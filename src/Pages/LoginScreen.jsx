@@ -1,7 +1,9 @@
+// RUTA: src/Pages/LoginScreen.jsx
+
 import React from 'react';
-import { ShieldCheck, LogIn, User } from 'lucide-react';
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, signInAnonymously } from 'firebase/auth';
-import { auth } from '../firebase/config';
+import { auth } from '../Firebase/config.js';
+import { User, Key } from 'lucide-react';
 
 const LoginScreen = () => {
     const [email, setEmail] = React.useState('');
@@ -28,42 +30,37 @@ const LoginScreen = () => {
         try {
             await signInAnonymously(auth);
         } catch (error) {
-            setError('No se pudo iniciar la sesión anónima.');
+            setError('No se pudo iniciar la sesión de merchandiser.');
         }
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col justify-center items-center p-4 font-sans">
+        <div className="min-h-screen bg-brand-blue flex flex-col justify-center items-center p-4 font-sans">
             <div className="w-full max-w-md">
-                <div className="text-center mb-8">
-                    <h1 className="text-5xl font-bold text-blue-900 tracking-tight">Genius Keeper</h1>
-                    <p className="text-gray-500 mt-2 text-lg">Inteligencia de Trade Marketing para <span className="font-semibold text-blue-800">Lacteoca</span></p>
+                <div className="text-center mb-10">
+                    <h1 className="text-5xl font-bold text-white tracking-tight">Lacteoca</h1>
+                    <h2 className="text-5xl font-bold text-brand-yellow tracking-tight">Genius Keeper</h2>
                 </div>
-                <div className="bg-white p-8 rounded-2xl shadow-xl">
-                    <h2 className="text-2xl font-semibold text-center text-gray-800 mb-6">Iniciar Sesión</h2>
-                    {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-center text-sm">{error}</p>}
-                    <form onSubmit={handleLogin}>
-                        <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="email">Correo Electrónico</label>
-                            <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="shadow-sm appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="usuario@lacteoca.com" required />
-                        </div>
-                        <div className="mb-6">
-                            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">Contraseña</label>
-                            <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="shadow-sm appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="••••••••••" required />
-                        </div>
-                        <button type="submit" disabled={isSubmitting} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-blue-300">
-                            <LogIn className="mr-2 h-5 w-5" /> {isSubmitting ? 'Ingresando...' : 'Ingresar'}
+
+                <div className="space-y-4 mb-8">
+                    <button 
+                        onClick={handleAnonymousLogin} 
+                        className="w-full bg-white text-brand-blue font-bold py-4 px-4 rounded-lg flex items-center justify-center transition-transform hover:scale-105 text-xl shadow-lg"
+                    >
+                        <User className="mr-3" size={24}/> Acceso Merchandiser
+                    </button>
+                </div>
+
+                <div className="bg-black bg-opacity-10 rounded-2xl p-6 space-y-4">
+                    <h2 className="text-2xl font-semibold text-center text-white mb-4">Acceso Gerencial</h2>
+                    {error && <p className="bg-red-500 text-white p-3 rounded-lg text-center text-sm">{error}</p>}
+                    <form onSubmit={handleLogin} className="space-y-4">
+                        <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="bg-slate-700 bg-opacity-50 appearance-none border-2 border-transparent rounded-lg w-full py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-brand-yellow" placeholder="Correo" required />
+                        <input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="bg-slate-700 bg-opacity-50 appearance-none border-2 border-transparent rounded-lg w-full py-3 px-4 text-white focus:outline-none focus:ring-2 focus:ring-brand-yellow" placeholder="Contraseña" required />
+                        <button type="submit" disabled={isSubmitting} className="w-full bg-brand-yellow hover:bg-opacity-90 text-black font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-yellow-200 text-lg">
+                            {isSubmitting ? 'Ingresando...' : 'Ingresar'}
                         </button>
                     </form>
-                    <div className="mt-6 text-center">
-                        <div className="relative"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-300"></div></div><div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-gray-500">o</span></div></div>
-                        <button onClick={handleAnonymousLogin} className="mt-6 w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors">
-                            <User className="mr-2 h-5 w-5" /> Entrar como Merchandiser
-                        </button>
-                    </div>
-                </div>
-                <div className="text-center mt-6">
-                    <p className="text-sm text-gray-500 flex items-center justify-center"><ShieldCheck className="h-4 w-4 mr-1 text-green-500" /> Comunicación Segura</p>
                 </div>
             </div>
         </div>

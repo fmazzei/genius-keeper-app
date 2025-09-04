@@ -1,106 +1,50 @@
-import React from 'react';
-import { collection, query, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase/config';
-import { PlusCircle, ChevronDown, AlertTriangle } from 'lucide-react';
-import LoadingSpinner from '../components/LoadingSpinner';
-import Modal from '../components/Modal';
+// RUTA: src/Pages/PosList.jsx
 
-const AddPosForm = ({ onClose }) => {
-    const [name, setName] = React.useState('');
-    const [chain, setChain] = React.useState('');
-    const [zone, setZone] = React.useState('');
-    const [visitInterval, setVisitInterval] = React.useState(7);
-    const [isSubmitting, setIsSubmitting] = React.useState(false);
-    const [error, setError] = React.useState('');
+import React, { useState, useEffect, useMemo } from 'react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../Firebase/config.js';
+import { PlusCircle, ChevronDown, MapPin, Loader } from 'lucide-react';
+import Modal from '../Components/Modal.jsx';
+import AddPosForm from '../Components/AddPosForm.jsx';
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!name || !chain || !zone) {
-            setError('Todos los campos son obligatorios.');
-            return;
-        }
-        setIsSubmitting(true);
-        setError('');
-        try {
-            await addDoc(collection(db, 'pointsOfSale'), {
-                name,
-                chain,
-                zone,
-                visitInterval: Number(visitInterval),
-                active: true,
-                createdAt: serverTimestamp(),
-            });
-            onClose();
-        } catch (err) {
-            console.error("Error adding new POS:", err);
-            setError('No se pudo agregar el punto de venta.');
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
+// Este componente modal se mantiene aquí ya que solo es usado por PosList.
+const PosCoordinatesModal = ({ pos, onClose, onConfirm, status, error }) => {
+    if (!pos) return null;
     return (
-        <form onSubmit={handleSubmit} className="space-y-4">
-            {error && <p className="text-red-500 bg-red-100 p-2 rounded-md">{error}</p>}
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Nombre de la Tienda</label>
-                <input type="text" value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" required />
+        <Modal isOpen={true} onClose={onClose} title={`Capturar GPS para ${pos.name}`}>
+            <div className="p-4 text-center">
+                <p className="mb-4">Este PDV no tiene coordenadas GPS. Para continuar, por favor, acércate al lugar y presiona "Confirmar Ubicación".</p>
+                {status === 'loading' && <div className="flex justify-center"><Loader className="animate-spin" /></div>}
+                {status === 'error' && <p className="text-red-500">{error}</p>}
+                <div className="flex justify-end gap-2 mt-4">
+                    <button type="button" onClick={onClose} className="bg-slate-200 px-4 py-2 rounded-lg">Cancelar</button>
+                    <button type="button" onClick={() => onConfirm(pos)} disabled={status === 'loading'} className="bg-brand-blue text-white px-4 py-2 rounded-lg">Confirmar Ubicación</button>
+                </div>
             </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Cadena</label>
-                <input type="text" value={chain} onChange={e => setChain(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Ej: Excelsior Gama" required />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Zona</label>
-                <input type="text" value={zone} onChange={e => setZone(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" placeholder="Ej: Las Mercedes" required />
-            </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700">Intervalo de Visita (días)</label>
-                <input type="number" value={visitInterval} onChange={e => setVisitInterval(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" required />
-            </div>
-            <div className="flex justify-end gap-3 pt-4">
-                <button type="button" onClick={onClose} className="bg-gray-200 px-4 py-2 rounded-lg">Cancelar</button>
-                <button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white px-4 py-2 rounded-lg disabled:bg-blue-300">{isSubmitting ? 'Agregando...' : 'Agregar'}</button>
-            </div>
-        </form>
+        </Modal>
     );
 };
 
-const PosList = ({ onSelectPos, user }) => {
-    const [posList, setPosList] = React.useState([]);
-    const [loading, setLoading] = React.useState(true);
-    const [error, setError] = React.useState('');
-    const [searchTerm, setSearchTerm] = React.useState('');
-    const [openCategories, setOpenCategories] = React.useState([]);
-    const [isModalOpen, setIsModalOpen] = React.useState(false);
+// El componente principal ahora recibe 'posList' como una prop.
+const PosList = ({ posList, onSelectPos }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [openCategories, setOpenCategories] = useState([]);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [posForCoordCapture, setPosForCoordCapture] = useState(null);
+    const [coordCaptureStatus, setCoordCaptureStatus] = useState('idle');
+    const [coordCaptureError, setCoordCaptureError] = useState('');
 
-    React.useEffect(() => {
-        if (!user) { setLoading(true); return; }
-        const q = query(collection(db, "pointsOfSale"));
-        const unsubscribe = onSnapshot(q, (querySnapshot) => {
-            const points = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(pos => pos.active === true && pos.visitInterval > 0);
-            setPosList(points);
-            if (!searchTerm) {
-                const allChains = [...new Set(points.map(p => p.chain || 'Automercados Individuales'))];
-                setOpenCategories(allChains);
-            }
-            setLoading(false);
-        }, (err) => {
-            console.error("Error fetching POS list:", err);
-            setError("No se pudieron cargar los puntos de venta.");
-            setLoading(false);
-        });
-        return () => unsubscribe();
-    }, [user, searchTerm]);
+    const groupedPos = useMemo(() => {
+        if (!posList) return {};
+        return posList.reduce((acc, pos) => {
+            const chain = pos.chain || 'Automercados Individuales';
+            if (!acc[chain]) { acc[chain] = []; }
+            acc[chain].push(pos);
+            return acc;
+        }, {});
+    }, [posList]);
 
-    const groupedPos = React.useMemo(() => posList.reduce((acc, pos) => {
-        const chain = pos.chain || 'Automercados Individuales';
-        if (!acc[chain]) { acc[chain] = []; }
-        acc[chain].push(pos);
-        return acc;
-    }, {}), [posList]);
-
-    const filteredGroupedPos = React.useMemo(() => {
+    const filteredGroupedPos = useMemo(() => {
         if (!searchTerm) return groupedPos;
         const lowerCaseSearch = searchTerm.toLowerCase();
         const filtered = {};
@@ -111,47 +55,91 @@ const PosList = ({ onSelectPos, user }) => {
         return filtered;
     }, [searchTerm, groupedPos]);
 
-    const toggleCategory = (category) => setOpenCategories(prev => prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]);
+    const toggleCategory = (category) => {
+        setOpenCategories(prev => prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]);
+    };
+    
+    useEffect(() => {
+        if (searchTerm) {
+            setOpenCategories(Object.keys(filteredGroupedPos));
+        } else {
+            setOpenCategories([]);
+        }
+    }, [searchTerm, filteredGroupedPos]);
 
-    React.useEffect(() => { if (searchTerm) { setOpenCategories(Object.keys(filteredGroupedPos)); } }, [searchTerm, filteredGroupedPos]);
-
-    if (loading) return <div className="text-center p-10"><LoadingSpinner /></div>;
-    if (error) return <div className="text-center p-10 bg-red-100 text-red-700 rounded-lg">{error}</div>;
+    const handlePosClick = (pos) => {
+        if (!pos.location) {
+            setPosForCoordCapture(pos);
+            return;
+        }
+        onSelectPos(pos);
+    };
+    
+    const handleConfirmCoordinates = (posToUpdate) => {
+        setCoordCaptureStatus('loading');
+        setCoordCaptureError('');
+        navigator.geolocation.getCurrentPosition(
+            async (position) => {
+                const newLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
+                const posRef = doc(db, 'pos', posToUpdate.id);
+                try {
+                    await updateDoc(posRef, { location: newLocation });
+                    setCoordCaptureStatus('success');
+                    onSelectPos({ ...posToUpdate, location: newLocation });
+                    setPosForCoordCapture(null);
+                } catch (err) {
+                    setCoordCaptureStatus('error');
+                    setCoordCaptureError('No se pudo guardar la ubicación en la base de datos.');
+                }
+            },
+            (err) => {
+                setCoordCaptureStatus('error');
+                setCoordCaptureError('No se pudo obtener tu ubicación. Revisa los permisos del navegador.');
+            }
+        );
+    };
 
     return (
-        <div className="max-w-4xl mx-auto">
-            <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-                <h3 className="text-3xl font-bold text-gray-800">Puntos de Venta</h3>
-                <button onClick={() => setIsModalOpen(true)} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-                    <PlusCircle size={20} /> Agregar Nuevo
-                </button>
+        <div className="min-h-full w-full bg-slate-50 p-4 md:p-6">
+            <div className="max-w-4xl mx-auto">
+                <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                    <h3 className="text-3xl font-bold text-slate-800">Puntos de Venta</h3>
+                    <button onClick={() => setIsAddModalOpen(true)} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-brand-yellow text-black font-bold px-4 py-2 rounded-lg hover:bg-opacity-90 shadow-md transition-transform transform hover:scale-105">
+                        <PlusCircle size={20} /> Agregar Nuevo
+                    </button>
+                </div>
+                <div className="mb-6 sticky top-0 bg-slate-50/80 backdrop-blur-sm py-3 z-10 -mx-4 px-4">
+                    <input type="text" placeholder="Buscar por nombre..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-yellow focus:border-transparent shadow-sm" />
+                </div>
+                <div className="space-y-2">
+                    {Object.keys(filteredGroupedPos).length > 0 ? (
+                        Object.keys(filteredGroupedPos).sort().map(chain => (
+                            <div key={chain} className="bg-white rounded-lg shadow-md overflow-hidden border border-slate-200">
+                                <button onClick={() => toggleCategory(chain)} className="w-full flex justify-between items-center p-4 text-left font-bold text-lg text-slate-800 bg-slate-50 hover:bg-slate-100 transition-colors">
+                                    <span className="truncate">{chain}</span>
+                                    <ChevronDown className={`transition-transform duration-300 ${openCategories.includes(chain) ? 'rotate-180' : ''}`} />
+                                </button>
+                                {openCategories.includes(chain) && (
+                                    <ul className="divide-y divide-slate-100">
+                                        {filteredGroupedPos[chain].sort((a, b) => a.name.localeCompare(b.name)).map(pos => (
+                                            <li key={pos.id} onClick={() => handlePosClick(pos)} className="p-4 cursor-pointer hover:bg-yellow-50 flex justify-between items-center transition-colors">
+                                                <div><h4 className="font-semibold text-slate-800">{pos.name}</h4><p className="text-sm text-slate-500">{pos.zone}</p></div>
+                                                {!pos.location && <MapPin className="text-red-500 flex-shrink-0" title="GPS no registrado"/>}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        ))
+                    ) : (
+                        <div className="bg-white rounded-lg p-10 text-center text-slate-500">No se encontraron puntos de venta.</div>
+                    )}
+                </div>
+                <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Agregar Nuevo Punto de Venta">
+                    <AddPosForm onClose={() => setIsAddModalOpen(false)} />
+                </Modal>
+                <PosCoordinatesModal pos={posForCoordCapture} onClose={() => { setPosForCoordCapture(null); setCoordCaptureStatus('idle'); }} onConfirm={handleConfirmCoordinates} status={coordCaptureStatus} error={coordCaptureError} />
             </div>
-            <div className="mb-6 sticky top-0 bg-gray-100 py-2 z-10">
-                <input type="text" placeholder="Buscar por nombre..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm" />
-            </div>
-            <div className="space-y-4">
-                {Object.keys(filteredGroupedPos).length > 0 ? Object.keys(filteredGroupedPos).sort().map(chain => (
-                    <div key={chain} className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                        <button onClick={() => toggleCategory(chain)} className="w-full flex justify-between items-center p-4 text-left font-bold text-lg text-blue-800 bg-blue-50 hover:bg-blue-100">
-                            <span className="truncate">{chain}</span>
-                            <ChevronDown className={`transition-transform duration-300 ${openCategories.includes(chain) ? 'rotate-180' : ''}`} />
-                        </button>
-                        {openCategories.includes(chain) && (
-                            <ul className="border-t divide-y divide-gray-100">
-                                {filteredGroupedPos[chain].sort((a, b) => a.name.localeCompare(b.name)).map(pos => (
-                                    <li key={pos.id} onClick={() => onSelectPos(pos)} className="p-4 cursor-pointer hover:bg-blue-50 flex justify-between items-center">
-                                        <div><h4 className="font-semibold text-gray-800">{pos.name}</h4><p className="text-sm text-gray-500">{pos.zone}</p></div>
-                                        {pos.alerts && pos.alerts > 0 && <AlertTriangle className="text-red-500 animate-pulse" />}
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </div>
-                )) : <p className="text-center text-gray-500 mt-10">No se encontraron puntos de venta.</p>}
-            </div>
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Agregar Nuevo Punto de Venta">
-                <AddPosForm onClose={() => setIsModalOpen(false)} />
-            </Modal>
         </div>
     );
 };

@@ -1,98 +1,157 @@
-import React from 'react';
-import { LogOut, BarChart2, Target, AlertTriangle, Settings, ChevronsRight } from 'lucide-react';
-import ManagerDashboard from './ManagerDashboard';
-import SalesGoalsView from './SalesGoalsView';
-import AlertsCenterView from './AlertsCenterView';
-import AdminPanel from './AdminPanel';
-import VisitReportForm from './VisitReportForm';
-import PosList from './PosList';
+import React, { useState } from 'react';
+import { useMerchandiserData } from '@/hooks/useMerchandiserData.js';
+import { useOfflineSync } from '@/hooks/useOfflineSync.js';
+import { useDelegatedTasks } from '@/hooks/useDelegatedTasks.jsx';
+import { LogOut, ChevronsRight, FileText, Truck, Map, Menu, ClipboardList } from 'lucide-react';
+import MerchandiserHub from '@/Pages/MerchandiserHub.jsx';
+import Planner from '@/Pages/Planner/Planner.jsx';
+import LogisticsPanel from '@/Pages/LogisticsPanel.jsx';
+import PosList from '@/Pages/PosList.jsx';
+import VisitReportForm from '@/Pages/VisitReportForm.jsx';
+import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
+import TaskList from '@/Components/TaskList.jsx';
+// SOLUCIÓN: Importar todos los skeletons necesarios
+import { TaskListSkeleton, PosListSkeleton } from '@/Components/SkeletonLoader.jsx';
 
 const AppShell = ({ user, role, onLogout }) => {
-    const [sidebarOpen, setSidebarOpen] = React.useState(true);
-    const [currentView, setCurrentView] = React.useState(role === 'merchandiser' ? 'pos' : 'dashboard');
-    const [selectedPos, setSelectedPos] = React.useState(null);
+    const [currentView, setCurrentView] = useState('hub');
+    const [selectedPos, setSelectedPos] = useState(null);
+    const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    
+    const { masterStopList, agenda, loading: merchandiserLoading } = useMerchandiserData();
+    const { tasks, loading: tasksLoading, completeTask } = useDelegatedTasks(role);
+    useOfflineSync();
 
     const navigateToReport = (pos) => {
         setSelectedPos(pos);
-        setCurrentView('report');
+        setCurrentView('visit_report');
     };
 
     const getGreeting = () => {
         const viewTitles = {
-            dashboard: 'Dashboard General', goals: 'Metas de Venta', alerts: 'Centro de Alertas',
-            settings: 'Panel de Administración', report: 'Elaborando Reporte', pos: 'Puntos de Venta'
+            hub: 'Centro de Operaciones',
+            planner: 'Planificador de Jornada',
+            logistics: 'Panel de Logística',
+            report: 'Seleccionar Punto de Venta',
+            tasks: 'Mis Tareas Pendientes',
+            visit_report: `Reporte: ${selectedPos?.name || ''}`,
         };
         return viewTitles[currentView] || 'Genius Keeper';
     };
+    
+    const pendingTasksCount = tasks.filter(t => t.status === 'pending').length;
 
-    const NavItem = ({ icon, text, active, alert, onClick }) => (
-        <li onClick={onClick} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer transition-colors ${active ? 'bg-blue-600 text-white shadow-md' : 'text-gray-600 hover:bg-blue-100'}`}>
-            {icon}
-            <span className={`ml-4 font-medium ${sidebarOpen ? 'inline' : 'hidden'}`}>{text}</span>
-            {alert && sidebarOpen && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
-        </li>
-    );
-
-    if (role === 'merchandiser') {
-        return (
-            <div className="h-screen bg-gray-100 font-sans">
-                <header className="bg-white border-b flex items-center justify-between px-6 shadow-sm h-16">
-                    <h2 className="text-2xl font-semibold text-gray-800">{getGreeting()}</h2>
-                    <button onClick={onLogout} className="flex items-center text-red-500 hover:text-red-700 font-semibold">
-                        <LogOut size={20} className="mr-2"/> Salir
-                    </button>
-                </header>
-                <main className="p-6 h-[calc(100vh-64px)] overflow-y-auto">
-                    {currentView === 'report' ? <VisitReportForm pos={selectedPos} backToList={() => setCurrentView('pos')} user={user} /> : <PosList onSelectPos={navigateToReport} user={user} />}
-                </main>
+    const SidebarContent = () => (
+        <div className="flex flex-col h-full bg-white">
+            <div className={`flex items-center justify-between p-4 h-16 border-b ${!desktopSidebarOpen && 'md:justify-center'}`}>
+                <h1 className={`text-xl font-bold text-brand-blue whitespace-nowrap overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>Genius Keeper</h1>
+                <button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="p-2 rounded-lg hover:bg-slate-200 hidden md:block">
+                    <ChevronsRight className={`transition-transform duration-300 ${desktopSidebarOpen && 'rotate-180'}`} />
+                </button>
             </div>
-        )
-    }
+            <nav className="mt-4 px-2 flex-grow">
+                <ul>
+                    <li onClick={() => { setCurrentView('tasks'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer relative ${currentView === 'tasks' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        <ClipboardList size={24} />
+                        <span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Tareas</span>
+                        {pendingTasksCount > 0 && (
+                            <span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+                                {pendingTasksCount}
+                            </span>
+                        )}
+                    </li>
+                    <li onClick={() => { setCurrentView('report'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView.includes('report') ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        <FileText size={24} />
+                        <span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Reporte</span>
+                    </li>
+                    <li onClick={() => { setCurrentView('planner'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'planner' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        <Map size={24} />
+                        <span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Planificador</span>
+                    </li>
+                    <li onClick={() => { setCurrentView('logistics'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'logistics' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        <Truck size={24} />
+                        <span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Logística</span>
+                    </li>
+                </ul>
+            </nav>
+            <div className="px-2 py-4 border-t">
+                <div className="flex items-center p-3 my-2">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-200 text-blue-700 font-bold flex-shrink-0">
+                        {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'J'}
+                    </div>
+                    <div className={`ml-3 overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>
+                        <p className="font-semibold text-sm truncate">{user.displayName || 'Juan (Merchandiser)'}</p>
+                    </div>
+                </div>
+                <button onClick={onLogout} className="w-full">
+                    <li className="flex items-center p-3 my-1 rounded-lg cursor-pointer text-slate-600 hover:bg-slate-100">
+                        <LogOut size={24} />
+                        <span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Cerrar Sesión</span>
+                    </li>
+                </button>
+            </div>
+        </div>
+    );
+    
+    const merchandiserContent = () => {
+        // SOLUCIÓN: Lógica de carga de esqueletos granular por vista
+        switch(currentView) {
+            case 'hub': 
+                // La vista Hub carga rápido, un spinner es aceptable si es necesario
+                if (merchandiserLoading) return <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>;
+                return <MerchandiserHub onNavigate={setCurrentView} />;
 
-    const renderManagerView = () => {
-        switch (currentView) {
-            case 'dashboard': return <ManagerDashboard user={user} />;
-            case 'goals': return <SalesGoalsView user={user} />;
-            case 'alerts': return <AlertsCenterView user={user} />;
-            case 'settings': return <AdminPanel user={user} />;
-            default: return <ManagerDashboard user={user} />;
+            case 'planner': 
+                if (merchandiserLoading) return <PosListSkeleton />; // Reutilizamos el esqueleto de lista de PDV
+                return <Planner role={role} allPossibleStops={masterStopList} agenda={agenda} onSelectPos={navigateToReport} />;
+            
+            case 'logistics': 
+                if (merchandiserLoading) return <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>;
+                return <LogisticsPanel />;
+            
+            case 'report': 
+                if (merchandiserLoading) return <PosListSkeleton />;
+                return <PosList posList={masterStopList} onSelectPos={navigateToReport} />;
+            
+            case 'tasks': 
+                if (tasksLoading) return <TaskListSkeleton />;
+                return (
+                    <div className="p-4 md:p-8">
+                        <h2 className="text-3xl font-bold text-slate-800 mb-6">Mis Tareas Pendientes</h2>
+                        <TaskList tasks={tasks} onCompleteTask={completeTask} loading={tasksLoading} />
+                    </div>
+                );
+
+            case 'visit_report': 
+                // El formulario no necesita esqueleto ya que recibe los datos del POS al ser seleccionado
+                return <VisitReportForm pos={selectedPos} user={user} backToList={() => setCurrentView('hub')} />;
+            
+            default: 
+                return <MerchandiserHub onNavigate={setCurrentView} />;
         }
     };
-
+    
     return (
-        <div className="flex h-screen bg-gray-100 font-sans">
-            <aside className={`bg-white text-gray-800 transition-all duration-300 flex flex-col ${sidebarOpen ? 'w-64' : 'w-20'}`}>
-                <div className="flex items-center justify-between p-4 h-16 border-b">
-                    <h1 className={`text-xl font-bold text-blue-900 whitespace-nowrap overflow-hidden ${sidebarOpen ? 'inline' : 'hidden'}`}>Genius Keeper</h1>
-                    <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 rounded-lg hover:bg-gray-200">
-                        <ChevronsRight className={`transition-transform duration-300 ${sidebarOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                </div>
-                <nav className="mt-4 px-2 flex-grow">
-                    <ul>
-                        <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
-                        <NavItem icon={<Target size={24} />} text="Metas de Venta" active={currentView === 'goals'} onClick={() => setCurrentView('goals')} />
-                        <NavItem icon={<AlertTriangle size={24} />} text="Alertas" alert active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} />
-                        {role === 'master' && <NavItem icon={<Settings size={24} />} text="Administración" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />}
-                    </ul>
-                </nav>
-                <div className="px-2 py-4 border-t">
-                    <div className="flex items-center p-3 my-2">
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-200 text-blue-700 font-bold">{user.email.charAt(0).toUpperCase()}</div>
-                        <div className={`ml-3 overflow-hidden ${sidebarOpen ? 'inline' : 'hidden'}`}>
-                            <p className="font-semibold text-sm truncate">{user.email}</p>
-                            <p className="text-xs text-gray-500">{role.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
-                        </div>
-                    </div>
-                    <button onClick={onLogout} className="w-full"><NavItem icon={<LogOut size={24} />} text="Cerrar Sesión" /></button>
-                </div>
+        <div className="h-screen font-sans flex">
+            <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white transition-transform duration-300 ease-in-out md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                <SidebarContent />
+            </div>
+            {mobileMenuOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden" onClick={() => setMobileMenuOpen(false)}></div>}
+            <aside className={`transition-all duration-300 hidden md:flex md:flex-col ${desktopSidebarOpen ? 'w-64' : 'w-20'}`}>
+                <SidebarContent />
             </aside>
-            <main className="flex-1 flex flex-col overflow-hidden">
-                <header className="h-16 bg-white border-b flex items-center px-6">
-                    <h2 className="text-2xl font-semibold text-gray-800">{getGreeting()}</h2>
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <header className="h-16 bg-white border-b flex items-center px-4 shadow-sm shrink-0">
+                    <button onClick={() => setMobileMenuOpen(true)} className="p-2 mr-2 rounded-full hover:bg-slate-100 md:hidden">
+                        <Menu size={24} />
+                    </button>
+                    <h2 className="text-lg sm:text-2xl font-semibold text-slate-800 ml-2 truncate">{getGreeting()}</h2>
                 </header>
-                <div className="flex-1 p-6 overflow-y-auto">{renderManagerView()}</div>
-            </main>
+                <main className="flex-1 overflow-y-auto bg-slate-50 pb-24">
+                    {merchandiserContent()}
+                </main>
+            </div>
         </div>
     );
 };
