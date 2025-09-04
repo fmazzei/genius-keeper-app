@@ -1,11 +1,14 @@
 import React from 'react';
-import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, signInAnonymously } from 'firebase/auth';
-import { auth } from '../Firebase/config.js';
+// --- SOLUCIÓN: Ya no importamos desde 'firebase/auth' directamente ---
+// import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, signInAnonymously } from 'firebase/auth';
+// import { auth } from '../Firebase/config.js';
+import { useAuth } from '@/context/AuthContext'; // Importamos nuestro hook de autenticación
 import { User, Key } from 'lucide-react';
-// --- SOLUCIÓN: Importamos la función para registrar el dispositivo ---
-import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 
 const LoginScreen = () => {
+    // --- SOLUCIÓN: Obtenemos las funciones de login desde el contexto ---
+    const { login, loginAnonymously } = useAuth();
+
     const [email, setEmail] = React.useState('');
     const [password, setPassword] = React.useState('');
     const [error, setError] = React.useState('');
@@ -17,15 +20,9 @@ const LoginScreen = () => {
         setIsSubmitting(true);
         setError('');
         try {
-            await setPersistence(auth, browserLocalPersistence);
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            
-            // --- SOLUCIÓN: Una vez que el usuario inicia sesión con éxito... ---
-            if (userCredential.user) {
-                // ...llamamos a la función para registrar su dispositivo para notificaciones.
-                await requestNotificationPermission(userCredential.user.uid);
-            }
-
+            // --- SOLUCIÓN: Llamamos a la función centralizada 'login' del contexto ---
+            await login(email, password);
+            // La lógica de 'requestNotificationPermission' ahora se ejecuta de forma segura dentro del contexto.
         } catch (err) {
             setError('Credenciales incorrectas o usuario no registrado.');
         } finally {
@@ -35,13 +32,8 @@ const LoginScreen = () => {
 
     const handleAnonymousLogin = async () => {
         try {
-            const userCredential = await signInAnonymously(auth);
-
-            // --- SOLUCIÓN: También registramos el dispositivo para el merchandiser anónimo ---
-             if (userCredential.user) {
-                await requestNotificationPermission(userCredential.user.uid);
-            }
-
+            // --- SOLUCIÓN: Llamamos a la función centralizada 'loginAnonymously' del contexto ---
+            await loginAnonymously();
         } catch (error) {
             setError('No se pudo iniciar la sesión de merchandiser.');
         }
