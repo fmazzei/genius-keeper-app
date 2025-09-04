@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../Firebase/config.js';
+import { db } from '@/Firebase/config.js';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { FormSection, ToggleButton } from '../Pages/VisitReportForm.jsx';
+import { FormSection, ToggleButton, FormInput } from '@/Components/FormControls.jsx';
 import { DollarSign, BarChart2, Shield, Trash2, X, Search } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner.jsx';
 import NewEntrantModal from './NewEntrantModal.jsx';
@@ -9,13 +9,6 @@ import NewEntrantModal from './NewEntrantModal.jsx';
 const SHELF_LOCATIONS = ['ojos', 'manos', 'superior', 'inferior'];
 const POP_STATUS_OPTIONS = ['Exhibido correctamente', 'Dañado', 'Ausente', 'Sin Campaña Activa'];
 const COMPETITOR_PRODUCTS = [ { id: 'Ananke Artesanal Natural 200g', text: 'Ananke Artesanal Natural 200g' }, { id: 'Ananke Natural Extra Cremoso 150g', text: 'Ananke Natural Extra Cremoso 150g' }, { id: 'Ananke Natural Extra Cremoso 225g', text: 'Ananke Natural Extra Cremoso 225g' }, { id: 'Cheva Capri 180g', text: 'Cheva Capri 180g' }, { id: 'Las Cumbres Natural 200g', text: 'Las Cumbres Natural 200g' }, { id: 'Capri Cream Natural 170g', text: 'Capri Cream Natural 170g' }, ];
-
-const FormInput = ({ label, type = 'text', value, onChange, placeholder }) => (
-    <div>
-        <label className="block text-sm font-medium text-slate-600 mb-1">{label}</label>
-        <input type={type} value={value} onChange={onChange} placeholder={placeholder} className="w-full px-3 py-2 border border-slate-300 rounded-md"/>
-    </div>
-);
 
 const EditReportForm = ({ report, onSave, onClose }) => {
     const [editedData, setEditedData] = useState(report);
@@ -151,9 +144,8 @@ const EditReportForm = ({ report, onSave, onClose }) => {
                         </button>
                     </FormSection>
                 </div>
-                {/* SOLUCIÓN: Se corrige la estructura de Flexbox para alinear los botones correctamente */}
+                
                 <div className="flex justify-between items-center gap-3 pt-6 border-t mt-6">
-                    {/* Botón de Eliminar a la izquierda */}
                     <button 
                         type="button" 
                         onClick={handleDelete} 
@@ -162,8 +154,6 @@ const EditReportForm = ({ report, onSave, onClose }) => {
                     >
                         <Trash2 size={16}/> Eliminar Reporte
                     </button>
-
-                    {/* Contenedor para los botones de la derecha */}
                     <div className="flex items-center gap-2">
                         <button type="button" onClick={onClose} className="bg-slate-200 text-slate-800 px-4 py-2 rounded-lg">Cancelar</button>
                         <button 

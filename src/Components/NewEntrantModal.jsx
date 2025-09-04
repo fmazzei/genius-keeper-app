@@ -1,9 +1,8 @@
-// RUTA: src/Components/NewEntrantModal.jsx
-
 import React, { useState } from 'react';
 import { CheckCircle } from 'lucide-react';
 import Modal from './Modal.jsx';
-import { FormInput, ToggleButton } from '../Pages/VisitReportForm.jsx'; 
+// --- SOLUCIÓN: La ruta de importación ahora apunta al nuevo archivo centralizado ---
+import { FormInput, ToggleButton } from '@/Components/FormControls.jsx'; 
 
 const NewEntrantModal = ({ isOpen, onClose, onSave }) => {
     const [entrant, setEntrant] = useState({
@@ -33,6 +32,7 @@ const NewEntrantModal = ({ isOpen, onClose, onSave }) => {
         };
         onSave(finalEntrantData);
         
+        // Resetea el estado para la próxima vez que se abra
         setEntrant({ brand: '', presentation: '', price: '', manufacturer: '', hasPop: null, hasTasting: null });
         setIsDirect(null);
         onClose();

@@ -4,6 +4,7 @@ import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { useSwipeable } from 'react-swipeable';
 import { ArrowLeft, Send, MapPin, DollarSign, Package, Calendar, BarChart2, Check, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search } from 'lucide-react';
+import { FormInput, ToggleButton, FormSection } from '@/Components/FormControls.jsx';
 import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
 import NewEntrantModal from '@/Components/NewEntrantModal.jsx';
@@ -23,24 +24,7 @@ const ProgressBar = ({ currentStep, totalSteps }) => (
         <div className="bg-brand-blue h-2.5 rounded-full" style={{ width: `${(currentStep / totalSteps) * 100}%`, transition: 'width 0.5s ease-in-out' }}></div>
     </div>
 );
-const FormSection = ({ title, icon, children }) => (
-    <div className="bg-white p-4 sm:p-6 rounded-lg shadow-md border border-slate-200">
-        {icon && <h3 className="text-lg sm:text-xl font-bold text-slate-800 flex items-center mb-4">{icon}{title}</h3>}
-        {children}
-    </div>
-);
-const FormInput = ({ label, type, value, onChange, placeholder, disabled = false }) => (
-    <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-        <input type={type} value={value} onChange={onChange} placeholder={placeholder} disabled={disabled} className="w-full p-3 border border-slate-300 rounded-md focus:ring-brand-yellow focus:border-brand-yellow disabled:bg-slate-100 disabled:text-slate-500"/>
-    </div>
-);
-const ToggleButton = ({ label, isSelected, onClick, disabled = false }) => (
-    <button type="button" onClick={onClick} disabled={disabled} className={`flex items-center justify-center gap-2 p-3 text-sm font-semibold rounded-lg border-2 w-full transition-colors ${isSelected ? 'bg-brand-blue text-white border-brand-blue' : 'bg-slate-50 text-slate-700'} disabled:opacity-70 disabled:cursor-not-allowed`}>
-        {isSelected && <Check size={16}/>}
-        {label}
-    </button>
-);
+
 const SubmissionSuccess = ({ onFinish, isOffline }) => {
     const tips = [ "Revisa que el anaquel quedó ordenado y limpio.", "Asegúrate que el precio de nuestro producto esté correctamente exhibido.", "Si hay campaña activa, ¿el material POP está visible y en buen estado?", "Conversar con el personal del automercado es vital para obtener información de la competencia.", "¡Un espacio más en el anaquel es una nueva ventana para una venta!" ];
     return (
@@ -64,6 +48,7 @@ const SubmissionSuccess = ({ onFinish, isOffline }) => {
         </div>
     );
 };
+
 
 // --- Componente Principal del Formulario ---
 const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialData = null }) => {
@@ -114,7 +99,7 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
             return R * c * 1000;
         };
-        if (!pos.location) { setUiState(prev => ({ ...prev, gpsStatus: 'no_pos_location', initialGpsValid: false })); return; }
+        if (!pos?.location) { setUiState(prev => ({ ...prev, gpsStatus: 'no_pos_location', initialGpsValid: true })); return; }
         navigator.geolocation.getCurrentPosition(
             (position) => {
                 const userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
@@ -125,7 +110,7 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
             () => { setUiState(prev => ({ ...prev, gpsStatus: 'error', initialGpsValid: false })); },
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
-    }, [pos.location, isReadOnly]);
+    }, [pos?.location, isReadOnly]);
     
     useEffect(() => {
         if (isReadOnly) {
@@ -159,22 +144,53 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
         setSubmissionState('submitting');
         const inventoryLevel = report.batches.reduce((sum, batch) => sum + batch.quantity, 0);
         const reportUserName = user.isAnonymous ? 'Juan Guanchez' : user.displayName || user.email;
-        const finalReportData = { /* ... */ };
+        
+        const finalReportData = {
+            price: Number(report.price) || 0,
+            orderQuantity: Number(report.orderQuantity) || 0,
+            stockout: report.stockout || false,
+            batches: report.batches || [],
+            shelfLocation: report.shelfLocation || null,
+            adjacentCategory: report.adjacentCategory || null,
+            popStatus: report.popStatus || null,
+            facing: Number(report.facing) || 0,
+            competition: report.competition || [],
+            newEntrants: report.newEntrants || [],
+            notes: report.notes || '',
+            userId: user.uid,
+            userName: reportUserName,
+            posId: pos.id,
+            posName: pos.name,
+            posZone: pos.zone || 'N/A',
+            location: pos.location || null,
+            inventoryLevel: inventoryLevel,
+        };
         
         if (navigator.onLine) {
             try {
-                await addDoc(collection(db, "visit_reports"), { ...finalReportData, createdAt: serverTimestamp() });
+                await addDoc(collection(db, "visit_reports"), {
+                    ...finalReportData,
+                    createdAt: serverTimestamp(),
+                });
                 setIsOfflineSave(false);
                 setSubmissionState('success');
             } catch (err) {
+                console.error("Error al enviar el reporte a Firestore (online):", err);
+                setUiState({ ...uiState, errorMessage: 'Error de envío online. Guardando localmente...' });
                 await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
                 setIsOfflineSave(true);
                 setSubmissionState('success');
             }
         } else {
-            await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
-            setIsOfflineSave(true);
-            setSubmissionState('success');
+            try {
+                await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
+                setIsOfflineSave(true);
+                setSubmissionState('success');
+            } catch (err) {
+                console.error("Error al guardar el reporte localmente:", err);
+                setUiState({ ...uiState, errorMessage: 'No se pudo guardar el reporte en el dispositivo.' });
+                setSubmissionState('form');
+            }
         }
     };
     
@@ -192,7 +208,13 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
     if (submissionState === 'success') return <SubmissionSuccess onFinish={backToList} isOffline={isOfflineSave} />;
 
     const GpsStatusIndicator = () => {
-        const statuses = { /* ... */ };
+        const statuses = {
+            checking: { text: 'Verificando GPS...', color: 'bg-yellow-100 text-yellow-800' },
+            valid: { text: 'Ubicación Verificada', color: 'bg-green-100 text-green-800' },
+            invalid_distance: { text: `Fuera de rango (${GPS_RADIUS_METERS}m)`, color: 'bg-red-100 text-red-800' },
+            error: { text: 'Error de GPS', color: 'bg-red-100 text-red-800' },
+            no_pos_location: { text: 'PDV sin GPS', color: 'bg-yellow-100 text-yellow-800' },
+        };
         const status = statuses[uiState.gpsStatus] || statuses.error;
         return ( <div className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-2 ${status.color}`}><MapPin size={14}/> {status.text}</div> );
     };
@@ -211,20 +233,25 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
                 </div>
                 {!isReadOnly && <div className="flex-shrink-0 ml-2"><GpsStatusIndicator /></div>}
             </header>
+            
             {!isReadOnly && <ProgressBar currentStep={currentStep} totalSteps={TOTAL_STEPS} />}
+            
             <div {...handlers} className="my-4 sm:my-6">
                  {uiState.errorMessage && <div className="bg-red-100 text-red-700 p-3 rounded-md mb-4">{uiState.errorMessage}</div>}
                  {renderStepContent()}
             </div>
+            
             {!isReadOnly && (
                 <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-lg md:absolute md:bottom-4 md:left-4 md:right-4 md:rounded-lg md:border">
                     <div className="max-w-4xl mx-auto flex items-center justify-between">
                         <button onClick={handleBack} disabled={currentStep === 1} className="flex items-center gap-2 bg-white border border-slate-300 text-slate-800 font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:opacity-50">
-                            <ChevronLeft size={20} /><span className="hidden sm:inline">Atrás</span>
+                            <ChevronLeft size={20} />
+                            <span className="hidden sm:inline">Atrás</span>
                         </button>
                         {currentStep < TOTAL_STEPS ? (
                             <button onClick={handleNext} disabled={!isStepValid} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-slate-400">
-                                <span className="hidden sm:inline">Siguiente</span><ChevronRight size={20} />
+                                <span className="hidden sm:inline">Siguiente</span>
+                                <ChevronRight size={20} />
                             </button>
                         ) : (
                             <button onClick={handleSubmit} disabled={isSubmitDisabled} className="flex items-center gap-2 bg-green-600 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-green-300">
@@ -246,7 +273,12 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
     const [scannerStatus, setScannerStatus] = useState('');
     const { processImageForDate, isProcessing } = useVisionAPI();
     const handleStockoutToggle = () => { if(!isReadOnly) { const isNowStockout = !report.stockout; setReport(prev => ({ ...prev, stockout: isNowStockout, batches: isNowStockout ? [] : prev.batches })); }};
-    const handleScanComplete = async (imageData) => { /* ... */ };
+    const handleScanComplete = async (imageData) => {
+        setScannerStatus("Analizando imagen...");
+        const foundDate = await processImageForDate(imageData);
+        if (foundDate) { setCurrentDate(foundDate); setScannerOpen(false); setScannerStatus(''); } 
+        else { setScannerStatus("No se encontró fecha. Intenta de nuevo."); setTimeout(() => { setScannerStatus(''); setScannerOpen(false); }, 2000); }
+    };
     const handleNumpadConfirm = (quantity) => { if(!isReadOnly) { if (currentDate && quantity > 0) { setReport(prev => ({ ...prev, batches: [...prev.batches, { expiryDate: currentDate, quantity: parseInt(quantity) }] })); setCurrentDate(''); } setNumpadOpen(false); }};
     const handleRemoveBatch = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, batches: prev.batches.filter((_, i) => i !== index) })); };
     const openNumpad = () => { if(!isReadOnly) { if (currentDate) setNumpadOpen(true); else alert("Primero selecciona o escanea una fecha."); }};
@@ -258,7 +290,10 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                 <div className={`transition-opacity duration-300 ${report.stockout ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
                     {!isReadOnly && <p className="text-sm text-slate-600 my-4">Escanea o elige una fecha, luego ingresa la cantidad de unidades para ese lote.</p>}
                     <div className="bg-slate-50 p-4 rounded-lg border space-y-4">
-                        <div className="w-full p-3 border-2 rounded-lg text-center"><label className="text-sm font-semibold text-slate-600">Fecha del Lote a Añadir</label><input type="date" value={currentDate} onChange={e => setCurrentDate(e.target.value)} className="w-full text-center font-bold text-xl bg-transparent border-none focus:ring-0 p-0 mt-1 disabled:bg-slate-100" disabled={isReadOnly}/></div>
+                        <div className="w-full p-3 border-2 rounded-lg text-center">
+                            <label className="text-sm font-semibold text-slate-600">Fecha del Lote a Añadir</label>
+                            <input type="date" value={currentDate} onChange={e => setCurrentDate(e.target.value)} className="w-full text-center font-bold text-xl bg-transparent border-none focus:ring-0 p-0 mt-1 disabled:bg-slate-100 disabled:cursor-not-allowed" disabled={isReadOnly}/>
+                        </div>
                         {!isReadOnly && <button type="button" onClick={() => setScannerOpen(true)} className="w-full flex items-center justify-center gap-3 bg-brand-blue text-white font-bold py-3 px-4 rounded-lg text-lg active:scale-95 transition-transform"><Camera size={24}/> Escanear Fecha</button>}
                         {!isReadOnly && <button type="button" onClick={openNumpad} disabled={!currentDate || isReadOnly} className="w-full bg-brand-yellow text-black font-bold py-3 px-4 rounded-lg text-lg active:scale-95 transition-transform disabled:opacity-50">Añadir Cantidad</button>}
                     </div>
@@ -331,7 +366,15 @@ const Step3_Execution = ({ report, setReport, isReadOnly }) => {
 const Step4_Intel = ({ report, setReport, isReadOnly }) => {
     const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null });
     const [isEntrantModalOpen, setIsEntrantModalOpen] = useState(false);
-    const handleAddCompetitor = () => { if(!isReadOnly) { /* ... */ } };
+    const handleAddCompetitor = () => {
+        if (isReadOnly) return;
+        if (comp.product && comp.price) {
+            setReport(prev => ({ ...prev, competition: [...prev.competition, comp] }));
+            setComp({ product: '', price: '', hasPop: null, hasTasting: null });
+        } else {
+            alert("Por favor, selecciona un producto y añade su precio.");
+        }
+    };
     const handleRemoveCompetitor = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, competition: prev.competition.filter((_, i) => i !== index) })); };
     const handleRemoveEntrant = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, newEntrants: prev.newEntrants.filter((_, i) => i !== index) })); };
     const handleSaveNewEntrant = (entrantData) => { if(!isReadOnly) { setReport(prev => ({ ...prev, newEntrants: [...prev.newEntrants, entrantData] })); setIsEntrantModalOpen(false); }};
@@ -342,10 +385,13 @@ const Step4_Intel = ({ report, setReport, isReadOnly }) => {
                     <div>
                         <h4 className="font-semibold text-slate-700 mb-2">Seguimiento a Competidores</h4>
                         <div className="p-4 bg-slate-50 rounded-lg space-y-4 border">
-                            <select value={comp.product} onChange={e => setComp({...comp, product: e.target.value})} className="w-full p-3 border rounded mt-1 bg-white disabled:bg-slate-100" disabled={isReadOnly}>
-                                <option value="">-- Elige un producto --</option>
-                                {COMPETITOR_PRODUCTS.map(p => <option key={p.id} value={p.text}>{p.text}</option>)}
-                            </select>
+                            <div>
+                                <label className="text-sm font-medium text-slate-700">Seleccionar Competidor</label>
+                                <select value={comp.product} onChange={e => setComp({...comp, product: e.target.value})} className="w-full p-3 border rounded mt-1 bg-white disabled:bg-slate-100" disabled={isReadOnly}>
+                                    <option value="">-- Elige un producto --</option>
+                                    {COMPETITOR_PRODUCTS.map(p => <option key={p.id} value={p.text}>{p.text}</option>)}
+                                </select>
+                            </div>
                             <FormInput label="Precio" type="number" value={comp.price} onChange={e => setComp({...comp, price: e.target.value})} placeholder="Ingresa el PVP" disabled={isReadOnly}/>
                             <div>
                                 <label className="text-sm font-medium text-slate-700">¿Tiene Material POP?</label>
