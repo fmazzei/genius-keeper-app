@@ -1,9 +1,9 @@
-// RUTA: src/Pages/LoginScreen.jsx
-
 import React from 'react';
 import { signInWithEmailAndPassword, setPersistence, browserLocalPersistence, signInAnonymously } from 'firebase/auth';
 import { auth } from '../Firebase/config.js';
 import { User, Key } from 'lucide-react';
+// --- SOLUCIÓN: Importamos la función para registrar el dispositivo ---
+import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 
 const LoginScreen = () => {
     const [email, setEmail] = React.useState('');
@@ -18,7 +18,14 @@ const LoginScreen = () => {
         setError('');
         try {
             await setPersistence(auth, browserLocalPersistence);
-            await signInWithEmailAndPassword(auth, email, password);
+            const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            
+            // --- SOLUCIÓN: Una vez que el usuario inicia sesión con éxito... ---
+            if (userCredential.user) {
+                // ...llamamos a la función para registrar su dispositivo para notificaciones.
+                await requestNotificationPermission(userCredential.user.uid);
+            }
+
         } catch (err) {
             setError('Credenciales incorrectas o usuario no registrado.');
         } finally {
@@ -28,7 +35,13 @@ const LoginScreen = () => {
 
     const handleAnonymousLogin = async () => {
         try {
-            await signInAnonymously(auth);
+            const userCredential = await signInAnonymously(auth);
+
+            // --- SOLUCIÓN: También registramos el dispositivo para el merchandiser anónimo ---
+             if (userCredential.user) {
+                await requestNotificationPermission(userCredential.user.uid);
+            }
+
         } catch (error) {
             setError('No se pudo iniciar la sesión de merchandiser.');
         }

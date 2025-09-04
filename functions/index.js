@@ -4,184 +4,194 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 
 /**
- * Se activa cuando se crea un nuevo reporte de visita.
- * Notifica al usuario 'Master' y guarda la notificación en Firestore.
+ * Función auxiliar centralizada para enviar notificaciones a un usuario.
+ * Busca todos los tokens del dispositivo del usuario, envía el mensaje,
+ * limpia los tokens inválidos y guarda un registro en la colección 'notifications'.
+ * @param {string} userId - El UID del usuario a notificar.
+ * @param {object} notificationPayload - El objeto de notificación { title, body }.
+ * @param {object} dataPayload - El objeto de datos { link }.
  */
+const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
+    functions.logger.log(`Iniciando sendNotificationToUser para userId: ${userId}`);
+    if (!userId) {
+        functions.logger.error("Finalizado: No se proporcionó userId.");
+        return;
+    }
+
+    // 1. Obtener todos los tokens de la subcolección del usuario
+    const tokensRef = admin.firestore().collection("users_metadata").doc(userId).collection("tokens");
+    const tokensSnap = await tokensRef.get();
+
+    if (tokensSnap.empty) {
+        functions.logger.warn(`No se encontraron tokens para el usuario ${userId}. La función terminará aquí.`);
+        // Aún así, guardamos la notificación para que aparezca en el centro de notificaciones
+        await admin.firestore().collection("notifications").add({
+            userId: userId,
+            title: notificationPayload.title,
+            body: notificationPayload.body,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            read: false,
+            link: dataPayload.link || ''
+        });
+        functions.logger.log(`Notificación para ${userId} guardada en Firestore (aunque no se encontraron tokens para enviar).`);
+        return;
+    }
+
+    const tokens = tokensSnap.docs.map(doc => doc.id);
+    functions.logger.log(`Tokens encontrados para ${userId}:`, tokens);
+    
+    const payload = {
+        notification: notificationPayload,
+        data: dataPayload
+    };
+
+    let response;
+    try {
+        functions.logger.log("Intentando enviar notificaciones con sendEachForMulticast...");
+        response = await admin.messaging().sendEachForMulticast({ tokens, ...payload });
+        functions.logger.log(`Respuesta de FCM recibida. Éxitos: ${response.successCount}, Fallos: ${response.failureCount}`);
+    } catch (error) {
+        // Este bloque captura errores a nivel de API, como permisos incorrectos.
+        functions.logger.error("ERROR CRÍTICO AL LLAMAR A admin.messaging().sendEachForMulticast:", error);
+        // Guardamos la notificación de todas formas para que el usuario la vea en la app
+        await admin.firestore().collection("notifications").add({
+            userId: userId,
+            title: notificationPayload.title,
+            body: notificationPayload.body,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            read: false,
+            link: dataPayload.link || ''
+        });
+        functions.logger.log(`Notificación para ${userId} guardada en Firestore a pesar del error de envío.`);
+        return; // Detenemos la ejecución aquí
+    }
+
+    const tokensToRemove = [];
+    response.responses.forEach((result, index) => {
+        const error = result.error;
+        if (error) {
+            functions.logger.error(`Fallo detallado al enviar al token ${tokens[index]}`, error);
+            if (["messaging/invalid-registration-token", "messaging/registration-token-not-registered"].includes(error.code)) {
+                tokensToRemove.push(tokensRef.doc(tokens[index]).delete());
+            }
+        }
+    });
+
+    if (tokensToRemove.length > 0) {
+        await Promise.all(tokensToRemove);
+        functions.logger.log(`Se limpiaron ${tokensToRemove.length} tokens inválidos.`);
+    }
+
+    try {
+        functions.logger.log("Intentando guardar la notificación en Firestore...");
+        await admin.firestore().collection("notifications").add({
+            userId: userId,
+            title: notificationPayload.title,
+            body: notificationPayload.body,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            read: false,
+            link: dataPayload.link || ''
+        });
+        functions.logger.log(`Notificación para ${userId} guardada en Firestore exitosamente.`);
+    } catch (dbError) {
+        functions.logger.error("ERROR AL GUARDAR LA NOTIFICACIÓN EN FIRESTORE:", dbError);
+    }
+};
+
+
+// --- Funciones Principales que usan el Helper ---
+
 exports.onReportCreated = functions.firestore
     .document("visit_reports/{reportId}")
     .onCreate(async (snap, context) => {
         const reportData = snap.data();
         const { reportId } = context.params;
-        const userName = reportData.userName || "Un vendedor";
-        const posName = reportData.posName || "un PDV";
-
         const masterUserEmail = "lacteoca@lacteoca.com";
-        let masterUid;
-
+        
         try {
             const masterUserRecord = await admin.auth().getUserByEmail(masterUserEmail);
-            masterUid = masterUserRecord.uid;
+            const masterUid = masterUserRecord.uid;
+            
+            await sendNotificationToUser(
+                masterUid,
+                {
+                    title: "Nuevo Reporte de Visita 📊",
+                    body: `${reportData.userName || "Un vendedor"} ha enviado un reporte desde ${reportData.posName || "un PDV"}.`
+                },
+                {
+                    link: `/reports/${reportId}`
+                }
+            );
         } catch (error) {
-            functions.logger.error("Error crítico: No se pudo encontrar el UID del usuario Master.", error);
-            return null;
+            functions.logger.error("Error en onReportCreated al obtener el UID del master:", error);
         }
-
-        const masterUserRef = admin.firestore().collection("users_metadata").doc(masterUid);
-        const masterUserDoc = await masterUserRef.get();
-
-        if (!masterUserDoc.exists || !masterUserDoc.data().fcmToken) {
-            return functions.logger.log("Usuario Master no encontrado o sin token FCM.");
-        }
-        
-        const fcmToken = masterUserDoc.data().fcmToken;
-        const payload = {
-            token: fcmToken,
-            notification: {
-                title: "Nuevo Reporte de Visita 📊",
-                body: `${userName} ha enviado un reporte desde ${posName}.`,
-            },
-            data: {
-                link: `/reports/${reportId}` // Enlace interactivo con el ID del reporte
-            }
-        };
-
-        try {
-            // 1. Envía la notificación push
-            await admin.messaging().send(payload);
-            functions.logger.log("Notificación push de nuevo reporte enviada al Master.");
-
-            // 2. Guarda la notificación en Firestore para la persistencia
-            await admin.firestore().collection("notifications").add({
-                userId: masterUid,
-                title: payload.notification.title,
-                body: payload.notification.body,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                read: false,
-                link: payload.data.link
-            });
-            functions.logger.log("Notificación de reporte guardada en Firestore.");
-
-        } catch (error) {
-            functions.logger.error("Error al enviar o guardar notificación de reporte:", error);
-        }
-        return null;
     });
 
-/**
- * Se activa cuando se crea una nueva tarea delegada.
- * Notifica al vendedor y guarda la notificación en Firestore.
- */
+
 exports.onTaskDelegated = functions.firestore
     .document("delegated_tasks/{taskId}")
     .onCreate(async (snap, context) => {
-        const { taskId } = context.params;
         const taskData = snap.data();
-        const delegatedToId = taskData.delegatedToId;
-        const posName = taskData.posName;
+        const { taskId } = context.params;
 
-        if (!delegatedToId) {
-            return functions.logger.log("No hay ID de usuario para notificar en la tarea.");
-        }
-
-        const userMetadataRef = admin.firestore().collection("users_metadata").doc(delegatedToId);
-        const userDoc = await userMetadataRef.get();
-
-        if (!userDoc.exists || !userDoc.data().fcmToken) {
-            return functions.logger.log(`Usuario ${delegatedToId} no encontrado o sin token.`);
-        }
-        
-        const fcmToken = userDoc.data().fcmToken;
-        const payload = {
-            token: fcmToken,
-            notification: {
+        await sendNotificationToUser(
+            taskData.delegatedToId,
+            {
                 title: "Nueva Tarea Asignada 📋",
-                body: `Tienes una nueva tarea en ${posName}: ${taskData.details}`,
+                body: `Tienes una nueva tarea en ${taskData.posName}: ${taskData.details}`
             },
-            data: {
-                link: `/tasks/${taskId}` // Enlace interactivo con el ID de la tarea
+            {
+                link: `/tasks/${taskId}`
             }
-        };
-
-        try {
-            // 1. Envía la notificación push
-            await admin.messaging().send(payload);
-            functions.logger.log(`Notificación de tarea enviada a ${delegatedToId}.`);
-
-            // 2. Guarda la notificación en Firestore
-            await admin.firestore().collection("notifications").add({
-                userId: delegatedToId,
-                title: payload.notification.title,
-                body: payload.notification.body,
-                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                read: false,
-                link: payload.data.link
-            });
-            functions.logger.log("Notificación de tarea guardada en Firestore.");
-
-        } catch (error) {
-            functions.logger.error("Error al enviar o guardar notificación de tarea:", error);
-        }
-        return null;
+        );
     });
 
-/**
- * Se ejecuta todos los días a las 9:00 AM para recordar visitas vencidas.
- */
+
 exports.scheduleVisitReminders = functions.pubsub
     .schedule("every day 09:00")
     .timeZone("America/Caracas")
     .onRun(async (context) => {
-      functions.logger.log("Ejecutando revisión diaria de visitas vencidas...");
-      const posRef = admin.firestore().collection("pos");
-      const reportsRef = admin.firestore().collection("visit_reports");
-      const usersRef = admin.firestore().collection("users_metadata");
-      const allPosSnapshot = await posRef.where("active", "==", true).get();
-      if (allPosSnapshot.empty) {
-        return functions.logger.log("No hay PDV activos para revisar.");
-      }
-      
-      // ADVERTENCIA DE LÓGICA: El ID del merchandiser está hardcodeado.
-      const merchandiserId = "anonymous_merchandiser_uid"; 
-      const userDoc = await usersRef.doc(merchandiserId).get();
-      if (!userDoc.exists || !userDoc.data().fcmToken) {
-        return functions.logger.log("Merchandiser no encontrado o sin token FCM.");
-      }
-      const fcmToken = userDoc.data().fcmToken;
-      const now = new Date();
+        functions.logger.log("Ejecutando revisión diaria de visitas vencidas...");
+        const posRef = admin.firestore().collection("pos");
+        const reportsRef = admin.firestore().collection("visit_reports");
+        const allPosSnapshot = await posRef.where("active", "==", true).get();
 
-      // ADVERTENCIA DE RENDIMIENTO: Este enfoque no escala bien. Realiza una consulta por cada PDV.
-      for (const posDoc of allPosSnapshot.docs) {
-        const posData = posDoc.data();
-        const visitInterval = posData.visitInterval || 7;
-        const lastReportSnapshot = await reportsRef
-            .where("posId", "==", posDoc.id)
-            .orderBy("createdAt", "desc")
-            .limit(1)
-            .get();
-        let daysSinceLastVisit = Infinity;
-        if (!lastReportSnapshot.empty) {
-            const lastVisitDate = lastReportSnapshot.docs[0].data().createdAt.toDate();
-            daysSinceLastVisit = (now - lastVisitDate) / (1000 * 60 * 60 * 24);
+        if (allPosSnapshot.empty) {
+            functions.logger.log("No hay PDV activos para revisar.");
+            return null;
         }
-        if (daysSinceLastVisit > visitInterval) {
-            const payload = {
-                token: fcmToken,
-                notification: {
-                    title: "Visita Vencida ⏰",
-                    body: `La visita a ${posData.name} está vencida por ${Math.floor(daysSinceLastVisit - visitInterval)} día(s).`,
-                },
-                 data: {
-                    title: "Visita Vencida ⏰",
-                    body: `La visita a ${posData.name} está vencida por ${Math.floor(daysSinceLastVisit - visitInterval)} día(s).`,
-                },
-            };
-            try {
-                await admin.messaging().send(payload);
-                functions.logger.log(`Notificación de visita vencida enviada para ${posData.name}.`);
-            } catch (error) {
-                functions.logger.error(`Error enviando notificación para ${posData.name}:`, error);
+        
+        const merchandiserId = "anonymous_merchandiser_uid";
+        const now = new Date();
+
+        for (const posDoc of allPosSnapshot.docs) {
+            const posData = posDoc.data();
+            const visitInterval = posData.visitInterval || 7;
+            const lastReportSnapshot = await reportsRef
+                .where("posId", "==", posDoc.id)
+                .orderBy("createdAt", "desc")
+                .limit(1)
+                .get();
+
+            let daysSinceLastVisit = Infinity;
+            if (!lastReportSnapshot.empty) {
+                const lastVisitDate = lastReportSnapshot.docs[0].data().createdAt.toDate();
+                daysSinceLastVisit = (now - lastVisitDate) / (1000 * 60 * 60 * 24);
+            }
+
+            if (daysSinceLastVisit > visitInterval) {
+                const overdueDays = Math.floor(daysSinceLastVisit - visitInterval);
+                await sendNotificationToUser(
+                    merchandiserId,
+                    {
+                        title: "Visita Vencida ⏰",
+                        body: `La visita a ${posData.name} está vencida por ${overdueDays} día(s).`
+                    },
+                    {
+                        link: `/pos/${posDoc.id}`
+                    }
+                );
             }
         }
-      }
-      return null;
+        return null;
     });

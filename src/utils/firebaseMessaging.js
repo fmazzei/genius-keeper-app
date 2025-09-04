@@ -1,14 +1,9 @@
 import { getToken } from "firebase/messaging";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, collection } from "firebase/firestore";
 import { messaging, db } from "@/Firebase/config.js";
 
-// La VAPID_KEY es necesaria para que Firebase verifique que las solicitudes provienen de tu app.
 const VAPID_KEY = "BMYvW8ZCm6LD6VSWkV5DjslHK506zfZrMMzcvEIAS8W0iECbmPUEml5cG0lBu0UUEQaqW3wgpSEFIPfVkbVVzWc";
 
-/**
- * Solicita permiso al usuario para recibir notificaciones push y guarda el token.
- * @param {string} userId - El UID del usuario autenticado.
- */
 export const requestNotificationPermission = async (userId) => {
   if (!userId) {
     console.error("No se puede solicitar permiso de notificación sin un ID de usuario.");
@@ -16,7 +11,7 @@ export const requestNotificationPermission = async (userId) => {
   }
 
   if (!("Notification" in window) || !("serviceWorker" in navigator) || !messaging) {
-    console.warn("Este navegador no soporta notificaciones push. La funcionalidad estará desactivada.");
+    console.warn("Este navegador no soporta notificaciones push.");
     return;
   }
 
@@ -33,15 +28,24 @@ export const requestNotificationPermission = async (userId) => {
         
         if (currentToken) {
           console.log("Token FCM recibido: ", currentToken);
-          const userMetadataRef = doc(db, "users_metadata", userId);
           
-          await setDoc(userMetadataRef, { fcmToken: currentToken }, { merge: true });
-          console.log("Token FCM guardado en Firestore.");
+          // --- SOLUCIÓN: Guardar el token en una subcolección ---
+          // Creamos una referencia a la subcolección 'tokens' del usuario.
+          const tokenRef = doc(db, "users_metadata", userId, "tokens", currentToken);
+          
+          // Guardamos el token como un documento. El ID del documento es el propio token
+          // para evitar duplicados.
+          await setDoc(tokenRef, { 
+            createdAt: serverTimestamp(),
+            userAgent: navigator.userAgent // Guardamos info del dispositivo
+          });
+
+          console.log("Token FCM guardado en la subcolección de tokens.");
         } else {
-          console.warn("No se pudo generar un token FCM. Asegúrate de que el Service Worker esté activo.");
+          console.warn("No se pudo generar un token FCM.");
         }
       } catch (err) {
-        console.error("Ocurrió un error al obtener el token FCM. Las notificaciones no funcionarán.", err);
+        console.error("Ocurrió un error al obtener el token FCM.", err);
       }
     } else {
       console.log("El usuario no concedió permiso para recibir notificaciones.");
