@@ -3,46 +3,130 @@ const admin = require("firebase-admin");
 
 admin.initializeApp();
 
+/**
+ * Se activa cuando se crea un nuevo reporte de visita.
+ * Notifica al usuario 'Master' y guarda la notificación en Firestore.
+ */
+exports.onReportCreated = functions.firestore
+    .document("visit_reports/{reportId}")
+    .onCreate(async (snap, context) => {
+        const reportData = snap.data();
+        const { reportId } = context.params;
+        const userName = reportData.userName || "Un vendedor";
+        const posName = reportData.posName || "un PDV";
+
+        const masterUserEmail = "lacteoca@lacteoca.com";
+        let masterUid;
+
+        try {
+            const masterUserRecord = await admin.auth().getUserByEmail(masterUserEmail);
+            masterUid = masterUserRecord.uid;
+        } catch (error) {
+            functions.logger.error("Error crítico: No se pudo encontrar el UID del usuario Master.", error);
+            return null;
+        }
+
+        const masterUserRef = admin.firestore().collection("users_metadata").doc(masterUid);
+        const masterUserDoc = await masterUserRef.get();
+
+        if (!masterUserDoc.exists || !masterUserDoc.data().fcmToken) {
+            return functions.logger.log("Usuario Master no encontrado o sin token FCM.");
+        }
+        
+        const fcmToken = masterUserDoc.data().fcmToken;
+        const payload = {
+            token: fcmToken,
+            notification: {
+                title: "Nuevo Reporte de Visita 📊",
+                body: `${userName} ha enviado un reporte desde ${posName}.`,
+            },
+            data: {
+                link: `/reports/${reportId}` // Enlace interactivo con el ID del reporte
+            }
+        };
+
+        try {
+            // 1. Envía la notificación push
+            await admin.messaging().send(payload);
+            functions.logger.log("Notificación push de nuevo reporte enviada al Master.");
+
+            // 2. Guarda la notificación en Firestore para la persistencia
+            await admin.firestore().collection("notifications").add({
+                userId: masterUid,
+                title: payload.notification.title,
+                body: payload.notification.body,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                read: false,
+                link: payload.data.link
+            });
+            functions.logger.log("Notificación de reporte guardada en Firestore.");
+
+        } catch (error) {
+            functions.logger.error("Error al enviar o guardar notificación de reporte:", error);
+        }
+        return null;
+    });
+
+/**
+ * Se activa cuando se crea una nueva tarea delegada.
+ * Notifica al vendedor y guarda la notificación en Firestore.
+ */
 exports.onTaskDelegated = functions.firestore
     .document("delegated_tasks/{taskId}")
     .onCreate(async (snap, context) => {
-      const taskData = snap.data();
-      const delegatedToId = taskData.delegatedToId;
-      const posName = taskData.posName;
+        const { taskId } = context.params;
+        const taskData = snap.data();
+        const delegatedToId = taskData.delegatedToId;
+        const posName = taskData.posName;
 
-      if (!delegatedToId) {
-        return functions.logger.log("No hay ID de usuario para notificar.");
-      }
-
-      const userMetadataRef = admin.firestore().collection("users_metadata").doc(delegatedToId);
-      const userDoc = await userMetadataRef.get();
-
-      if (!userDoc.exists || !userDoc.data().fcmToken) {
-        return functions.logger.log(`Usuario ${delegatedToId} no encontrado o sin token.`);
-      }
-
-      const fcmToken = userDoc.data().fcmToken;
-      const payload = {
-        token: fcmToken,
-        notification: {
-          title: "Nueva Tarea Asignada 📋",
-          body: `Tienes una nueva tarea en ${posName}: ${taskData.details}`,
-        },
-        data: {
-            title: "Nueva Tarea Asignada 📋",
-            body: `Tienes una nueva tarea en ${posName}: ${taskData.details}`,
+        if (!delegatedToId) {
+            return functions.logger.log("No hay ID de usuario para notificar en la tarea.");
         }
-      };
 
-      try {
-        await admin.messaging().send(payload);
-        functions.logger.log("Notificación de tarea enviada con éxito.");
-      } catch (error) {
-        functions.logger.error("Error al enviar notificación de tarea:", error);
-      }
-      return null;
+        const userMetadataRef = admin.firestore().collection("users_metadata").doc(delegatedToId);
+        const userDoc = await userMetadataRef.get();
+
+        if (!userDoc.exists || !userDoc.data().fcmToken) {
+            return functions.logger.log(`Usuario ${delegatedToId} no encontrado o sin token.`);
+        }
+        
+        const fcmToken = userDoc.data().fcmToken;
+        const payload = {
+            token: fcmToken,
+            notification: {
+                title: "Nueva Tarea Asignada 📋",
+                body: `Tienes una nueva tarea en ${posName}: ${taskData.details}`,
+            },
+            data: {
+                link: `/tasks/${taskId}` // Enlace interactivo con el ID de la tarea
+            }
+        };
+
+        try {
+            // 1. Envía la notificación push
+            await admin.messaging().send(payload);
+            functions.logger.log(`Notificación de tarea enviada a ${delegatedToId}.`);
+
+            // 2. Guarda la notificación en Firestore
+            await admin.firestore().collection("notifications").add({
+                userId: delegatedToId,
+                title: payload.notification.title,
+                body: payload.notification.body,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                read: false,
+                link: payload.data.link
+            });
+            functions.logger.log("Notificación de tarea guardada en Firestore.");
+
+        } catch (error) {
+            functions.logger.error("Error al enviar o guardar notificación de tarea:", error);
+        }
+        return null;
     });
 
+/**
+ * Se ejecuta todos los días a las 9:00 AM para recordar visitas vencidas.
+ */
 exports.scheduleVisitReminders = functions.pubsub
     .schedule("every day 09:00")
     .timeZone("America/Caracas")
@@ -55,6 +139,8 @@ exports.scheduleVisitReminders = functions.pubsub
       if (allPosSnapshot.empty) {
         return functions.logger.log("No hay PDV activos para revisar.");
       }
+      
+      // ADVERTENCIA DE LÓGICA: El ID del merchandiser está hardcodeado.
       const merchandiserId = "anonymous_merchandiser_uid"; 
       const userDoc = await usersRef.doc(merchandiserId).get();
       if (!userDoc.exists || !userDoc.data().fcmToken) {
@@ -62,6 +148,8 @@ exports.scheduleVisitReminders = functions.pubsub
       }
       const fcmToken = userDoc.data().fcmToken;
       const now = new Date();
+
+      // ADVERTENCIA DE RENDIMIENTO: Este enfoque no escala bien. Realiza una consulta por cada PDV.
       for (const posDoc of allPosSnapshot.docs) {
         const posData = posDoc.data();
         const visitInterval = posData.visitInterval || 7;
@@ -96,54 +184,4 @@ exports.scheduleVisitReminders = functions.pubsub
         }
       }
       return null;
-    });
-
-exports.onReportCreated = functions.firestore
-    .document("visit_reports/{reportId}")
-    .onCreate(async (snap, context) => {
-        const reportData = snap.data();
-        const userName = reportData.userName || "Un vendedor";
-        const posName = reportData.posName || "un PDV";
-
-        functions.logger.log(`Nuevo reporte creado. Revisando si se debe notificar.`);
-
-        const settingsRef = admin.firestore().collection("settings").doc("notifications");
-        const settingsDoc = await settingsRef.get();
-
-        if (!settingsDoc.exists || !settingsDoc.data().newReportNotifications) {
-            return functions.logger.log("Notificaciones para nuevos reportes desactivadas.");
-        }
-
-        const masterUserId = "lacteoca@lacteoca.com";
-        const masterUserRecord = await admin.auth().getUserByEmail(masterUserId);
-        const masterUid = masterUserRecord.uid;
-
-        const masterUserRef = admin.firestore().collection("users_metadata").doc(masterUid);
-        const masterUserDoc = await masterUserRef.get();
-
-        if (!masterUserDoc.exists || !masterUserDoc.data().fcmToken) {
-            return functions.logger.log("Usuario Master no encontrado o sin token FCM.");
-        }
-        const fcmToken = masterUserDoc.data().fcmToken;
-
-        // SOLUCIÓN: Construir un payload híbrido con 'notification' y 'data'.
-        const payload = {
-            token: fcmToken,
-            notification: {
-                title: "Nuevo Reporte de Visita 📊",
-                body: `${userName} ha enviado un nuevo reporte desde ${posName}.`,
-            },
-            data: {
-                title: "Nuevo Reporte de Visita 📊",
-                body: `${userName} ha enviado un nuevo reporte desde ${posName}.`,
-            }
-        };
-
-        try {
-            await admin.messaging().send(payload);
-            functions.logger.log("Notificación de nuevo reporte enviada al Master.");
-        } catch (error) {
-            functions.logger.error("Error al enviar notificación de nuevo reporte:", error);
-        }
-        return null;
     });

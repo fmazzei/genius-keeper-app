@@ -1,5 +1,3 @@
-// RUTA: src/Components/Modal.jsx
-
 import React, { useState } from 'react';
 import { X, Maximize, Minimize } from 'lucide-react';
 

@@ -21,7 +21,10 @@ import PromoActivityModalContent from '@/Components/PromoActivityModalContent';
 
 const ManagerDashboard = ({ reports, posList, loading }) => {
     const [activeModal, setActiveModal] = useState(null);
-    const kpis = useKpiCalculations(reports, posList);
+    const [timeRange, setTimeRange] = useState('30d');
+    
+    const kpis = useKpiCalculations(reports, posList, timeRange);
+
     const geniusStatus = ((score) => score < 50 ? { barColor: '#ef4444', textColor: 'text-red-600', statusText: 'En Riesgo' } : score < 80 ? { barColor: '#FFD700', textColor: 'text-yellow-600', statusText: 'Saludable' } : { barColor: '#22c55e', textColor: 'text-green-600', statusText: 'Genius' })(kpis.geniusIndex.score);
     
     if (loading) return <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>;
@@ -49,7 +52,7 @@ const ManagerDashboard = ({ reports, posList, loading }) => {
 
     const renderModalContent = () => {
         if (!activeModal) return null;
-        const props = { reports, posList: posList || [], kpis };
+        const props = { reports: kpis.reports, posList: posList || [], kpis };
         const components = {
             stockout: <StockoutModalContent {...props} />,
             geoDemand: <GeographicDemandModalContent {...props} />,
@@ -67,11 +70,32 @@ const ManagerDashboard = ({ reports, posList, loading }) => {
         };
         return components[activeModal.type] || <div className="p-4">Contenido en desarrollo.</div>;
     };
+
+    const TimeFilterButton = ({ range, label }) => (
+        <button
+            onClick={() => setTimeRange(range)}
+            className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
+                timeRange === range
+                    ? 'bg-brand-blue text-white shadow'
+                    : 'bg-white text-slate-600 hover:bg-slate-100'
+            }`}
+        >
+            {label}
+        </button>
+    );
     
     return (
         <div className="w-full">
             <div className="max-w-7xl mx-auto">
-                <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-6">Dashboard Gerencial</h2>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
+                    <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">Dashboard Gerencial</h2>
+                    <div className="flex items-center gap-2 mt-4 sm:mt-0">
+                        <TimeFilterButton range="15d" label="15 Días" />
+                        <TimeFilterButton range="30d" label="30 Días" />
+                        <TimeFilterButton range="90d" label="90 Días" />
+                        <TimeFilterButton range="all" label="Histórico" />
+                    </div>
+                </div>
                 
                 <div className="bg-white rounded-lg shadow-2xl p-4 md:p-6 mb-8 flex flex-col md:flex-row items-center gap-6 border-t-4" style={{ borderColor: geniusStatus.barColor }}>
                     <div className="relative w-40 h-40 sm:w-48 sm:h-48 flex-shrink-0">

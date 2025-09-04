@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useGeniusEngine } from '@/hooks/useGeniusEngine';
-import { LogOut, BarChart2, TrendingUp, AlertTriangle, Settings, ChevronsRight, Package, Sun, DollarSign, Target, Map, Menu } from 'lucide-react';
+// --- NUEVO: Importamos el hook de notificaciones y el ícono de campana ---
+import { useNotifications } from '@/hooks/useNotifications';
+import { LogOut, BarChart2, TrendingUp, Bell, Settings, ChevronsRight, Package, Sun, DollarSign, Target, Map, Menu } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import ManagerDashboard from './ManagerDashboard.jsx';
 import MarketTrendsView from './MarketTrendsView.jsx';
@@ -14,8 +16,11 @@ import CommissionsView from './CommissionsView.jsx';
 import SalesDashboard from './SalesDashboard.jsx';
 
 const ManagerLayout = ({ user, role, onLogout }) => {
+    // Mantenemos useGeniusEngine porque otras vistas lo necesitan.
     const { tasks: rawTasks, posList, reports, loading } = useGeniusEngine(role);
-    const tasks = rawTasks || [];
+    // --- NUEVO: Obtenemos el conteo de notificaciones no leídas en tiempo real ---
+    const { unreadCount } = useNotifications();
+
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [currentView, setCurrentView] = useState(role === 'sales_manager' ? 'focus' : 'dashboard');
@@ -24,7 +29,7 @@ const ManagerLayout = ({ user, role, onLogout }) => {
         const viewTitles = {
             dashboard: 'Dashboard Gerencial',
             trends: 'Análisis de Tendencias',
-            alerts: 'Centro de Alertas',
+            alerts: 'Centro de Notificaciones', // Título actualizado
             inventory: 'Panel de Inventario',
             settings: 'Panel de Administración',
             focus: 'Brújula de Ventas',
@@ -37,11 +42,16 @@ const ManagerLayout = ({ user, role, onLogout }) => {
     };
     
     const SidebarContent = () => {
-        const NavItem = ({ icon, text, active, alert, onClick }) => (
+        // --- MODIFICADO: El componente NavItem ahora acepta un 'badgeCount' numérico ---
+        const NavItem = ({ icon, text, active, badgeCount, onClick }) => (
             <li onClick={() => { onClick(); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer transition-colors relative ${active ? 'bg-brand-blue text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
                 {icon}
                 <span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>{text}</span>
-                {alert && <span className={`absolute top-2 ${desktopSidebarOpen ? 'right-2' : 'left-1/2 -translate-x-1/2'} w-2 h-2 bg-red-500 rounded-full`}></span>}
+                {badgeCount > 0 && (
+                    <span className={`absolute top-1.5 ${desktopSidebarOpen ? 'right-2' : 'left-1/2 -translate-x-1/2 md:translate-x-0'} w-5 h-5 bg-red-500 text-white text-xs flex items-center justify-center rounded-full`}>
+                        {badgeCount}
+                    </span>
+                )}
             </li>
         );
 
@@ -49,7 +59,8 @@ const ManagerLayout = ({ user, role, onLogout }) => {
             <ul>
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
                 <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />
-                <NavItem icon={<AlertTriangle size={24} />} text="Alertas" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} alert={tasks.length > 0} />
+                {/* --- MODIFICADO: Ahora es un ícono de campana con contador numérico --- */}
+                <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />
                 <NavItem icon={<Settings size={24} />} text="Administración" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
             </ul>
@@ -58,7 +69,8 @@ const ManagerLayout = ({ user, role, onLogout }) => {
         const salesManagerNav = (
             <ul>
                 <NavItem icon={<Sun size={24} />} text="Brújula de Ventas" active={currentView === 'focus'} onClick={() => setCurrentView('focus')} />
-                <NavItem icon={<AlertTriangle size={24} />} text="Alertas Operativas" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} alert={tasks.length > 0} />
+                 {/* --- MODIFICADO: Ahora es un ícono de campana con contador numérico --- */}
+                <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 <NavItem icon={<Map size={24} />} text="Planificador de Ruta" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
                 <NavItem icon={<Package size={24} />} text="Inventario Caracas" active={currentView === 'caracas_inventory'} onClick={() => setCurrentView('caracas_inventory')} />
                 <NavItem icon={<DollarSign size={24} />} text="Comisiones" active={currentView === 'commissions'} onClick={() => setCurrentView('commissions')} />
@@ -107,10 +119,11 @@ const ManagerLayout = ({ user, role, onLogout }) => {
     }
     
     const renderMainContent = () => {
+        const tasks = rawTasks || [];
         switch (currentView) {
             case 'dashboard': return <ManagerDashboard reports={reports} posList={posList} loading={loading} />;
             case 'trends': return <MarketTrendsView reports={reports} posList={posList} />;
-            case 'alerts': return <AlertsCenterView role={role} allAlerts={tasks} />;
+            case 'alerts': return <AlertsCenterView />; // Ya no necesita props
             case 'inventory': return <InventoryPanel />;
             case 'settings': return <AdminPanel user={user} posList={posList} reports={reports} loading={loading} />;
             case 'focus': return <SalesFocusDashboard reports={reports} posList={posList} loading={loading} onNavigate={setCurrentView} allAlerts={tasks} />;

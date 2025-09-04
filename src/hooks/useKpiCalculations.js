@@ -17,8 +17,7 @@ const getFreshnessStatus = (expiryDateStr) => {
     return 'Óptimo';
 };
 
-// --- SOLUCIÓN: El hook ahora acepta 'timeRange' para filtrar los reportes ---
-export const useKpiCalculations = (allReports, timeRange = 'all') => {
+export const useKpiCalculations = (allReports, posList, timeRange = 'all') => {
     return useMemo(() => {
         // --- FASE 1: FILTRADO DE REPORTES POR RANGO DE TIEMPO ---
         const filteredReports = allReports.filter(report => {
@@ -27,18 +26,13 @@ export const useKpiCalculations = (allReports, timeRange = 'all') => {
 
             const reportDate = new Date(report.createdAt.seconds * 1000);
             const now = new Date();
-            let startDate = new Date();
-
-            if (timeRange === '7d') {
-                startDate.setDate(now.getDate() - 7);
-            } else if (timeRange === '30d') {
-                startDate.setDate(now.getDate() - 30);
-            }
+            const startDate = new Date();
+            const daysToSubtract = parseInt(timeRange.replace('d', ''));
             
+            startDate.setDate(now.getDate() - daysToSubtract);
             return reportDate >= startDate;
         });
         
-        // Si no hay reportes después del filtrado, devolver estado inicial.
         if (!filteredReports || filteredReports.length === 0) {
             return {
                 totalVisits: 0, stockouts: { count: 0, percentage: 0 }, productRotation: { total: 0, averageDaily: 0 },
@@ -47,14 +41,34 @@ export const useKpiCalculations = (allReports, timeRange = 'all') => {
                 visitCompliance: 0,
                 geniusIndex: { score: 0, pillars: { health: 0, operations: 0, competition: 0 } },
                 storeScores: [],
-                reports: [] // Devolver array vacío de reportes filtrados
+                reports: []
             };
         }
 
         // --- FASE 2: CÁLCULO DE KPIS CON LOS REPORTES YA FILTRADOS ---
-        const reports = filteredReports; // Usar la variable con el nombre corto para el resto de la función
-
+        const reports = [...filteredReports].sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
         const totalVisits = reports.length;
+        
+        // --- CÁLCULO DE ROTACIÓN CORREGIDO ---
+        let daysInRange = 1;
+        if (reports.length > 1) {
+            const firstReportDate = new Date(reports[reports.length - 1].createdAt.seconds * 1000);
+            const lastReportDate = new Date(reports[0].createdAt.seconds * 1000);
+            const diffTime = Math.abs(lastReportDate - firstReportDate);
+            daysInRange = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        }
+        if (timeRange !== 'all') {
+            daysInRange = parseInt(timeRange.replace('d', ''));
+        }
+
+        const totalUnitsSold = reports.reduce((sum, r) => sum + (Number(r.orderQuantity) || 0), 0);
+        const averageDailySales = safeAvg(totalUnitsSold, daysInRange);
+
+        const productRotation = {
+            total: totalUnitsSold,
+            averageDaily: averageDailySales
+        };
+        
         const stockoutCount = reports.filter(r => r.stockout === true).length;
         
         const allBatches = reports.flatMap(r => r.batches || []);
@@ -68,12 +82,6 @@ export const useKpiCalculations = (allReports, timeRange = 'all') => {
             return sum + (isNaN(duration) ? 0 : duration);
         }, 0);
         const averageVisitDuration = safeAvg(totalDurationMinutes, reportsWithDuration.length);
-
-        const daysInRange = timeRange === '7d' ? 7 : (timeRange === '30d' ? 30 : 90); // Asumir 90 días para 'all' como referencia
-        const productRotation = {
-            total: reports.reduce((sum, r) => sum + (Number(r.orderQuantity) || 0), 0),
-            averageDaily: reports.reduce((sum, r) => sum + (Number(r.orderQuantity) || 0), 0) / daysInRange
-        };
         
         const latestReportByStore = reports.reduce((acc, r) => {
             if (!acc[r.posId] || (r.createdAt?.seconds > acc[r.posId].createdAt?.seconds)) {
@@ -82,7 +90,7 @@ export const useKpiCalculations = (allReports, timeRange = 'all') => {
             return acc;
         }, {});
         const totalInventory = Object.values(latestReportByStore).reduce((sum, r) => sum + (Number(r.inventoryLevel) || 0), 0);
-        const daysOfInventory = productRotation.averageDaily > 0 ? totalInventory / productRotation.averageDaily : 0;
+        const daysOfInventory = averageDailySales > 0 ? totalInventory / averageDailySales : 0;
         
         const newEntrantsCount = reports.flatMap(r => r.newEntrants || []).length;
         const promoActivityCount = reports.flatMap(r => r.competition || []).filter(c => c.hasPop || c.hasTasting).length;
@@ -117,7 +125,7 @@ export const useKpiCalculations = (allReports, timeRange = 'all') => {
             
             const health = (1 - safeAvg(storeStockouts, storeVisits)) * 100;
             const operations = safeAvg(storeOptimalPos, storeVisits) * 100;
-            const competition = 75; // Valor fijo
+            const competition = 75;
             
             const score = (health * 0.4) + (operations * 0.4) + (competition * 0.2);
             return { name: storeName, score, health, operations };
@@ -146,7 +154,7 @@ export const useKpiCalculations = (allReports, timeRange = 'all') => {
             visitCompliance,
             geniusIndex: { score: globalGeniusScore, pillars: { health: globalHealth, operations: globalOps, competition: 75 } },
             storeScores,
-            reports // Devolver los reportes ya filtrados para los modales
+            reports
         };
-    }, [allReports, timeRange]);
+    }, [allReports, posList, timeRange]);
 };
