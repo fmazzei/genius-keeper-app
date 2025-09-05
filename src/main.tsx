@@ -1,13 +1,14 @@
+// RUTA: src/main.tsx
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-import { AuthProvider } from './context/AuthContext.tsx'; // Actualizado a .tsx
+import { AuthProvider } from './context/AuthContext.tsx';
 import { SimulationProvider } from './context/SimulationContext.jsx';
+import { ReportViewProvider } from './context/ReportViewContext.jsx'; // <-- 1. IMPORTAR EL NUEVO PROVIDER
 
-// --- NUEVO: REGISTRO DEL SERVICE WORKER PARA NOTIFICACIONES ---
-// Este código se asegura de que el "cartero" de notificaciones (firebase-messaging-sw.js)
-// esté siempre instalado y activo en el navegador.
+// --- CÓDIGO DE REGISTRO DEL SERVICE WORKER ---
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/firebase-messaging-sw.js')
@@ -19,10 +20,10 @@ if ('serviceWorker' in navigator) {
       });
   });
 }
-// --- FIN DEL NUEVO CÓDIGO ---
+// --- FIN DEL CÓDIGO ---
 
 
-// --- Filtro de warnings (tu código original) ---
+// --- Filtro de warnings ---
 const originalError = console.error;
 console.error = (...args) => {
   if (typeof args[0] === 'string' && args[0].includes('Warning: Internal React error: Expected static flag was missing')) {
@@ -35,7 +36,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AuthProvider>
       <SimulationProvider>
-        <App />
+        <ReportViewProvider> {/* <-- 2. ENVOLVER LA APP CON EL NUEVO PROVIDER */}
+          <App />
+        </ReportViewProvider>
       </SimulationProvider>
     </AuthProvider>
   </React.StrictMode>,
