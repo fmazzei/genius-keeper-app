@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { onMessage, MessagePayload } from "firebase/messaging";
+import { onMessage } from "firebase/messaging";
+import type { MessagePayload } from "firebase/messaging";
 import { auth, messaging } from '@/Firebase/config.js';
-import { useAuth } from '@/context/AuthContext.jsx';
+import { useAuth } from '@/context/AuthContext.tsx';
 import LoginScreen from '@/Pages/LoginScreen.jsx';
 import ManagerLayout from '@/Pages/ManagerLayout.jsx';
 import AppShell from '@/Pages/AppShell.jsx';
@@ -36,7 +37,6 @@ const AppContent: React.FC = () => {
     }, [user]);
 
     useEffect(() => {
-        // Asegurarse de que 'messaging' está inicializado antes de usarlo.
         if (messaging) {
             const unsubscribe = onMessage(messaging, (payload: MessagePayload) => {
                 console.log("Notificación recibida en primer plano: ", payload);
@@ -81,12 +81,8 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
     return (
         <Router>
-            {/* El contenido principal de la app siempre está presente */}
             <AppContent />
-
-            {/* Las rutas definen qué componentes adicionales se muestran según la URL */}
             <Routes>
-                {/* Esta es la regla para que el modal interactivo funcione */}
                 <Route path="/reports/:reportId" element={<ReportDetailModalController />} />
             </Routes>
         </Router>
