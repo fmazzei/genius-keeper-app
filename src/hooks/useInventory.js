@@ -1,10 +1,9 @@
-// RUTA: src/hooks/useInventory.js
-
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query } from 'firebase/firestore';
-import { db } from '../Firebase/config.js';
-import { useAuth } from '../context/AuthContext.jsx';
-import { useSimulation } from '../context/SimulationContext.jsx';
+// --- SOLUCIÓN: Se actualizan las rutas para usar alias ---
+import { db } from '@/Firebase/config.js';
+import { useAuth } from '@/context/AuthContext.tsx';
+import { useSimulation } from '@/context/SimulationContext.jsx';
 
 export const useInventory = () => {
     const { user } = useAuth();

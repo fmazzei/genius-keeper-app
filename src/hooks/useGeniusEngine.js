@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../Firebase/config.js';
-import { useAuth } from '../context/AuthContext.jsx';
+import { useAuth } from '../context/AuthContext.tsx'; // Se corrige la extensión a .tsx
 import { useSimulation } from '../context/SimulationContext.jsx';
 
 const getReportDate = (report) => {
@@ -19,59 +19,48 @@ export const useGeniusEngine = (role) => {
 
     useEffect(() => {
         if (!user || !role || role === 'merchandiser') {
-            console.log("useGeniusEngine: Hook detenido (sin usuario, rol incorrecto, etc).");
             setLoading(false);
             return;
         }
 
         if (simulationMode) {
-            console.log("useGeniusEngine: Sirviendo datos de SIMULACIÓN.");
             setPosList(simulatedData.posList);
             setReports(simulatedData.reports);
             setLoading(false);
             return;
         }
         
-        console.log(`%cuseGeniusEngine: INICIANDO. Buscando datos para el rol: ${role}`, 'color: blue; font-weight: bold;');
         setLoading(true);
 
-        // --- Listener para Puntos de Venta (PDV) ---
-        console.log("useGeniusEngine: Creando consulta para la colección 'pos'...");
         const qPos = query(collection(db, "pos"), where("active", "==", true));
         const unsubPos = onSnapshot(qPos, 
             (posSnapshot) => {
-                console.log(`%cuseGeniusEngine: ÉXITO - Se recibieron ${posSnapshot.docs.length} PDV.`, 'color: green;');
                 setPosList(posSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
             }, 
             (error) => {
-                console.error("%cuseGeniusEngine: ERROR en Snapshot de PDV. La consulta a 'pos' falló:", 'color: red; font-weight: bold;', error);
+                console.error("Error en Snapshot de PDV:", error);
             }
         );
 
-        // --- Listener para Reportes de Visita ---
-        console.log("useGeniusEngine: Creando consulta para la colección 'visit_reports'...");
         const qReports = query(collection(db, "visit_reports"));
         const unsubReports = onSnapshot(qReports, 
             (reportsSnapshot) => {
-                console.log(`%cuseGeniusEngine: ÉXITO - Se recibieron ${reportsSnapshot.docs.length} reportes.`, 'color: green;');
                 setReports(reportsSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
                 setLoading(false);
             }, 
             (error) => {
-                console.error("%cuseGeniusEngine: ERROR en Snapshot de Reportes. La consulta a 'visit_reports' falló:", 'color: red; font-weight: bold;', error);
+                console.error("Error en Snapshot de Reportes:", error);
                 setLoading(false);
             }
         );
 
         return () => {
-            console.log("useGeniusEngine: Limpiando listeners.");
             unsubPos();
             unsubReports();
         };
     }, [role, user, simulationMode, simulatedData]);
 
     const tasks = useMemo(() => {
-        // Esta parte no hace consultas a la base de datos, solo procesa datos ya cargados.
         if (loading || posList.length === 0) {
             return [];
         }

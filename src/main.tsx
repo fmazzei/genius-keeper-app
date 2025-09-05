@@ -2,23 +2,34 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-import { AuthProvider } from './context/AuthContext.jsx';
+import { AuthProvider } from './context/AuthContext.tsx'; // Actualizado a .tsx
 import { SimulationProvider } from './context/SimulationContext.jsx';
 
-// --- SOLUCIÓN: FILTRO DE WARNINGS ESPECÍFICOS ---
-// Guardamos la función original de error de la consola.
+// --- NUEVO: REGISTRO DEL SERVICE WORKER PARA NOTIFICACIONES ---
+// Este código se asegura de que el "cartero" de notificaciones (firebase-messaging-sw.js)
+// esté siempre instalado y activo en el navegador.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/firebase-messaging-sw.js')
+      .then((registration) => {
+        console.log('Service Worker para notificaciones registrado con éxito:', registration);
+      })
+      .catch((error) => {
+        console.error('Error al registrar el Service Worker:', error);
+      });
+  });
+}
+// --- FIN DEL NUEVO CÓDIGO ---
+
+
+// --- Filtro de warnings (tu código original) ---
 const originalError = console.error;
-// Sobrescribimos la función de error.
 console.error = (...args) => {
-  // Verificamos si el primer argumento es un string y si contiene el texto del warning que queremos ignorar.
   if (typeof args[0] === 'string' && args[0].includes('Warning: Internal React error: Expected static flag was missing')) {
-    // Si es el warning que no queremos ver, simplemente no hacemos nada.
     return;
   }
-  // Para cualquier otro error, llamamos a la función original para que se muestre en la consola.
   originalError(...args);
 };
-// --- FIN DE LA SOLUCIÓN ---
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

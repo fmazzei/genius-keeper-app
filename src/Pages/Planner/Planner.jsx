@@ -1,12 +1,10 @@
-// RUTA: src/Pages/Planner/Planner.jsx
-
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { useAuth } from '../../context/AuthContext.jsx';
-import { db } from '../../Firebase/config.js';
+import { useAuth } from '@/context/AuthContext.tsx';
+import { db } from '@/Firebase/config.js';
 import { doc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import useAlerts from '../../hooks/useAlerts.js';
+import useAlerts from '@/hooks/useAlerts.js';
 import { NavTab, SpontaneousPlanModal, MoveStopModal, DelegateModal } from './PlannerComponents.jsx';
-import AddStopModal from '../../Components/AddStopModal.jsx';
+import AddStopModal from '@/Components/AddStopModal.jsx';
 import { Compass, Calendar, Map as MapIcon, PlusCircle, Sparkles, Loader, Navigation, BrainCircuit, Users, CheckCircle, Move, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { MapContainer, TileLayer, Popup, Polyline, CircleMarker } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -268,7 +266,7 @@ const Planner = ({ role, geniusTasks = [], allPossibleStops = [], agenda: initia
             
                 {activeTab === 'mapa' && (
                     <MapContainer center={[10.48, -66.90]} zoom={12} style={{ height: '100%', width: '100%' }}>
-                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' />
+                        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' />
                         {currentPlan.length > 0 && userLocation && <Polyline positions={[userLocation ? [userLocation.lat, userLocation.lng] : null, ...currentPlan.filter(p=>p.location).map(p => [p.location.lat, p.location.lng])].filter(Boolean)} color="#0D2B4C" weight={5} />}
                         {masterStopList.filter(pos => pos.location).map((pos) => { const status = getStopStatus(pos); return (<CircleMarker key={pos.id} center={[pos.location.lat, pos.location.lng]} radius={8} pathOptions={{ color: status.color, fillColor: status.color, fillOpacity: 0.7 }}><Popup><OpportunityPopup stop={pos} onAddToPlan={handleToggleStopInPlan} onStartReport={onSelectPos} /></Popup></CircleMarker>) })}
                     </MapContainer>
