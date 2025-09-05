@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../Firebase/config.js';
-import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc } from 'firebase/firestore';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell } from 'lucide-react';
+import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList } from 'lucide-react';
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
@@ -13,24 +13,126 @@ const ToggleSwitch = ({ enabled, setEnabled, disabled = false }) => (
     </button>
 );
 
+const ReportersManagement = () => {
+    const [reporters, setReporters] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [newReporterName, setNewReporterName] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        const q = query(collection(db, "reporters"), orderBy("name"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const reportersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setReporters(reportersData);
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const handleAddReporter = async (e) => {
+        e.preventDefault();
+        if (!newReporterName.trim()) {
+            alert("El nombre del reporter no puede estar vacío.");
+            return;
+        }
+        setIsSaving(true);
+        try {
+            await addDoc(collection(db, "reporters"), {
+                name: newReporterName.trim(),
+                active: true
+            });
+            setNewReporterName('');
+        } catch (error) {
+            console.error("Error al agregar reporter:", error);
+            alert("No se pudo agregar el reporter.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDeleteReporter = async (reporterId) => {
+        if (window.confirm("¿Estás seguro de que quieres eliminar este reporter? Esta acción no se puede deshacer.")) {
+            try {
+                await deleteDoc(doc(db, "reporters", reporterId));
+            } catch (error) {
+                console.error("Error al eliminar el reporter:", error);
+                alert("No se pudo eliminar el reporter.");
+            }
+        }
+    };
+
+    const handleToggleActive = async (reporter) => {
+        const reporterRef = doc(db, "reporters", reporter.id);
+        try {
+            await updateDoc(reporterRef, { active: !reporter.active });
+        } catch (error) {
+            console.error("Error al actualizar el estado del reporter:", error);
+            alert("No se pudo actualizar el estado.");
+        }
+    };
+
+    if (loading) return <LoadingSpinner />;
+    
+    return (
+         <div className="space-y-6">
+            <div>
+                <h3 className="text-xl font-semibold text-slate-700 mb-2">Agregar Nuevo Reporter</h3>
+                 <form onSubmit={handleAddReporter} className="bg-white p-4 sm:p-6 rounded-lg shadow flex flex-col sm:flex-row items-center gap-4">
+                    <input 
+                        type="text" 
+                        placeholder="Nombre y Apellido" 
+                        value={newReporterName} 
+                        onChange={e => setNewReporterName(e.target.value)} 
+                        className="w-full p-3 border border-slate-300 rounded-md flex-grow" 
+                        required 
+                    />
+                    <button type="submit" disabled={isSaving} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-brand-blue text-white font-bold py-3 px-6 rounded-lg hover:bg-opacity-90 disabled:bg-slate-400">
+                        {isSaving ? <LoadingSpinner size="sm" /> : <UserPlus size={20} />}
+                        {isSaving ? 'Agregando...' : 'Agregar Reporter'}
+                    </button>
+                 </form>
+            </div>
+            <div>
+                <h3 className="text-xl font-semibold text-slate-700 mb-2">Reporters Existentes</h3>
+                 <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-3">
+                    {reporters.map(reporter => (
+                        <div key={reporter.id} className="flex flex-col sm:flex-row justify-between items-center p-3 bg-slate-50 rounded-md border gap-3">
+                            <p className="font-semibold text-slate-800">{reporter.name}</p>
+                            <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <label className={`text-sm font-semibold ${reporter.active ? 'text-green-600' : 'text-slate-500'}`}>
+                                        {reporter.active ? 'Activo' : 'Inactivo'}
+                                    </label>
+                                    <ToggleSwitch enabled={reporter.active} setEnabled={() => handleToggleActive(reporter)} />
+                                </div>
+                                <button onClick={() => handleDeleteReporter(reporter.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full">
+                                    <Trash2 size={18} />
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                    {reporters.length === 0 && <p className="text-center text-slate-500 py-4">No hay reporters registrados.</p>}
+                 </div>
+            </div>
+        </div>
+    );
+};
+
+
 const SalesGoalsManagement = () => {
-    // ... (Este componente no cambia)
     const [users, setUsers] = useState([]);
     const [isSaving, setIsSaving] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const existingUsers = [
-            { id: 'carolina@lacteoca.com', name: 'Carolina Ramírez', role: 'Sales Manager' },
-            { id: 'anonymous_merchandiser', name: 'Juan Carlos Guanchez', role: 'Merchandiser' },
-        ];
-
-        const q = query(collection(db, "users_metadata"));
+        // --- MODIFICADO: Se buscan usuarios con rol 'sales_manager' para asignarles metas ---
+        const q = query(collection(db, "users_metadata"), where("role", "==", "sales_manager"));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const goalsData = new Map(snapshot.docs.map(doc => [doc.id, doc.data().salesGoal]));
-            const usersWithGoals = existingUsers.map(user => ({
-                ...user,
-                salesGoal: goalsData.get(user.id) || 0
+            const usersWithGoals = snapshot.docs.map(doc => ({
+                id: doc.id,
+                name: doc.data().name || doc.id,
+                role: 'Sales Manager',
+                salesGoal: doc.data().salesGoal || 0
             }));
             setUsers(usersWithGoals);
             setLoading(false);
@@ -66,10 +168,10 @@ const SalesGoalsManagement = () => {
 
     return (
         <div>
-            <h3 className="text-xl font-semibold text-slate-700 mb-2">Metas de Venta por Vendedor</h3>
-            <p className="text-sm text-slate-500 mb-4">Establece la meta mensual de ventas en unidades para cada miembro del equipo de campo.</p>
+            <h3 className="text-xl font-semibold text-slate-700 mb-2">Metas de Venta por Usuario</h3>
+            <p className="text-sm text-slate-500 mb-4">Establece la meta mensual de ventas en unidades para cada miembro del equipo de ventas.</p>
             <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-4">
-                {users.map(user => (
+                {users.length > 0 ? users.map(user => (
                     <div key={user.id} className="flex flex-col sm:flex-row justify-between items-center gap-3 border-b pb-4 last:border-b-0 last:pb-0">
                          <div className="flex items-center">
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 bg-brand-blue`}>
@@ -86,9 +188,9 @@ const SalesGoalsManagement = () => {
                              <label className="text-sm text-slate-600">unidades</label>
                         </div>
                     </div>
-                ))}
+                )) : <p className="text-center text-slate-500 py-4">No hay usuarios con rol 'Sales Manager' para asignar metas.</p>}
                 <div className="flex justify-end pt-2">
-                     <button onClick={handleSaveChanges} disabled={isSaving} className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
+                     <button onClick={handleSaveChanges} disabled={isSaving || users.length === 0} className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
                         {isSaving ? <LoadingSpinner size="sm" /> : <Save size={18} />}
                         {isSaving ? 'Guardando...' : 'Guardar Metas'}
                     </button>
@@ -100,34 +202,52 @@ const SalesGoalsManagement = () => {
 
 
 const UserManagement = () => {
-    // ... (Este componente no cambia)
-    const [users, setUsers] = useState([
-         { uid: 'ABC1', name: 'Francisco Mazzei', email: 'lacteoca@lacteoca.com', role: 'Master', active: true, protected: true },
-         { uid: 'DEF2', name: 'Carolina Ramírez', email: 'carolina@lacteoca.com', role: 'Sales Manager', active: true },
-         { uid: 'GHI3', name: 'Juan Carlos Guanchez', email: 'Usuario Anónimo', role: 'Merchandiser', active: true },
-    ]);
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        // --- MODIFICADO: Se buscan usuarios reales desde users_metadata ---
+        const q = query(collection(db, "users_metadata"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const usersData = snapshot.docs
+                .filter(doc => doc.data().role) // Filtrar usuarios anónimos o sin rol
+                .map(doc => ({
+                    id: doc.id,
+                    name: doc.data().name || doc.id,
+                    role: doc.data().role,
+                    email: doc.data().email || 'No disponible',
+                    // El usuario master no se puede eliminar
+                    protected: doc.data().role === 'master'
+                }));
+            setUsers(usersData);
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    }, []);
     
     const handleAddUser = (e) => {
         e.preventDefault();
-        alert("FUNCIONALIDAD EN DESARROLLO:\nLa creación de usuarios debe implementarse en un backend (Firebase Functions) por seguridad para proteger tus credenciales de administrador.");
+        alert("FUNCIONALIDAD EN DESARROLLO:\nLa creación de usuarios debe hacerse desde Firebase Authentication para generar credenciales seguras.");
     };
 
     const handleDeleteUser = (user) => {
-        if(user.protected) {
+        if (user.protected) {
             alert("Este usuario no puede ser eliminado.");
             return;
         }
-        if (window.confirm(`¿Estás seguro de que quieres eliminar a ${user.name}? Esta acción es irreversible.`)) {
-            alert("FUNCIONALIDAD EN DESARROLLO:\nLa eliminación de usuarios debe implementarse en un backend (Firebase Functions) por seguridad.");
+        if (window.confirm(`¿Estás seguro de que quieres eliminar a ${user.name}? Esta acción es irreversible y debe hacerse también en Firebase Authentication.`)) {
+            alert("FUNCIONALIDAD EN DESARROLLO:\nLa eliminación de usuarios debe implementarse en un backend (Firebase Functions).");
         }
     };
+
+    if (loading) return <LoadingSpinner />;
 
     return (
         <div className="space-y-8">
             <div>
                 <h3 className="text-xl font-semibold text-slate-700 mb-4">Agregar Nuevo Usuario</h3>
                 <form onSubmit={handleAddUser} className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-4">
-                    <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-md">
+                     <p className="text-xs text-slate-500 bg-blue-50 p-3 rounded-md">
                         <strong>Nota de Desarrollo:</strong> Por seguridad, la creación de usuarios se gestiona desde la Consola de Firebase &gt; Authentication. Este formulario es un marcador de posición para una futura integración con un backend seguro (Firebase Functions).
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -137,7 +257,6 @@ const UserManagement = () => {
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <input type="password" placeholder="Contraseña" className="w-full p-3 border border-slate-300 rounded-md" required />
                         <select className="w-full p-3 border border-slate-300 rounded-md bg-white">
-                            <option value="merchandiser">Merchandiser</option>
                             <option value="sales_manager">Sales Manager</option>
                         </select>
                     </div>
@@ -152,14 +271,14 @@ const UserManagement = () => {
                 <div className="bg-white rounded-lg shadow overflow-hidden">
                     <ul className="divide-y divide-slate-200">
                         {users.map(user => (
-                            <li key={user.uid} className={`p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center`}>
+                            <li key={user.id} className={`p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center`}>
                                 <div className="flex items-center w-full sm:w-auto mb-3 sm:mb-0">
                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 ${user.protected ? 'bg-amber-500' : 'bg-brand-blue'}`}>
                                         {user.name.charAt(0)}
                                     </div>
                                     <div className="ml-4">
                                         <p className="font-semibold text-slate-800">{user.name}</p>
-                                        <p className="text-sm text-slate-500">{user.role}</p>
+                                        <p className="text-sm text-slate-500 capitalize">{user.role}</p>
                                     </div>
                                 </div>
                                 <button onClick={() => handleDeleteUser(user)} disabled={user.protected} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full disabled:opacity-50 disabled:cursor-not-allowed">
@@ -175,7 +294,6 @@ const UserManagement = () => {
 };
 
 const PosManagement = ({ posList, loading }) => {
-    // ... (Este componente no cambia)
     const [editablePos, setEditablePos] = useState([]);
     const [openCategories, setOpenCategories] = useState({});
     const [isSaving, setIsSaving] = useState(false);
@@ -223,7 +341,7 @@ const PosManagement = ({ posList, loading }) => {
         });
 
         if (changesCount === 0) {
-            alert("No hay cambios que guardar en la base de datos (los PDV de simulación no se guardan).");
+            alert("No hay cambios que guardar en la base de datos.");
             setIsSaving(false);
             setChangesMade(false);
             return;
@@ -333,7 +451,6 @@ const PosManagement = ({ posList, loading }) => {
 
 
 const ReportManagement = ({ reports, posList, loading }) => {
-    // ... (Este componente no cambia)
     const [selectedChain, setSelectedChain] = useState('all');
     const [selectedWeek, setSelectedWeek] = useState('all');
     const [editingReport, setEditingReport] = useState(null);
@@ -455,7 +572,6 @@ const ReportManagement = ({ reports, posList, loading }) => {
 };
 
 const DepotManagement = () => {
-    // ... (Este componente no cambia)
     const [depots, setDepots] = useState([]);
     const [loading, setLoading] = useState(true);
     const [newDepot, setNewDepot] = useState({ name: '', city: '', type: 'secundario' });
@@ -668,17 +784,19 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                 <div className="flex space-x-1 sm:space-x-2 border-b border-slate-200 mb-6 overflow-x-auto pb-2">
                     <TabButton id="reports" text="Reportes" icon={<FileText size={18} />} />
                     <TabButton id="pos" text="PDV" icon={<Store size={18} />} />
+                    <TabButton id="reporters" text="Reporters" icon={<ClipboardList size={18} />} />
                     <TabButton id="depots" text="Depósitos" icon={<Warehouse size={18} />} />
                     <TabButton id="users" text="Usuarios" icon={<Users size={18} />} />
                     <TabButton id="sales_goals" text="Metas de Venta" icon={<Target size={18} />} />
                     <TabButton id="settings" text="Configuración" icon={<Settings size={18} />} />
                 </div>
                 <div className="animate-fade-in">
+                    {activeTab === 'reports' && <ReportManagement reports={reports} posList={posList} loading={loading} />}
+                    {activeTab === 'pos' && <PosManagement posList={posList} loading={loading} />}
+                    {activeTab === 'reporters' && <ReportersManagement />}
+                    {activeTab === 'depots' && <DepotManagement />}
                     {activeTab === 'users' && <UserManagement />}
                     {activeTab === 'sales_goals' && <SalesGoalsManagement />}
-                    {activeTab === 'pos' && <PosManagement posList={posList} loading={loading} />}
-                    {activeTab === 'depots' && <DepotManagement />}
-                    {activeTab === 'reports' && <ReportManagement reports={reports} posList={posList} loading={loading} />}
                     {activeTab === 'settings' && <GeneralSettings />}
                 </div>
             </div>

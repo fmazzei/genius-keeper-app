@@ -12,9 +12,8 @@ admin.initializeApp();
  * @param {object} dataPayload - El objeto de datos { link }.
  */
 const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
-    functions.logger.log(`Iniciando sendNotificationToUser para userId: ${userId}`);
     if (!userId) {
-        functions.logger.error("Finalizado: No se proporcionó userId.");
+        functions.logger.log("sendNotificationToUser: No se proporcionó userId.");
         return;
     }
 
@@ -23,8 +22,8 @@ const sendNotificationToUser = async (userId, notificationPayload, dataPayload) 
     const tokensSnap = await tokensRef.get();
 
     if (tokensSnap.empty) {
-        functions.logger.warn(`No se encontraron tokens para el usuario ${userId}. La función terminará aquí.`);
-        // Aún así, guardamos la notificación para que aparezca en el centro de notificaciones
+        functions.logger.log(`No se encontraron tokens para el usuario ${userId}.`);
+        // Guardamos la notificación de todas formas para que aparezca en el centro de notificaciones
         await admin.firestore().collection("notifications").add({
             userId: userId,
             title: notificationPayload.title,
@@ -33,69 +32,49 @@ const sendNotificationToUser = async (userId, notificationPayload, dataPayload) 
             read: false,
             link: dataPayload.link || ''
         });
-        functions.logger.log(`Notificación para ${userId} guardada en Firestore (aunque no se encontraron tokens para enviar).`);
         return;
     }
 
     const tokens = tokensSnap.docs.map(doc => doc.id);
-    functions.logger.log(`Tokens encontrados para ${userId}:`, tokens);
     
+    // 2. Construir el payload completo
     const payload = {
         notification: notificationPayload,
         data: dataPayload
     };
 
-    let response;
-    try {
-        functions.logger.log("Intentando enviar notificaciones con sendEachForMulticast...");
-        response = await admin.messaging().sendEachForMulticast({ tokens, ...payload });
-        functions.logger.log(`Respuesta de FCM recibida. Éxitos: ${response.successCount}, Fallos: ${response.failureCount}`);
-    } catch (error) {
-        // Este bloque captura errores a nivel de API, como permisos incorrectos.
-        functions.logger.error("ERROR CRÍTICO AL LLAMAR A admin.messaging().sendEachForMulticast:", error);
-        // Guardamos la notificación de todas formas para que el usuario la vea en la app
-        await admin.firestore().collection("notifications").add({
-            userId: userId,
-            title: notificationPayload.title,
-            body: notificationPayload.body,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            read: false,
-            link: dataPayload.link || ''
-        });
-        functions.logger.log(`Notificación para ${userId} guardada en Firestore a pesar del error de envío.`);
-        return; // Detenemos la ejecución aquí
-    }
+    // 3. Enviar la notificación a todos los tokens
+    const response = await admin.messaging().sendEachForMulticast({ tokens, ...payload });
 
+    functions.logger.log(`Notificación enviada a ${response.successCount} de ${tokens.length} dispositivos para el usuario ${userId}.`);
+
+    // 4. Limpiar tokens inválidos de la base de datos
     const tokensToRemove = [];
     response.responses.forEach((result, index) => {
         const error = result.error;
         if (error) {
-            functions.logger.error(`Fallo detallado al enviar al token ${tokens[index]}`, error);
+            functions.logger.error(`Fallo al enviar al token ${tokens[index]}`, error);
             if (["messaging/invalid-registration-token", "messaging/registration-token-not-registered"].includes(error.code)) {
                 tokensToRemove.push(tokensRef.doc(tokens[index]).delete());
             }
         }
     });
 
+    await Promise.all(tokensToRemove);
     if (tokensToRemove.length > 0) {
-        await Promise.all(tokensToRemove);
         functions.logger.log(`Se limpiaron ${tokensToRemove.length} tokens inválidos.`);
     }
 
-    try {
-        functions.logger.log("Intentando guardar la notificación en Firestore...");
-        await admin.firestore().collection("notifications").add({
-            userId: userId,
-            title: notificationPayload.title,
-            body: notificationPayload.body,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            read: false,
-            link: dataPayload.link || ''
-        });
-        functions.logger.log(`Notificación para ${userId} guardada en Firestore exitosamente.`);
-    } catch (dbError) {
-        functions.logger.error("ERROR AL GUARDAR LA NOTIFICACIÓN EN FIRESTORE:", dbError);
-    }
+    // 5. Guardar la notificación en la colección de persistencia
+    await admin.firestore().collection("notifications").add({
+        userId: userId,
+        title: notificationPayload.title,
+        body: notificationPayload.body,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        read: false,
+        link: dataPayload.link || ''
+    });
+    functions.logger.log(`Notificación para ${userId} guardada en Firestore.`);
 };
 
 
@@ -123,10 +102,49 @@ exports.onReportCreated = functions.firestore
                 }
             );
         } catch (error) {
-            functions.logger.error("Error en onReportCreated al obtener el UID del master:", error);
+            functions.logger.error("Error en onReportCreated:", error);
         }
     });
 
+/**
+ * --- NUEVA FUNCIÓN ---
+ * Se activa cuando se crea un nuevo reporte de visita.
+ * Revisa el nombre del repartidor y si no existe en la colección 'reporters', lo añade.
+ */
+exports.checkAndCreateReporter = functions.firestore
+    .document("visit_reports/{reportId}")
+    .onCreate(async (snap, context) => {
+        const reportData = snap.data();
+        const reporterName = reportData.userName;
+
+        if (!reporterName) {
+            functions.logger.log("El reporte no tiene nombre de usuario, no se hace nada.");
+            return null;
+        }
+
+        const reportersRef = admin.firestore().collection("reporters");
+        const q = reportersRef.where("name", "==", reporterName);
+
+        try {
+            const snapshot = await q.get();
+            if (snapshot.empty) {
+                // Si no se encuentra ningún repartidor con ese nombre, se crea uno nuevo.
+                functions.logger.log(`El repartidor "${reporterName}" no existe. Creándolo...`);
+                await reportersRef.add({
+                    name: reporterName,
+                    active: true
+                });
+                functions.logger.log(`Repartidor "${reporterName}" creado exitosamente.`);
+            } else {
+                // Si ya existe, no hacemos nada.
+                functions.logger.log(`El repartidor "${reporterName}" ya existe.`);
+            }
+            return null;
+        } catch (error) {
+            functions.logger.error("Error al verificar o crear el repartidor:", error);
+            return null;
+        }
+    });
 
 exports.onTaskDelegated = functions.firestore
     .document("delegated_tasks/{taskId}")
@@ -194,4 +212,36 @@ exports.scheduleVisitReminders = functions.pubsub
             }
         }
         return null;
+    });
+
+exports.onReportDeleted = functions.firestore
+    .document("visit_reports/{reportId}")
+    .onDelete(async (snap, context) => {
+        const { reportId } = context.params;
+        const linkToDelete = `/reports/${reportId}`;
+        functions.logger.log(`Reporte ${reportId} eliminado. Buscando notificación con el enlace: ${linkToDelete}`);
+
+        const notificationsRef = admin.firestore().collection("notifications");
+        const q = notificationsRef.where("link", "==", linkToDelete);
+        
+        try {
+            const snapshot = await q.get();
+            if (snapshot.empty) {
+                functions.logger.log("No se encontró ninguna notificación asociada para eliminar.");
+                return null;
+            }
+
+            const batch = admin.firestore().batch();
+            snapshot.forEach(doc => {
+                functions.logger.log(`Eliminando notificación ${doc.id}`);
+                batch.delete(doc.ref);
+            });
+
+            await batch.commit();
+            functions.logger.log("Notificación(es) asociada(s) eliminada(s) con éxito.");
+            return null;
+        } catch (error) {
+            functions.logger.error("Error al eliminar la notificación asociada:", error);
+            return null;
+        }
     });

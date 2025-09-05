@@ -10,7 +10,6 @@ import PosList from '@/Pages/PosList.jsx';
 import VisitReportForm from '@/Pages/VisitReportForm.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import TaskList from '@/Components/TaskList.jsx';
-// SOLUCIÓN: Importar todos los skeletons necesarios
 import { TaskListSkeleton, PosListSkeleton } from '@/Components/SkeletonLoader.jsx';
 
 const AppShell = ({ user, role, onLogout }) => {
@@ -78,10 +77,12 @@ const AppShell = ({ user, role, onLogout }) => {
             <div className="px-2 py-4 border-t">
                 <div className="flex items-center p-3 my-2">
                     <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-200 text-blue-700 font-bold flex-shrink-0">
-                        {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'J'}
+                        {/* --- MODIFICADO: Muestra una 'M' genérica si no hay nombre --- */}
+                        {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'M'}
                     </div>
                     <div className={`ml-3 overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>
-                        <p className="font-semibold text-sm truncate">{user.displayName || 'Juan (Merchandiser)'}</p>
+                        {/* --- MODIFICADO: Muestra un título genérico --- */}
+                        <p className="font-semibold text-sm truncate">{user.displayName || 'Usuario Merchandiser'}</p>
                     </div>
                 </div>
                 <button onClick={onLogout} className="w-full">
@@ -95,15 +96,13 @@ const AppShell = ({ user, role, onLogout }) => {
     );
     
     const merchandiserContent = () => {
-        // SOLUCIÓN: Lógica de carga de esqueletos granular por vista
         switch(currentView) {
-            case 'hub': 
-                // La vista Hub carga rápido, un spinner es aceptable si es necesario
+            case 'hub':
                 if (merchandiserLoading) return <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>;
                 return <MerchandiserHub onNavigate={setCurrentView} />;
 
             case 'planner': 
-                if (merchandiserLoading) return <PosListSkeleton />; // Reutilizamos el esqueleto de lista de PDV
+                if (merchandiserLoading) return <PosListSkeleton />;
                 return <Planner role={role} allPossibleStops={masterStopList} agenda={agenda} onSelectPos={navigateToReport} />;
             
             case 'logistics': 
@@ -124,7 +123,6 @@ const AppShell = ({ user, role, onLogout }) => {
                 );
 
             case 'visit_report': 
-                // El formulario no necesita esqueleto ya que recibe los datos del POS al ser seleccionado
                 return <VisitReportForm pos={selectedPos} user={user} backToList={() => setCurrentView('hub')} />;
             
             default: 

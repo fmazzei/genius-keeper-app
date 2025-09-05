@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { useSwipeable } from 'react-swipeable';
-import { ArrowLeft, Send, MapPin, DollarSign, Package, Calendar, BarChart2, Check, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search } from 'lucide-react';
+import { ArrowLeft, Send, MapPin, DollarSign, Package, Calendar, BarChart2, Check, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, UserPlus } from 'lucide-react';
 import { FormInput, ToggleButton, FormSection } from '@/Components/FormControls.jsx';
 import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
@@ -11,7 +11,7 @@ import NewEntrantModal from '@/Components/NewEntrantModal.jsx';
 import { useVisionAPI } from '@/hooks/useVisionAPI.js';
 
 // --- Constantes y Utilidades ---
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5; // MODIFICADO: Ahora son 5 pasos en total
 const GPS_RADIUS_METERS = 500;
 const SHELF_LOCATIONS = [ { id: 'ojos', label: 'Nivel Ojos (Zona Caliente)' }, { id: 'manos', label: 'Nivel Manos (Zona Tibia)' }, { id: 'superior', label: 'Nivel Superior (Zona Fría)' }, { id: 'inferior', label: 'Nivel Inferior (Zona Fría)' } ];
 const ADJACENT_CATEGORIES = [ { id: 'Quesos crema', label: 'Quesos crema' }, { id: 'Quesos de Cabra', label: 'Quesos de Cabra' }, { id: 'Delicatessen', label: 'Delicatessen' }, { id: 'Nevera Charcutería', label: 'Nevera Charcutería' } ];
@@ -49,20 +49,100 @@ const SubmissionSuccess = ({ onFinish, isOffline }) => {
     );
 };
 
+// --- NUEVO: Componente para el Paso 1: Selección de Repartidor ---
+const Step1_ReporterSelection = ({ reporters, loadingReporters, selectedReporterName, setSelectedReporterName }) => {
+    const [otherName, setOtherName] = useState('');
+    const [showOtherInput, setShowOtherInput] = useState(false);
+
+    const handleSelect = (name) => {
+        setSelectedReporterName(name);
+        setShowOtherInput(false);
+        setOtherName('');
+    };
+
+    const handleSelectOther = () => {
+        setShowOtherInput(true);
+        setSelectedReporterName('');
+    };
+    
+    const handleOtherNameChange = (e) => {
+        setOtherName(e.target.value);
+        setSelectedReporterName(e.target.value);
+    };
+
+    if (loadingReporters) {
+        return <div className="flex justify-center items-center h-48"><Loader className="animate-spin h-8 w-8 text-brand-blue" /></div>;
+    }
+
+    return (
+        <FormSection title="Selección de Repartidor" icon={<UserPlus className="text-brand-blue mr-3"/>}>
+            <div className="space-y-4">
+                <p className="text-sm text-slate-600">¿Quién está realizando esta visita?</p>
+                <div className="grid grid-cols-2 gap-3">
+                    {reporters.map(name => (
+                        <ToggleButton 
+                            key={name}
+                            label={name}
+                            isSelected={selectedReporterName === name && !showOtherInput}
+                            onClick={() => handleSelect(name)}
+                        />
+                    ))}
+                    <ToggleButton 
+                        label="Otro"
+                        isSelected={showOtherInput}
+                        onClick={handleSelectOther}
+                    />
+                </div>
+                {showOtherInput && (
+                    <div className="animate-fade-in-up mt-4">
+                         <FormInput 
+                            label="Nombre del repartidor"
+                            value={otherName}
+                            onChange={handleOtherNameChange}
+                            placeholder="Escribe tu nombre y apellido"
+                        />
+                    </div>
+                )}
+            </div>
+        </FormSection>
+    );
+};
+
 
 // --- Componente Principal del Formulario ---
 const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialData = null }) => {
     const [currentStep, setCurrentStep] = useState(1);
     const [submissionState, setSubmissionState] = useState('form');
     const [isOfflineSave, setIsOfflineSave] = useState(false);
-    const [report, setReport] = useState({ price: '', orderQuantity: '', stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
+    const [report, setReport] = useState({ reporterName: '', price: '', orderQuantity: '', stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
     const [uiState, setUiState] = useState({ statusMessage: '', errorMessage: '', gpsStatus: 'checking', initialGpsValid: false });
     const [reportDate, setReportDate] = useState(new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }));
     const [isStepValid, setIsStepValid] = useState(false);
+    
+    const [reporters, setReporters] = useState([]);
+    const [loadingReporters, setLoadingReporters] = useState(true);
+
+    useEffect(() => {
+        if (isReadOnly) {
+            setLoadingReporters(false);
+            return;
+        }
+        const q = query(collection(db, "reporters"), where("active", "==", true));
+        const unsub = onSnapshot(q, (snapshot) => {
+            const reportersData = snapshot.docs.map(doc => doc.data().name);
+            setReporters(reportersData);
+            setLoadingReporters(false);
+        }, (error) => {
+            console.error("Error cargando repartidores:", error);
+            setLoadingReporters(false);
+        });
+        return () => unsub();
+    }, [isReadOnly]);
 
     useEffect(() => {
         if (initialData) {
             setReport({
+                reporterName: initialData.userName || '',
                 price: initialData.price || '',
                 orderQuantity: initialData.orderQuantity || '',
                 stockout: initialData.stockout || false,
@@ -84,7 +164,6 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
 
     useEffect(() => {
         if (isReadOnly) {
-            setIsStepValid(true);
             return;
         };
         const haversineDistance = (coords1, coords2) => {
@@ -119,10 +198,11 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
         }
         let isValid = false;
         switch (currentStep) {
-            case 1: isValid = report.batches.length > 0 || report.stockout; break;
-            case 2: isValid = report.price !== ''; break;
-            case 3: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
-            case 4: isValid = true; break;
+            case 1: isValid = report.reporterName !== ''; break;
+            case 2: isValid = report.batches.length > 0 || report.stockout; break;
+            case 3: isValid = report.price !== ''; break;
+            case 4: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
+            case 5: isValid = true; break;
             default: isValid = false;
         }
         setIsStepValid(isValid);
@@ -143,7 +223,6 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
         if (isReadOnly) return;
         setSubmissionState('submitting');
         const inventoryLevel = report.batches.reduce((sum, batch) => sum + batch.quantity, 0);
-        const reportUserName = user.isAnonymous ? 'Juan Guanchez' : user.displayName || user.email;
         
         const finalReportData = {
             price: Number(report.price) || 0,
@@ -158,7 +237,7 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
             newEntrants: report.newEntrants || [],
             notes: report.notes || '',
             userId: user.uid,
-            userName: reportUserName,
+            userName: report.reporterName, // Guardar el repartidor seleccionado
             posId: pos.id,
             posName: pos.name,
             posZone: pos.zone || 'N/A',
@@ -197,10 +276,11 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
     const renderStepContent = () => {
         const stepProps = { report, setReport, isReadOnly };
         switch (currentStep) {
-            case 1: return <Step1_Inventory {...stepProps} />;
-            case 2: return <Step2_Sales {...stepProps} />;
-            case 3: return <Step3_Execution {...stepProps} />;
-            case 4: return <Step4_Intel {...stepProps} />;
+            case 1: return <Step1_ReporterSelection reporters={reporters} loadingReporters={loadingReporters} selectedReporterName={report.reporterName} setSelectedReporterName={(name) => setReport(prev => ({...prev, reporterName: name}))} />;
+            case 2: return <Step2_Inventory {...stepProps} />;
+            case 3: return <Step3_Sales {...stepProps} />;
+            case 4: return <Step4_Execution {...stepProps} />;
+            case 5: return <Step5_Intel {...stepProps} />;
             default: return <div>Paso no encontrado</div>;
         }
     };
@@ -266,7 +346,7 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
 };
 
 // --- Sub-componentes de Pasos ---
-const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
+const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
     const [currentDate, setCurrentDate] = useState('');
     const [isScannerOpen, setScannerOpen] = useState(false);
     const [isNumpadOpen, setNumpadOpen] = useState(false);
@@ -322,7 +402,7 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
     );
 };
 
-const Step2_Sales = ({ report, setReport, isReadOnly }) => (
+const Step3_Sales = ({ report, setReport, isReadOnly }) => (
     <FormSection title="PVP y Reposición" icon={<DollarSign className="text-brand-blue mr-3"/>}>
         <div className="space-y-4">
             <FormInput label="Precio de Venta al Público (PVP)" type="number" value={report.price} onChange={e => setReport(prev => ({...prev, price: e.target.value}))} placeholder="Ej: 10.25" disabled={isReadOnly} />
@@ -331,7 +411,7 @@ const Step2_Sales = ({ report, setReport, isReadOnly }) => (
     </FormSection>
 );
 
-const Step3_Execution = ({ report, setReport, isReadOnly }) => {
+const Step4_Execution = ({ report, setReport, isReadOnly }) => {
     const [isNumpadOpen, setNumpadOpen] = useState(false);
     const handleNumpadConfirm = (value) => { if(!isReadOnly) { setReport(prev => ({...prev, facing: value})); setNumpadOpen(false); }};
     return (
@@ -363,7 +443,7 @@ const Step3_Execution = ({ report, setReport, isReadOnly }) => {
     );
 };
 
-const Step4_Intel = ({ report, setReport, isReadOnly }) => {
+const Step5_Intel = ({ report, setReport, isReadOnly }) => {
     const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null });
     const [isEntrantModalOpen, setIsEntrantModalOpen] = useState(false);
     const handleAddCompetitor = () => {

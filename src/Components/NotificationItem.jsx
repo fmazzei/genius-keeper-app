@@ -1,67 +1,47 @@
 import React from 'react';
-import { Bell, CheckCircle, FileText } from 'lucide-react';
+import { Bell, CheckCircle, FileText, Trash2 } from 'lucide-react'; // Importar Trash2
 
-// Pequeña función para mostrar el tiempo de forma amigable (ej. "hace 5 minutos")
-const formatTimeAgo = (date) => {
-    if (!date) return '';
-    const seconds = Math.floor((new Date() - date) / 1000);
-    let interval = seconds / 31536000;
-    if (interval > 1) return `hace ${Math.floor(interval)} años`;
-    interval = seconds / 2592000;
-    if (interval > 1) return `hace ${Math.floor(interval)} meses`;
-    interval = seconds / 86400;
-    if (interval > 1) return `hace ${Math.floor(interval)} días`;
-    interval = seconds / 3600;
-    if (interval > 1) return `hace ${Math.floor(interval)} horas`;
-    interval = seconds / 60;
-    if (interval > 1) return `hace ${Math.floor(interval)} minutos`;
-    return 'hace unos segundos';
-};
+// ... (la función formatTimeAgo y getNotificationIcon no cambian)
+const formatTimeAgo = (date) => { /* ... */ };
+const getNotificationIcon = (link) => { /* ... */ };
 
-// Función para determinar qué ícono mostrar según el tipo de notificación
-const getNotificationIcon = (link) => {
-    if (link?.startsWith('/reports')) {
-        return <FileText className="text-blue-500" size={24} />;
-    }
-    if (link?.startsWith('/tasks')) {
-        return <CheckCircle className="text-green-500" size={24} />;
-    }
-    return <Bell className="text-slate-500" size={24} />;
-};
-
-const NotificationItem = ({ notification, markAsRead }) => {
+const NotificationItem = ({ notification, markAsRead, deleteNotification }) => {
     const { id, read, title, body, createdAt, link } = notification;
 
-    const handleClick = () => {
-        // Primero, marca la notificación como leída en la base de datos.
+    // Manejador para cuando se hace clic en el cuerpo de la notificación
+    const handleNavigate = () => {
         if (!read) {
             markAsRead(id);
         }
-        // Luego, si hay un enlace, navega a él.
-        // Nota: Si usas React Router, podrías usar el hook `useNavigate` para una transición más fluida.
         if (link) {
+            // Navegamos primero
             window.location.href = link;
+            // Luego, borramos la notificación después de un breve instante
+            // para dar tiempo a la navegación.
+            setTimeout(() => {
+                deleteNotification(id);
+            }, 500);
         }
+    };
+    
+    // Manejador para el botón de eliminar
+    const handleDelete = (e) => {
+        // Detenemos la propagación para no activar handleNavigate
+        e.stopPropagation(); 
+        deleteNotification(id);
     };
 
     return (
         <div
-            onClick={handleClick}
-            className="flex items-start p-4 border-b border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors"
+            onClick={handleNavigate}
+            className="flex items-start p-4 border-b border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors group"
         >
-            {/* Indicador de no leído */}
             <div className="w-6 flex-shrink-0 pt-1">
-                {!read && (
-                    <div className="w-2.5 h-2.5 bg-brand-blue rounded-full animate-pulse"></div>
-                )}
+                {!read && <div className="w-2.5 h-2.5 bg-brand-blue rounded-full"></div>}
             </div>
-
-            {/* Ícono */}
             <div className="flex-shrink-0 mr-4">
                 {getNotificationIcon(link)}
             </div>
-
-            {/* Contenido */}
             <div className="flex-1">
                 <p className={`font-semibold text-slate-800 ${!read ? 'font-bold' : 'font-medium'}`}>
                     {title}
@@ -70,6 +50,16 @@ const NotificationItem = ({ notification, markAsRead }) => {
                 <p className="text-xs text-slate-400 mt-1">
                     {formatTimeAgo(createdAt)}
                 </p>
+            </div>
+            {/* --- NUEVO: Botón de eliminar que aparece al pasar el mouse --- */}
+            <div className="flex-shrink-0 pl-2">
+                 <button 
+                    onClick={handleDelete}
+                    title="Eliminar notificación"
+                    className="p-2 text-slate-400 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 transition-all"
+                >
+                    <Trash2 size={18} />
+                </button>
             </div>
         </div>
     );

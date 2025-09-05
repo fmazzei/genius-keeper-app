@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore'; // Importar deleteDoc
 import { useAuth } from '@/context/AuthContext';
 
 export const useNotifications = () => {
@@ -29,7 +29,7 @@ export const useNotifications = () => {
             const fetchedNotifications = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data(),
-                createdAt: doc.data().createdAt?.toDate() // Convertir Timestamp a objeto Date
+                createdAt: doc.data().createdAt?.toDate()
             }));
 
             const newUnreadCount = fetchedNotifications.filter(n => !n.read).length;
@@ -42,22 +42,29 @@ export const useNotifications = () => {
             setLoading(false);
         });
 
-        // Limpiar el listener cuando el componente se desmonte o el usuario cambie
         return () => unsubscribe();
     }, [user]);
 
     const markAsRead = async (notificationId) => {
         if (!user) return;
-        
+        const notificationRef = doc(db, 'notifications', notificationId);
         try {
-            const notificationRef = doc(db, 'notifications', notificationId);
-            await updateDoc(notificationRef, {
-                read: true
-            });
+            await updateDoc(notificationRef, { read: true });
         } catch (error) {
             console.error("Error al marcar la notificación como leída:", error);
         }
     };
 
-    return { notifications, unreadCount, loading, markAsRead };
+    // --- NUEVA FUNCIÓN PARA ELIMINAR NOTIFICACIONES ---
+    const deleteNotification = async (notificationId) => {
+        if (!user) return;
+        const notificationRef = doc(db, 'notifications', notificationId);
+        try {
+            await deleteDoc(notificationRef);
+        } catch (error) {
+            console.error("Error al eliminar la notificación:", error);
+        }
+    };
+
+    return { notifications, unreadCount, loading, markAsRead, deleteNotification };
 };
