@@ -1,38 +1,14 @@
-// RUTA: src/Pages/PosList.jsx
-
-import React, { useState, useEffect, useMemo } from 'react';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db } from '../Firebase/config.js';
-import { PlusCircle, ChevronDown, MapPin, Loader } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { PlusCircle, ChevronDown, MapPin } from 'lucide-react';
 import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 
-// Este componente modal se mantiene aquí ya que solo es usado por PosList.
-const PosCoordinatesModal = ({ pos, onClose, onConfirm, status, error }) => {
-    if (!pos) return null;
-    return (
-        <Modal isOpen={true} onClose={onClose} title={`Capturar GPS para ${pos.name}`}>
-            <div className="p-4 text-center">
-                <p className="mb-4">Este PDV no tiene coordenadas GPS. Para continuar, por favor, acércate al lugar y presiona "Confirmar Ubicación".</p>
-                {status === 'loading' && <div className="flex justify-center"><Loader className="animate-spin" /></div>}
-                {status === 'error' && <p className="text-red-500">{error}</p>}
-                <div className="flex justify-end gap-2 mt-4">
-                    <button type="button" onClick={onClose} className="bg-slate-200 px-4 py-2 rounded-lg">Cancelar</button>
-                    <button type="button" onClick={() => onConfirm(pos)} disabled={status === 'loading'} className="bg-brand-blue text-white px-4 py-2 rounded-lg">Confirmar Ubicación</button>
-                </div>
-            </div>
-        </Modal>
-    );
-};
-
-// El componente principal ahora recibe 'posList' como una prop.
+// El componente principal ahora recibe 'posList' y 'onSelectPos' como props.
+// Su lógica de captura de coordenadas ha sido eliminada y centralizada en AppShell.
 const PosList = ({ posList, onSelectPos }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [openCategories, setOpenCategories] = useState([]);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [posForCoordCapture, setPosForCoordCapture] = useState(null);
-    const [coordCaptureStatus, setCoordCaptureStatus] = useState('idle');
-    const [coordCaptureError, setCoordCaptureError] = useState('');
 
     const groupedPos = useMemo(() => {
         if (!posList) return {};
@@ -59,6 +35,7 @@ const PosList = ({ posList, onSelectPos }) => {
         setOpenCategories(prev => prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]);
     };
     
+    // Expande automáticamente las categorías al buscar
     useEffect(() => {
         if (searchTerm) {
             setOpenCategories(Object.keys(filteredGroupedPos));
@@ -66,38 +43,6 @@ const PosList = ({ posList, onSelectPos }) => {
             setOpenCategories([]);
         }
     }, [searchTerm, filteredGroupedPos]);
-
-    const handlePosClick = (pos) => {
-        if (!pos.location) {
-            setPosForCoordCapture(pos);
-            return;
-        }
-        onSelectPos(pos);
-    };
-    
-    const handleConfirmCoordinates = (posToUpdate) => {
-        setCoordCaptureStatus('loading');
-        setCoordCaptureError('');
-        navigator.geolocation.getCurrentPosition(
-            async (position) => {
-                const newLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
-                const posRef = doc(db, 'pos', posToUpdate.id);
-                try {
-                    await updateDoc(posRef, { location: newLocation });
-                    setCoordCaptureStatus('success');
-                    onSelectPos({ ...posToUpdate, location: newLocation });
-                    setPosForCoordCapture(null);
-                } catch (err) {
-                    setCoordCaptureStatus('error');
-                    setCoordCaptureError('No se pudo guardar la ubicación en la base de datos.');
-                }
-            },
-            (err) => {
-                setCoordCaptureStatus('error');
-                setCoordCaptureError('No se pudo obtener tu ubicación. Revisa los permisos del navegador.');
-            }
-        );
-    };
 
     return (
         <div className="min-h-full w-full bg-slate-50 p-4 md:p-6">
@@ -122,9 +67,13 @@ const PosList = ({ posList, onSelectPos }) => {
                                 {openCategories.includes(chain) && (
                                     <ul className="divide-y divide-slate-100">
                                         {filteredGroupedPos[chain].sort((a, b) => a.name.localeCompare(b.name)).map(pos => (
-                                            <li key={pos.id} onClick={() => handlePosClick(pos)} className="p-4 cursor-pointer hover:bg-yellow-50 flex justify-between items-center transition-colors">
-                                                <div><h4 className="font-semibold text-slate-800">{pos.name}</h4><p className="text-sm text-slate-500">{pos.zone}</p></div>
-                                                {!pos.location && <MapPin className="text-red-500 flex-shrink-0" title="GPS no registrado"/>}
+                                            <li key={pos.id} onClick={() => onSelectPos(pos)} className="p-4 cursor-pointer hover:bg-yellow-50 flex justify-between items-center transition-colors">
+                                                <div>
+                                                    <h4 className="font-semibold text-slate-800">{pos.name}</h4>
+                                                    <p className="text-sm text-slate-500">{pos.zone}</p>
+                                                </div>
+                                                {/* Usamos 'coordinates' como en AppShell para consistencia */}
+                                                {!pos.coordinates && <MapPin className="text-red-500 flex-shrink-0" title="GPS no registrado"/>}
                                             </li>
                                         ))}
                                     </ul>
@@ -138,10 +87,10 @@ const PosList = ({ posList, onSelectPos }) => {
                 <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Agregar Nuevo Punto de Venta">
                     <AddPosForm onClose={() => setIsAddModalOpen(false)} />
                 </Modal>
-                <PosCoordinatesModal pos={posForCoordCapture} onClose={() => { setPosForCoordCapture(null); setCoordCaptureStatus('idle'); }} onConfirm={handleConfirmCoordinates} status={coordCaptureStatus} error={coordCaptureError} />
             </div>
         </div>
     );
 };
 
 export default PosList;
+

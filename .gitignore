@@ -1,12 +1,24 @@
-# Dependencies
+# ===================================================================
+# Archivo .gitignore para Genius Keeper (Vite + React + Firebase)
+# ===================================================================
+
+# 1. Dependencias y Paquetes
+# -------------------------------------------------------------------
+# Nunca incluyas la carpeta de dependencias. Se instala con 'npm install'.
 node_modules
 
-# Vite build output
+
+# 2. Build Output
+# -------------------------------------------------------------------
+# Archivos generados por el proceso de 'npm run build'.
 dist
 dist-ssr
 .vite/
 
-# Logs
+
+# 3. Logs
+# -------------------------------------------------------------------
+# Archivos de registro que se generan durante el desarrollo o en caso de errores.
 logs
 *.log
 npm-debug.log*
@@ -14,13 +26,29 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+firebase-debug.log
 
-# Local Env Files - CRUCIAL FOR SECURITY
+
+# 4. Variables de Entorno y Secretos
+# -------------------------------------------------------------------
+# ¡CRÍTICO PARA LA SEGURIDAD! Estos archivos contienen claves de API y otros secretos.
 .env
 .env.local
 .env.*.local
+serviceAccountKey.json
 
-# Editor directories and files
+
+# 5. Archivos de Administración y Datos Locales
+# -------------------------------------------------------------------
+# Scripts de un solo uso y archivos de datos que no son parte del código de la app.
+export_pos_ids.cjs
+update_firestore.cjs
+pos_coordinates.json
+
+
+# 6. Archivos de Editor y Sistema Operativo
+# -------------------------------------------------------------------
+# Configuraciones personales del editor y archivos generados por el sistema operativo.
 .idea
 .vscode/*
 !.vscode/extensions.json

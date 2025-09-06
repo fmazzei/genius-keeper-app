@@ -13,131 +13,6 @@ const ToggleSwitch = ({ enabled, setEnabled, disabled = false }) => (
     </button>
 );
 
-// --- SUB-COMPONENTE: CONFIGURACIÓN GENERAL (CON CORRECCIÓN) ---
-const GeneralSettings = () => {
-    const [settings, setSettings] = useState({
-        newReportNotifications: false,
-        gpsRequired: true,
-        zohoWebhookActive: false,
-    });
-    const [loading, setLoading] = useState(true);
-
-    // Cargar todas las configuraciones
-    useEffect(() => {
-        const loadSettings = async () => {
-            const notificationsRef = doc(db, 'settings', 'notifications');
-            const appConfigRef = doc(db, 'settings', 'appConfig');
-
-            try {
-                const [notificationsSnap, appConfigSnap] = await Promise.all([
-                    getDoc(notificationsRef),
-                    getDoc(appConfigRef)
-                ]);
-
-                let loadedSettings = {};
-                if (notificationsSnap.exists()) {
-                    loadedSettings = { ...loadedSettings, ...notificationsSnap.data() };
-                }
-                if (appConfigSnap.exists()) {
-                     loadedSettings = { ...loadedSettings, ...appConfigSnap.data() };
-                }
-                setSettings(prev => ({...prev, ...loadedSettings}));
-            } catch (error) {
-                console.error("Error loading settings:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        loadSettings();
-    }, []);
-
-    // --- CORRECCIÓN: Lógica de guardado más robusta ---
-    // Esta función ahora intenta guardar en la base de datos PRIMERO.
-    // Si falla, revierte el cambio en la UI y muestra un error.
-    const handleSettingChange = async (collection, key, value) => {
-        // Guardamos el estado anterior en caso de que necesitemos revertir
-        const originalSettings = { ...settings };
-        
-        // Actualizamos la UI inmediatamente para una respuesta rápida (actualización optimista)
-        const newSettings = { ...settings, [key]: value };
-        setSettings(newSettings);
-        
-        const settingRef = doc(db, 'settings', collection);
-        try {
-            // Intentamos escribir el cambio en la base de datos
-            await setDoc(settingRef, { [key]: value }, { merge: true });
-        } catch (error) {
-            console.error(`Error updating setting ${key}:`, error);
-            alert("No se pudo guardar la configuración. Revisa los permisos de la base de datos.");
-            // Si hay un error, revertimos el cambio en la UI al estado original
-            setSettings(originalSettings);
-        }
-    };
-    
-    // Manejar el toggle de modo simulación (localStorage)
-    const [isSimulationMode, setIsSimulationMode] = useState(() => localStorage.getItem('simulationMode') === 'true');
-    const handleSimulationToggle = () => { 
-        const newMode = !isSimulationMode; 
-        localStorage.setItem('simulationMode', newMode); 
-        setIsSimulationMode(newMode); 
-        window.dispatchEvent(new CustomEvent('simulationModeChange')); 
-    };
-
-    if (loading) return <LoadingSpinner />;
-
-    return (
-        <div className="space-y-6">
-             <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
-                <h3 className="text-xl font-semibold text-slate-700">Parámetros de la Aplicación</h3>
-                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
-                    <div className="w-full text-center sm:text-left">
-                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Bell/> Notificar al Master sobre nuevos reportes</label>
-                        <p className="text-sm text-slate-500 mt-1">Si está activo, se enviará una notificación push cada vez que un vendedor envíe un reporte.</p>
-                    </div>
-                    <ToggleSwitch 
-                        enabled={settings.newReportNotifications} 
-                        setEnabled={(value) => handleSettingChange('notifications', 'newReportNotifications', value)} 
-                    />
-                </div>
-                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
-                    <div className="w-full text-center sm:text-left">
-                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Lock/> Requerir GPS para enviar reporte</label>
-                        <p className="text-sm text-slate-500 mt-1">Si está activo, el merchandiser no podrá enviar un reporte si está fuera del rango del PDV.</p>
-                    </div>
-                     <ToggleSwitch 
-                        enabled={settings.gpsRequired} 
-                        setEnabled={(value) => handleSettingChange('appConfig', 'gpsRequired', value)} 
-                    />
-                </div>
-            </div>
-             <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
-                 <h3 className="text-xl font-semibold text-slate-700">Herramientas de Desarrollo</h3>
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
-                     <div className="w-full text-center sm:text-left">
-                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Lock/> Activar Modo Simulación de Datos</label>
-                        <p className="text-sm text-slate-500 mt-1">Usa datos de prueba generados automáticamente en toda la app. (Solo afecta tu sesión).</p>
-                    </div>
-                    <ToggleSwitch enabled={isSimulationMode} setEnabled={handleSimulationToggle} />
-                </div>
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
-                    <div className="w-full text-center sm:text-left">
-                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Book/> Activar Sincronización con Zoho Books</label>
-                        <p className="text-sm text-slate-500 mt-1">Permite la conexión con Zoho para las metas de venta (funcionalidad futura).</p>
-                    </div>
-                    <ToggleSwitch 
-                        enabled={settings.zohoWebhookActive} 
-                        setEnabled={(value) => handleSettingChange('appConfig', 'zohoWebhookActive', value)} 
-                    />
-                </div>
-            </div>
-        </div>
-    );
-};
-
-
-// --- EL RESTO DE LOS COMPONENTES SIN CAMBIOS ---
-// (ReportersManagement, SalesGoalsManagement, etc. se incluyen completos pero sin modificaciones)
-
 const ReportersManagement = () => {
     const [reporters, setReporters] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -783,6 +658,118 @@ const DepotManagement = () => {
 };
 
 
+// --- SUB-COMPONENTE: CONFIGURACIÓN GENERAL ---
+const GeneralSettings = () => {
+    const [settings, setSettings] = useState({
+        newReportNotifications: false,
+        gpsRequired: true,
+        zohoWebhookActive: false,
+    });
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const loadSettings = async () => {
+            const notificationsRef = doc(db, 'settings', 'notifications');
+            const appConfigRef = doc(db, 'settings', 'appConfig');
+
+            try {
+                const [notificationsSnap, appConfigSnap] = await Promise.all([
+                    getDoc(notificationsRef),
+                    getDoc(appConfigRef)
+                ]);
+
+                let loadedSettings = {};
+                if (notificationsSnap.exists()) {
+                    loadedSettings = { ...loadedSettings, ...notificationsSnap.data() };
+                }
+                if (appConfigSnap.exists()) {
+                     loadedSettings = { ...loadedSettings, ...appConfigSnap.data() };
+                }
+                setSettings(prev => ({...prev, ...loadedSettings}));
+            } catch (error) {
+                console.error("Error loading settings:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        loadSettings();
+    }, []);
+
+    const handleSettingChange = async (collection, key, value) => {
+        const originalSettings = { ...settings };
+        const newSettings = { ...settings, [key]: value };
+        setSettings(newSettings);
+        
+        const settingRef = doc(db, 'settings', collection);
+        try {
+            await setDoc(settingRef, { [key]: value }, { merge: true });
+        } catch (error) {
+            console.error(`Error updating setting ${key}:`, error);
+            alert("No se pudo guardar la configuración. Revisa los permisos de la base de datos.");
+            setSettings(originalSettings);
+        }
+    };
+    
+    const [isSimulationMode, setIsSimulationMode] = useState(() => localStorage.getItem('simulationMode') === 'true');
+    const handleSimulationToggle = () => { 
+        const newMode = !isSimulationMode; 
+        localStorage.setItem('simulationMode', newMode); 
+        setIsSimulationMode(newMode); 
+        window.dispatchEvent(new CustomEvent('simulationModeChange')); 
+    };
+
+    if (loading) return <LoadingSpinner />;
+
+    return (
+        <div className="space-y-6">
+             <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
+                <h3 className="text-xl font-semibold text-slate-700">Parámetros de la Aplicación</h3>
+                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
+                    <div className="w-full text-center sm:text-left">
+                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Bell/> Notificar al Master sobre nuevos reportes</label>
+                        <p className="text-sm text-slate-500 mt-1">Si está activo, se enviará una notificación push cada vez que un vendedor envíe un reporte.</p>
+                    </div>
+                    <ToggleSwitch 
+                        enabled={settings.newReportNotifications} 
+                        setEnabled={(value) => handleSettingChange('notifications', 'newReportNotifications', value)} 
+                    />
+                </div>
+                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
+                    <div className="w-full text-center sm:text-left">
+                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Lock/> Requerir GPS para enviar reporte</label>
+                        <p className="text-sm text-slate-500 mt-1">Si está activo, el merchandiser no podrá enviar un reporte si está fuera del rango del PDV.</p>
+                    </div>
+                     <ToggleSwitch 
+                        enabled={settings.gpsRequired} 
+                        setEnabled={(value) => handleSettingChange('appConfig', 'gpsRequired', value)} 
+                    />
+                </div>
+            </div>
+             <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
+                 <h3 className="text-xl font-semibold text-slate-700">Herramientas de Desarrollo</h3>
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
+                     <div className="w-full text-center sm:text-left">
+                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Lock/> Activar Modo Simulación de Datos</label>
+                        <p className="text-sm text-slate-500 mt-1">Usa datos de prueba generados automáticamente en toda la app. (Solo afecta tu sesión).</p>
+                    </div>
+                    <ToggleSwitch enabled={isSimulationMode} setEnabled={handleSimulationToggle} />
+                </div>
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
+                    <div className="w-full text-center sm:text-left">
+                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Book/> Activar Sincronización con Zoho Books</label>
+                        <p className="text-sm text-slate-500 mt-1">Permite la conexión con Zoho para las metas de venta (funcionalidad futura).</p>
+                    </div>
+                    <ToggleSwitch 
+                        enabled={settings.zohoWebhookActive} 
+                        setEnabled={(value) => handleSettingChange('appConfig', 'zohoWebhookActive', value)} 
+                    />
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 // --- COMPONENTE PRINCIPAL ---
 const AdminPanel = ({ user, posList, reports, loading }) => {
     const [activeTab, setActiveTab] = useState('reports');
@@ -815,3 +802,4 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
 };
 
 export default AdminPanel;
+
