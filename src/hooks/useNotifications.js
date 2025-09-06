@@ -1,44 +1,37 @@
+// RUTA: src/hooks/useNotifications.js
+
 import { useState, useEffect } from 'react';
-import { db } from '@/Firebase/config';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore'; // Importar deleteDoc
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { db } from '@/Firebase/config.js';
 import { useAuth } from '@/context/AuthContext';
+import { useReportView } from '@/context/ReportViewContext'; // <-- Importamos el hook para el modal
 
 export const useNotifications = () => {
     const { user } = useAuth();
+    const { setViewedReportId } = useReportView(); // <-- Usamos el contexto para abrir el modal
     const [notifications, setNotifications] = useState([]);
-    const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         if (!user) {
-            setLoading(false);
             setNotifications([]);
-            setUnreadCount(0);
+            setLoading(false);
             return;
         }
 
-        setLoading(true);
-        const notificationsRef = collection(db, 'notifications');
         const q = query(
-            notificationsRef,
-            where('userId', '==', user.uid),
-            orderBy('createdAt', 'desc')
+            collection(db, 'notifications'),
+            where('userId', '==', user.uid)
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const fetchedNotifications = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data(),
-                createdAt: doc.data().createdAt?.toDate()
-            }));
-
-            const newUnreadCount = fetchedNotifications.filter(n => !n.read).length;
-            
-            setNotifications(fetchedNotifications);
-            setUnreadCount(newUnreadCount);
+            const notifsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+            // Ordenamos para mostrar las más recientes primero
+            notifsData.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
+            setNotifications(notifsData);
             setLoading(false);
         }, (error) => {
-            console.error("Error al obtener notificaciones:", error);
+            console.error("Error al cargar notificaciones:", error);
             setLoading(false);
         });
 
@@ -46,25 +39,30 @@ export const useNotifications = () => {
     }, [user]);
 
     const markAsRead = async (notificationId) => {
-        if (!user) return;
-        const notificationRef = doc(db, 'notifications', notificationId);
         try {
-            await updateDoc(notificationRef, { read: true });
+            const notifRef = doc(db, 'notifications', notificationId);
+            await updateDoc(notifRef, { read: true });
         } catch (error) {
             console.error("Error al marcar la notificación como leída:", error);
         }
     };
 
-    // --- NUEVA FUNCIÓN PARA ELIMINAR NOTIFICACIONES ---
     const deleteNotification = async (notificationId) => {
-        if (!user) return;
-        const notificationRef = doc(db, 'notifications', notificationId);
         try {
-            await deleteDoc(notificationRef);
+            const notifRef = doc(db, 'notifications', notificationId);
+            await deleteDoc(notifRef);
         } catch (error) {
             console.error("Error al eliminar la notificación:", error);
         }
     };
 
-    return { notifications, unreadCount, loading, markAsRead, deleteNotification };
+    // Nueva función para abrir el modal del reporte
+    const viewReport = (link) => {
+        if (link && link.includes('/reports/')) {
+            const reportId = link.split('/reports/')[1];
+            setViewedReportId(reportId); // <-- Actualizamos el contexto, ¡esto abre el modal!
+        }
+    };
+
+    return { notifications, loading, markAsRead, deleteNotification, viewReport };
 };

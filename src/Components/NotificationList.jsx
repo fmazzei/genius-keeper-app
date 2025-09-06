@@ -1,3 +1,5 @@
+// RUTA: src/Components/NotificationList.jsx
+
 import React from 'react';
 import { useNotifications } from '@/hooks/useNotifications';
 import NotificationItem from '@/Components/NotificationItem';
@@ -5,14 +7,11 @@ import LoadingSpinner from '@/Components/LoadingSpinner';
 import { BellOff } from 'lucide-react';
 
 const NotificationList = () => {
-    const { notifications, loading, markAsRead } = useNotifications();
+    // CORRECCIÓN: Obtenemos deleteNotification y viewReport del hook
+    const { notifications, loading, markAsRead, deleteNotification, viewReport } = useNotifications();
 
     if (loading) {
-        return (
-            <div className="flex justify-center items-center h-64">
-                <LoadingSpinner />
-            </div>
-        );
+        return <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>;
     }
 
     if (notifications.length === 0) {
@@ -32,6 +31,8 @@ const NotificationList = () => {
                     key={notification.id}
                     notification={notification}
                     markAsRead={markAsRead}
+                    deleteNotification={deleteNotification} // <-- Pasamos la función de eliminar
+                    viewReport={viewReport}               // <-- Pasamos la función de ver reporte
                 />
             ))}
         </div>

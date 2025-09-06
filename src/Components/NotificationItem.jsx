@@ -1,34 +1,51 @@
+// RUTA: src/Components/NotificationItem.jsx
+
 import React from 'react';
-import { Bell, CheckCircle, FileText, Trash2 } from 'lucide-react'; // Importar Trash2
+import { Bell, FileText, Trash2 } from 'lucide-react';
 
-// ... (la función formatTimeAgo y getNotificationIcon no cambian)
-const formatTimeAgo = (date) => { /* ... */ };
-const getNotificationIcon = (link) => { /* ... */ };
+const formatTimeAgo = (timestamp) => {
+    if (!timestamp || !timestamp.toDate) return 'Fecha inválida';
+    const date = timestamp.toDate();
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+    
+    let interval = seconds / 31536000;
+    if (interval > 1) return `hace ${Math.floor(interval)} años`;
+    interval = seconds / 2592000;
+    if (interval > 1) return `hace ${Math.floor(interval)} meses`;
+    interval = seconds / 86400;
+    if (interval > 1) return `hace ${Math.floor(interval)} días`;
+    interval = seconds / 3600;
+    if (interval > 1) return `hace ${Math.floor(interval)} horas`;
+    interval = seconds / 60;
+    if (interval > 1) return `hace ${Math.floor(interval)} minutos`;
+    return "hace unos segundos";
+};
 
-const NotificationItem = ({ notification, markAsRead, deleteNotification }) => {
+const getNotificationIcon = (link) => {
+    const iconClass = "h-6 w-6 text-slate-500";
+    if (link && link.includes('reports')) {
+        return <FileText className={iconClass} />;
+    }
+    return <Bell className={iconClass} />;
+};
+
+const NotificationItem = ({ notification, markAsRead, deleteNotification, viewReport }) => {
     const { id, read, title, body, createdAt, link } = notification;
 
-    // Manejador para cuando se hace clic en el cuerpo de la notificación
+    // Lógica de navegación completamente nueva y rápida
     const handleNavigate = () => {
         if (!read) {
             markAsRead(id);
         }
         if (link) {
-            // Navegamos primero
-            window.location.href = link;
-            // Luego, borramos la notificación después de un breve instante
-            // para dar tiempo a la navegación.
-            setTimeout(() => {
-                deleteNotification(id);
-            }, 500);
+            viewReport(link); // <-- Llamamos a la función del contexto para abrir el modal
         }
     };
     
-    // Manejador para el botón de eliminar
     const handleDelete = (e) => {
-        // Detenemos la propagación para no activar handleNavigate
         e.stopPropagation(); 
-        deleteNotification(id);
+        deleteNotification(id); // <-- Ahora esta función existe y funcionará
     };
 
     return (
@@ -51,7 +68,6 @@ const NotificationItem = ({ notification, markAsRead, deleteNotification }) => {
                     {formatTimeAgo(createdAt)}
                 </p>
             </div>
-            {/* --- NUEVO: Botón de eliminar que aparece al pasar el mouse --- */}
             <div className="flex-shrink-0 pl-2">
                  <button 
                     onClick={handleDelete}
