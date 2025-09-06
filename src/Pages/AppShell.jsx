@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { db } from '@/Firebase/config.js';
+import { doc, getDoc, updateDoc } from 'firebase/firestore'; // <-- IMPORTAMOS getDoc y updateDoc
 import { useMerchandiserData } from '@/hooks/useMerchandiserData.js';
 import { useOfflineSync } from '@/hooks/useOfflineSync.js';
 import { useDelegatedTasks } from '@/hooks/useDelegatedTasks.jsx';
-import { LogOut, ChevronsRight, FileText, Truck, Map, Menu, ClipboardList } from 'lucide-react';
+import { LogOut, ChevronsRight, FileText, Truck, Map, Menu, ClipboardList, MapPin } from 'lucide-react';
 import MerchandiserHub from '@/Pages/MerchandiserHub.jsx';
 import Planner from '@/Pages/Planner/Planner.jsx';
 import LogisticsPanel from '@/Pages/LogisticsPanel.jsx';
@@ -11,6 +13,76 @@ import VisitReportForm from '@/Pages/VisitReportForm.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import TaskList from '@/Components/TaskList.jsx';
 import { TaskListSkeleton, PosListSkeleton } from '@/Components/SkeletonLoader.jsx';
+import Modal from '@/Components/Modal.jsx'; // <-- IMPORTAMOS el componente Modal base
+
+// --- NUEVO SUB-COMPONENTE: Modal para Capturar GPS ---
+// Lo creamos aquí mismo para mantener la lógica encapsulada en el AppShell.
+const GpsCaptureModal = ({ pos, onClose, onConfirm }) => {
+    const [isCapturing, setIsCapturing] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleConfirmLocation = async () => {
+        setIsCapturing(true);
+        setError('');
+
+        if (!navigator.geolocation) {
+            setError("La geolocalización no es compatible con este navegador.");
+            setIsCapturing(false);
+            return;
+        }
+
+        try {
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            });
+
+            const { latitude, longitude } = position.coords;
+            const posRef = doc(db, 'pos', pos.id);
+            await updateDoc(posRef, {
+                coordinates: { lat: latitude, lng: longitude }
+            });
+            
+            // Pasamos el PDV actualizado de vuelta para continuar el flujo
+            onConfirm({ ...pos, coordinates: { lat: latitude, lng: longitude } });
+
+        } catch (err) {
+            console.error("Error en captura GPS:", err);
+            if (err.code === 1) {
+                setError("Permiso de ubicación denegado. Revise la configuración de su navegador.");
+            } else {
+                setError("No se pudo obtener la ubicación. Inténtelo de nuevo.");
+            }
+        } finally {
+            setIsCapturing(false);
+        }
+    };
+
+    return (
+        <Modal isOpen={true} onClose={onClose} title={`Capturar GPS para ${pos.name}`}>
+            <div className="p-6 text-center">
+                <MapPin size={48} className="mx-auto text-slate-400 mb-4" />
+                <p className="text-slate-600 mb-4">
+                    Este PDV no tiene coordenadas GPS. Para continuar, por favor, acércate al lugar y presiona "Confirmar Ubicación".
+                </p>
+                {error && <p className="text-red-600 font-semibold mb-4 bg-red-50 p-3 rounded-md">{error}</p>}
+                <div className="flex justify-center gap-4 mt-6">
+                    <button onClick={onClose} disabled={isCapturing} className="px-6 py-2 bg-slate-200 text-slate-800 rounded-lg font-semibold">
+                        Cancelar
+                    </button>
+                    <button onClick={handleConfirmLocation} disabled={isCapturing} className="px-6 py-2 bg-brand-blue text-white rounded-lg font-bold flex items-center justify-center gap-2">
+                        {isCapturing ? <LoadingSpinner size="sm" /> : null}
+                        {isCapturing ? 'Capturando...' : 'Confirmar Ubicación'}
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 
 const AppShell = ({ user, role, onLogout }) => {
     const [currentView, setCurrentView] = useState('hub');
@@ -18,12 +90,50 @@ const AppShell = ({ user, role, onLogout }) => {
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     
+    // --- CORRECCIÓN 1: Estados para manejar la configuración y el modal de GPS ---
+    const [appConfig, setAppConfig] = useState({ gpsRequired: true }); // Default a true por seguridad
+    const [isGpsModalOpen, setIsGpsModalOpen] = useState(false);
+    const [posForGpsCapture, setPosForGpsCapture] = useState(null);
+
     const { masterStopList, agenda, loading: merchandiserLoading } = useMerchandiserData();
     const { tasks, loading: tasksLoading, completeTask } = useDelegatedTasks(role);
     useOfflineSync();
 
+    // --- CORRECCIÓN 2: Cargar la configuración de la app al iniciar ---
+    useEffect(() => {
+        const fetchAppConfig = async () => {
+            try {
+                const configRef = doc(db, 'settings', 'appConfig');
+                const configSnap = await getDoc(configRef);
+                if (configSnap.exists()) {
+                    setAppConfig(configSnap.data());
+                }
+            } catch (error) {
+                console.error("Error al cargar la configuración de la app:", error);
+                // Si falla, se queda con el default de 'gpsRequired: true'
+            }
+        };
+        fetchAppConfig();
+    }, []);
+
+    // --- CORRECCIÓN 3: Lógica de navegación actualizada ---
     const navigateToReport = (pos) => {
-        setSelectedPos(pos);
+        // Comprobamos si el PDV NO tiene coordenadas Y si la configuración global EXIGE el GPS.
+        if (!pos.coordinates && appConfig.gpsRequired) {
+            // Si ambas condiciones son ciertas, abrimos el modal de captura.
+            setPosForGpsCapture(pos);
+            setIsGpsModalOpen(true);
+        } else {
+            // Si el PDV ya tiene GPS, o si el GPS no es requerido, vamos directo al reporte.
+            setSelectedPos(pos);
+            setCurrentView('visit_report');
+        }
+    };
+    
+    const handleGpsCaptureConfirm = (posWithGps) => {
+        setIsGpsModalOpen(false);
+        // Una vez que el GPS se guarda, procedemos a la vista de reporte con el PDV actualizado.
+        setSelectedPos(posWithGps);
         setCurrentView('visit_report');
     };
 
@@ -77,11 +187,9 @@ const AppShell = ({ user, role, onLogout }) => {
             <div className="px-2 py-4 border-t">
                 <div className="flex items-center p-3 my-2">
                     <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-200 text-blue-700 font-bold flex-shrink-0">
-                        {/* --- MODIFICADO: Muestra una 'M' genérica si no hay nombre --- */}
                         {user.displayName ? user.displayName.charAt(0).toUpperCase() : 'M'}
                     </div>
                     <div className={`ml-3 overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>
-                        {/* --- MODIFICADO: Muestra un título genérico --- */}
                         <p className="font-semibold text-sm truncate">{user.displayName || 'Usuario Merchandiser'}</p>
                     </div>
                 </div>
@@ -150,6 +258,15 @@ const AppShell = ({ user, role, onLogout }) => {
                     {merchandiserContent()}
                 </main>
             </div>
+            
+            {/* --- CORRECCIÓN 4: Renderizar el modal de GPS cuando sea necesario --- */}
+            {isGpsModalOpen && (
+                <GpsCaptureModal
+                    pos={posForGpsCapture}
+                    onClose={() => setIsGpsModalOpen(false)}
+                    onConfirm={handleGpsCaptureConfirm}
+                />
+            )}
         </div>
     );
 };
