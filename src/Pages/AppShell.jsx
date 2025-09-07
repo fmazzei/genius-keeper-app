@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { useMerchandiserData } from '@/hooks/useMerchandiserData.js';
 import { useOfflineSync } from '@/hooks/useOfflineSync.js';
 import { useDelegatedTasks } from '@/hooks/useDelegatedTasks.jsx';
-import { LogOut, ChevronsRight, FileText, Truck, Map, Menu, ClipboardList, MapPin, AlertTriangle } from 'lucide-react';
+import { LogOut, ChevronsRight, FileText, Truck, Map, Menu, ClipboardList, AlertTriangle } from 'lucide-react';
 import MerchandiserHub from '@/Pages/MerchandiserHub.jsx';
 import Planner from '@/Pages/Planner/Planner.jsx';
 import LogisticsPanel from '@/Pages/LogisticsPanel.jsx';
@@ -14,9 +14,9 @@ import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import TaskList from '@/Components/TaskList.jsx';
 import { TaskListSkeleton, PosListSkeleton } from '@/Components/SkeletonLoader.jsx';
 import Modal from '@/Components/Modal.jsx';
+import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx'; // <-- 1. IMPORTAMOS EL NUEVO MODAL INTELIGENTE
 
 // --- FUNCIÓN HELPER: CÁLCULO DE DISTANCIA GEOGRÁFICA ---
-// Esta es la fórmula de Haversine para calcular la distancia entre dos puntos GPS.
 const getDistanceInMeters = (coords1, coords2) => {
     if (!coords1 || !coords2) return Infinity;
 
@@ -32,54 +32,6 @@ const getDistanceInMeters = (coords1, coords2) => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     
     return R * c; // Distancia en metros
-};
-
-
-// --- SUB-COMPONENTE: Modal para Capturar GPS por primera vez ---
-const GpsCaptureModal = ({ pos, onClose, onConfirm }) => {
-    const [isCapturing, setIsCapturing] = useState(false);
-    const [error, setError] = useState('');
-
-    const handleConfirmLocation = async () => {
-        setIsCapturing(true);
-        setError('');
-        if (!navigator.geolocation) {
-            setError("La geolocalización no es compatible.");
-            setIsCapturing(false);
-            return;
-        }
-        try {
-            const position = await new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-            });
-            const { latitude, longitude } = position.coords;
-            const posRef = doc(db, 'pos', pos.id);
-            // CORRECCIÓN: El campo se llama 'coordinates' no 'location'
-            await updateDoc(posRef, { coordinates: { lat: latitude, lng: longitude } });
-            onConfirm({ ...pos, coordinates: { lat: latitude, lng: longitude } });
-        } catch (err) {
-            setError(err.code === 1 ? "Permiso de ubicación denegado." : "No se pudo obtener la ubicación.");
-        } finally {
-            setIsCapturing(false);
-        }
-    };
-
-    return (
-        <Modal isOpen={true} onClose={onClose} title={`Capturar GPS para ${pos.name}`}>
-            <div className="p-6 text-center">
-                <MapPin size={48} className="mx-auto text-slate-400 mb-4" />
-                <p className="text-slate-600 mb-4">Este PDV no tiene coordenadas GPS. Para continuar, acérquese y presione "Confirmar Ubicación".</p>
-                {error && <p className="text-red-600 font-semibold mb-4 bg-red-50 p-3 rounded-md">{error}</p>}
-                <div className="flex justify-center gap-4 mt-6">
-                    <button onClick={onClose} disabled={isCapturing} className="px-6 py-2 bg-slate-200 text-slate-800 rounded-lg font-semibold">Cancelar</button>
-                    <button onClick={handleConfirmLocation} disabled={isCapturing} className="px-6 py-2 bg-brand-blue text-white rounded-lg font-bold flex items-center justify-center gap-2">
-                        {isCapturing ? <LoadingSpinner size="sm" /> : null}
-                        {isCapturing ? 'Capturando...' : 'Confirmar Ubicación'}
-                    </button>
-                </div>
-            </div>
-        </Modal>
-    );
 };
 
 // --- SUB-COMPONENTE: Modal de Alerta "Fuera de Rango" ---
@@ -106,9 +58,9 @@ const AppShell = ({ user, role, onLogout }) => {
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     
-    const [appConfig, setAppConfig] = useState({ gpsRequired: true, gpsRange: 500 }); // Default a 500m
-    const [isGpsModalOpen, setIsGpsModalOpen] = useState(false);
-    const [posForGpsCapture, setPosForGpsCapture] = useState(null);
+    const [appConfig, setAppConfig] = useState({ gpsRequired: true, gpsRange: 500 });
+    // --- 2. ESTADOS ACTUALIZADOS PARA EL NUEVO FLUJO ---
+    const [posToUpdateGps, setPosToUpdateGps] = useState(null); // Para PDV existentes sin GPS
     const [isOutOfRangeModalOpen, setIsOutOfRangeModalOpen] = useState(false);
     const [posForRangeCheck, setPosForRangeCheck] = useState(null);
     const [currentDistance, setCurrentDistance] = useState(0);
@@ -139,13 +91,15 @@ const AppShell = ({ user, role, onLogout }) => {
             setCurrentView('visit_report');
             return;
         }
-
+        
+        // --- 3. LÓGICA DE NAVEGACIÓN ACTUALIZADA ---
+        // Si el PDV existente NO tiene coordenadas, abrimos el nuevo modal inteligente de actualización.
         if (!pos.coordinates) {
-            setPosForGpsCapture(pos);
-            setIsGpsModalOpen(true);
+            setPosToUpdateGps(pos);
             return;
         }
         
+        // Si el PDV SÍ tiene coordenadas, procedemos con la verificación de proximidad.
         setIsVerifyingLocation(true);
         try {
             const position = await new Promise((resolve, reject) => {
@@ -170,8 +124,9 @@ const AppShell = ({ user, role, onLogout }) => {
         }
     };
     
-    const handleGpsCaptureConfirm = (posWithGps) => {
-        setIsGpsModalOpen(false);
+    // Función que se llama cuando el nuevo modal de actualización confirma la ubicación
+    const handleGpsUpdateConfirm = (posWithGps) => {
+        setPosToUpdateGps(null);
         setSelectedPos(posWithGps);
         setCurrentView('visit_report');
     };
@@ -292,13 +247,15 @@ const AppShell = ({ user, role, onLogout }) => {
                 </main>
             </div>
             
-            {isGpsModalOpen && (
-                <GpsCaptureModal
-                    pos={posForGpsCapture}
-                    onClose={() => setIsGpsModalOpen(false)}
-                    onConfirm={handleGpsCaptureConfirm}
+            {/* --- 4. RENDERIZADO DEL NUEVO MODAL DE ACTUALIZACIÓN --- */}
+            {posToUpdateGps && (
+                <UpdatePosGpsModal
+                    pos={posToUpdateGps}
+                    onClose={() => setPosToUpdateGps(null)}
+                    onConfirm={handleGpsUpdateConfirm}
                 />
             )}
+            
             {isOutOfRangeModalOpen && (
                 <OutOfRangeModal
                     pos={posForRangeCheck}
