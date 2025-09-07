@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+// --- CORRECCIÓN 1: Ya no intentamos importar 'functions' desde aquí ---
 import { db } from '../Firebase/config.js';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { MapPin, AlertTriangle } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner.jsx';
 
 // --- FUNCIÓN HELPER: CÁLCULO DE DISTANCIA GEOGRÁFICA ---
-// Esta función es necesaria aquí para la validación cruzada.
 const getDistanceInMeters = (coords1, coords2) => {
     if (!coords1 || !coords2) return Infinity;
     const toRad = (value) => (value * Math.PI) / 180;
-    const R = 6371e3; // Radio de la Tierra en metros
+    const R = 6371e3;
     const dLat = toRad(coords2.lat - coords1.lat);
     const dLng = toRad(coords2.lng - coords1.lng);
     const lat1 = toRad(coords1.lat);
@@ -20,25 +21,11 @@ const getDistanceInMeters = (coords1, coords2) => {
     return R * c;
 };
 
-// --- SIMULACIÓN DE "GENIUS": Geocodificador de Direcciones ---
-// Esta función simula la llamada a "Genius" (una API de geocodificación).
-// En una implementación real, esto se haría en una Cloud Function para proteger la API Key.
-const geocodeAddressByGenius = async (address) => {
-    console.log(`"Genius" buscando coordenadas para: ${address}`);
-    // Simulación: Para este ejemplo, siempre devolverá un punto central en Caracas.
-    // En producción, aquí iría la llamada a la API de Google Maps Geocoding.
-    return new Promise(resolve => {
-        setTimeout(() => {
-            resolve({ lat: 10.4806, lng: -66.9036 }); // Coordenadas de Caracas
-        }, 1000); // Simulamos un pequeño retraso de red
-    });
-};
-
 
 const AddPosForm = ({ onClose }) => {
     const [storeName, setStoreName] = useState('');
     const [zone, setZone] = useState('');
-    const [address, setAddress] = useState(''); // Dirección completa y obligatoria
+    const [address, setAddress] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [merchandiserLocation, setMerchandiserLocation] = useState(null);
@@ -76,10 +63,19 @@ const AddPosForm = ({ onClose }) => {
         }
 
         try {
-            const geniusCoords = await geocodeAddressByGenius(address);
+            // --- CORRECCIÓN 2: Inicializamos el servicio de Functions aquí ---
+            const functions = getFunctions();
+            const geocodeAddressByGenius = httpsCallable(functions, 'geocodeAddress');
+            const result = await geocodeAddressByGenius({ address: address });
+            const geniusCoords = result.data;
+
+            if (!geniusCoords || !geniusCoords.lat) {
+                throw new Error("La función 'Genius' no devolvió coordenadas válidas.");
+            }
+
             const distance = getDistanceInMeters(merchandiserLocation, geniusCoords);
 
-            if (distance > 500) { // Umbral de 500m
+            if (distance > 500) {
                 setError(`La ubicación capturada no coincide con la dirección ingresada (diferencia de ${Math.round(distance)} metros). Verifique los datos.`);
                 setIsSubmitting(false);
                 return;
@@ -91,7 +87,7 @@ const AddPosForm = ({ onClose }) => {
                 zone: zone,
                 address: address,
                 coordinates: merchandiserLocation,
-                gpsStatus: 'verified', // Se guarda como verificado gracias a la doble validación
+                gpsStatus: 'verified',
                 visitInterval: 7,
                 active: true, 
                 createdAt: serverTimestamp(), 
@@ -99,8 +95,8 @@ const AddPosForm = ({ onClose }) => {
             onClose();
 
         } catch (err) {
-            console.error("Error adding new POS:", err);
-            setError('No se pudo agregar el punto de venta. Hubo un error en la validación.');
+            console.error("Error en la doble verificación:", err);
+            setError(err.message || 'No se pudo validar la dirección. Inténtelo de nuevo.');
         } finally {
             setIsSubmitting(false);
         }
@@ -133,4 +129,3 @@ const AddPosForm = ({ onClose }) => {
 };
 
 export default AddPosForm;
-

@@ -1,82 +1,54 @@
-// RUTA: src/hooks/useVisionAPI.js
-
 import { useState } from 'react';
-import { VISION_API_KEY } from '../Firebase/config.js';
-
-const parseDateFromText = (text) => {
-    // Expresión regular para encontrar fechas en formato D/M/Y, DD/MM/YY, etc.
-    const regex = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/;
-    const match = text.match(regex);
-
-    if (match) {
-        let day = match[1].padStart(2, '0');
-        let month = match[2].padStart(2, '0');
-        let year = match[3];
-
-        // Convierte años de 2 dígitos a 4 dígitos (ej: 25 -> 2025)
-        if (year.length === 2) {
-            year = `20${year}`;
-        }
-        
-        // Retorna la fecha en el formato que el <input type="date"> necesita
-        return `${year}-${month}-${day}`;
-    }
-    return null;
-};
-
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export const useVisionAPI = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [error, setError] = useState(null);
 
-    const processImageForDate = async (base64Image) => {
+    /**
+     * Procesa una imagen para detectar una fecha de vencimiento llamando a una Cloud Function segura.
+     * @param {string} imageBase64 - La imagen capturada, codificada en base64.
+     * @returns {Promise<string|null>} La fecha encontrada en formato de texto, o null si no se encuentra.
+     */
+    const processImageForDate = async (imageBase64) => {
         setIsProcessing(true);
         setError(null);
 
-        const requestBody = {
-            requests: [
-                {
-                    image: {
-                        content: base64Image.split(',')[1], // Quita el prefijo 'data:image/jpeg;base64,'
-                    },
-                    features: [
-                        {
-                            type: 'TEXT_DETECTION',
-                        },
-                    ],
-                },
-            ],
-        };
+        // Quitamos el prefijo 'data:image/jpeg;base64,' si existe, ya que la Cloud Function
+        // espera solo los datos de la imagen.
+        const pureBase64 = imageBase64.split(',')[1] || imageBase64;
 
         try {
-            const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${VISION_API_KEY}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody),
-            });
+            // Inicializamos la conexión con las Cloud Functions
+            const functions = getFunctions();
+            // Apuntamos a nuestra función específica 'processImageForDate'
+            const callVisionAPI = httpsCallable(functions, 'processImageForDate');
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                console.error("Error en la respuesta de Vision API:", errorData);
-                throw new Error('Error en la respuesta de la API de Vision');
-            }
+            // Enviamos la imagen a la Cloud Function
+            const result = await callVisionAPI({ imageBase64: pureBase64 });
+            
+            // La fecha viene en la propiedad 'date' del objeto 'data' de la respuesta
+            const detectedDate = result.data?.date;
 
-            const data = await response.json();
-            const detection = data.responses[0]?.fullTextAnnotation;
-
-            if (detection) {
-                const detectedDate = parseDateFromText(detection.text);
-                if (detectedDate) {
-                    return detectedDate; // ¡Éxito! Retornamos la fecha formateada
-                } else {
-                    throw new Error('No se encontró una fecha con formato DD/MM/AAAA en la imagen.');
+            if (detectedDate) {
+                // La Cloud Function ya nos devuelve la fecha. Para que sea compatible con
+                // el input de tipo 'date', la formateamos a YYYY-MM-DD.
+                const parts = detectedDate.match(/(\d{1,2})[\s\.\/-](\d{1,2})[\s\.\/-](\d{2,4})/);
+                if (parts) {
+                    let day = parts[1].padStart(2, '0');
+                    let month = parts[2].padStart(2, '0');
+                    let year = parts[3];
+                    if (year.length === 2) year = `20${year}`;
+                    return `${year}-${month}-${day}`;
                 }
+                return detectedDate; // Devolvemos el formato original como fallback
             } else {
-                throw new Error('No se detectó texto en la imagen.');
+                throw new Error("No se encontró un formato de fecha válido.");
             }
+
         } catch (err) {
-            console.error("Error en el hook useVisionAPI:", err);
-            setError(err.message);
+            console.error("Error al llamar a la Cloud Function de Vision:", err);
+            setError(err.message || "Un error desconocido ocurrió.");
             return null;
         } finally {
             setIsProcessing(false);
@@ -85,3 +57,4 @@ export const useVisionAPI = () => {
 
     return { processImageForDate, isProcessing, error };
 };
+

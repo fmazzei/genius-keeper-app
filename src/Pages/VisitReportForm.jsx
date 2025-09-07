@@ -11,7 +11,7 @@ import NewEntrantModal from '@/Components/NewEntrantModal.jsx';
 import { useVisionAPI } from '@/hooks/useVisionAPI.js';
 
 // --- Constantes y Utilidades ---
-const TOTAL_STEPS = 5; // MODIFICADO: Ahora son 5 pasos en total
+const TOTAL_STEPS = 5;
 const GPS_RADIUS_METERS = 500;
 const SHELF_LOCATIONS = [ { id: 'ojos', label: 'Nivel Ojos (Zona Caliente)' }, { id: 'manos', label: 'Nivel Manos (Zona Tibia)' }, { id: 'superior', label: 'Nivel Superior (Zona Fría)' }, { id: 'inferior', label: 'Nivel Inferior (Zona Fría)' } ];
 const ADJACENT_CATEGORIES = [ { id: 'Quesos crema', label: 'Quesos crema' }, { id: 'Quesos de Cabra', label: 'Quesos de Cabra' }, { id: 'Delicatessen', label: 'Delicatessen' }, { id: 'Nevera Charcutería', label: 'Nevera Charcutería' } ];
@@ -49,7 +49,6 @@ const SubmissionSuccess = ({ onFinish, isOffline }) => {
     );
 };
 
-// --- NUEVO: Componente para el Paso 1: Selección de Repartidor ---
 const Step1_ReporterSelection = ({ reporters, loadingReporters, selectedReporterName, setSelectedReporterName }) => {
     const [otherName, setOtherName] = useState('');
     const [showOtherInput, setShowOtherInput] = useState(false);
@@ -108,257 +107,34 @@ const Step1_ReporterSelection = ({ reporters, loadingReporters, selectedReporter
     );
 };
 
-
-// --- Componente Principal del Formulario ---
-const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialData = null }) => {
-    const [currentStep, setCurrentStep] = useState(1);
-    const [submissionState, setSubmissionState] = useState('form');
-    const [isOfflineSave, setIsOfflineSave] = useState(false);
-    const [report, setReport] = useState({ reporterName: '', price: '', orderQuantity: '', stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
-    const [uiState, setUiState] = useState({ statusMessage: '', errorMessage: '', gpsStatus: 'checking', initialGpsValid: false });
-    const [reportDate, setReportDate] = useState(new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }));
-    const [isStepValid, setIsStepValid] = useState(false);
-    
-    const [reporters, setReporters] = useState([]);
-    const [loadingReporters, setLoadingReporters] = useState(true);
-
-    useEffect(() => {
-        if (isReadOnly) {
-            setLoadingReporters(false);
-            return;
-        }
-        const q = query(collection(db, "reporters"), where("active", "==", true));
-        const unsub = onSnapshot(q, (snapshot) => {
-            const reportersData = snapshot.docs.map(doc => doc.data().name);
-            setReporters(reportersData);
-            setLoadingReporters(false);
-        }, (error) => {
-            console.error("Error cargando repartidores:", error);
-            setLoadingReporters(false);
-        });
-        return () => unsub();
-    }, [isReadOnly]);
-
-    useEffect(() => {
-        if (initialData) {
-            setReport({
-                reporterName: initialData.userName || '',
-                price: initialData.price || '',
-                orderQuantity: initialData.orderQuantity || '',
-                stockout: initialData.stockout || false,
-                batches: initialData.batches || [],
-                shelfLocation: initialData.shelfLocation || '',
-                adjacentCategory: initialData.adjacentCategory || '',
-                popStatus: initialData.popStatus || '',
-                facing: initialData.facing || '',
-                competition: initialData.competition || [],
-                newEntrants: initialData.newEntrants || [],
-                notes: initialData.notes || ''
-            });
-            if (initialData.createdAt && initialData.createdAt.toDate) {
-                const date = initialData.createdAt.toDate();
-                setReportDate(date.toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }));
-            }
-        }
-    }, [initialData]);
-
-    useEffect(() => {
-        if (isReadOnly) {
-            return;
-        };
-        const haversineDistance = (coords1, coords2) => {
-            if (!coords1 || !coords2) return Infinity;
-            const toRad = (x) => (x * Math.PI) / 180;
-            const R = 6371;
-            const dLat = toRad(coords2.lat - coords1.lat);
-            const dLon = toRad(coords2.lng - coords1.lng);
-            const lat1 = toRad(coords1.lat);
-            const lat2 = toRad(coords2.lat);
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c * 1000;
-        };
-        if (!pos?.location) { setUiState(prev => ({ ...prev, gpsStatus: 'no_pos_location', initialGpsValid: true })); return; }
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
-                const distance = haversineDistance(userLocation, pos.location);
-                if (distance > GPS_RADIUS_METERS) { setUiState(prev => ({ ...prev, gpsStatus: 'invalid_distance', initialGpsValid: false })); } 
-                else { setUiState(prev => ({ ...prev, gpsStatus: 'valid', initialGpsValid: true })); }
-            },
-            () => { setUiState(prev => ({ ...prev, gpsStatus: 'error', initialGpsValid: false })); },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
-    }, [pos?.location, isReadOnly]);
-    
-    useEffect(() => {
-        if (isReadOnly) {
-            setIsStepValid(true);
-            return;
-        }
-        let isValid = false;
-        switch (currentStep) {
-            case 1: isValid = report.reporterName !== ''; break;
-            case 2: isValid = report.batches.length > 0 || report.stockout; break;
-            case 3: isValid = report.price !== ''; break;
-            case 4: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
-            case 5: isValid = true; break;
-            default: isValid = false;
-        }
-        setIsStepValid(isValid);
-    }, [currentStep, report, isReadOnly]);
-
-    const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, TOTAL_STEPS));
-    const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 1));
-
-    const handlers = useSwipeable({
-        onSwipedLeft: () => { if (isStepValid && currentStep < TOTAL_STEPS && !isReadOnly) handleNext(); },
-        onSwipedRight: () => { if (currentStep > 1 && !isReadOnly) handleBack(); },
-        preventScrollOnSwipe: true,
-        trackMouse: true,
-    });
-    
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (isReadOnly) return;
-        setSubmissionState('submitting');
-        const inventoryLevel = report.batches.reduce((sum, batch) => sum + batch.quantity, 0);
-        
-        const finalReportData = {
-            price: Number(report.price) || 0,
-            orderQuantity: Number(report.orderQuantity) || 0,
-            stockout: report.stockout || false,
-            batches: report.batches || [],
-            shelfLocation: report.shelfLocation || null,
-            adjacentCategory: report.adjacentCategory || null,
-            popStatus: report.popStatus || null,
-            facing: Number(report.facing) || 0,
-            competition: report.competition || [],
-            newEntrants: report.newEntrants || [],
-            notes: report.notes || '',
-            userId: user.uid,
-            userName: report.reporterName, // Guardar el repartidor seleccionado
-            posId: pos.id,
-            posName: pos.name,
-            posZone: pos.zone || 'N/A',
-            location: pos.location || null,
-            inventoryLevel: inventoryLevel,
-        };
-        
-        if (navigator.onLine) {
-            try {
-                await addDoc(collection(db, "visit_reports"), {
-                    ...finalReportData,
-                    createdAt: serverTimestamp(),
-                });
-                setIsOfflineSave(false);
-                setSubmissionState('success');
-            } catch (err) {
-                console.error("Error al enviar el reporte a Firestore (online):", err);
-                setUiState({ ...uiState, errorMessage: 'Error de envío online. Guardando localmente...' });
-                await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
-                setIsOfflineSave(true);
-                setSubmissionState('success');
-            }
-        } else {
-            try {
-                await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
-                setIsOfflineSave(true);
-                setSubmissionState('success');
-            } catch (err) {
-                console.error("Error al guardar el reporte localmente:", err);
-                setUiState({ ...uiState, errorMessage: 'No se pudo guardar el reporte en el dispositivo.' });
-                setSubmissionState('form');
-            }
-        }
-    };
-    
-    const renderStepContent = () => {
-        const stepProps = { report, setReport, isReadOnly };
-        switch (currentStep) {
-            case 1: return <Step1_ReporterSelection reporters={reporters} loadingReporters={loadingReporters} selectedReporterName={report.reporterName} setSelectedReporterName={(name) => setReport(prev => ({...prev, reporterName: name}))} />;
-            case 2: return <Step2_Inventory {...stepProps} />;
-            case 3: return <Step3_Sales {...stepProps} />;
-            case 4: return <Step4_Execution {...stepProps} />;
-            case 5: return <Step5_Intel {...stepProps} />;
-            default: return <div>Paso no encontrado</div>;
-        }
-    };
-
-    if (submissionState === 'success') return <SubmissionSuccess onFinish={backToList} isOffline={isOfflineSave} />;
-
-    const GpsStatusIndicator = () => {
-        const statuses = {
-            checking: { text: 'Verificando GPS...', color: 'bg-yellow-100 text-yellow-800' },
-            valid: { text: 'Ubicación Verificada', color: 'bg-green-100 text-green-800' },
-            invalid_distance: { text: `Fuera de rango (${GPS_RADIUS_METERS}m)`, color: 'bg-red-100 text-red-800' },
-            error: { text: 'Error de GPS', color: 'bg-red-100 text-red-800' },
-            no_pos_location: { text: 'PDV sin GPS', color: 'bg-yellow-100 text-yellow-800' },
-        };
-        const status = statuses[uiState.gpsStatus] || statuses.error;
-        return ( <div className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-2 ${status.color}`}><MapPin size={14}/> {status.text}</div> );
-    };
-
-    const isSubmitDisabled = submissionState === 'submitting' || (!uiState.initialGpsValid && navigator.onLine);
-
-    return (
-        <div className="max-w-4xl mx-auto p-2 sm:p-4 md:p-6 bg-slate-50 animate-fade-in relative pb-24">
-            <header className="flex items-center justify-between mb-4">
-                <div className="flex items-center min-w-0">
-                    <button onClick={backToList} className="p-2 rounded-full hover:bg-slate-200 mr-2"><ArrowLeft /></button>
-                    <div className="min-w-0">
-                        <h2 className="text-lg sm:text-2xl font-bold text-slate-800 truncate">{initialData?.posName || pos?.name}</h2>
-                        <p className="text-sm text-slate-500">{reportDate}</p>
-                    </div>
-                </div>
-                {!isReadOnly && <div className="flex-shrink-0 ml-2"><GpsStatusIndicator /></div>}
-            </header>
-            
-            {!isReadOnly && <ProgressBar currentStep={currentStep} totalSteps={TOTAL_STEPS} />}
-            
-            <div {...handlers} className="my-4 sm:my-6">
-                 {uiState.errorMessage && <div className="bg-red-100 text-red-700 p-3 rounded-md mb-4">{uiState.errorMessage}</div>}
-                 {renderStepContent()}
-            </div>
-            
-            {!isReadOnly && (
-                <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-lg md:absolute md:bottom-4 md:left-4 md:right-4 md:rounded-lg md:border">
-                    <div className="max-w-4xl mx-auto flex items-center justify-between">
-                        <button onClick={handleBack} disabled={currentStep === 1} className="flex items-center gap-2 bg-white border border-slate-300 text-slate-800 font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:opacity-50">
-                            <ChevronLeft size={20} />
-                            <span className="hidden sm:inline">Atrás</span>
-                        </button>
-                        {currentStep < TOTAL_STEPS ? (
-                            <button onClick={handleNext} disabled={!isStepValid} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-slate-400">
-                                <span className="hidden sm:inline">Siguiente</span>
-                                <ChevronRight size={20} />
-                            </button>
-                        ) : (
-                            <button onClick={handleSubmit} disabled={isSubmitDisabled} className="flex items-center gap-2 bg-green-600 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-green-300">
-                                <Send size={20} /> {submissionState === 'submitting' ? 'Enviando...' : 'Finalizar'}
-                            </button>
-                        )}
-                    </div>
-                </footer>
-            )}
-        </div>
-    );
-};
-
-// --- Sub-componentes de Pasos ---
 const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
     const [currentDate, setCurrentDate] = useState('');
     const [isScannerOpen, setScannerOpen] = useState(false);
     const [isNumpadOpen, setNumpadOpen] = useState(false);
     const [scannerStatus, setScannerStatus] = useState('');
+    
     const { processImageForDate, isProcessing } = useVisionAPI();
+
     const handleStockoutToggle = () => { if(!isReadOnly) { const isNowStockout = !report.stockout; setReport(prev => ({ ...prev, stockout: isNowStockout, batches: isNowStockout ? [] : prev.batches })); }};
+    
     const handleScanComplete = async (imageData) => {
         setScannerStatus("Analizando imagen...");
-        const foundDate = await processImageForDate(imageData);
-        if (foundDate) { setCurrentDate(foundDate); setScannerOpen(false); setScannerStatus(''); } 
-        else { setScannerStatus("No se encontró fecha. Intenta de nuevo."); setTimeout(() => { setScannerStatus(''); setScannerOpen(false); }, 2000); }
+        try {
+            const foundDate = await processImageForDate(imageData);
+            if (foundDate) {
+                setCurrentDate(foundDate);
+                setScannerOpen(false);
+                setScannerStatus('');
+            } else {
+                setScannerStatus("No se encontró fecha. Intenta de nuevo.");
+                setTimeout(() => { setScannerStatus(''); setScannerOpen(false); }, 2500);
+            }
+        } catch (error) {
+            setScannerStatus(error.message || "Error al procesar. Intenta de nuevo.");
+            setTimeout(() => { setScannerStatus(''); setScannerOpen(false); }, 2500);
+        }
     };
+    
     const handleNumpadConfirm = (quantity) => { if(!isReadOnly) { if (currentDate && quantity > 0) { setReport(prev => ({ ...prev, batches: [...prev.batches, { expiryDate: currentDate, quantity: parseInt(quantity) }] })); setCurrentDate(''); } setNumpadOpen(false); }};
     const handleRemoveBatch = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, batches: prev.batches.filter((_, i) => i !== index) })); };
     const openNumpad = () => { if(!isReadOnly) { if (currentDate) setNumpadOpen(true); else alert("Primero selecciona o escanea una fecha."); }};
@@ -395,8 +171,8 @@ const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
                     </div>
                 </div>
             </div>
-            {!isReadOnly && <CameraScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onCapture={handleScanComplete} onStatusChange={setScannerStatus}/>}
-            {isProcessing && <div className="fixed inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50"><Loader className="animate-spin h-12 w-12 text-brand-blue"/> <p className="mt-4 font-semibold">{scannerStatus || "Procesando..."}</p></div>}
+            {!isReadOnly && <CameraScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onCapture={handleScanComplete} />}
+            {isProcessing && <div className="fixed inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50"><Loader className="animate-spin h-12 w-12 text-brand-blue"/> <p className="mt-4 font-semibold">{scannerStatus || "Procesando imagen..."}</p></div>}
             {!isReadOnly && <NumericKeypadModal isOpen={isNumpadOpen} onClose={() => setNumpadOpen(false)} onConfirm={handleNumpadConfirm} title={`Cantidad para lote ${currentDate}`}/>}
         </FormSection>
     );
@@ -522,4 +298,247 @@ const Step5_Intel = ({ report, setReport, isReadOnly }) => {
     );
 };
 
+// --- Componente Principal del Formulario ---
+const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialData = null }) => {
+    const [currentStep, setCurrentStep] = useState(1);
+    const [submissionState, setSubmissionState] = useState('form');
+    const [isOfflineSave, setIsOfflineSave] = useState(false);
+    const [report, setReport] = useState({ reporterName: '', price: '', orderQuantity: '', stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
+    const [uiState, setUiState] = useState({ statusMessage: '', errorMessage: '', gpsStatus: 'checking', initialGpsValid: false });
+    const [reportDate, setReportDate] = useState(new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }));
+    const [isStepValid, setIsStepValid] = useState(false);
+    const [reporters, setReporters] = useState([]);
+    const [loadingReporters, setLoadingReporters] = useState(true);
+
+    useEffect(() => {
+        if (isReadOnly) {
+            setLoadingReporters(false);
+            return;
+        }
+        const q = query(collection(db, "reporters"), where("active", "==", true));
+        const unsub = onSnapshot(q, (snapshot) => {
+            const reportersData = snapshot.docs.map(doc => doc.data().name);
+            setReporters(reportersData);
+            setLoadingReporters(false);
+        }, (error) => {
+            console.error("Error cargando repartidores:", error);
+            setLoadingReporters(false);
+        });
+        return () => unsub();
+    }, [isReadOnly]);
+
+    useEffect(() => {
+        if (initialData) {
+            setReport({
+                reporterName: initialData.userName || '',
+                price: initialData.price || '',
+                orderQuantity: initialData.orderQuantity || '',
+                stockout: initialData.stockout || false,
+                batches: initialData.batches || [],
+                shelfLocation: initialData.shelfLocation || '',
+                adjacentCategory: initialData.adjacentCategory || '',
+                popStatus: initialData.popStatus || '',
+                facing: initialData.facing || '',
+                competition: initialData.competition || [],
+                newEntrants: initialData.newEntrants || [],
+                notes: initialData.notes || ''
+            });
+            if (initialData.createdAt && initialData.createdAt.toDate) {
+                const date = initialData.createdAt.toDate();
+                setReportDate(date.toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }));
+            }
+        }
+    }, [initialData]);
+
+    useEffect(() => {
+        if (isReadOnly) {
+            return;
+        };
+        const haversineDistance = (coords1, coords2) => {
+            if (!coords1 || !coords2) return Infinity;
+            const toRad = (x) => (x * Math.PI) / 180;
+            const R = 6371e3; // Metros
+            const dLat = toRad(coords2.lat - coords1.lat);
+            const dLon = toRad(coords2.lng - coords1.lng);
+            const lat1 = toRad(coords1.lat);
+            const lat2 = toRad(coords2.lat);
+            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        };
+        
+        // --- CORRECCIÓN CRÍTICA: Se usa 'coordinates' en lugar de 'location' ---
+        if (!pos?.coordinates) { 
+            setUiState(prev => ({ ...prev, gpsStatus: 'no_pos_location', initialGpsValid: true })); 
+            return; 
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
+                const distance = haversineDistance(userLocation, pos.coordinates);
+                if (distance > GPS_RADIUS_METERS) { setUiState(prev => ({ ...prev, gpsStatus: 'invalid_distance', initialGpsValid: false })); } 
+                else { setUiState(prev => ({ ...prev, gpsStatus: 'valid', initialGpsValid: true })); }
+            },
+            () => { setUiState(prev => ({ ...prev, gpsStatus: 'error', initialGpsValid: false })); },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    }, [pos?.coordinates, isReadOnly]);
+    
+    useEffect(() => {
+        if (isReadOnly) {
+            setIsStepValid(true);
+            return;
+        }
+        let isValid = false;
+        switch (currentStep) {
+            case 1: isValid = report.reporterName !== ''; break;
+            case 2: isValid = report.batches.length > 0 || report.stockout; break;
+            case 3: isValid = report.price !== ''; break;
+            case 4: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
+            case 5: isValid = true; break;
+            default: isValid = false;
+        }
+        setIsStepValid(isValid);
+    }, [currentStep, report, isReadOnly]);
+
+    const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, TOTAL_STEPS));
+    const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 1));
+
+    const handlers = useSwipeable({
+        onSwipedLeft: () => { if (isStepValid && currentStep < TOTAL_STEPS && !isReadOnly) handleNext(); },
+        onSwipedRight: () => { if (currentStep > 1 && !isReadOnly) handleBack(); },
+        preventScrollOnSwipe: true,
+        trackMouse: true,
+    });
+    
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (isReadOnly) return;
+        setSubmissionState('submitting');
+        const inventoryLevel = report.batches.reduce((sum, batch) => sum + batch.quantity, 0);
+        
+        const finalReportData = {
+            price: Number(report.price) || 0,
+            orderQuantity: Number(report.orderQuantity) || 0,
+            stockout: report.stockout || false,
+            batches: report.batches || [],
+            shelfLocation: report.shelfLocation || null,
+            adjacentCategory: report.adjacentCategory || null,
+            popStatus: report.popStatus || null,
+            facing: Number(report.facing) || 0,
+            competition: report.competition || [],
+            newEntrants: report.newEntrants || [],
+            notes: report.notes || '',
+            userId: user.uid,
+            userName: report.reporterName,
+            posId: pos.id,
+            posName: pos.name,
+            posZone: pos.zone || 'N/A',
+            // --- CORRECCIÓN CRÍTICA: Guardamos 'coordinates' en lugar de 'location' ---
+            coordinates: pos.coordinates || null,
+            inventoryLevel: inventoryLevel,
+        };
+        
+        if (navigator.onLine) {
+            try {
+                await addDoc(collection(db, "visit_reports"), {
+                    ...finalReportData,
+                    createdAt: serverTimestamp(),
+                });
+                setIsOfflineSave(false);
+                setSubmissionState('success');
+            } catch (err) {
+                console.error("Error al enviar el reporte a Firestore (online):", err);
+                setUiState({ ...uiState, errorMessage: 'Error de envío online. Guardando localmente...' });
+                await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
+                setIsOfflineSave(true);
+                setSubmissionState('success');
+            }
+        } else {
+            try {
+                await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
+                setIsOfflineSave(true);
+                setSubmissionState('success');
+            } catch (err) {
+                console.error("Error al guardar el reporte localmente:", err);
+                setUiState({ ...uiState, errorMessage: 'No se pudo guardar el reporte en el dispositivo.' });
+                setSubmissionState('form');
+            }
+        }
+    };
+    
+    const renderStepContent = () => {
+        const stepProps = { report, setReport, isReadOnly };
+        switch (currentStep) {
+            case 1: return <Step1_ReporterSelection reporters={reporters} loadingReporters={loadingReporters} selectedReporterName={report.reporterName} setSelectedReporterName={(name) => setReport(prev => ({...prev, reporterName: name}))} />;
+            case 2: return <Step2_Inventory {...stepProps} />;
+            case 3: return <Step3_Sales {...stepProps} />;
+            case 4: return <Step4_Execution {...stepProps} />;
+            case 5: return <Step5_Intel {...stepProps} />;
+            default: return <div>Paso no encontrado</div>;
+        }
+    };
+
+    if (submissionState === 'success') return <SubmissionSuccess onFinish={backToList} isOffline={isOfflineSave} />;
+
+    const GpsStatusIndicator = () => {
+        const statuses = {
+            checking: { text: 'Verificando GPS...', color: 'bg-yellow-100 text-yellow-800' },
+            valid: { text: 'Ubicación Verificada', color: 'bg-green-100 text-green-800' },
+            invalid_distance: { text: `Fuera de rango (${GPS_RADIUS_METERS}m)`, color: 'bg-red-100 text-red-800' },
+            error: { text: 'Error de GPS', color: 'bg-red-100 text-red-800' },
+            no_pos_location: { text: 'PDV sin GPS', color: 'bg-yellow-100 text-yellow-800' },
+        };
+        const status = statuses[uiState.gpsStatus] || statuses.error;
+        return ( <div className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-2 ${status.color}`}><MapPin size={14}/> {status.text}</div> );
+    };
+
+    const isSubmitDisabled = submissionState === 'submitting' || (!uiState.initialGpsValid && navigator.onLine);
+
+    return (
+        <div className="max-w-4xl mx-auto p-2 sm:p-4 md:p-6 bg-slate-50 animate-fade-in relative pb-24">
+            <header className="flex items-center justify-between mb-4">
+                <div className="flex items-center min-w-0">
+                    <button onClick={backToList} className="p-2 rounded-full hover:bg-slate-200 mr-2"><ArrowLeft /></button>
+                    <div className="min-w-0">
+                        <h2 className="text-lg sm:text-2xl font-bold text-slate-800 truncate">{initialData?.posName || pos?.name}</h2>
+                        <p className="text-sm text-slate-500">{reportDate}</p>
+                    </div>
+                </div>
+                {!isReadOnly && <div className="flex-shrink-0 ml-2"><GpsStatusIndicator /></div>}
+            </header>
+            
+            {!isReadOnly && <ProgressBar currentStep={currentStep} totalSteps={TOTAL_STEPS} />}
+            
+            <div {...handlers} className="my-4 sm:my-6">
+                 {uiState.errorMessage && <div className="bg-red-100 text-red-700 p-3 rounded-md mb-4">{uiState.errorMessage}</div>}
+                 {renderStepContent()}
+            </div>
+            
+            {!isReadOnly && (
+                <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-lg md:absolute md:bottom-4 md:left-4 md:right-4 md:rounded-lg md:border">
+                    <div className="max-w-4xl mx-auto flex items-center justify-between">
+                        <button onClick={handleBack} disabled={currentStep === 1} className="flex items-center gap-2 bg-white border border-slate-300 text-slate-800 font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:opacity-50">
+                            <ChevronLeft size={20} />
+                            <span className="hidden sm:inline">Atrás</span>
+                        </button>
+                        {currentStep < TOTAL_STEPS ? (
+                            <button onClick={handleNext} disabled={!isStepValid} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-slate-400">
+                                <span className="hidden sm:inline">Siguiente</span>
+                                <ChevronRight size={20} />
+                            </button>
+                        ) : (
+                            <button onClick={handleSubmit} disabled={isSubmitDisabled} className="flex items-center gap-2 bg-green-600 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-green-300">
+                                <Send size={20} /> {submissionState === 'submitting' ? 'Enviando...' : 'Finalizar'}
+                            </button>
+                        )}
+                    </div>
+                </footer>
+            )}
+        </div>
+    );
+};
+
 export default VisitReportForm;
+
