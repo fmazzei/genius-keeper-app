@@ -9,6 +9,9 @@ import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
 import NewEntrantModal from '@/Components/NewEntrantModal.jsx';
 import { useVisionAPI } from '@/hooks/useVisionAPI.js';
+// --- OPTIMIZACIÓN 1/4: Importamos la librería de compresión ---
+import imageCompression from 'browser-image-compression';
+
 
 // --- Constantes y Utilidades ---
 const TOTAL_STEPS = 5;
@@ -114,24 +117,45 @@ const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
     const [scannerStatus, setScannerStatus] = useState('');
     
     const { processImageForDate, isProcessing } = useVisionAPI();
+    // --- OPTIMIZACIÓN 2/4: Añadimos un estado local para la fase de compresión ---
+    const [isOptimizing, setIsOptimizing] = useState(false);
 
     const handleStockoutToggle = () => { if(!isReadOnly) { const isNowStockout = !report.stockout; setReport(prev => ({ ...prev, stockout: isNowStockout, batches: isNowStockout ? [] : prev.batches })); }};
     
-    const handleScanComplete = async (imageData) => {
-        setScannerStatus("Analizando imagen...");
+    // --- OPTIMIZACIÓN 3/4: Modificamos la función para comprimir la imagen ANTES de enviarla ---
+    const handleScanComplete = async (imageFile) => {
+        if (!imageFile) return;
+
+        setIsOptimizing(true);
+        setScannerStatus("Optimizando imagen...");
+        setScannerOpen(false); // Cerramos el modal de la cámara inmediatamente
+
+        const options = {
+            maxSizeMB: 0.8,         // Reducimos la imagen a un máximo de 0.8 MB
+            maxWidthOrHeight: 1280, // Redimensionamos a un máximo de 1280px de ancho o alto
+            useWebWorker: true,     // Usamos Web Worker para no bloquear la UI
+        };
+
         try {
-            const foundDate = await processImageForDate(imageData);
+            const compressedFile = await imageCompression(imageFile, options);
+            
+            setIsOptimizing(false); // Terminó la optimización, ahora empieza el análisis
+            setScannerStatus("Analizando fecha..."); // Actualizamos el mensaje para el usuario
+
+            const foundDate = await processImageForDate(compressedFile);
+            
             if (foundDate) {
                 setCurrentDate(foundDate);
-                setScannerOpen(false);
-                setScannerStatus('');
             } else {
                 setScannerStatus("No se encontró fecha. Intenta de nuevo.");
-                setTimeout(() => { setScannerStatus(''); setScannerOpen(false); }, 2500);
+                setTimeout(() => setScannerStatus(''), 2500);
             }
         } catch (error) {
+            console.error("Error en el proceso de escaneo:", error);
             setScannerStatus(error.message || "Error al procesar. Intenta de nuevo.");
-            setTimeout(() => { setScannerStatus(''); setScannerOpen(false); }, 2500);
+            setTimeout(() => setScannerStatus(''), 2500);
+        } finally {
+            setIsOptimizing(false); // Nos aseguramos de apagar el indicador
         }
     };
     
@@ -172,7 +196,8 @@ const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
                 </div>
             </div>
             {!isReadOnly && <CameraScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onCapture={handleScanComplete} />}
-            {isProcessing && <div className="fixed inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50"><Loader className="animate-spin h-12 w-12 text-brand-blue"/> <p className="mt-4 font-semibold">{scannerStatus || "Procesando imagen..."}</p></div>}
+            {/* --- OPTIMIZACIÓN 4/4: El overlay ahora se muestra durante la compresión Y el análisis --- */}
+            {(isProcessing || isOptimizing) && <div className="fixed inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50"><Loader className="animate-spin h-12 w-12 text-brand-blue"/> <p className="mt-4 font-semibold">{scannerStatus || "Procesando..."}</p></div>}
             {!isReadOnly && <NumericKeypadModal isOpen={isNumpadOpen} onClose={() => setNumpadOpen(false)} onConfirm={handleNumpadConfirm} title={`Cantidad para lote ${currentDate}`}/>}
         </FormSection>
     );
@@ -541,4 +566,3 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
 };
 
 export default VisitReportForm;
-

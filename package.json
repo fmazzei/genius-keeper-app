@@ -12,6 +12,7 @@
   "dependencies": {
     "@react-google-maps/api": "^2.20.7",
     "apexcharts": "^5.3.4",
+    "browser-image-compression": "^2.0.2",
     "dexie": "^4.0.7",
     "dexie-react-hooks": "^1.1.7",
     "firebase": "^10.12.2",
