@@ -1,10 +1,10 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const axios = require("axios");
-const vision = require("@google-cloud/vision"); // <-- 1. AÑADIMOS LA LIBRERÍA DE VISION
+const vision = require("@google-cloud/vision");
 
 admin.initializeApp();
-const visionClient = new vision.ImageAnnotatorClient(); // <-- 2. INICIALIZAMOS EL CLIENTE DE VISION
+const visionClient = new vision.ImageAnnotatorClient();
 
 // ===================================================================
 // FUNCIÓN HELPER PARA NOTIFICACIONES (SIN CAMBIOS)
@@ -196,6 +196,10 @@ exports.onReportDeleted = functions.firestore
         }
     });
 
+
+// ===================================================================
+// --- FUNCIÓN "GENIUS" PARA GEOCODIFICACIÓN (CON API KEY) ---
+// ===================================================================
 exports.geocodeAddress = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError(
@@ -210,8 +214,11 @@ exports.geocodeAddress = functions.https.onCall(async (data, context) => {
         "Se debe proporcionar una dirección.",
     );
   }
-  const API_KEY = "AIzaSyBHDWIi97uCNJNxEYP-FmG1M9YDijuSrIE";
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${API_KEY}`;
+  
+  // CLAVE DE API PARA GEOCODING
+  const API_KEY_GEOCODING = "AIzaSyBHDWIi97uCNJNxEYP-FmG1M9YDijuSrIE";
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${API_KEY_GEOCODING}`;
+
   try {
     const response = await axios.get(url);
     const geocodeData = response.data;
@@ -235,7 +242,7 @@ exports.geocodeAddress = functions.https.onCall(async (data, context) => {
 
 
 // ===================================================================
-// --- NUEVA FUNCIÓN "GENIUS VISION" PARA LEER FECHAS ---
+// --- FUNCIÓN "GENIUS VISION" PARA LEER FECHAS (CON API KEY) ---
 // ===================================================================
 exports.processImageForDate = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
@@ -245,28 +252,30 @@ exports.processImageForDate = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("invalid-argument", "Se debe proporcionar una imagen en formato base64.");
     }
 
-    // Preparamos la imagen para la API de Vision
-    const request = {
-        image: {
-            content: data.imageBase64,
-        },
-        features: [{ type: "TEXT_DETECTION" }],
+    // --- CLAVE DE API PARA VISION ---
+    const API_KEY_VISION = "AIzaSyA3lGxMdhX_vrFAXUQVxQVm-4hSYEFM3Ts";
+    const url = `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY_VISION}`;
+
+    const requestBody = {
+        requests: [{
+            image: { content: data.imageBase64 },
+            features: [{ type: "TEXT_DETECTION" }],
+        }],
     };
 
     try {
-        const [result] = await visionClient.textDetection(request);
-        const detections = result.textAnnotations;
+        const response = await axios.post(url, requestBody);
+        const visionData = response.data;
+        const detection = visionData.responses[0]?.fullTextAnnotation;
 
-        if (detections && detections.length > 0) {
-            const fullText = detections[0].description;
+        if (detection) {
+            const fullText = detection.text;
             functions.logger.log("Texto detectado:", fullText);
-
-            // Expresión regular para buscar fechas en formatos comunes (dd/mm/yy, dd-mm-yyyy, dd.mm.yy, etc.)
+            
             const dateRegex = /(\d{1,2})[\s\.\/-](\d{1,2})[\s\.\/-](\d{2,4})/g;
             const matches = fullText.match(dateRegex);
 
             if (matches && matches.length > 0) {
-                // Devolvemos la primera fecha que encontremos
                 functions.logger.log("Fecha encontrada:", matches[0]);
                 return { date: matches[0] };
             } else {
@@ -276,7 +285,7 @@ exports.processImageForDate = functions.https.onCall(async (data, context) => {
             throw new functions.https.HttpsError("not-found", "No se detectó texto en la imagen.");
         }
     } catch (error) {
-        functions.logger.error("Error en la API de Vision:", error);
+        functions.logger.error("Error en la API de Vision:", error.response?.data || error.message);
         throw new functions.https.HttpsError("internal", "Ocurrió un error al procesar la imagen.");
     }
 });
