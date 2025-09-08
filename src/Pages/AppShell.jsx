@@ -14,14 +14,17 @@ import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import TaskList from '@/Components/TaskList.jsx';
 import { TaskListSkeleton, PosListSkeleton } from '@/Components/SkeletonLoader.jsx';
 import Modal from '@/Components/Modal.jsx';
-import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx'; // <-- 1. IMPORTAMOS EL NUEVO MODAL INTELIGENTE
+import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx';
 
 // --- FUNCIÓN HELPER: CÁLCULO DE DISTANCIA GEOGRÁFICA ---
 const getDistanceInMeters = (coords1, coords2) => {
-    if (!coords1 || !coords2) return Infinity;
+    // Agregamos una validación extra para evitar NaN
+    if (!coords1 || !coords2 || typeof coords1.lat !== 'number' || typeof coords2.lat !== 'number') {
+        return Infinity;
+    }
 
     const toRad = (value) => (value * Math.PI) / 180;
-    const R = 6371e3; // Radio de la Tierra en metros
+    const R = 6371e3;
     const dLat = toRad(coords2.lat - coords1.lat);
     const dLng = toRad(coords2.lng - coords1.lng);
     const lat1 = toRad(coords1.lat);
@@ -31,7 +34,7 @@ const getDistanceInMeters = (coords1, coords2) => {
               Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     
-    return R * c; // Distancia en metros
+    return R * c;
 };
 
 // --- SUB-COMPONENTE: Modal de Alerta "Fuera de Rango" ---
@@ -41,7 +44,7 @@ const OutOfRangeModal = ({ pos, distance, onClose }) => (
             <AlertTriangle size={48} className="mx-auto text-yellow-500 mb-4" />
             <h3 className="text-lg font-bold text-slate-800">No te encuentras en el Punto de Venta</h3>
             <p className="text-slate-600 my-4">
-                Estás a aproximadamente <strong className="text-slate-900">{Math.round(distance)} metros</strong> de <strong className="text-slate-900">{pos.name}</strong>.
+                Estás a aproximadamente <strong className="text-slate-900">{isFinite(distance) ? Math.round(distance) : '---'} metros</strong> de <strong className="text-slate-900">{pos.name}</strong>.
             </p>
             <p className="text-sm text-slate-500">Por favor, acércate a la ubicación correcta para poder iniciar el reporte.</p>
             <div className="flex justify-center gap-4 mt-6">
@@ -59,8 +62,7 @@ const AppShell = ({ user, role, onLogout }) => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     
     const [appConfig, setAppConfig] = useState({ gpsRequired: true, gpsRange: 500 });
-    // --- 2. ESTADOS ACTUALIZADOS PARA EL NUEVO FLUJO ---
-    const [posToUpdateGps, setPosToUpdateGps] = useState(null); // Para PDV existentes sin GPS
+    const [posToUpdateGps, setPosToUpdateGps] = useState(null);
     const [isOutOfRangeModalOpen, setIsOutOfRangeModalOpen] = useState(false);
     const [posForRangeCheck, setPosForRangeCheck] = useState(null);
     const [currentDistance, setCurrentDistance] = useState(0);
@@ -92,14 +94,15 @@ const AppShell = ({ user, role, onLogout }) => {
             return;
         }
         
-        // --- 3. LÓGICA DE NAVEGACIÓN ACTUALIZADA ---
-        // Si el PDV existente NO tiene coordenadas, abrimos el nuevo modal inteligente de actualización.
-        if (!pos.coordinates) {
+        // --- LA CORRECCIÓN DEFINITIVA ---
+        // Esta nueva condición es mucho más estricta. Verifica no solo que `pos.coordinates` exista,
+        // sino también que contenga una latitud y longitud que sean números válidos.
+        if (!pos.coordinates || typeof pos.coordinates.lat !== 'number' || typeof pos.coordinates.lng !== 'number') {
             setPosToUpdateGps(pos);
             return;
         }
         
-        // Si el PDV SÍ tiene coordenadas, procedemos con la verificación de proximidad.
+        // Si las coordenadas son válidas, procedemos con la verificación de proximidad.
         setIsVerifyingLocation(true);
         try {
             const position = await new Promise((resolve, reject) => {
@@ -124,7 +127,6 @@ const AppShell = ({ user, role, onLogout }) => {
         }
     };
     
-    // Función que se llama cuando el nuevo modal de actualización confirma la ubicación
     const handleGpsUpdateConfirm = (posWithGps) => {
         setPosToUpdateGps(null);
         setSelectedPos(posWithGps);
@@ -247,7 +249,6 @@ const AppShell = ({ user, role, onLogout }) => {
                 </main>
             </div>
             
-            {/* --- 4. RENDERIZADO DEL NUEVO MODAL DE ACTUALIZACIÓN --- */}
             {posToUpdateGps && (
                 <UpdatePosGpsModal
                     pos={posToUpdateGps}
@@ -276,4 +277,3 @@ const AppShell = ({ user, role, onLogout }) => {
 };
 
 export default AppShell;
-

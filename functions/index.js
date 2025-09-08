@@ -6,6 +6,7 @@ const vision = require("@google-cloud/vision");
 admin.initializeApp();
 const visionClient = new vision.ImageAnnotatorClient();
 
+// ... (El resto de tus funciones, como sendNotificationToUser y los triggers, permanecen sin cambios) ...
 // ===================================================================
 // FUNCIÓN HELPER PARA NOTIFICACIONES (SIN CAMBIOS)
 // ===================================================================
@@ -196,28 +197,31 @@ exports.onReportDeleted = functions.firestore
         }
     });
 
-
 // ===================================================================
-// --- FUNCIÓN "GENIUS" PARA GEOCODIFICACIÓN (CON API KEY) ---
+// --- FUNCIÓN "GENIUS" PARA GEOCODIFICACIÓN (DINÁMICA Y SEGURA) ---
 // ===================================================================
 exports.geocodeAddress = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
-    throw new functions.https.HttpsError(
-        "unauthenticated",
-        "El usuario debe estar autenticado para realizar esta acción.",
-    );
+    throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
   }
-  const address = data.address;
+  const { address, location: userLocation } = data;
   if (!address) {
-    throw new functions.https.HttpsError(
-        "invalid-argument",
-        "Se debe proporcionar una dirección.",
-    );
+    throw new functions.https.HttpsError("invalid-argument", "Se debe proporcionar una dirección.");
   }
   
-  // CLAVE DE API PARA GEOCODING
-  const API_KEY_GEOCODING = "AIzaSyBHDWIi97uCNJNxEYP-FmG1M9YDijuSrIE";
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${API_KEY_GEOCODING}`;
+  const API_KEY_GEOCODING = functions.config().genius.maps_api_key;
+  if (!API_KEY_GEOCODING) {
+      throw new functions.https.HttpsError("internal", "La clave de API de Maps no está configurada.");
+  }
+
+  // --- CAMBIO CRÍTICO: Construimos una URL dinámica ---
+  let url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=ve&key=${API_KEY_GEOCODING}`;
+
+  // Si el frontend nos envía la ubicación del usuario, la usamos como una pista poderosa.
+  if (userLocation && userLocation.lat && userLocation.lng) {
+      const locationBias = `circle:50000@${userLocation.lat},${userLocation.lng}`; // Círculo de 50km de radio
+      url += `&locationbias=${encodeURIComponent(locationBias)}`;
+  }
 
   try {
     const response = await axios.get(url);
@@ -226,23 +230,17 @@ exports.geocodeAddress = functions.https.onCall(async (data, context) => {
       const location = geocodeData.results[0].geometry.location;
       return { lat: location.lat, lng: location.lng };
     } else {
-      throw new functions.https.HttpsError(
-          "not-found",
-          `No se encontraron coordenadas para la dirección: ${geocodeData.status}`,
-      );
+      throw new functions.https.HttpsError("not-found", `No se encontraron coordenadas para la dirección. Estado: ${geocodeData.status}`);
     }
   } catch (error) {
-    console.error("Error en la llamada a la API de Geocoding:", error);
-    throw new functions.https.HttpsError(
-        "internal",
-        "Ocurrió un error al contactar el servicio de geocodificación.",
-    );
+    functions.logger.error("Error en la llamada a la API de Geocoding:", error);
+    throw new functions.https.HttpsError("internal", "Ocurrió un error al contactar el servicio de geocodificación.");
   }
 });
 
 
 // ===================================================================
-// --- FUNCIÓN "GENIUS VISION" PARA LEER FECHAS (CON API KEY) ---
+// --- FUNCIÓN "GENIUS VISION" PARA LEER FECHAS (SEGURA) ---
 // ===================================================================
 exports.processImageForDate = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
@@ -252,8 +250,10 @@ exports.processImageForDate = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("invalid-argument", "Se debe proporcionar una imagen en formato base64.");
     }
 
-    // --- CLAVE DE API PARA VISION ---
-    const API_KEY_VISION = "AIzaSyA3lGxMdhX_vrFAXUQVxQVm-4hSYEFM3Ts";
+    const API_KEY_VISION = functions.config().genius.vision_api_key;
+    if (!API_KEY_VISION) {
+        throw new functions.https.HttpsError("internal", "La clave de API de Vision no está configurada.");
+    }
     const url = `https://vision.googleapis.com/v1/images:annotate?key=${API_KEY_VISION}`;
 
     const requestBody = {
@@ -272,7 +272,7 @@ exports.processImageForDate = functions.https.onCall(async (data, context) => {
             const fullText = detection.text;
             functions.logger.log("Texto detectado:", fullText);
             
-            const dateRegex = /(\d{1,2})[\s\.\/-](\d{1,2})[\s\.\/-](\d{2,4})/g;
+            const dateRegex = /(\d{1,2}[\s\.\/-]\d{1,2}[\s\.\/-]\d{2,4})|(\d{4}[\s\.\/-]\d{1,2}[\s\.\/-]\d{1,2})/g;
             const matches = fullText.match(dateRegex);
 
             if (matches && matches.length > 0) {
@@ -289,4 +289,3 @@ exports.processImageForDate = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError("internal", "Ocurrió un error al procesar la imagen.");
     }
 });
-

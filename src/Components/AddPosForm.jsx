@@ -5,10 +5,9 @@ import { db } from '../Firebase/config.js';
 import { MapPin, AlertTriangle, Check, Edit3 } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner.jsx';
 import Modal from './Modal.jsx';
-// --- 1. IMPORTAMOS NUESTRO NUEVO MAPA INTERACTIVO ---
 import LocationConfirmationMap from './LocationConfirmationMap.jsx';
 
-// --- FUNCIÓN HELPER: CÁLCULO DE DISTANCIA GEOGRÁFICA (sin cambios) ---
+// --- FUNCIÓN HELPER: CÁLCULO DE DISTANCIA GEOGRÁFICA ---
 const getDistanceInMeters = (coords1, coords2) => {
     if (!coords1 || !coords2) return Infinity;
     const toRad = (value) => (value * Math.PI) / 180;
@@ -23,7 +22,7 @@ const getDistanceInMeters = (coords1, coords2) => {
     return R * c;
 };
 
-// --- 2. SUB-COMPONENTE ACTUALIZADO: Modal ahora usa el mapa interactivo ---
+// --- SUB-COMPONENTE: Modal de Verificación con Mapa Interactivo ---
 const VerificationModal = ({ merchandiserCoords, geniusCoords, distance, onConfirm, onCorrect, onClose }) => {
     return (
         <Modal isOpen={true} onClose={onClose} title="Confirmar Ubicación del PDV">
@@ -33,21 +32,17 @@ const VerificationModal = ({ merchandiserCoords, geniusCoords, distance, onConfi
                 <p className="text-slate-600 my-2">
                     Tu ubicación (Pin Azul) y la encontrada por Genius (Pin Rojo) tienen una diferencia de <strong>{Math.round(distance)} metros</strong>.
                 </p>
-                
-                {/* --- AQUÍ ESTÁ LA MAGIA: Reemplazamos <img> por el componente del mapa --- */}
                 <div className="my-4">
                     <LocationConfirmationMap 
                         merchandiserCoords={merchandiserCoords}
                         geniusCoords={geniusCoords}
                     />
                 </div>
-                
                 <p className="text-sm text-slate-500 mb-6">Por favor, confirma cuál es la ubicación correcta o corrige la dirección.</p>
                 <div className="flex flex-col sm:flex-row justify-center gap-3">
                     <button onClick={() => onConfirm(merchandiserCoords)} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-colors">
                         <Check size={20}/> Usar Mi Ubicación (Pin Azul)
                     </button>
-                    {/* --- NUEVO: Botón para usar la ubicación de Genius --- */}
                     <button onClick={() => onConfirm(geniusCoords)} className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 transition-colors">
                         <MapPin size={20}/> Usar Ubicación Genius (Pin Rojo)
                     </button>
@@ -67,9 +62,7 @@ const AddPosForm = ({ onClose }) => {
     const [status, setStatus] = useState({ error: '', message: '' });
     const [merchandiserLocation, setMerchandiserLocation] = useState(null);
     const [isCapturing, setIsCapturing] = useState(false);
-
-    // Estados para el flujo de verificación (sin cambios)
-    const [step, setStep] = useState('entry'); // 'entry', 'confirm'
+    const [step, setStep] = useState('entry');
     const [geniusCoords, setGeniusCoords] = useState(null);
     const [distance, setDistance] = useState(0);
 
@@ -90,19 +83,16 @@ const AddPosForm = ({ onClose }) => {
                 setStatus({ error: "No se pudo obtener la ubicación. Asegúrate de tener el GPS activado.", message: '' });
                 setIsCapturing(false);
             },
-            { enableHighAccuracy: true } // Pedimos alta precisión
+            { enableHighAccuracy: true }
         );
     };
     
-    // --- 3. LÓGICA DE GUARDADO ACTUALIZADA ---
-    // Ahora recibe las coordenadas a guardar como parámetro
     const savePosToFirestore = async (coordinatesToSave) => {
         if (!coordinatesToSave) {
             setStatus({ error: 'Se produjo un error al seleccionar las coordenadas.', message: ''});
             setStep('entry');
             return;
         }
-
         setStatus({ message: 'Guardando PDV...', error: '' });
         setIsSubmitting(true);
         try {
@@ -117,11 +107,11 @@ const AddPosForm = ({ onClose }) => {
                 active: true, 
                 createdAt: serverTimestamp(), 
             });
-            onClose(); // Cierra el formulario principal tras el éxito
+            onClose();
         } catch (err) {
             console.error("Error adding new POS:", err);
             setStatus({ error: 'No se pudo guardar el punto de venta en la base de datos.', message: '' });
-            setStep('entry'); // Regresa al formulario si falla el guardado
+            setStep('entry');
         } finally {
             setIsSubmitting(false);
         }
@@ -138,7 +128,7 @@ const AddPosForm = ({ onClose }) => {
             return;
         }
         if (!merchandiserLocation) {
-            setStatus({ error: 'Primero debes capturar tu ubicación actual.', message: '' });
+            setStatus({ error: 'Primero debes capturar su ubicación actual.', message: '' });
             setIsSubmitting(false);
             return;
         }
@@ -155,14 +145,12 @@ const AddPosForm = ({ onClose }) => {
 
             const calculatedDistance = getDistanceInMeters(merchandiserLocation, foundCoords);
             
-            // Usamos un umbral de 200 metros para ser un poco más estrictos
+            // Umbral de 200 metros para requerir verificación visual.
             const DISTANCE_THRESHOLD = 200; 
 
             if (calculatedDistance < DISTANCE_THRESHOLD) {
-                // Si la distancia es corta, confiamos en el GPS del merchandiser y guardamos directamente
                 await savePosToFirestore(merchandiserLocation);
             } else {
-                // Si la distancia es grande, iniciamos el paso de confirmación visual
                 setGeniusCoords(foundCoords);
                 setDistance(calculatedDistance);
                 setStep('confirm');
@@ -182,7 +170,7 @@ const AddPosForm = ({ onClose }) => {
                 merchandiserCoords={merchandiserLocation}
                 geniusCoords={geniusCoords}
                 distance={distance}
-                onConfirm={savePosToFirestore} // La función de guardado ahora es el callback de confirmación
+                onConfirm={savePosToFirestore}
                 onCorrect={() => setStep('entry')}
                 onClose={onClose}
             />
