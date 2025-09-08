@@ -1,3 +1,5 @@
+// RUTA: src/Pages/VisitReportForm.jsx
+
 import React, { useState, useEffect } from 'react';
 import { addDoc, collection, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
@@ -5,12 +7,12 @@ import { db as localDB } from '@/db/local.js';
 import { useSwipeable } from 'react-swipeable';
 import { ArrowLeft, Send, MapPin, DollarSign, Package, Calendar, BarChart2, Check, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, UserPlus } from 'lucide-react';
 import { FormInput, ToggleButton, FormSection } from '@/Components/FormControls.jsx';
-import CameraScannerModal from '@/Components/CamScannerModal.jsx';
+import CameraScannerModal from '@/Components/CameraScannerModal.jsx';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
 import NewEntrantModal from '@/Components/NewEntrantModal.jsx';
 import { useVisionAPI } from '@/hooks/useVisionAPI.js';
-// --- OPTIMIZACIÓN 1/4: Importamos la librería de compresión ---
-import imageCompression from 'browser-image-compression';
+// ✅ 1. IMPORTACIÓN CORREGIDA
+import imageCompression, { dataUrlToFile, filetoDataURL } from 'browser-image-compression';
 
 
 // --- Constantes y Utilidades ---
@@ -117,45 +119,51 @@ const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
     const [scannerStatus, setScannerStatus] = useState('');
     
     const { processImageForDate, isProcessing } = useVisionAPI();
-    // --- OPTIMIZACIÓN 2/4: Añadimos un estado local para la fase de compresión ---
     const [isOptimizing, setIsOptimizing] = useState(false);
 
     const handleStockoutToggle = () => { if(!isReadOnly) { const isNowStockout = !report.stockout; setReport(prev => ({ ...prev, stockout: isNowStockout, batches: isNowStockout ? [] : prev.batches })); }};
     
-    // --- OPTIMIZACIÓN 3/4: Modificamos la función para comprimir la imagen ANTES de enviarla ---
-    const handleScanComplete = async (imageFile) => {
-        if (!imageFile) return;
+    const handleScanComplete = async (imageDataUrl) => {
+        if (!imageDataUrl || typeof imageDataUrl !== 'string') {
+            console.error("La cámara no devolvió una imagen válida.");
+            return;
+        }
 
         setIsOptimizing(true);
         setScannerStatus("Optimizando imagen...");
-        setScannerOpen(false); // Cerramos el modal de la cámara inmediatamente
-
-        const options = {
-            maxSizeMB: 0.8,         // Reducimos la imagen a un máximo de 0.8 MB
-            maxWidthOrHeight: 1280, // Redimensionamos a un máximo de 1280px de ancho o alto
-            useWebWorker: true,     // Usamos Web Worker para no bloquear la UI
-        };
+        setScannerOpen(false);
 
         try {
+            // ✅ 2. ACTUALIZACIÓN DE LLAMADA
+            const imageFile = await dataUrlToFile(imageDataUrl, 'photo.jpg');
+
+            const options = {
+                maxSizeMB: 0.8,
+                maxWidthOrHeight: 1280,
+                useWebWorker: true,
+            };
             const compressedFile = await imageCompression(imageFile, options);
             
-            setIsOptimizing(false); // Terminó la optimización, ahora empieza el análisis
-            setScannerStatus("Analizando fecha..."); // Actualizamos el mensaje para el usuario
+            setIsOptimizing(false);
+            setScannerStatus("Analizando fecha...");
 
-            const foundDate = await processImageForDate(compressedFile);
+            // ✅ 2. ACTUALIZACIÓN DE LLAMADA
+            const compressedImageDataUrl = await filetoDataURL(compressedFile);
             
-            if (foundDate) {
-                setCurrentDate(foundDate);
+            const finalResult = await processImageForDate(compressedImageDataUrl);
+            
+            if (finalResult) {
+                setCurrentDate(finalResult);
             } else {
-                setScannerStatus("No se encontró fecha. Intenta de nuevo.");
+                setScannerStatus("No se encontró formato de fecha. Intenta de nuevo.");
                 setTimeout(() => setScannerStatus(''), 2500);
             }
         } catch (error) {
             console.error("Error en el proceso de escaneo:", error);
-            setScannerStatus(error.message || "Error al procesar. Intenta de nuevo.");
-            setTimeout(() => setScannerStatus(''), 2500);
+            setScannerStatus(error.message || "Error al procesar la imagen.");
+            setTimeout(() => setScannerStatus(''), 4000);
         } finally {
-            setIsOptimizing(false); // Nos aseguramos de apagar el indicador
+            setIsOptimizing(false);
         }
     };
     
@@ -195,8 +203,7 @@ const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
                     </div>
                 </div>
             </div>
-            {!isReadOnly && <CameraScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onCapture={handleScanComplete} />}
-            {/* --- OPTIMIZACIÓN 4/4: El overlay ahora se muestra durante la compresión Y el análisis --- */}
+            {!isReadOnly && <CameraScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onCapture={handleScanComplete} onStatusChange={setScannerStatus}/>}
             {(isProcessing || isOptimizing) && <div className="fixed inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50"><Loader className="animate-spin h-12 w-12 text-brand-blue"/> <p className="mt-4 font-semibold">{scannerStatus || "Procesando..."}</p></div>}
             {!isReadOnly && <NumericKeypadModal isOpen={isNumpadOpen} onClose={() => setNumpadOpen(false)} onConfirm={handleNumpadConfirm} title={`Cantidad para lote ${currentDate}`}/>}
         </FormSection>
@@ -323,7 +330,6 @@ const Step5_Intel = ({ report, setReport, isReadOnly }) => {
     );
 };
 
-// --- Componente Principal del Formulario ---
 const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialData = null }) => {
     const [currentStep, setCurrentStep] = useState(1);
     const [submissionState, setSubmissionState] = useState('form');
@@ -392,7 +398,6 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
             return R * c;
         };
         
-        // --- CORRECCIÓN CRÍTICA: Se usa 'coordinates' en lugar de 'location' ---
         if (!pos?.coordinates) { 
             setUiState(prev => ({ ...prev, gpsStatus: 'no_pos_location', initialGpsValid: true })); 
             return; 
@@ -460,7 +465,6 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
             posId: pos.id,
             posName: pos.name,
             posZone: pos.zone || 'N/A',
-            // --- CORRECCIÓN CRÍTICA: Guardamos 'coordinates' en lugar de 'location' ---
             coordinates: pos.coordinates || null,
             inventoryLevel: inventoryLevel,
         };
