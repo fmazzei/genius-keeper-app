@@ -7,12 +7,40 @@ import { db as localDB } from '@/db/local.js';
 import { useSwipeable } from 'react-swipeable';
 import { ArrowLeft, Send, MapPin, DollarSign, Package, Calendar, BarChart2, Check, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, UserPlus } from 'lucide-react';
 import { FormInput, ToggleButton, FormSection } from '@/Components/FormControls.jsx';
-import CameraScannerModal from '@/Components/CameraScannerModal.jsx';
+import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
 import NewEntrantModal from '@/Components/NewEntrantModal.jsx';
 import { useVisionAPI } from '@/hooks/useVisionAPI.js';
-// ✅ 1. IMPORTACIÓN CORREGIDA
-import imageCompression, { dataUrlToFile, filetoDataURL } from 'browser-image-compression';
+// ✅ SOLUCIÓN 1/3: Simplificamos la importación para traer solo la función principal que sí funciona.
+import imageCompression from 'browser-image-compression';
+
+
+// ✅ SOLUCIÓN 2/3: Añadimos nuestras propias funciones de ayuda para reemplazar las de la librería que dan error.
+/**
+ * Convierte una imagen en formato Data URL (base64) a un objeto File.
+ * @param {string} dataUrl - La imagen en formato Data URL.
+ * @param {string} filename - El nombre del archivo a crear.
+ * @returns {Promise<File>} - Una promesa que se resuelve con el objeto File.
+ */
+const customDataUrlToFile = async (dataUrl, filename) => {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return new File([blob], filename, { type: blob.type });
+};
+
+/**
+ * Convierte un objeto File a formato Data URL (base64).
+ * @param {File} file - El archivo a convertir.
+ * @returns {Promise<string>} - Una promesa que se resuelve con la cadena Data URL.
+ */
+const customFileToDataURL = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
 
 
 // --- Constantes y Utilidades ---
@@ -134,21 +162,22 @@ const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
         setScannerOpen(false);
 
         try {
-            // ✅ 2. ACTUALIZACIÓN DE LLAMADA
-            const imageFile = await dataUrlToFile(imageDataUrl, 'photo.jpg');
+            // ✅ SOLUCIÓN 3/3: Usamos nuestra función de ayuda `custom` en lugar de la de la librería.
+            const imageFile = await customDataUrlToFile(imageDataUrl, 'photo.jpg');
 
             const options = {
                 maxSizeMB: 0.8,
                 maxWidthOrHeight: 1280,
                 useWebWorker: true,
             };
+            // La llamada a la función principal de compresión no cambia y funciona bien.
             const compressedFile = await imageCompression(imageFile, options);
             
             setIsOptimizing(false);
             setScannerStatus("Analizando fecha...");
 
-            // ✅ 2. ACTUALIZACIÓN DE LLAMADA
-            const compressedImageDataUrl = await filetoDataURL(compressedFile);
+            // ✅ SOLUCIÓN 3/3: Usamos nuestra otra función de ayuda `custom`.
+            const compressedImageDataUrl = await customFileToDataURL(compressedFile);
             
             const finalResult = await processImageForDate(compressedImageDataUrl);
             

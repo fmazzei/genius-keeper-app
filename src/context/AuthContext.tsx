@@ -1,29 +1,27 @@
+// RUTA: src/context/AuthContext.tsx
+
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import type { ReactNode } from 'react';
-import { onAuthStateChanged, signInWithEmailAndPassword, setPersistence, browserLocalPersistence, signInAnonymously } from 'firebase/auth';
+// ✅ NUEVO: Importamos signInWithCustomToken
+import { onAuthStateChanged, signInWithEmailAndPassword, setPersistence, browserLocalPersistence, signInWithCustomToken } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { auth } from '../Firebase/config';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 
-// --- Definimos los "tipos" para que TypeScript entienda la estructura ---
-
-// El tipo de los datos que nuestro contexto va a proveer
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<any>;
-  loginAnonymously: () => Promise<any>;
+  // ✅ NUEVO: Añadimos la nueva función al tipo del contexto
+  signInWithCustomToken: (token: string) => Promise<any>;
 }
 
-// El tipo de las props que nuestro componente AuthProvider recibirá
 interface AuthProviderProps {
   children: ReactNode;
 }
 
-// Creamos el contexto con el tipo definido
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Hook personalizado para usar el contexto, ahora con el tipo correcto
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (context === undefined) {
@@ -32,7 +30,6 @@ export const useAuth = (): AuthContextType => {
   return context;
 };
 
-// El componente Provider, ahora escrito en TypeScript
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,20 +50,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
     return userCredential;
   };
-  
-  const loginAnonymously = async () => {
-    const userCredential = await signInAnonymously(auth);
-    if (userCredential.user) {
-      await requestNotificationPermission(userCredential.user.uid);
-    }
-    return userCredential;
+
+  // ✅ NUEVO: Implementación de la función para iniciar sesión con el token seguro
+  const signInWithCustomTokenHandler = async (token: string) => {
+      const userCredential = await signInWithCustomToken(auth, token);
+      if (userCredential.user) {
+          await requestNotificationPermission(userCredential.user.uid);
+      }
+      return userCredential;
   };
 
   const value: AuthContextType = { 
     user, 
     loading,
     login,
-    loginAnonymously
+    signInWithCustomToken: signInWithCustomTokenHandler, // Añadimos la función al valor del provider
   };
 
   return (

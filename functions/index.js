@@ -3,12 +3,28 @@ const admin = require("firebase-admin");
 const axios = require("axios");
 const vision = require("@google-cloud/vision");
 
+// ✅ NUEVAS LIBRERÍAS INTEGRADAS
+const cors = require("cors")({ origin: true });
+const {
+  generateRegistrationOptions,
+  verifyRegistrationResponse,
+  generateAuthenticationOptions,
+  verifyAuthenticationResponse,
+} = require("@simplewebauthn/server");
+
 admin.initializeApp();
 const visionClient = new vision.ImageAnnotatorClient();
 
-// ... (El resto de tus funciones, como sendNotificationToUser y los triggers, permanecen sin cambios) ...
+// ✅ NUEVA CONFIGURACIÓN PARA WEBAUTHN
+// Configuración de WebAuthn (Relying Party)
+const rpName = "Genius Keeper";
+// IMPORTANTE: Este ID debe ser el dominio donde tu app está alojada, SIN el https://
+const rpID = "geniuskeeper-36553.firebaseapp.com"; 
+const origin = `https://${rpID}`;
+
+
 // ===================================================================
-// FUNCIÓN HELPER PARA NOTIFICACIONES (SIN CAMBIOS)
+// FUNCIÓN HELPER PARA NOTIFICACIONES (CÓDIGO EXISTENTE - SIN CAMBIOS)
 // ===================================================================
 const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
     if (!userId) {
@@ -60,7 +76,7 @@ const sendNotificationToUser = async (userId, notificationPayload, dataPayload) 
 
 
 // ===================================================================
-// FUNCIONES DE TRIGGERS EXISTENTES (SIN CAMBIOS)
+// FUNCIONES DE TRIGGERS EXISTENTES (CÓDIGO EXISTENTE - SIN CAMBIOS)
 // ===================================================================
 
 exports.onReportCreated = functions.firestore
@@ -198,7 +214,7 @@ exports.onReportDeleted = functions.firestore
     });
 
 // ===================================================================
-// --- FUNCIÓN "GENIUS" PARA GEOCODIFICACIÓN (DINÁMICA Y SEGURA) ---
+// --- FUNCIÓN "GENIUS" PARA GEOCODIFICACIÓN (CÓDIGO EXISTENTE - SIN CAMBIOS) ---
 // ===================================================================
 exports.geocodeAddress = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
@@ -214,12 +230,10 @@ exports.geocodeAddress = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError("internal", "La clave de API de Maps no está configurada.");
   }
 
-  // --- CAMBIO CRÍTICO: Construimos una URL dinámica ---
   let url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&region=ve&key=${API_KEY_GEOCODING}`;
 
-  // Si el frontend nos envía la ubicación del usuario, la usamos como una pista poderosa.
   if (userLocation && userLocation.lat && userLocation.lng) {
-      const locationBias = `circle:50000@${userLocation.lat},${userLocation.lng}`; // Círculo de 50km de radio
+      const locationBias = `circle:50000@${userLocation.lat},${userLocation.lng}`;
       url += `&locationbias=${encodeURIComponent(locationBias)}`;
   }
 
@@ -240,9 +254,9 @@ exports.geocodeAddress = functions.https.onCall(async (data, context) => {
 
 
 // ===================================================================
-// --- FUNCIÓN "GENIUS VISION" PARA LEER FECHAS (SEGURA) ---
+// --- FUNCIÓN "GENIUS VISION" (CÓDIGO EXISTENTE - SIN CAMBIOS) ---
 // ===================================================================
-exports.processImageForDate = functions.https.onCall(async (data, context) => {
+exports.processImageForDate = functions.runWith({ minInstances: 1 }).https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
     }
@@ -288,4 +302,199 @@ exports.processImageForDate = functions.https.onCall(async (data, context) => {
         functions.logger.error("Error en la API de Vision:", error.response?.data || error.message);
         throw new functions.https.HttpsError("internal", "Ocurrió un error al procesar la imagen.");
     }
+});
+
+
+// ===================================================================
+// --- FUNCIONES "GENIUS AUTH" PARA ACCESO CON HUELLA (WEBAUTHN) ---
+// ===================================================================
+
+// Función 1: Genera las opciones para registrar un nuevo dispositivo
+exports.generateRegistrationOptions = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
+  }
+
+  const { uid, token } = context.auth;
+  const { email, displayName } = token;
+  
+  const userAuthenticatorsRef = admin.firestore().collection("users_metadata").doc(uid).collection("authenticators");
+  const snapshot = await userAuthenticatorsRef.get();
+  const existingAuthenticators = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+          ...data,
+          id: Buffer.from(data.credentialID, 'base64url'),
+      };
+  });
+
+  const options = await generateRegistrationOptions({
+    rpName,
+    rpID,
+    userID: uid,
+    userName: email,
+    userDisplayName: displayName || email,
+    attestationType: "none",
+    excludeCredentials: existingAuthenticators.map(auth => ({
+        id: auth.id,
+        type: 'public-key',
+        transports: auth.transports,
+    })),
+    authenticatorSelection: {
+      residentKey: "preferred",
+      userVerification: "preferred",
+      authenticatorAttachment: "platform",
+    },
+  });
+
+  await admin.firestore().collection("users_metadata").doc(uid).set({ webAuthnChallenge: options.challenge }, { merge: true });
+
+  return options;
+});
+
+
+// Función 2: Verifica la respuesta del navegador y guarda el nuevo autenticador
+exports.verifyRegistration = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
+  }
+  const { uid } = context.auth;
+  const { registrationResponse } = data;
+
+  const userDoc = await admin.firestore().collection("users_metadata").doc(uid).get();
+  const { webAuthnChallenge } = userDoc.data();
+
+  let verification;
+  try {
+    verification = await verifyRegistrationResponse({
+      response: registrationResponse,
+      expectedChallenge: webAuthnChallenge,
+      expectedOrigin: origin,
+      expectedRPID: rpID,
+      requireUserVerification: true,
+    });
+  } catch (error) {
+    console.error("Error en verifyRegistrationResponse:", error);
+    throw new functions.https.HttpsError("internal", error.message);
+  }
+  
+  if (!verification.verified) {
+    throw new functions.https.HttpsError("invalid-argument", "No se pudo verificar el registro.");
+  }
+
+  const { registrationInfo } = verification;
+  const newAuthenticator = {
+    ...registrationInfo,
+    credentialID: Buffer.from(registrationInfo.credentialID).toString('base64url'),
+    credentialPublicKey: Buffer.from(registrationInfo.credentialPublicKey).toString('base64url'),
+  };
+
+  await admin.firestore().collection("users_metadata").doc(uid).collection("authenticators").add(newAuthenticator);
+  
+  await admin.firestore().collection("users_metadata").doc(uid).update({ webAuthnChallenge: admin.firestore.FieldValue.delete() });
+
+  return { verified: true };
+});
+
+
+// Función 3: Genera las opciones (el desafío) para iniciar sesión
+exports.generateAuthenticationOptions = functions.https.onCall(async (data, context) => {
+  const { email } = data;
+  if (!email) {
+    throw new functions.https.HttpsError("invalid-argument", "Se debe proporcionar un correo.");
+  }
+
+  let userRecord;
+  try {
+    userRecord = await admin.auth().getUserByEmail(email);
+  } catch (error) {
+     throw new functions.https.HttpsError("not-found", "Usuario no encontrado.");
+  }
+  
+  const { uid } = userRecord;
+  const authenticatorsRef = admin.firestore().collection("users_metadata").doc(uid).collection("authenticators");
+  const snapshot = await authenticatorsRef.get();
+
+  if (snapshot.empty) {
+      throw new functions.https.HttpsError("not-found", "No hay huellas registradas para este usuario.");
+  }
+
+  const userAuthenticators = [];
+  snapshot.forEach(doc => {
+      const data = doc.data();
+      userAuthenticators.push({
+          ...data,
+          id: Buffer.from(data.credentialID, 'base64url'),
+      });
+  });
+
+  const options = await generateAuthenticationOptions({
+    rpID,
+    allowCredentials: userAuthenticators.map(auth => ({
+      id: auth.id,
+      type: "public-key",
+      transports: auth.transports,
+    })),
+    userVerification: "preferred",
+  });
+
+  await admin.firestore().collection("users_metadata").doc(uid).set({ webAuthnChallenge: options.challenge }, { merge: true });
+
+  return options;
+});
+
+// Función 4: Verifica la respuesta de inicio de sesión y crea un token personalizado
+exports.verifyAuthentication = functions.https.onCall(async (data, context) => {
+  const { email, authenticationResponse } = data;
+  
+  const userRecord = await admin.auth().getUserByEmail(email);
+  const { uid } = userRecord;
+
+  const userDoc = await admin.firestore().collection("users_metadata").doc(uid).get();
+  const { webAuthnChallenge } = userDoc.data();
+
+  const authenticatorsRef = admin.firestore().collection("users_metadata").doc(uid).collection("authenticators");
+  const snapshot = await authenticatorsRef.get();
+  
+  let authenticator;
+  // Buscamos el autenticador correcto que coincida con el ID de la credencial que nos envía el cliente
+  for (const doc of snapshot.docs) {
+      const authData = doc.data();
+      if (authData.credentialID === authenticationResponse.id) {
+          authenticator = authData;
+          break;
+      }
+  }
+
+  if (!authenticator) {
+    throw new functions.https.HttpsError("not-found", "El autenticador correspondiente no fue encontrado.");
+  }
+
+  let verification;
+  try {
+    verification = await verifyAuthenticationResponse({
+      response: authenticationResponse,
+      expectedChallenge: webAuthnChallenge,
+      expectedOrigin: origin,
+      expectedRPID: rpID,
+      authenticator: {
+          ...authenticator,
+          credentialID: Buffer.from(authenticator.credentialID, 'base64url'),
+          credentialPublicKey: Buffer.from(authenticator.credentialPublicKey, 'base64url'),
+      },
+      requireUserVerification: true,
+    });
+  } catch (error) {
+     console.error("Error en verifyAuthenticationResponse:", error);
+     throw new functions.https.HttpsError("internal", error.message);
+  }
+
+  if (!verification.verified) {
+    throw new functions.https.HttpsError("unauthenticated", "Falló la verificación de la huella.");
+  }
+
+  await admin.firestore().collection("users_metadata").doc(uid).update({ webAuthnChallenge: admin.firestore.FieldValue.delete() });
+  
+  const customToken = await admin.auth().createCustomToken(uid);
+  return { verified: true, customToken };
 });
