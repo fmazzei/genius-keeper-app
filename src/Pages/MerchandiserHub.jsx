@@ -1,19 +1,54 @@
-import React from 'react';
-import { FileText, Map, Truck, AlertTriangle } from 'lucide-react';
-// CORRECCIÓN: Se elimina la extensión .js para que el sistema encuentre el nuevo archivo .ts
+// RUTA: src/Pages/MerchandiserHub.jsx
+
+import React, { useState, useEffect } from 'react';
+import { collection, onSnapshot, query } from 'firebase/firestore';
+import { db } from '@/Firebase/config.js';
+import { useAuth } from '@/context/AuthContext';
+import { FileText, Map, Truck, Loader } from 'lucide-react';
+// ✅ NUEVO: Importamos el componente de registro biométrico
+import BiometricSetup from '@/Components/BiometricSetup.jsx';
+// ✅ NUEVO: Importamos el hook que nos da el traslado pendiente
 import { usePendingTransfer } from '../hooks/usePendingTransfer';
+import { AlertTriangle } from 'lucide-react';
 
 const MerchandiserHub = ({ onNavigate }) => {
-    const { transfer: pendingTransfer, loading } = usePendingTransfer();
+    const { user } = useAuth();
+    const { transfer: pendingTransfer, loading: transferLoading } = usePendingTransfer();
+
+    // ✅ NUEVO: Lógica para verificar si el usuario ya tiene una huella registrada
+    const [hasBiometricsSetup, setHasBiometricsSetup] = useState(true);
+    const [checkingBiometrics, setCheckingBiometrics] = useState(true);
+
+    useEffect(() => {
+        if (user) {
+            const authenticatorsRef = collection(db, 'users_metadata', user.uid, 'authenticators');
+            const q = query(authenticatorsRef);
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                setHasBiometricsSetup(!snapshot.empty);
+                setCheckingBiometrics(false);
+            }, (error) => {
+                console.error("Error al verificar biométricos:", error);
+                setCheckingBiometrics(false);
+            });
+
+            return () => unsubscribe();
+        }
+    }, [user]);
 
     return (
-        <div className="p-4 md:p-8 bg-slate-50 h-full flex flex-col justify-center">
+       <div className="p-4 md:p-8 bg-slate-50">
             <div className="max-w-md mx-auto w-full">
-                <h2 className="text-3xl font-bold text-center text-slate-800 mb-2">Centro de Operaciones</h2>
-                <p className="text-center text-slate-500 mb-8">Selecciona tu tarea para hoy.</p>
 
-                {/* Notificación de Carga Pendiente */}
-                {!loading && pendingTransfer && (
+                {/* ✅ NUEVO: Renderizado condicional del componente de registro de huella */}
+                {checkingBiometrics && (
+                    <div className="flex justify-center items-center p-4 mb-4">
+                        <Loader className="animate-spin text-slate-400"/>
+                    </div>
+                )}
+                {!checkingBiometrics && !hasBiometricsSetup && <BiometricSetup />}
+
+                {/* Notificación de Carga Pendiente (ya existía, solo se movió la lógica al hook) */}
+                {!transferLoading && pendingTransfer && (
                     <div
                         onClick={() => onNavigate('logistics')}
                         className="bg-brand-yellow border-2 border-yellow-500 text-black p-4 rounded-lg mb-8 shadow-lg animate-pulse cursor-pointer"
@@ -22,13 +57,15 @@ const MerchandiserHub = ({ onNavigate }) => {
                             <AlertTriangle className="h-8 w-8 mr-4"/>
                             <div>
                                 <h3 className="font-bold">¡Acción Requerida!</h3>
-                                <p className="text-sm">Tienes una carga de {pendingTransfer.totalQuantity} unidades pendiente por distribuir.</p>
+                                <p className="text-sm">Tienes una carga de {pendingTransfer.totalQuantity} unidades pendiente por recibir.</p>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {/* Botones de Acción */}
+                {/* Botones de Acción (sin cambios) */}
+                <h2 className="text-3xl font-bold text-center text-slate-800 mb-2">Centro de Operaciones</h2>
+                <p className="text-center text-slate-500 mb-8">Selecciona tu tarea para hoy.</p>
                 <div className="space-y-4">
                     <button
                         onClick={() => onNavigate('report')}

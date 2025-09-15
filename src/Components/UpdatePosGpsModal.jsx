@@ -1,6 +1,10 @@
+// RUTA: src/Components/UpdatePosGpsModal.jsx
+
 import React, { useState } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+// ✅ SOLUCIÓN: Importamos 'httpsCallable' y nuestra instancia configurada de 'functions'.
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../Firebase/config.js';
 import { db } from '../Firebase/config.js';
 import { MapPin, AlertTriangle, Check, Edit3 } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner.jsx';
@@ -119,7 +123,7 @@ const UpdatePosGpsModal = ({ pos, onClose, onConfirm }) => {
         }
 
         try {
-            const functions = getFunctions();
+            // ✅ SOLUCIÓN: Ya no se llama a getFunctions() aquí.
             const geocodeAddressByGenius = httpsCallable(functions, 'geocodeAddress');
             
             const result = await geocodeAddressByGenius({ 
@@ -134,16 +138,11 @@ const UpdatePosGpsModal = ({ pos, onClose, onConfirm }) => {
             }
 
             const calculatedDistance = getDistanceInMeters(merchandiserLocation, foundCoords);
-            
-            // --- CORRECCIÓN: Devolvemos el umbral a un valor estricto y correcto ---
             const DISTANCE_THRESHOLD = 200; 
 
             if (calculatedDistance < DISTANCE_THRESHOLD) {
-                // Si la distancia es corta, se guarda la ubicación del merchandiser.
-                // Esto es para casos donde la dirección es imprecisa pero el usuario está físicamente allí.
                 await savePosUpdateToFirestore(merchandiserLocation);
             } else {
-                // Si la distancia es grande, FORZAMOS la verificación visual del mapa.
                 setGeniusCoords(foundCoords);
                 setDistance(calculatedDistance);
                 setStep('confirm');

@@ -30,22 +30,33 @@ const getNotificationIcon = (link) => {
     return <Bell className={iconClass} />;
 };
 
-const NotificationItem = ({ notification, markAsRead, deleteNotification, viewReport }) => {
+// ✅ CAMBIO 1: Aceptamos la nueva prop 'onNavigate'.
+const NotificationItem = ({ notification, markAsRead, deleteNotification, viewReport, onNavigate }) => {
     const { id, read, title, body, createdAt, link } = notification;
 
-    // Lógica de navegación completamente nueva y rápida
+    // ✅ CAMBIO 2: La lógica de navegación ahora es más inteligente.
     const handleNavigate = () => {
         if (!read) {
             markAsRead(id);
         }
+        
         if (link) {
-            viewReport(link); // <-- Llamamos a la función del contexto para abrir el modal
+            // Si el link es para un reporte específico, usa la función 'viewReport' para abrir el modal.
+            if (link.startsWith('/reports/')) {
+                viewReport(link);
+            } 
+            // Para cualquier otro link (como '/inventory'), usa la función 'onNavigate' para cambiar de vista.
+            else if (onNavigate) {
+                // Extraemos el nombre de la vista quitando el '/' inicial (ej: '/inventory' -> 'inventory')
+                const viewKey = link.startsWith('/') ? link.substring(1) : link;
+                onNavigate(viewKey);
+            }
         }
     };
     
     const handleDelete = (e) => {
         e.stopPropagation(); 
-        deleteNotification(id); // <-- Ahora esta función existe y funcionará
+        deleteNotification(id);
     };
 
     return (

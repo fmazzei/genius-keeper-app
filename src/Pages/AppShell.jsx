@@ -1,3 +1,5 @@
+// RUTA: src/Pages/AppShell.jsx
+
 import React, { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
 import { doc, getDoc } from 'firebase/firestore';
@@ -16,28 +18,21 @@ import { TaskListSkeleton, PosListSkeleton } from '@/Components/SkeletonLoader.j
 import Modal from '@/Components/Modal.jsx';
 import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx';
 
-// --- FUNCIÓN HELPER: CÁLCULO DE DISTANCIA GEOGRÁFICA ---
 const getDistanceInMeters = (coords1, coords2) => {
-    // Agregamos una validación extra para evitar NaN
     if (!coords1 || !coords2 || typeof coords1.lat !== 'number' || typeof coords2.lat !== 'number') {
         return Infinity;
     }
-
     const toRad = (value) => (value * Math.PI) / 180;
     const R = 6371e3;
     const dLat = toRad(coords2.lat - coords1.lat);
     const dLng = toRad(coords2.lng - coords1.lng);
     const lat1 = toRad(coords1.lat);
     const lat2 = toRad(coords2.lat);
-
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    
     return R * c;
 };
 
-// --- SUB-COMPONENTE: Modal de Alerta "Fuera de Rango" ---
 const OutOfRangeModal = ({ pos, distance, onClose }) => (
     <Modal isOpen={true} onClose={onClose} title="Verificación de Ubicación">
         <div className="p-6 text-center">
@@ -94,15 +89,11 @@ const AppShell = ({ user, role, onLogout }) => {
             return;
         }
         
-        // --- LA CORRECCIÓN DEFINITIVA ---
-        // Esta nueva condición es mucho más estricta. Verifica no solo que `pos.coordinates` exista,
-        // sino también que contenga una latitud y longitud que sean números válidos.
         if (!pos.coordinates || typeof pos.coordinates.lat !== 'number' || typeof pos.coordinates.lng !== 'number') {
             setPosToUpdateGps(pos);
             return;
         }
         
-        // Si las coordenadas son válidas, procedemos con la verificación de proximidad.
         setIsVerifyingLocation(true);
         try {
             const position = await new Promise((resolve, reject) => {
@@ -136,7 +127,7 @@ const AppShell = ({ user, role, onLogout }) => {
     const getGreeting = () => {
         const viewTitles = {
             hub: 'Centro de Operaciones',
-            planner: 'Planificador de Jornada',
+            planner: 'Planificador de Ruta',
             logistics: 'Panel de Logística',
             report: 'Seleccionar Punto de Venta',
             tasks: 'Mis Tareas Pendientes',
@@ -202,13 +193,11 @@ const AppShell = ({ user, role, onLogout }) => {
     const merchandiserContent = () => {
         switch(currentView) {
             case 'hub':
-                if (merchandiserLoading) return <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>;
                 return <MerchandiserHub onNavigate={setCurrentView} />;
             case 'planner': 
                 if (merchandiserLoading) return <PosListSkeleton />;
                 return <Planner role={role} allPossibleStops={masterStopList} agenda={agenda} onSelectPos={navigateToReport} />;
             case 'logistics': 
-                if (merchandiserLoading) return <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>;
                 return <LogisticsPanel />;
             case 'report': 
                 if (merchandiserLoading) return <PosListSkeleton />;
@@ -244,34 +233,15 @@ const AppShell = ({ user, role, onLogout }) => {
                     </button>
                     <h2 className="text-lg sm:text-2xl font-semibold text-slate-800 ml-2 truncate">{getGreeting()}</h2>
                 </header>
-                <main className="flex-1 overflow-y-auto bg-slate-50 pb-24">
+                {/* ✅ CORRECCIÓN: Se elimina el padding inferior 'pb-24' */}
+                <main className="flex-1 overflow-y-auto bg-slate-50">
                     {merchandiserContent()}
                 </main>
             </div>
             
-            {posToUpdateGps && (
-                <UpdatePosGpsModal
-                    pos={posToUpdateGps}
-                    onClose={() => setPosToUpdateGps(null)}
-                    onConfirm={handleGpsUpdateConfirm}
-                />
-            )}
-            
-            {isOutOfRangeModalOpen && (
-                <OutOfRangeModal
-                    pos={posForRangeCheck}
-                    distance={currentDistance}
-                    onClose={() => setIsOutOfRangeModalOpen(false)}
-                />
-            )}
-            {isVerifyingLocation && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-                    <div className="bg-white p-6 rounded-lg flex items-center gap-4 shadow-xl">
-                        <LoadingSpinner />
-                        <span className="font-semibold text-slate-700">Verificando tu ubicación...</span>
-                    </div>
-                </div>
-            )}
+            {posToUpdateGps && (<UpdatePosGpsModal pos={posToUpdateGps} onClose={() => setPosToUpdateGps(null)} onConfirm={handleGpsUpdateConfirm} />)}
+            {isOutOfRangeModalOpen && (<OutOfRangeModal pos={posForRangeCheck} distance={currentDistance} onClose={() => setIsOutOfRangeModalOpen(false)} />)}
+            {isVerifyingLocation && (<div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"><div className="bg-white p-6 rounded-lg flex items-center gap-4 shadow-xl"><LoadingSpinner /> <span className="font-semibold text-slate-700">Verificando tu ubicación...</span></div></div>)}
         </div>
     );
 };

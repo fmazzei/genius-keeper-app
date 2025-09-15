@@ -1,8 +1,11 @@
+// RUTA: src/Pages/ManagerLayout.jsx
+
 import React, { useState } from 'react';
 import { useGeniusEngine } from '@/hooks/useGeniusEngine';
-// --- NUEVO: Importamos el hook de notificaciones y el ícono de campana ---
 import { useNotifications } from '@/hooks/useNotifications';
-import { LogOut, BarChart2, TrendingUp, Bell, Settings, ChevronsRight, Package, Sun, DollarSign, Target, Map, Menu } from 'lucide-react';
+import { signOut } from 'firebase/auth';
+import { auth } from '@/Firebase/config.js';
+import { LogOut, BarChart2, TrendingUp, Bell, Settings, Package, Sun, DollarSign, Target, Map, Menu, ChevronsRight } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import ManagerDashboard from './ManagerDashboard.jsx';
 import MarketTrendsView from './MarketTrendsView.jsx';
@@ -11,16 +14,12 @@ import InventoryPanel from './InventoryPanel.jsx';
 import AdminPanel from './AdminPanel.jsx';
 import SalesFocusDashboard from './SalesFocusDashboard.jsx';
 import Planner from './Planner/Planner.jsx';
-import CaracasInventoryView from './CaracasInventoryView.jsx';
 import CommissionsView from './CommissionsView.jsx';
 import SalesDashboard from './SalesDashboard.jsx';
 
 const ManagerLayout = ({ user, role, onLogout }) => {
-    // Mantenemos useGeniusEngine porque otras vistas lo necesitan.
     const { tasks: rawTasks, posList, reports, loading } = useGeniusEngine(role);
-    // --- NUEVO: Obtenemos el conteo de notificaciones no leídas en tiempo real ---
     const { unreadCount } = useNotifications();
-
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [currentView, setCurrentView] = useState(role === 'sales_manager' ? 'focus' : 'dashboard');
@@ -29,12 +28,11 @@ const ManagerLayout = ({ user, role, onLogout }) => {
         const viewTitles = {
             dashboard: 'Dashboard Gerencial',
             trends: 'Análisis de Tendencias',
-            alerts: 'Centro de Notificaciones', // Título actualizado
-            inventory: 'Panel de Inventario',
+            alerts: 'Centro de Notificaciones',
+            inventory: 'Panel de Inventario', 
             settings: 'Panel de Administración',
             focus: 'Brújula de Ventas',
             planner: 'Planificador de Ruta',
-            caracas_inventory: 'Inventario (Caracas)',
             commissions: 'Mis Comisiones',
             sales: 'Metas de Venta'
         };
@@ -42,7 +40,6 @@ const ManagerLayout = ({ user, role, onLogout }) => {
     };
     
     const SidebarContent = () => {
-        // --- MODIFICADO: El componente NavItem ahora acepta un 'badgeCount' numérico ---
         const NavItem = ({ icon, text, active, badgeCount, onClick }) => (
             <li onClick={() => { onClick(); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer transition-colors relative ${active ? 'bg-brand-blue text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
                 {icon}
@@ -59,7 +56,6 @@ const ManagerLayout = ({ user, role, onLogout }) => {
             <ul>
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
                 <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />
-                {/* --- MODIFICADO: Ahora es un ícono de campana con contador numérico --- */}
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />
                 <NavItem icon={<Settings size={24} />} text="Administración" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
@@ -69,49 +65,17 @@ const ManagerLayout = ({ user, role, onLogout }) => {
         const salesManagerNav = (
             <ul>
                 <NavItem icon={<Sun size={24} />} text="Brújula de Ventas" active={currentView === 'focus'} onClick={() => setCurrentView('focus')} />
-                 {/* --- MODIFICADO: Ahora es un ícono de campana con contador numérico --- */}
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 <NavItem icon={<Map size={24} />} text="Planificador de Ruta" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
-                <NavItem icon={<Package size={24} />} text="Inventario Caracas" active={currentView === 'caracas_inventory'} onClick={() => setCurrentView('caracas_inventory')} />
+                <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />
                 <NavItem icon={<DollarSign size={24} />} text="Comisiones" active={currentView === 'commissions'} onClick={() => setCurrentView('commissions')} />
                 <NavItem icon={<Target size={24} />} text="Metas de Venta" active={currentView === 'sales'} onClick={() => setCurrentView('sales')} />
             </ul>
         );
 
-        const userInfo = role === 'master' 
-            ? { initial: 'F', name: user.displayName || 'Francisco Mazzei', title: 'Master', color: 'bg-indigo-200 text-indigo-700' }
-            : { initial: 'C', name: user.displayName || 'Carolina Ramírez', title: 'Sales Manager', color: 'bg-pink-200 text-pink-700' };
-
-        return (
-            <div className="flex flex-col h-full bg-white">
-                <div className={`flex items-center justify-between p-4 h-16 border-b ${!desktopSidebarOpen && 'md:justify-center'}`}>
-                    <h1 className={`text-xl font-bold text-brand-blue whitespace-nowrap overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>Genius Keeper</h1>
-                    <button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="p-2 rounded-lg hover:bg-slate-200 hidden md:block">
-                        <ChevronsRight className={`transition-transform duration-300 ${desktopSidebarOpen && 'rotate-180'}`} />
-                    </button>
-                </div>
-                <nav className="mt-4 px-2 flex-grow">
-                    {role === 'master' ? masterNav : salesManagerNav}
-                </nav>
-                <div className="px-2 py-4 border-t">
-                    <div className="flex items-center p-3 my-2">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${userInfo.color}`}>
-                            {userInfo.initial}
-                        </div>
-                        <div className={`ml-3 overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>
-                            <p className="font-semibold text-sm truncate">{userInfo.name}</p>
-                            <p className="text-xs text-gray-500">{userInfo.title}</p>
-                        </div>
-                    </div>
-                    <button onClick={onLogout} className="w-full">
-                         <li className="flex items-center p-3 my-1 rounded-lg cursor-pointer text-slate-600 hover:bg-slate-100">
-                             <LogOut size={24} />
-                             <span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Cerrar Sesión</span>
-                         </li>
-                    </button>
-                </div>
-            </div>
-        );
+        const userInfo = role === 'master' ? { initial: 'F', name: user.displayName || 'Francisco Mazzei', title: 'Master', color: 'bg-indigo-200 text-indigo-700' } : { initial: 'C', name: user.displayName || 'Carolina Ramírez', title: 'Sales Manager', color: 'bg-pink-200 text-pink-700' };
+        
+        return (<div className="flex flex-col h-full bg-white"><div className={`flex items-center justify-between p-4 h-16 border-b ${!desktopSidebarOpen && 'md:justify-center'}`}><h1 className={`text-xl font-bold text-brand-blue whitespace-nowrap overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>Genius Keeper</h1><button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="p-2 rounded-lg hover:bg-slate-200 hidden md:block"><ChevronsRight className={`transition-transform duration-300 ${desktopSidebarOpen && 'rotate-180'}`} /></button></div><nav className="mt-4 px-2 flex-grow">{role === 'master' ? masterNav : salesManagerNav}</nav><div className="px-2 py-4 border-t"><div className="flex items-center p-3 my-2"><div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${userInfo.color}`}>{userInfo.initial}</div><div className={`ml-3 overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}><p className="font-semibold text-sm truncate">{userInfo.name}</p><p className="text-xs text-gray-500">{userInfo.title}</p></div></div><button onClick={onLogout} className="w-full"><li className="flex items-center p-3 my-1 rounded-lg cursor-pointer text-slate-600 hover:bg-slate-100"><LogOut size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Cerrar Sesión</span></li></button></div></div>);
     };
 
     if (loading) {
@@ -123,12 +87,12 @@ const ManagerLayout = ({ user, role, onLogout }) => {
         switch (currentView) {
             case 'dashboard': return <ManagerDashboard reports={reports} posList={posList} loading={loading} />;
             case 'trends': return <MarketTrendsView reports={reports} posList={posList} />;
-            case 'alerts': return <AlertsCenterView />; // Ya no necesita props
-            case 'inventory': return <InventoryPanel />;
+            // ✅ CAMBIO: Le pasamos la función para cambiar de vista a AlertsCenterView
+            case 'alerts': return <AlertsCenterView onNavigate={setCurrentView} />;
+            case 'inventory': return <InventoryPanel role={role} />;
             case 'settings': return <AdminPanel user={user} posList={posList} reports={reports} loading={loading} />;
             case 'focus': return <SalesFocusDashboard reports={reports} posList={posList} loading={loading} onNavigate={setCurrentView} allAlerts={tasks} />;
             case 'planner': return <Planner role={role} geniusTasks={tasks} allPossibleStops={posList} />;
-            case 'caracas_inventory': return <CaracasInventoryView />;
             case 'commissions': return <CommissionsView />;
             case 'sales': return <SalesDashboard reports={reports} />;
             default: return <div>Vista no encontrada</div>;

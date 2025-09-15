@@ -1,3 +1,5 @@
+// RUTA: src/hooks/useMerchandiserData.js
+
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, onSnapshot, where, doc } from 'firebase/firestore';
 import { db } from '../Firebase/config';
@@ -8,7 +10,7 @@ export const useMerchandiserData = () => {
     const { user } = useAuth();
     const { simulationMode, simulatedData } = useSimulation();
     const [posList, setPosList] = useState([]);
-    const [depots, setDepots] = useState([]); // SOLUCIÓN: Estado para depósitos dinámicos
+    const [depots, setDepots] = useState([]);
     const [agenda, setAgenda] = useState({ name: 'Mi Agenda Semanal', days: {} });
     const [loading, setLoading] = useState(true);
 
@@ -20,9 +22,10 @@ export const useMerchandiserData = () => {
 
         if (simulationMode) {
              console.log("useMerchandiserData: Sirviendo datos de SIMULACIÓN.");
-             setPosList(simulatedData.posList);
-             setDepots(simulatedData.depots); // Cargar depósitos de la simulación
-             setAgenda(simulatedData.agenda);
+             // ✅ CORRECCIÓN: Añadimos valores por defecto para evitar errores si alguna propiedad falta.
+             setPosList(simulatedData.posList || []);
+             setDepots(simulatedData.depots || []);
+             setAgenda(simulatedData.agenda || { name: 'Mi Agenda Semanal (Default)', days: {} });
              setLoading(false);
              return;
         }
@@ -34,17 +37,12 @@ export const useMerchandiserData = () => {
         const unsubscribePos = onSnapshot(qPos, (snapshot) => {
             const allPos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'pos' }));
             setPosList(allPos);
-        }, (error) => {
-            console.error("Error cargando la lista de PDV:", error);
         });
 
-        // SOLUCIÓN: Listener para la colección de depósitos
         const qDepots = query(collection(db, "depots"));
         const unsubscribeDepots = onSnapshot(qDepots, (snapshot) => {
             const allDepots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'depot' }));
             setDepots(allDepots);
-        }, (error) => {
-            console.error("Error cargando la lista de depósitos:", error);
         });
 
         const agendaRef = doc(db, 'agendas', user.uid);
@@ -55,19 +53,15 @@ export const useMerchandiserData = () => {
                 setAgenda({ name: 'Mi Agenda Semanal', days: {} });
             }
             setLoading(false); 
-        }, (error) => {
-            console.error("Error cargando la agenda:", error);
-            setLoading(false);
         });
 
         return () => {
             unsubscribePos();
             unsubscribeAgenda();
-            unsubscribeDepots(); // Limpiar el nuevo listener
+            unsubscribeDepots();
         };
     }, [user, simulationMode, simulatedData]);
 
-    // El masterStopList ahora combina dinámicamente ambas fuentes de datos
     const masterStopList = useMemo(() => [...posList, ...depots], [posList, depots]);
 
     return { masterStopList, agenda, loading };

@@ -2,8 +2,8 @@
 
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import type { ReactNode } from 'react';
-// ✅ NUEVO: Importamos signInWithCustomToken
-import { onAuthStateChanged, signInWithEmailAndPassword, setPersistence, browserLocalPersistence, signInWithCustomToken } from 'firebase/auth';
+// ✅ CAMBIO: Ya no importamos 'setPersistence' ni 'indexedDBLocalPersistence' aquí.
+import { onAuthStateChanged, signInWithEmailAndPassword, signInWithCustomToken } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { auth } from '../Firebase/config';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
@@ -12,7 +12,6 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<any>;
-  // ✅ NUEVO: Añadimos la nueva función al tipo del contexto
   signInWithCustomToken: (token: string) => Promise<any>;
 }
 
@@ -43,7 +42,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = async (email: string, password: string) => {
-    await setPersistence(auth, browserLocalPersistence);
+    // ✅ CAMBIO: La línea 'setPersistence' ha sido eliminada. Ya no es necesaria aquí.
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     if (userCredential.user) {
       await requestNotificationPermission(userCredential.user.uid);
@@ -51,7 +50,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return userCredential;
   };
 
-  // ✅ NUEVO: Implementación de la función para iniciar sesión con el token seguro
   const signInWithCustomTokenHandler = async (token: string) => {
       const userCredential = await signInWithCustomToken(auth, token);
       if (userCredential.user) {
@@ -64,7 +62,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user, 
     loading,
     login,
-    signInWithCustomToken: signInWithCustomTokenHandler, // Añadimos la función al valor del provider
+    signInWithCustomToken: signInWithCustomTokenHandler,
   };
 
   return (

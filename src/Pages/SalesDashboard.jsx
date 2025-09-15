@@ -1,7 +1,9 @@
+// RUTA: src/Pages/SalesDashboard.jsx
+
 import React, { useMemo } from 'react';
 import { Target, Zap } from 'lucide-react';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line } from 'recharts';
-// SOLUCIÓN: Importar el nuevo hook para leer la meta de ventas
+import { useAuth } from '../context/AuthContext.tsx';
 import { useSalesGoal } from '../hooks/useSalesGoal.js'; 
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 
@@ -18,11 +20,10 @@ const SalesKpiCard = ({ title, value, unit, icon, children }) => (
     </div>
 );
 
+// ✅ CORRECCIÓN: Se elimina la clase 'text-white' del contenedor principal
 const SalesDashboard = ({ reports }) => {
-    
-    // SOLUCIÓN: Usar el hook para obtener la meta del merchandiser dinámicamente
-    // Se asume que este dashboard principal sigue la meta del equipo de campo (merchandiser)
-    const { salesGoal: metaMensualUnidades, loading: goalLoading } = useSalesGoal('anonymous_merchandiser');
+    const { user } = useAuth();
+    const { salesGoal: metaMensualUnidades, loading: goalLoading } = useSalesGoal(user ? user.uid : null);
 
     const salesData = useMemo(() => {
         if (!reports) return { ventasActualesUnidades: 0, diasTranscurridos: 0, diasTotalesMes: 30, progresoHistorico: [] };
@@ -72,14 +73,15 @@ const SalesDashboard = ({ reports }) => {
     const runRateNecesario = diasRestantes > 0 && ventaRestante > 0 ? ventaRestante / diasRestantes : 0;
 
     return (
-        <div className="w-full text-white">
+        <div className="w-full">
             <div className="max-w-7xl mx-auto">
-                <h2 className="text-3xl font-bold mb-6">Metas de Venta</h2>
+                {/* ✅ CORRECCIÓN: Se añade 'text-slate-800' al título principal */}
+                <h2 className="text-3xl font-bold mb-6 text-slate-800">Metas de Venta</h2>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
                     <div className="lg:col-span-2 bg-white rounded-lg shadow-lg p-6 flex flex-col justify-between text-slate-800">
                         <div>
-                            <h3 className="font-bold text-xl">Progreso de la Meta Mensual</h3>
-                            <p className="text-sm text-slate-500">Meta: {metaMensualUnidades.toLocaleString()} unidades</p>
+                            <h3 className="font-bold text-xl">Progreso de Tu Meta Mensual</h3>
+                            <p className="text-sm text-slate-500">Meta Asignada: {metaMensualUnidades.toLocaleString()} unidades</p>
                         </div>
                         <div className="relative w-full h-8 bg-slate-200 rounded-full mt-4 overflow-hidden">
                             <div className="absolute top-0 left-0 h-8 rounded-full bg-brand-yellow transition-all duration-500" style={{ width: `${Math.min(porcentajeAlcanzado, 100)}%` }}></div>

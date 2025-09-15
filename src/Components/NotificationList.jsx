@@ -6,8 +6,8 @@ import NotificationItem from '@/Components/NotificationItem';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import { BellOff } from 'lucide-react';
 
-const NotificationList = () => {
-    // CORRECCIÓN: Obtenemos deleteNotification y viewReport del hook
+// ✅ CAMBIO 1: Aceptamos la prop 'onNavigate' que viene desde AlertsCenterView.
+const NotificationList = ({ onNavigate }) => {
     const { notifications, loading, markAsRead, deleteNotification, viewReport } = useNotifications();
 
     if (loading) {
@@ -31,8 +31,10 @@ const NotificationList = () => {
                     key={notification.id}
                     notification={notification}
                     markAsRead={markAsRead}
-                    deleteNotification={deleteNotification} // <-- Pasamos la función de eliminar
-                    viewReport={viewReport}               // <-- Pasamos la función de ver reporte
+                    deleteNotification={deleteNotification}
+                    viewReport={viewReport}
+                    // ✅ CAMBIO 2: Pasamos la prop 'onNavigate' a cada NotificationItem.
+                    onNavigate={onNavigate}
                 />
             ))}
         </div>

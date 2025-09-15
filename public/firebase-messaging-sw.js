@@ -1,3 +1,4 @@
+// Versión 2.0 - Forzando actualización de caché.
 // Importamos los scripts de Firebase necesarios para el service worker.
 importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js");
