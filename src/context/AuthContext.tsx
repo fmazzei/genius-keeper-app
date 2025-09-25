@@ -2,14 +2,15 @@
 
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import type { ReactNode } from 'react';
-// ✅ CAMBIO: Ya no importamos 'setPersistence' ni 'indexedDBLocalPersistence' aquí.
 import { onAuthStateChanged, signInWithEmailAndPassword, signInWithCustomToken } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { auth } from '../Firebase/config';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../Firebase/config';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 
 interface AuthContextType {
   user: User | null;
+  role: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<any>;
   signInWithCustomToken: (token: string) => Promise<any>;
@@ -31,21 +32,43 @@ export const useAuth = (): AuthContextType => {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
+  const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      if (currentUser) {
+        try {
+          const userDocRef = doc(db, 'users_metadata', currentUser.uid);
+          const docSnap = await getDoc(userDocRef);
+          if (docSnap.exists()) {
+            setRole(docSnap.data().role);
+          } else {
+            setRole('no-role');
+          }
+        } catch (error) {
+          console.error("Error crítico al buscar el rol del usuario:", error);
+          setRole('no-role');
+        }
+      } else {
+        setRole(null);
+      }
       setLoading(false);
     });
     return unsubscribe;
   }, []);
 
   const login = async (email: string, password: string) => {
-    // ✅ CAMBIO: La línea 'setPersistence' ha sido eliminada. Ya no es necesaria aquí.
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     if (userCredential.user) {
-      await requestNotificationPermission(userCredential.user.uid);
+        // ✅ SOLUCIÓN: Envolvemos la petición de notificaciones en su propio try...catch.
+        // Si falla, solo mostrará una advertencia en la consola pero NO detendrá el login.
+        try {
+            await requestNotificationPermission(userCredential.user.uid);
+        } catch (notificationError) {
+            console.warn("No se pudo obtener el permiso para notificaciones (esto es normal en desarrollo):", notificationError);
+        }
     }
     return userCredential;
   };
@@ -53,13 +76,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signInWithCustomTokenHandler = async (token: string) => {
       const userCredential = await signInWithCustomToken(auth, token);
       if (userCredential.user) {
-          await requestNotificationPermission(userCredential.user.uid);
+          try {
+            await requestNotificationPermission(userCredential.user.uid);
+          } catch (notificationError) {
+            console.warn("No se pudo obtener el permiso para notificaciones:", notificationError);
+          }
       }
       return userCredential;
   };
 
   const value: AuthContextType = { 
     user, 
+    role,
     loading,
     login,
     signInWithCustomToken: signInWithCustomTokenHandler,
@@ -67,7 +95,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 };

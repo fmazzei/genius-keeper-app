@@ -1,9 +1,8 @@
 // RUTA: src/Pages/ManagerLayout.jsx
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react'; // ✅ Se añade useEffect
 import { useGeniusEngine } from '@/hooks/useGeniusEngine';
 import { useNotifications } from '@/hooks/useNotifications';
-// ✅ 1. IMPORTAMOS EL NUEVO HOOK ESPECIALIZADO
 import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/Firebase/config.js';
@@ -15,22 +14,33 @@ import AlertsCenterView from './AlertsCenterView.jsx';
 import InventoryPanel from './InventoryPanel.jsx';
 import AdminPanel from './AdminPanel.jsx';
 import SalesFocusDashboard from './SalesFocusDashboard.jsx';
-import Planner from './Planner/Planner.jsx';
 import CommissionsView from './CommissionsView.jsx';
 import SalesDashboard from './SalesDashboard.jsx';
 
+// ✅ Se importan ambos componentes del planificador
+import MonthlyPlanner from './Planner/MonthlyPlanner.jsx';
+import Planner from './Planner/Planner.jsx';
+
 const ManagerLayout = ({ user, role, onLogout }) => {
-    const { tasks: rawTasks, posList, reports, loading: geniusLoading } = useGeniusEngine(role);
+    const { posList, reports, loading: geniusLoading } = useGeniusEngine(role);
     const { unreadCount } = useNotifications();
     
-    // ✅ 2. OBTENEMOS LA AGENDA DEL VENDEDOR USANDO SU UID ESPECÍFICO
-    // Este UID corresponde a 'anaquel@lacteoca.com'
-    const MERCHANDISER_UID = 'Lo8ETRzbWXOdc6JeZ9QusBFq2ZJ2'; 
-    const { agenda, updateAgenda, loading: agendaLoading } = useAgenda(MERCHANDISER_UID);
+    // Este hook se mantiene por si es usado en alguna otra parte del layout.
+    const { agenda: legacyAgenda, updateAgenda: updateLegacyAgenda, loading: agendaLoading } = useAgenda(user.uid); 
     
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [currentView, setCurrentView] = useState(role === 'sales_manager' ? 'focus' : 'dashboard');
+
+    // ✅ Se añade un estado para controlar la navegación del planificador.
+    const [selectedWeekId, setSelectedWeekId] = useState(null);
+
+    // ✅ Se añade un efecto para limpiar la selección de semana al cambiar de vista.
+    useEffect(() => {
+        if (currentView !== 'planner') {
+            setSelectedWeekId(null);
+        }
+    }, [currentView]);
 
     const getGreeting = () => {
         const viewTitles = {
@@ -40,7 +50,8 @@ const ManagerLayout = ({ user, role, onLogout }) => {
             inventory: 'Panel de Inventario', 
             settings: 'Panel de Administración',
             focus: 'Brújula de Ventas',
-            planner: 'Planificador de Ruta',
+            // El título ahora es más genérico para abarcar ambas vistas
+            planner: 'Centro de Planificación', 
             commissions: 'Mis Comisiones',
             sales: 'Metas de Venta'
         };
@@ -66,7 +77,7 @@ const ManagerLayout = ({ user, role, onLogout }) => {
                 <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />
-                <NavItem icon={<Map size={24} />} text="Planificador de Ruta" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
+                <NavItem icon={<Map size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
                 <NavItem icon={<Settings size={24} />} text="Administración" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
             </ul>
         );
@@ -75,7 +86,7 @@ const ManagerLayout = ({ user, role, onLogout }) => {
             <ul>
                 <NavItem icon={<Sun size={24} />} text="Brújula de Ventas" active={currentView === 'focus'} onClick={() => setCurrentView('focus')} />
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
-                <NavItem icon={<Map size={24} />} text="Planificador de Ruta" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
+                <NavItem icon={<Map size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
                 <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />
                 <NavItem icon={<DollarSign size={24} />} text="Comisiones" active={currentView === 'commissions'} onClick={() => setCurrentView('commissions')} />
                 <NavItem icon={<Target size={24} />} text="Metas de Venta" active={currentView === 'sales'} onClick={() => setCurrentView('sales')} />
@@ -93,7 +104,6 @@ const ManagerLayout = ({ user, role, onLogout }) => {
     
     const renderMainContent = () => {
         const commonProps = { reports, posList, loading: geniusLoading, onNavigate: setCurrentView };
-        const tasks = rawTasks || [];
         
         return (
             <>
@@ -102,17 +112,27 @@ const ManagerLayout = ({ user, role, onLogout }) => {
                 <div className={currentView === 'alerts' ? 'block h-full' : 'hidden'}><AlertsCenterView onNavigate={setCurrentView} /></div>
                 <div className={currentView === 'inventory' ? 'block h-full' : 'hidden'}><InventoryPanel role={role} /></div>
                 <div className={currentView === 'settings' ? 'block h-full' : 'hidden'}><AdminPanel user={user} {...commonProps} /></div>
-                <div className={currentView === 'focus' ? 'block h-full' : 'hidden'}><SalesFocusDashboard allAlerts={tasks} {...commonProps} /></div>
+                <div className={currentView === 'focus' ? 'block h-full' : 'hidden'}><SalesFocusDashboard {...commonProps} /></div>
+                
+                {/* ✅ LÓGICA DE PLANIFICACIÓN ACTUALIZADA */}
                 <div className={currentView === 'planner' ? 'block h-full' : 'hidden'}>
-                    <Planner 
-                        role={role} 
-                        allPossibleStops={posList}
-                        agenda={agenda}
-                        updateAgenda={updateAgenda}
-                        geniusTasks={tasks} 
-                        onSelectPos={() => {}} 
-                    />
+                    {selectedWeekId ? (
+                        <Planner 
+                            role={role} 
+                            allPossibleStops={posList}
+                            selectedReporter={user}
+                            weekId={selectedWeekId}
+                            onBackToMonthly={() => setSelectedWeekId(null)}
+                            onSelectPos={() => {}}
+                        />
+                    ) : (
+                        <MonthlyPlanner 
+                            reporter={user}
+                            onSelectWeek={(weekId) => setSelectedWeekId(weekId)}
+                        />
+                    )}
                 </div>
+                
                 <div className={currentView === 'commissions' ? 'block h-full' : 'hidden'}><CommissionsView /></div>
                 <div className={currentView === 'sales' ? 'block h-full' : 'hidden'}><SalesDashboard {...commonProps} /></div>
             </>

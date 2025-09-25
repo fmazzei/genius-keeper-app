@@ -1,3 +1,5 @@
+// RUTA: functions/handlers/callable.js
+
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const axios = require("axios");
@@ -128,14 +130,17 @@ exports.reverseGeocode = functions.https.onCall(async (data, context) => {
 });
 
 // ==========================================================
-// --- El Cerebro del Planificador Inteligente (Versión Final con 'coordinates') ---
+// --- El Cerebro del Planificador Inteligente (Versión Final) ---
 // ==========================================================
 exports.generateSmartAgenda = functions.runWith({timeoutSeconds: 300, memory: '1GB'}).https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
     }
+
+    const { city, visitCount, dailyHours, anchorPoint, startMode = 'fixed', excludeIds = [], depotVisits = {}, isContinuation = false } = data;
     
-    const { city, visitCount, dailyHours, anchorPoint, startMode = 'fixed', excludeIds = [] } = data;
+    functions.logger.info("SMART AGENDA DEBUG (INICIO): Datos recibidos", { dataRecibida: data });
+    
     const API_KEY_MAPS = functions.config().genius.maps_api_key;
 
     if (!anchorPoint) throw new functions.https.HttpsError("invalid-argument", "Se requiere un punto de anclaje.");
@@ -143,24 +148,39 @@ exports.generateSmartAgenda = functions.runWith({timeoutSeconds: 300, memory: '1
 
     let anchorPointCoords;
     try {
-        const geocodeResponse = await axios.get(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(anchorPoint)}&key=${API_KEY_MAPS}`);
+        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(anchorPoint)}&region=ve&key=${API_KEY_MAPS}`;
+        functions.logger.info("SMART AGENDA DEBUG: URL de Geocodificación", { url: geocodeUrl });
+        
+        const geocodeResponse = await axios.get(geocodeUrl);
+        
+        functions.logger.info("SMART AGENDA DEBUG: Respuesta de Geocodificación", { status: geocodeResponse.data.status, results: geocodeResponse.data.results.length });
+
         if (geocodeResponse.data.status !== 'OK' || geocodeResponse.data.results.length === 0) {
             throw new functions.https.HttpsError("not-found", `No se pudo geocodificar el punto de partida: ${anchorPoint}`);
         }
         anchorPointCoords = geocodeResponse.data.results[0].geometry.location;
+        
+        functions.logger.info("SMART AGENDA DEBUG: Coordenadas del Punto de Partida obtenidas", { coords: anchorPointCoords });
+
     } catch (error) {
+        functions.logger.error("Error geocodificando anchorPoint:", error);
         throw new functions.https.HttpsError("internal", "Error al buscar la ubicación del punto de partida.");
     }
 
     const posQuery = admin.firestore().collection('pos').where('active', '==', true).where('city', '==', city);
-    const posSnapshot = await posQuery.get();
-    if (posSnapshot.empty) return { name: `Agenda para ${city}`, days: {} };
+    const depotsQuery = admin.firestore().collection('depots').where('city', '==', city);
+    
+    const [posSnapshot, depotsSnapshot] = await Promise.all([posQuery.get(), depotsQuery.get()]);
+    
+    const posData = posSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const depotsData = depotsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    const allPosInCity = posSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    let posWithDistance = allPosInCity
+    if (posData.length === 0) {
+        return { name: `Agenda para ${city}`, days: {}, anchorPoint: data.anchorPoint, anchorPointCoords: anchorPointCoords };
+    }
+    
+    let posWithDistance = posData
         .map(p => {
-            // ✅ CORRECCIÓN: Ahora solo busca en el campo 'coordinates'.
             const coords = p.coordinates;
             if (!coords || typeof coords.lat !== 'number' || typeof coords.lng !== 'number') return null;
             return { ...p, coords, distance: haversineDistance(anchorPointCoords, coords) };
@@ -177,11 +197,11 @@ exports.generateSmartAgenda = functions.runWith({timeoutSeconds: 300, memory: '1
     const maxStopsForApi = 9;
     const selectedPos = posWithDistance.slice(0, Math.min(visitCount, maxStopsForApi));
     
-    if (selectedPos.length === 0) {
-        return { name: `Agenda para ${city}`, days: {} };
+    if (selectedPos.length === 0 && Object.keys(depotVisits).length === 0) {
+        return { name: `Agenda para ${city}`, days: {}, anchorPoint: data.anchorPoint, anchorPointCoords: anchorPointCoords };
     }
 
-    const locationsToMatrix = [{ ...anchorPointCoords, id: 'anchor' }, ...selectedPos.map(p => ({ ...p.coords, id: p.id }))];
+    const locationsToMatrix = [{ ...anchorPointCoords, id: 'anchor' }, ...selectedPos.map(p => ({ ...p.coordinates, id: p.id }))];
     const origins = locationsToMatrix.map(l => `${l.lat},${l.lng}`).join('|');
     const matrixUrl = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origins}&destinations=${origins}&key=${API_KEY_MAPS}`;
     
@@ -247,8 +267,28 @@ exports.generateSmartAgenda = functions.runWith({timeoutSeconds: 300, memory: '1
                 lastDayPosId = agenda[day][agenda[day].length - 1].id;
             }
         }
-        return { name: `Agenda Generada para ${city}`, days: agenda };
+        
+        if (!isContinuation) {
+            for (const depotId in depotVisits) {
+                const daysToVisit = depotVisits[depotId];
+                const depotData = depotsData.find(p => p.id === depotId);
+                if (depotData) {
+                    for (const day in daysToVisit) {
+                        if (daysToVisit[day] === true) {
+                            if (!agenda[day]) {
+                                agenda[day] = [];
+                            }
+                            agenda[day].unshift(depotData);
+                        }
+                    }
+                }
+            }
+        }
+
+        return { name: `Agenda Generada para ${city}`, days: agenda, anchorPoint: data.anchorPoint, anchorPointCoords: anchorPointCoords };
+
     } catch (error) {
+        functions.logger.error("Error obteniendo matriz de distancias:", error);
         throw new functions.https.HttpsError("internal", "No se pudo obtener la matriz de distancias.");
     }
 });
@@ -271,3 +311,264 @@ exports.generateRegistrationOptions = functions.runWith({ memory: '512MB' }).htt
 exports.verifyRegistration = functions.runWith({ memory: '512MB' }).https.onCall(async (data, context) => { /* ...código original... */ });
 exports.generateAuthenticationOptions = functions.runWith({ memory: '512MB' }).https.onCall(async (data) => { /* ...código original... */ });
 exports.verifyAuthentication = functions.runWith({ memory: '512MB' }).https.onCall(async (data) => { /* ...código original... */ });
+
+
+// ==========================================================
+// --- Función de Delegación de Visitas ---
+// ==========================================================
+exports.delegateVisit = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
+    }
+
+    const { targetUserId, stopData } = data;
+    if (!targetUserId || !stopData) {
+        throw new functions.https.HttpsError("invalid-argument", "Faltan los datos del usuario objetivo o de la parada.");
+    }
+
+    const delegatorId = context.auth.uid;
+    const delegatorUserRecord = await admin.auth().getUser(delegatorId);
+    const delegatorName = delegatorUserRecord.displayName || delegatorUserRecord.email;
+
+    const task = {
+        targetUserId,
+        delegatedByUserId: delegatorId,
+        delegatedByName: delegatorName,
+        stopData,
+        status: 'pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await admin.firestore().collection('delegated_tasks').add(task);
+
+    const notificationPayload = {
+        title: 'Nueva Visita Delegada',
+        body: `${delegatorName} te ha asignado una visita a: ${stopData.name}.`
+    };
+    
+    const dataPayload = { link: '/tasks' }; 
+
+    await sendNotificationToUser(targetUserId, notificationPayload, dataPayload);
+
+    return { success: true, message: "La visita ha sido delegada con éxito." };
+});
+
+// =========================================================================================
+// --- Funciones para el Sistema de Delegación de PDV ---
+// =========================================================================================
+
+exports.requestDelegation = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
+    }
+
+    const { requesterId, requesterName, ownerId, pdvId, pdvName } = data;
+    if (!requesterId || !requesterName || !ownerId || !pdvId || !pdvName) {
+        throw new functions.https.HttpsError("invalid-argument", "Faltan datos para crear la solicitud de delegación.");
+    }
+
+    const requestData = {
+        requesterId,
+        requesterName,
+        ownerId,
+        pdvId,
+        pdvName,
+        status: 'pending', 
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    const requestRef = await admin.firestore().collection('delegation_requests').add(requestData);
+
+    const task = {
+        targetReporterId: ownerId,
+        type: 'delegation_request',
+        title: `Solicitud de Delegación`,
+        details: `${requesterName} te ha solicitado la visita a ${pdvName}.`,
+        relatedRequestId: requestRef.id, 
+        status: 'pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+    
+    await admin.firestore().collection('delegated_tasks').add(task);
+    
+    return { success: true, message: "Solicitud enviada." };
+});
+
+exports.resolveDelegation = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "El usuario debe estar autenticado.");
+    }
+
+    const { requestId, resolution } = data;
+    if (!requestId || !resolution) {
+        throw new functions.https.HttpsError("invalid-argument", "Falta el ID de la solicitud y la resolución.");
+    }
+
+    const db = admin.firestore();
+    const requestRef = db.doc(`delegation_requests/${requestId}`);
+
+    if (resolution === 'rejected') {
+        await requestRef.update({ status: 'rejected' });
+        return { success: true, message: "Solicitud rechazada." };
+    }
+
+    if (resolution === 'approved') {
+        try {
+            await db.runTransaction(async (transaction) => {
+                const requestDoc = await transaction.get(requestRef);
+                if (!requestDoc.exists) {
+                    throw new functions.https.HttpsError("not-found", "La solicitud no existe.");
+                }
+                if (requestDoc.data().status !== 'pending') {
+                    throw new functions.https.HttpsError("already-exists", "Esta solicitud ya ha sido resuelta.");
+                }
+
+                const { ownerId, requesterId, requesterName, pdvId, pdvName } = requestDoc.data();
+
+                const ownerAgendaRef = db.doc(`agendas/${ownerId}`);
+                const requesterAgendaRef = db.doc(`agendas/${requesterId}`);
+                const [ownerAgendaDoc, requesterAgendaDoc] = await Promise.all([
+                    transaction.get(ownerAgendaRef),
+                    transaction.get(requesterAgendaRef)
+                ]);
+
+                if (!ownerAgendaDoc.exists) {
+                    throw new functions.https.HttpsError("not-found", "La agenda del dueño original no fue encontrada.");
+                }
+
+                const ownerAgendaData = ownerAgendaDoc.data();
+                const requesterAgendaData = requesterAgendaDoc.exists ? requesterAgendaDoc.data() : { name: `Agenda de ${requesterName}`, days: {} };
+                
+                let stopToMove = null;
+                let originalDay = null;
+
+                for (const [day, stops] of Object.entries(ownerAgendaData.days)) {
+                    const stopIndex = stops.findIndex(s => s.id === pdvId);
+                    if (stopIndex > -1) {
+                        [stopToMove] = ownerAgendaData.days[day].splice(stopIndex, 1);
+                        originalDay = day;
+                        break;
+                    }
+                }
+
+                if (!stopToMove) {
+                    functions.logger.warn(`El PDV ${pdvId} no se encontró en la agenda de ${ownerId}, pero se procederá con la reasignación.`);
+                    stopToMove = { id: pdvId, name: pdvName };
+                }
+                
+                const targetDay = originalDay || 'lunes';
+                if (!requesterAgendaData.days[targetDay]) {
+                    requesterAgendaData.days[targetDay] = [];
+                }
+                requesterAgendaData.days[targetDay].push(stopToMove);
+
+                transaction.set(ownerAgendaRef, ownerAgendaData);
+                transaction.set(requesterAgendaRef, requesterAgendaData, { merge: true });
+
+                const assignmentRef = db.doc(`pdv_assignments/${pdvId}`);
+                transaction.update(assignmentRef, {
+                    reporterId: requesterId,
+                    reporterName: requesterName
+                });
+
+                transaction.update(requestRef, { status: 'approved' });
+            });
+
+            return { success: true, message: "PDV delegado con éxito." };
+
+        } catch (error) {
+            functions.logger.error(`Error al resolver delegación ${requestId}:`, error);
+            throw new functions.https.HttpsError("internal", "No se pudo completar la transferencia del PDV.");
+        }
+    }
+
+    return { success: false, message: "Resolución no válida." };
+});
+
+
+// =========================================================================================
+// ✅ INICIO: NUEVAS FUNCIONES PARA DELEGACIÓN POR WHATSAPP
+// =========================================================================================
+
+/**
+ * Crea una invitación de ruta compartible en la base de datos.
+ * Devuelve un ID único para ser usado en un Dynamic Link.
+ */
+exports.createShareableRoute = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Debes estar autenticado.");
+    }
+    const { day, stops } = data;
+    if (!day || !stops || stops.length === 0) {
+        throw new functions.https.HttpsError("invalid-argument", "Faltan datos de la ruta para compartir.");
+    }
+
+    const userRecord = await admin.auth().getUser(context.auth.uid);
+    const userName = userRecord.displayName || userRecord.email || "Un colega";
+
+    const inviteData = {
+        fromUserId: context.auth.uid,
+        fromUserName: userName,
+        day,
+        stops,
+        status: 'pending', // pending, accepted-merged, accepted-replaced, rejected
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    const inviteRef = await admin.firestore().collection('delegation_invites').add(inviteData);
+    return { inviteId: inviteRef.id };
+});
+
+/**
+ * Resuelve una invitación de ruta (la rechaza o acepta).
+ * Si se rechaza, notifica al emisor original.
+ */
+exports.resolveShareableRoute = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError("unauthenticated", "Debes estar autenticado.");
+    }
+    const { inviteId, resolution } = data; // resolution puede ser 'rejected', 'accepted'
+    if (!inviteId || !resolution) {
+        throw new functions.https.HttpsError("invalid-argument", "Faltan datos de la resolución.");
+    }
+
+    const inviteRef = admin.firestore().collection('delegation_invites').doc(inviteId);
+    const inviteDoc = await inviteRef.get();
+
+    if (!inviteDoc.exists) {
+        throw new functions.https.HttpsError("not-found", "La invitación de ruta no existe o ha expirado.");
+    }
+
+    const inviteData = inviteDoc.data();
+    const recipientRecord = await admin.auth().getUser(context.auth.uid);
+    const recipientName = recipientRecord.displayName || recipientRecord.email || "Tu colega";
+
+    // Si la invitación ya fue resuelta, no hacer nada.
+    if (inviteData.status !== 'pending') {
+        return { success: true, message: "Esta invitación ya fue resuelta." };
+    }
+
+    await inviteRef.update({ 
+        status: resolution,
+        resolvedByUserId: context.auth.uid,
+        resolvedByUserName: recipientName,
+        resolvedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Si se rechaza, notifica al emisor original.
+    if (resolution === 'rejected') {
+        const notificationPayload = {
+            title: 'Ruta Rechazada',
+            body: `${recipientName} ha rechazado la ruta que le enviaste para el día ${inviteData.day}.`
+        };
+        await sendNotificationToUser(inviteData.fromUserId, notificationPayload, {});
+        return { success: true, message: "La ruta ha sido rechazada." };
+    }
+    
+    // Para cualquier otro caso de aceptación.
+    if (resolution.startsWith('accepted')) {
+        return { success: true, message: "La ruta ha sido aceptada." };
+    }
+
+    return { success: false, message: "Resolución no válida." };
+});

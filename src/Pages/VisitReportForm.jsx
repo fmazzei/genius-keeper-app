@@ -1,38 +1,25 @@
 // RUTA: src/Pages/VisitReportForm.jsx
 
 import React, { useState, useEffect } from 'react';
-import { addDoc, collection, serverTimestamp, query, where, onSnapshot } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { useSwipeable } from 'react-swipeable';
-import { ArrowLeft, Send, MapPin, DollarSign, Package, Calendar, BarChart2, Check, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, UserPlus } from 'lucide-react';
+import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search } from 'lucide-react';
 import { FormInput, ToggleButton, FormSection } from '@/Components/FormControls.jsx';
 import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
 import NewEntrantModal from '@/Components/NewEntrantModal.jsx';
 import { useVisionAPI } from '@/hooks/useVisionAPI.js';
-// ✅ SOLUCIÓN 1/3: Simplificamos la importación para traer solo la función principal que sí funciona.
 import imageCompression from 'browser-image-compression';
 
 
-// ✅ SOLUCIÓN 2/3: Añadimos nuestras propias funciones de ayuda para reemplazar las de la librería que dan error.
-/**
- * Convierte una imagen en formato Data URL (base64) a un objeto File.
- * @param {string} dataUrl - La imagen en formato Data URL.
- * @param {string} filename - El nombre del archivo a crear.
- * @returns {Promise<File>} - Una promesa que se resuelve con el objeto File.
- */
 const customDataUrlToFile = async (dataUrl, filename) => {
   const res = await fetch(dataUrl);
   const blob = await res.blob();
   return new File([blob], filename, { type: blob.type });
 };
 
-/**
- * Convierte un objeto File a formato Data URL (base64).
- * @param {File} file - El archivo a convertir.
- * @returns {Promise<string>} - Una promesa que se resuelve con la cadena Data URL.
- */
 const customFileToDataURL = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -44,8 +31,7 @@ const customFileToDataURL = (file) => {
 
 
 // --- Constantes y Utilidades ---
-const TOTAL_STEPS = 5;
-const GPS_RADIUS_METERS = 500;
+const TOTAL_STEPS = 4; // ✅ CORREGIDO: Ahora son 4 pasos
 const SHELF_LOCATIONS = [ { id: 'ojos', label: 'Nivel Ojos (Zona Caliente)' }, { id: 'manos', label: 'Nivel Manos (Zona Tibia)' }, { id: 'superior', label: 'Nivel Superior (Zona Fría)' }, { id: 'inferior', label: 'Nivel Inferior (Zona Fría)' } ];
 const ADJACENT_CATEGORIES = [ { id: 'Quesos crema', label: 'Quesos crema' }, { id: 'Quesos de Cabra', label: 'Quesos de Cabra' }, { id: 'Delicatessen', label: 'Delicatessen' }, { id: 'Nevera Charcutería', label: 'Nevera Charcutería' } ];
 const POP_STATUS_OPTIONS = [ { id: 'Exhibido correctamente', label: 'Exhibido OK', icon: <ThumbsUp/> }, { id: 'Dañado', label: 'Dañado', icon: <AlertCircle/> }, { id: 'Ausente', label: 'Ausente', icon: <X/> }, { id: 'Sin Campaña Activa', label: 'Sin Campaña', icon: <Info/> } ];
@@ -82,65 +68,8 @@ const SubmissionSuccess = ({ onFinish, isOffline }) => {
     );
 };
 
-const Step1_ReporterSelection = ({ reporters, loadingReporters, selectedReporterName, setSelectedReporterName }) => {
-    const [otherName, setOtherName] = useState('');
-    const [showOtherInput, setShowOtherInput] = useState(false);
 
-    const handleSelect = (name) => {
-        setSelectedReporterName(name);
-        setShowOtherInput(false);
-        setOtherName('');
-    };
-
-    const handleSelectOther = () => {
-        setShowOtherInput(true);
-        setSelectedReporterName('');
-    };
-    
-    const handleOtherNameChange = (e) => {
-        setOtherName(e.target.value);
-        setSelectedReporterName(e.target.value);
-    };
-
-    if (loadingReporters) {
-        return <div className="flex justify-center items-center h-48"><Loader className="animate-spin h-8 w-8 text-brand-blue" /></div>;
-    }
-
-    return (
-        <FormSection title="Selección de Repartidor" icon={<UserPlus className="text-brand-blue mr-3"/>}>
-            <div className="space-y-4">
-                <p className="text-sm text-slate-600">¿Quién está realizando esta visita?</p>
-                <div className="grid grid-cols-2 gap-3">
-                    {reporters.map(name => (
-                        <ToggleButton 
-                            key={name}
-                            label={name}
-                            isSelected={selectedReporterName === name && !showOtherInput}
-                            onClick={() => handleSelect(name)}
-                        />
-                    ))}
-                    <ToggleButton 
-                        label="Otro"
-                        isSelected={showOtherInput}
-                        onClick={handleSelectOther}
-                    />
-                </div>
-                {showOtherInput && (
-                    <div className="animate-fade-in-up mt-4">
-                         <FormInput 
-                            label="Nombre del repartidor"
-                            value={otherName}
-                            onChange={handleOtherNameChange}
-                            placeholder="Escribe tu nombre y apellido"
-                        />
-                    </div>
-                )}
-            </div>
-        </FormSection>
-    );
-};
-
-const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
+const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
     const [currentDate, setCurrentDate] = useState('');
     const [isScannerOpen, setScannerOpen] = useState(false);
     const [isNumpadOpen, setNumpadOpen] = useState(false);
@@ -162,7 +91,6 @@ const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
         setScannerOpen(false);
 
         try {
-            // ✅ SOLUCIÓN 3/3: Usamos nuestra función de ayuda `custom` en lugar de la de la librería.
             const imageFile = await customDataUrlToFile(imageDataUrl, 'photo.jpg');
 
             const options = {
@@ -170,13 +98,11 @@ const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
                 maxWidthOrHeight: 1280,
                 useWebWorker: true,
             };
-            // La llamada a la función principal de compresión no cambia y funciona bien.
             const compressedFile = await imageCompression(imageFile, options);
             
             setIsOptimizing(false);
             setScannerStatus("Analizando fecha...");
 
-            // ✅ SOLUCIÓN 3/3: Usamos nuestra otra función de ayuda `custom`.
             const compressedImageDataUrl = await customFileToDataURL(compressedFile);
             
             const finalResult = await processImageForDate(compressedImageDataUrl);
@@ -239,7 +165,7 @@ const Step2_Inventory = ({ report, setReport, isReadOnly }) => {
     );
 };
 
-const Step3_Sales = ({ report, setReport, isReadOnly }) => (
+const Step2_Sales = ({ report, setReport, isReadOnly }) => (
     <FormSection title="PVP y Reposición" icon={<DollarSign className="text-brand-blue mr-3"/>}>
         <div className="space-y-4">
             <FormInput label="Precio de Venta al Público (PVP)" type="number" value={report.price} onChange={e => setReport(prev => ({...prev, price: e.target.value}))} placeholder="Ej: 10.25" disabled={isReadOnly} />
@@ -248,7 +174,7 @@ const Step3_Sales = ({ report, setReport, isReadOnly }) => (
     </FormSection>
 );
 
-const Step4_Execution = ({ report, setReport, isReadOnly }) => {
+const Step3_Execution = ({ report, setReport, isReadOnly }) => {
     const [isNumpadOpen, setNumpadOpen] = useState(false);
     const handleNumpadConfirm = (value) => { if(!isReadOnly) { setReport(prev => ({...prev, facing: value})); setNumpadOpen(false); }};
     return (
@@ -280,7 +206,7 @@ const Step4_Execution = ({ report, setReport, isReadOnly }) => {
     );
 };
 
-const Step5_Intel = ({ report, setReport, isReadOnly }) => {
+const Step4_Intel = ({ report, setReport, isReadOnly }) => {
     const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null });
     const [isEntrantModalOpen, setIsEntrantModalOpen] = useState(false);
     const handleAddCompetitor = () => {
@@ -359,33 +285,19 @@ const Step5_Intel = ({ report, setReport, isReadOnly }) => {
     );
 };
 
-const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialData = null }) => {
+const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly = false, initialData = null }) => {
     const [currentStep, setCurrentStep] = useState(1);
     const [submissionState, setSubmissionState] = useState('form');
     const [isOfflineSave, setIsOfflineSave] = useState(false);
     const [report, setReport] = useState({ reporterName: '', price: '', orderQuantity: '', stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
-    const [uiState, setUiState] = useState({ statusMessage: '', errorMessage: '', gpsStatus: 'checking', initialGpsValid: false });
     const [reportDate, setReportDate] = useState(new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }));
     const [isStepValid, setIsStepValid] = useState(false);
-    const [reporters, setReporters] = useState([]);
-    const [loadingReporters, setLoadingReporters] = useState(true);
 
     useEffect(() => {
-        if (isReadOnly) {
-            setLoadingReporters(false);
-            return;
+        if (selectedReporter && !isReadOnly) {
+            setReport(prev => ({ ...prev, reporterName: selectedReporter.name }));
         }
-        const q = query(collection(db, "reporters"), where("active", "==", true));
-        const unsub = onSnapshot(q, (snapshot) => {
-            const reportersData = snapshot.docs.map(doc => doc.data().name);
-            setReporters(reportersData);
-            setLoadingReporters(false);
-        }, (error) => {
-            console.error("Error cargando repartidores:", error);
-            setLoadingReporters(false);
-        });
-        return () => unsub();
-    }, [isReadOnly]);
+    }, [selectedReporter, isReadOnly]);
 
     useEffect(() => {
         if (initialData) {
@@ -412,50 +324,15 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
 
     useEffect(() => {
         if (isReadOnly) {
-            return;
-        };
-        const haversineDistance = (coords1, coords2) => {
-            if (!coords1 || !coords2) return Infinity;
-            const toRad = (x) => (x * Math.PI) / 180;
-            const R = 6371e3; // Metros
-            const dLat = toRad(coords2.lat - coords1.lat);
-            const dLon = toRad(coords2.lng - coords1.lng);
-            const lat1 = toRad(coords1.lat);
-            const lat2 = toRad(coords2.lat);
-            const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c;
-        };
-        
-        if (!pos?.coordinates) { 
-            setUiState(prev => ({ ...prev, gpsStatus: 'no_pos_location', initialGpsValid: true })); 
-            return; 
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const userLocation = { lat: position.coords.latitude, lng: position.coords.longitude };
-                const distance = haversineDistance(userLocation, pos.coordinates);
-                if (distance > GPS_RADIUS_METERS) { setUiState(prev => ({ ...prev, gpsStatus: 'invalid_distance', initialGpsValid: false })); } 
-                else { setUiState(prev => ({ ...prev, gpsStatus: 'valid', initialGpsValid: true })); }
-            },
-            () => { setUiState(prev => ({ ...prev, gpsStatus: 'error', initialGpsValid: false })); },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-        );
-    }, [pos?.coordinates, isReadOnly]);
-    
-    useEffect(() => {
-        if (isReadOnly) {
             setIsStepValid(true);
             return;
-        }
+        };
         let isValid = false;
         switch (currentStep) {
-            case 1: isValid = report.reporterName !== ''; break;
-            case 2: isValid = report.batches.length > 0 || report.stockout; break;
-            case 3: isValid = report.price !== ''; break;
-            case 4: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
-            case 5: isValid = true; break;
+            case 1: isValid = report.batches.length > 0 || report.stockout; break;
+            case 2: isValid = report.price !== ''; break;
+            case 3: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
+            case 4: isValid = true; break;
             default: isValid = false;
         }
         setIsStepValid(isValid);
@@ -508,7 +385,6 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
                 setSubmissionState('success');
             } catch (err) {
                 console.error("Error al enviar el reporte a Firestore (online):", err);
-                setUiState({ ...uiState, errorMessage: 'Error de envío online. Guardando localmente...' });
                 await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
                 setIsOfflineSave(true);
                 setSubmissionState('success');
@@ -520,7 +396,6 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
                 setSubmissionState('success');
             } catch (err) {
                 console.error("Error al guardar el reporte localmente:", err);
-                setUiState({ ...uiState, errorMessage: 'No se pudo guardar el reporte en el dispositivo.' });
                 setSubmissionState('form');
             }
         }
@@ -529,30 +404,15 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
     const renderStepContent = () => {
         const stepProps = { report, setReport, isReadOnly };
         switch (currentStep) {
-            case 1: return <Step1_ReporterSelection reporters={reporters} loadingReporters={loadingReporters} selectedReporterName={report.reporterName} setSelectedReporterName={(name) => setReport(prev => ({...prev, reporterName: name}))} />;
-            case 2: return <Step2_Inventory {...stepProps} />;
-            case 3: return <Step3_Sales {...stepProps} />;
-            case 4: return <Step4_Execution {...stepProps} />;
-            case 5: return <Step5_Intel {...stepProps} />;
+            case 1: return <Step1_Inventory {...stepProps} />;
+            case 2: return <Step2_Sales {...stepProps} />;
+            case 3: return <Step3_Execution {...stepProps} />;
+            case 4: return <Step4_Intel {...stepProps} />;
             default: return <div>Paso no encontrado</div>;
         }
     };
 
     if (submissionState === 'success') return <SubmissionSuccess onFinish={backToList} isOffline={isOfflineSave} />;
-
-    const GpsStatusIndicator = () => {
-        const statuses = {
-            checking: { text: 'Verificando GPS...', color: 'bg-yellow-100 text-yellow-800' },
-            valid: { text: 'Ubicación Verificada', color: 'bg-green-100 text-green-800' },
-            invalid_distance: { text: `Fuera de rango (${GPS_RADIUS_METERS}m)`, color: 'bg-red-100 text-red-800' },
-            error: { text: 'Error de GPS', color: 'bg-red-100 text-red-800' },
-            no_pos_location: { text: 'PDV sin GPS', color: 'bg-yellow-100 text-yellow-800' },
-        };
-        const status = statuses[uiState.gpsStatus] || statuses.error;
-        return ( <div className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-2 ${status.color}`}><MapPin size={14}/> {status.text}</div> );
-    };
-
-    const isSubmitDisabled = submissionState === 'submitting' || (!uiState.initialGpsValid && navigator.onLine);
 
     return (
         <div className="max-w-4xl mx-auto p-2 sm:p-4 md:p-6 bg-slate-50 animate-fade-in relative pb-24">
@@ -561,16 +421,14 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
                     <button onClick={backToList} className="p-2 rounded-full hover:bg-slate-200 mr-2"><ArrowLeft /></button>
                     <div className="min-w-0">
                         <h2 className="text-lg sm:text-2xl font-bold text-slate-800 truncate">{initialData?.posName || pos?.name}</h2>
-                        <p className="text-sm text-slate-500">{reportDate}</p>
+                        <p className="text-sm text-slate-500">{(selectedReporter && selectedReporter.name) || (initialData && initialData.userName) || ''} - {reportDate}</p>
                     </div>
                 </div>
-                {!isReadOnly && <div className="flex-shrink-0 ml-2"><GpsStatusIndicator /></div>}
             </header>
             
             {!isReadOnly && <ProgressBar currentStep={currentStep} totalSteps={TOTAL_STEPS} />}
             
             <div {...handlers} className="my-4 sm:my-6">
-                 {uiState.errorMessage && <div className="bg-red-100 text-red-700 p-3 rounded-md mb-4">{uiState.errorMessage}</div>}
                  {renderStepContent()}
             </div>
             
@@ -587,7 +445,7 @@ const VisitReportForm = ({ pos, backToList, user, isReadOnly = false, initialDat
                                 <ChevronRight size={20} />
                             </button>
                         ) : (
-                            <button onClick={handleSubmit} disabled={isSubmitDisabled} className="flex items-center gap-2 bg-green-600 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-green-300">
+                            <button onClick={handleSubmit} disabled={submissionState === 'submitting'} className="flex items-center gap-2 bg-green-600 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-green-300">
                                 <Send size={20} /> {submissionState === 'submitting' ? 'Enviando...' : 'Finalizar'}
                             </button>
                         )}

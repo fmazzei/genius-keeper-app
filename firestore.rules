@@ -1,0 +1,136 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- FUNCIONES DE ROL ---
+    function getRole(uid) {
+      return get(/databases/$(database)/documents/users_metadata/$(uid)).data.role;
+    }
+    function isAdmin() {
+      return isMaster() || getRole(request.auth.uid) == 'sales_manager';
+    }
+    function isMaster() {
+      return request.auth.token.email == 'lacteoca@lacteoca.com';
+    }
+    function isMerchandiser() {
+      return getRole(request.auth.uid) == 'merchandiser';
+    }
+    function isProduccion() {
+        return getRole(request.auth.uid) == 'produccion';
+    }
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // --- REGLAS DE COLECCIONES ---
+
+    match /users_metadata/{userId} {
+      allow get: if (isAuthenticated() && (request.auth.uid == userId || isAdmin())) || !isAuthenticated();
+      allow list: if isAdmin();
+      allow write: if request.auth.uid == userId || isMaster();
+      match /authenticators/{authenticatorId} {
+        allow read, write: if request.auth.uid == userId;
+      }
+      match /tokens/{tokenId} {
+        allow read, create, delete: if request.auth.uid == userId;
+      }
+    }
+
+    match /reporters/{reporterId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /visit_reports/{reportId} {
+      allow get: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin();
+      allow create: if (isMerchandiser() || isAdmin()) && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isMaster();
+    }
+
+    match /delegated_tasks/{taskId} {
+      allow list: if isAuthenticated() && (isAdmin() || isMerchandiser());
+      allow get, update: if isAuthenticated() && (isAdmin() || isMerchandiser());
+      allow create: if isAdmin();
+      allow delete: if isMaster();
+    }
+
+    match /ajustes_pendientes/{ajusteId} {
+      allow get: if isAuthenticated() && (request.auth.uid == resource.data.requesterId || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() || isProduccion();
+      allow update: if isMaster();
+      allow delete: if false;
+    }
+    
+    match /pagos_registrados/{pagoId} {
+      allow read, write: if isAdmin();
+      allow delete: if false;
+    }
+
+    match /pos/{posId} {
+      allow get, list: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow create, delete: if isMaster();
+    }
+
+    match /depots/{depotId} {
+      allow get, list: if isAuthenticated() && (isProduccion() || isAdmin() || isMerchandiser());
+      allow write: if isProduccion() || isAdmin();
+      match /stock/{productId} {
+        allow get, list: if isAuthenticated() && (isProduccion() || isAdmin());
+        allow write: if isProduccion() || isAdmin();
+      }
+    }
+    
+    match /ventas_pendientes/{saleId} {
+        allow read, write, update: if isAdmin();
+    }
+    
+    match /movimientos_inventario/{movimientoId} {
+        allow get, list: if isAdmin();
+        allow create, update, delete: if false;
+    }
+
+    match /transfers/{transferId} {
+      allow get, list: if isAuthenticated();
+      allow create: if isProduccion() || isAdmin();
+      allow update: if isMerchandiser() || isAdmin();
+      allow delete: if isMaster();
+    }
+
+    // ✅ REPARACIÓN: REGLA CORREGIDA Y VALIDADA PARA AGENDAS
+    // Esta estructura permite a los usuarios autorizados (merchandisers y admins)
+    // acceder tanto a la lista de agendas semanales como a cada agenda individual.
+    match /agendas/{reporterId} {
+      // Permite leer el documento principal de un reporter (si tuviera datos).
+      allow get: if isAuthenticated() && (isAdmin() || isMerchandiser());
+
+      // Esta regla anidada da permisos explícitos sobre la subcolección.
+      // 'list' es crucial para poder obtener la lista de agendas del mes.
+      match /weekly_agendas/{weekId} {
+        allow list, get, write: if isAuthenticated() && (isAdmin() || isMerchandiser());
+      }
+    }
+    
+    match /pdv_assignments/{pdvId} {
+        allow read: if isAuthenticated() && (isAdmin() || isMerchandiser());
+        allow write: if false;
+    }
+
+    match /delegation_requests/{requestId} {
+        allow read, write: if isAuthenticated() && (isAdmin() || isMerchandiser());
+    }
+
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isMaster();
+    }
+  }
+}

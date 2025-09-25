@@ -6,7 +6,12 @@ import App from './App.tsx';
 import './index.css';
 import { AuthProvider } from './context/AuthContext.tsx';
 import { SimulationProvider } from './context/SimulationContext.jsx';
-import { ReportViewProvider } from './context/ReportViewContext.jsx'; // <-- 1. IMPORTAR EL NUEVO PROVIDER
+import { ReportViewProvider } from './context/ReportViewContext.jsx';
+import { ReporterProvider } from './context/ReporterContext.jsx';
+import { InviteProvider } from './context/InviteContext.jsx'; // ✅ 1. IMPORTAR EL NUEVO PROVIDER
+
+// Importación global de estilos de Leaflet para el mapa
+import 'leaflet/dist/leaflet.css';
 
 // --- CÓDIGO DE REGISTRO DEL SERVICE WORKER ---
 if ('serviceWorker' in navigator) {
@@ -35,11 +40,16 @@ console.error = (...args) => {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AuthProvider>
-      <SimulationProvider>
-        <ReportViewProvider> {/* <-- 2. ENVOLVER LA APP CON EL NUEVO PROVIDER */}
-          <App />
-        </ReportViewProvider>
-      </SimulationProvider>
+      <ReporterProvider>
+        <SimulationProvider>
+          <ReportViewProvider>
+            {/* ✅ 2. ENVOLVER LA APP CON EL INVITEPROVIDER */}
+            <InviteProvider>
+              <App />
+            </InviteProvider>
+          </ReportViewProvider>
+        </SimulationProvider>
+      </ReporterProvider>
     </AuthProvider>
   </React.StrictMode>,
 );

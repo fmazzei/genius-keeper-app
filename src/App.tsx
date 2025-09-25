@@ -4,18 +4,20 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { onMessage, type MessagePayload } from "firebase/messaging";
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, messaging, db } from '@/Firebase/config.js';
+import { auth, messaging, dynamicLinks } from '@/Firebase/config.js';
+import { getDynamicLink, onDynamicLink } from "firebase/dynamic-links";
 import { useAuth } from '@/context/AuthContext.tsx';
 import { useReportView } from '@/context/ReportViewContext.jsx';
+import { useInvite } from '@/context/InviteContext.tsx'; 
 import LoginScreen from '@/Pages/LoginScreen.jsx';
 import ManagerLayout from '@/Pages/ManagerLayout.jsx';
 import AppShell from '@/Pages/AppShell.jsx';
 import ProductionPanel from '@/Pages/ProductionPanel.jsx';
-import SecurityLockScreen from '@/Components/SecurityLockScreen.jsx';
+import SecurityLockScreen from '@/Components/SecurityLockScreen.tsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import InAppNotification from '@/Components/InAppNotification.jsx';
 import ReportDetailModalController from '@/Components/ReportDetailModalController.tsx';
+import RouteInviteModal from '@/Components/RouteInviteModal.tsx';
 import { LogOut } from 'lucide-react';
 
 interface AppNotification {
@@ -24,55 +26,21 @@ interface AppNotification {
 }
 
 const AppLayout: React.FC = () => {
-    const { user, loading: authLoading } = useAuth();
-    const [role, setRole] = useState<string | null>(null);
+    const { user, role, loading } = useAuth();
     const [isSecurityLocked, setIsSecurityLocked] = useState<boolean>(true);
-    const [isLoadingMetadata, setIsLoadingMetadata] = useState<boolean>(true);
-
+    
     useEffect(() => {
-        const fetchUserMetadata = async () => {
-            if (user) {
-                setIsLoadingMetadata(true);
-                try {
-                    const userDocRef = doc(db, 'users_metadata', user.uid);
-                    const docSnap = await getDoc(userDocRef);
-                    
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        const userRole = data.role;
-                        setRole(userRole);
-
-                        if (userRole === 'merchandiser' || userRole === 'produccion') {
-                            if (data.isSecurityBypassed === true) {
-                                setIsSecurityLocked(false);
-                            } else {
-                                setIsSecurityLocked(true);
-                            }
-                        } else {
-                            setIsSecurityLocked(false);
-                        }
-                    } else {
-                        setRole('no-role');
-                        setIsSecurityLocked(false);
-                    }
-                } catch (error) {
-                    console.error("Error fetching user metadata:", error);
-                    setRole('no-role');
-                    setIsSecurityLocked(false);
-                } finally {
-                    setIsLoadingMetadata(false);
-                }
+        if (!loading) {
+            if ((role === 'merchandiser' || role === 'produccion')) {
+                setIsSecurityLocked(true);
             } else {
-                setRole(null);
-                setIsLoadingMetadata(false);
                 setIsSecurityLocked(false);
             }
-        };
+        }
+    }, [loading, role]);
 
-        fetchUserMetadata();
-    }, [user]);
 
-    if (authLoading || isLoadingMetadata) {
+    if (loading) {
         return <div className="flex justify-center items-center h-screen"><LoadingSpinner /></div>;
     }
 
@@ -80,9 +48,8 @@ const AppLayout: React.FC = () => {
         return <LoginScreen />;
     }
 
-    // ✅ CAMBIO CLAVE: Ahora pasamos el 'role' como prop a la pantalla de bloqueo.
     if (isSecurityLocked && (role === 'merchandiser' || role === 'produccion')) {
-        return <SecurityLockScreen onUnlock={() => setIsSecurityLocked(false)} role={role} />;
+        return <SecurityLockScreen onUnlock={() => setIsSecurityLocked(false)} role={role as string} />;
     }
     
     if (role === 'master' || role === 'sales_manager') {
@@ -121,9 +88,35 @@ const GlobalReportModal: React.FC = () => {
 
 const App: React.FC = () => {
     const [activeNotification, setActiveNotification] = useState<AppNotification | null>(null);
+    const { inviteId, setInviteId } = useInvite();
+
+    useEffect(() => {
+        const unsubscribe = onDynamicLink(dynamicLinks, (payload) => {
+            const url = new URL(payload.url);
+            const routeInviteId = url.searchParams.get('routeId');
+            if (routeInviteId) {
+                setInviteId(routeInviteId);
+            }
+        });
+
+        getDynamicLink(dynamicLinks)
+            .then((payload) => {
+                if (payload) {
+                    const url = new URL(payload.url);
+                    const routeInviteId = url.searchParams.get('routeId');
+                    if (routeInviteId) {
+                        setInviteId(routeInviteId);
+                    }
+                }
+            })
+            .catch((err) => console.error("Error al obtener el dynamic link inicial:", err));
+
+        return () => unsubscribe();
+    }, [setInviteId]);
 
     useEffect(() => {
         if (messaging) {
+            // ✅ CORRECCIÓN: Se añade el tipo explícito 'MessagePayload' al parámetro 'payload'.
             const unsubscribe = onMessage(messaging, (payload: MessagePayload) => {
                 if (payload.notification) {
                     setActiveNotification({
@@ -143,6 +136,14 @@ const App: React.FC = () => {
                 onDismiss={() => setActiveNotification(null)}
             />
             <GlobalReportModal />
+
+            {inviteId && (
+                <RouteInviteModal 
+                    inviteId={inviteId} 
+                    onClose={() => setInviteId(null)} 
+                />
+            )}
+
             <Routes>
                 <Route path="*" element={<AppLayout />} />
             </Routes>

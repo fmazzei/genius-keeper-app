@@ -1,26 +1,31 @@
 // RUTA: src/Pages/MerchandiserHub.jsx
 
-import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, query } from 'firebase/firestore';
-import { db } from '@/Firebase/config.js';
-import { useAuth } from '@/context/AuthContext';
-import { FileText, Map, Truck, Loader } from 'lucide-react';
-// ✅ NUEVO: Importamos el componente de registro biométrico
-import BiometricSetup from '@/Components/BiometricSetup.jsx';
-// ✅ NUEVO: Importamos el hook que nos da el traslado pendiente
+import React from 'react';
+import { FileText, Map, Truck, Loader, AlertTriangle } from 'lucide-react';
+// ✅ Se elimina useAuth y las importaciones de Firestore, ya no son necesarias aquí.
+// import { useAuth } from '@/context/AuthContext';
+// import { collection, onSnapshot, query } from 'firebase/firestore';
+// import { db } from '@/Firebase/config.js';
+
+// El componente de biometría se puede reactivar cuando se rediseñe para reporters
+// import BiometricSetup from '@/Components/BiometricSetup.jsx';
 import { usePendingTransfer } from '../hooks/usePendingTransfer';
-import { AlertTriangle } from 'lucide-react';
 
-const MerchandiserHub = ({ onNavigate }) => {
-    const { user } = useAuth();
-    const { transfer: pendingTransfer, loading: transferLoading } = usePendingTransfer();
+// ✅ El componente ahora recibe el 'selectedReporter' como prop.
+const MerchandiserHub = ({ onNavigate, selectedReporter }) => {
+    // const { user } = useAuth(); // <- ELIMINADO
 
-    // ✅ NUEVO: Lógica para verificar si el usuario ya tiene una huella registrada
+    // ✅ La llamada al hook ahora le pasa el ID del reporter activo.
+    const { transfer: pendingTransfer, loading: transferLoading } = usePendingTransfer(selectedReporter.id);
+
+    // ✅ LÓGICA DE BIOMETRÍA COMENTADA TEMPORALMENTE PARA SOLUCIONAR EL ERROR
+    // Esta funcionalidad necesita ser rediseñada para funcionar con 'reporterId' en lugar de 'user.uid'.
+    /*
     const [hasBiometricsSetup, setHasBiometricsSetup] = useState(true);
     const [checkingBiometrics, setCheckingBiometrics] = useState(true);
 
     useEffect(() => {
-        if (user) {
+        if (user) { // Esta lógica depende de 'user', que ya no usamos aquí.
             const authenticatorsRef = collection(db, 'users_metadata', user.uid, 'authenticators');
             const q = query(authenticatorsRef);
             const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -34,20 +39,13 @@ const MerchandiserHub = ({ onNavigate }) => {
             return () => unsubscribe();
         }
     }, [user]);
+    */
 
     return (
        <div className="p-4 md:p-8 bg-slate-50">
             <div className="max-w-md mx-auto w-full">
 
-                {/* ✅ NUEVO: Renderizado condicional del componente de registro de huella */}
-                {checkingBiometrics && (
-                    <div className="flex justify-center items-center p-4 mb-4">
-                        <Loader className="animate-spin text-slate-400"/>
-                    </div>
-                )}
-                {!checkingBiometrics && !hasBiometricsSetup && <BiometricSetup />}
-
-                {/* Notificación de Carga Pendiente (ya existía, solo se movió la lógica al hook) */}
+                {/* Notificación de Carga Pendiente */}
                 {!transferLoading && pendingTransfer && (
                     <div
                         onClick={() => onNavigate('logistics')}
@@ -63,7 +61,7 @@ const MerchandiserHub = ({ onNavigate }) => {
                     </div>
                 )}
 
-                {/* Botones de Acción (sin cambios) */}
+                {/* Botones de Acción */}
                 <h2 className="text-3xl font-bold text-center text-slate-800 mb-2">Centro de Operaciones</h2>
                 <p className="text-center text-slate-500 mb-8">Selecciona tu tarea para hoy.</p>
                 <div className="space-y-4">

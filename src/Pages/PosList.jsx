@@ -1,10 +1,10 @@
+// RUTA: src/Pages/PosList.jsx
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { PlusCircle, ChevronDown, MapPin } from 'lucide-react';
 import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 
-// El componente principal ahora recibe 'posList' y 'onSelectPos' como props.
-// Su lógica de captura de coordenadas ha sido eliminada y centralizada en AppShell.
 const PosList = ({ posList, onSelectPos }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [openCategories, setOpenCategories] = useState([]);
@@ -12,7 +12,11 @@ const PosList = ({ posList, onSelectPos }) => {
 
     const groupedPos = useMemo(() => {
         if (!posList) return {};
-        return posList.reduce((acc, pos) => {
+        
+        // ✅ GUARDA DE SEGURIDAD: Nos aseguramos de que solo procesamos PDVs que son objetos válidos con un ID.
+        const validPosList = posList.filter(pos => pos && typeof pos === 'object' && pos.id);
+
+        return validPosList.reduce((acc, pos) => {
             const chain = pos.chain || 'Automercados Individuales';
             if (!acc[chain]) { acc[chain] = []; }
             acc[chain].push(pos);
@@ -35,7 +39,6 @@ const PosList = ({ posList, onSelectPos }) => {
         setOpenCategories(prev => prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]);
     };
     
-    // Expande automáticamente las categorías al buscar
     useEffect(() => {
         if (searchTerm) {
             setOpenCategories(Object.keys(filteredGroupedPos));
@@ -72,7 +75,6 @@ const PosList = ({ posList, onSelectPos }) => {
                                                     <h4 className="font-semibold text-slate-800">{pos.name}</h4>
                                                     <p className="text-sm text-slate-500">{pos.zone}</p>
                                                 </div>
-                                                {/* Usamos 'coordinates' como en AppShell para consistencia */}
                                                 {!pos.coordinates && <MapPin className="text-red-500 flex-shrink-0" title="GPS no registrado"/>}
                                             </li>
                                         ))}
@@ -93,4 +95,3 @@ const PosList = ({ posList, onSelectPos }) => {
 };
 
 export default PosList;
-
