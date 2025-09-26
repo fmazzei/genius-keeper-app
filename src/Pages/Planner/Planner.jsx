@@ -3,7 +3,7 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { useMonthlyAgendas } from '@/hooks/useMonthlyAgendas';
-import { useAgenda } from '@/hooks/useAgenda.js';
+import { useAgenda } from '@/hooks/useAgenda.ts';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { db, functions } from '@/Firebase/config.js';
 
@@ -423,26 +423,148 @@ const Planner = ({ role, allPossibleStops = [], selectedReporter }) => {
     }, []);
 
     const handleStartGeneration = useCallback(async (generationData) => {
-        // ... (código sin cambios)
+        if (!selectedWeekId) return;
+        setLoadingAction('Generando...');
+        setPlannerNotice({ message: 'Contactando a Genius...', type: 'info' });
+        setPendingGeneration(null);
+        const finalAnchorPoint = generationData.anchorPoint;
+        if (!finalAnchorPoint || finalAnchorPoint.trim() === '') {
+            setPlannerNotice({ message: 'Error: Debes especificar un Punto de Partida.', type: 'error' });
+            setIsWizardOpen(true);
+            setLoadingAction('');
+            return;
+        }
+        try {
+            const BATCH_SIZE = 9;
+            const initialBatchData = {
+                ...generationData, 
+                reporterId: selectedReporter.id, 
+                weekId: selectedWeekId,
+                anchorPoint: finalAnchorPoint,
+                visitCount: Math.min(generationData.visitCount, BATCH_SIZE),
+                isContinuation: false
+            };
+            const generateSmartAgenda = httpsCallable(functions, 'generateSmartAgenda');
+            const result = await generateSmartAgenda(initialBatchData);
+            if (result.data && result.data.days) {
+                updateAgenda(result.data);
+                const plannedIds = Object.values(result.data.days).flat().map(stop => stop.id);
+                if (generationData.visitCount > BATCH_SIZE) {
+                    setPendingGeneration({ originalRequest: generationData, plannedIds });
+                    setPlannerNotice({ message: `Se planificaron las primeras ${plannedIds.length} visitas.`, type: 'info' });
+                } else {
+                    setPlannerNotice({ message: '¡Planificación completada!', type: 'success' });
+                }
+            } else {
+                throw new Error(result.data.error || "La respuesta de Genius no fue válida.");
+            }
+        } catch (error) {
+            setPlannerNotice({ message: `Error de Genius: ${error.message}`, type: 'error' });
+        } finally {
+            setLoadingAction('');
+        }
     }, [selectedReporter.id, selectedWeekId, updateAgenda]);
     
     const handleGenerateNextBatch = useCallback(async () => {
-        // ... (código sin cambios)
+        if (!pendingGeneration) return;
+        setLoadingAction('Añadiendo siguientes visitas...');
+        const { originalRequest, plannedIds } = pendingGeneration;
+        const remainingCount = originalRequest.visitCount - plannedIds.length;
+        try {
+            const BATCH_SIZE = 9;
+            const nextBatchData = { 
+                city: originalRequest.city,
+                visitCount: Math.min(remainingCount, BATCH_SIZE),
+                dailyHours: originalRequest.dailyHours,
+                anchorPoint: originalRequest.anchorPoint,
+                startMode: originalRequest.startMode,
+                excludeIds: plannedIds,
+                reporterId: selectedReporter.id, 
+                weekId: selectedWeekId,
+                isContinuation: true 
+            };
+            const generateSmartAgenda = httpsCallable(functions, 'generateSmartAgenda');
+            const result = await generateSmartAgenda(nextBatchData);
+            const nextAgendaChunk = result.data;
+            if (nextAgendaChunk && nextAgendaChunk.days) {
+                const mergedAgenda = JSON.parse(JSON.stringify(agenda));
+                Object.entries(nextAgendaChunk.days).forEach(([day, newStops]) => {
+                    if (newStops && newStops.length > 0) {
+                        mergedAgenda.days[day] = [...(mergedAgenda.days[day] || []), ...newStops];
+                    }
+                });
+                updateAgenda(mergedAgenda);
+                const newPlannedIds = Object.values(nextAgendaChunk.days).flat().map(stop => stop.id);
+                const allPlannedIds = [...plannedIds, ...newPlannedIds];
+                if (allPlannedIds.length < originalRequest.visitCount && newPlannedIds.length > 0) {
+                    setPendingGeneration({ originalRequest, plannedIds: allPlannedIds });
+                    setPlannerNotice({ message: `Se añadieron ${newPlannedIds.length} visitas más.`, type: 'info' });
+                } else {
+                    setPendingGeneration(null);
+                    setPlannerNotice({ message: '¡Planificación completada!', type: 'success' });
+                }
+            } else {
+                 throw new Error(nextAgendaChunk.error || "La respuesta de Genius no fue válida.");
+            }
+        } catch (error) {
+            setPlannerNotice({ message: `Error de Genius: ${error.message}`, type: 'error' });
+        } finally {
+            setLoadingAction('');
+        }
     }, [pendingGeneration, agenda, updateAgenda, selectedReporter.id, selectedWeekId]);
 
     const handleGenerateSpontaneousPlan = useCallback((count, depotId) => {
-        // ... (código sin cambios)
+        setIsSpontaneousModalOpen(false);
+        const startPoint = depotId ? (validStops.find(d => d.id === depotId)?.coordinates || userLocation) : userLocation;
+        if (!startPoint) { alert("No se pudo determinar un punto de partida."); return; }
+        const stopsToConsider = validStops.filter(s => s.type === 'pos' && s.coordinates);
+        if (stopsToConsider.length === 0) { alert("No hay PDV con coordenadas para crear una ruta."); return; }
+        const sortedStops = stopsToConsider.sort((a, b) => haversineDistance(startPoint, a.coordinates) - haversineDistance(startPoint, b.coordinates));
+        const newPlan = sortedStops.slice(0, count);
+        setPlanDelDia(newPlan);
+        setActiveTab('Hoy');
     }, [userLocation, validStops]);
 
     const handleSelectWeek = (weekId) => { setSelectedWeekId(weekId); setLastSelectedWeekId(weekId); setActiveTab('Agenda'); };
     const handleBackToMonthly = () => { setSelectedWeekId(null); setActiveTab('Mes'); };
     
     const handleOptimizePlanDiario = useCallback(() => {
-        // ... (código sin cambios)
+        if (!userLocation || planDelDia.length < 2) return;
+        const stopsWithCoords = planDelDia.filter(stop => stop.coordinates);
+        let remaining = [...stopsWithCoords];
+        let route = [];
+        let currentPoint = userLocation;
+        while (remaining.length > 0) {
+            remaining.sort((a, b) => haversineDistance(currentPoint, a.coordinates) - haversineDistance(currentPoint, b.coordinates));
+            const nextStop = remaining.shift();
+            route.push(nextStop);
+            currentPoint = nextStop.coordinates;
+        }
+        setPlanDelDia(route.concat(planDelDia.filter(stop => !stop.coordinates)));
     }, [planDelDia, userLocation]);
 
     const startNavigation = useCallback(() => {
-        // ... (código sin cambios)
+        if (!userLocation) {
+            alert("No se pudo obtener tu ubicación actual. Activa tu GPS para navegar.");
+            return;
+        }
+        if (planDelDia.length === 0) {
+            alert("No hay paradas en el plan de hoy para iniciar la navegación.");
+            return;
+        }
+        const planWithCoords = planDelDia.filter(s => s.coordinates);
+        if (planWithCoords.length === 0) {
+            alert("Ninguna de las paradas en el plan tiene GPS registrado.");
+            return;
+        }
+        
+        const baseUrl = "https://www.google.com/maps/dir/";
+        const origin = `${userLocation.lat},${userLocation.lng}`;
+        const stopsString = planWithCoords.map(s => `${s.coordinates.lat},${s.coordinates.lng}`).join('/');
+        
+        const navigationUrl = `${baseUrl}${origin}/${stopsString}`;
+        
+        window.open(navigationUrl, '_blank');
     }, [planDelDia, userLocation]);
 
     const handleCargarParaHoy = (day) => {
@@ -453,7 +575,14 @@ const Planner = ({ role, allPossibleStops = [], selectedReporter }) => {
     };
 
     const handleConfirmManualStops = useCallback((selectedStopObjects) => {
-        // ... (código sin cambios)
+        if (activeTab === 'Hoy') {
+            setPlanDelDia(selectedStopObjects);
+        } else {
+            const dayToUpdate = 'lunes';
+            const newDaysState = JSON.parse(JSON.stringify(agenda?.days || {}));
+            newDaysState[dayToUpdate] = selectedStopObjects;
+            updateAgenda({ ...agenda, days: newDaysState });
+        }
     }, [agenda, updateAgenda, activeTab]);
 
     const handleClearTodayPlan = () => { if (window.confirm("¿Estás seguro de que quieres borrar el plan de hoy?")) { setPlanDelDia([]); }};
@@ -463,15 +592,44 @@ const Planner = ({ role, allPossibleStops = [], selectedReporter }) => {
     };
 
     const handleConfirmDelegation = useCallback(async (targetUserId) => {
-        // ... (código sin cambios)
+        if (!stopToDelegate || !targetUserId) {
+            setPlannerNotice({ message: 'Error: No se pudo completar la delegación.', type: 'error' });
+            return;
+        }
+        setLoadingAction('Delegando...');
+        try {
+            const delegateVisit = httpsCallable(functions, 'delegateVisit');
+            const result = await delegateVisit({
+                targetUserId: targetUserId,
+                stopData: stopToDelegate
+            });
+            setPlannerNotice({ message: result.data.message, type: 'success' });
+            setStopToDelegate(null);
+        } catch (error) {
+            console.error("Error al delegar visita:", error);
+            setPlannerNotice({ message: `Error: ${error.message}`, type: 'error' });
+        } finally {
+            setLoadingAction('');
+        }
     }, [stopToDelegate]);
 
     const handleTodayDragEnd = (result) => {
-        // ... (código sin cambios)
+        if (!result.destination) return;
+        const items = Array.from(planDelDia);
+        const [reorderedItem] = items.splice(result.source.index, 1);
+        items.splice(result.destination.index, 0, reorderedItem);
+        setPlanDelDia(items);
     };
 
     const handleNavClick = (tab) => {
-        // ... (código sin cambios)
+        if (tab === 'Agenda') {
+            const weekToLoad = selectedWeekId || lastSelectedWeekId;
+            setSelectedWeekId(weekToLoad);
+            setLastSelectedWeekId(weekToLoad);
+            setActiveTab('Agenda');
+        } else {
+            setActiveTab(tab);
+        }
     };
     
     // ✅ NUEVA FUNCIÓN PARA CREAR Y COMPARTIR LA RUTA POR WHATSAPP
@@ -493,13 +651,13 @@ const Planner = ({ role, allPossibleStops = [], selectedReporter }) => {
                 throw new Error("No se pudo obtener un ID para la ruta compartida.");
             }
 
-            // 2. Construir el Dynamic Link
-            // **IMPORTANTE**: Reemplaza 'geniuskeeper.page.link' con el dominio de tus Dynamic Links
-            const link = `https://geniuskeeper.page.link/?routeId=${inviteId}`;
+            // 2. Construir el enlace web estándar
+            const link = `https://geniuskeeper-36553.web.app/?routeId=${inviteId}`;
             
             // 3. Crear el mensaje y abrir WhatsApp
             const message = encodeURIComponent(`Hola, te comparto la ruta del día ${day} para que la cargues en Genius Keeper: ${link}`);
             window.open(`https://wa.me/?text=${message}`, '_blank');
+            setPlannerNotice({ message: 'Enlace de WhatsApp listo para ser enviado.', type: 'success' });
 
         } catch (error) {
             console.error("Error al compartir la ruta:", error);
@@ -508,7 +666,7 @@ const Planner = ({ role, allPossibleStops = [], selectedReporter }) => {
             setLoadingAction('');
         }
     }, [agenda]);
-
+    
     const renderContent = () => {
         if (agendaLoading && activeTab === 'Agenda') return <div className="h-full flex items-center justify-center"><LoadingSpinner/></div>;
         switch (activeTab) {
@@ -531,7 +689,7 @@ const Planner = ({ role, allPossibleStops = [], selectedReporter }) => {
                 userLocation={userLocation} 
                 onOptimize={handleOptimizePlanDiario} 
                 onNavigate={startNavigation}
-                onShare={handleSharePlan}
+                onShare={handleShareDay} // Reutilizamos la función de compartir para el plan del día
                 onDragEnd={handleTodayDragEnd}
                 onClear={handleClearTodayPlan}
                 onDelegate={openDelegateModal}

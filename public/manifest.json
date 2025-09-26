@@ -21,8 +21,14 @@
       "purpose": "maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "theme_color": "#0D2B4C",
-  "background_color": "#0D2B4C"
+  "background_color": "#0D2B4C",
+  "url_handlers": [
+    {
+      "origin": "https://geniuskeeper-36553.web.app"
+    }
+  ]
 }

@@ -8,7 +8,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyBcTpXt3p5kjOCc6rK41Jv4vO8_ULJEfGw",
   authDomain: "geniuskeeper-36553.firebaseapp.com",
   projectId: "geniuskeeper-36553",
-  storageBucket: "geniuskeeper-36553.firebasestorage.app",
+  storageBucket: "geniuskeeper-36553.appspot.com",
   messagingSenderId: "362565450545",
   appId: "1:362565450545:web:27d9dea004e74966a70e10"
 };

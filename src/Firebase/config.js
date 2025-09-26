@@ -5,10 +5,9 @@ import { initializeAuth, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getMessaging } from "firebase/messaging";
 import { getFunctions } from "firebase/functions";
-// ✅ 1. IMPORTAR EL SERVICIO DE DYNAMIC LINKS
-import { getDynamicLinks } from "firebase/dynamic-links";
+// ✅ SE ELIMINA LA IMPORTACIÓN DE DYNAMIC LINKS
+// import { getDynamicLinks } from "firebase/dynamic-links";
 
-// Tu configuración de Firebase no cambia.
 const firebaseConfig = {
   apiKey: "AIzaSyBcTpXt3p5kjOCc6rK41Jv4vO8_ULJEfGw",
   authDomain: "geniuskeeper-36553.firebaseapp.com",
@@ -26,7 +25,7 @@ export const auth = initializeAuth(app, {
 export const db = getFirestore(app);
 export const messaging = getMessaging(app);
 export const functions = getFunctions(app, 'us-central1');
-// ✅ 2. INICIALIZAR Y EXPORTAR DYNAMIC LINKS
-export const dynamicLinks = getDynamicLinks(app);
+// ✅ SE ELIMINA LA EXPORTACIÓN DE DYNAMIC LINKS
+// export const dynamicLinks = getDynamicLinks(app);
 
-export const VISION_API_KEY = "AIzaSyA3lGxMdhX_vrFAXUQVxQVm-4hSYEFM3Ts"; // Hardcodeamos esta también para eliminar dependencias de .env
+export const VISION_API_KEY = "AIzaSyA3lGxMdhX_vrFAXUQVxQVm-4hSYEFM3Ts";

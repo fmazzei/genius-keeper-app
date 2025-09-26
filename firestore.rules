@@ -55,6 +55,15 @@ service cloud.firestore {
       allow create: if isAdmin();
       allow delete: if isMaster();
     }
+    
+    // ✅ NUEVA REGLA PARA PERMITIR LA LECTURA DE INVITACIONES DE RUTA
+    match /delegation_invites/{inviteId} {
+        // Permite que cualquier usuario autenticado pueda leer una invitación.
+        // Esto es necesario para que el receptor del enlace de WhatsApp pueda ver los detalles de la ruta.
+        allow get: if isAuthenticated();
+        // La creación y actualización solo se permiten a través de las Cloud Functions (backend).
+        allow write: if false;
+    }
 
     match /ajustes_pendientes/{ajusteId} {
       allow get: if isAuthenticated() && (request.auth.uid == resource.data.requesterId || isAdmin());
@@ -100,15 +109,8 @@ service cloud.firestore {
       allow delete: if isMaster();
     }
 
-    // ✅ REPARACIÓN: REGLA CORREGIDA Y VALIDADA PARA AGENDAS
-    // Esta estructura permite a los usuarios autorizados (merchandisers y admins)
-    // acceder tanto a la lista de agendas semanales como a cada agenda individual.
     match /agendas/{reporterId} {
-      // Permite leer el documento principal de un reporter (si tuviera datos).
       allow get: if isAuthenticated() && (isAdmin() || isMerchandiser());
-
-      // Esta regla anidada da permisos explícitos sobre la subcolección.
-      // 'list' es crucial para poder obtener la lista de agendas del mes.
       match /weekly_agendas/{weekId} {
         allow list, get, write: if isAuthenticated() && (isAdmin() || isMerchandiser());
       }

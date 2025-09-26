@@ -4,9 +4,35 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 
 // --- Helper de Notificaciones ---
-// (Esta función no cambia, pero es usada por los triggers)
 const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
-    // ... (código existente sin cambios)
+    if (!userId) return;
+    
+    // 1. Crear notificación en la base de datos (para el centro de notificaciones interno)
+    await admin.firestore().collection("notifications").add({
+        userId,
+        title: notificationPayload.title,
+        body: notificationPayload.body,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        read: false,
+        link: dataPayload.link || ''
+    });
+
+    // 2. Enviar notificación push
+    const tokensRef = admin.firestore().collection("users_metadata").doc(userId).collection("tokens");
+    const tokensSnap = await tokensRef.get();
+    if (tokensSnap.empty) {
+        console.log(`No se encontraron tokens para el usuario ${userId}`);
+        return;
+    }
+
+    const tokens = tokensSnap.docs.map(doc => doc.id);
+    const payload = { 
+        notification: notificationPayload, 
+        data: dataPayload 
+    };
+
+    await admin.messaging().sendEachForMulticast({ tokens, ...payload });
+    console.log(`Notificación push enviada a ${tokens.length} dispositivo(s) del usuario ${userId}`);
 };
 
 // =========================================================================================
@@ -25,8 +51,7 @@ exports.onAgendaWrite = functions.firestore
         const db = admin.firestore();
         const batch = db.batch();
 
-        // Obtener el nombre del reporter para almacenarlo en la asignación
-        let reporterName = 'Reporter'; // Valor por defecto
+        let reporterName = 'Reporter';
         try {
             const reporterDoc = await db.doc(`reporters/${reporterId}`).get();
             if (reporterDoc.exists) {
@@ -36,7 +61,6 @@ exports.onAgendaWrite = functions.firestore
             functions.logger.error(`No se pudo obtener el nombre para el reporterId: ${reporterId}`, error);
         }
 
-        // Función de ayuda para extraer todos los IDs de PDV de un objeto de agenda
         const getPdvIdsFromAgenda = (agendaData) => {
             if (!agendaData || !agendaData.days) return new Set();
             const allStops = Object.values(agendaData.days).flat();
@@ -49,7 +73,6 @@ exports.onAgendaWrite = functions.firestore
         const pdvIdsBefore = getPdvIdsFromAgenda(beforeData);
         const pdvIdsAfter = getPdvIdsFromAgenda(afterData);
 
-        // 1. Encontrar PDVs eliminados (estaban antes pero ya no están)
         const removedPdvIds = new Set([...pdvIdsBefore].filter(id => !pdvIdsAfter.has(id)));
         if (removedPdvIds.size > 0) {
             functions.logger.log(`Detectados ${removedPdvIds.size} PDV eliminados de la agenda de ${reporterName}.`);
@@ -59,12 +82,10 @@ exports.onAgendaWrite = functions.firestore
             });
         }
 
-        // 2. Encontrar PDVs añadidos (no estaban antes pero ahora sí)
         const addedPdvIds = new Set([...pdvIdsAfter].filter(id => !pdvIdsBefore.has(id)));
         if (addedPdvIds.size > 0) {
             functions.logger.log(`Detectados ${addedPdvIds.size} PDV añadidos a la agenda de ${reporterName}.`);
             addedPdvIds.forEach(pdvId => {
-                // Encontrar el día para un contexto más rico (opcional pero útil)
                 let dayAssigned = 'desconocido';
                 if (afterData && afterData.days) {
                     for (const [day, stops] of Object.entries(afterData.days)) {
@@ -84,7 +105,6 @@ exports.onAgendaWrite = functions.firestore
             });
         }
         
-        // 3. Si no hay cambios, no hacer nada. Si los hay, ejecutar el lote.
         if (removedPdvIds.size === 0 && addedPdvIds.size === 0) {
             functions.logger.log("onAgendaWrite: No se detectaron cambios en las asignaciones de PDV.");
             return null;
@@ -116,7 +136,6 @@ exports.onDeleteReporter = functions.firestore
         const db = admin.firestore();
         const batch = db.batch();
 
-        // ACCIÓN 1: Desasignar todos los PDV del reporter
         const assignmentsQuery = db.collection('pdv_assignments').where('reporterId', '==', reporterId);
         
         try {
@@ -128,7 +147,6 @@ exports.onDeleteReporter = functions.firestore
                 });
             }
 
-            // ACCIÓN 2: Eliminar la agenda del reporter
             const agendaRef = db.doc(`agendas/${reporterId}`);
             batch.delete(agendaRef);
             functions.logger.log(`Agenda para ${reporterName} marcada para eliminación.`);
@@ -154,7 +172,50 @@ exports.onDeleteReporter = functions.firestore
 exports.onReportCreated = functions.firestore
     .document("visit_reports/{reportId}")
     .onCreate(async (snap, context) => {
-        // ... (código existente sin cambios)
+        const reportData = snap.data();
+        const { reportId } = context.params;
+
+        if (!reportData) {
+            functions.logger.error("No se encontraron datos en el reporte creado.");
+            return null;
+        }
+
+        const reporterName = reportData.userName || "un reporter";
+        const posName = reportData.posName || "un PDV";
+
+        functions.logger.log(`Nuevo reporte creado por ${reporterName}. Buscando usuarios 'master' para notificar.`);
+
+        try {
+            const mastersQuery = admin.firestore().collection('users_metadata').where('role', '==', 'master');
+            const mastersSnapshot = await mastersQuery.get();
+
+            if (mastersSnapshot.empty) {
+                functions.logger.warn("No se encontraron usuarios 'master' para notificar.");
+                return null;
+            }
+
+            const notificationPayload = {
+                title: 'Nuevo Reporte de Visita',
+                body: `${reporterName} ha enviado un nuevo reporte desde ${posName}.`
+            };
+
+            const dataPayload = {
+                link: `/reports/${reportId}` // Enlace para abrir el detalle del reporte en la app
+            };
+
+            const promises = mastersSnapshot.docs.map(doc => {
+                const masterUserId = doc.id;
+                return sendNotificationToUser(masterUserId, notificationPayload, dataPayload);
+            });
+
+            await Promise.all(promises);
+            functions.logger.log(`Notificaciones enviadas a ${mastersSnapshot.size} usuario(s) master.`);
+            return null;
+
+        } catch (error) {
+            functions.logger.error("Error al buscar usuarios master o enviar notificaciones:", error);
+            return null;
+        }
     });
 
 exports.onTaskDelegated = functions.firestore

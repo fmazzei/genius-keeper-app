@@ -5,7 +5,8 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { useSwipeable } from 'react-swipeable';
-import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search } from 'lucide-react';
+// ✅ CORRECCIÓN: Se añade 'Check' a la lista de importaciones para solucionar el error.
+import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check } from 'lucide-react';
 import { FormInput, ToggleButton, FormSection } from '@/Components/FormControls.jsx';
 import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
@@ -31,7 +32,7 @@ const customFileToDataURL = (file) => {
 
 
 // --- Constantes y Utilidades ---
-const TOTAL_STEPS = 4; // ✅ CORREGIDO: Ahora son 4 pasos
+const TOTAL_STEPS = 4;
 const SHELF_LOCATIONS = [ { id: 'ojos', label: 'Nivel Ojos (Zona Caliente)' }, { id: 'manos', label: 'Nivel Manos (Zona Tibia)' }, { id: 'superior', label: 'Nivel Superior (Zona Fría)' }, { id: 'inferior', label: 'Nivel Inferior (Zona Fría)' } ];
 const ADJACENT_CATEGORIES = [ { id: 'Quesos crema', label: 'Quesos crema' }, { id: 'Quesos de Cabra', label: 'Quesos de Cabra' }, { id: 'Delicatessen', label: 'Delicatessen' }, { id: 'Nevera Charcutería', label: 'Nevera Charcutería' } ];
 const POP_STATUS_OPTIONS = [ { id: 'Exhibido correctamente', label: 'Exhibido OK', icon: <ThumbsUp/> }, { id: 'Dañado', label: 'Dañado', icon: <AlertCircle/> }, { id: 'Ausente', label: 'Ausente', icon: <X/> }, { id: 'Sin Campaña Activa', label: 'Sin Campaña', icon: <Info/> } ];

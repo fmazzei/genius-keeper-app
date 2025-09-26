@@ -8,7 +8,7 @@ import { AuthProvider } from './context/AuthContext.tsx';
 import { SimulationProvider } from './context/SimulationContext.jsx';
 import { ReportViewProvider } from './context/ReportViewContext.jsx';
 import { ReporterProvider } from './context/ReporterContext.jsx';
-import { InviteProvider } from './context/InviteContext.jsx'; // ✅ 1. IMPORTAR EL NUEVO PROVIDER
+import { InviteProvider } from './context/InviteContext.tsx'; // ✅ 1. IMPORTAR EL PROVIDER CORREGIDO (.tsx)
 
 // Importación global de estilos de Leaflet para el mapa
 import 'leaflet/dist/leaflet.css';
