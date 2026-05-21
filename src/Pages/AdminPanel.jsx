@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
 // ✅ Se añade el ícono 'Link2'
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map, Truck } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
@@ -673,34 +673,69 @@ const ModuleManagement = () => {
     const { modules, updateModule, configLoading } = useAppConfig();
     const [saving, setSaving] = useState(null);
 
-    const moduleList = [
+    const moduleGroups = [
         {
-            key: 'salesFocus',
-            label: 'Brújula de Ventas',
-            description: 'Dashboard principal del Gerente de Ventas con indicadores de foco.',
-            icon: <Sun size={20} className="text-yellow-500 flex-shrink-0" />,
-            badge: 'Sales Manager',
+            groupLabel: 'Gerente de Ventas',
+            items: [
+                {
+                    key: 'salesFocus',
+                    label: 'Brújula de Ventas',
+                    description: 'Dashboard principal del Gerente de Ventas.',
+                    icon: <Sun size={20} className="text-yellow-500 flex-shrink-0" />,
+                },
+                {
+                    key: 'plannerManager',
+                    label: 'Planificador',
+                    description: 'Módulo de planificación y agenda de rutas.',
+                    icon: <Map size={20} className="text-blue-500 flex-shrink-0" />,
+                },
+                {
+                    key: 'inventoryManager',
+                    label: 'Inventario',
+                    description: 'Vista de inventario y gestión de depósitos.',
+                    icon: <Warehouse size={20} className="text-orange-500 flex-shrink-0" />,
+                },
+                {
+                    key: 'commissions',
+                    label: 'Comisiones',
+                    description: 'Vista de comisiones generadas desde pagos de Zoho Books.',
+                    icon: <DollarSign size={20} className="text-green-600 flex-shrink-0" />,
+                },
+                {
+                    key: 'salesGoals',
+                    label: 'Metas de Venta',
+                    description: 'Panel de seguimiento y cumplimiento de metas mensuales.',
+                    icon: <Target size={20} className="text-blue-600 flex-shrink-0" />,
+                },
+            ],
         },
         {
-            key: 'commissions',
-            label: 'Módulo de Comisiones',
-            description: 'Vista de comisiones generadas desde pagos de Zoho Books.',
-            icon: <DollarSign size={20} className="text-green-600 flex-shrink-0" />,
-            badge: 'Sales Manager',
+            groupLabel: 'Merchandiser',
+            items: [
+                {
+                    key: 'plannerMerchandiser',
+                    label: 'Planificador',
+                    description: 'Acceso al planificador de rutas y visitas del merchandiser.',
+                    icon: <Map size={20} className="text-blue-500 flex-shrink-0" />,
+                },
+                {
+                    key: 'logisticsMerchandiser',
+                    label: 'Logística',
+                    description: 'Panel de logística y transferencias de inventario del merchandiser.',
+                    icon: <Truck size={20} className="text-slate-600 flex-shrink-0" />,
+                },
+            ],
         },
         {
-            key: 'salesGoals',
-            label: 'Metas de Venta',
-            description: 'Panel de seguimiento y cumplimiento de metas mensuales.',
-            icon: <Target size={20} className="text-blue-600 flex-shrink-0" />,
-            badge: 'Sales Manager',
-        },
-        {
-            key: 'marketTrends',
-            label: 'Análisis de Tendencias',
-            description: 'Vista de tendencias de mercado y análisis competitivo.',
-            icon: <TrendingUp size={20} className="text-purple-600 flex-shrink-0" />,
-            badge: 'Master',
+            groupLabel: 'Master',
+            items: [
+                {
+                    key: 'marketTrends',
+                    label: 'Análisis de Tendencias',
+                    description: 'Vista de tendencias de mercado y análisis competitivo.',
+                    icon: <TrendingUp size={20} className="text-purple-600 flex-shrink-0" />,
+                },
+            ],
         },
     ];
 
@@ -721,29 +756,33 @@ const ModuleManagement = () => {
         <div className="space-y-6">
             <div>
                 <h3 className="text-xl font-semibold text-slate-700 mb-1">Módulos Activos</h3>
-                <p className="text-sm text-slate-500 mb-4">Activa o desactiva funcionalidades de la app. Los cambios aplican en tiempo real para todos los usuarios.</p>
-                <div className="bg-white rounded-lg shadow divide-y divide-slate-200">
-                    {moduleList.map(({ key, label, description, icon, badge }) => (
-                        <div key={key} className="flex flex-col sm:flex-row justify-between items-center gap-4 p-4 sm:p-6">
-                            <div className="w-full text-center sm:text-left flex items-start gap-3">
-                                <div className="mt-0.5">{icon}</div>
-                                <div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        <label className="font-semibold text-slate-800">{label}</label>
-                                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{badge}</span>
+                <p className="text-sm text-slate-500 mb-4">Activa o desactiva funcionalidades por rol. Los cambios aplican en tiempo real para todos los usuarios.</p>
+                <div className="space-y-4">
+                    {moduleGroups.map(({ groupLabel, items }) => (
+                        <div key={groupLabel}>
+                            <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2 px-1">{groupLabel}</p>
+                            <div className="bg-white rounded-lg shadow divide-y divide-slate-200">
+                                {items.map(({ key, label, description, icon }) => (
+                                    <div key={key} className="flex flex-col sm:flex-row justify-between items-center gap-4 p-4 sm:p-5">
+                                        <div className="w-full text-center sm:text-left flex items-start gap-3">
+                                            <div className="mt-0.5">{icon}</div>
+                                            <div>
+                                                <label className="font-semibold text-slate-800">{label}</label>
+                                                <p className="text-sm text-slate-500 mt-0.5">{description}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3 flex-shrink-0">
+                                            <span className={`text-sm font-semibold min-w-[64px] text-right ${modules[key] ? 'text-green-600' : 'text-slate-400'}`}>
+                                                {saving === key ? '...' : modules[key] ? 'Activo' : 'Inactivo'}
+                                            </span>
+                                            <ToggleSwitch
+                                                enabled={modules[key]}
+                                                setEnabled={() => !saving && handleToggle(key, modules[key])}
+                                                disabled={saving !== null}
+                                            />
+                                        </div>
                                     </div>
-                                    <p className="text-sm text-slate-500 mt-1">{description}</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-3 flex-shrink-0">
-                                <span className={`text-sm font-semibold min-w-[64px] text-right ${modules[key] ? 'text-green-600' : 'text-slate-400'}`}>
-                                    {saving === key ? '...' : modules[key] ? 'Activo' : 'Inactivo'}
-                                </span>
-                                <ToggleSwitch
-                                    enabled={modules[key]}
-                                    setEnabled={() => !saving && handleToggle(key, modules[key])}
-                                    disabled={saving !== null}
-                                />
+                                ))}
                             </div>
                         </div>
                     ))}

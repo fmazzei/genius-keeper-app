@@ -11,6 +11,10 @@ export interface ModulesConfig {
   salesGoals: boolean;
   marketTrends: boolean;
   salesFocus: boolean;
+  plannerManager: boolean;
+  inventoryManager: boolean;
+  plannerMerchandiser: boolean;
+  logisticsMerchandiser: boolean;
 }
 
 interface AppConfigContextType {
@@ -24,6 +28,10 @@ const defaultModules: ModulesConfig = {
   salesGoals: true,
   marketTrends: true,
   salesFocus: true,
+  plannerManager: true,
+  inventoryManager: true,
+  plannerMerchandiser: true,
+  logisticsMerchandiser: true,
 };
 
 const AppConfigContext = createContext<AppConfigContextType | undefined>(undefined);

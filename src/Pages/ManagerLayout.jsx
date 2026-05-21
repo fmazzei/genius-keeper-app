@@ -42,6 +42,8 @@ const ManagerLayout = ({ user, role, onLogout }) => {
         }
         if (role === 'master') {
             if (currentView === 'trends' && !modules.marketTrends) setCurrentView('dashboard');
+            if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('dashboard');
+            if (currentView === 'planner' && !modules.plannerManager) setCurrentView('dashboard');
         }
     }, [modules, role, currentView]);
 
@@ -89,8 +91,8 @@ const ManagerLayout = ({ user, role, onLogout }) => {
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
                 {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
-                <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />
-                <NavItem icon={<Map size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
+                {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
+                {modules.plannerManager && <NavItem icon={<Map size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 <NavItem icon={<Settings size={24} />} text="Administración" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
             </ul>
         );
@@ -99,8 +101,8 @@ const ManagerLayout = ({ user, role, onLogout }) => {
             <ul>
                 {modules.salesFocus && <NavItem icon={<Sun size={24} />} text="Brújula de Ventas" active={currentView === 'focus'} onClick={() => setCurrentView('focus')} />}
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
-                <NavItem icon={<Map size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
-                <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />
+                {modules.plannerManager && <NavItem icon={<Map size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
+                {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
                 {modules.commissions && <NavItem icon={<DollarSign size={24} />} text="Comisiones" active={currentView === 'commissions'} onClick={() => setCurrentView('commissions')} />}
                 {modules.salesGoals && <NavItem icon={<Target size={24} />} text="Metas de Venta" active={currentView === 'sales'} onClick={() => setCurrentView('sales')} />}
             </ul>
