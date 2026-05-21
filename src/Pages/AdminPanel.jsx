@@ -280,7 +280,7 @@ const UserManagement = () => {
     );
 };
 
-const PosManagement = ({ posList, loading }) => {
+const PosManagement = ({ posList = [], loading }) => {
     const [editablePos, setEditablePos] = useState([]);
     const [openCategories, setOpenCategories] = useState({});
     const [isSaving, setIsSaving] = useState(false);
@@ -396,7 +396,7 @@ const PosManagement = ({ posList, loading }) => {
     );
 };
 
-const ReportManagement = ({ reports, posList, loading }) => {
+const ReportManagement = ({ reports = [], posList = [], loading }) => {
     const [selectedChain, setSelectedChain] = useState('all');
     const [selectedWeek, setSelectedWeek] = useState('all');
     const [editingReport, setEditingReport] = useState(null);
@@ -608,16 +608,22 @@ const SalesManagerManagement = () => {
 
     useEffect(() => {
         const q = query(collection(db, "users_metadata"), where("role", "==", "sales_manager"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const managersData = snapshot.docs.map(d => ({
-                id: d.id,
-                name: d.data().name || d.id,
-                email: d.data().email || 'No disponible',
-                active: d.data().active !== false,
-            }));
-            setManagers(managersData);
-            setLoading(false);
-        });
+        const unsubscribe = onSnapshot(q,
+            (snapshot) => {
+                const managersData = snapshot.docs.map(d => ({
+                    id: d.id,
+                    name: d.data().name || d.id,
+                    email: d.data().email || 'No disponible',
+                    active: d.data().active !== false,
+                }));
+                setManagers(managersData);
+                setLoading(false);
+            },
+            (error) => {
+                console.error("Error al cargar gerentes:", error);
+                setLoading(false);
+            }
+        );
         return () => unsubscribe();
     }, []);
 

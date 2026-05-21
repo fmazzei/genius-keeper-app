@@ -4,7 +4,7 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { onAuthStateChanged, signInWithEmailAndPassword, signInWithCustomToken } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../Firebase/config';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 
@@ -49,7 +49,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setRole(data.role);
             setIsAccountSuspended(data.active === false);
           } else {
-            setRole('no-role');
+            // Cuentas compartidas de campo: auto-crear perfil si no existe
+            const sharedAccounts: Record<string, string> = {
+              'anaquel@lacteoca.com': 'merchandiser',
+              'produccion@lacteoca.com': 'produccion',
+            };
+            const email = currentUser.email || '';
+            if (sharedAccounts[email]) {
+              await setDoc(userDocRef, { role: sharedAccounts[email], email });
+              setRole(sharedAccounts[email]);
+            } else {
+              setRole('no-role');
+            }
             setIsAccountSuspended(false);
           }
         } catch (error) {
