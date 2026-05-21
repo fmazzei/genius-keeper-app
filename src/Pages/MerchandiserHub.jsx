@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { FileText, Map, Truck, Loader, AlertTriangle } from 'lucide-react';
+import { useAppConfig } from '@/context/AppConfigContext.tsx';
 // ✅ Se elimina useAuth y las importaciones de Firestore, ya no son necesarias aquí.
 // import { useAuth } from '@/context/AuthContext';
 // import { collection, onSnapshot, query } from 'firebase/firestore';
@@ -13,10 +14,8 @@ import { usePendingTransfer } from '../hooks/usePendingTransfer';
 
 // ✅ El componente ahora recibe el 'selectedReporter' como prop.
 const MerchandiserHub = ({ onNavigate, selectedReporter }) => {
-    // const { user } = useAuth(); // <- ELIMINADO
-
-    // ✅ La llamada al hook ahora le pasa el ID del reporter activo.
     const { transfer: pendingTransfer, loading: transferLoading } = usePendingTransfer(selectedReporter.id);
+    const { modules } = useAppConfig();
 
     // ✅ LÓGICA DE BIOMETRÍA COMENTADA TEMPORALMENTE PARA SOLUCIONAR EL ERROR
     // Esta funcionalidad necesita ser rediseñada para funcionar con 'reporterId' en lugar de 'user.uid'.
@@ -75,28 +74,34 @@ const MerchandiserHub = ({ onNavigate, selectedReporter }) => {
                             <p className="text-sm opacity-80">Seleccionar un PDV y comenzar la visita.</p>
                         </div>
                     </button>
-                    <div className="grid grid-cols-2 gap-4">
-                        <button
-                            onClick={() => onNavigate('planner')}
-                            className="w-full bg-white text-slate-700 p-4 rounded-lg shadow-md text-left flex items-center transition-transform hover:scale-105"
-                        >
-                            <Map size={24} className="mr-3 text-slate-500"/>
-                            <div>
-                                <h4 className="font-bold">Planificador</h4>
-                                <p className="text-xs text-slate-500">Crear y optimizar rutas.</p>
-                            </div>
-                        </button>
-                        <button
-                            onClick={() => onNavigate('logistics')}
-                            className="w-full bg-white text-slate-700 p-4 rounded-lg shadow-md text-left flex items-center transition-transform hover:scale-105"
-                        >
-                            <Truck size={24} className="mr-3 text-slate-500"/>
-                            <div>
-                                <h4 className="font-bold">Logística</h4>
-                                <p className="text-xs text-slate-500">Gestionar inventario.</p>
-                            </div>
-                        </button>
-                    </div>
+                    {(modules.plannerMerchandiser || modules.logisticsMerchandiser) && (
+                        <div className="grid grid-cols-2 gap-4">
+                            {modules.plannerMerchandiser && (
+                                <button
+                                    onClick={() => onNavigate('planner')}
+                                    className="w-full bg-white text-slate-700 p-4 rounded-lg shadow-md text-left flex items-center transition-transform hover:scale-105"
+                                >
+                                    <Map size={24} className="mr-3 text-slate-500"/>
+                                    <div>
+                                        <h4 className="font-bold">Planificador</h4>
+                                        <p className="text-xs text-slate-500">Crear y optimizar rutas.</p>
+                                    </div>
+                                </button>
+                            )}
+                            {modules.logisticsMerchandiser && (
+                                <button
+                                    onClick={() => onNavigate('logistics')}
+                                    className="w-full bg-white text-slate-700 p-4 rounded-lg shadow-md text-left flex items-center transition-transform hover:scale-105"
+                                >
+                                    <Truck size={24} className="mr-3 text-slate-500"/>
+                                    <div>
+                                        <h4 className="font-bold">Logística</h4>
+                                        <p className="text-xs text-slate-500">Gestionar inventario.</p>
+                                    </div>
+                                </button>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

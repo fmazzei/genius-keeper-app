@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
 // ✅ Se añade el ícono 'Link2'
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map, Truck } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
@@ -789,7 +789,7 @@ const ModuleManagement = () => {
                     key: 'plannerManager',
                     label: 'Planificador',
                     description: 'Módulo de planificación y agenda de rutas.',
-                    icon: <Map size={20} className="text-blue-500 flex-shrink-0" />,
+                    icon: <MapIcon size={20} className="text-blue-500 flex-shrink-0" />,
                 },
                 {
                     key: 'inventoryManager',
@@ -818,7 +818,7 @@ const ModuleManagement = () => {
                     key: 'plannerMerchandiser',
                     label: 'Planificador',
                     description: 'Acceso al planificador de rutas y visitas del merchandiser.',
-                    icon: <Map size={20} className="text-blue-500 flex-shrink-0" />,
+                    icon: <MapIcon size={20} className="text-blue-500 flex-shrink-0" />,
                 },
                 {
                     key: 'logisticsMerchandiser',
