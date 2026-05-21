@@ -601,6 +601,10 @@ const GeneralSettings = () => {
 const SalesManagerManagement = () => {
     const [managers, setManagers] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [newUser, setNewUser] = useState({ name: '', email: '', password: '' });
+    const [isCreating, setIsCreating] = useState(false);
+    const [createError, setCreateError] = useState('');
 
     useEffect(() => {
         const q = query(collection(db, "users_metadata"), where("role", "==", "sales_manager"));
@@ -618,21 +622,85 @@ const SalesManagerManagement = () => {
     }, []);
 
     const handleToggleActive = async (managerId, currentActive) => {
-        const managerRef = doc(db, "users_metadata", managerId);
         try {
-            await updateDoc(managerRef, { active: !currentActive });
+            await updateDoc(doc(db, "users_metadata", managerId), { active: !currentActive });
         } catch (error) {
-            console.error("Error al actualizar el estado:", error);
-            alert("No se pudo actualizar el estado de la cuenta.");
+            alert("No se pudo actualizar el estado.");
         }
+    };
+
+    const handleDelete = async (manager) => {
+        if (!window.confirm(`¿Seguro que quieres eliminar a "${manager.name}"? Perderá el acceso a la app de inmediato.`)) return;
+        try {
+            await deleteDoc(doc(db, "users_metadata", manager.id));
+        } catch (error) {
+            alert("No se pudo eliminar el usuario.");
+        }
+    };
+
+    const handleCreateUser = async (e) => {
+        e.preventDefault();
+        setCreateError('');
+        setIsCreating(true);
+        try {
+            const { initializeApp, deleteApp } = await import('firebase/app');
+            const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
+            const firebaseConfig = {
+                apiKey: "AIzaSyBcTpXt3p5kjOCc6rK41Jv4vO8_ULJEfGw",
+                authDomain: "geniuskeeper-36553.firebaseapp.com",
+                projectId: "geniuskeeper-36553",
+                storageBucket: "geniuskeeper-36553.appspot.com",
+                messagingSenderId: "362565450545",
+                appId: "1:362565450545:web:27d9dea004e74966a70e10"
+            };
+            const tempApp = initializeApp(firebaseConfig, `create-user-${Date.now()}`);
+            const tempAuth = getAuth(tempApp);
+            const { user } = await createUserWithEmailAndPassword(tempAuth, newUser.email.trim(), newUser.password);
+            await setDoc(doc(db, "users_metadata", user.uid), {
+                name: newUser.name.trim(),
+                email: newUser.email.trim(),
+                role: 'sales_manager',
+                active: true,
+                salesGoal: 0,
+            });
+            await tempAuth.signOut();
+            await deleteApp(tempApp);
+            setNewUser({ name: '', email: '', password: '' });
+            setIsAddModalOpen(false);
+        } catch (error) {
+            if (error.code === 'auth/email-already-in-use') {
+                setCreateError('Ya existe un usuario con ese correo electrónico.');
+            } else if (error.code === 'auth/weak-password') {
+                setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            } else {
+                setCreateError(`Error: ${error.message}`);
+            }
+        } finally {
+            setIsCreating(false);
+        }
+    };
+
+    const closeModal = () => {
+        setIsAddModalOpen(false);
+        setCreateError('');
+        setNewUser({ name: '', email: '', password: '' });
     };
 
     if (loading) return <LoadingSpinner />;
 
     return (
         <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-slate-700 mb-1">Gerentes de Ventas</h3>
-            <p className="text-sm text-slate-500 mb-4">Activa o desactiva el acceso a la aplicación para cada gerente. Una cuenta desactivada verá un mensaje de suspensión al intentar entrar.</p>
+            <div className="flex justify-between items-center">
+                <div>
+                    <h3 className="text-xl font-semibold text-slate-700">Acceso Gerencial</h3>
+                    <p className="text-sm text-slate-500 mt-1">Usuarios que ingresan con correo y contraseña.</p>
+                </div>
+                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm">
+                    <UserPlus size={18} />
+                    <span className="hidden sm:inline">Agregar</span>
+                </button>
+            </div>
+
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <ul className="divide-y divide-slate-200">
                     {managers.map(manager => (
@@ -646,25 +714,53 @@ const SalesManagerManagement = () => {
                                     <p className="text-sm text-slate-500">{manager.email}</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border w-full sm:w-auto">
-                                <div className="flex-grow">
-                                    <label className="font-semibold text-slate-700 text-sm">Acceso a la App</label>
-                                    <p className={`text-xs ${manager.active ? 'text-green-600' : 'text-red-600'}`}>
-                                        {manager.active ? 'Cuenta activa' : 'Cuenta suspendida'}
-                                    </p>
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border">
+                                    <div>
+                                        <p className="font-semibold text-slate-700 text-sm">Acceso</p>
+                                        <p className={`text-xs font-medium ${manager.active ? 'text-green-600' : 'text-red-500'}`}>
+                                            {manager.active ? 'Activo' : 'Suspendido'}
+                                        </p>
+                                    </div>
+                                    <ToggleSwitch enabled={manager.active} setEnabled={() => handleToggleActive(manager.id, manager.active)} />
                                 </div>
-                                <ToggleSwitch
-                                    enabled={manager.active}
-                                    setEnabled={() => handleToggleActive(manager.id, manager.active)}
-                                />
+                                <button onClick={() => handleDelete(manager)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Eliminar usuario">
+                                    <Trash2 size={18} />
+                                </button>
                             </div>
                         </li>
                     ))}
                     {managers.length === 0 && (
-                        <p className="text-center text-slate-500 py-6">No hay gerentes de ventas registrados.</p>
+                        <p className="text-center text-slate-500 py-8">No hay usuarios gerenciales. Agrega uno con el botón de arriba.</p>
                     )}
                 </ul>
             </div>
+
+            <Modal isOpen={isAddModalOpen} onClose={closeModal} title="Agregar Nuevo Usuario Gerencial">
+                <form onSubmit={handleCreateUser} className="space-y-4 p-1">
+                    <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre completo</label>
+                        <input type="text" value={newUser.name} onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="Ej: Carlos Pérez" required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Correo electrónico</label>
+                        <input type="email" value={newUser.email} onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="correo@lacteoca.com" required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña inicial</label>
+                        <input type="password" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="Mínimo 6 caracteres" required minLength={6} />
+                        <p className="text-xs text-slate-500 mt-1">El usuario puede cambiarla después desde su cuenta.</p>
+                    </div>
+                    {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-md font-medium">{createError}</p>}
+                    <div className="flex gap-3 pt-2">
+                        <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button>
+                        <button type="submit" disabled={isCreating} className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
+                            {isCreating ? <LoadingSpinner size="sm" /> : <UserPlus size={18} />}
+                            {isCreating ? 'Creando...' : 'Crear Usuario'}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
         </div>
     );
 };

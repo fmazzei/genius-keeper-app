@@ -16,7 +16,7 @@ const LoginScreen = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     // Contraseñas de campo compartidas (guardadas de forma segura en variables de entorno)
-    const MERCHANDISER_PASS = import.meta.env.VITE_MERCHANDISER_PASSWORD || "MerchandiserPass123!";
+    const MERCHANDISER_PASS = import.meta.env.VITE_MERCHANDISER_PASSWORD || "Password123!";
     const PRODUCCION_PASS = import.meta.env.VITE_PRODUCCION_PASSWORD || "ProduccionPass123!";
 
     const handleLogin = async (loginEmail, loginPassword) => {
