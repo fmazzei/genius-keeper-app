@@ -1,12 +1,13 @@
 // RUTA: src/Pages/ManagerLayout.jsx
 
-import React, { useState, useMemo, useEffect } from 'react'; // ✅ Se añade useEffect
+import React, { useState, useMemo, useEffect } from 'react';
 import { useGeniusEngine } from '@/hooks/useGeniusEngine';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/Firebase/config.js';
 import { LogOut, BarChart2, TrendingUp, Bell, Settings, Package, Sun, DollarSign, Target, Map, Menu, ChevronsRight } from 'lucide-react';
+import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import ManagerDashboard from './ManagerDashboard.jsx';
 import MarketTrendsView from './MarketTrendsView.jsx';
@@ -24,6 +25,7 @@ import Planner from './Planner/Planner.jsx';
 const ManagerLayout = ({ user, role, onLogout }) => {
     const { posList, reports, loading: geniusLoading } = useGeniusEngine(role);
     const { unreadCount } = useNotifications();
+    const { modules } = useAppConfig();
     
     // Este hook se mantiene por si es usado en alguna otra parte del layout.
     const { agenda: legacyAgenda, updateAgenda: updateLegacyAgenda, loading: agendaLoading } = useAgenda(user.uid); 
@@ -31,6 +33,17 @@ const ManagerLayout = ({ user, role, onLogout }) => {
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [currentView, setCurrentView] = useState(role === 'sales_manager' ? 'focus' : 'dashboard');
+
+    useEffect(() => {
+        if (role === 'sales_manager') {
+            if (currentView === 'focus' && !modules.salesFocus) setCurrentView('alerts');
+            if (currentView === 'commissions' && !modules.commissions) setCurrentView('alerts');
+            if (currentView === 'sales' && !modules.salesGoals) setCurrentView('alerts');
+        }
+        if (role === 'master') {
+            if (currentView === 'trends' && !modules.marketTrends) setCurrentView('dashboard');
+        }
+    }, [modules, role, currentView]);
 
     // ✅ Se añade un estado para controlar la navegación del planificador.
     const [selectedWeekId, setSelectedWeekId] = useState(null);
@@ -74,7 +87,7 @@ const ManagerLayout = ({ user, role, onLogout }) => {
         const masterNav = (
             <ul>
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
-                <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />
+                {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />
                 <NavItem icon={<Map size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
@@ -84,12 +97,12 @@ const ManagerLayout = ({ user, role, onLogout }) => {
 
         const salesManagerNav = (
             <ul>
-                <NavItem icon={<Sun size={24} />} text="Brújula de Ventas" active={currentView === 'focus'} onClick={() => setCurrentView('focus')} />
+                {modules.salesFocus && <NavItem icon={<Sun size={24} />} text="Brújula de Ventas" active={currentView === 'focus'} onClick={() => setCurrentView('focus')} />}
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 <NavItem icon={<Map size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />
                 <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />
-                <NavItem icon={<DollarSign size={24} />} text="Comisiones" active={currentView === 'commissions'} onClick={() => setCurrentView('commissions')} />
-                <NavItem icon={<Target size={24} />} text="Metas de Venta" active={currentView === 'sales'} onClick={() => setCurrentView('sales')} />
+                {modules.commissions && <NavItem icon={<DollarSign size={24} />} text="Comisiones" active={currentView === 'commissions'} onClick={() => setCurrentView('commissions')} />}
+                {modules.salesGoals && <NavItem icon={<Target size={24} />} text="Metas de Venta" active={currentView === 'sales'} onClick={() => setCurrentView('sales')} />}
             </ul>
         );
 

@@ -4,7 +4,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
 // ✅ Se añade el ícono 'Link2'
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2 } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid } from 'lucide-react';
+import { useAppConfig } from '../context/AppConfigContext.tsx';
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
@@ -241,8 +242,9 @@ const UserManagement = () => {
 
     return (
         <div className="space-y-8">
+            <SalesManagerManagement />
             <div>
-                <h3 className="text-xl font-semibold text-slate-700 mb-4">Gestión de Acceso para Usuarios de Campo</h3>
+                <h3 className="text-xl font-semibold text-slate-700 mb-4">Usuarios de Campo</h3>
                 <div className="bg-white rounded-lg shadow overflow-hidden">
                     <ul className="divide-y divide-slate-200">
                         {users.map(user => (
@@ -596,6 +598,161 @@ const GeneralSettings = () => {
     );
 };
 
+const SalesManagerManagement = () => {
+    const [managers, setManagers] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const q = query(collection(db, "users_metadata"), where("role", "==", "sales_manager"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const managersData = snapshot.docs.map(d => ({
+                id: d.id,
+                name: d.data().name || d.id,
+                email: d.data().email || 'No disponible',
+                active: d.data().active !== false,
+            }));
+            setManagers(managersData);
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const handleToggleActive = async (managerId, currentActive) => {
+        const managerRef = doc(db, "users_metadata", managerId);
+        try {
+            await updateDoc(managerRef, { active: !currentActive });
+        } catch (error) {
+            console.error("Error al actualizar el estado:", error);
+            alert("No se pudo actualizar el estado de la cuenta.");
+        }
+    };
+
+    if (loading) return <LoadingSpinner />;
+
+    return (
+        <div className="space-y-4">
+            <h3 className="text-xl font-semibold text-slate-700 mb-1">Gerentes de Ventas</h3>
+            <p className="text-sm text-slate-500 mb-4">Activa o desactiva el acceso a la aplicación para cada gerente. Una cuenta desactivada verá un mensaje de suspensión al intentar entrar.</p>
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+                <ul className="divide-y divide-slate-200">
+                    {managers.map(manager => (
+                        <li key={manager.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <div className="flex items-center">
+                                <div className="w-10 h-10 rounded-full bg-pink-200 text-pink-700 flex items-center justify-center font-bold text-lg flex-shrink-0">
+                                    {manager.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="ml-4">
+                                    <p className="font-semibold text-slate-800">{manager.name}</p>
+                                    <p className="text-sm text-slate-500">{manager.email}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border w-full sm:w-auto">
+                                <div className="flex-grow">
+                                    <label className="font-semibold text-slate-700 text-sm">Acceso a la App</label>
+                                    <p className={`text-xs ${manager.active ? 'text-green-600' : 'text-red-600'}`}>
+                                        {manager.active ? 'Cuenta activa' : 'Cuenta suspendida'}
+                                    </p>
+                                </div>
+                                <ToggleSwitch
+                                    enabled={manager.active}
+                                    setEnabled={() => handleToggleActive(manager.id, manager.active)}
+                                />
+                            </div>
+                        </li>
+                    ))}
+                    {managers.length === 0 && (
+                        <p className="text-center text-slate-500 py-6">No hay gerentes de ventas registrados.</p>
+                    )}
+                </ul>
+            </div>
+        </div>
+    );
+};
+
+const ModuleManagement = () => {
+    const { modules, updateModule, configLoading } = useAppConfig();
+    const [saving, setSaving] = useState(null);
+
+    const moduleList = [
+        {
+            key: 'salesFocus',
+            label: 'Brújula de Ventas',
+            description: 'Dashboard principal del Gerente de Ventas con indicadores de foco.',
+            icon: <Sun size={20} className="text-yellow-500 flex-shrink-0" />,
+            badge: 'Sales Manager',
+        },
+        {
+            key: 'commissions',
+            label: 'Módulo de Comisiones',
+            description: 'Vista de comisiones generadas desde pagos de Zoho Books.',
+            icon: <DollarSign size={20} className="text-green-600 flex-shrink-0" />,
+            badge: 'Sales Manager',
+        },
+        {
+            key: 'salesGoals',
+            label: 'Metas de Venta',
+            description: 'Panel de seguimiento y cumplimiento de metas mensuales.',
+            icon: <Target size={20} className="text-blue-600 flex-shrink-0" />,
+            badge: 'Sales Manager',
+        },
+        {
+            key: 'marketTrends',
+            label: 'Análisis de Tendencias',
+            description: 'Vista de tendencias de mercado y análisis competitivo.',
+            icon: <TrendingUp size={20} className="text-purple-600 flex-shrink-0" />,
+            badge: 'Master',
+        },
+    ];
+
+    const handleToggle = async (key, currentValue) => {
+        setSaving(key);
+        try {
+            await updateModule(key, !currentValue);
+        } catch {
+            alert('No se pudo actualizar el módulo.');
+        } finally {
+            setSaving(null);
+        }
+    };
+
+    if (configLoading) return <LoadingSpinner />;
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h3 className="text-xl font-semibold text-slate-700 mb-1">Módulos Activos</h3>
+                <p className="text-sm text-slate-500 mb-4">Activa o desactiva funcionalidades de la app. Los cambios aplican en tiempo real para todos los usuarios.</p>
+                <div className="bg-white rounded-lg shadow divide-y divide-slate-200">
+                    {moduleList.map(({ key, label, description, icon, badge }) => (
+                        <div key={key} className="flex flex-col sm:flex-row justify-between items-center gap-4 p-4 sm:p-6">
+                            <div className="w-full text-center sm:text-left flex items-start gap-3">
+                                <div className="mt-0.5">{icon}</div>
+                                <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <label className="font-semibold text-slate-800">{label}</label>
+                                        <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{badge}</span>
+                                    </div>
+                                    <p className="text-sm text-slate-500 mt-1">{description}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                                <span className={`text-sm font-semibold min-w-[64px] text-right ${modules[key] ? 'text-green-600' : 'text-slate-400'}`}>
+                                    {saving === key ? '...' : modules[key] ? 'Activo' : 'Inactivo'}
+                                </span>
+                                <ToggleSwitch
+                                    enabled={modules[key]}
+                                    setEnabled={() => !saving && handleToggle(key, modules[key])}
+                                    disabled={saving !== null}
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const AdminPanel = ({ user, posList, reports, loading }) => {
     const [activeTab, setActiveTab] = useState('settings');
     const TabButton = ({ id, text, icon }) => ( <button onClick={() => setActiveTab(id)} className={`flex items-center px-3 sm:px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === id ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-200'}`}>{icon}<span className="ml-2 hidden sm:inline">{text}</span></button> );
@@ -611,6 +768,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     <TabButton id="depots" text="Depósitos" icon={<Warehouse size={18} />} />
                     <TabButton id="users" text="Usuarios" icon={<Users size={18} />} />
                     <TabButton id="sales_goals" text="Metas de Venta" icon={<Target size={18} />} />
+                    <TabButton id="modules" text="Módulos" icon={<LayoutGrid size={18} />} />
                     <TabButton id="settings" text="Configuración" icon={<Settings size={18} />} />
                 </div>
                 <div className="animate-fade-in">
@@ -620,6 +778,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     {activeTab === 'depots' && <DepotManagement />}
                     {activeTab === 'users' && <UserManagement />}
                     {activeTab === 'sales_goals' && <SalesGoalsManagement />}
+                    {activeTab === 'modules' && <ModuleManagement />}
                     {activeTab === 'settings' && <GeneralSettings />}
                 </div>
             </div>

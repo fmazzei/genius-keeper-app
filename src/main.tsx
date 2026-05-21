@@ -5,6 +5,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { AuthProvider } from './context/AuthContext.tsx';
+import { AppConfigProvider } from './context/AppConfigContext.tsx';
 import { SimulationProvider } from './context/SimulationContext.jsx';
 import { ReportViewProvider } from './context/ReportViewContext.jsx';
 import { ReporterProvider } from './context/ReporterContext.jsx';
@@ -40,16 +41,17 @@ console.error = (...args) => {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AuthProvider>
-      <ReporterProvider>
-        <SimulationProvider>
-          <ReportViewProvider>
-            {/* ✅ 2. ENVOLVER LA APP CON EL INVITEPROVIDER */}
-            <InviteProvider>
-              <App />
-            </InviteProvider>
-          </ReportViewProvider>
-        </SimulationProvider>
-      </ReporterProvider>
+      <AppConfigProvider>
+        <ReporterProvider>
+          <SimulationProvider>
+            <ReportViewProvider>
+              <InviteProvider>
+                <App />
+              </InviteProvider>
+            </ReportViewProvider>
+          </SimulationProvider>
+        </ReporterProvider>
+      </AppConfigProvider>
     </AuthProvider>
   </React.StrictMode>,
 );

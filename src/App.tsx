@@ -17,7 +17,7 @@ import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import InAppNotification from '@/Components/InAppNotification.jsx';
 import ReportDetailModalController from '@/Components/ReportDetailModalController.tsx';
 import RouteInviteModal from '@/Components/RouteInviteModal.tsx';
-import { LogOut } from 'lucide-react';
+import { LogOut, Lock } from 'lucide-react';
 
 interface AppNotification {
   title: string;
@@ -25,7 +25,7 @@ interface AppNotification {
 }
 
 const AppLayout: React.FC = () => {
-    const { user, role, loading } = useAuth();
+    const { user, role, loading, isAccountSuspended } = useAuth();
     const [isSecurityLocked, setIsSecurityLocked] = useState<boolean>(true);
     // ✅ Se trae la lógica del modal aquí
     const { inviteId, setInviteId } = useInvite();
@@ -47,6 +47,27 @@ const AppLayout: React.FC = () => {
 
     if (!user) {
         return <LoginScreen />;
+    }
+
+    if (isAccountSuspended) {
+        return (
+            <div className="flex flex-col items-center justify-center h-screen bg-slate-100 p-6">
+                <div className="bg-white rounded-xl shadow-lg p-8 max-w-sm w-full text-center space-y-4">
+                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                        <Lock size={32} className="text-red-500" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-slate-800">Cuenta Suspendida</h2>
+                    <p className="text-slate-500 text-sm">Tu cuenta ha sido desactivada temporalmente. Contacta con el administrador del sistema para reactivarla.</p>
+                    <button
+                        onClick={() => signOut(auth)}
+                        className="w-full bg-red-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-red-600 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <LogOut size={18} />
+                        Cerrar Sesión
+                    </button>
+                </div>
+            </div>
+        );
     }
     
     // El modal de invitación ahora se renderiza aquí, asegurando que el usuario ya está autenticado.

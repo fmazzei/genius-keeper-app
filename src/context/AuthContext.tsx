@@ -12,6 +12,7 @@ interface AuthContextType {
   user: User | null;
   role: string | null;
   loading: boolean;
+  isAccountSuspended: boolean;
   login: (email: string, password: string) => Promise<any>;
   signInWithCustomToken: (token: string) => Promise<any>;
 }
@@ -34,6 +35,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isAccountSuspended, setIsAccountSuspended] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -43,16 +45,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const userDocRef = doc(db, 'users_metadata', currentUser.uid);
           const docSnap = await getDoc(userDocRef);
           if (docSnap.exists()) {
-            setRole(docSnap.data().role);
+            const data = docSnap.data();
+            setRole(data.role);
+            setIsAccountSuspended(data.active === false);
           } else {
             setRole('no-role');
+            setIsAccountSuspended(false);
           }
         } catch (error) {
           console.error("Error crítico al buscar el rol del usuario:", error);
           setRole('no-role');
+          setIsAccountSuspended(false);
         }
       } else {
         setRole(null);
+        setIsAccountSuspended(false);
       }
       setLoading(false);
     });
@@ -85,10 +92,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return userCredential;
   };
 
-  const value: AuthContextType = { 
-    user, 
+  const value: AuthContextType = {
+    user,
     role,
     loading,
+    isAccountSuspended,
     login,
     signInWithCustomToken: signInWithCustomTokenHandler,
   };
