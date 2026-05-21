@@ -437,7 +437,7 @@ const ReportManagement = ({ reports = [], posList = [], loading }) => {
     const getDisplayDate = (report) => {
         const date = report.createdAt?.seconds ? new Date(report.createdAt.seconds * 1000) : null;
         if (!date) return 'Fecha no disponible';
-        return date.toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
+        return date.toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
     return (
         <div className="bg-white p-4 sm:p-6 rounded-lg shadow">

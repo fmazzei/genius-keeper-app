@@ -5,7 +5,8 @@ import { useGeniusEngine } from '@/hooks/useGeniusEngine';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
-import { auth } from '@/Firebase/config.js';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '@/Firebase/config.js';
 import { LogOut, BarChart2, TrendingUp, Bell, Settings, Package, Sun, DollarSign, Target, Map, Menu, ChevronsRight } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import LoadingSpinner from '@/Components/LoadingSpinner';
@@ -33,6 +34,17 @@ const ManagerLayout = ({ user, role, onLogout }) => {
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [currentView, setCurrentView] = useState(role === 'sales_manager' ? 'focus' : 'dashboard');
+    const [userMetadata, setUserMetadata] = useState({ name: '', email: '' });
+
+    useEffect(() => {
+        if (!user?.uid) return;
+        getDoc(doc(db, 'users_metadata', user.uid)).then(snap => {
+            if (snap.exists()) {
+                const data = snap.data();
+                setUserMetadata({ name: data.name || '', email: data.email || '' });
+            }
+        }).catch(() => {});
+    }, [user?.uid]);
 
     useEffect(() => {
         if (role === 'sales_manager') {
@@ -108,7 +120,10 @@ const ManagerLayout = ({ user, role, onLogout }) => {
             </ul>
         );
 
-        const userInfo = role === 'master' ? { initial: 'F', name: user.displayName || 'Francisco Mazzei', title: 'Master', color: 'bg-indigo-200 text-indigo-700' } : { initial: 'C', name: user.displayName || 'Carolina Ramírez', title: 'Sales Manager', color: 'bg-pink-200 text-pink-700' };
+        const displayName = user.displayName || userMetadata.name || userMetadata.email || (role === 'master' ? 'Master' : 'Sales Manager');
+        const userInfo = role === 'master'
+            ? { initial: displayName[0]?.toUpperCase() || 'M', name: displayName, title: 'Master', color: 'bg-indigo-200 text-indigo-700' }
+            : { initial: displayName[0]?.toUpperCase() || 'S', name: displayName, title: 'Sales Manager', color: 'bg-pink-200 text-pink-700' };
         
         return (<div className="flex flex-col h-full bg-white"><div className={`flex items-center justify-between p-4 h-16 border-b ${!desktopSidebarOpen && 'md:justify-center'}`}><h1 className={`text-xl font-bold text-brand-blue whitespace-nowrap overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>Genius Keeper</h1><button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="p-2 rounded-lg hover:bg-slate-200 hidden md:block"><ChevronsRight className={`transition-transform duration-300 ${desktopSidebarOpen && 'rotate-180'}`} /></button></div><nav className="mt-4 px-2 flex-grow">{role === 'master' ? masterNav : salesManagerNav}</nav><div className="px-2 py-4 border-t"><div className="flex items-center p-3 my-2"><div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${userInfo.color}`}>{userInfo.initial}</div><div className={`ml-3 overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}><p className="font-semibold text-sm truncate">{userInfo.name}</p><p className="text-xs text-gray-500">{userInfo.title}</p></div></div><button onClick={onLogout} className="w-full"><li className="flex items-center p-3 my-1 rounded-lg cursor-pointer text-slate-600 hover:bg-slate-100"><LogOut size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Cerrar Sesión</span></li></button></div></div>);
     };
