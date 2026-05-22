@@ -7,7 +7,7 @@ import {
     Thermometer, Snowflake, FlaskConical, Clock, Scissors, RotateCcw,
     Droplets, ArrowDown, Waves, CalendarDays, Package, CheckCircle2,
     TestTube, Timer, Repeat, Pencil,
-    Scale, Box, Lock, Layers,
+    Scale, Box, Lock, Layers, AlertTriangle, RefreshCw,
 } from 'lucide-react';
 import { PillGroup } from '../admin/ProductCatalogPage';
 
@@ -995,6 +995,7 @@ export default function ProcessBuilderPage() {
     const [materials, setMaterials] = useState([]);
     const [processes, setProcesses] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
     const [materialsLoading, setMaterialsLoading] = useState(false);
     const [mode, setMode] = useState('list'); // 'list' | 'builder'
 
@@ -1002,6 +1003,7 @@ export default function ProcessBuilderPage() {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [bloques, setBloques] = useState([]);
     const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState(null);
 
     // Block editor modal
     const [blockModal, setBlockModal] = useState(null); // null | { mode: 'add' | 'edit', index? }
@@ -1009,6 +1011,7 @@ export default function ProcessBuilderPage() {
     const [modalParams, setModalParams] = useState({});
 
     const loadAll = useCallback(async () => {
+        setLoadError(null);
         try {
             const [prodSnap, procSnap] = await Promise.all([
                 getDocs(collection(db, 'kroma_products')),
@@ -1026,6 +1029,7 @@ export default function ProcessBuilderPage() {
             );
         } catch (err) {
             console.error(err);
+            setLoadError(err?.code || err?.message || 'Error desconocido');
         } finally {
             setLoading(false);
         }
@@ -1091,6 +1095,7 @@ export default function ProcessBuilderPage() {
     const saveProcess = async () => {
         if (!selectedProduct || bloques.length === 0) return;
         setSaving(true);
+        setSaveError(null);
         try {
             await addDoc(collection(db, 'kroma_processes'), {
                 productoId: selectedProduct.id,
@@ -1108,6 +1113,7 @@ export default function ProcessBuilderPage() {
             setBloques([]);
         } catch (err) {
             console.error(err);
+            setSaveError(err?.code || err?.message || 'Error al guardar');
         } finally {
             setSaving(false);
         }
@@ -1141,6 +1147,25 @@ export default function ProcessBuilderPage() {
                 {loading ? (
                     <div className="flex justify-center py-16">
                         <Loader size={28} className="animate-spin text-emerald-400" />
+                    </div>
+                ) : loadError ? (
+                    <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-5 max-w-md">
+                        <div className="flex items-center gap-2 mb-2">
+                            <AlertTriangle size={16} className="text-red-400 shrink-0" />
+                            <p className="text-red-300 font-semibold text-sm">Error al cargar datos</p>
+                        </div>
+                        <p className="text-red-400/80 text-xs mb-4 font-mono">{loadError}</p>
+                        <p className="text-slate-400 text-xs mb-4">
+                            Esto puede deberse a un problema de permisos en Firestore o de conexión.
+                            Si el error dice <span className="text-red-300 font-mono">permission-denied</span>, avisa al administrador para revisar las reglas de seguridad.
+                        </p>
+                        <button
+                            onClick={() => { setLoading(true); loadAll(); }}
+                            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                        >
+                            <RefreshCw size={14} />
+                            Reintentar
+                        </button>
                     </div>
                 ) : products.length === 0 ? (
                     <div className="text-center py-16">
@@ -1226,6 +1251,18 @@ export default function ProcessBuilderPage() {
                     </button>
                 )}
             </div>
+
+            {saveError && (
+                <div className="flex items-center gap-2 bg-red-500/10 border-b border-red-500/30 px-5 py-3 shrink-0">
+                    <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                    <p className="text-red-300 text-xs flex-1">
+                        <span className="font-semibold">Error al guardar:</span> {saveError}
+                    </p>
+                    <button onClick={() => setSaveError(null)} className="text-red-400 hover:text-white p-0.5">
+                        <X size={13} />
+                    </button>
+                </div>
+            )}
 
             <div className="flex-1 overflow-y-auto p-5">
                 {/* Step 1 — Select product */}
