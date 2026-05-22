@@ -987,6 +987,22 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
     }
 }
 
+// ─── Draft persistence ────────────────────────────────────────────────────────
+
+const DRAFT_KEY = 'kroma_process_draft';
+
+function saveDraft(product, bloques) {
+    if (!product) { localStorage.removeItem(DRAFT_KEY); return; }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ product, bloques }));
+}
+
+function loadDraft() {
+    try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ProcessBuilderPage() {
@@ -998,6 +1014,7 @@ export default function ProcessBuilderPage() {
     const [loadError, setLoadError] = useState(null);
     const [materialsLoading, setMaterialsLoading] = useState(false);
     const [mode, setMode] = useState('list'); // 'list' | 'builder'
+    const [hasDraft, setHasDraft] = useState(() => !!loadDraft());
 
     // Builder state
     const [selectedProduct, setSelectedProduct] = useState(null);
@@ -1054,6 +1071,11 @@ export default function ProcessBuilderPage() {
 
     useEffect(() => { loadAll(); }, [loadAll]);
 
+    // Persist draft whenever builder state changes
+    useEffect(() => {
+        if (mode === 'builder') saveDraft(selectedProduct, bloques);
+    }, [mode, selectedProduct, bloques]);
+
     // Block modal actions
     const openAddBlock = () => {
         setModalTipo('');
@@ -1092,6 +1114,20 @@ export default function ProcessBuilderPage() {
         setBloques(arr);
     };
 
+    const restoreDraft = () => {
+        const d = loadDraft();
+        if (!d) return;
+        setSelectedProduct(d.product);
+        setBloques(d.bloques || []);
+        setMode('builder');
+        setHasDraft(false);
+    };
+
+    const discardDraft = () => {
+        localStorage.removeItem(DRAFT_KEY);
+        setHasDraft(false);
+    };
+
     const saveProcess = async () => {
         if (!selectedProduct || bloques.length === 0) return;
         setSaving(true);
@@ -1107,6 +1143,8 @@ export default function ProcessBuilderPage() {
                 active: true,
                 createdAt: serverTimestamp(),
             });
+            localStorage.removeItem(DRAFT_KEY);
+            setHasDraft(false);
             await loadAll();
             setMode('list');
             setSelectedProduct(null);
@@ -1143,6 +1181,33 @@ export default function ProcessBuilderPage() {
                         </button>
                     )}
                 </div>
+
+                {/* Draft recovery banner */}
+                {hasDraft && !loading && (
+                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-5 flex items-start gap-3">
+                        <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-amber-300 font-semibold text-sm">Tienes un proceso sin guardar</p>
+                            <p className="text-amber-400/70 text-xs mt-0.5">
+                                {loadDraft()?.product?.nombre || 'Proceso'} — se recuperó automáticamente
+                            </p>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                            <button
+                                onClick={discardDraft}
+                                className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded border border-slate-600 hover:border-slate-500 transition-colors"
+                            >
+                                Descartar
+                            </button>
+                            <button
+                                onClick={restoreDraft}
+                                className="bg-amber-500 hover:bg-amber-400 text-white text-xs font-bold px-3 py-1 rounded transition-colors"
+                            >
+                                Continuar
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {loading ? (
                     <div className="flex justify-center py-16">
@@ -1227,7 +1292,7 @@ export default function ProcessBuilderPage() {
             {/* Header */}
             <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-800 shrink-0">
                 <button
-                    onClick={() => { setMode('list'); setSelectedProduct(null); setBloques([]); }}
+                    onClick={() => { localStorage.removeItem(DRAFT_KEY); setHasDraft(false); setMode('list'); setSelectedProduct(null); setBloques([]); }}
                     className="text-slate-400 hover:text-white p-1 rounded transition-colors"
                 >
                     <X size={18} />
