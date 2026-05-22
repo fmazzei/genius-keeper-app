@@ -7,7 +7,7 @@ import KromaUserSelect from './KromaUserSelect';
 // Admin pages
 import {
     AdminHome, WarehousesPage, SuppliersPage, MaterialsMasterPage,
-    InventoryPTPage, ProductionHistoryPage, KromaUsersPage,
+    ProductCatalogPage, InventoryPTPage, ProductionHistoryPage, KromaUsersPage,
 } from './pages/AdminPages';
 
 // Manager pages
@@ -20,7 +20,7 @@ import {
 } from './pages/OperatorPages';
 
 import {
-    LayoutDashboard, Warehouse, Truck, Package, Archive, ClipboardList, Users,
+    LayoutDashboard, Warehouse, Truck, Package, Archive, ClipboardList, Users, Tag,
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
     LogOut, Menu, X, ChevronRight,
@@ -30,27 +30,29 @@ import {
 
 const NAV = {
     kroma_admin: [
-        { id: 'home',     label: 'Inicio',            Icon: LayoutDashboard },
-        { id: 'warehouses',label: 'Almacenes',         Icon: Warehouse },
-        { id: 'suppliers', label: 'Proveedores',       Icon: Truck },
-        { id: 'materials', label: 'Maestro Materiales',Icon: Package },
-        { id: 'inventory_pt', label: 'Inventario PT',  Icon: Archive },
-        { id: 'history',   label: 'Historial',         Icon: ClipboardList },
-        { id: 'users',     label: 'Usuarios Kroma',    Icon: Users },
+        { id: 'home',        label: 'Inicio',              Icon: LayoutDashboard },
+        { id: 'products',    label: 'Catálogo Productos',  Icon: Tag },
+        { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse },
+        { id: 'suppliers',   label: 'Proveedores',         Icon: Truck },
+        { id: 'materials',   label: 'Maestro Materiales',  Icon: Package },
+        { id: 'inventory_pt',label: 'Inventario PT',       Icon: Archive },
+        { id: 'history',     label: 'Historial',           Icon: ClipboardList },
+        { id: 'users',       label: 'Usuarios Kroma',      Icon: Users },
     ],
     kroma_gerencial: [
         // — Sección Gerencial —
-        { id: 'home',        label: 'Dashboard',          Icon: BarChart3,       section: 'Gerencial' },
-        { id: 'financial',   label: 'Financiero',         Icon: DollarSign,      section: 'Gerencial' },
-        { id: 'kpis',        label: 'KPIs Producción',    Icon: TrendingUp,      section: 'Gerencial' },
-        { id: 'quality',     label: 'Calidad',            Icon: ShieldCheck,     section: 'Gerencial' },
+        { id: 'home',        label: 'Dashboard',           Icon: BarChart3,       section: 'Gerencial' },
+        { id: 'financial',   label: 'Financiero',          Icon: DollarSign,      section: 'Gerencial' },
+        { id: 'kpis',        label: 'KPIs Producción',     Icon: TrendingUp,      section: 'Gerencial' },
+        { id: 'quality',     label: 'Calidad',             Icon: ShieldCheck,     section: 'Gerencial' },
         // — Sección Administración —
-        { id: 'warehouses',  label: 'Almacenes',          Icon: Warehouse,       section: 'Administración' },
-        { id: 'suppliers',   label: 'Proveedores',        Icon: Truck,           section: 'Administración' },
-        { id: 'materials',   label: 'Maestro Materiales', Icon: Package,         section: 'Administración' },
-        { id: 'inventory_pt',label: 'Inventario PT',      Icon: Archive,         section: 'Administración' },
-        { id: 'history',     label: 'Historial',          Icon: ClipboardList,   section: 'Administración' },
-        { id: 'users',       label: 'Usuarios Kroma',     Icon: Users,           section: 'Administración' },
+        { id: 'products',    label: 'Catálogo Productos',  Icon: Tag,             section: 'Administración' },
+        { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse,       section: 'Administración' },
+        { id: 'suppliers',   label: 'Proveedores',         Icon: Truck,           section: 'Administración' },
+        { id: 'materials',   label: 'Maestro Materiales',  Icon: Package,         section: 'Administración' },
+        { id: 'inventory_pt',label: 'Inventario PT',       Icon: Archive,         section: 'Administración' },
+        { id: 'history',     label: 'Historial',           Icon: ClipboardList,   section: 'Administración' },
+        { id: 'users',       label: 'Usuarios Kroma',      Icon: Users,           section: 'Administración' },
     ],
     kroma_operario: [
         { id: 'home',          label: 'Inicio',          Icon: LayoutDashboard },
@@ -80,6 +82,7 @@ function renderPage(view, role) {
     if (role === 'kroma_admin') {
         switch (view) {
             case 'home':         return <AdminHome />;
+            case 'products':     return <ProductCatalogPage />;
             case 'warehouses':   return <WarehousesPage />;
             case 'suppliers':    return <SuppliersPage />;
             case 'materials':    return <MaterialsMasterPage />;
@@ -97,6 +100,7 @@ function renderPage(view, role) {
             case 'kpis':         return <ProductionKPIsPage />;
             case 'quality':      return <QualityBoard />;
             // Admin views (gerencial has full access)
+            case 'products':     return <ProductCatalogPage />;
             case 'warehouses':   return <WarehousesPage />;
             case 'suppliers':    return <SuppliersPage />;
             case 'materials':    return <MaterialsMasterPage />;

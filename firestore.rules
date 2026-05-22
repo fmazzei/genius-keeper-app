@@ -151,6 +151,10 @@ service cloud.firestore {
       allow write: if isKromaAccess();
     }
 
+    match /kroma_products/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
     match /kroma_warehouses/{id} {
       allow read, write: if isKromaAccess();
     }

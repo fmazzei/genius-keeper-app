@@ -4,6 +4,7 @@ import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'fi
 import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction, Plus, Edit2, Trash2, Loader, Settings, BarChart3, ChefHat } from 'lucide-react';
 import SuppliersPageImpl from './admin/SuppliersPage';
 import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
+import ProductCatalogPageImpl from './admin/ProductCatalogPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -64,6 +65,8 @@ export const WarehousesPage = () => (
 export const SuppliersPage = () => <SuppliersPageImpl />;
 
 export const MaterialsMasterPage = () => <MaterialsMasterPageImpl />;
+
+export const ProductCatalogPage = () => <ProductCatalogPageImpl />;
 
 export const InventoryPTPage = () => (
     <ComingSoon
