@@ -39,10 +39,18 @@ const NAV = {
         { id: 'users',     label: 'Usuarios Kroma',    Icon: Users },
     ],
     kroma_gerencial: [
-        { id: 'home',      label: 'Dashboard',         Icon: BarChart3 },
-        { id: 'financial', label: 'Financiero',        Icon: DollarSign },
-        { id: 'kpis',      label: 'KPIs Producción',   Icon: TrendingUp },
-        { id: 'quality',   label: 'Calidad',           Icon: ShieldCheck },
+        // — Sección Gerencial —
+        { id: 'home',        label: 'Dashboard',          Icon: BarChart3,       section: 'Gerencial' },
+        { id: 'financial',   label: 'Financiero',         Icon: DollarSign,      section: 'Gerencial' },
+        { id: 'kpis',        label: 'KPIs Producción',    Icon: TrendingUp,      section: 'Gerencial' },
+        { id: 'quality',     label: 'Calidad',            Icon: ShieldCheck,     section: 'Gerencial' },
+        // — Sección Administración —
+        { id: 'warehouses',  label: 'Almacenes',          Icon: Warehouse,       section: 'Administración' },
+        { id: 'suppliers',   label: 'Proveedores',        Icon: Truck,           section: 'Administración' },
+        { id: 'materials',   label: 'Maestro Materiales', Icon: Package,         section: 'Administración' },
+        { id: 'inventory_pt',label: 'Inventario PT',      Icon: Archive,         section: 'Administración' },
+        { id: 'history',     label: 'Historial',          Icon: ClipboardList,   section: 'Administración' },
+        { id: 'users',       label: 'Usuarios Kroma',     Icon: Users,           section: 'Administración' },
     ],
     kroma_operario: [
         { id: 'home',          label: 'Inicio',          Icon: LayoutDashboard },
@@ -83,11 +91,19 @@ function renderPage(view, role) {
     }
     if (role === 'kroma_gerencial') {
         switch (view) {
-            case 'home':      return <ManagerHome />;
-            case 'financial': return <FinancialBoard />;
-            case 'kpis':      return <ProductionKPIsPage />;
-            case 'quality':   return <QualityBoard />;
-            default:          return <ManagerHome />;
+            // Gerencial views
+            case 'home':         return <ManagerHome />;
+            case 'financial':    return <FinancialBoard />;
+            case 'kpis':         return <ProductionKPIsPage />;
+            case 'quality':      return <QualityBoard />;
+            // Admin views (gerencial has full access)
+            case 'warehouses':   return <WarehousesPage />;
+            case 'suppliers':    return <SuppliersPage />;
+            case 'materials':    return <MaterialsMasterPage />;
+            case 'inventory_pt': return <InventoryPTPage />;
+            case 'history':      return <ProductionHistoryPage />;
+            case 'users':        return <KromaUsersPage />;
+            default:             return <ManagerHome />;
         }
     }
     if (role === 'kroma_operario') {
@@ -208,12 +224,19 @@ function KromaInner({ onExitKroma }) {
                     </div>
 
                     {/* Nav items */}
-                    <nav className="flex-1 py-4 px-2 space-y-0.5 overflow-y-auto mt-14 md:mt-0">
-                        {navItems.map(({ id, label, Icon }) => {
+                    <nav className="flex-1 py-4 px-2 overflow-y-auto mt-14 md:mt-0">
+                        {navItems.map(({ id, label, Icon, section }, idx) => {
                             const isActive = currentView === id;
+                            const prevSection = idx > 0 ? navItems[idx - 1].section : null;
+                            const showSectionLabel = section && section !== prevSection;
                             return (
+                                <React.Fragment key={id}>
+                                    {showSectionLabel && (
+                                        <p className="text-slate-600 text-xs font-semibold uppercase tracking-widest px-3 pt-4 pb-1.5">
+                                            {section}
+                                        </p>
+                                    )}
                                 <button
-                                    key={id}
                                     onClick={() => handleNav(id)}
                                     className={`
                                         w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors text-sm font-medium
@@ -226,6 +249,7 @@ function KromaInner({ onExitKroma }) {
                                     <Icon size={17} className="shrink-0" />
                                     {label}
                                 </button>
+                                </React.Fragment>
                             );
                         })}
                     </nav>
