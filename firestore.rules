@@ -134,5 +134,57 @@ service cloud.firestore {
       allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow delete: if isMaster();
     }
+
+    match /pedidos/{pedidoId} {
+      allow create: if isMerchandiser() || isAdmin();
+      allow read: if isAdmin();
+      allow update, delete: if isMaster();
+    }
+
+    // ── Kroma collections (accesibles solo desde el rol produccion y master) ──
+    function isKromaAccess() {
+      return getRole(request.auth.uid) == 'produccion' || isMaster();
+    }
+
+    match /kroma_users/{userId} {
+      allow read: if isKromaAccess();
+      allow write: if isKromaAccess();
+    }
+
+    match /kroma_warehouses/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_suppliers/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_materials/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_recipes/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_processes/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_production_logs/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_milk_reception/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_inventory_materials/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_inventory_pt/{id} {
+      allow read, write: if isKromaAccess();
+    }
   }
 }

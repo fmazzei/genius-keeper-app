@@ -11,7 +11,7 @@ import { useInvite } from '@/context/InviteContext.tsx';
 import LoginScreen from '@/Pages/LoginScreen.jsx';
 import ManagerLayout from '@/Pages/ManagerLayout.jsx';
 import AppShell from '@/Pages/AppShell.jsx';
-import ProductionPanel from '@/Pages/ProductionPanel.jsx';
+import KromaShell from '@/Kroma/KromaShell.jsx';
 import SecurityLockScreen from '@/Components/SecurityLockScreen.tsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import InAppNotification from '@/Components/InAppNotification.jsx';
@@ -76,20 +76,7 @@ const AppLayout: React.FC = () => {
             return <ManagerLayout user={user} role={role} onLogout={() => signOut(auth)} />;
         }
         if (role === 'produccion') {
-            return (
-                <div className="h-screen font-sans flex flex-col">
-                     <header className="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm shrink-0">
-                        <h2 className="text-xl font-semibold text-slate-800">Genius Keeper - Producción</h2>
-                        <button onClick={() => signOut(auth)} className="flex items-center gap-2 text-sm text-slate-600 hover:text-red-600 font-semibold p-2 rounded-lg hover:bg-slate-100 transition-colors">
-                            <LogOut size={18} />
-                            Cerrar Sesión
-                        </button>
-                    </header>
-                    <main className="flex-1 overflow-y-auto bg-slate-50">
-                        <ProductionPanel />
-                    </main>
-                </div>
-            );
+            return <KromaShell onExitKroma={() => signOut(auth)} />;
         }
         if (role === 'merchandiser') {
              return <AppShell user={user} role={role} onLogout={() => signOut(auth)} />;
