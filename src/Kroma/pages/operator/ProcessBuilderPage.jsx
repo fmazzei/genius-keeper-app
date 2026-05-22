@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
 import {
     Workflow, Plus, X, ChevronUp, ChevronDown, Edit2, Trash2, Loader,
     Thermometer, Snowflake, FlaskConical, Clock, Scissors, RotateCcw,
     Droplets, ArrowDown, Waves, CalendarDays, Package, CheckCircle2,
+    TestTube, Timer, Repeat, Pencil,
 } from 'lucide-react';
 import { PillGroup } from '../admin/ProductCatalogPage';
 
@@ -14,31 +15,44 @@ import { PillGroup } from '../admin/ProductCatalogPage';
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 const BLOCK_TYPES = [
-    { id: 'pasteurizacion', label: 'Pasteurización',    Icon: Thermometer,  color: 'text-orange-400',  bg: 'bg-orange-500/20',  border: 'border-orange-500/30' },
-    { id: 'enfriamiento',   label: 'Enfriamiento',      Icon: Snowflake,    color: 'text-cyan-400',    bg: 'bg-cyan-500/20',    border: 'border-cyan-500/30' },
-    { id: 'inoculacion',    label: 'Inoculación',       Icon: FlaskConical, color: 'text-violet-400',  bg: 'bg-violet-500/20',  border: 'border-violet-500/30' },
-    { id: 'cuajado',        label: 'Cuajado',           Icon: Clock,        color: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/30' },
-    { id: 'corte',          label: 'Corte de Cuajada',  Icon: Scissors,     color: 'text-red-400',     bg: 'bg-red-500/20',     border: 'border-red-500/30' },
-    { id: 'agitacion',      label: 'Agitación/Cocción', Icon: RotateCcw,    color: 'text-orange-400',  bg: 'bg-orange-500/20',  border: 'border-orange-500/30' },
-    { id: 'desuerado',      label: 'Desuerado',         Icon: Droplets,     color: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/30' },
-    { id: 'prensado',       label: 'Prensado',          Icon: ArrowDown,    color: 'text-slate-400',   bg: 'bg-slate-600/30',   border: 'border-slate-500/30' },
-    { id: 'salado',         label: 'Salado',            Icon: Waves,        color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/30' },
-    { id: 'maduracion',     label: 'Maduración/Curado', Icon: CalendarDays, color: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/30' },
-    { id: 'empaque',        label: 'Empaque',           Icon: Package,      color: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/30' },
+    // ── Temperatura ──
+    { id: 'pasteurizacion',  label: 'Pasteurización',    Icon: Thermometer,  color: 'text-orange-400',  bg: 'bg-orange-500/20',  border: 'border-orange-500/30' },
+    { id: 'enfriamiento',    label: 'Enfriamiento',      Icon: Snowflake,    color: 'text-cyan-400',    bg: 'bg-cyan-500/20',    border: 'border-cyan-500/30' },
+    // ── Ingredientes ──
+    { id: 'agregar_insumo',  label: 'Agregar Insumo',   Icon: TestTube,     color: 'text-teal-400',    bg: 'bg-teal-500/20',    border: 'border-teal-500/30' },
+    { id: 'inoculacion',     label: 'Inoculación',       Icon: FlaskConical, color: 'text-violet-400',  bg: 'bg-violet-500/20',  border: 'border-violet-500/30' },
+    { id: 'cuajado',         label: 'Cuajado',           Icon: Clock,        color: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/30' },
+    // ── Agitación y reposo ──
+    { id: 'agitacion_simple',label: 'Agitación',         Icon: Repeat,       color: 'text-lime-400',    bg: 'bg-lime-500/20',    border: 'border-lime-500/30' },
+    { id: 'reposo',          label: 'Reposo / Espera',   Icon: Timer,        color: 'text-slate-300',   bg: 'bg-slate-600/40',   border: 'border-slate-500/40' },
+    // ── Proceso físico ──
+    { id: 'corte',           label: 'Corte de Cuajada',  Icon: Scissors,     color: 'text-red-400',     bg: 'bg-red-500/20',     border: 'border-red-500/30' },
+    { id: 'agitacion',       label: 'Agitación/Cocción', Icon: RotateCcw,    color: 'text-orange-400',  bg: 'bg-orange-500/20',  border: 'border-orange-500/30' },
+    { id: 'desuerado',       label: 'Desuerado',         Icon: Droplets,     color: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/30' },
+    { id: 'prensado',        label: 'Prensado',          Icon: ArrowDown,    color: 'text-slate-400',   bg: 'bg-slate-600/30',   border: 'border-slate-500/30' },
+    { id: 'salado',          label: 'Salado',            Icon: Waves,        color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/30' },
+    { id: 'maduracion',      label: 'Maduración/Curado', Icon: CalendarDays, color: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/30' },
+    { id: 'empaque',         label: 'Empaque',           Icon: Package,      color: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/30' },
+    // ── Personalizado ──
+    { id: 'personalizado',   label: 'Personalizado',     Icon: Pencil,       color: 'text-slate-400',   bg: 'bg-slate-700/50',   border: 'border-slate-600/50' },
 ];
 
 const BLOCK_DEFAULTS = {
-    pasteurizacion: { metodo: 'htlv', temperatura: 72, tiempo: 15, unidadTiempo: 'seg' },
-    enfriamiento:   { temperaturaObjetivo: 22 },
-    inoculacion:    { tipoCultivo: 'mesofilico', temperatura: 22, tiempoIncubacion: 12, unidadTiempo: 'h' },
-    cuajado:        { tipo: 'acido', temperatura: 22, tiempo: 14, unidadTiempo: 'h', phObjetivo: 4.5 },
-    corte:          { tamanoGrano: 'medio', tipoCorte: 'manual' },
-    agitacion:      { tipo: 'agitacion', temperaturaObjetivo: 38, tiempo: 30, unidadTiempo: 'min' },
-    desuerado:      { metodo: 'gravedad', conMoldes: 'si', tiempo: 12, unidadTiempo: 'h', temperaturaAmbiente: 18 },
-    prensado:       { presion: 'suave', tiempo: 6, unidadTiempo: 'h', volteos: 'cada2h' },
-    salado:         { metodo: 'superficie', concentracion: '20', temperatura: 12, tiempo: 12, unidadTiempo: 'h' },
-    maduracion:     { temperatura: 12, humedadRelativa: 90, duracion: 21, unidadDuracion: 'dias', virajes: 'cada2dias' },
-    empaque:        { tipo: 'film_stretch', temperaturaEmpaque: 'refrigerado', almacenamiento: 'refrigeracion' },
+    pasteurizacion:  { metodo: 'htlv', tempMax: 72, tempSalidaMin: 4, tempSalidaMax: 8, tiempoSostenimiento: 15, unidadTiempo: 'seg' },
+    enfriamiento:    { temperaturaObjetivo: 22 },
+    agregar_insumo:  { materialId: '', materialNombre: '', agitar: 'si', tiempoAgitacion: 5, unidadAgitacion: 'min', reposar: 'no', tiempoReposo: 30, unidadReposo: 'min', tempReposo: 0 },
+    inoculacion:     { tipoCultivo: 'mesofilico', temperatura: 22, tiempoIncubacion: 12, unidadTiempo: 'h' },
+    cuajado:         { tipo: 'acido', temperatura: 22, tiempo: 14, unidadTiempo: 'h', phObjetivo: 4.5 },
+    agitacion_simple:{ intensidad: 'suave', duracion: 5, unidadTiempo: 'min' },
+    reposo:          { duracion: 30, unidadTiempo: 'min', tipoTemp: 'ambiente', temperatura: 22 },
+    corte:           { tamanoGrano: 'medio', tipoCorte: 'manual' },
+    agitacion:       { tipo: 'agitacion', temperaturaObjetivo: 38, tiempo: 30, unidadTiempo: 'min' },
+    desuerado:       { metodo: 'gravedad', conMoldes: 'si', tiempo: 12, unidadTiempo: 'h', temperaturaAmbiente: 18 },
+    prensado:        { presion: 'suave', tiempo: 6, unidadTiempo: 'h', volteos: 'cada2h' },
+    salado:          { metodo: 'superficie', concentracion: '20', temperatura: 12, tiempo: 12, unidadTiempo: 'h' },
+    maduracion:      { temperatura: 12, humedadRelativa: 90, duracion: 21, unidadDuracion: 'dias', virajes: 'cada2dias' },
+    empaque:         { tipo: 'film_stretch', temperaturaEmpaque: 'refrigerado', almacenamiento: 'refrigeracion' },
+    personalizado:   { nombre: '', duracion: 5, unidadTiempo: 'min' },
 };
 
 const CAT_LABELS = {
@@ -66,12 +80,22 @@ const MILK_STYLE = {
 function blockSummary(tipo, params) {
     if (!params) return '';
     switch (tipo) {
-        case 'pasteurizacion':
-            if (params.metodo === 'htlv') return 'HTLV · 72°C · 15 seg';
-            if (params.metodo === 'ltlt') return 'LTLT · 63°C · 30 min';
-            return `${params.temperatura}°C · ${params.tiempo} ${params.unidadTiempo}`;
+        case 'pasteurizacion': {
+            const tMax = params.tempMax ?? params.temperatura ?? '?';
+            const tMin = params.tempSalidaMin ?? '?';
+            const tMax2 = params.tempSalidaMax ?? '?';
+            const t = params.tiempoSostenimiento ?? params.tiempo ?? '?';
+            return `${tMax}°C → ${tMin}–${tMax2}°C · ${t} ${params.unidadTiempo}`;
+        }
         case 'enfriamiento':
             return `→ ${params.temperaturaObjetivo}°C`;
+        case 'agregar_insumo': {
+            const base = params.materialNombre || 'Insumo';
+            const parts = [base];
+            if (params.agitar === 'si') parts.push(`agitar ${params.tiempoAgitacion} ${params.unidadAgitacion || 'min'}`);
+            if (params.reposar === 'si') parts.push(`reposar ${params.tiempoReposo} ${params.unidadReposo}`);
+            return parts.join(' · ');
+        }
         case 'inoculacion': {
             const cl = { mesofilico: 'Mesofílico', termofilico: 'Termofílico', mixto: 'Mixto' };
             return `${cl[params.tipoCultivo] || params.tipoCultivo} · ${params.temperatura}°C · ${params.tiempoIncubacion} ${params.unidadTiempo}`;
@@ -80,6 +104,15 @@ function blockSummary(tipo, params) {
             const tl = { acido: 'Ácido', enzimatico: 'Enzimático', mixto: 'Mixto' };
             const ph = params.phObjetivo ? ` · pH ${Number(params.phObjetivo).toFixed(1)}` : '';
             return `${tl[params.tipo] || params.tipo} · ${params.temperatura}°C · ${params.tiempo} ${params.unidadTiempo}${ph}`;
+        }
+        case 'agitacion_simple': {
+            const il = { suave: 'Suave', moderada: 'Moderada', vigorosa: 'Vigorosa' };
+            return `${il[params.intensidad] || 'Suave'} · ${params.duracion} ${params.unidadTiempo}`;
+        }
+        case 'reposo': {
+            const base = `${params.duracion} ${params.unidadTiempo}`;
+            if (params.tipoTemp === 'controlada') return `${base} · ${params.temperatura}°C`;
+            return `${base} · Ambiente`;
         }
         case 'corte': {
             const gl = { fino: 'Fino 3mm', medio: 'Medio 6mm', grueso: 'Grueso 12mm', extra_grueso: 'Extra 20mm' };
@@ -114,6 +147,8 @@ function blockSummary(tipo, params) {
             };
             return el[params.tipo] || params.tipo;
         }
+        case 'personalizado':
+            return params.nombre || 'Paso personalizado';
         default: return '';
     }
 }
@@ -176,43 +211,61 @@ const TiempoRow = ({ value, unidad, onValueChange, onUnidadChange, min = 1, max 
 
 // ─── Block param editor (per tipo) ────────────────────────────────────────────
 
-function BlockParamEditor({ tipo, params, setParams }) {
+function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLoading = false }) {
     const set = key => val => setParams(p => ({ ...p, [key]: val }));
 
     switch (tipo) {
+
         case 'pasteurizacion':
             return (
                 <div className="space-y-6">
                     <div>
-                        <SecLabel>Método</SecLabel>
+                        <SecLabel>Preajuste rápido</SecLabel>
                         <PillGroup
                             options={[
-                                { id: 'htlv',   label: 'HTLV  (72°C / 15 seg)' },
-                                { id: 'ltlt',   label: 'LTLT  (63°C / 30 min)' },
+                                { id: 'htlv',   label: 'HTLV (72°C / 15 seg)' },
+                                { id: 'ltlt',   label: 'LTLT (63°C / 30 min)' },
                                 { id: 'manual', label: 'Personalizado' },
                             ]}
                             value={params.metodo}
                             onChange={v => {
-                                if (v === 'htlv') setParams({ metodo: 'htlv', temperatura: 72, tiempo: 15, unidadTiempo: 'seg' });
-                                else if (v === 'ltlt') setParams({ metodo: 'ltlt', temperatura: 63, tiempo: 30, unidadTiempo: 'min' });
+                                if (v === 'htlv') setParams({ metodo: 'htlv', tempMax: 72, tempSalidaMin: 4, tempSalidaMax: 8, tiempoSostenimiento: 15, unidadTiempo: 'seg' });
+                                else if (v === 'ltlt') setParams({ metodo: 'ltlt', tempMax: 63, tempSalidaMin: 4, tempSalidaMax: 8, tiempoSostenimiento: 30, unidadTiempo: 'min' });
                                 else setParams(p => ({ ...p, metodo: 'manual' }));
                             }}
                         />
                     </div>
-                    {params.metodo === 'manual' && (
-                        <>
-                            <SliderField label="Temperatura" value={params.temperatura} min={60} max={95} unit="°C" onChange={set('temperatura')} />
-                            <div>
-                                <SecLabel>Tiempo</SecLabel>
-                                <TiempoRow
-                                    value={params.tiempo} unidad={params.unidadTiempo}
-                                    onValueChange={set('tiempo')} onUnidadChange={set('unidadTiempo')}
-                                    min={1} max={120}
-                                    units={[{ id: 'seg', label: 'seg' }, { id: 'min', label: 'min' }, { id: 'h', label: 'h' }]}
-                                />
-                            </div>
-                        </>
-                    )}
+                    <SliderField
+                        label="Temperatura máxima (calentamiento)"
+                        value={params.tempMax ?? 72} min={60} max={95} unit="°C"
+                        onChange={v => setParams(p => ({ ...p, tempMax: v, metodo: 'manual' }))}
+                    />
+                    <div>
+                        <SecLabel>Temperatura de salida — choque térmico</SecLabel>
+                        <div className="grid grid-cols-2 gap-4">
+                            <SliderField
+                                label="Mínima"
+                                value={params.tempSalidaMin ?? 22} min={2} max={45} unit="°C"
+                                onChange={v => setParams(p => ({ ...p, tempSalidaMin: v, metodo: 'manual' }))}
+                            />
+                            <SliderField
+                                label="Máxima"
+                                value={params.tempSalidaMax ?? 27} min={2} max={45} unit="°C"
+                                onChange={v => setParams(p => ({ ...p, tempSalidaMax: v, metodo: 'manual' }))}
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <SecLabel>Tiempo de sostenimiento a temp. máx.</SecLabel>
+                        <TiempoRow
+                            value={params.tiempoSostenimiento ?? 15}
+                            unidad={params.unidadTiempo}
+                            onValueChange={v => setParams(p => ({ ...p, tiempoSostenimiento: v, metodo: 'manual' }))}
+                            onUnidadChange={v => setParams(p => ({ ...p, unidadTiempo: v, metodo: 'manual' }))}
+                            min={1} max={120}
+                            units={[{ id: 'seg', label: 'seg' }, { id: 'min', label: 'min' }]}
+                        />
+                    </div>
                 </div>
             );
 
@@ -240,6 +293,95 @@ function BlockParamEditor({ tipo, params, setParams }) {
             );
         }
 
+        case 'agregar_insumo':
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Insumo a Agregar</SecLabel>
+                        {materialsLoading ? (
+                            <div className="flex items-center gap-2 text-slate-500 text-sm py-3">
+                                <Loader size={14} className="animate-spin" /> Cargando materiales…
+                            </div>
+                        ) : (
+                            <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-700 bg-slate-800 p-1.5 space-y-0.5">
+                                {materials.length === 0 ? (
+                                    <p className="text-slate-500 text-sm text-center py-4">
+                                        Sin materiales en el Maestro todavía.
+                                    </p>
+                                ) : materials.map(m => (
+                                    <button
+                                        key={m.id}
+                                        type="button"
+                                        onClick={() => setParams(p => ({ ...p, materialId: m.id, materialNombre: m.nombre }))}
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                            params.materialId === m.id
+                                                ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
+                                                : 'text-slate-300 hover:bg-slate-700 border border-transparent'
+                                        }`}
+                                    >
+                                        <span className="font-medium">{m.nombre}</span>
+                                        {m.categoria && (
+                                            <span className="text-slate-500 text-xs ml-2 capitalize">{m.categoria}</span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div>
+                        <SecLabel>Agitar después de agregar</SecLabel>
+                        <PillGroup
+                            options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]}
+                            value={params.agitar}
+                            onChange={v => setParams(p => ({ ...p, agitar: v }))}
+                        />
+                    </div>
+
+                    {params.agitar === 'si' && (
+                        <div>
+                            <SecLabel>Tiempo de agitación</SecLabel>
+                            <TiempoRow
+                                value={params.tiempoAgitacion} unidad={params.unidadAgitacion || 'min'}
+                                onValueChange={v => setParams(p => ({ ...p, tiempoAgitacion: v }))}
+                                onUnidadChange={v => setParams(p => ({ ...p, unidadAgitacion: v }))}
+                                min={1} max={60}
+                                units={[{ id: 'min', label: 'min' }, { id: 'h', label: 'h' }]}
+                            />
+                        </div>
+                    )}
+
+                    <div>
+                        <SecLabel>Reposar después</SecLabel>
+                        <PillGroup
+                            options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]}
+                            value={params.reposar}
+                            onChange={v => setParams(p => ({ ...p, reposar: v }))}
+                        />
+                    </div>
+
+                    {params.reposar === 'si' && (
+                        <>
+                            <div>
+                                <SecLabel>Tiempo de reposo</SecLabel>
+                                <TiempoRow
+                                    value={params.tiempoReposo} unidad={params.unidadReposo}
+                                    onValueChange={v => setParams(p => ({ ...p, tiempoReposo: v }))}
+                                    onUnidadChange={v => setParams(p => ({ ...p, unidadReposo: v }))}
+                                    min={1} max={72}
+                                    units={[{ id: 'min', label: 'min' }, { id: 'h', label: 'h' }]}
+                                />
+                            </div>
+                            <SliderField
+                                label="Temperatura de reposo (0 = ambiente)"
+                                value={params.tempReposo ?? 0} min={0} max={45} unit="°C"
+                                onChange={v => setParams(p => ({ ...p, tempReposo: v }))}
+                            />
+                        </>
+                    )}
+                </div>
+            );
+
         case 'inoculacion':
             return (
                 <div className="space-y-6">
@@ -250,6 +392,7 @@ function BlockParamEditor({ tipo, params, setParams }) {
                                 { id: 'mesofilico',  label: 'Mesofílico' },
                                 { id: 'termofilico', label: 'Termofílico' },
                                 { id: 'mixto',       label: 'Mixto' },
+                                { id: 'kefir',       label: 'Kéfir' },
                             ]}
                             value={params.tipoCultivo}
                             onChange={set('tipoCultivo')}
@@ -257,7 +400,17 @@ function BlockParamEditor({ tipo, params, setParams }) {
                     </div>
                     <SliderField label="Temperatura de inoculación" value={params.temperatura} min={18} max={45} unit="°C" onChange={set('temperatura')} />
                     <div>
-                        <SecLabel>Tiempo de incubación</SecLabel>
+                        <SecLabel>Tiempo de agitación tras inoculación</SecLabel>
+                        <TiempoRow
+                            value={params.tiempoAgitacion ?? 5} unidad={params.unidadAgitacion ?? 'min'}
+                            onValueChange={v => setParams(p => ({ ...p, tiempoAgitacion: v }))}
+                            onUnidadChange={v => setParams(p => ({ ...p, unidadAgitacion: v }))}
+                            min={1} max={30}
+                            units={[{ id: 'min', label: 'min' }]}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Tiempo de incubación / fermentación</SecLabel>
                         <TiempoRow
                             value={params.tiempoIncubacion} unidad={params.unidadTiempo}
                             onValueChange={set('tiempoIncubacion')} onUnidadChange={set('unidadTiempo')}
@@ -282,9 +435,19 @@ function BlockParamEditor({ tipo, params, setParams }) {
                             onChange={set('tipo')}
                         />
                     </div>
-                    <SliderField label="Temperatura" value={params.temperatura} min={18} max={42} unit="°C" onChange={set('temperatura')} />
+                    <SliderField label="Temperatura de cuajado" value={params.temperatura} min={18} max={42} unit="°C" onChange={set('temperatura')} />
                     <div>
-                        <SecLabel>Tiempo de cuajado</SecLabel>
+                        <SecLabel>Tiempo de agitación tras agregar cuajo</SecLabel>
+                        <TiempoRow
+                            value={params.tiempoAgitacion ?? 3} unidad={params.unidadAgitacion ?? 'min'}
+                            onValueChange={v => setParams(p => ({ ...p, tiempoAgitacion: v }))}
+                            onUnidadChange={v => setParams(p => ({ ...p, unidadAgitacion: v }))}
+                            min={1} max={30}
+                            units={[{ id: 'min', label: 'min' }]}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Tiempo de reposo para cuajado</SecLabel>
                         <TiempoRow
                             value={params.tiempo} unidad={params.unidadTiempo}
                             onValueChange={set('tiempo')} onUnidadChange={set('unidadTiempo')}
@@ -293,6 +456,62 @@ function BlockParamEditor({ tipo, params, setParams }) {
                     </div>
                     {(params.tipo === 'acido' || params.tipo === 'mixto') && (
                         <SliderField label="pH objetivo" value={params.phObjetivo} min={3.8} max={6.8} step={0.1} decimals={1} onChange={set('phObjetivo')} />
+                    )}
+                </div>
+            );
+
+        case 'agitacion_simple':
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Intensidad</SecLabel>
+                        <PillGroup
+                            options={[
+                                { id: 'suave',    label: 'Suave' },
+                                { id: 'moderada', label: 'Moderada' },
+                                { id: 'vigorosa', label: 'Vigorosa' },
+                            ]}
+                            value={params.intensidad}
+                            onChange={set('intensidad')}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Duración</SecLabel>
+                        <TiempoRow
+                            value={params.duracion} unidad={params.unidadTiempo}
+                            onValueChange={set('duracion')} onUnidadChange={set('unidadTiempo')}
+                            min={1} max={60}
+                            units={[{ id: 'min', label: 'min' }, { id: 'h', label: 'h' }]}
+                        />
+                    </div>
+                </div>
+            );
+
+        case 'reposo':
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Duración del reposo</SecLabel>
+                        <TiempoRow
+                            value={params.duracion} unidad={params.unidadTiempo}
+                            onValueChange={set('duracion')} onUnidadChange={set('unidadTiempo')}
+                            min={1} max={72}
+                            units={[{ id: 'min', label: 'min' }, { id: 'h', label: 'h' }, { id: 'dias', label: 'días' }]}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Temperatura durante el reposo</SecLabel>
+                        <PillGroup
+                            options={[
+                                { id: 'ambiente',   label: 'Temperatura ambiente' },
+                                { id: 'controlada', label: 'Temperatura controlada' },
+                            ]}
+                            value={params.tipoTemp}
+                            onChange={set('tipoTemp')}
+                        />
+                    </div>
+                    {params.tipoTemp === 'controlada' && (
+                        <SliderField label="Temperatura" value={params.temperatura} min={0} max={45} unit="°C" onChange={set('temperatura')} />
                     )}
                 </div>
             );
@@ -416,10 +635,10 @@ function BlockParamEditor({ tipo, params, setParams }) {
                         <SecLabel>Volteos</SecLabel>
                         <PillGroup
                             options={[
-                                { id: 'ninguno',    label: 'Ninguno' },
-                                { id: 'una_vez',    label: '1 vez' },
-                                { id: 'cada_hora',  label: 'Cada hora' },
-                                { id: 'cada2h',     label: 'Cada 2 h' },
+                                { id: 'ninguno',   label: 'Ninguno' },
+                                { id: 'una_vez',   label: '1 vez' },
+                                { id: 'cada_hora', label: 'Cada hora' },
+                                { id: 'cada2h',    label: 'Cada 2 h' },
                             ]}
                             value={params.volteos}
                             onChange={set('volteos')}
@@ -546,6 +765,32 @@ function BlockParamEditor({ tipo, params, setParams }) {
                 </div>
             );
 
+        case 'personalizado':
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Nombre del paso</SecLabel>
+                        <input
+                            type="text"
+                            value={params.nombre || ''}
+                            onChange={e => set('nombre')(e.target.value)}
+                            placeholder="ej. Acidificación, Lavado de cuajada, Ahumado…"
+                            maxLength={60}
+                            className="w-full bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Duración estimada</SecLabel>
+                        <TiempoRow
+                            value={params.duracion ?? 5} unidad={params.unidadTiempo ?? 'min'}
+                            onValueChange={set('duracion')} onUnidadChange={set('unidadTiempo')}
+                            min={1} max={120}
+                            units={[{ id: 'min', label: 'min' }, { id: 'h', label: 'h' }, { id: 'dias', label: 'días' }]}
+                        />
+                    </div>
+                </div>
+            );
+
         default:
             return null;
     }
@@ -556,8 +801,10 @@ function BlockParamEditor({ tipo, params, setParams }) {
 export default function ProcessBuilderPage() {
     const { kromaUser } = useKroma();
     const [products, setProducts] = useState([]);
+    const [materials, setMaterials] = useState([]);
     const [processes, setProcesses] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [materialsLoading, setMaterialsLoading] = useState(false);
     const [mode, setMode] = useState('list'); // 'list' | 'builder'
 
     // Builder state
@@ -593,17 +840,44 @@ export default function ProcessBuilderPage() {
         }
     }, []);
 
+    const loadMaterials = useCallback(async () => {
+        if (materials.length > 0) return;
+        setMaterialsLoading(true);
+        try {
+            const snap = await getDocs(collection(db, 'kroma_materials'));
+            setMaterials(
+                snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                    .filter(m => m.active !== false)
+                    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+            );
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setMaterialsLoading(false);
+        }
+    }, [materials.length]);
+
     useEffect(() => { loadAll(); }, [loadAll]);
 
     // Block modal actions
-    const openAddBlock = () => { setModalTipo(''); setModalParams({}); setBlockModal({ mode: 'add' }); };
+    const openAddBlock = () => {
+        setModalTipo('');
+        setModalParams({});
+        setBlockModal({ mode: 'add' });
+        loadMaterials();
+    };
     const openEditBlock = (idx) => {
         const b = bloques[idx];
         setModalTipo(b.tipo);
         setModalParams({ ...b.params });
         setBlockModal({ mode: 'edit', index: idx });
+        if (b.tipo === 'agregar_insumo') loadMaterials();
     };
-    const selectTipo = (tipo) => { setModalTipo(tipo); setModalParams({ ...BLOCK_DEFAULTS[tipo] }); };
+    const selectTipo = (tipo) => {
+        setModalTipo(tipo);
+        setModalParams({ ...BLOCK_DEFAULTS[tipo] });
+        if (tipo === 'agregar_insumo') loadMaterials();
+    };
     const confirmBlock = () => {
         if (!modalTipo) return;
         const bloque = { id: uid(), tipo: modalTipo, params: modalParams };
@@ -712,7 +986,6 @@ export default function ProcessBuilderPage() {
                                             {proc.estado === 'activo' ? 'Activo' : 'Borrador'}
                                         </span>
                                     </div>
-                                    {/* Block flow preview */}
                                     <div className="flex flex-wrap items-center gap-1.5">
                                         {types.map((bt, i) => (
                                             <React.Fragment key={i}>
@@ -810,19 +1083,20 @@ export default function ProcessBuilderPage() {
                                         <div key={bloque.id}>
                                             <div className={`bg-slate-800 border rounded-xl p-3.5 ${bt.border}`}>
                                                 <div className="flex items-center gap-3">
-                                                    {/* Icon */}
                                                     <div className={`w-9 h-9 rounded-lg ${bt.bg} flex items-center justify-center shrink-0`}>
                                                         <Icon size={16} className={bt.color} />
                                                     </div>
-                                                    {/* Info */}
                                                     <div className="flex-1 min-w-0">
                                                         <div className="flex items-center gap-1.5">
                                                             <span className="text-slate-600 text-xs font-bold tabular-nums">{String(idx + 1).padStart(2, '0')}</span>
-                                                            <p className="text-white font-semibold text-sm">{bt.label}</p>
+                                                            <p className="text-white font-semibold text-sm">{
+                                                                bloque.tipo === 'personalizado' && bloque.params.nombre
+                                                                    ? bloque.params.nombre
+                                                                    : bt.label
+                                                            }</p>
                                                         </div>
                                                         <p className="text-slate-400 text-xs truncate">{blockSummary(bloque.tipo, bloque.params)}</p>
                                                     </div>
-                                                    {/* Move */}
                                                     <div className="flex flex-col gap-0.5 shrink-0">
                                                         <button onClick={() => moveBlock(idx, -1)} disabled={idx === 0}
                                                             className="p-1 text-slate-600 hover:text-slate-300 disabled:opacity-25 transition-colors">
@@ -833,7 +1107,6 @@ export default function ProcessBuilderPage() {
                                                             <ChevronDown size={14} />
                                                         </button>
                                                     </div>
-                                                    {/* Edit / Remove */}
                                                     <div className="flex flex-col gap-0.5 shrink-0">
                                                         <button onClick={() => openEditBlock(idx)}
                                                             className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors">
@@ -868,7 +1141,7 @@ export default function ProcessBuilderPage() {
                 )}
             </div>
 
-            {/* Block editor modal — bottom sheet on mobile, centered on desktop */}
+            {/* Block editor modal */}
             {blockModal && (
                 <div className="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
                     <div className="bg-slate-900 border-t border-slate-700 sm:border sm:rounded-2xl w-full sm:max-w-lg max-h-[92vh] flex flex-col shadow-2xl">
@@ -889,7 +1162,7 @@ export default function ProcessBuilderPage() {
                                 <div>
                                     <SecLabel>Tipo de Bloque</SecLabel>
                                     <div className="grid grid-cols-2 gap-2">
-                                        {BLOCK_TYPES.map(bt => {
+                                        {BLOCK_TYPES.filter(bt => bt.id !== 'personalizado').map(bt => {
                                             const Icon = bt.Icon;
                                             const selected = modalTipo === bt.id;
                                             return (
@@ -908,6 +1181,27 @@ export default function ProcessBuilderPage() {
                                                 </button>
                                             );
                                         })}
+                                        {/* Personalizado — full width */}
+                                        {(() => {
+                                            const bt = BLOCK_TYPES.find(b => b.id === 'personalizado');
+                                            const Icon = bt.Icon;
+                                            const selected = modalTipo === 'personalizado';
+                                            return (
+                                                <button
+                                                    key="personalizado"
+                                                    type="button"
+                                                    onClick={() => selectTipo('personalizado')}
+                                                    className={`col-span-2 flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${
+                                                        selected
+                                                            ? `${bt.bg} ${bt.border} ${bt.color}`
+                                                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+                                                    }`}
+                                                >
+                                                    <Icon size={15} className={selected ? bt.color : 'text-slate-500'} />
+                                                    <span className="text-xs font-semibold leading-tight">{bt.label} — define tu propio paso</span>
+                                                </button>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             )}
@@ -929,7 +1223,13 @@ export default function ProcessBuilderPage() {
                             {modalTipo && (
                                 <div className={blockModal.mode === 'add' ? 'pt-2 border-t border-slate-800' : ''}>
                                     {blockModal.mode === 'add' && <SecLabel>Parámetros</SecLabel>}
-                                    <BlockParamEditor tipo={modalTipo} params={modalParams} setParams={setModalParams} />
+                                    <BlockParamEditor
+                                        tipo={modalTipo}
+                                        params={modalParams}
+                                        setParams={setModalParams}
+                                        materials={materials}
+                                        materialsLoading={materialsLoading}
+                                    />
                                 </div>
                             )}
                         </div>
