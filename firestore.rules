@@ -134,5 +134,11 @@ service cloud.firestore {
       allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow delete: if isMaster();
     }
+
+    match /pedidos/{pedidoId} {
+      allow create: if isMerchandiser() || isAdmin();
+      allow read: if isAdmin();
+      allow update, delete: if isMaster();
+    }
   }
 }
