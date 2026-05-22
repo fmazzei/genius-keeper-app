@@ -7,6 +7,7 @@ import {
     Thermometer, Snowflake, FlaskConical, Clock, Scissors, RotateCcw,
     Droplets, ArrowDown, Waves, CalendarDays, Package, CheckCircle2,
     TestTube, Timer, Repeat, Pencil,
+    Scale, Box, Lock, Layers,
 } from 'lucide-react';
 import { PillGroup } from '../admin/ProductCatalogPage';
 
@@ -32,7 +33,12 @@ const BLOCK_TYPES = [
     { id: 'prensado',        label: 'Prensado',          Icon: ArrowDown,    color: 'text-slate-400',   bg: 'bg-slate-600/30',   border: 'border-slate-500/30' },
     { id: 'salado',          label: 'Salado',            Icon: Waves,        color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/30' },
     { id: 'maduracion',      label: 'Maduración/Curado', Icon: CalendarDays, color: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/30' },
-    { id: 'empaque',         label: 'Empaque',           Icon: Package,      color: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/30' },
+    // ── Finalización ──
+    { id: 'pesaje',             label: 'Pesaje',             Icon: Scale,   color: 'text-yellow-400',  bg: 'bg-yellow-500/20',   border: 'border-yellow-500/30' },
+    { id: 'envasado',           label: 'Envasado',           Icon: Box,     color: 'text-sky-400',     bg: 'bg-sky-500/20',      border: 'border-sky-500/30' },
+    { id: 'precintado',         label: 'Precintado',         Icon: Lock,    color: 'text-rose-400',    bg: 'bg-rose-500/20',     border: 'border-rose-500/30' },
+    { id: 'empaque',            label: 'Empaque Individual', Icon: Package, color: 'text-blue-400',    bg: 'bg-blue-500/20',     border: 'border-blue-500/30' },
+    { id: 'empaque_secundario', label: 'Empaque Secundario', Icon: Layers,  color: 'text-indigo-400',  bg: 'bg-indigo-500/20',   border: 'border-indigo-500/30' },
     // ── Personalizado ──
     { id: 'personalizado',   label: 'Personalizado',     Icon: Pencil,       color: 'text-slate-400',   bg: 'bg-slate-700/50',   border: 'border-slate-600/50' },
 ];
@@ -40,7 +46,7 @@ const BLOCK_TYPES = [
 const BLOCK_DEFAULTS = {
     pasteurizacion:  { metodo: 'htlv', tempMax: 72, tempSalidaMin: 4, tempSalidaMax: 8, tiempoSostenimiento: 15, unidadTiempo: 'seg' },
     enfriamiento:    { temperaturaObjetivo: 22 },
-    agregar_insumo:  { materialId: '', materialNombre: '', agitar: 'si', tiempoAgitacion: 5, unidadAgitacion: 'min', reposar: 'no', tiempoReposo: 30, unidadReposo: 'min', tempReposo: 0 },
+    agregar_insumo:  { materialId: '', materialNombre: '', metodoAplicacion: 'mezclado', agitar: 'si', tiempoAgitacion: 5, unidadAgitacion: 'min', reposar: 'no', tiempoReposo: 30, unidadReposo: 'min', tempReposo: 0 },
     inoculacion:     { tipoCultivo: 'mesofilico', temperatura: 22, tiempoIncubacion: 12, unidadTiempo: 'h' },
     cuajado:         { tipo: 'acido', temperatura: 22, tiempo: 14, unidadTiempo: 'h', phObjetivo: 4.5 },
     agitacion_simple:{ intensidad: 'suave', duracion: 5, unidadTiempo: 'min' },
@@ -51,8 +57,12 @@ const BLOCK_DEFAULTS = {
     prensado:        { presion: 'suave', tiempo: 6, unidadTiempo: 'h', volteos: 'cada2h' },
     salado:          { metodo: 'superficie', concentracion: '20', temperatura: 12, tiempo: 12, unidadTiempo: 'h' },
     maduracion:      { temperatura: 12, humedadRelativa: 90, duracion: 21, unidadDuracion: 'dias', virajes: 'cada2dias' },
-    empaque:         { tipo: 'film_stretch', temperaturaEmpaque: 'refrigerado', almacenamiento: 'refrigeracion' },
-    personalizado:   { nombre: '', duracion: 5, unidadTiempo: 'min' },
+    pesaje:             { unidadPeso: 'kg', registrarRendimiento: 'si', rendimientoEsperado: 10 },
+    envasado:           { tipoEnvase: 'tina_plastica', pesoNeto: 250, unidadPeso: 'g', temperatura: 'frio' },
+    precintado:         { tipoPrecinto: 'termoencogible_cristal', aplicaEtiqueta: 'si' },
+    empaque:            { tipo: 'film_stretch', temperaturaEmpaque: 'refrigerado', almacenamiento: 'refrigeracion' },
+    empaque_secundario: { unidadesPorPack: 12, materialEmpaque: 'film_termoencogible' },
+    personalizado:      { nombre: '', duracion: 5, unidadTiempo: 'min' },
 };
 
 const CAT_LABELS = {
@@ -91,8 +101,13 @@ function blockSummary(tipo, params) {
             return `→ ${params.temperaturaObjetivo}°C`;
         case 'agregar_insumo': {
             const base = params.materialNombre || 'Insumo';
+            const ml = { mezclado: '', superficie: 'superficie', aspersion: 'aspersión', inmersion: 'inmersión' };
+            const metodo = params.metodoAplicacion && params.metodoAplicacion !== 'mezclado' ? ml[params.metodoAplicacion] : '';
             const parts = [base];
-            if (params.agitar === 'si') parts.push(`agitar ${params.tiempoAgitacion} ${params.unidadAgitacion || 'min'}`);
+            if (metodo) parts.push(metodo);
+            if (params.agitar === 'si' && (!params.metodoAplicacion || params.metodoAplicacion === 'mezclado')) {
+                parts.push(`agitar ${params.tiempoAgitacion} ${params.unidadAgitacion || 'min'}`);
+            }
             if (params.reposar === 'si') parts.push(`reposar ${params.tiempoReposo} ${params.unidadReposo}`);
             return parts.join(' · ');
         }
@@ -139,6 +154,24 @@ function blockSummary(tipo, params) {
         }
         case 'maduracion':
             return `${params.temperatura}°C · HR ${params.humedadRelativa}% · ${params.duracion} ${params.unidadDuracion}`;
+        case 'pesaje': {
+            const r = params.registrarRendimiento === 'si' ? ` · Rdto ~${params.rendimientoEsperado}%` : '';
+            return `Pesaje en ${params.unidadPeso}${r}`;
+        }
+        case 'envasado': {
+            const el = { tina_plastica: 'Tina plástica', frasco: 'Frasco', bolsa: 'Bolsa', molde: 'Molde', otro: 'Otro' };
+            return `${el[params.tipoEnvase] || params.tipoEnvase} · ${params.pesoNeto} ${params.unidadPeso}`;
+        }
+        case 'precintado': {
+            const pl = {
+                termoencogible_cristal: 'Termoencogible cristal',
+                termoencogible_opaco:   'Termoencogible opaco',
+                termosellado:           'Termosellado',
+                cinta_adhesiva:         'Cinta adhesiva',
+            };
+            const etq = params.aplicaEtiqueta === 'si' ? ' · con etiqueta' : '';
+            return `${pl[params.tipoPrecinto] || params.tipoPrecinto}${etq}`;
+        }
         case 'empaque': {
             const el = {
                 al_vacio: 'Al vacío', film_stretch: 'Film stretch',
@@ -146,6 +179,15 @@ function blockSummary(tipo, params) {
                 atm_modificada: 'Atm. modificada',
             };
             return el[params.tipo] || params.tipo;
+        }
+        case 'empaque_secundario': {
+            const ml = {
+                film_termoencogible: 'Film termoencogible',
+                caja_carton: 'Caja cartón',
+                bolsa: 'Bolsa',
+                bandeja: 'Bandeja',
+            };
+            return `${params.unidadesPorPack} und · ${ml[params.materialEmpaque] || params.materialEmpaque}`;
         }
         case 'personalizado':
             return params.nombre || 'Paso personalizado';
@@ -330,6 +372,21 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                     </div>
 
                     <div>
+                        <SecLabel>Método de aplicación</SecLabel>
+                        <PillGroup
+                            options={[
+                                { id: 'mezclado',   label: 'Mezclado / agitado' },
+                                { id: 'superficie', label: 'Superficie (espolvorear)' },
+                                { id: 'aspersion',  label: 'Aspersión (spray)' },
+                                { id: 'inmersion',  label: 'Inmersión' },
+                            ]}
+                            value={params.metodoAplicacion || 'mezclado'}
+                            onChange={v => setParams(p => ({ ...p, metodoAplicacion: v }))}
+                        />
+                    </div>
+
+                    {(params.metodoAplicacion === 'mezclado' || !params.metodoAplicacion) && (
+                    <div>
                         <SecLabel>Agitar después de agregar</SecLabel>
                         <PillGroup
                             options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]}
@@ -337,8 +394,9 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                             onChange={v => setParams(p => ({ ...p, agitar: v }))}
                         />
                     </div>
+                    )}
 
-                    {params.agitar === 'si' && (
+                    {params.agitar === 'si' && (params.metodoAplicacion === 'mezclado' || !params.metodoAplicacion) && (
                         <div>
                             <SecLabel>Tiempo de agitación</SecLabel>
                             <TiempoRow
@@ -722,11 +780,144 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                 </div>
             );
 
+        case 'pesaje':
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Unidad de peso</SecLabel>
+                        <PillGroup
+                            options={[{ id: 'kg', label: 'Kilogramos (Kg)' }, { id: 'g', label: 'Gramos (g)' }]}
+                            value={params.unidadPeso}
+                            onChange={set('unidadPeso')}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Registrar rendimiento</SecLabel>
+                        <PillGroup
+                            options={[{ id: 'si', label: 'Sí — calcular kg / L leche' }, { id: 'no', label: 'No' }]}
+                            value={params.registrarRendimiento}
+                            onChange={set('registrarRendimiento')}
+                        />
+                    </div>
+                    {params.registrarRendimiento === 'si' && (
+                        <SliderField
+                            label="Rendimiento esperado"
+                            value={params.rendimientoEsperado}
+                            min={4} max={30} unit="%"
+                            onChange={set('rendimientoEsperado')}
+                        />
+                    )}
+                </div>
+            );
+
+        case 'envasado':
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Tipo de envase</SecLabel>
+                        <PillGroup
+                            options={[
+                                { id: 'tina_plastica', label: 'Tina plástica' },
+                                { id: 'frasco',        label: 'Frasco' },
+                                { id: 'bolsa',         label: 'Bolsa' },
+                                { id: 'molde',         label: 'Molde / bandeja' },
+                                { id: 'otro',          label: 'Otro' },
+                            ]}
+                            value={params.tipoEnvase}
+                            onChange={set('tipoEnvase')}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Peso / volumen neto por unidad</SecLabel>
+                        <div className="flex items-center gap-4 flex-wrap">
+                            <StepperField
+                                label="" value={params.pesoNeto} min={10} max={2000} step={10}
+                                onChange={set('pesoNeto')}
+                            />
+                            <PillGroup
+                                options={[
+                                    { id: 'g',  label: 'g' },
+                                    { id: 'kg', label: 'Kg' },
+                                    { id: 'ml', label: 'ml' },
+                                    { id: 'L',  label: 'L' },
+                                ]}
+                                value={params.unidadPeso}
+                                onChange={v => v && set('unidadPeso')(v)}
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <SecLabel>Temperatura del producto al envasar</SecLabel>
+                        <PillGroup
+                            options={[
+                                { id: 'frio',     label: 'Frío (refrigerado)' },
+                                { id: 'ambiente', label: 'Temperatura ambiente' },
+                            ]}
+                            value={params.temperatura}
+                            onChange={set('temperatura')}
+                        />
+                    </div>
+                </div>
+            );
+
+        case 'precintado':
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Tipo de precinto</SecLabel>
+                        <PillGroup
+                            options={[
+                                { id: 'termoencogible_cristal', label: 'Termoencogible cristal' },
+                                { id: 'termoencogible_opaco',   label: 'Termoencogible opaco' },
+                                { id: 'termosellado',           label: 'Termosellado directo' },
+                                { id: 'cinta_adhesiva',         label: 'Cinta adhesiva' },
+                            ]}
+                            value={params.tipoPrecinto}
+                            onChange={set('tipoPrecinto')}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>¿Aplica etiqueta en este paso?</SecLabel>
+                        <PillGroup
+                            options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]}
+                            value={params.aplicaEtiqueta}
+                            onChange={set('aplicaEtiqueta')}
+                        />
+                    </div>
+                </div>
+            );
+
+        case 'empaque_secundario':
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Unidades por paquete</SecLabel>
+                        <StepperField
+                            label="" value={params.unidadesPorPack} min={2} max={48}
+                            onChange={set('unidadesPorPack')}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Material de empaque secundario</SecLabel>
+                        <PillGroup
+                            options={[
+                                { id: 'film_termoencogible', label: 'Film termoencogible' },
+                                { id: 'caja_carton',         label: 'Caja cartón' },
+                                { id: 'bolsa',               label: 'Bolsa' },
+                                { id: 'bandeja',             label: 'Bandeja' },
+                            ]}
+                            value={params.materialEmpaque}
+                            onChange={set('materialEmpaque')}
+                        />
+                    </div>
+                </div>
+            );
+
         case 'empaque':
             return (
                 <div className="space-y-6">
                     <div>
-                        <SecLabel>Tipo de Empaque</SecLabel>
+                        <SecLabel>Tipo de Empaque Individual</SecLabel>
                         <PillGroup
                             options={[
                                 { id: 'al_vacio',        label: 'Al vacío' },
