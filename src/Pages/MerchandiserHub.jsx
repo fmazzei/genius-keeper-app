@@ -1,7 +1,7 @@
 // RUTA: src/Pages/MerchandiserHub.jsx
 
 import React from 'react';
-import { FileText, Map, Truck, Loader, AlertTriangle } from 'lucide-react';
+import { FileText, Map, Truck, ShoppingCart, AlertTriangle } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 // ✅ Se elimina useAuth y las importaciones de Firestore, ya no son necesarias aquí.
 // import { useAuth } from '@/context/AuthContext';
@@ -72,6 +72,16 @@ const MerchandiserHub = ({ onNavigate, selectedReporter }) => {
                         <div>
                             <h3 className="text-xl font-bold">Iniciar Reporte</h3>
                             <p className="text-sm opacity-80">Seleccionar un PDV y comenzar la visita.</p>
+                        </div>
+                    </button>
+                    <button
+                        onClick={() => onNavigate('pedidos')}
+                        className="w-full bg-brand-yellow text-black p-6 rounded-lg shadow-xl text-left flex items-center transition-transform hover:scale-105"
+                    >
+                        <ShoppingCart size={40} className="mr-4"/>
+                        <div>
+                            <h3 className="text-xl font-bold">Pedidos</h3>
+                            <p className="text-sm opacity-70">Registrar pedido de un cliente.</p>
                         </div>
                     </button>
                     {(modules.plannerMerchandiser || modules.logisticsMerchandiser) && (

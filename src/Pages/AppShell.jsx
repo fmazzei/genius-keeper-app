@@ -7,9 +7,10 @@ import { useMerchandiserData } from '@/hooks/useMerchandiserData.js';
 import { useOfflineSync } from '@/hooks/useOfflineSync.js';
 import { useDelegatedTasks } from '@/hooks/useDelegatedTasks.jsx';
 import { useReporter } from '@/context/ReporterContext.jsx';
-import { LogOut, ChevronsRight, FileText, Truck, Map, Menu, ClipboardList, AlertTriangle, UserCheck, Users } from 'lucide-react';
+import { LogOut, ChevronsRight, FileText, Truck, Map, ShoppingCart, Menu, ClipboardList, AlertTriangle, UserCheck, Users } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import MerchandiserHub from '@/Pages/MerchandiserHub.jsx';
+import PedidoForm from '@/Pages/PedidoForm.jsx';
 import LogisticsPanel from '@/Pages/LogisticsPanel.jsx';
 import PosList from '@/Pages/PosList.jsx';
 import VisitReportForm from '@/Pages/VisitReportForm.jsx';
@@ -193,6 +194,7 @@ const AppShell = ({ user, role, onLogout }) => {
             logistics: 'Panel de Logística',
             report: 'Seleccionar Punto de Venta',
             tasks: 'Mis Tareas Pendientes',
+            pedidos: 'Registrar Pedido',
             visit_report: `Reporte: ${selectedPos?.name || ''}`,
         };
         return viewTitles[currentView] || 'Genius Keeper';
@@ -207,6 +209,7 @@ const AppShell = ({ user, role, onLogout }) => {
                 <ul>
                     <li onClick={() => { setCurrentView('tasks'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer relative ${currentView === 'tasks' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><ClipboardList size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Tareas</span>{pendingTasksCount > 0 && (<span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{pendingTasksCount}</span>)}</li>
                     <li onClick={() => { setCurrentView('report'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView.includes('report') ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><FileText size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Reporte</span></li>
+                    <li onClick={() => { setCurrentView('pedidos'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'pedidos' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><ShoppingCart size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Pedidos</span></li>
                     {modules.plannerMerchandiser && <li onClick={() => { setCurrentView('planner'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'planner' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Map size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Planificador</span></li>}
                     {modules.logisticsMerchandiser && <li onClick={() => { setCurrentView('logistics'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'logistics' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Truck size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Logística</span></li>}
                 </ul>
@@ -247,6 +250,7 @@ const AppShell = ({ user, role, onLogout }) => {
                             selectedReporter={selectedReporter}
                         />;
 
+            case 'pedidos': return <PedidoForm posList={masterStopList} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
             case 'logistics': return <LogisticsPanel />;
             case 'report': return <PosList posList={masterStopList} onSelectPos={navigateToReport} />;
             case 'tasks': 
