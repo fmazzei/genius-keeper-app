@@ -1,6 +1,7 @@
 import React from 'react';
 import { Droplets, Package, FlaskConical, Workflow, Factory, Construction } from 'lucide-react';
 import ProcessBuilderPageImpl from './operator/ProcessBuilderPage';
+import RecipeBuilderPageImpl from './operator/RecipeBuilderPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -70,18 +71,7 @@ export const MaterialsInventoryPage = () => (
     />
 );
 
-export const RecipeBuilderPage = () => (
-    <ComingSoon
-        title="Constructor de Recetas"
-        description="Define la fórmula de cada producto. El sistema calcula el costo teórico cruzando con el Maestro de Materiales."
-        items={[
-            { title: 'Crear receta por producto', desc: 'Asocia insumos, empaques y consumibles con cantidades por litro o Kg.' },
-            { title: 'Costo teórico automático', desc: 'Kroma calcula el costo de producir el lote según precios en dólares.' },
-            { title: 'Crear insumos nuevos', desc: 'Si el insumo no existe en el Maestro, el operario puede crearlo (sin precio).' },
-            { title: 'Versiones de receta', desc: 'Historial de cambios en la fórmula de cada producto.' },
-        ]}
-    />
-);
+export const RecipeBuilderPage = () => <RecipeBuilderPageImpl />;
 
 export const ProcessBuilderPage = () => <ProcessBuilderPageImpl />;
 
