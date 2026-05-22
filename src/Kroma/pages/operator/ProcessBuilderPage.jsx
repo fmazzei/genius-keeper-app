@@ -8,6 +8,7 @@ import {
     Droplets, ArrowDown, Waves, CalendarDays, Package, CheckCircle2,
     TestTube, Timer, Repeat, Pencil,
     Scale, Box, Lock, Layers, AlertTriangle, RefreshCw,
+    Disc, ChevronsDown,
 } from 'lucide-react';
 import { PillGroup } from '../admin/ProductCatalogPage';
 
@@ -30,6 +31,8 @@ const BLOCK_TYPES = [
     { id: 'corte',           label: 'Corte de Cuajada',  Icon: Scissors,     color: 'text-red-400',     bg: 'bg-red-500/20',     border: 'border-red-500/30' },
     { id: 'agitacion',       label: 'Agitación/Cocción', Icon: RotateCcw,    color: 'text-orange-400',  bg: 'bg-orange-500/20',  border: 'border-orange-500/30' },
     { id: 'desuerado',       label: 'Desuerado',         Icon: Droplets,     color: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/30' },
+    { id: 'moldeado',        label: 'Moldeado',          Icon: Disc,         color: 'text-purple-400',  bg: 'bg-purple-500/20',  border: 'border-purple-500/30' },
+    { id: 'pre_prensa',      label: 'Pre-Prensa',        Icon: ChevronsDown, color: 'text-slate-300',   bg: 'bg-slate-600/30',   border: 'border-slate-500/30' },
     { id: 'prensado',        label: 'Prensado',          Icon: ArrowDown,    color: 'text-slate-400',   bg: 'bg-slate-600/30',   border: 'border-slate-500/30' },
     { id: 'salado',          label: 'Salado',            Icon: Waves,        color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/30' },
     { id: 'maduracion',      label: 'Maduración/Curado', Icon: CalendarDays, color: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/30' },
@@ -51,12 +54,14 @@ const BLOCK_DEFAULTS = {
     cuajado:         { tipo: 'acido', temperatura: 22, tiempo: 14, unidadTiempo: 'h', phObjetivo: 4.5 },
     agitacion_simple:{ intensidad: 'suave', duracion: 5, unidadTiempo: 'min' },
     reposo:          { duracion: 30, unidadTiempo: 'min', tipoTemp: 'ambiente', temperatura: 22 },
-    corte:           { tamanoGrano: 'medio', tipoCorte: 'manual' },
+    corte:           { tamanoGrano: 'maiz', tipoCorte: 'manual' },
     agitacion:       { tipo: 'agitacion', temperaturaObjetivo: 38, tiempo: 30, unidadTiempo: 'min' },
     desuerado:       { metodo: 'gravedad', conMoldes: 'si', tiempo: 12, unidadTiempo: 'h', temperaturaAmbiente: 18 },
-    prensado:        { presion: 'suave', tiempo: 6, unidadTiempo: 'h', volteos: 'cada2h' },
+    moldeado:        { tipoMolde: 'cilindrico', numVueltas: 2, phPost: 5.8, temperaturaAmbiente: 18, tiempoEnMolde: 4, unidadTiempo: 'h' },
+    pre_prensa:      { unidadPresion: 'kg_cm2', valorPresion: 5, tiempo: 15, unidadTiempo: 'min' },
+    prensado:        { unidadPresion: 'kg_cm2', numVueltas: 2, vuelta1Presion: 10, vuelta1Tiempo: 30, vuelta1UnidadTiempo: 'min', vuelta2Presion: 20, vuelta2Tiempo: 60, vuelta2UnidadTiempo: 'min', vuelta3Presion: 30, vuelta3Tiempo: 120, vuelta3UnidadTiempo: 'min', vuelta4Presion: 40, vuelta4Tiempo: 240, vuelta4UnidadTiempo: 'min' },
     salado:          { metodo: 'superficie', concentracion: '20', temperatura: 12, tiempo: 12, unidadTiempo: 'h' },
-    maduracion:      { temperatura: 12, humedadRelativa: 90, duracion: 21, unidadDuracion: 'dias', virajes: 'cada2dias' },
+    maduracion:      { temperatura: 12, humedadRelativa: 90, duracion: 21, unidadDuracion: 'dias', virajes: 'cada2dias', cepillado: 'no', frecuenciaCepillado: 'semanal' },
     pesaje:             { unidadPeso: 'kg', registrarRendimiento: 'si', rendimientoEsperado: 10 },
     envasado:           { tipoEnvase: 'tina_plastica', pesoNeto: 250, unidadPeso: 'g', temperatura: 'frio' },
     precintado:         { tipoPrecinto: 'termoencogible_cristal', aplicaEtiqueta: 'si' },
@@ -112,7 +117,7 @@ function blockSummary(tipo, params) {
             return parts.join(' · ');
         }
         case 'inoculacion': {
-            const cl = { mesofilico: 'Mesofílico', termofilico: 'Termofílico', mixto: 'Mixto' };
+            const cl = { mesofilico: 'Mesófilo', termofilico: 'Termófilo', blend: 'Blend T/M' };
             return `${cl[params.tipoCultivo] || params.tipoCultivo} · ${params.temperatura}°C · ${params.tiempoIncubacion} ${params.unidadTiempo}`;
         }
         case 'cuajado': {
@@ -130,7 +135,7 @@ function blockSummary(tipo, params) {
             return `${base} · Ambiente`;
         }
         case 'corte': {
-            const gl = { fino: 'Fino 3mm', medio: 'Medio 6mm', grueso: 'Grueso 12mm', extra_grueso: 'Extra 20mm' };
+            const gl = { arroz: 'Arroz ~3mm', maiz: 'Maíz ~6mm', frijol_rojo: 'Frijol ~12mm', dado: 'Dado ~20mm' };
             const tc = { manual: 'Lira manual', mecanico: 'Mecánico' };
             return `${gl[params.tamanoGrano] || params.tamanoGrano} · ${tc[params.tipoCorte] || params.tipoCorte}`;
         }
@@ -142,9 +147,21 @@ function blockSummary(tipo, params) {
             const ml = { gravedad: 'Gravedad', prensado_suave: 'Prensado suave', prensado_fuerte: 'Prensado fuerte' };
             return `${ml[params.metodo] || params.metodo} · ${params.tiempo} ${params.unidadTiempo}`;
         }
+        case 'moldeado': {
+            const ml = { cilindrico: 'Cilíndrico', rectangular: 'Rectangular', corazon: 'Corazón', otro: 'Otro' };
+            const ph = params.phPost ? ` · pH ${Number(params.phPost).toFixed(1)}` : '';
+            const n = params.numVueltas || 1;
+            return `${ml[params.tipoMolde] || params.tipoMolde} · ${n} vuelta${n !== 1 ? 's' : ''}${ph}`;
+        }
+        case 'pre_prensa': {
+            const u = params.unidadPresion === 'psi' ? 'PSI' : 'kg/cm²';
+            return `${params.valorPresion ?? '?'} ${u} · ${params.tiempo} ${params.unidadTiempo}`;
+        }
         case 'prensado': {
-            const pl = { suave: '1:1', media: '2:1', fuerte: '5:1', extra: '10:1' };
-            return `Presión ${pl[params.presion] || params.presion} · ${params.tiempo} ${params.unidadTiempo}`;
+            const n = params.numVueltas || 1;
+            const u = params.unidadPresion === 'psi' ? 'PSI' : 'kg/cm²';
+            const maxP = params[`vuelta${n}Presion`] ?? '?';
+            return `${n} vuelta${n !== 1 ? 's' : ''} · hasta ${maxP} ${u}`;
         }
         case 'salado': {
             const sl = { superficie: 'Superficie', salmuera: 'En salmuera', masa: 'En masa' };
@@ -152,8 +169,10 @@ function blockSummary(tipo, params) {
             if (params.metodo === 'salmuera' && params.concentracion) s += ` ${params.concentracion}%`;
             return s;
         }
-        case 'maduracion':
-            return `${params.temperatura}°C · HR ${params.humedadRelativa}% · ${params.duracion} ${params.unidadDuracion}`;
+        case 'maduracion': {
+            const cep = params.cepillado === 'si' ? ` · Cepillado ${params.frecuenciaCepillado || ''}` : '';
+            return `${params.temperatura}°C · HR ${params.humedadRelativa}% · ${params.duracion} ${params.unidadDuracion}${cep}`;
+        }
         case 'pesaje': {
             const r = params.registrarRendimiento === 'si' ? ` · Rdto ~${params.rendimientoEsperado}%` : '';
             return `Pesaje en ${params.unidadPeso}${r}`;
@@ -447,10 +466,9 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                         <SecLabel>Tipo de Cultivo</SecLabel>
                         <PillGroup
                             options={[
-                                { id: 'mesofilico',  label: 'Mesofílico' },
-                                { id: 'termofilico', label: 'Termofílico' },
-                                { id: 'mixto',       label: 'Mixto' },
-                                { id: 'kefir',       label: 'Kéfir' },
+                                { id: 'mesofilico',  label: 'Mesófilo' },
+                                { id: 'termofilico', label: 'Termófilo' },
+                                { id: 'blend',       label: 'Blend Termo-Mesófilo' },
                             ]}
                             value={params.tipoCultivo}
                             onChange={set('tipoCultivo')}
@@ -581,10 +599,10 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                         <SecLabel>Tamaño de Grano</SecLabel>
                         <PillGroup
                             options={[
-                                { id: 'fino',        label: 'Fino (3 mm)' },
-                                { id: 'medio',       label: 'Medio (6 mm)' },
-                                { id: 'grueso',      label: 'Grueso (12 mm)' },
-                                { id: 'extra_grueso',label: 'Extra (20 mm)' },
+                                { id: 'arroz',       label: 'Arroz (~3 mm)' },
+                                { id: 'maiz',        label: 'Maíz (~6 mm)' },
+                                { id: 'frijol_rojo', label: 'Frijol rojo (~12 mm)' },
+                                { id: 'dado',        label: 'Dado (~20 mm)' },
                             ]}
                             value={params.tamanoGrano}
                             onChange={set('tamanoGrano')}
@@ -665,45 +683,150 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                 </div>
             );
 
-        case 'prensado':
+        case 'moldeado':
             return (
                 <div className="space-y-6">
                     <div>
-                        <SecLabel>Nivel de Presión (kg peso / kg queso)</SecLabel>
+                        <SecLabel>Tipo de Molde</SecLabel>
                         <PillGroup
                             options={[
-                                { id: 'suave', label: 'Suave 1:1' },
-                                { id: 'media', label: 'Media 2:1' },
-                                { id: 'fuerte',label: 'Fuerte 5:1' },
-                                { id: 'extra', label: 'Extra 10:1' },
+                                { id: 'cilindrico',  label: 'Cilíndrico' },
+                                { id: 'rectangular', label: 'Rectangular' },
+                                { id: 'corazon',     label: 'Corazón' },
+                                { id: 'otro',        label: 'Otro' },
                             ]}
-                            value={params.presion}
-                            onChange={set('presion')}
+                            value={params.tipoMolde}
+                            onChange={set('tipoMolde')}
                         />
                     </div>
                     <div>
-                        <SecLabel>Tiempo total</SecLabel>
+                        <SecLabel>Número de vueltas en molde (1–5)</SecLabel>
+                        <StepperField label="" value={params.numVueltas ?? 2} min={1} max={5} onChange={set('numVueltas')} />
+                    </div>
+                    <SliderField
+                        label="pH post-moldeado objetivo"
+                        value={params.phPost ?? 5.8} min={4.0} max={6.8} step={0.1} decimals={1}
+                        onChange={set('phPost')}
+                    />
+                    <SliderField
+                        label="Temperatura ambiente durante moldeado"
+                        value={params.temperaturaAmbiente ?? 18} min={10} max={28} unit="°C"
+                        onChange={set('temperaturaAmbiente')}
+                    />
+                    <div>
+                        <SecLabel>Tiempo total en molde</SecLabel>
                         <TiempoRow
-                            value={params.tiempo} unidad={params.unidadTiempo}
-                            onValueChange={set('tiempo')} onUnidadChange={set('unidadTiempo')}
+                            value={params.tiempoEnMolde ?? 4} unidad={params.unidadTiempo ?? 'h'}
+                            onValueChange={set('tiempoEnMolde')} onUnidadChange={set('unidadTiempo')}
                             min={1} max={48}
-                        />
-                    </div>
-                    <div>
-                        <SecLabel>Volteos</SecLabel>
-                        <PillGroup
-                            options={[
-                                { id: 'ninguno',   label: 'Ninguno' },
-                                { id: 'una_vez',   label: '1 vez' },
-                                { id: 'cada_hora', label: 'Cada hora' },
-                                { id: 'cada2h',    label: 'Cada 2 h' },
-                            ]}
-                            value={params.volteos}
-                            onChange={set('volteos')}
+                            units={[{ id: 'h', label: 'h' }, { id: 'dias', label: 'días' }]}
                         />
                     </div>
                 </div>
             );
+
+        case 'pre_prensa':
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Unidad de presión</SecLabel>
+                        <PillGroup
+                            options={[
+                                { id: 'kg_cm2', label: 'kg/cm²' },
+                                { id: 'psi',    label: 'PSI' },
+                            ]}
+                            value={params.unidadPresion || 'kg_cm2'}
+                            onChange={set('unidadPresion')}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Valor de presión</SecLabel>
+                        <div className="flex items-center gap-3">
+                            <button type="button"
+                                onClick={() => setParams(p => ({ ...p, valorPresion: Math.max(1, (p.valorPresion ?? 5) - 1) }))}
+                                className="w-11 h-11 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none">
+                                −
+                            </button>
+                            <div className="flex-1 text-center">
+                                <span className="text-white font-bold text-2xl tabular-nums">{params.valorPresion ?? 5}</span>
+                                <span className="text-slate-400 text-sm ml-1.5">{params.unidadPresion === 'psi' ? 'PSI' : 'kg/cm²'}</span>
+                            </div>
+                            <button type="button"
+                                onClick={() => setParams(p => ({ ...p, valorPresion: Math.min(200, (p.valorPresion ?? 5) + 1) }))}
+                                className="w-11 h-11 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none">
+                                +
+                            </button>
+                        </div>
+                    </div>
+                    <div>
+                        <SecLabel>Tiempo</SecLabel>
+                        <TiempoRow
+                            value={params.tiempo ?? 15} unidad={params.unidadTiempo ?? 'min'}
+                            onValueChange={set('tiempo')} onUnidadChange={set('unidadTiempo')}
+                            min={5} max={120}
+                            units={[{ id: 'min', label: 'min' }, { id: 'h', label: 'h' }]}
+                        />
+                    </div>
+                </div>
+            );
+
+        case 'prensado': {
+            const numV = params.numVueltas || 2;
+            const u = params.unidadPresion === 'psi' ? 'PSI' : 'kg/cm²';
+            return (
+                <div className="space-y-6">
+                    <div>
+                        <SecLabel>Unidad de presión</SecLabel>
+                        <PillGroup
+                            options={[
+                                { id: 'kg_cm2', label: 'kg/cm²' },
+                                { id: 'psi',    label: 'PSI' },
+                            ]}
+                            value={params.unidadPresion || 'kg_cm2'}
+                            onChange={set('unidadPresion')}
+                        />
+                    </div>
+                    <div>
+                        <SecLabel>Número de vueltas de prensado</SecLabel>
+                        <StepperField label="" value={numV} min={1} max={4} onChange={set('numVueltas')} />
+                    </div>
+                    {[1, 2, 3, 4].filter(i => i <= numV).map(i => (
+                        <div key={i} className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
+                            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wider">Vuelta {i}</p>
+                            <div>
+                                <span className="block text-xs font-medium text-slate-400 mb-2">Presión ({u})</span>
+                                <div className="flex items-center gap-3">
+                                    <button type="button"
+                                        onClick={() => setParams(p => ({ ...p, [`vuelta${i}Presion`]: Math.max(1, (p[`vuelta${i}Presion`] ?? 10) - 1) }))}
+                                        className="w-11 h-11 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none">
+                                        −
+                                    </button>
+                                    <span className="text-white font-bold text-2xl w-20 text-center tabular-nums">
+                                        {params[`vuelta${i}Presion`] ?? 10}
+                                    </span>
+                                    <button type="button"
+                                        onClick={() => setParams(p => ({ ...p, [`vuelta${i}Presion`]: Math.min(500, (p[`vuelta${i}Presion`] ?? 10) + 1) }))}
+                                        className="w-11 h-11 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none">
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <SecLabel>Tiempo</SecLabel>
+                                <TiempoRow
+                                    value={params[`vuelta${i}Tiempo`] ?? 30}
+                                    unidad={params[`vuelta${i}UnidadTiempo`] ?? 'min'}
+                                    onValueChange={v => setParams(p => ({ ...p, [`vuelta${i}Tiempo`]: v }))}
+                                    onUnidadChange={v => setParams(p => ({ ...p, [`vuelta${i}UnidadTiempo`]: v }))}
+                                    min={5} max={480}
+                                    units={[{ id: 'min', label: 'min' }, { id: 'h', label: 'h' }]}
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
 
         case 'salado':
             return (
@@ -777,6 +900,28 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                             onChange={set('virajes')}
                         />
                     </div>
+                    <div>
+                        <SecLabel>Cepillado de corteza</SecLabel>
+                        <PillGroup
+                            options={[{ id: 'no', label: 'No' }, { id: 'si', label: 'Sí' }]}
+                            value={params.cepillado || 'no'}
+                            onChange={set('cepillado')}
+                        />
+                    </div>
+                    {params.cepillado === 'si' && (
+                        <div>
+                            <SecLabel>Frecuencia de cepillado</SecLabel>
+                            <PillGroup
+                                options={[
+                                    { id: 'diario',    label: 'Diario' },
+                                    { id: 'cada2dias', label: 'Cada 2 días' },
+                                    { id: 'semanal',   label: 'Semanal' },
+                                ]}
+                                value={params.frecuenciaCepillado || 'semanal'}
+                                onChange={set('frecuenciaCepillado')}
+                            />
+                        </div>
+                    )}
                 </div>
             );
 
