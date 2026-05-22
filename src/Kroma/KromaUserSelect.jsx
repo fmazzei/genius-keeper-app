@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs, addDoc, serverTimestamp, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useKroma } from './KromaContext';
 import { Settings, BarChart3, ChefHat, Plus, Loader, X } from 'lucide-react';
 
@@ -29,12 +29,11 @@ export default function KromaUserSelect({ onExitKroma }) {
 
     const loadUsers = async () => {
         try {
-            const snap = await getDocs(query(
-                collection(db, 'kroma_users'),
-                where('active', '==', true),
-                orderBy('name')
-            ));
-            const list = snap.docs.map((d, i) => ({ id: d.id, avatarIndex: i % AVATAR_COLORS.length, ...d.data() }));
+            const snap = await getDocs(collection(db, 'kroma_users'));
+            const list = snap.docs
+                .map((d, i) => ({ id: d.id, avatarIndex: i % AVATAR_COLORS.length, ...d.data() }))
+                .filter(u => u.active !== false)
+                .sort((a, b) => a.name.localeCompare(b.name));
             setUsers(list);
             if (list.length === 0) setShowCreate(true);
         } catch (err) {
