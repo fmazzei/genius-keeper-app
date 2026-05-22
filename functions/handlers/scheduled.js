@@ -1,10 +1,10 @@
 // RUTA: functions/handlers/scheduled.js
 
-const functions = require("firebase-functions");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 
 // --- Helper de Notificaciones ---
-// (No sufre cambios)
 const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
     if (!userId) return;
     await admin.firestore().collection("notifications").add({
@@ -30,89 +30,81 @@ const sendNotificationToUser = async (userId, notificationPayload, dataPayload) 
     if (tokensToRemove.length > 0) await Promise.all(tokensToRemove);
 };
 
-// --- Supervisor de Visitas Vencidas (sin cambios) ---
-exports.scheduleVisitReminders = functions.pubsub
-    .schedule("every day 09:00")
-    .timeZone("America/Caracas")
-    .onRun(async () => {
-        functions.logger.log("Ejecutando revisión diaria de visitas vencidas...");
-        const posRef = admin.firestore().collection("pos");
-        const reportsRef = admin.firestore().collection("visit_reports");
-        const allPosSnapshot = await posRef.where("active", "==", true).get();
-        if (allPosSnapshot.empty) return null;
-        const merchandiserId = "anonymous_merchandiser_uid";
-        const now = new Date();
-        for (const posDoc of allPosSnapshot.docs) {
-            const posData = posDoc.data();
-            const visitInterval = posData.visitInterval || 7;
-            const lastReportSnapshot = await reportsRef.where("posId", "==", posDoc.id).orderBy("createdAt", "desc").limit(1).get();
-            let daysSinceLastVisit = Infinity;
-            if (!lastReportSnapshot.empty) {
-                const lastVisitDate = lastReportSnapshot.docs[0].data().createdAt.toDate();
-                daysSinceLastVisit = (now - lastVisitDate) / (1000 * 60 * 60 * 24);
-            }
-            if (daysSinceLastVisit > visitInterval) {
-                const overdueDays = Math.floor(daysSinceLastVisit - visitInterval);
-                await sendNotificationToUser(
-                    merchandiserId,
-                    { title: "Visita Vencida ⏰", body: `La visita a ${posData.name} está vencida por ${overdueDays} día(s).` },
-                    { link: `/pos/${posDoc.id}` }
-                );
-            }
+// --- Supervisor de Visitas Vencidas ---
+exports.scheduleVisitReminders = onSchedule({
+    schedule: "0 9 * * *",
+    timeZone: "America/Caracas",
+    region: "us-central1",
+}, async () => {
+    logger.log("Ejecutando revisión diaria de visitas vencidas...");
+    const posRef = admin.firestore().collection("pos");
+    const reportsRef = admin.firestore().collection("visit_reports");
+    const allPosSnapshot = await posRef.where("active", "==", true).get();
+    if (allPosSnapshot.empty) return;
+    const merchandiserId = "anonymous_merchandiser_uid";
+    const now = new Date();
+    for (const posDoc of allPosSnapshot.docs) {
+        const posData = posDoc.data();
+        const visitInterval = posData.visitInterval || 7;
+        const lastReportSnapshot = await reportsRef.where("posId", "==", posDoc.id).orderBy("createdAt", "desc").limit(1).get();
+        let daysSinceLastVisit = Infinity;
+        if (!lastReportSnapshot.empty) {
+            const lastVisitDate = lastReportSnapshot.docs[0].data().createdAt.toDate();
+            daysSinceLastVisit = (now - lastVisitDate) / (1000 * 60 * 60 * 24);
         }
-        return null;
-    });
-
-// ✅ --- NUEVO SUPERVISOR DE VENTAS PENDIENTES (POR HORA) ---
-exports.supervisarVentasPendientes = functions.pubsub
-    .schedule("every 1 hours") // Se ejecuta cada hora
-    .timeZone("America/Caracas")
-    .onRun(async (context) => {
-        const now = new Date();
-        const currentHour = now.getHours(); // Hora en zona horaria de Caracas (0-23)
-
-        // Condición de horario laboral: solo opera entre las 7 AM y las 7 PM (19:00).
-        if (currentHour < 7 || currentHour > 19) {
-            functions.logger.log(`Supervisor ejecutado a las ${currentHour}h. Fuera de horario laboral, no se enviarán notificaciones.`);
-            return null;
+        if (daysSinceLastVisit > visitInterval) {
+            const overdueDays = Math.floor(daysSinceLastVisit - visitInterval);
+            await sendNotificationToUser(
+                merchandiserId,
+                { title: "Visita Vencida ⏰", body: `La visita a ${posData.name} está vencida por ${overdueDays} día(s).` },
+                { link: `/pos/${posDoc.id}` }
+            );
         }
+    }
+});
 
-        functions.logger.log(`Supervisor ejecutado a las ${currentHour}h. Verificando ventas pendientes...`);
+// --- Supervisor de Ventas Pendientes (cada hora) ---
+exports.supervisarVentasPendientes = onSchedule({
+    schedule: "0 * * * *",
+    timeZone: "America/Caracas",
+    region: "us-central1",
+}, async () => {
+    const now = new Date();
+    const currentHour = now.getHours();
 
-        const ventasRef = admin.firestore().collection("ventas_pendientes");
-        const q = ventasRef.where("status", "==", "pending");
-        
-        const snapshot = await q.get();
+    if (currentHour < 7 || currentHour > 19) {
+        logger.log(`Supervisor ejecutado a las ${currentHour}h. Fuera de horario laboral.`);
+        return;
+    }
 
-        if (snapshot.empty) {
-            functions.logger.log("No se encontraron ventas pendientes.");
-            return null;
-        }
-        
-        functions.logger.log(`Se encontraron ${snapshot.size} ventas pendientes. Notificando...`);
+    logger.log(`Supervisor ejecutado a las ${currentHour}h. Verificando ventas pendientes...`);
 
-        // Obtenemos los UIDs de los gerentes a notificar
-        const salesManagerEmail = "carolina@lacteoca.com";
-        const masterEmail = "lacteoca@lacteoca.com";
+    const ventasRef = admin.firestore().collection("ventas_pendientes");
+    const snapshot = await ventasRef.where("status", "==", "pending").get();
 
-        try {
-            const salesManager = await admin.auth().getUserByEmail(salesManagerEmail);
-            const masterUser = await admin.auth().getUserByEmail(masterEmail);
-            
-            const totalPending = snapshot.size;
-            const notificationBody = totalPending === 1
-                ? `Hay 1 venta pendiente por despachar en el panel de inventario.`
-                : `Hay ${totalPending} ventas pendientes por despachar en el panel de inventario.`;
+    if (snapshot.empty) {
+        logger.log("No se encontraron ventas pendientes.");
+        return;
+    }
 
-            // Enviamos una única notificación resumida a cada gerente
-            await sendNotificationToUser(salesManager.uid, { title: "📦 Ventas Pendientes por Despachar", body: notificationBody }, { link: `/inventory` });
-            await sendNotificationToUser(masterUser.uid, { title: "📦 Ventas Pendientes por Despachar", body: notificationBody }, { link: `/inventory` });
+    logger.log(`Se encontraron ${snapshot.size} ventas pendientes. Notificando...`);
 
-        } catch (error) {
-            functions.logger.error("Error al notificar sobre ventas pendientes:", error);
-        }
-        
-        return null;
-    });
+    const salesManagerEmail = "carolina@lacteoca.com";
+    const masterEmail = "lacteoca@lacteoca.com";
 
-// ❌ Las funciones de verificación de mañana y tarde han sido eliminadas y reemplazadas por el supervisor por hora.
+    try {
+        const salesManager = await admin.auth().getUserByEmail(salesManagerEmail);
+        const masterUser = await admin.auth().getUserByEmail(masterEmail);
+
+        const totalPending = snapshot.size;
+        const notificationBody = totalPending === 1
+            ? `Hay 1 venta pendiente por despachar en el panel de inventario.`
+            : `Hay ${totalPending} ventas pendientes por despachar en el panel de inventario.`;
+
+        await sendNotificationToUser(salesManager.uid, { title: "📦 Ventas Pendientes por Despachar", body: notificationBody }, { link: `/inventory` });
+        await sendNotificationToUser(masterUser.uid, { title: "📦 Ventas Pendientes por Despachar", body: notificationBody }, { link: `/inventory` });
+
+    } catch (error) {
+        logger.error("Error al notificar sobre ventas pendientes:", error);
+    }
+});
