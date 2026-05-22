@@ -11,7 +11,11 @@ import { PillGroup } from '../admin/ProductCatalogPage';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const LOTE_REF = 100; // reference batch in liters
+const LOTE_REF = 1; // dosis expresada por litro de leche
+
+// Categorías que pertenecen a la receta de producción (excluye leche,
+// empaques, consumibles, detergentes y reactivos de laboratorio)
+const RECIPE_CATEGORIES = new Set(['cultivos', 'coagulantes', 'sales', 'otros']);
 
 const CAT_LABELS = {
     leche: 'Leche', cultivos: 'Cultivos', coagulantes: 'Coagulantes',
@@ -105,8 +109,8 @@ const SecLabel = ({ children }) => (
 
 // Stepper with selectable step size
 function PrecisionStepper({ label, value, unit, onChange }) {
-    const [step, setStep] = useState(1);
-    const STEPS = [0.1, 1, 10, 100];
+    const [step, setStep] = useState(0.1);
+    const STEPS = [0.001, 0.01, 0.1, 1];
     return (
         <div>
             {label && <SecLabel>{label}</SecLabel>}
@@ -308,10 +312,12 @@ export default function RecipeBuilderPage() {
     });
 
     // ── Filtered materials for modal ──────────────────────────────────────────
+    // Only recipe-relevant categories (no leche, empaques, consumibles, detergentes, reactivos)
+    const recipeMats = materials.filter(m => RECIPE_CATEGORIES.has(m.categoria));
     const filteredMats = matFilter.trim()
-        ? materials.filter(m => m.nombre.toLowerCase().includes(matFilter.toLowerCase()) ||
-                                (m.categoria || '').toLowerCase().includes(matFilter.toLowerCase()))
-        : materials;
+        ? recipeMats.filter(m => m.nombre.toLowerCase().includes(matFilter.toLowerCase()) ||
+                                 (m.categoria || '').toLowerCase().includes(matFilter.toLowerCase()))
+        : recipeMats;
 
     // ── Process list for selected product ─────────────────────────────────────
     const productProcesses = selProduct
@@ -428,7 +434,7 @@ export default function RecipeBuilderPage() {
                                             </span>
                                             {tCost > 0 && (
                                                 <p className="text-emerald-400 text-xs font-bold mt-1">
-                                                    ${fmt(tCost)} / {LOTE_REF}L
+                                                    ${fmt(tCost)} / L leche
                                                 </p>
                                             )}
                                         </div>
@@ -468,7 +474,7 @@ export default function RecipeBuilderPage() {
                     {step === 3 && (
                         <p className="text-slate-500 text-xs">
                             {ingredientes.length} ingrediente{ingredientes.length !== 1 ? 's' : ''}
-                            {hasCostData ? ` · $${fmt(totalCost)} / ${LOTE_REF}L` : ''}
+                            {hasCostData ? ` · $${fmt(totalCost)} / L leche` : ''}
                         </p>
                     )}
                 </div>
@@ -610,11 +616,11 @@ export default function RecipeBuilderPage() {
                             </button>
                         </div>
                         <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">
-                            Paso 3 de 3 — Ingredientes por {LOTE_REF} litros de leche
+                            Paso 3 de 3 — Ingredientes por litro de leche
                         </p>
                         <p className="text-slate-600 text-xs mb-5">
-                            Define la dosis de cada insumo para un lote de referencia de {LOTE_REF}L.
-                            Kroma calculará las cantidades exactas en Producción Diaria según los litros reales.
+                            Define la dosis de cada ingrediente por cada litro de leche.
+                            Kroma multiplicará por los litros reales al momento de la producción.
                         </p>
 
                         {/* Ingredient list */}
@@ -640,7 +646,7 @@ export default function RecipeBuilderPage() {
                                                     <p className="text-white font-semibold text-sm truncate">{ing.materialNombre}</p>
                                                     <p className="text-slate-400 text-xs">
                                                         <span className="text-emerald-300 font-bold">{fmt(ing.dosis)} {ing.unidadDosis}</span>
-                                                        <span className="text-slate-600"> / {LOTE_REF}L</span>
+                                                        <span className="text-slate-600"> / L leche</span>
                                                         {cost != null && (
                                                             <span className="text-slate-500 ml-2">· ${fmt(cost)}</span>
                                                         )}
@@ -680,7 +686,7 @@ export default function RecipeBuilderPage() {
                             <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3.5 mb-4 flex items-center justify-between">
                                 <div className="flex items-center gap-2">
                                     <DollarSign size={15} className="text-emerald-400" />
-                                    <span className="text-emerald-300 text-sm font-semibold">Costo estimado por {LOTE_REF}L</span>
+                                    <span className="text-emerald-300 text-sm font-semibold">Costo estimado por litro de leche</span>
                                 </div>
                                 <span className="text-white font-bold text-lg font-mono">${fmt(totalCost)}</span>
                             </div>
@@ -737,7 +743,9 @@ export default function RecipeBuilderPage() {
                                 <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-700 bg-slate-800 p-1.5 space-y-0.5">
                                     {filteredMats.length === 0 ? (
                                         <p className="text-slate-500 text-sm text-center py-4">
-                                            {materials.length === 0 ? 'Sin materiales en el Maestro.' : 'Sin resultados.'}
+                                            {recipeMats.length === 0
+                                                ? 'No hay cultivos, coagulantes ni sales cargados aún.'
+                                                : 'Sin resultados para esa búsqueda.'}
                                         </p>
                                     ) : filteredMats.map(m => (
                                         <button key={m.id} type="button"
@@ -772,7 +780,7 @@ export default function RecipeBuilderPage() {
                                     </div>
 
                                     <PrecisionStepper
-                                        label={`Cantidad por ${LOTE_REF} litros de leche`}
+                                        label="Cantidad por litro de leche"
                                         value={ingDosis}
                                         unit={ingUnidad}
                                         onChange={setIngDosis}
@@ -783,7 +791,7 @@ export default function RecipeBuilderPage() {
                                         const c = calcIngredientCost(ingMaterial, ingDosis, ingUnidad);
                                         return c != null && ingDosis > 0 ? (
                                             <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center justify-between">
-                                                <span className="text-slate-400 text-xs">Costo estimado para {LOTE_REF}L</span>
+                                                <span className="text-slate-400 text-xs">Costo estimado por litro de leche</span>
                                                 <span className="text-emerald-400 font-bold text-sm font-mono">${fmt(c)}</span>
                                             </div>
                                         ) : ingDosis > 0 ? (
