@@ -1,5 +1,6 @@
 import React from 'react';
 import { Droplets, Package, FlaskConical, Workflow, Factory, Construction } from 'lucide-react';
+import ProcessBuilderPageImpl from './operator/ProcessBuilderPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -82,18 +83,7 @@ export const RecipeBuilderPage = () => (
     />
 );
 
-export const ProcessBuilderPage = () => (
-    <ComingSoon
-        title="Constructor de Procesos"
-        description="Flujograma técnico de producción. Define los bloques y sub-bloques del proceso de cada producto."
-        items={[
-            { title: 'Bloques de proceso', desc: 'Pasteurización → Cuajado → Corte → Desuerado → Prensado → Salado → Curado → Empaque.' },
-            { title: 'Parámetros técnicos', desc: 'Temperaturas, pH, tiempos, presiones, tipo de fermento, cuajo, conservante.' },
-            { title: 'Salado con bloqueo de calidad', desc: 'Salmuera requiere Temp, Titulación y °Bé previo. Sin parámetros, no se habilita.' },
-            { title: 'Maduración y curado', desc: 'Condiciones de cava, virajes, cepillados, cambios programados de T° y humedad.' },
-        ]}
-    />
-);
+export const ProcessBuilderPage = () => <ProcessBuilderPageImpl />;
 
 export const DailyProductionPage = () => (
     <ComingSoon
