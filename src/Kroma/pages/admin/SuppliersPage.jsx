@@ -41,6 +41,7 @@ const EMPTY_FORM = {
     rifCedulaCuenta: '',
     pagoMovilTelefono: '',
     pagoMovilCedula: '',
+    pagoMovilBanco: '',
     zelleContacto: '',
     instruccionesInternacionales: '',
 };
@@ -204,6 +205,12 @@ function SupplierForm({ initial, onSave, onCancel, saving }) {
                 <SectionHeader icon={Smartphone} title="Pago Móvil" open={sections.mobile} onToggle={() => toggleSection('mobile')} />
                 {sections.mobile && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <Field label="Banco">
+                            <Select value={form.pagoMovilBanco} onChange={set('pagoMovilBanco')}>
+                                <option value="">— Seleccionar banco —</option>
+                                {BANCOS_VE.map(b => <option key={b} value={b}>{b}</option>)}
+                            </Select>
+                        </Field>
                         <Field label="Teléfono de Pago Móvil">
                             <Input value={form.pagoMovilTelefono} onChange={set('pagoMovilTelefono')} placeholder="0414-0000000" />
                         </Field>

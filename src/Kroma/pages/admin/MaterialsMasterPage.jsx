@@ -10,6 +10,7 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CATEGORIES = [
+    { id: 'leche',        label: 'Leche / Materia Prima' },
     { id: 'cultivos',     label: 'Cultivos y Fermentos' },
     { id: 'coagulantes',  label: 'Coagulantes y Cuajo' },
     { id: 'sales',        label: 'Sales y Conservantes' },
@@ -64,9 +65,10 @@ function calcPrices(costoUSD, cantidad, unidad) {
 }
 
 function fmt(n) {
-    if (n < 0.001) return n.toExponential(3);
-    if (n < 1) return n.toFixed(4);
-    return n.toFixed(4);
+    if (n >= 1)        return n.toFixed(2);
+    if (n >= 0.01)     return parseFloat(n.toFixed(4)).toString();
+    if (n >= 0.0001)   return parseFloat(n.toFixed(6)).toString();
+    return n.toExponential(3);
 }
 
 // ─── Cost Calculator Panel ────────────────────────────────────────────────────
