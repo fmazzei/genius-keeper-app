@@ -241,3 +241,107 @@ exports.onReportDeleted = functions.firestore
     .onDelete(async (snap, context) => {
         // ... (código existente sin cambios)
     });
+
+// =========================================================================================
+// TRIGGER: Nuevo Pedido — notifica a master/sales_manager y envía correos
+// =========================================================================================
+exports.onPedidoCreated = functions.firestore
+    .document("pedidos/{pedidoId}")
+    .onCreate(async (snap) => {
+        const pedido = snap.data();
+        const db = admin.firestore();
+
+        // 1. Notificaciones push a master y sales_manager (nunca a merchandiser/produccion)
+        try {
+            const usersSnap = await db.collection("users_metadata")
+                .where("role", "in", ["master", "sales_manager"])
+                .get();
+
+            const activeUsers = usersSnap.docs.filter(d => d.data().active !== false);
+
+            const notifPayload = {
+                title: "Nuevo Pedido Registrado",
+                body: `${pedido.reporterName || "Un merchandiser"} tomó un pedido de ${pedido.cantidad} uds. para ${pedido.posName || "un cliente"}${pedido.sucursal ? ` (${pedido.sucursal})` : ""}`,
+            };
+
+            await Promise.all(activeUsers.map(d =>
+                sendNotificationToUser(d.id, notifPayload, { link: "/pedidos" })
+            ));
+            functions.logger.log(`Notificaciones de pedido enviadas a ${activeUsers.length} usuario(s).`);
+        } catch (err) {
+            functions.logger.error("Error enviando notificaciones de pedido:", err);
+        }
+
+        // 2. Envío de correo a destinatarios habilitados
+        try {
+            const [recipientsSnap, smtpSnap] = await Promise.all([
+                db.doc("settings/emailRecipients").get(),
+                db.doc("settings/smtpConfig").get(),
+            ]);
+
+            if (!smtpSnap.exists || !recipientsSnap.exists) {
+                functions.logger.warn("SMTP o destinatarios no configurados. Saltando envío de correo.");
+                return null;
+            }
+
+            const { recipients = [] } = recipientsSnap.data();
+            const enabledEmails = recipients
+                .filter(r => r.enabled !== false && r.email)
+                .map(r => r.email);
+
+            if (enabledEmails.length === 0) {
+                functions.logger.info("No hay destinatarios de correo habilitados.");
+                return null;
+            }
+
+            const { host, port, secure, user, password, fromName } = smtpSnap.data();
+            if (!user || !password) {
+                functions.logger.warn("Credenciales SMTP incompletas.");
+                return null;
+            }
+
+            const nodemailer = require("nodemailer");
+            const transporter = nodemailer.createTransport({
+                host: host || "smtp.gmail.com",
+                port: port || 587,
+                secure: secure || false,
+                auth: { user, pass: password },
+            });
+
+            const fecha = pedido.createdAt && pedido.createdAt.toDate
+                ? pedido.createdAt.toDate().toLocaleString("es-VE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                : new Date().toLocaleString("es-VE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+            const htmlBody = `<!DOCTYPE html>
+<html><body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+  <div style="background:#1e3a5f;color:white;padding:20px;border-radius:8px 8px 0 0;">
+    <h1 style="margin:0;font-size:22px;">Nuevo Pedido Registrado</h1>
+    <p style="margin:4px 0 0;opacity:.8;font-size:14px;">Genius Keeper — Lacteoca</p>
+  </div>
+  <div style="background:#f8f9fa;padding:20px;border-radius:0 0 8px 8px;border:1px solid #dee2e6;">
+    <table style="width:100%;border-collapse:collapse;">
+      <tr style="border-bottom:1px solid #dee2e6;"><td style="padding:10px;font-weight:bold;color:#495057;width:40%;">Cliente</td><td style="padding:10px;">${pedido.posName || "-"}</td></tr>
+      ${pedido.sucursal ? `<tr style="border-bottom:1px solid #dee2e6;"><td style="padding:10px;font-weight:bold;color:#495057;">Sucursal</td><td style="padding:10px;">${pedido.sucursal}</td></tr>` : ""}
+      <tr style="border-bottom:1px solid #dee2e6;"><td style="padding:10px;font-weight:bold;color:#495057;">Fecha y Hora</td><td style="padding:10px;">${fecha}</td></tr>
+      <tr style="border-bottom:1px solid #dee2e6;"><td style="padding:10px;font-weight:bold;color:#495057;">Cantidad</td><td style="padding:10px;font-size:18px;font-weight:bold;">${pedido.cantidad} unidades</td></tr>
+      <tr style="border-bottom:1px solid #dee2e6;"><td style="padding:10px;font-weight:bold;color:#495057;">N° Orden de Compra</td><td style="padding:10px;">${pedido.numeroOC || "-"}</td></tr>
+      <tr><td style="padding:10px;font-weight:bold;color:#495057;">Tomado por</td><td style="padding:10px;">${pedido.reporterName || "-"}</td></tr>
+    </table>
+  </div>
+  <p style="text-align:center;color:#6c757d;font-size:12px;margin-top:16px;">Generado automáticamente por Genius Keeper</p>
+</body></html>`;
+
+            await transporter.sendMail({
+                from: `"${fromName || "Genius Keeper"}" <${user}>`,
+                to: enabledEmails.join(", "),
+                subject: `Pedido: ${pedido.posName || "Cliente"}${pedido.sucursal ? ` - ${pedido.sucursal}` : ""} | ${pedido.cantidad} uds. | OC: ${pedido.numeroOC || "-"}`,
+                html: htmlBody,
+            });
+
+            functions.logger.log(`Correo de pedido enviado a: ${enabledEmails.join(", ")}`);
+        } catch (err) {
+            functions.logger.error("Error enviando correo de pedido:", err);
+        }
+
+        return null;
+    });

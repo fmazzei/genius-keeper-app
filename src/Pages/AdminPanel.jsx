@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
 // ✅ Se añade el ícono 'Link2'
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
@@ -894,6 +894,159 @@ const ModuleManagement = () => {
     );
 };
 
+// =========================================================================================
+// GESTIÓN DE CORREOS — Destinatarios de Pedidos + Configuración SMTP
+// =========================================================================================
+const EmailManagement = () => {
+    const [recipients, setRecipients] = useState([]);
+    const [newEmail, setNewEmail] = useState('');
+    const [newName, setNewName] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+
+    const [smtp, setSmtp] = useState({ host: 'smtp.gmail.com', port: 587, secure: false, user: '', password: '', fromName: 'Genius Keeper' });
+    const [showPassword, setShowPassword] = useState(false);
+    const [savingSmtp, setSavingSmtp] = useState(false);
+    const [smtpSaved, setSmtpSaved] = useState(false);
+
+    const recipientsRef = doc(db, 'settings', 'emailRecipients');
+    const smtpRef = doc(db, 'settings', 'smtpConfig');
+
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                const [recSnap, smtpSnap] = await Promise.all([getDoc(recipientsRef), getDoc(smtpRef)]);
+                if (recSnap.exists()) setRecipients(recSnap.data().recipients || []);
+                if (smtpSnap.exists()) setSmtp(prev => ({ ...prev, ...smtpSnap.data() }));
+            } catch (e) { console.error(e); }
+            finally { setLoading(false); }
+        };
+        loadData();
+    }, []);
+
+    const saveRecipients = async (updated) => {
+        setSaving(true);
+        try { await setDoc(recipientsRef, { recipients: updated }, { merge: true }); setRecipients(updated); }
+        catch (e) { alert('Error al guardar. Intenta de nuevo.'); }
+        finally { setSaving(false); }
+    };
+
+    const handleAdd = async (e) => {
+        e.preventDefault();
+        const email = newEmail.trim().toLowerCase();
+        if (!email) return;
+        if (recipients.some(r => r.email === email)) { alert('Este correo ya está en la lista.'); return; }
+        const updated = [...recipients, { email, name: newName.trim() || email, enabled: true }];
+        await saveRecipients(updated);
+        setNewEmail(''); setNewName('');
+    };
+
+    const handleToggle = (email) => {
+        const updated = recipients.map(r => r.email === email ? { ...r, enabled: !r.enabled } : r);
+        saveRecipients(updated);
+    };
+
+    const handleDelete = (email) => {
+        if (!window.confirm(`¿Eliminar ${email} de la lista?`)) return;
+        saveRecipients(recipients.filter(r => r.email !== email));
+    };
+
+    const handleSaveSmtp = async (e) => {
+        e.preventDefault();
+        setSavingSmtp(true);
+        try {
+            await setDoc(smtpRef, smtp);
+            setSmtpSaved(true);
+            setTimeout(() => setSmtpSaved(false), 3000);
+        } catch (e) { alert('Error al guardar la configuración SMTP.'); }
+        finally { setSavingSmtp(false); }
+    };
+
+    if (loading) return <LoadingSpinner />;
+
+    return (
+        <div className="space-y-8">
+            {/* --- Destinatarios --- */}
+            <div className="bg-white rounded-lg shadow p-5">
+                <h3 className="text-xl font-semibold text-slate-700 mb-1">Destinatarios de Correo</h3>
+                <p className="text-sm text-slate-500 mb-5">Estos correos recibirán un email automático cada vez que un mercaderista registre un pedido.</p>
+
+                <form onSubmit={handleAdd} className="flex flex-col sm:flex-row gap-3 mb-6">
+                    <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="correo@ejemplo.com" required className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nombre (opcional)" className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    <button type="submit" disabled={saving} className="flex items-center justify-center gap-2 bg-brand-blue text-white font-bold py-3 px-5 rounded-lg hover:bg-opacity-90 disabled:opacity-60 whitespace-nowrap">
+                        <PlusCircle size={18} /> Agregar
+                    </button>
+                </form>
+
+                {recipients.length === 0 ? (
+                    <p className="text-slate-400 text-center py-6">No hay destinatarios configurados todavía.</p>
+                ) : (
+                    <ul className="divide-y divide-slate-100">
+                        {recipients.map(r => (
+                            <li key={r.email} className="flex items-center justify-between py-3 gap-4">
+                                <div className="min-w-0">
+                                    <p className="font-semibold text-slate-800 truncate">{r.name || r.email}</p>
+                                    {r.name && r.name !== r.email && <p className="text-sm text-slate-500 truncate">{r.email}</p>}
+                                </div>
+                                <div className="flex items-center gap-3 flex-shrink-0">
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${r.enabled !== false ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                        {r.enabled !== false ? 'Activo' : 'Inactivo'}
+                                    </span>
+                                    <ToggleSwitch enabled={r.enabled !== false} setEnabled={() => handleToggle(r.email)} />
+                                    <button onClick={() => handleDelete(r.email)} className="text-red-400 hover:text-red-600"><Trash2 size={18} /></button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+
+            {/* --- Configuración SMTP --- */}
+            <div className="bg-white rounded-lg shadow p-5">
+                <h3 className="text-xl font-semibold text-slate-700 mb-1">Configuración de Envío (SMTP)</h3>
+                <p className="text-sm text-slate-500 mb-5">
+                    Configura la cuenta de correo que <strong>enviará</strong> los emails de pedidos. Para Gmail, usa una{' '}
+                    <span className="text-brand-blue font-medium">Contraseña de Aplicación</span> (no tu contraseña normal).
+                </p>
+                <form onSubmit={handleSaveSmtp} className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Servidor SMTP</label>
+                            <input value={smtp.host} onChange={e => setSmtp(p => ({ ...p, host: e.target.value }))} placeholder="smtp.gmail.com" className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Puerto</label>
+                            <input type="number" value={smtp.port} onChange={e => setSmtp(p => ({ ...p, port: Number(e.target.value) }))} placeholder="587" className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Correo remitente</label>
+                            <input type="email" value={smtp.user} onChange={e => setSmtp(p => ({ ...p, user: e.target.value }))} placeholder="notificaciones@lacteoca.com" className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña / App Password</label>
+                            <div className="relative">
+                                <input type={showPassword ? 'text' : 'password'} value={smtp.password} onChange={e => setSmtp(p => ({ ...p, password: e.target.value }))} placeholder="••••••••••••••••" className="w-full p-3 pr-10 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                                <button type="button" onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre visible del remitente</label>
+                            <input value={smtp.fromName} onChange={e => setSmtp(p => ({ ...p, fromName: e.target.value }))} placeholder="Genius Keeper - Lacteoca" className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                        </div>
+                    </div>
+                    <button type="submit" disabled={savingSmtp} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-3 px-6 rounded-lg hover:bg-opacity-90 disabled:opacity-60">
+                        <Save size={18} />
+                        {savingSmtp ? 'Guardando...' : smtpSaved ? '¡Guardado!' : 'Guardar Configuración SMTP'}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
 const AdminPanel = ({ user, posList, reports, loading }) => {
     const [activeTab, setActiveTab] = useState('settings');
     const TabButton = ({ id, text, icon }) => ( <button onClick={() => setActiveTab(id)} className={`flex items-center px-3 sm:px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === id ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-200'}`}>{icon}<span className="ml-2 hidden sm:inline">{text}</span></button> );
@@ -910,6 +1063,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     <TabButton id="users" text="Usuarios" icon={<Users size={18} />} />
                     <TabButton id="sales_goals" text="Metas de Venta" icon={<Target size={18} />} />
                     <TabButton id="modules" text="Módulos" icon={<LayoutGrid size={18} />} />
+                    <TabButton id="emails" text="Correos" icon={<Mail size={18} />} />
                     <TabButton id="settings" text="Configuración" icon={<Settings size={18} />} />
                 </div>
                 <div className="animate-fade-in">
@@ -920,6 +1074,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     {activeTab === 'users' && <UserManagement />}
                     {activeTab === 'sales_goals' && <SalesGoalsManagement />}
                     {activeTab === 'modules' && <ModuleManagement />}
+                    {activeTab === 'emails' && <EmailManagement />}
                     {activeTab === 'settings' && <GeneralSettings />}
                 </div>
             </div>

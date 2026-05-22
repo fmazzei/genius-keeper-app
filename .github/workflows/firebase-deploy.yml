@@ -1,4 +1,4 @@
-name: Deploy a Firebase Hosting
+name: Deploy Firebase (Hosting + Functions)
 
 on:
   push:
@@ -11,16 +11,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Instalar dependencias
+      - name: Instalar dependencias (web app)
         run: npm install
 
       - name: Construir la app
         run: npm run build
 
-      - name: Deploy a Firebase Hosting
+      - name: Instalar dependencias (Cloud Functions)
+        run: npm install --prefix functions
+
+      - name: Deploy Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           channelId: live
           projectId: geniuskeeper-36553
+
+      - name: Deploy Cloud Functions
+        env:
+          SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          npm install -g firebase-tools
+          echo "$SERVICE_ACCOUNT" > /tmp/sa.json
+          GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json firebase deploy --only functions --project geniuskeeper-36553
