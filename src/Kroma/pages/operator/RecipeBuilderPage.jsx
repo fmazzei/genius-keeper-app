@@ -5,7 +5,7 @@ import { useKroma } from '../../KromaContext';
 import {
     FlaskConical, Plus, X, Loader, ChevronUp, ChevronDown,
     Edit2, Trash2, CheckCircle2, AlertTriangle, Workflow,
-    DollarSign, RefreshCw, Package,
+    DollarSign, RefreshCw, Package, PlusCircle,
 } from 'lucide-react';
 import { PillGroup } from '../admin/ProductCatalogPage';
 
@@ -175,6 +175,12 @@ export default function RecipeBuilderPage() {
     const [ingUnidad,   setIngUnidad]   = useState('g');
     const [matFilter,   setMatFilter]   = useState('');
 
+    // Create new ingredient mini-form
+    const [showCreateMat, setShowCreateMat] = useState(false);
+    const [newMatNombre,  setNewMatNombre]  = useState('');
+    const [newMatCat,     setNewMatCat]     = useState('otros');
+    const [creatingMat,   setCreatingMat]   = useState(false);
+
     // ── Data loading ──────────────────────────────────────────────────────────
     const loadAll = useCallback(async () => {
         setLoadError(null);
@@ -260,6 +266,34 @@ export default function RecipeBuilderPage() {
         setIngModal(null);
     };
     const removeIng = (idx) => setIngredientes(prev => prev.filter((_, i) => i !== idx));
+
+    const createMaterial = async () => {
+        if (!newMatNombre.trim()) return;
+        setCreatingMat(true);
+        try {
+            const ref = await addDoc(collection(db, 'kroma_materials'), {
+                nombre: newMatNombre.trim(),
+                categoria: newMatCat,
+                active: true,
+                costoUSD: null,
+                cantidadPresentacion: null,
+                unidad: 'g',
+                createdAt: serverTimestamp(),
+            });
+            const newMat = { id: ref.id, nombre: newMatNombre.trim(), categoria: newMatCat, unidad: 'g' };
+            setMaterials(prev => [...prev, newMat].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+            setIngMaterial(newMat);
+            setIngUnidad('g');
+            setShowCreateMat(false);
+            setNewMatNombre('');
+            setNewMatCat('otros');
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setCreatingMat(false);
+        }
+    };
+
     const moveIng = (idx, dir) => {
         const arr = [...ingredientes];
         const ni = idx + dir;
@@ -765,6 +799,52 @@ export default function RecipeBuilderPage() {
                                         </button>
                                     ))}
                                 </div>
+
+                                {/* Create new material (no price) */}
+                                {!showCreateMat ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCreateMat(true)}
+                                        className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-emerald-400 transition-colors mt-1"
+                                    >
+                                        <PlusCircle size={13} />
+                                        Crear insumo nuevo (sin precio)
+                                    </button>
+                                ) : (
+                                    <div className="bg-slate-800 border border-slate-600 rounded-xl p-3 space-y-3 mt-1">
+                                        <p className="text-slate-400 text-xs font-semibold">Nuevo insumo — solo nombre y categoría</p>
+                                        <input
+                                            type="text"
+                                            value={newMatNombre}
+                                            onChange={e => setNewMatNombre(e.target.value)}
+                                            placeholder="Nombre del insumo"
+                                            maxLength={80}
+                                            autoFocus
+                                            className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                                        />
+                                        <select
+                                            value={newMatCat}
+                                            onChange={e => setNewMatCat(e.target.value)}
+                                            className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500"
+                                        >
+                                            {['cultivos', 'coagulantes', 'sales', 'otros'].map(c => (
+                                                <option key={c} value={c}>{CAT_LABELS[c]}</option>
+                                            ))}
+                                        </select>
+                                        <p className="text-slate-600 text-xs">El precio lo cargará el Administrador después.</p>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => setShowCreateMat(false)}
+                                                className="flex-1 border border-slate-600 text-slate-400 rounded-lg py-1.5 text-xs font-medium transition-colors hover:text-white">
+                                                Cancelar
+                                            </button>
+                                            <button type="button" onClick={createMaterial} disabled={!newMatNombre.trim() || creatingMat}
+                                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg py-1.5 text-xs font-bold transition-colors disabled:opacity-40 flex items-center justify-center gap-1">
+                                                {creatingMat ? <Loader size={12} className="animate-spin" /> : null}
+                                                {creatingMat ? 'Creando…' : 'Crear'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Dose controls — shown only when material is selected */}
