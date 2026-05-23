@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
 import {
     Workflow, Plus, X, ChevronUp, ChevronDown, Edit2, Trash2, Loader,
@@ -1441,6 +1441,12 @@ export default function ProcessBuilderPage() {
     const [bloques, setBloques] = useState([]);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
+    const [editingProcess, setEditingProcess] = useState(null); // null | process doc
+
+    // Deactivate modal
+    const [deactivateTarget, setDeactivateTarget] = useState(null); // null | process doc
+    const [deactivating, setDeactivating] = useState(false);
+    const [deactivateError, setDeactivateError] = useState(null);
 
     // Block editor modal
     const [blockModal, setBlockModal] = useState(null); // null | { mode: 'add' | 'edit', index? }
@@ -1548,27 +1554,45 @@ export default function ProcessBuilderPage() {
         setHasDraft(false);
     };
 
+    const openEditProcess = (proc) => {
+        setEditingProcess(proc);
+        setSelectedProduct({ id: proc.productoId, nombre: proc.productoNombre });
+        setBloques(proc.bloques || []);
+        setMode('builder');
+        loadMaterials();
+    };
+
     const saveProcess = async () => {
         if (!selectedProduct || bloques.length === 0) return;
         setSaving(true);
         setSaveError(null);
         try {
-            await addDoc(collection(db, 'kroma_processes'), {
-                productoId: selectedProduct.id,
-                productoNombre: selectedProduct.nombre,
-                bloques,
-                estado: 'borrador',
-                creadoPor: kromaUser?.id || null,
-                creadoPorNombre: kromaUser?.name || null,
-                active: true,
-                createdAt: serverTimestamp(),
-            });
+            if (editingProcess) {
+                await updateDoc(doc(db, 'kroma_processes', editingProcess.id), {
+                    bloques,
+                    updatedAt: serverTimestamp(),
+                    updatedPor: kromaUser?.id || null,
+                    updatedPorNombre: kromaUser?.name || null,
+                });
+            } else {
+                await addDoc(collection(db, 'kroma_processes'), {
+                    productoId: selectedProduct.id,
+                    productoNombre: selectedProduct.nombre,
+                    bloques,
+                    estado: 'borrador',
+                    creadoPor: kromaUser?.id || null,
+                    creadoPorNombre: kromaUser?.name || null,
+                    active: true,
+                    createdAt: serverTimestamp(),
+                });
+            }
             localStorage.removeItem(DRAFT_KEY);
             setHasDraft(false);
             await loadAll();
             setMode('list');
             setSelectedProduct(null);
             setBloques([]);
+            setEditingProcess(null);
         } catch (err) {
             console.error(err);
             setSaveError(err?.code || err?.message || 'Error al guardar');
@@ -1577,9 +1601,26 @@ export default function ProcessBuilderPage() {
         }
     };
 
+    const deactivateProcess = async () => {
+        if (!deactivateTarget) return;
+        setDeactivating(true);
+        setDeactivateError(null);
+        try {
+            await updateDoc(doc(db, 'kroma_processes', deactivateTarget.id), { active: false });
+            setDeactivateTarget(null);
+            await loadAll();
+        } catch (err) {
+            console.error(err);
+            setDeactivateError(err?.code || err?.message || 'Error al desactivar');
+        } finally {
+            setDeactivating(false);
+        }
+    };
+
     // ── List view ──────────────────────────────────────────────────────────────
     if (mode === 'list') {
         return (
+            <>
             <div className="p-6 md:p-8">
                 <div className="flex items-center justify-between mb-6 gap-4">
                     <div>
@@ -1673,19 +1714,35 @@ export default function ProcessBuilderPage() {
                             return (
                                 <div key={proc.id} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                                     <div className="flex items-start justify-between gap-2 mb-3">
-                                        <div>
+                                        <div className="flex-1 min-w-0">
                                             <p className="text-white font-semibold text-sm">{proc.productoNombre}</p>
                                             <p className="text-slate-500 text-xs mt-0.5">
                                                 {proc.bloques?.length || 0} bloques · {proc.creadoPorNombre || 'Sistema'}
                                             </p>
                                         </div>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold shrink-0 ${
-                                            proc.estado === 'activo'
-                                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                                                : 'bg-slate-500/20 text-slate-400 border-slate-500/30'
-                                        }`}>
-                                            {proc.estado === 'activo' ? 'Activo' : 'Borrador'}
-                                        </span>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${
+                                                proc.estado === 'activo'
+                                                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                                                    : 'bg-slate-500/20 text-slate-400 border-slate-500/30'
+                                            }`}>
+                                                {proc.estado === 'activo' ? 'Activo' : 'Borrador'}
+                                            </span>
+                                            <button
+                                                onClick={() => openEditProcess(proc)}
+                                                className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors"
+                                                title="Editar proceso"
+                                            >
+                                                <Edit2 size={14} />
+                                            </button>
+                                            <button
+                                                onClick={() => setDeactivateTarget(proc)}
+                                                className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+                                                title="Desactivar proceso"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-1.5">
                                         {types.map((bt, i) => (
@@ -1703,6 +1760,41 @@ export default function ProcessBuilderPage() {
                     </div>
                 )}
             </div>
+
+            {/* Deactivate confirmation modal */}
+            {deactivateTarget && (
+                <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                        <h3 className="text-white font-bold text-lg mb-2">Desactivar Proceso</h3>
+                        <p className="text-slate-400 text-sm mb-6">
+                            ¿Desactivar el proceso de{' '}
+                            <strong className="text-white">{deactivateTarget.productoNombre}</strong>?
+                            {' '}El proceso ya no estará disponible, pero su historial se conserva.
+                        </p>
+                        {deactivateError && (
+                            <p className="text-red-400 text-xs mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                                {deactivateError}
+                            </p>
+                        )}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { setDeactivateTarget(null); setDeactivateError(null); }}
+                                className="flex-1 border border-slate-600 text-slate-300 rounded-xl py-2.5 text-sm font-medium hover:text-white transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={deactivateProcess}
+                                disabled={deactivating}
+                                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-60"
+                            >
+                                {deactivating ? 'Desactivando...' : 'Desactivar'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            </>
         );
     }
 
@@ -1712,7 +1804,7 @@ export default function ProcessBuilderPage() {
             {/* Header */}
             <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-800 shrink-0">
                 <button
-                    onClick={() => { localStorage.removeItem(DRAFT_KEY); setHasDraft(false); setMode('list'); setSelectedProduct(null); setBloques([]); }}
+                    onClick={() => { localStorage.removeItem(DRAFT_KEY); setHasDraft(false); setMode('list'); setSelectedProduct(null); setBloques([]); setEditingProcess(null); }}
                     className="text-slate-400 hover:text-white p-1 rounded transition-colors"
                 >
                     <X size={18} />
@@ -1721,9 +1813,9 @@ export default function ProcessBuilderPage() {
                     <p className="text-white font-bold text-sm truncate">
                         {selectedProduct ? selectedProduct.nombre : 'Nuevo Proceso'}
                     </p>
-                    {selectedProduct && (
-                        <p className="text-slate-500 text-xs">{bloques.length} bloque{bloques.length !== 1 ? 's' : ''}</p>
-                    )}
+                    <p className="text-slate-500 text-xs">
+                        {editingProcess ? 'Editando proceso' : 'Nuevo proceso'}{selectedProduct ? ` · ${bloques.length} bloque${bloques.length !== 1 ? 's' : ''}` : ''}
+                    </p>
                 </div>
                 {selectedProduct && bloques.length > 0 && (
                     <button
@@ -1732,7 +1824,7 @@ export default function ProcessBuilderPage() {
                         className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors disabled:opacity-60 flex items-center gap-2 shrink-0"
                     >
                         {saving ? <Loader size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                        {saving ? 'Guardando…' : 'Guardar'}
+                        {saving ? 'Guardando…' : editingProcess ? 'Actualizar' : 'Guardar'}
                     </button>
                 )}
             </div>
