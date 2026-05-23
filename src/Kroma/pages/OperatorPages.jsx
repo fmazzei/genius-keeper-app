@@ -2,6 +2,7 @@ import React from 'react';
 import { Droplets, Package, FlaskConical, Workflow, Factory, Construction } from 'lucide-react';
 import ProcessBuilderPageImpl from './operator/ProcessBuilderPage';
 import RecipeBuilderPageImpl from './operator/RecipeBuilderPage';
+import FichaBuilderPageImpl from './operator/FichaBuilderPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -70,6 +71,8 @@ export const MaterialsInventoryPage = () => (
         ]}
     />
 );
+
+export const FichaBuilderPage = () => <FichaBuilderPageImpl />;
 
 export const RecipeBuilderPage = () => <RecipeBuilderPageImpl />;
 
