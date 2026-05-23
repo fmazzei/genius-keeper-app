@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
-    collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp,
+    collection, getDocs, addDoc, updateDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
 import {
     Truck, Plus, Search, X, Edit2, Trash2, Loader, ChevronDown, ChevronUp,
@@ -510,9 +510,9 @@ export default function SuppliersPage() {
             {deleteTarget && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
                     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-                        <h3 className="text-white font-bold text-lg mb-2">Eliminar Proveedor</h3>
+                        <h3 className="text-white font-bold text-lg mb-2">Desactivar Proveedor</h3>
                         <p className="text-slate-400 text-sm mb-6">
-                            ¿Estás seguro de eliminar a <strong className="text-white">{deleteTarget.nombreComercial}</strong>? Esta acción no se puede deshacer.
+                            ¿Desactivar a <strong className="text-white">{deleteTarget.nombreComercial}</strong>? El proveedor ya no aparecerá en el sistema, pero su historial se conserva.
                         </p>
                         <div className="flex gap-3">
                             <button
@@ -527,7 +527,7 @@ export default function SuppliersPage() {
                                 className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm flex items-center justify-center gap-2"
                             >
                                 {deleting ? <Loader size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                                {deleting ? 'Eliminando...' : 'Eliminar'}
+                                {deleting ? 'Desactivando...' : 'Desactivar'}
                             </button>
                         </div>
                     </div>

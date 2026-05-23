@@ -4,7 +4,7 @@ import {
     collection, getDocs, addDoc, updateDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
 import {
-    Package, Plus, Search, X, Edit2, Trash2, Loader, Calculator, ChevronDown,
+    Package, Plus, Search, X, Edit2, Trash2, Loader, Calculator,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -510,9 +510,9 @@ export default function MaterialsMasterPage() {
             {deleteTarget && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
                     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-                        <h3 className="text-white font-bold text-lg mb-2">Eliminar Material</h3>
+                        <h3 className="text-white font-bold text-lg mb-2">Desactivar Material</h3>
                         <p className="text-slate-400 text-sm mb-6">
-                            ¿Eliminar <strong className="text-white">{deleteTarget.nombre}</strong> del catálogo? Esta acción no se puede deshacer.
+                            ¿Desactivar <strong className="text-white">{deleteTarget.nombre}</strong>? El material ya no aparecerá en el catálogo, pero su historial de costos se conserva.
                         </p>
                         <div className="flex gap-3">
                             <button
@@ -527,7 +527,7 @@ export default function MaterialsMasterPage() {
                                 className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm flex items-center justify-center gap-2"
                             >
                                 {deleting ? <Loader size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                                {deleting ? 'Eliminando...' : 'Eliminar'}
+                                {deleting ? 'Desactivando...' : 'Desactivar'}
                             </button>
                         </div>
                     </div>

@@ -16,14 +16,14 @@ import { ManagerHome, FinancialBoard, ProductionKPIsPage, QualityBoard } from '.
 // Operator pages
 import {
     OperatorHome, MilkInventoryPage, MaterialsInventoryPage,
-    RecipeBuilderPage, ProcessBuilderPage, DailyProductionPage,
+    FichaBuilderPage, RecipeBuilderPage, ProcessBuilderPage, DailyProductionPage,
 } from './pages/OperatorPages';
 
 import {
     LayoutDashboard, Warehouse, Truck, Package, Archive, ClipboardList, Users, Tag,
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
-    LogOut, Menu, X, ChevronRight,
+    LogOut, Menu, X, ChevronRight, BookOpen,
 } from 'lucide-react';
 
 // ─── Navigation config per role ───────────────────────────────────────────────
@@ -58,8 +58,7 @@ const NAV = {
         { id: 'home',          label: 'Inicio',          Icon: LayoutDashboard },
         { id: 'milk',          label: 'Leche',           Icon: Droplets },
         { id: 'materials_inv', label: 'Insumos',         Icon: PackageOpen },
-        { id: 'recipes',       label: 'Recetas',         Icon: FlaskConical },
-        { id: 'processes',     label: 'Procesos',        Icon: Workflow },
+        { id: 'fichas',        label: 'Fichas',          Icon: BookOpen },
         { id: 'production',    label: 'Producción',      Icon: Factory },
     ],
 };
@@ -115,8 +114,7 @@ function renderPage(view, role) {
             case 'home':          return <OperatorHome />;
             case 'milk':          return <MilkInventoryPage />;
             case 'materials_inv': return <MaterialsInventoryPage />;
-            case 'recipes':       return <RecipeBuilderPage />;
-            case 'processes':     return <ProcessBuilderPage />;
+            case 'fichas':        return <FichaBuilderPage />;
             case 'production':    return <DailyProductionPage />;
             default:              return <OperatorHome />;
         }
