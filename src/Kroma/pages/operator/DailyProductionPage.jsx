@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     collection, getDocs, addDoc, updateDoc, doc,
-    serverTimestamp, query, where,
+    serverTimestamp, query, where, orderBy,
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
@@ -201,21 +201,34 @@ function LitrosStepper({ value, onChange }) {
     );
 }
 
+// Returns true when a material comes in countable discrete packages (sobres, envases…)
+function isSobreMat(mat) {
+    return !!mat && !!mat.presentacion && mat.presentacion !== 'a granel' && (mat.cantidadPresentacion || 0) > 0;
+}
+
 // Dosing assistant row: planned reference + real input
-function DosisRow({ nombre, cantidadRef, unidadRef, litrosNetos, valorReal, onChangeReal }) {
+function DosisRow({ nombre, cantidadRef, unidadRef, litrosNetos, valorReal, onChangeReal, materialId, materialsMap }) {
     const teórico = calcTeórico(cantidadRef, litrosNetos);
+    const mat     = materialId && materialsMap ? materialsMap[materialId] : null;
+    const discrete = isSobreMat(mat);
+    const sobresTeórico = discrete ? +(teórico / mat.cantidadPresentacion).toFixed(2) : null;
+    const sobresReal    = discrete && valorReal > 0 ? +(valorReal / mat.cantidadPresentacion).toFixed(2) : null;
+
     return (
         <div className="bg-slate-700/30 border border-slate-700/50 rounded-xl p-3 space-y-2">
             <p className="text-slate-200 text-sm font-semibold">{nombre}</p>
-            <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500">Dosis teórica</span>
-                <span className="text-teal-400 font-mono">
+            <div className="flex items-start justify-between gap-2 text-xs">
+                <span className="text-slate-500 shrink-0">Dosis teórica</span>
+                <span className="text-teal-400 font-mono text-right">
                     {cantidadRef} {unidadRef}/L × {litrosNetos} L ={' '}
                     <strong className="text-teal-300">{teórico} {unidadRef}</strong>
+                    {sobresTeórico !== null && (
+                        <span className="text-teal-600 ml-1">≈ {sobresTeórico} {mat.presentacion}</span>
+                    )}
                 </span>
             </div>
             <div>
-                <p className="text-slate-500 text-xs mb-1">Cantidad real añadida *</p>
+                <p className="text-slate-500 text-xs mb-1">Cantidad real añadida * ({unidadRef})</p>
                 <input
                     type="number"
                     value={valorReal}
@@ -224,6 +237,9 @@ function DosisRow({ nombre, cantidadRef, unidadRef, litrosNetos, valorReal, onCh
                     className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2.5 text-white font-mono text-base focus:outline-none focus:border-teal-500"
                     placeholder={String(teórico)}
                 />
+                {sobresReal !== null && valorReal > 0 && (
+                    <p className="text-teal-700 text-xs mt-1 text-right font-mono">≈ {sobresReal} {mat.presentacion}</p>
+                )}
             </div>
         </div>
     );
@@ -273,7 +289,7 @@ function PasteurizacionEditor({ bloque, litrosIngresados, reg, onChange }) {
     );
 }
 
-function SimpleDosisEditor({ bloque, litrosNetos, reg, onChange }) {
+function SimpleDosisEditor({ bloque, litrosNetos, reg, onChange, materialsMap }) {
     const p = bloque.params || {};
     const d = bloque.dosis || {};
     const cantRef = d.cantidad || 0;
@@ -301,6 +317,8 @@ function SimpleDosisEditor({ bloque, litrosNetos, reg, onChange }) {
                     litrosNetos={litrosNetos}
                     valorReal={reg.cantidadReal ?? calcTeórico(cantRef, litrosNetos)}
                     onChangeReal={v => onChange({ ...reg, cantidadReal: v })}
+                    materialId={d.materialId}
+                    materialsMap={materialsMap}
                 />
             )}
 
@@ -311,7 +329,7 @@ function SimpleDosisEditor({ bloque, litrosNetos, reg, onChange }) {
     );
 }
 
-function CuajadoEditor({ bloque, litrosNetos, reg, onChange }) {
+function CuajadoEditor({ bloque, litrosNetos, reg, onChange, materialsMap }) {
     const p = bloque.params || {};
     const d = bloque.dosis || {};
 
@@ -342,6 +360,8 @@ function CuajadoEditor({ bloque, litrosNetos, reg, onChange }) {
                         litrosNetos={litrosNetos}
                         valorReal={reg[`${it.key}Real`] ?? calcTeórico(it.ref.cantidad || 0, litrosNetos)}
                         onChangeReal={v => onChange({ ...reg, [`${it.key}Real`]: v })}
+                        materialId={it.ref.materialId}
+                        materialsMap={materialsMap}
                     />
                 ))}
             </>}
@@ -643,7 +663,7 @@ function GenericEditor({ bloque, reg, onChange }) {
 }
 
 // Dispatcher — picks the right editor per block type
-function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloquesData, onUpdate }) {
+function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloquesData, onUpdate, materialsMap }) {
     const reg = bloquesData[String(idx)]?.registros || {};
     const onChange = newReg => onUpdate(String(idx), { ...(bloquesData[String(idx)] || {}), registros: newReg });
     const props = { bloque, reg, onChange };
@@ -651,8 +671,8 @@ function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloqu
     switch (bloque.tipo) {
         case 'pasteurizacion': return <PasteurizacionEditor {...props} litrosIngresados={litrosIngresados} />;
         case 'agregar_insumo':
-        case 'inoculacion':    return <SimpleDosisEditor    {...props} litrosNetos={litrosNetos} />;
-        case 'cuajado':        return <CuajadoEditor        {...props} litrosNetos={litrosNetos} />;
+        case 'inoculacion':    return <SimpleDosisEditor    {...props} litrosNetos={litrosNetos} materialsMap={materialsMap} />;
+        case 'cuajado':        return <CuajadoEditor        {...props} litrosNetos={litrosNetos} materialsMap={materialsMap} />;
         case 'salado':         return <SaladoEditor         {...props} />;
         case 'maduracion':     return <MaduracionEditor     {...props} />;
         case 'empaque':        return <EmpaqueEditor        {...props} />;
@@ -769,10 +789,11 @@ function ProductionCard({ log, onOpen, onCancel }) {
 export default function DailyProductionPage() {
     const { kromaUser } = useKroma();
 
-    const [fichas, setFichas]   = useState([]);
-    const [logs, setLogs]       = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError]     = useState(null);
+    const [fichas, setFichas]           = useState([]);
+    const [logs, setLogs]               = useState([]);
+    const [materialsMap, setMaterialsMap] = useState({}); // materialId → material doc
+    const [loading, setLoading]         = useState(true);
+    const [error, setError]             = useState(null);
 
     // views: 'list' | 'select_ficha' | 'setup_litros' | 'runner'
     const [view, setView] = useState('list');
@@ -796,9 +817,10 @@ export default function DailyProductionPage() {
     async function loadData() {
         setLoading(true); setError(null);
         try {
-            const [fichasSnap, logsSnap] = await Promise.all([
+            const [fichasSnap, logsSnap, matsSnap] = await Promise.all([
                 getDocs(query(collection(db, 'kroma_fichas'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_production_logs')),
+                getDocs(query(collection(db, 'kroma_materials'), where('active', '==', true))),
             ]);
             const fichasList = fichasSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
@@ -809,8 +831,12 @@ export default function DailyProductionPage() {
                 .filter(l => l.active !== false && l.estado !== 'completada')
                 .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
 
+            const mMap = {};
+            matsSnap.docs.forEach(d => { mMap[d.id] = { id: d.id, ...d.data() }; });
+
             setFichas(fichasList);
             setLogs(logsList);
+            setMaterialsMap(mMap);
         } catch (e) { setError(e.message); }
         finally { setLoading(false); }
     }
@@ -1141,6 +1167,7 @@ export default function DailyProductionPage() {
                                     litrosNetos={litrosNetos}
                                     bloquesData={bloquesData}
                                     onUpdate={updateBlockLocal}
+                                    materialsMap={materialsMap}
                                 />
                             </div>
 

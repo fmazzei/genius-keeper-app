@@ -22,12 +22,34 @@ const STEPS = [0.001, 0.01, 0.1, 1];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Returns true when the material is stored/counted in discrete presentation units (sobres, envases…)
+function isDiscrete(mat) {
+    return !!mat.presentacion && mat.presentacion !== 'a granel' && (mat.cantidadPresentacion || 0) > 0;
+}
+
 function fmtStock(n, unit) {
     if (n === 0 || n == null) return `0 ${UNIT_LABELS[unit] || unit}`;
     const u = UNIT_LABELS[unit] || unit;
     if ((unit === 'g' || unit === 'ml') && n >= 1000)
         return `${(n / 1000).toFixed(2)} ${unit === 'g' ? 'kg' : 'L'}`;
     return `${n % 1 === 0 ? n : n.toFixed(3)} ${u}`;
+}
+
+// Formats stock using presentation unit for discrete materials (e.g. "3 sobres · 150 g")
+function fmtStockMat(n, mat) {
+    if (n === 0 || n == null) {
+        const u = isDiscrete(mat) ? mat.presentacion : (UNIT_LABELS[mat.unidad] || mat.unidad || '');
+        return `0 ${u}`;
+    }
+    if (isDiscrete(mat)) {
+        const total = +(n * mat.cantidadPresentacion).toFixed(3);
+        const bu = mat.unidad || 'g';
+        const totalLabel = (bu === 'g' && total >= 1000) ? `${(total / 1000).toFixed(2)} kg`
+            : (bu === 'ml' && total >= 1000) ? `${(total / 1000).toFixed(2)} L`
+            : `${total % 1 === 0 ? total : total.toFixed(2)} ${bu}`;
+        return `${n % 1 === 0 ? n : n.toFixed(1)} ${mat.presentacion} · ${totalLabel}`;
+    }
+    return fmtStock(n, mat.unidad || 'g');
 }
 
 function stockStatus(actual, minimo) {
@@ -113,6 +135,31 @@ function PrecisionStepper({ label, value, onChange, unit }) {
     );
 }
 
+// Simple whole-number stepper for materials tracked in discrete units (sobres, envases…)
+function WholeStepper({ label, value, onChange, unit, min = 0 }) {
+    return (
+        <div>
+            {label && <SecLabel>{label}</SecLabel>}
+            <div className="flex items-center gap-3">
+                <button type="button"
+                    onClick={() => onChange(Math.max(min, value - 1))}
+                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">
+                    −
+                </button>
+                <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3.5 text-center">
+                    <span className="text-white text-xl font-mono font-semibold">{value}</span>
+                    {unit && <span className="text-slate-400 text-sm ml-1.5">{unit}</span>}
+                </div>
+                <button type="button"
+                    onClick={() => onChange(value + 1)}
+                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">
+                    +
+                </button>
+            </div>
+        </div>
+    );
+}
+
 // ─── Material Card ────────────────────────────────────────────────────────────
 
 function MaterialCard({ mat, invDoc, onEntrada, onSetMinimo }) {
@@ -139,11 +186,11 @@ function MaterialCard({ mat, invDoc, onEntrada, onSetMinimo }) {
             <div>
                 <div className="flex items-end justify-between mb-1.5">
                     <span className={`text-lg font-bold font-mono ${hasInv ? 'text-white' : 'text-slate-600'}`}>
-                        {hasInv ? fmtStock(actual, mat.unidad || 'g') : '—'}
+                        {hasInv ? fmtStockMat(actual, mat) : '—'}
                     </span>
                     {minimo > 0 && (
                         <span className="text-slate-500 text-xs">
-                            mín {fmtStock(minimo, mat.unidad || 'g')}
+                            mín {fmtStockMat(minimo, mat)}
                         </span>
                     )}
                 </div>
@@ -180,7 +227,8 @@ function MaterialCard({ mat, invDoc, onEntrada, onSetMinimo }) {
 // ─── Entrada Bottom Sheet ─────────────────────────────────────────────────────
 
 function EntradaSheet({ mat, invDoc, onClose, onSave }) {
-    const unit        = mat.unidad || 'g';
+    const discrete     = isDiscrete(mat);
+    const unit         = discrete ? mat.presentacion : (mat.unidad || 'g');
     const currentStock = invDoc?.stockActual ?? 0;
     const [cantidad, setCantidad] = useState(0);
     const [notas, setNotas]       = useState('');
@@ -188,9 +236,9 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
 
     const newTotal = currentStock + cantidad;
 
-    // Presentation helper (e.g. "≈ 2 frascos de 500 ml")
-    const presHelper = mat.cantidadPresentacion > 0 && mat.presentacion && cantidad > 0
-        ? `≈ ${(cantidad / mat.cantidadPresentacion).toFixed(2)} ${mat.presentacion}`
+    // For discrete: show the gram equivalent of the quantity being entered
+    const gramEquiv = discrete && cantidad > 0
+        ? `${cantidad} ${mat.presentacion} = ${+(cantidad * mat.cantidadPresentacion).toFixed(3)} ${mat.unidad || 'g'}`
         : null;
 
     async function handleSave() {
@@ -217,7 +265,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                         <div>
                             <p className="text-white font-bold text-base">{mat.nombre}</p>
                             <p className="text-slate-400 text-sm mt-0.5">
-                                Stock actual: <span className="font-mono text-slate-300">{fmtStock(currentStock, unit)}</span>
+                                Stock actual: <span className="font-mono text-slate-300">{fmtStockMat(currentStock, mat)}</span>
                             </p>
                         </div>
                         <button onClick={onClose} className="text-slate-500 hover:text-white p-1 mt-0.5">
@@ -227,14 +275,23 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
 
                     {/* Stepper */}
                     <div className="mb-4">
-                        <PrecisionStepper
-                            label="Cantidad a ingresar"
-                            value={cantidad}
-                            onChange={setCantidad}
-                            unit={unit}
-                        />
-                        {presHelper && (
-                            <p className="text-slate-500 text-xs text-center mt-2">{presHelper}</p>
+                        {discrete ? (
+                            <WholeStepper
+                                label={`Cantidad a ingresar (${mat.presentacion})`}
+                                value={cantidad}
+                                onChange={setCantidad}
+                                unit={mat.presentacion}
+                            />
+                        ) : (
+                            <PrecisionStepper
+                                label="Cantidad a ingresar"
+                                value={cantidad}
+                                onChange={setCantidad}
+                                unit={unit}
+                            />
+                        )}
+                        {gramEquiv && (
+                            <p className="text-slate-500 text-xs text-center mt-2">{gramEquiv}</p>
                         )}
                     </div>
 
@@ -244,7 +301,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                             <Check size={15} className="text-teal-400 shrink-0" />
                             <p className="text-teal-300 text-sm">
                                 Nuevo total:{' '}
-                                <span className="font-bold font-mono">{fmtStock(newTotal, unit)}</span>
+                                <span className="font-bold font-mono">{fmtStockMat(newTotal, mat)}</span>
                             </p>
                         </div>
                     )}
@@ -277,7 +334,8 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
 // ─── Mínimo Bottom Sheet ──────────────────────────────────────────────────────
 
 function MinimoSheet({ mat, invDoc, onClose, onSave }) {
-    const unit = mat.unidad || 'g';
+    const discrete = isDiscrete(mat);
+    const unit = discrete ? mat.presentacion : (mat.unidad || 'g');
     const [minimo, setMinimo] = useState(invDoc?.stockMinimo ?? 0);
     const [saving, setSaving] = useState(false);
 
@@ -310,12 +368,21 @@ function MinimoSheet({ mat, invDoc, onClose, onSave }) {
                         Kroma te alertará cuando el stock baje de este valor.
                     </p>
                     <div className="mb-6">
-                        <PrecisionStepper
-                            label={`Umbral mínimo`}
-                            value={minimo}
-                            onChange={setMinimo}
-                            unit={unit}
-                        />
+                        {discrete ? (
+                            <WholeStepper
+                                label={`Umbral mínimo (${mat.presentacion})`}
+                                value={minimo}
+                                onChange={setMinimo}
+                                unit={mat.presentacion}
+                            />
+                        ) : (
+                            <PrecisionStepper
+                                label="Umbral mínimo"
+                                value={minimo}
+                                onChange={setMinimo}
+                                unit={unit}
+                            />
+                        )}
                     </div>
                     <div className="flex gap-3">
                         <button
@@ -386,11 +453,14 @@ export default function MaterialsInventoryPage() {
         const newStock = (invDoc?.stockActual ?? 0) + cantidad;
         const docRef   = doc(db, 'kroma_inventory_materials', mat.id);
 
+        const discrete = isDiscrete(mat);
         await setDoc(docRef, {
             materialId:        mat.id,
             materialNombre:    mat.nombre,
             categoria:         mat.categoria || 'otros',
             unidad:            mat.unidad || 'g',
+            unidadInventario:  discrete ? mat.presentacion : (mat.unidad || 'g'),
+            ...(discrete && { cantidadPorUnidad: mat.cantidadPresentacion }),
             stockActual:       newStock,
             stockMinimo:       invDoc?.stockMinimo ?? 0,
             ultimaEntrada:     serverTimestamp(),
