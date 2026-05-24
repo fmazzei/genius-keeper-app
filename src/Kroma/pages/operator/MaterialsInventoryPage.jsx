@@ -30,7 +30,7 @@ const TEXT_COLOR = { ok: 'text-emerald-400', low: 'text-amber-400', critical: 't
 // ─── Domain helpers ───────────────────────────────────────────────────────────
 
 function isGranel(inv) {
-    return !inv?.cantidadPorUnidad || inv.cantidadPorUnidad <= 0;
+    return !inv || inv.presentacionTipo === 'granel' || !inv.cantidadPorUnidad || inv.cantidadPorUnidad <= 0;
 }
 
 // Total in presentation units (packages). For granel: total in base units.
@@ -272,11 +272,12 @@ function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo }) {
 // ─── Entrada Bottom Sheet ─────────────────────────────────────────────────────
 
 function EntradaSheet({ mat, invDoc, onClose, onSave }) {
+    const initialPres = invDoc?.presentacionTipo
+        || (mat.presentacion && mat.presentacion !== 'a granel' ? mat.presentacion : 'granel');
     const [config, setConfig] = useState({
-        presentacionTipo: invDoc?.presentacionTipo
-            || (mat.presentacion && mat.presentacion !== 'a granel' ? mat.presentacion : 'granel'),
+        presentacionTipo: initialPres,
         unidadBase:       invDoc?.unidadBase || mat.unidad || 'g',
-        cantidadPorUnidad: invDoc?.cantidadPorUnidad ?? mat.cantidadPresentacion ?? 0,
+        cantidadPorUnidad: initialPres === 'granel' ? 0 : (invDoc?.cantidadPorUnidad ?? mat.cantidadPresentacion ?? 0),
     });
     const [showConfig, setShowConfig] = useState(!invDoc);
     const granel = config.presentacionTipo === 'granel';
@@ -686,7 +687,7 @@ export default function MaterialsInventoryPage() {
             categoria:         mat.categoria || 'otros',
             presentacionTipo:  config.presentacionTipo,
             unidadBase:        config.unidadBase,
-            cantidadPorUnidad: config.cantidadPorUnidad || 0,
+            cantidadPorUnidad: granel ? 0 : (config.cantidadPorUnidad || 0),
             stockCerrado:      newCerrado,
             stockEnUso:        newEnUso,
             stockMinimo:       invDoc?.stockMinimo ?? 0,
