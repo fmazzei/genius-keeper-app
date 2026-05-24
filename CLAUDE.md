@@ -314,15 +314,14 @@ match /kroma_{collection}/{id} {
 | Módulo / Página | Estado |
 |---|---|
 | ProductCatalogPage (Admin) | ✅ Completo |
-| MaterialsMasterPage (Admin) | ✅ Completo |
+| MaterialsMasterPage (Admin) | ✅ Completo — unidades g/kg/ml/l/m/und |
 | SupplierPage (Admin) | ✅ Completo |
 | ProcessBuilderPage (Operario) | ✅ Completo — alineado con manual |
 | RecipeBuilderPage (Operario) | ✅ Completo — alineado con manual |
-| MilkInventoryPage | 🔲 Pendiente (Módulo 4.2) |
-| MaterialsInventoryPage | 🔲 Pendiente (Módulo 3.1) |
-| DailyProductionPage | 🔲 Pendiente (Módulo 4) |
+| MilkInventoryPage | ✅ Completo — edición master dentro de 10 min |
+| MaterialsInventoryPage | ✅ Completo — stockCerrado/stockEnUso, alertas, ajuste, secciones |
+| DailyProductionPage | ✅ Completo — recepción leche, runner bloques, historial |
 | WarehousesPage | 🔲 Pendiente (Módulo 1.2) |
 | InventoryPTPage | 🔲 Pendiente (Módulo 1.2) |
 | ProductionHistoryPage | 🔲 Pendiente (Módulo 1.5) |
 | Dashboards Gerenciales | 🔲 Pendiente (Módulo 2) |
-| Planilla de Producción Activa | 🔲 Pendiente (Módulo 4.4) |

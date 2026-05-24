@@ -9,7 +9,7 @@ import {
     ChevronLeft, ChevronRight, Check, Plus, Play,
     Clock, AlertTriangle, Package, Droplets,
     Calendar, Lock, ChevronDown, ChevronUp,
-    Factory, Pause, FlaskConical, X,
+    Factory, Pause, FlaskConical, X, Zap,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -201,6 +201,25 @@ function LitrosStepper({ value, onChange }) {
     );
 }
 
+function ParamInput({ label, value, onChange, unit, step = 0.1 }) {
+    const dec = String(step).split('.')[1]?.length ?? 1;
+    return (
+        <div className="bg-slate-800 border border-slate-700 rounded-xl p-3">
+            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">{label}</p>
+            <div className="flex items-center gap-2">
+                <button type="button" onClick={() => onChange(+(value - step).toFixed(dec + 1))}
+                    className="w-9 h-9 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center shrink-0">−</button>
+                <input type="number" value={value} step={step}
+                    onChange={e => onChange(Number(e.target.value))}
+                    className="flex-1 min-w-0 bg-transparent text-white font-mono text-sm text-center focus:outline-none" />
+                <button type="button" onClick={() => onChange(+(value + step).toFixed(dec + 1))}
+                    className="w-9 h-9 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center shrink-0">+</button>
+            </div>
+            {unit && <p className="text-slate-600 text-xs text-center mt-1">{unit}</p>}
+        </div>
+    );
+}
+
 // Returns true when a material comes in countable discrete packages (sobres, envases…)
 function isSobreMat(mat) {
     return !!mat && !!mat.presentacion && mat.presentacion !== 'a granel' && (mat.cantidadPresentacion || 0) > 0;
@@ -309,13 +328,32 @@ function DosisRow({ nombre, cantidadRef, unidadRef, litrosNetos, valorReal, onCh
 
 // ─── Block Editors ────────────────────────────────────────────────────────────
 
-function PasteurizacionEditor({ bloque, litrosIngresados, reg, onChange }) {
+function PasteurizacionEditor({ bloque, litrosIngresados, reg, onChange, rutaLeche }) {
     const p = bloque.params || {};
     const merma = reg.merma ?? 10;
     const litrosNetos = Math.max(0, litrosIngresados - merma);
 
     return (
         <div className="space-y-5">
+            {rutaLeche === 'tanque' && (
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <Droplets size={13} className="text-blue-400" />
+                        <span className="text-blue-400 text-xs font-semibold uppercase tracking-widest">Parámetros previos (tanque)</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <ParamInput label="Temperatura (°C)" value={reg.tempTanque ?? 4} step={0.1}
+                            onChange={v => onChange({ ...reg, tempTanque: v })} unit="°C" />
+                        <ParamInput label="pH" value={reg.phTanque ?? 6.7} step={0.01}
+                            onChange={v => onChange({ ...reg, phTanque: v })} />
+                        <ParamInput label="Densidad" value={reg.densidadTanque ?? 1.030} step={0.001}
+                            onChange={v => onChange({ ...reg, densidadTanque: v })} unit="g/ml" />
+                        <ParamInput label="Brix (°Bx)" value={reg.BrixTanque ?? 12} step={0.1}
+                            onChange={v => onChange({ ...reg, BrixTanque: v })} unit="°Bx" />
+                    </div>
+                    <div className="h-px bg-slate-700/60" />
+                </div>
+            )}
             <RefCard>
                 <SecLabel>Plan de referencia</SecLabel>
                 <RefRow label="Método" value={p.metodo?.toUpperCase()} />
@@ -725,13 +763,13 @@ function GenericEditor({ bloque, reg, onChange }) {
 }
 
 // Dispatcher — picks the right editor per block type
-function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloquesData, onUpdate, materialsMap }) {
+function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloquesData, onUpdate, materialsMap, rutaLeche }) {
     const reg = bloquesData[String(idx)]?.registros || {};
     const onChange = newReg => onUpdate(String(idx), { ...(bloquesData[String(idx)] || {}), registros: newReg });
     const props = { bloque, reg, onChange };
 
     switch (bloque.tipo) {
-        case 'pasteurizacion': return <PasteurizacionEditor {...props} litrosIngresados={litrosIngresados} />;
+        case 'pasteurizacion': return <PasteurizacionEditor {...props} litrosIngresados={litrosIngresados} rutaLeche={rutaLeche} />;
         case 'agregar_insumo':
         case 'inoculacion':    return <SimpleDosisEditor    {...props} litrosNetos={litrosNetos} materialsMap={materialsMap} />;
         case 'cuajado':        return <CuajadoEditor        {...props} litrosNetos={litrosNetos} materialsMap={materialsMap} />;
@@ -877,24 +915,36 @@ export default function DailyProductionPage() {
     // In-session stock alerts from production decrement
     const [productionAlerts, setProductionAlerts] = useState([]);
 
+    const [suppliers, setSuppliers]       = useState([]);
+    const [recepcion, setRecepcion]        = useState({
+        proveedorId: '', proveedorNombre: '',
+        temperatura: 4.0, densidad: 1.030, pH: 6.7, Brix: 12.0,
+        rutaLeche: 'tanque',
+    });
+    const [historial, setHistorial]        = useState([]);
+    const [showHistorial, setShowHistorial] = useState(false);
+
     useEffect(() => { loadData(); }, []);
 
     async function loadData() {
         setLoading(true); setError(null);
         try {
-            const [fichasSnap, logsSnap, matsSnap] = await Promise.all([
+            const [fichasSnap, logsSnap, matsSnap, suppSnap] = await Promise.all([
                 getDocs(query(collection(db, 'kroma_fichas'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_production_logs')),
                 getDocs(query(collection(db, 'kroma_materials'), where('active', '==', true))),
+                getDocs(query(collection(db, 'kroma_suppliers'), where('active', '==', true))),
             ]);
             const fichasList = fichasSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
                 .sort((a, b) => a.productoNombre.localeCompare(b.productoNombre));
 
-            const logsList = logsSnap.docs
+            const allLogs = logsSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
-                .filter(l => l.active !== false && l.estado !== 'completada')
+                .filter(l => l.active !== false)
                 .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+            const logsList   = allLogs.filter(l => l.estado !== 'completada');
+            const historialList = allLogs.filter(l => l.estado === 'completada').slice(0, 20);
 
             const mMap = {};
             matsSnap.docs.forEach(d => { mMap[d.id] = { id: d.id, ...d.data() }; });
@@ -902,6 +952,11 @@ export default function DailyProductionPage() {
             setFichas(fichasList);
             setLogs(logsList);
             setMaterialsMap(mMap);
+            const suppList = suppSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+            setSuppliers(suppList);
+            setHistorial(historialList);
         } catch (e) { setError(e.message); }
         finally { setLoading(false); }
     }
@@ -927,6 +982,15 @@ export default function DailyProductionPage() {
                 litrosIngresados,
                 litrosNetos: litrosIngresados,
                 merma: 0,
+                proveedorId:     recepcion.proveedorId,
+                proveedorNombre: recepcion.proveedorNombre,
+                rutaLeche:       recepcion.rutaLeche,
+                parametrosLeche: {
+                    temperatura: recepcion.temperatura,
+                    densidad:    recepcion.densidad,
+                    pH:          recepcion.pH,
+                    Brix:        recepcion.Brix,
+                },
                 estado: 'activa',
                 bloqueActualIdx: 0,
                 holdHasta: null,
@@ -1183,10 +1247,90 @@ export default function DailyProductionPage() {
                     <div className="bg-red-900/30 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-xs font-mono">{saveError}</div>
                 )}
 
-                {/* Ficha summary */}
+                {/* ── Recepción de leche ── */}
+                <div>
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Recepción de Leche</p>
+
+                    {/* Proveedor */}
+                    <div className="mb-3">
+                        <SecLabel>Proveedor</SecLabel>
+                        {suppliers.length === 0 ? (
+                            <input type="text" placeholder="Nombre del productor…"
+                                value={recepcion.proveedorNombre}
+                                onChange={e => setRecepcion(r => ({ ...r, proveedorNombre: e.target.value, proveedorId: '' }))}
+                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-slate-500" />
+                        ) : (
+                            <div className="flex flex-wrap gap-2">
+                                {suppliers.map(s => (
+                                    <button key={s.id} type="button"
+                                        onClick={() => setRecepcion(r => ({ ...r, proveedorId: s.id, proveedorNombre: s.nombre || s.nombreComercial || s.id }))}
+                                        className={`px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                            recepcion.proveedorId === s.id
+                                                ? 'bg-teal-600 text-white'
+                                                : 'bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-600'
+                                        }`}>
+                                        {s.nombre || s.nombreComercial || s.id}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Litros */}
+                    <LitrosStepper value={litrosIngresados} onChange={setLitrosIngresados} />
+                </div>
+
+                {/* ── Parámetros de calidad ── */}
+                <div>
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Parámetros de Calidad</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        <ParamInput label="Temperatura (°C)" value={recepcion.temperatura} step={0.1}
+                            onChange={v => setRecepcion(r => ({ ...r, temperatura: v }))} unit="°C" />
+                        <ParamInput label="pH" value={recepcion.pH} step={0.01}
+                            onChange={v => setRecepcion(r => ({ ...r, pH: v }))} />
+                        <ParamInput label="Densidad" value={recepcion.densidad} step={0.001}
+                            onChange={v => setRecepcion(r => ({ ...r, densidad: v }))} unit="g/ml" />
+                        <ParamInput label="Brix (°Bx)" value={recepcion.Brix} step={0.1}
+                            onChange={v => setRecepcion(r => ({ ...r, Brix: v }))} unit="°Bx" />
+                    </div>
+                </div>
+
+                {/* ── Enrutamiento ── */}
+                <div>
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Enrutamiento</p>
+                    <div className="flex gap-3">
+                        <button type="button"
+                            onClick={() => setRecepcion(r => ({ ...r, rutaLeche: 'tanque' }))}
+                            className={`flex-1 flex flex-col items-center gap-2 py-4 rounded-xl font-semibold text-sm transition-colors ${
+                                recepcion.rutaLeche === 'tanque'
+                                    ? 'bg-blue-700 text-white'
+                                    : 'bg-slate-800 border border-slate-700 text-slate-400 hover:border-slate-600'
+                            }`}>
+                            <Droplets size={18} />
+                            <span>Tanque de enfriamiento</span>
+                        </button>
+                        <button type="button"
+                            onClick={() => setRecepcion(r => ({ ...r, rutaLeche: 'directo' }))}
+                            className={`flex-1 flex flex-col items-center gap-2 py-4 rounded-xl font-semibold text-sm transition-colors ${
+                                recepcion.rutaLeche === 'directo'
+                                    ? 'bg-orange-700 text-white'
+                                    : 'bg-slate-800 border border-slate-700 text-slate-400 hover:border-slate-600'
+                            }`}>
+                            <Zap size={18} />
+                            <span>Directo a producción</span>
+                        </button>
+                    </div>
+                    {recepcion.rutaLeche === 'directo' && (
+                        <p className="text-orange-400/70 text-xs mt-2 text-center">
+                            Los parámetros previos al pasteurizador no se registrarán
+                        </p>
+                    )}
+                </div>
+
+                {/* ── Ficha summary ── */}
                 <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                     <SecLabel>Ficha seleccionada</SecLabel>
-                    <p className="text-white font-bold text-base mb-2">{selectedFicha?.productoNombre}</p>
+                    <p className="text-white font-bold text-sm mb-2">{selectedFicha?.productoNombre}</p>
                     <div className="flex flex-wrap gap-1.5">
                         {(selectedFicha?.bloques || []).filter(b => !b.deprecated).map((b, i) => {
                             const m = meta(b.tipo);
@@ -1197,12 +1341,6 @@ export default function DailyProductionPage() {
                             );
                         })}
                     </div>
-                </div>
-
-                <LitrosStepper value={litrosIngresados} onChange={setLitrosIngresados} />
-
-                <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-xs text-slate-400">
-                    La leche debe estar recibida y registrada en el módulo de Recepción antes de iniciar producción.
                 </div>
             </div>
         </div>
@@ -1302,6 +1440,7 @@ export default function DailyProductionPage() {
                                     bloquesData={bloquesData}
                                     onUpdate={updateBlockLocal}
                                     materialsMap={materialsMap}
+                                    rutaLeche={activeLog.rutaLeche}
                                 />
                             </div>
 
