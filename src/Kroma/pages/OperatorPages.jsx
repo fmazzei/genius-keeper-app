@@ -5,6 +5,7 @@ import RecipeBuilderPageImpl from './operator/RecipeBuilderPage';
 import FichaBuilderPageImpl from './operator/FichaBuilderPage';
 import MaterialsInventoryPageImpl from './operator/MaterialsInventoryPage';
 import MilkInventoryPageImpl from './operator/MilkInventoryPage';
+import DailyProductionPageImpl from './operator/DailyProductionPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -58,15 +59,4 @@ export const RecipeBuilderPage = () => <RecipeBuilderPageImpl />;
 
 export const ProcessBuilderPage = () => <ProcessBuilderPageImpl />;
 
-export const DailyProductionPage = () => (
-    <ComingSoon
-        title="Producción Diaria"
-        description="Planilla inteligente de producción. Se adapta automáticamente al producto seleccionado cruzando receta y proceso."
-        items={[
-            { title: 'Selección de producto', desc: 'Desplegable con los productos configurados en recetas y procesos.' },
-            { title: 'Asistente de insumos', desc: 'Kroma calcula la dosis exacta según litros a procesar y muestra la cantidad real añadida.' },
-            { title: 'Registro paso a paso', desc: 'El formulario guía al operario bloque por bloque (Cuajado → Desuerado → Empaque).' },
-            { title: 'Cierre de producción', desc: 'Declaración de unidades, Kg y actualización automática de inventarios.' },
-        ]}
-    />
-);
+export const DailyProductionPage = () => <DailyProductionPageImpl />;
