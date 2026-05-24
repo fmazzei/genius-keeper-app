@@ -433,12 +433,14 @@ function CuajadoEditor({ bloque, litrosNetos, reg, onChange, materialsMap }) {
     const p = bloque.params || {};
     const d = bloque.dosis || {};
 
-    const items = [
-        p.calcio !== 'no'       && d.calcio      ? { key: 'calcio',      nombre: d.calcio.materialNombre || 'CaCl₂',     ref: d.calcio      } : null,
-        p.conservante === 'si'  && d.conservante  ? { key: 'conservante', nombre: d.conservante.materialNombre || 'Conservante', ref: d.conservante } : null,
-        d.cuajo                                   ? { key: 'cuajo',       nombre: d.cuajo.materialNombre || 'Cuajo',       ref: d.cuajo       } : null,
-        p.fermento !== 'no'     && d.fermento     ? { key: 'fermento',    nombre: d.fermento.materialNombre || 'Fermento', ref: d.fermento    } : null,
-    ].filter(Boolean);
+    const order = p.ingredienteOrden ?? ['calcio', 'conservante', 'cuajo', 'fermento'];
+    const allItems = {
+        calcio:      p.calcio !== 'no' && d.calcio      ? { key: 'calcio',      nombre: d.calcio.materialNombre || 'CaCl₂',                  ref: d.calcio      } : null,
+        conservante: p.conservante === 'si' && d.conservante ? { key: 'conservante', nombre: d.conservante.materialNombre || 'Conservante',   ref: d.conservante } : null,
+        cuajo:       d.cuajo                             ? { key: 'cuajo',       nombre: d.cuajo.materialNombre || 'Cuajo',                    ref: d.cuajo       } : null,
+        fermento:    p.fermento !== 'no' && d.fermento   ? { key: 'fermento',    nombre: d.fermento.materialNombre || 'Fermento',              ref: d.fermento    } : null,
+    };
+    const items = order.map(k => allItems[k]).filter(Boolean);
 
     return (
         <div className="space-y-4">
@@ -453,17 +455,47 @@ function CuajadoEditor({ bloque, litrosNetos, reg, onChange, materialsMap }) {
 
             {items.length > 0 && <>
                 <SecLabel>Asistente de insumos</SecLabel>
-                {items.map(it => (
-                    <DosisRow key={it.key}
-                        nombre={it.nombre}
-                        cantidadRef={it.ref.cantidad || 0} unidadRef={it.ref.unidad || 'g'}
-                        litrosNetos={litrosNetos}
-                        valorReal={reg[`${it.key}Real`] ?? calcTeórico(it.ref.cantidad || 0, litrosNetos)}
-                        onChangeReal={v => onChange({ ...reg, [`${it.key}Real`]: v })}
-                        materialId={it.ref.materialId}
-                        materialsMap={materialsMap}
-                    />
-                ))}
+                {items.map(it => {
+                    if (it.key === 'calcio' && p.calcioEsDilucion) {
+                        const doseML   = p.calcioDosisMLporL ?? 0.2;
+                        const gRef     = p.calcioGramosRef ?? 330;
+                        const aRef     = p.calcioAguaMLRef ?? 250;
+                        const mlSol    = +(doseML * litrosNetos).toFixed(3);
+                        const gCaCl2   = +(mlSol * (gRef / aRef)).toFixed(2);
+                        const mlAgua   = +(mlSol).toFixed(2);
+                        return (
+                            <div key="calcio" className="bg-sky-500/10 border border-sky-500/30 rounded-xl p-3 space-y-2">
+                                <p className="text-sky-300 text-sm font-semibold">CaCl₂ — Solución diluida</p>
+                                <div className="grid grid-cols-3 gap-2 text-center">
+                                    <div className="bg-slate-800 rounded-lg p-2">
+                                        <p className="text-sky-200 text-base font-bold">{mlSol} ml</p>
+                                        <p className="text-slate-500 text-xs">solución a añadir</p>
+                                    </div>
+                                    <div className="bg-slate-800 rounded-lg p-2">
+                                        <p className="text-sky-200 text-base font-bold">{gCaCl2} g</p>
+                                        <p className="text-slate-500 text-xs">CaCl₂ escamas</p>
+                                    </div>
+                                    <div className="bg-slate-800 rounded-lg p-2">
+                                        <p className="text-sky-200 text-base font-bold">{mlAgua} ml</p>
+                                        <p className="text-slate-500 text-xs">H₂O destilada</p>
+                                    </div>
+                                </div>
+                                <p className="text-slate-600 text-xs">{doseML} ml/L × {litrosNetos} L · Receta: {gRef}g / {aRef}ml</p>
+                            </div>
+                        );
+                    }
+                    return (
+                        <DosisRow key={it.key}
+                            nombre={it.nombre}
+                            cantidadRef={it.ref.cantidad || 0} unidadRef={it.ref.unidad || 'g'}
+                            litrosNetos={litrosNetos}
+                            valorReal={reg[`${it.key}Real`] ?? calcTeórico(it.ref.cantidad || 0, litrosNetos)}
+                            onChangeReal={v => onChange({ ...reg, [`${it.key}Real`]: v })}
+                            materialId={it.ref.materialId}
+                            materialsMap={materialsMap}
+                        />
+                    );
+                })}
             </>}
 
             <NumStepper label="Temp pre-cuajado real (°C)"

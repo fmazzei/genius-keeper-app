@@ -53,10 +53,16 @@ const BLOCK_DEFAULTS = {
     inoculacion:     { tipoCultivo: 'mesofilico', temperatura: 22, tiempoIncubacion: 12, unidadTiempo: 'h' },
     cuajado: {
         tempPreCuajado: 22, phPreCuajado: 6.6, tipoCoagulacion: 'enzimatica',
+        ingredienteOrden: ['calcio', 'conservante', 'cuajo', 'fermento'],
         calcio: 'si', calcioAgitar: 5, calcioAgitarUnidad: 'min',
+        calcioEsperaPost: 0, calcioEsperaPostUnidad: 'min',
+        calcioEsDilucion: false, calcioGramosRef: 330, calcioAguaMLRef: 250, calcioDosisMLporL: 0.2,
         conservante: 'no', conservanteNombre: '', conservanteAgitar: 5, conservanteAgitarUnidad: 'min',
+        conservanteEsperaPost: 0, conservanteEsperaPostUnidad: 'min',
         cuajoTipo: 'microbiano', cuajoAgitar: 3, cuajoAgitarUnidad: 'min',
+        cuajoEsperaPost: 0, cuajoEsperaPostUnidad: 'min',
         fermento: 'si', tipoFermento: 'mesofilico', tempInoculacion: 22, fermentoAgitar: 5, fermentoAgitarUnidad: 'min',
+        fermentoEsperaPost: 0, fermentoEsperaPostUnidad: 'min',
         tiempoCoagulacion: 14, unidadTiempoCoagulacion: 'h', tempCoagulacion: 22,
     },
     agitacion_simple:{ intensidad: 'suave', duracion: 5, unidadTiempo: 'min' },
@@ -128,15 +134,18 @@ function getBlockDosisItems(bloque) {
         return dosis.cantidad > 0 ? [{ nombre: dosis.materialNombre || 'Insumo', cantidad: dosis.cantidad, unidad: dosis.unidad }] : [];
     }
     if (tipo === 'cuajado') {
+        const order = params?.ingredienteOrden ?? ['calcio', 'conservante', 'cuajo', 'fermento'];
         const items = [];
-        if ((params?.calcio ?? 'si') !== 'no' && dosis.calcio?.cantidad > 0)
-            items.push({ nombre: dosis.calcio.materialNombre || 'CaCl₂', cantidad: dosis.calcio.cantidad, unidad: dosis.calcio.unidad });
-        if (params?.conservante === 'si' && dosis.conservante?.cantidad > 0)
-            items.push({ nombre: dosis.conservante.materialNombre || 'Conservante', cantidad: dosis.conservante.cantidad, unidad: dosis.conservante.unidad });
-        if (dosis.cuajo?.cantidad > 0)
-            items.push({ nombre: dosis.cuajo.materialNombre || 'Cuajo', cantidad: dosis.cuajo.cantidad, unidad: dosis.cuajo.unidad });
-        if ((params?.fermento ?? 'si') !== 'no' && dosis.fermento?.cantidad > 0)
-            items.push({ nombre: dosis.fermento.materialNombre || 'Fermento', cantidad: dosis.fermento.cantidad, unidad: dosis.fermento.unidad });
+        for (const key of order) {
+            if (key === 'calcio' && (params?.calcio ?? 'si') !== 'no' && dosis.calcio?.cantidad > 0)
+                items.push({ nombre: dosis.calcio.materialNombre || 'CaCl₂', cantidad: dosis.calcio.cantidad, unidad: dosis.calcio.unidad });
+            if (key === 'conservante' && params?.conservante === 'si' && dosis.conservante?.cantidad > 0)
+                items.push({ nombre: dosis.conservante.materialNombre || 'Conservante', cantidad: dosis.conservante.cantidad, unidad: dosis.conservante.unidad });
+            if (key === 'cuajo' && dosis.cuajo?.cantidad > 0)
+                items.push({ nombre: dosis.cuajo.materialNombre || 'Cuajo', cantidad: dosis.cuajo.cantidad, unidad: dosis.cuajo.unidad });
+            if (key === 'fermento' && (params?.fermento ?? 'si') !== 'no' && dosis.fermento?.cantidad > 0)
+                items.push({ nombre: dosis.fermento.materialNombre || 'Fermento', cantidad: dosis.fermento.cantidad, unidad: dosis.fermento.unidad });
+        }
         return items;
     }
     return [];
@@ -276,7 +285,7 @@ function PrecisionStepper({ label, value, onChange }) {
                 {STEPS.map(s => (
                     <button key={s} type="button" onClick={() => setStep(s)}
                         className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${step === s ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
-                        ×{s}
+                        ±{s}
                     </button>
                 ))}
             </div>
@@ -333,27 +342,55 @@ function DosisSection({ tipo, params, dosis, setDosis }) {
             </div>
         );
 
+        const order = params.ingredienteOrden ?? ['calcio', 'conservante', 'cuajo', 'fermento'];
+        const renderItem = (key) => {
+            if (key === 'calcio' && (params.calcio ?? 'si') !== 'no') {
+                if (params.calcioEsDilucion) {
+                    const dML = params.calcioDosisMLporL ?? 0.2;
+                    const gRef = params.calcioGramosRef ?? 330;
+                    const aRef = params.calcioAguaMLRef ?? 250;
+                    return (
+                        <div key="calcio" className="bg-slate-900/60 border border-sky-500/20 rounded-xl p-3 space-y-1.5">
+                            <p className="text-sky-300 text-xs font-semibold">CaCl₂ — Solución diluida</p>
+                            <p className="text-slate-400 text-xs">Dosis: {dML} ml/L · Receta: {gRef}g CaCl₂ / {aRef} ml H₂O dest.</p>
+                            <p className="text-slate-500 text-xs">La planilla calculará gramos y agua exactos al ingresar litros.</p>
+                        </div>
+                    );
+                }
+                return (
+                    <SubCard key="calcio" label="CaCl₂ (Cloruro de Calcio)" item={calcioItem}
+                        onQty={v => setDosis(d => ({ ...d, calcio: { ...calcioItem, materialNombre: 'CaCl₂', cantidad: v } }))}
+                        onUnit={v => setDosis(d => ({ ...d, calcio: { ...calcioItem, unidad: v } }))} />
+                );
+            }
+            if (key === 'conservante' && params.conservante === 'si') {
+                return (
+                    <SubCard key="conservante" label={params.conservanteNombre || 'Conservante'} item={conservanteItem}
+                        onQty={v => setDosis(d => ({ ...d, conservante: { ...conservanteItem, materialNombre: params.conservanteNombre || 'Conservante', cantidad: v } }))}
+                        onUnit={v => setDosis(d => ({ ...d, conservante: { ...conservanteItem, unidad: v } }))} />
+                );
+            }
+            if (key === 'cuajo') {
+                return (
+                    <SubCard key="cuajo" label={cuajoL[params.cuajoTipo] || 'Cuajo'} item={cuajoItem}
+                        onQty={v => setDosis(d => ({ ...d, cuajo: { ...cuajoItem, materialNombre: cuajoL[params.cuajoTipo] || 'Cuajo', cantidad: v } }))}
+                        onUnit={v => setDosis(d => ({ ...d, cuajo: { ...cuajoItem, unidad: v } }))} />
+                );
+            }
+            if (key === 'fermento' && (params.fermento ?? 'si') !== 'no') {
+                return (
+                    <SubCard key="fermento" label={fermentoL[params.tipoFermento] || 'Fermento'} item={fermentoItem}
+                        onQty={v => setDosis(d => ({ ...d, fermento: { ...fermentoItem, materialNombre: fermentoL[params.tipoFermento] || 'Fermento', cantidad: v } }))}
+                        onUnit={v => setDosis(d => ({ ...d, fermento: { ...fermentoItem, unidad: v } }))} />
+                );
+            }
+            return null;
+        };
+
         return (
             <div className="bg-teal-500/10 border border-teal-500/20 rounded-xl p-4 space-y-4">
                 {header}
-                {(params.calcio ?? 'si') !== 'no' && (
-                    <SubCard label="CaCl₂ (Cloruro de Calcio)" item={calcioItem}
-                        onQty={v => setDosis(d => ({ ...d, calcio: { ...calcioItem, materialNombre: 'CaCl₂', cantidad: v } }))}
-                        onUnit={v => setDosis(d => ({ ...d, calcio: { ...calcioItem, unidad: v } }))} />
-                )}
-                {params.conservante === 'si' && (
-                    <SubCard label={params.conservanteNombre || 'Conservante'} item={conservanteItem}
-                        onQty={v => setDosis(d => ({ ...d, conservante: { ...conservanteItem, materialNombre: params.conservanteNombre || 'Conservante', cantidad: v } }))}
-                        onUnit={v => setDosis(d => ({ ...d, conservante: { ...conservanteItem, unidad: v } }))} />
-                )}
-                <SubCard label={cuajoL[params.cuajoTipo] || 'Cuajo'} item={cuajoItem}
-                    onQty={v => setDosis(d => ({ ...d, cuajo: { ...cuajoItem, materialNombre: cuajoL[params.cuajoTipo] || 'Cuajo', cantidad: v } }))}
-                    onUnit={v => setDosis(d => ({ ...d, cuajo: { ...cuajoItem, unidad: v } }))} />
-                {(params.fermento ?? 'si') !== 'no' && (
-                    <SubCard label={fermentoL[params.tipoFermento] || 'Fermento'} item={fermentoItem}
-                        onQty={v => setDosis(d => ({ ...d, fermento: { ...fermentoItem, materialNombre: fermentoL[params.tipoFermento] || 'Fermento', cantidad: v } }))}
-                        onUnit={v => setDosis(d => ({ ...d, fermento: { ...fermentoItem, unidad: v } }))} />
-                )}
+                {order.map(key => renderItem(key)).filter(Boolean)}
             </div>
         );
     }
@@ -504,7 +541,13 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                 </div>
             );
 
-        case 'cuajado':
+        case 'cuajado': {
+            const order = params.ingredienteOrden ?? ['calcio', 'conservante', 'cuajo', 'fermento'];
+            const moveIng = (fromIdx, toIdx) => {
+                const next = [...order];
+                [next[fromIdx], next[toIdx]] = [next[toIdx], next[fromIdx]];
+                setParams(p => ({ ...p, ingredienteOrden: next }));
+            };
             return (
                 <div className="space-y-5">
                     <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
@@ -516,66 +559,147 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                             <PillGroup options={[{ id: 'lactica', label: 'Láctica' }, { id: 'enzimatica', label: 'Enzimática' }]} value={params.tipoCoagulacion ?? 'enzimatica'} onChange={set('tipoCoagulacion')} />
                         </div>
                     </div>
-                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-5">
-                        <SecLabel>Adición de Insumos</SecLabel>
-                        <div className="border border-slate-600 rounded-lg p-3 space-y-3">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-semibold text-slate-300">Cloruro de Calcio (CaCl₂)</span>
-                                <PillGroup options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]} value={params.calcio ?? 'si'} onChange={set('calcio')} />
-                            </div>
-                            {(params.calcio ?? 'si') === 'si' && (
-                                <div><span className="block text-xs text-slate-500 mb-2">Agitar</span>
-                                    <TiempoRow value={params.calcioAgitar ?? 5} unidad={params.calcioAgitarUnidad ?? 'min'}
-                                        onValueChange={v => setParams(p => ({ ...p, calcioAgitar: v }))}
-                                        onUnidadChange={v => setParams(p => ({ ...p, calcioAgitarUnidad: v }))} min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Adición de Insumos</span>
+                            <span className="text-slate-600 text-xs">↕ reordenable</span>
+                        </div>
+                        {order.map((key, idx) => {
+                            const isFirst = idx === 0;
+                            const isLast = idx === order.length - 1;
+                            const reorderBtns = (
+                                <div className="flex flex-col shrink-0">
+                                    <button type="button" disabled={isFirst} onClick={() => moveIng(idx, idx - 1)}
+                                        className="p-1 text-slate-600 hover:text-slate-300 disabled:opacity-20 transition-colors">
+                                        <ChevronUp size={12} />
+                                    </button>
+                                    <button type="button" disabled={isLast} onClick={() => moveIng(idx, idx + 1)}
+                                        className="p-1 text-slate-600 hover:text-slate-300 disabled:opacity-20 transition-colors">
+                                        <ChevronDown size={12} />
+                                    </button>
                                 </div>
-                            )}
-                        </div>
-                        <div className="border border-slate-600 rounded-lg p-3 space-y-3">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-semibold text-slate-300">Conservante</span>
-                                <PillGroup options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]} value={params.conservante ?? 'no'} onChange={set('conservante')} />
-                            </div>
-                            {(params.conservante ?? 'no') === 'si' && (
-                                <>
-                                    <input type="text" value={params.conservanteNombre || ''} onChange={e => set('conservanteNombre')(e.target.value)}
-                                        placeholder="Ej. Natamicina" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors" />
-                                    <div><span className="block text-xs text-slate-500 mb-2">Agitar</span>
-                                        <TiempoRow value={params.conservanteAgitar ?? 5} unidad={params.conservanteAgitarUnidad ?? 'min'}
-                                            onValueChange={v => setParams(p => ({ ...p, conservanteAgitar: v }))}
-                                            onUnidadChange={v => setParams(p => ({ ...p, conservanteAgitarUnidad: v }))} min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
+                            );
+                            const esperaRow = (keyName) => (
+                                <div>
+                                    <span className="block text-xs text-slate-500 mb-2">Esperar antes del siguiente</span>
+                                    <TiempoRow
+                                        value={params[`${keyName}EsperaPost`] ?? 0}
+                                        unidad={params[`${keyName}EsperaPostUnidad`] ?? 'min'}
+                                        onValueChange={v => setParams(p => ({ ...p, [`${keyName}EsperaPost`]: v }))}
+                                        onUnidadChange={v => setParams(p => ({ ...p, [`${keyName}EsperaPostUnidad`]: v }))}
+                                        min={0} max={120}
+                                    />
+                                </div>
+                            );
+                            if (key === 'calcio') return (
+                                <div key="calcio" className="border border-slate-600 rounded-lg p-3 space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        {reorderBtns}
+                                        <span className="flex-1 text-xs font-semibold text-slate-300">Cloruro de Calcio (CaCl₂)</span>
+                                        <PillGroup options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]} value={params.calcio ?? 'si'} onChange={set('calcio')} />
                                     </div>
-                                </>
-                            )}
-                        </div>
-                        <div className="border border-slate-600 rounded-lg p-3 space-y-3">
-                            <span className="block text-xs font-semibold text-slate-300">Cuajo</span>
-                            <PillGroup options={[{ id: 'microbiano', label: 'Microbiano' }, { id: 'vegetal', label: 'Vegetal' }, { id: 'animal', label: 'Animal' }, { id: 'genetico', label: 'Genético' }]}
-                                value={params.cuajoTipo ?? 'microbiano'} onChange={set('cuajoTipo')} />
-                            <div><span className="block text-xs text-slate-500 mb-2">Agitar</span>
-                                <TiempoRow value={params.cuajoAgitar ?? 3} unidad={params.cuajoAgitarUnidad ?? 'min'}
-                                    onValueChange={v => setParams(p => ({ ...p, cuajoAgitar: v }))}
-                                    onUnidadChange={v => setParams(p => ({ ...p, cuajoAgitarUnidad: v }))} min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
-                            </div>
-                        </div>
-                        <div className="border border-slate-600 rounded-lg p-3 space-y-3">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-semibold text-slate-300">Fermento</span>
-                                <PillGroup options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]} value={params.fermento ?? 'si'} onChange={set('fermento')} />
-                            </div>
-                            {(params.fermento ?? 'si') === 'si' && (
-                                <>
-                                    <PillGroup options={[{ id: 'mesofilico', label: 'Mesófilo' }, { id: 'termofilico', label: 'Termófilo' }, { id: 'blend', label: 'Blend T/M' }]}
-                                        value={params.tipoFermento ?? 'mesofilico'} onChange={set('tipoFermento')} />
-                                    <SliderField label="Temp. inoculación" value={params.tempInoculacion ?? 22} min={18} max={45} unit="°C" onChange={set('tempInoculacion')} />
-                                    <div><span className="block text-xs text-slate-500 mb-2">Agitar</span>
-                                        <TiempoRow value={params.fermentoAgitar ?? 5} unidad={params.fermentoAgitarUnidad ?? 'min'}
-                                            onValueChange={v => setParams(p => ({ ...p, fermentoAgitar: v }))}
-                                            onUnidadChange={v => setParams(p => ({ ...p, fermentoAgitarUnidad: v }))} min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
+                                    {(params.calcio ?? 'si') !== 'no' && <>
+                                        <div>
+                                            <span className="block text-xs text-slate-500 mb-2">Modo de adición</span>
+                                            <PillGroup
+                                                options={[{ id: 'directo', label: 'Gramos directos' }, { id: 'dilucion', label: 'Solución diluida' }]}
+                                                value={params.calcioEsDilucion ? 'dilucion' : 'directo'}
+                                                onChange={v => setParams(p => ({ ...p, calcioEsDilucion: v === 'dilucion' }))}
+                                            />
+                                        </div>
+                                        {params.calcioEsDilucion && (
+                                            <div className="bg-sky-500/10 border border-sky-500/20 rounded-lg p-3 space-y-2">
+                                                <p className="text-sky-400 text-xs font-semibold mb-2">Receta de dilución</p>
+                                                <div className="grid grid-cols-3 gap-2">
+                                                    {[
+                                                        { field: 'calcioGramosRef', dflt: 330, label: 'g CaCl₂', step: 1 },
+                                                        { field: 'calcioAguaMLRef', dflt: 250, label: 'ml H₂O dest.', step: 1 },
+                                                        { field: 'calcioDosisMLporL', dflt: 0.2, label: 'ml/L leche', step: 0.01 },
+                                                    ].map(f => (
+                                                        <div key={f.field} className="bg-slate-800 rounded-lg p-2 text-center">
+                                                            <input type="number" value={params[f.field] ?? f.dflt} step={f.step}
+                                                                onChange={e => setParams(p => ({ ...p, [f.field]: Number(e.target.value) }))}
+                                                                className="w-full bg-transparent text-sky-300 text-sm font-bold text-center focus:outline-none" />
+                                                            <p className="text-slate-500 text-xs mt-0.5">{f.label}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <p className="text-slate-600 text-xs">Kroma calculará la dilución exacta en la planilla.</p>
+                                            </div>
+                                        )}
+                                        <div>
+                                            <span className="block text-xs text-slate-500 mb-2">Agitar</span>
+                                            <TiempoRow value={params.calcioAgitar ?? 5} unidad={params.calcioAgitarUnidad ?? 'min'}
+                                                onValueChange={v => setParams(p => ({ ...p, calcioAgitar: v }))}
+                                                onUnidadChange={v => setParams(p => ({ ...p, calcioAgitarUnidad: v }))}
+                                                min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
+                                        </div>
+                                        {!isLast && esperaRow('calcio')}
+                                    </>}
+                                </div>
+                            );
+                            if (key === 'conservante') return (
+                                <div key="conservante" className="border border-slate-600 rounded-lg p-3 space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        {reorderBtns}
+                                        <span className="flex-1 text-xs font-semibold text-slate-300">Conservante</span>
+                                        <PillGroup options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]} value={params.conservante ?? 'no'} onChange={set('conservante')} />
                                     </div>
-                                </>
-                            )}
-                        </div>
+                                    {params.conservante === 'si' && <>
+                                        <input type="text" value={params.conservanteNombre || ''} onChange={e => set('conservanteNombre')(e.target.value)}
+                                            placeholder="Ej. Natamicina" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors" />
+                                        <div>
+                                            <span className="block text-xs text-slate-500 mb-2">Agitar</span>
+                                            <TiempoRow value={params.conservanteAgitar ?? 5} unidad={params.conservanteAgitarUnidad ?? 'min'}
+                                                onValueChange={v => setParams(p => ({ ...p, conservanteAgitar: v }))}
+                                                onUnidadChange={v => setParams(p => ({ ...p, conservanteAgitarUnidad: v }))}
+                                                min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
+                                        </div>
+                                        {!isLast && esperaRow('conservante')}
+                                    </>}
+                                </div>
+                            );
+                            if (key === 'cuajo') return (
+                                <div key="cuajo" className="border border-slate-600 rounded-lg p-3 space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        {reorderBtns}
+                                        <span className="flex-1 text-xs font-semibold text-slate-300">Cuajo</span>
+                                    </div>
+                                    <PillGroup options={[{ id: 'microbiano', label: 'Microbiano' }, { id: 'vegetal', label: 'Vegetal' }, { id: 'animal', label: 'Animal' }, { id: 'genetico', label: 'Genético' }]}
+                                        value={params.cuajoTipo ?? 'microbiano'} onChange={set('cuajoTipo')} />
+                                    <div>
+                                        <span className="block text-xs text-slate-500 mb-2">Agitar</span>
+                                        <TiempoRow value={params.cuajoAgitar ?? 3} unidad={params.cuajoAgitarUnidad ?? 'min'}
+                                            onValueChange={v => setParams(p => ({ ...p, cuajoAgitar: v }))}
+                                            onUnidadChange={v => setParams(p => ({ ...p, cuajoAgitarUnidad: v }))}
+                                            min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
+                                    </div>
+                                    {!isLast && esperaRow('cuajo')}
+                                </div>
+                            );
+                            if (key === 'fermento') return (
+                                <div key="fermento" className="border border-slate-600 rounded-lg p-3 space-y-3">
+                                    <div className="flex items-center gap-2">
+                                        {reorderBtns}
+                                        <span className="flex-1 text-xs font-semibold text-slate-300">Fermento</span>
+                                        <PillGroup options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]} value={params.fermento ?? 'si'} onChange={set('fermento')} />
+                                    </div>
+                                    {(params.fermento ?? 'si') !== 'no' && <>
+                                        <PillGroup options={[{ id: 'mesofilico', label: 'Mesófilo' }, { id: 'termofilico', label: 'Termófilo' }, { id: 'blend', label: 'Blend T/M' }]}
+                                            value={params.tipoFermento ?? 'mesofilico'} onChange={set('tipoFermento')} />
+                                        <SliderField label="Temp. inoculación" value={params.tempInoculacion ?? 22} min={18} max={45} unit="°C" onChange={set('tempInoculacion')} />
+                                        <div>
+                                            <span className="block text-xs text-slate-500 mb-2">Agitar</span>
+                                            <TiempoRow value={params.fermentoAgitar ?? 5} unidad={params.fermentoAgitarUnidad ?? 'min'}
+                                                onValueChange={v => setParams(p => ({ ...p, fermentoAgitar: v }))}
+                                                onUnidadChange={v => setParams(p => ({ ...p, fermentoAgitarUnidad: v }))}
+                                                min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
+                                        </div>
+                                    </>}
+                                </div>
+                            );
+                            return null;
+                        })}
                     </div>
                     <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-4">
                         <SecLabel>Cierre de Coagulación</SecLabel>
@@ -587,6 +711,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                     </div>
                 </div>
             );
+        }
 
         case 'agitacion_simple':
             return (
@@ -1059,13 +1184,13 @@ export default function FichaBuilderPage() {
                 <div>
                     <div className="flex items-center gap-2 mb-1">
                         <ClipboardList size={20} className="text-emerald-400" />
-                        <h2 className="text-xl font-bold text-white">Fichas de Producción</h2>
+                        <h2 className="text-xl font-bold text-white">Plantillas de Producción</h2>
                     </div>
-                    <p className="text-slate-400 text-sm">{fichas.length} ficha{fichas.length !== 1 ? 's' : ''} definida{fichas.length !== 1 ? 's' : ''}</p>
+                    <p className="text-slate-400 text-sm">{fichas.length} plantilla{fichas.length !== 1 ? 's' : ''} definida{fichas.length !== 1 ? 's' : ''}</p>
                 </div>
                 {products.length > 0 && (
                     <button onClick={() => setMode('builder')} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-3 rounded-xl transition-colors text-sm shrink-0">
-                        <Plus size={16} /> Nueva Ficha
+                        <Plus size={16} /> Nueva Plantilla
                     </button>
                 )}
             </div>
@@ -1074,8 +1199,8 @@ export default function FichaBuilderPage() {
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-5 flex items-start gap-3">
                     <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                        <p className="text-amber-300 font-semibold text-sm">Tienes una ficha sin guardar</p>
-                        <p className="text-amber-400/70 text-xs mt-0.5">{loadDraft()?.product?.nombre || 'Ficha'} — se recuperó automáticamente</p>
+                        <p className="text-amber-300 font-semibold text-sm">Tienes una plantilla sin guardar</p>
+                        <p className="text-amber-400/70 text-xs mt-0.5">{loadDraft()?.product?.nombre || 'Plantilla'} — se recuperó automáticamente</p>
                     </div>
                     <div className="flex gap-2 shrink-0">
                         <button onClick={discardDraft} className="text-slate-400 hover:text-white text-xs px-2 py-1.5 rounded border border-slate-600 hover:border-slate-500 transition-colors">Descartar</button>
@@ -1103,8 +1228,8 @@ export default function FichaBuilderPage() {
             ) : fichas.length === 0 ? (
                 <div className="text-center py-16">
                     <ClipboardList size={36} className="text-slate-700 mx-auto mb-3" />
-                    <p className="text-slate-500 text-sm">Sin fichas. Crea la primera.</p>
-                    <button onClick={() => setMode('builder')} className="mt-4 text-emerald-400 hover:text-emerald-300 text-sm font-medium">+ Nueva ficha</button>
+                    <p className="text-slate-500 text-sm">Sin plantillas. Crea la primera.</p>
+                    <button onClick={() => setMode('builder')} className="mt-4 text-emerald-400 hover:text-emerald-300 text-sm font-medium">+ Nueva plantilla</button>
                 </div>
             ) : (
                 <div className="space-y-4 max-w-2xl">
@@ -1119,10 +1244,10 @@ export default function FichaBuilderPage() {
                                         <p className="text-slate-500 text-xs mt-0.5">{ficha.bloques?.length || 0} bloques · {ficha.ingredientesCount || 0} ingrediente{(ficha.ingredientesCount || 0) !== 1 ? 's' : ''}</p>
                                     </div>
                                     <div className="flex items-center gap-1 shrink-0">
-                                        <button onClick={() => openEditFicha(ficha)} className="p-2 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors" title="Editar ficha">
+                                        <button onClick={() => openEditFicha(ficha)} className="p-2 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors" title="Editar plantilla">
                                             <Edit2 size={15} />
                                         </button>
-                                        <button onClick={() => setDeactivateTarget(ficha)} className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors" title="Desactivar ficha">
+                                        <button onClick={() => setDeactivateTarget(ficha)} className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors" title="Desactivar plantilla">
                                             <Trash2 size={15} />
                                         </button>
                                     </div>
@@ -1153,8 +1278,8 @@ export default function FichaBuilderPage() {
         {deactivateTarget && (
             <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
                 <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-                    <h3 className="text-white font-bold text-lg mb-2">Desactivar Ficha</h3>
-                    <p className="text-slate-400 text-sm mb-6">¿Desactivar la ficha de <strong className="text-white">{deactivateTarget.productoNombre}</strong>? Su historial se conserva.</p>
+                    <h3 className="text-white font-bold text-lg mb-2">Desactivar Plantilla</h3>
+                    <p className="text-slate-400 text-sm mb-6">¿Desactivar la plantilla de <strong className="text-white">{deactivateTarget.productoNombre}</strong>? Su historial se conserva.</p>
                     {deactivateError && <p className="text-red-400 text-xs mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{deactivateError}</p>}
                     <div className="flex gap-3">
                         <button onClick={() => { setDeactivateTarget(null); setDeactivateError(null); }} className="flex-1 border border-slate-600 text-slate-300 rounded-xl py-3 text-sm font-medium hover:text-white transition-colors">Cancelar</button>
@@ -1177,8 +1302,8 @@ export default function FichaBuilderPage() {
                     <X size={20} />
                 </button>
                 <div className="flex-1 min-w-0">
-                    <p className="text-white font-bold text-sm truncate">{selectedProduct ? selectedProduct.nombre : 'Nueva Ficha'}</p>
-                    <p className="text-slate-500 text-xs">{editingFicha ? 'Editando ficha' : 'Nueva ficha'}{selectedProduct ? ` · ${bloques.length} bloque${bloques.length !== 1 ? 's' : ''}` : ' · Paso 1 de 2'}</p>
+                    <p className="text-white font-bold text-sm truncate">{selectedProduct ? selectedProduct.nombre : 'Nueva Plantilla'}</p>
+                    <p className="text-slate-500 text-xs">{editingFicha ? 'Editando plantilla' : 'Nueva plantilla'}{selectedProduct ? ` · ${bloques.length} bloque${bloques.length !== 1 ? 's' : ''}` : ' · Paso 1 de 2'}</p>
                 </div>
                 {!editingFicha && (
                     <div className="flex gap-1.5 shrink-0">
