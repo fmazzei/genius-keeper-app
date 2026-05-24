@@ -293,9 +293,11 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
         ? (modoAjuste ? addCerrado : (invDoc?.stockEnUso ?? 0) + addCerrado)
         : initEnUso;
 
-    // Whole-number materials (labels, packaging) use large step options
-    const isUnd = config.unidadBase === 'und';
-    const undSteps = [1, 100, 1000];
+    // Whole-number materials use large step options instead of precision stepper
+    const isUnd    = config.unidadBase === 'und';
+    const isMetros = config.unidadBase === 'm';
+    const undSteps   = [1, 100, 1000];
+    const metroSteps = [1, 10, 100];
 
     function switchMode(ajuste) {
         setModoAjuste(ajuste);
@@ -357,7 +359,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
 
                     {/* Quantity entry */}
                     <div className="mb-4">
-                        {granel && !isUnd ? (
+                        {granel && !isUnd && !isMetros ? (
                             <PrecisionStepper
                                 label={modoAjuste ? `Stock total actual (${config.unidadBase})` : `Cantidad a ingresar (${config.unidadBase})`}
                                 value={addCerrado} onChange={setAddCerrado} unit={config.unidadBase} />
@@ -368,7 +370,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                                     : (granel ? `Cantidad a ingresar (${config.unidadBase})` : `${config.presentacionTipo}s cerrados a ingresar`)}
                                 value={addCerrado} onChange={setAddCerrado}
                                 unit={config.presentacionTipo === 'granel' ? config.unidadBase : config.presentacionTipo}
-                                steps={isUnd ? undSteps : [1]}
+                                steps={isUnd ? undSteps : isMetros ? metroSteps : [1]}
                             />
                         )}
                         {!granel && cpu > 0 && addCerrado > 0 && (
@@ -381,14 +383,15 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                     {/* En uso declaration (for discrete, entrada mode only) */}
                     {!granel && (
                         <div className="mb-4">
-                            {isUnd ? (
+                            {(isUnd || isMetros) ? (
                                 <WholeStepper label={`Ya tengo en uso / abierto (${config.unidadBase})`}
-                                    value={initEnUso} onChange={setInitEnUso} unit={config.unidadBase} steps={undSteps} />
+                                    value={initEnUso} onChange={setInitEnUso} unit={config.unidadBase}
+                                    steps={isUnd ? undSteps : metroSteps} />
                             ) : (
                                 <PrecisionStepper label={`Ya tengo en uso / abierto (${config.unidadBase})`}
                                     value={initEnUso} onChange={setInitEnUso} unit={config.unidadBase} />
                             )}
-                            {!isUnd && cpu > 0 && initEnUso > 0 && (
+                            {!isUnd && !isMetros && cpu > 0 && initEnUso > 0 && (
                                 <p className="text-slate-500 text-xs text-center mt-1.5">
                                     {(initEnUso / cpu * 100).toFixed(0)}% de 1 {config.presentacionTipo}
                                 </p>
@@ -476,8 +479,14 @@ function EnUsoSheet({ mat, invDoc, onClose, onSave }) {
                     </p>
 
                     <div className="mb-4">
-                        <PrecisionStepper label={`Cantidad en uso (${unit})`}
-                            value={enUso} onChange={setEnUso} unit={unit} />
+                        {unit === 'und' || unit === 'm' ? (
+                            <WholeStepper label={`Cantidad en uso (${unit})`}
+                                value={enUso} onChange={setEnUso} unit={unit}
+                                steps={unit === 'und' ? [1, 100, 1000] : [1, 10, 100]} />
+                        ) : (
+                            <PrecisionStepper label={`Cantidad en uso (${unit})`}
+                                value={enUso} onChange={setEnUso} unit={unit} />
+                        )}
                         {cpu > 0 && enUso > 0 && (
                             <p className="text-slate-500 text-xs text-center mt-1.5">
                                 {(enUso / cpu * 100).toFixed(0)}% de 1 {pres}
