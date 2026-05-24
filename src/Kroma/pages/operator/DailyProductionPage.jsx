@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-    collection, getDocs, addDoc, updateDoc, doc,
-    serverTimestamp, query, where, orderBy,
+    collection, getDocs, addDoc, updateDoc, doc, getDoc,
+    serverTimestamp, query, where,
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
@@ -9,7 +9,7 @@ import {
     ChevronLeft, ChevronRight, Check, Plus, Play,
     Clock, AlertTriangle, Package, Droplets,
     Calendar, Lock, ChevronDown, ChevronUp,
-    Factory, Pause, FlaskConical,
+    Factory, Pause, FlaskConical, X,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -204,6 +204,62 @@ function LitrosStepper({ value, onChange }) {
 // Returns true when a material comes in countable discrete packages (sobres, envases…)
 function isSobreMat(mat) {
     return !!mat && !!mat.presentacion && mat.presentacion !== 'a granel' && (mat.cantidadPresentacion || 0) > 0;
+}
+
+// ─── Inventory decrement helpers ──────────────────────────────────────────────
+
+function isGranelInv(inv) {
+    return !inv?.cantidadPorUnidad || inv.cantidadPorUnidad <= 0;
+}
+
+function invTotalDisplay(inv) {
+    if (!inv) return 0;
+    if (isGranelInv(inv)) return inv.stockEnUso ?? 0;
+    const cpu = inv.cantidadPorUnidad || 1;
+    return (inv.stockCerrado ?? 0) + (inv.stockEnUso ?? 0) / cpu;
+}
+
+function invStatus(inv) {
+    const minimo = inv?.stockMinimo ?? 0;
+    if (minimo <= 0) return 'ok';
+    const total = invTotalDisplay(inv);
+    if (total <= 0) return 'empty';
+    return total / minimo < 1 ? 'low' : 'ok';
+}
+
+function convertUnit(amount, from, to) {
+    if (!from || !to || from === to) return amount;
+    const CONV = { 'g_kg': 0.001, 'kg_g': 1000, 'ml_l': 0.001, 'l_ml': 1000 };
+    return amount * (CONV[`${from}_${to}`] || 1);
+}
+
+// Extract ingredients used in a block that need inventory decrement
+function extractBlockIngredients(bloque, reg) {
+    const tipo = bloque.tipo;
+    const d    = bloque.dosis || {};
+    const out  = [];
+
+    if (tipo === 'agregar_insumo' || tipo === 'inoculacion') {
+        if (d.materialId && (reg.cantidadReal ?? 0) > 0)
+            out.push({ materialId: d.materialId, nombre: d.materialNombre || '', amount: reg.cantidadReal, unidad: d.unidad || 'g' });
+    } else if (tipo === 'cuajado') {
+        [['calcio', 'calcioReal'], ['conservante', 'conservanteReal'], ['cuajo', 'cuajoReal'], ['fermento', 'fermentoReal']]
+            .forEach(([key, regKey]) => {
+                const ref = d[key];
+                if (ref?.materialId && (reg[regKey] ?? 0) > 0)
+                    out.push({ materialId: ref.materialId, nombre: ref.materialNombre || '', amount: reg[regKey], unidad: ref.unidad || 'g' });
+            });
+    }
+    return out;
+}
+
+function tryBrowserNotification(title, body) {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+        new Notification(title, { body });
+    } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(p => { if (p === 'granted') new Notification(title, { body }); });
+    }
 }
 
 // Dosing assistant row: planned reference + real input
@@ -812,6 +868,9 @@ export default function DailyProductionPage() {
     // Hold option toggle per block
     const [holdOptions, setHoldOptions]   = useState({}); // { [idxStr]: bool }
 
+    // In-session stock alerts from production decrement
+    const [productionAlerts, setProductionAlerts] = useState([]);
+
     useEffect(() => { loadData(); }, []);
 
     async function loadData() {
@@ -899,6 +958,58 @@ export default function DailyProductionPage() {
         return activeLog?.litrosNetos ?? activeLog?.litrosIngresados ?? 300;
     }
 
+    async function decrementInventory(ingredients) {
+        const newAlerts = [];
+        for (const { materialId, nombre, amount, unidad } of ingredients) {
+            try {
+                const invRef  = doc(db, 'kroma_inventory_materials', materialId);
+                const invSnap = await getDoc(invRef);
+                if (!invSnap.exists()) continue;
+                const inv = { id: invSnap.id, ...invSnap.data() };
+
+                const amountInBase = convertUnit(amount, unidad, inv.unidadBase || 'g');
+                let newCerrado = inv.stockCerrado ?? 0;
+                let newEnUso   = (inv.stockEnUso  ?? 0) - amountInBase;
+
+                // Auto-open a sealed package if in-use stock runs out
+                if (newEnUso < 0 && !isGranelInv(inv) && newCerrado > 0) {
+                    newCerrado -= 1;
+                    newEnUso   += (inv.cantidadPorUnidad || 0);
+                }
+                newEnUso   = Math.max(0, newEnUso);
+                newCerrado = Math.max(0, newCerrado);
+
+                await updateDoc(invRef, { stockCerrado: newCerrado, stockEnUso: newEnUso, updatedAt: serverTimestamp() });
+
+                const updatedInv = { ...inv, stockCerrado: newCerrado, stockEnUso: newEnUso };
+                const st = invStatus(updatedInv);
+                if (st === 'low' || st === 'empty') {
+                    const total = isGranelInv(updatedInv)
+                        ? `${newEnUso.toFixed(2)} ${inv.unidadBase || 'g'}`
+                        : `${invTotalDisplay(updatedInv).toFixed(1)} ${inv.presentacionTipo || ''}`;
+                    const msg = `⚠ Stock bajo: ${nombre || inv.materialNombre} — quedan ${total} (mín: ${inv.stockMinimo ?? 0} ${isGranelInv(inv) ? inv.unidadBase : inv.presentacionTipo})`;
+
+                    newAlerts.push(msg);
+                    tryBrowserNotification('Stock bajo', msg);
+
+                    await addDoc(collection(db, 'kroma_alerts'), {
+                        tipo: 'stock_bajo',
+                        materialId,
+                        materialNombre: inv.materialNombre,
+                        categoria:      inv.categoria,
+                        mensaje:        msg,
+                        createdAt:      serverTimestamp(),
+                        leidaPor:       [],
+                        active:         true,
+                    });
+                }
+            } catch (_) { /* inventory decrement is best-effort */ }
+        }
+        if (newAlerts.length > 0) {
+            setProductionAlerts(prev => [...prev, ...newAlerts]);
+        }
+    }
+
     async function completeBlock(idx) {
         const idxStr = String(idx);
         const bloques = activeLog?.bloquesSnapshot || [];
@@ -975,6 +1086,11 @@ export default function DailyProductionPage() {
             } else {
                 setLogs(prev => prev.map(l => l.id === activeLog.id ? { ...l, ...payload } : l));
             }
+
+            // Decrement inventory for any ingredients used in this block
+            const usedIngredients = extractBlockIngredients(bloque, reg);
+            if (usedIngredients.length > 0) decrementInventory(usedIngredients);
+
         } catch (e) { setSaveError(e.message); }
         finally { setSaving(false); }
     }
@@ -1125,6 +1241,18 @@ export default function DailyProductionPage() {
 
                 {saveError && (
                     <div className="mx-4 mt-3 shrink-0 bg-red-900/30 border border-red-700 rounded-xl px-4 py-2.5 text-red-300 text-xs font-mono">{saveError}</div>
+                )}
+                {productionAlerts.length > 0 && (
+                    <div className="mx-4 mt-3 shrink-0 space-y-1.5">
+                        {productionAlerts.map((msg, i) => (
+                            <div key={i} className="flex items-start gap-2 bg-amber-900/30 border border-amber-700/50 rounded-xl px-3 py-2.5">
+                                <AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                                <p className="text-amber-300 text-xs flex-1">{msg}</p>
+                                <button onClick={() => setProductionAlerts(prev => prev.filter((_, j) => j !== i))}
+                                    className="text-amber-600 hover:text-amber-400 shrink-0"><X size={12} /></button>
+                            </div>
+                        ))}
+                    </div>
                 )}
 
                 <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">

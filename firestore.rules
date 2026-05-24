@@ -199,6 +199,13 @@ service cloud.firestore {
       allow read, write: if isKromaAccess();
     }
 
+    match /kroma_alerts/{id} {
+      allow read: if isKromaAccess();
+      allow create: if isKromaAccess();
+      allow update: if isKromaAccess();
+      allow delete: if isMaster();
+    }
+
     match /kroma_inventory_pt/{id} {
       allow read, write: if isKromaAccess();
     }
