@@ -3,6 +3,7 @@ import { Droplets, Package, FlaskConical, Workflow, Factory, Construction } from
 import ProcessBuilderPageImpl from './operator/ProcessBuilderPage';
 import RecipeBuilderPageImpl from './operator/RecipeBuilderPage';
 import FichaBuilderPageImpl from './operator/FichaBuilderPage';
+import MaterialsInventoryPageImpl from './operator/MaterialsInventoryPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -59,18 +60,7 @@ export const MilkInventoryPage = () => (
     />
 );
 
-export const MaterialsInventoryPage = () => (
-    <ComingSoon
-        title="Insumos, Empaques y Consumibles"
-        description="Visibilidad del inventario operativo en planta. Gestión basada en el Maestro de Materiales."
-        items={[
-            { title: 'Stock actual por insumo', desc: 'Cantidad disponible en la unidad de medida del Maestro.' },
-            { title: 'Registro de entradas', desc: 'Ingreso de materiales con vinculación a proveedor y lote.' },
-            { title: 'Consumo por proceso', desc: 'El sistema descuenta automáticamente al completar una planilla.' },
-            { title: 'Alertas de stock bajo', desc: 'Notificación cuando un insumo baja del mínimo definido.' },
-        ]}
-    />
-);
+export const MaterialsInventoryPage = () => <MaterialsInventoryPageImpl />;
 
 export const FichaBuilderPage = () => <FichaBuilderPageImpl />;
 
