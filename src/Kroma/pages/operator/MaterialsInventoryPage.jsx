@@ -119,18 +119,30 @@ function PillGroup({ options, value, onChange }) {
     );
 }
 
-function WholeStepper({ label, value, onChange, unit, min = 0 }) {
+function WholeStepper({ label, value, onChange, unit, min = 0, steps = [1] }) {
+    const [stepIdx, setStepIdx] = useState(0);
+    const step = steps[stepIdx];
     return (
         <div>
             {label && <SecLabel>{label}</SecLabel>}
+            {steps.length > 1 && (
+                <div className="flex gap-1 mb-2">
+                    {steps.map((s, i) => (
+                        <button key={s} type="button" onClick={() => setStepIdx(i)}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-mono font-semibold ${
+                                stepIdx === i ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                            }`}>±{s.toLocaleString()}</button>
+                    ))}
+                </div>
+            )}
             <div className="flex items-center gap-3">
-                <button type="button" onClick={() => onChange(Math.max(min, value - 1))}
+                <button type="button" onClick={() => onChange(Math.max(min, value - step))}
                     className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">−</button>
                 <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3.5 text-center">
-                    <span className="text-white text-xl font-mono font-semibold">{value}</span>
+                    <span className="text-white text-xl font-mono font-semibold">{value.toLocaleString()}</span>
                     {unit && <span className="text-slate-400 text-sm ml-1.5">{unit}</span>}
                 </div>
-                <button type="button" onClick={() => onChange(value + 1)}
+                <button type="button" onClick={() => onChange(value + step)}
                     className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">+</button>
             </div>
         </div>
@@ -278,6 +290,10 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
     const newCerrado = (invDoc?.stockCerrado ?? 0) + (granel ? 0 : addCerrado);
     const newEnUso   = granel ? (invDoc?.stockEnUso ?? 0) + addCerrado : initEnUso;
 
+    // Whole-number materials (labels, packaging) use large step options
+    const isUnd = config.unidadBase === 'und';
+    const undSteps = [1, 100, 1000];
+
     async function handleSave() {
         if (addCerrado <= 0 || saving) return;
         setSaving(true);
@@ -317,16 +333,19 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
 
                     {/* Quantity entry */}
                     <div className="mb-4">
-                        {granel ? (
+                        {granel && !isUnd ? (
                             <PrecisionStepper label={`Cantidad a ingresar (${config.unidadBase})`}
                                 value={addCerrado} onChange={setAddCerrado} unit={config.unidadBase} />
                         ) : (
-                            <WholeStepper label={`${config.presentacionTipo}s cerrados a ingresar`}
-                                value={addCerrado} onChange={setAddCerrado} unit={config.presentacionTipo} />
+                            <WholeStepper
+                                label={granel ? `Cantidad a ingresar (${config.unidadBase})` : `${config.presentacionTipo}s cerrados a ingresar`}
+                                value={addCerrado} onChange={setAddCerrado} unit={config.presentacionTipo === 'granel' ? config.unidadBase : config.presentacionTipo}
+                                steps={isUnd ? undSteps : [1]}
+                            />
                         )}
                         {!granel && cpu > 0 && addCerrado > 0 && (
                             <p className="text-slate-500 text-xs text-center mt-2">
-                                {addCerrado} × {fmtBase(cpu, config.unidadBase)} = {fmtBase(addCerrado * cpu, config.unidadBase)} total
+                                {addCerrado.toLocaleString()} × {fmtBase(cpu, config.unidadBase)} = {fmtBase(addCerrado * cpu, config.unidadBase)} total
                             </p>
                         )}
                     </div>
@@ -334,9 +353,14 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                     {/* En uso declaration (for discrete) */}
                     {!granel && (
                         <div className="mb-4">
-                            <PrecisionStepper label={`Ya tengo en uso / abierto (${config.unidadBase})`}
-                                value={initEnUso} onChange={setInitEnUso} unit={config.unidadBase} />
-                            {cpu > 0 && initEnUso > 0 && (
+                            {isUnd ? (
+                                <WholeStepper label={`Ya tengo en uso / abierto (${config.unidadBase})`}
+                                    value={initEnUso} onChange={setInitEnUso} unit={config.unidadBase} steps={undSteps} />
+                            ) : (
+                                <PrecisionStepper label={`Ya tengo en uso / abierto (${config.unidadBase})`}
+                                    value={initEnUso} onChange={setInitEnUso} unit={config.unidadBase} />
+                            )}
+                            {!isUnd && cpu > 0 && initEnUso > 0 && (
                                 <p className="text-slate-500 text-xs text-center mt-1.5">
                                     {(initEnUso / cpu * 100).toFixed(0)}% de 1 {config.presentacionTipo}
                                 </p>
@@ -351,8 +375,8 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                             <div>
                                 <p className="text-teal-300 text-sm font-semibold">
                                     {granel
-                                        ? `Total: ${fmtBase(newEnUso, config.unidadBase)}`
-                                        : `${newCerrado} ${config.presentacionTipo} cerrado${newCerrado !== 1 ? 's' : ''}`
+                                        ? `Total: ${isUnd ? newEnUso.toLocaleString() + ' ' + config.unidadBase : fmtBase(newEnUso, config.unidadBase)}`
+                                        : `${newCerrado.toLocaleString()} ${config.presentacionTipo} cerrado${newCerrado !== 1 ? 's' : ''}`
                                     }
                                 </p>
                                 {!granel && initEnUso > 0 && (
@@ -530,11 +554,17 @@ function MinimoSheet({ mat, invDoc, onClose, onSave }) {
 
                     <div className="mb-6">
                         {(!invDoc || granel || useBase) ? (
-                            <PrecisionStepper label={`Umbral mínimo (${unit})`}
-                                value={minimo} onChange={setMinimo} unit={unit} />
+                            unit === 'und' ? (
+                                <WholeStepper label={`Umbral mínimo (${unit})`}
+                                    value={minimo} onChange={setMinimo} unit={unit} steps={[1, 100, 1000]} />
+                            ) : (
+                                <PrecisionStepper label={`Umbral mínimo (${unit})`}
+                                    value={minimo} onChange={setMinimo} unit={unit} />
+                            )
                         ) : (
                             <WholeStepper label={`Umbral mínimo (${pres})`}
-                                value={minimo} onChange={setMinimo} unit={pres} />
+                                value={minimo} onChange={setMinimo} unit={pres}
+                                steps={unit === 'und' ? [1, 100, 1000] : [1]} />
                         )}
                         {/* Conversion hint */}
                         {!granel && cpu > 0 && minimo > 0 && (
