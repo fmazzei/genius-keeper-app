@@ -45,12 +45,20 @@ function stockStatus(inv) {
     if (!inv || (inv.stockCerrado == null && inv.stockEnUso == null)) return 'none';
     const minimo = inv.stockMinimo ?? 0;
     if (minimo <= 0) return 'ok';
-    const total = totalDisplay(inv);
+    // Compare in the unit the minimum was set in
+    const total = (isGranel(inv) || inv.stockMinimoEsBase) ? totalBase(inv) : totalDisplay(inv);
     if (total <= 0) return 'empty';
     const ratio = total / minimo;
     if (ratio < 0.5) return 'critical';
     if (ratio < 1)   return 'low';
     return 'ok';
+}
+
+// Total stock in base units (g, ml…) regardless of presentation
+function totalBase(inv) {
+    if (!inv) return 0;
+    if (isGranel(inv)) return inv.stockEnUso ?? 0;
+    return ((inv.stockCerrado ?? 0) * (inv.cantidadPorUnidad || 0)) + (inv.stockEnUso ?? 0);
 }
 
 function fmtBase(n, unit) {
@@ -74,14 +82,16 @@ function fmtInv(inv) {
 
 function fmtMinLabel(inv) {
     if (!inv || (inv.stockMinimo ?? 0) <= 0) return null;
-    if (isGranel(inv)) return `mín ${fmtBase(inv.stockMinimo, inv.unidadBase || 'g')}`;
+    if (isGranel(inv) || inv.stockMinimoEsBase)
+        return `mín ${fmtBase(inv.stockMinimo, inv.unidadBase || 'g')}`;
     return `mín ${inv.stockMinimo} ${inv.presentacionTipo || ''}`;
 }
 
 function barPct(inv) {
     const minimo = inv?.stockMinimo ?? 0;
     if (minimo <= 0) return inv ? 100 : 0;
-    return Math.min(100, Math.round((totalDisplay(inv) / minimo) * 100));
+    const total = (isGranel(inv) || inv?.stockMinimoEsBase) ? totalBase(inv) : totalDisplay(inv);
+    return Math.min(100, Math.round((total / minimo) * 100));
 }
 
 // ─── Reusable UI ──────────────────────────────────────────────────────────────
@@ -450,13 +460,28 @@ function EnUsoSheet({ mat, invDoc, onClose, onSave }) {
 
 function MinimoSheet({ mat, invDoc, onClose, onSave }) {
     const granel = isGranel(invDoc);
-    const [minimo, setMinimo] = useState(invDoc?.stockMinimo ?? 0);
-    const [saving, setSaving] = useState(false);
+    const pres   = invDoc?.presentacionTipo || '';
+    const unit   = invDoc?.unidadBase || 'g';
+    const cpu    = invDoc?.cantidadPorUnidad || 0;
+
+    // For discrete materials: choose between envases (packages) or base units (g/ml)
+    const [useBase, setUseBase] = useState(invDoc?.stockMinimoEsBase ?? false);
+    const [minimo, setMinimo]   = useState(invDoc?.stockMinimo ?? 0);
+    const [saving, setSaving]   = useState(false);
+
+    // When switching unit, convert the current value
+    function toggleUnit(toBase) {
+        if (toBase === useBase) return;
+        if (cpu > 0) {
+            setMinimo(prev => toBase ? +(prev * cpu).toFixed(3) : Math.round(prev / cpu));
+        }
+        setUseBase(toBase);
+    }
 
     async function handleSave() {
         if (saving) return;
         setSaving(true);
-        await onSave(mat, minimo);
+        await onSave(mat, minimo, granel ? false : useBase);
         setSaving(false);
         onClose();
     }
@@ -474,19 +499,54 @@ function MinimoSheet({ mat, invDoc, onClose, onSave }) {
                         </div>
                         <button onClick={onClose} className="text-slate-500 hover:text-white p-1"><X size={18} /></button>
                     </div>
+
+                    {/* Unit toggle — only for discrete materials */}
+                    {!granel && invDoc && (
+                        <div className="flex gap-2 mb-5">
+                            <button type="button" onClick={() => toggleUnit(false)}
+                                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                                    !useBase ? 'bg-teal-700 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                }`}>
+                                Por {pres}
+                            </button>
+                            <button type="button" onClick={() => toggleUnit(true)}
+                                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                                    useBase ? 'bg-teal-700 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                }`}>
+                                Por {unit}
+                            </button>
+                        </div>
+                    )}
+
                     <p className="text-slate-400 text-sm mb-5">
-                        Kroma alertará cuando el stock total baje de este valor
-                        {invDoc ? ` (en ${granel ? (invDoc.unidadBase || 'g') : invDoc.presentacionTipo})` : ''}.
+                        Alerta cuando el stock total baje de este valor
+                        {' '}({!granel && !useBase ? `en ${pres}` : `en ${unit}`}).
+                        {!granel && cpu > 0 && (
+                            <span className="text-slate-500">
+                                {' '}1 {pres} = {fmtBase(cpu, unit)}
+                            </span>
+                        )}
                     </p>
+
                     <div className="mb-6">
-                        {!invDoc || granel ? (
-                            <PrecisionStepper label={`Umbral mínimo (${invDoc?.unidadBase || 'g'})`}
-                                value={minimo} onChange={setMinimo} unit={invDoc?.unidadBase || 'g'} />
+                        {(!invDoc || granel || useBase) ? (
+                            <PrecisionStepper label={`Umbral mínimo (${unit})`}
+                                value={minimo} onChange={setMinimo} unit={unit} />
                         ) : (
-                            <WholeStepper label={`Umbral mínimo (${invDoc.presentacionTipo})`}
-                                value={minimo} onChange={setMinimo} unit={invDoc.presentacionTipo} />
+                            <WholeStepper label={`Umbral mínimo (${pres})`}
+                                value={minimo} onChange={setMinimo} unit={pres} />
+                        )}
+                        {/* Conversion hint */}
+                        {!granel && cpu > 0 && minimo > 0 && (
+                            <p className="text-slate-600 text-xs text-center mt-2">
+                                {useBase
+                                    ? `≈ ${(minimo / cpu).toFixed(1)} ${pres}`
+                                    : `≈ ${fmtBase(minimo * cpu, unit)}`
+                                }
+                            </p>
                         )}
                     </div>
+
                     <div className="flex gap-3">
                         <button onClick={() => setMinimo(0)}
                             className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 font-semibold py-3.5 rounded-xl">
@@ -616,10 +676,11 @@ export default function MaterialsInventoryPage() {
         setInventory(prev => ({ ...prev, [mat.id]: { ...prev[mat.id], ...update } }));
     }
 
-    async function handleSetMinimo(mat, minimo) {
+    async function handleSetMinimo(mat, minimo, esBase) {
         const docRef = doc(db, 'kroma_inventory_materials', mat.id);
-        await setDoc(docRef, { materialId: mat.id, stockMinimo: minimo, updatedAt: serverTimestamp() }, { merge: true });
-        setInventory(prev => ({ ...prev, [mat.id]: { ...prev[mat.id], stockMinimo: minimo } }));
+        const update = { materialId: mat.id, stockMinimo: minimo, stockMinimoEsBase: !!esBase, updatedAt: serverTimestamp() };
+        await setDoc(docRef, update, { merge: true });
+        setInventory(prev => ({ ...prev, [mat.id]: { ...prev[mat.id], ...update } }));
     }
 
     // ── Derived ───────────────────────────────────────────────────────────────

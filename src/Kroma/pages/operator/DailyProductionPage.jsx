@@ -219,10 +219,16 @@ function invTotalDisplay(inv) {
     return (inv.stockCerrado ?? 0) + (inv.stockEnUso ?? 0) / cpu;
 }
 
+function invTotalBase(inv) {
+    if (!inv) return 0;
+    if (isGranelInv(inv)) return inv.stockEnUso ?? 0;
+    return ((inv.stockCerrado ?? 0) * (inv.cantidadPorUnidad || 0)) + (inv.stockEnUso ?? 0);
+}
+
 function invStatus(inv) {
     const minimo = inv?.stockMinimo ?? 0;
     if (minimo <= 0) return 'ok';
-    const total = invTotalDisplay(inv);
+    const total = (isGranelInv(inv) || inv?.stockMinimoEsBase) ? invTotalBase(inv) : invTotalDisplay(inv);
     if (total <= 0) return 'empty';
     return total / minimo < 1 ? 'low' : 'ok';
 }
