@@ -13,15 +13,11 @@ const PRES_TIPOS = ['sobre', 'saco', 'envase', 'bolsa', 'bulto', 'granel'];
 
 const UNIDADES_BASE = ['g', 'kg', 'ml', 'l', 'und'];
 
-const CATEGORIES = [
-    { id: 'cultivos',    label: 'Cultivos' },
-    { id: 'coagulantes', label: 'Coagulantes' },
-    { id: 'sales',       label: 'Sales' },
-    { id: 'empaques',    label: 'Empaques' },
-    { id: 'consumibles', label: 'Consumibles' },
-    { id: 'detergentes', label: 'Detergentes' },
-    { id: 'reactivos',   label: 'Reactivos' },
-    { id: 'otros',       label: 'Otros' },
+const SECTION_GROUPS = [
+    { id: 'produccion', label: 'Producción', cats: ['cultivos', 'coagulantes', 'sales'] },
+    { id: 'empaque',    label: 'Empaque',    cats: ['empaques'] },
+    { id: 'higiene',    label: 'Higiene',    cats: ['detergentes', 'reactivos'] },
+    { id: 'general',    label: 'General',    cats: ['consumibles', 'otros'] },
 ];
 
 const BAR_COLOR  = { ok: 'bg-emerald-500', low: 'bg-amber-400', critical: 'bg-red-500', empty: 'bg-slate-600', none: 'bg-slate-700' };
@@ -724,7 +720,10 @@ export default function MaterialsInventoryPage() {
     const noStockCount = materials.filter(m => !inventory[m.id]).length;
 
     const filtered = materials.filter(m => {
-        if (catFilter !== 'all' && m.categoria !== catFilter) return false;
+        if (catFilter !== 'all') {
+            const section = SECTION_GROUPS.find(s => s.id === catFilter);
+            if (section && !section.cats.includes(m.categoria || 'otros')) return false;
+        }
         if (statusFilter === 'low') {
             const st = stockStatus(inventory[m.id]);
             return st === 'low' || st === 'critical' || st === 'empty';
@@ -793,10 +792,10 @@ export default function MaterialsInventoryPage() {
                         className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold ${catFilter === 'all' ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-500 hover:text-white'}`}>
                         Todas
                     </button>
-                    {CATEGORIES.map(c => (
-                        <button key={c.id} onClick={() => setCatFilter(c.id)}
-                            className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold ${catFilter === c.id ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-500 hover:text-white'}`}>
-                            {c.label}
+                    {SECTION_GROUPS.map(s => (
+                        <button key={s.id} onClick={() => setCatFilter(s.id)}
+                            className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold ${catFilter === s.id ? 'bg-slate-600 text-white' : 'bg-slate-800 text-slate-500 hover:text-white'}`}>
+                            {s.label}
                         </button>
                     ))}
                 </div>
@@ -807,11 +806,34 @@ export default function MaterialsInventoryPage() {
                     <div className="text-center py-16">
                         <Package size={36} className="text-slate-700 mx-auto mb-3" />
                         <p className="text-slate-500 text-sm">Sin materiales en esta vista</p>
-                        {statusFilter !== 'all' && (
+                        {(statusFilter !== 'all' || catFilter !== 'all') && (
                             <button onClick={() => { setStatusFilter('all'); setCatFilter('all'); }}
                                 className="mt-3 text-slate-400 hover:text-white text-xs underline">Ver todos</button>
                         )}
                     </div>
+                ) : catFilter === 'all' ? (
+                    SECTION_GROUPS.map(section => {
+                        const mats = filtered.filter(m => section.cats.includes(m.categoria || 'otros'));
+                        if (mats.length === 0) return null;
+                        return (
+                            <div key={section.id} className="mb-6">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <span className="text-slate-500 text-xs font-semibold uppercase tracking-widest">{section.label}</span>
+                                    <div className="flex-1 h-px bg-slate-800" />
+                                    <span className="text-slate-700 text-xs">{mats.length}</span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {mats.map(mat => (
+                                        <MaterialCard key={mat.id} mat={mat} invDoc={inventory[mat.id] ?? null}
+                                            onEntrada={(m, inv) => setEntradaTarget({ mat: m, invDoc: inv })}
+                                            onEnUso={(m, inv) => setEnUsoTarget({ mat: m, invDoc: inv })}
+                                            onSetMinimo={(m, inv) => setMinimoTarget({ mat: m, invDoc: inv })}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {filtered.map(mat => (
