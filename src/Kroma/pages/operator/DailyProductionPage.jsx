@@ -449,6 +449,8 @@ function CuajadoEditor({ bloque, litrosNetos, reg, onChange, materialsMap }) {
                 <RefRow label="Tipo coagulación" value={p.tipoCoagulacion} />
                 <RefRow label="Temp pre-cuajado" value={`${p.tempPreCuajado} °C`} />
                 <RefRow label="pH pre-cuajado" value={p.phPreCuajado} />
+                {p.cuajoTempAdiccion != null && <RefRow label="Temp leche al agregar cuajo" value={`${p.cuajoTempAdiccion} °C`} />}
+                {p.tempInoculacion != null && <RefRow label="Temp leche al agregar fermento" value={`${p.tempInoculacion} °C`} />}
                 <RefRow label="Tiempo coagulación" value={`${p.tiempoCoagulacion} ${p.unidadTiempoCoagulacion}`} />
                 <RefRow label="Temp coagulación" value={`${p.tempCoagulacion} °C`} />
             </RefCard>

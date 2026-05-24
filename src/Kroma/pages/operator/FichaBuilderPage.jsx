@@ -59,7 +59,7 @@ const BLOCK_DEFAULTS = {
         calcioEsDilucion: false, calcioGramosRef: 330, calcioAguaMLRef: 250, calcioDosisMLporL: 0.2,
         conservante: 'no', conservanteNombre: '', conservanteAgitar: 5, conservanteAgitarUnidad: 'min',
         conservanteEsperaPost: 0, conservanteEsperaPostUnidad: 'min',
-        cuajoTipo: 'microbiano', cuajoAgitar: 3, cuajoAgitarUnidad: 'min',
+        cuajoTipo: 'microbiano', cuajoTempAdiccion: 32, cuajoAgitar: 3, cuajoAgitarUnidad: 'min',
         cuajoEsperaPost: 0, cuajoEsperaPostUnidad: 'min',
         fermento: 'si', tipoFermento: 'mesofilico', tempInoculacion: 22, fermentoAgitar: 5, fermentoAgitarUnidad: 'min',
         fermentoEsperaPost: 0, fermentoEsperaPostUnidad: 'min',
@@ -634,7 +634,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                                 onUnidadChange={v => setParams(p => ({ ...p, calcioAgitarUnidad: v }))}
                                                 min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
                                         </div>
-                                        {!isLast && esperaRow('calcio')}
+                                        {esperaRow('calcio')}
                                     </>}
                                 </div>
                             );
@@ -655,7 +655,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                                 onUnidadChange={v => setParams(p => ({ ...p, conservanteAgitarUnidad: v }))}
                                                 min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
                                         </div>
-                                        {!isLast && esperaRow('conservante')}
+                                        {esperaRow('conservante')}
                                     </>}
                                 </div>
                             );
@@ -667,6 +667,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                     </div>
                                     <PillGroup options={[{ id: 'microbiano', label: 'Microbiano' }, { id: 'vegetal', label: 'Vegetal' }, { id: 'animal', label: 'Animal' }, { id: 'genetico', label: 'Genético' }]}
                                         value={params.cuajoTipo ?? 'microbiano'} onChange={set('cuajoTipo')} />
+                                    <SliderField label="Temp. de la leche al agregar" value={params.cuajoTempAdiccion ?? 32} min={18} max={45} unit="°C" onChange={set('cuajoTempAdiccion')} />
                                     <div>
                                         <span className="block text-xs text-slate-500 mb-2">Agitar</span>
                                         <TiempoRow value={params.cuajoAgitar ?? 3} unidad={params.cuajoAgitarUnidad ?? 'min'}
@@ -674,7 +675,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                             onUnidadChange={v => setParams(p => ({ ...p, cuajoAgitarUnidad: v }))}
                                             min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
                                     </div>
-                                    {!isLast && esperaRow('cuajo')}
+                                    {esperaRow('cuajo')}
                                 </div>
                             );
                             if (key === 'fermento') return (
@@ -687,7 +688,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                     {(params.fermento ?? 'si') !== 'no' && <>
                                         <PillGroup options={[{ id: 'mesofilico', label: 'Mesófilo' }, { id: 'termofilico', label: 'Termófilo' }, { id: 'blend', label: 'Blend T/M' }]}
                                             value={params.tipoFermento ?? 'mesofilico'} onChange={set('tipoFermento')} />
-                                        <SliderField label="Temp. inoculación" value={params.tempInoculacion ?? 22} min={18} max={45} unit="°C" onChange={set('tempInoculacion')} />
+                                        <SliderField label="Temp. de la leche al agregar" value={params.tempInoculacion ?? 22} min={18} max={45} unit="°C" onChange={set('tempInoculacion')} />
                                         <div>
                                             <span className="block text-xs text-slate-500 mb-2">Agitar</span>
                                             <TiempoRow value={params.fermentoAgitar ?? 5} unidad={params.fermentoAgitarUnidad ?? 'min'}
@@ -695,6 +696,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                                 onUnidadChange={v => setParams(p => ({ ...p, fermentoAgitarUnidad: v }))}
                                                 min={1} max={30} units={[{ id: 'min', label: 'min' }]} />
                                         </div>
+                                        {esperaRow('fermento')}
                                     </>}
                                 </div>
                             );
