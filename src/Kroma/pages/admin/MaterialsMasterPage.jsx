@@ -26,6 +26,7 @@ const UNITS = [
     { id: 'kg',  label: 'Kg',  base: 'kg', derivedId: null,  derivedLabel: null,  factor: 1 },
     { id: 'ml',  label: 'ml',  base: 'ml', derivedId: 'l',   derivedLabel: 'L',   factor: 0.001 },
     { id: 'l',   label: 'L',   base: 'l',  derivedId: null,  derivedLabel: null,  factor: 1 },
+    { id: 'm',   label: 'm',   base: 'm',  derivedId: null,  derivedLabel: null,  factor: 1 },
     { id: 'und', label: 'und', base: 'und',derivedId: null,  derivedLabel: null,  factor: 1 },
 ];
 

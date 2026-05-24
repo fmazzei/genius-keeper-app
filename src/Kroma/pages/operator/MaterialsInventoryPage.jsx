@@ -11,7 +11,7 @@ import { Package, Plus, AlertTriangle, X, Check, TrendingDown, Bell, Settings } 
 
 const PRES_TIPOS = ['sobre', 'saco', 'envase', 'bolsa', 'bulto', 'granel'];
 
-const UNIDADES_BASE = ['g', 'kg', 'ml', 'l', 'und'];
+const UNIDADES_BASE = ['g', 'kg', 'ml', 'l', 'm', 'und'];
 
 const SECTION_GROUPS = [
     { id: 'produccion', label: 'Producción', cats: ['cultivos', 'coagulantes', 'sales'] },
@@ -276,6 +276,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
         cantidadPorUnidad: initialPres === 'granel' ? 0 : (invDoc?.cantidadPorUnidad ?? mat.cantidadPresentacion ?? 0),
     });
     const [showConfig, setShowConfig] = useState(!invDoc);
+    const [modoAjuste, setModoAjuste] = useState(false);
     const granel = config.presentacionTipo === 'granel';
 
     const [addCerrado, setAddCerrado] = useState(0);
@@ -284,17 +285,27 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
     const [saving, setSaving]         = useState(false);
 
     const cpu = config.cantidadPorUnidad || 0;
-    const newCerrado = (invDoc?.stockCerrado ?? 0) + (granel ? 0 : addCerrado);
-    const newEnUso   = granel ? (invDoc?.stockEnUso ?? 0) + addCerrado : initEnUso;
+    // modoAjuste=true → replace current stock; false → add to current stock
+    const newCerrado = granel ? 0
+        : modoAjuste ? addCerrado
+        : (invDoc?.stockCerrado ?? 0) + addCerrado;
+    const newEnUso = granel
+        ? (modoAjuste ? addCerrado : (invDoc?.stockEnUso ?? 0) + addCerrado)
+        : initEnUso;
 
     // Whole-number materials (labels, packaging) use large step options
     const isUnd = config.unidadBase === 'und';
     const undSteps = [1, 100, 1000];
 
+    function switchMode(ajuste) {
+        setModoAjuste(ajuste);
+        setAddCerrado(0);
+    }
+
     async function handleSave() {
         if (addCerrado <= 0 || saving) return;
         setSaving(true);
-        await onSave(mat, config, addCerrado, initEnUso, notas.trim());
+        await onSave(mat, config, addCerrado, initEnUso, notas.trim(), modoAjuste);
         setSaving(false);
         onClose();
     }
@@ -312,10 +323,26 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                     <div className="flex items-start justify-between py-3 mb-4">
                         <div>
                             <p className="text-white font-bold text-base">{mat.nombre}</p>
-                            <p className="text-slate-400 text-sm mt-0.5">Registrar Entrada</p>
+                            <p className={`text-sm mt-0.5 ${modoAjuste ? 'text-amber-400' : 'text-slate-400'}`}>
+                                {modoAjuste ? 'Corregir Stock' : 'Registrar Entrada'}
+                            </p>
                         </div>
                         <button onClick={onClose} className="text-slate-500 hover:text-white p-1"><X size={18} /></button>
                     </div>
+
+                    {/* Mode toggle — only when stock already recorded */}
+                    {invDoc && (
+                        <div className="flex gap-2 mb-4">
+                            <button type="button" onClick={() => switchMode(false)}
+                                className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
+                                    !modoAjuste ? 'bg-teal-700 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                }`}>+ Entrada</button>
+                            <button type="button" onClick={() => switchMode(true)}
+                                className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
+                                    modoAjuste ? 'bg-amber-700 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                                }`}>Corregir stock</button>
+                        </div>
+                    )}
 
                     {/* Presentation config toggle */}
                     <button type="button" onClick={() => setShowConfig(v => !v)}
@@ -331,23 +358,27 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                     {/* Quantity entry */}
                     <div className="mb-4">
                         {granel && !isUnd ? (
-                            <PrecisionStepper label={`Cantidad a ingresar (${config.unidadBase})`}
+                            <PrecisionStepper
+                                label={modoAjuste ? `Stock total actual (${config.unidadBase})` : `Cantidad a ingresar (${config.unidadBase})`}
                                 value={addCerrado} onChange={setAddCerrado} unit={config.unidadBase} />
                         ) : (
                             <WholeStepper
-                                label={granel ? `Cantidad a ingresar (${config.unidadBase})` : `${config.presentacionTipo}s cerrados a ingresar`}
-                                value={addCerrado} onChange={setAddCerrado} unit={config.presentacionTipo === 'granel' ? config.unidadBase : config.presentacionTipo}
+                                label={modoAjuste
+                                    ? (granel ? `Stock total actual (${config.unidadBase})` : `${config.presentacionTipo}s en stock total`)
+                                    : (granel ? `Cantidad a ingresar (${config.unidadBase})` : `${config.presentacionTipo}s cerrados a ingresar`)}
+                                value={addCerrado} onChange={setAddCerrado}
+                                unit={config.presentacionTipo === 'granel' ? config.unidadBase : config.presentacionTipo}
                                 steps={isUnd ? undSteps : [1]}
                             />
                         )}
                         {!granel && cpu > 0 && addCerrado > 0 && (
                             <p className="text-slate-500 text-xs text-center mt-2">
-                                {addCerrado.toLocaleString()} × {fmtBase(cpu, config.unidadBase)} = {fmtBase(addCerrado * cpu, config.unidadBase)} total
+                                {addCerrado.toLocaleString()} × {fmtBase(cpu, config.unidadBase)} = {fmtBase(addCerrado * cpu, config.unidadBase)}
                             </p>
                         )}
                     </div>
 
-                    {/* En uso declaration (for discrete) */}
+                    {/* En uso declaration (for discrete, entrada mode only) */}
                     {!granel && (
                         <div className="mb-4">
                             {isUnd ? (
@@ -367,13 +398,15 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
 
                     {/* Preview */}
                     {addCerrado > 0 && (
-                        <div className="flex items-center gap-3 bg-teal-900/30 border border-teal-700/40 rounded-xl px-4 py-3 mb-4">
-                            <Check size={15} className="text-teal-400 shrink-0" />
+                        <div className={`flex items-center gap-3 rounded-xl px-4 py-3 mb-4 ${
+                            modoAjuste ? 'bg-amber-900/25 border border-amber-700/40' : 'bg-teal-900/30 border border-teal-700/40'
+                        }`}>
+                            <Check size={15} className={`${modoAjuste ? 'text-amber-400' : 'text-teal-400'} shrink-0`} />
                             <div>
-                                <p className="text-teal-300 text-sm font-semibold">
+                                <p className={`text-sm font-semibold ${modoAjuste ? 'text-amber-300' : 'text-teal-300'}`}>
                                     {granel
-                                        ? `Total: ${isUnd ? newEnUso.toLocaleString() + ' ' + config.unidadBase : fmtBase(newEnUso, config.unidadBase)}`
-                                        : `${newCerrado.toLocaleString()} ${config.presentacionTipo} cerrado${newCerrado !== 1 ? 's' : ''}`
+                                        ? `${modoAjuste ? 'Ajustar a:' : 'Total:'} ${isUnd ? newEnUso.toLocaleString() + ' ' + config.unidadBase : fmtBase(newEnUso, config.unidadBase)}`
+                                        : `${modoAjuste ? 'Ajustar a: ' : ''}${newCerrado.toLocaleString()} ${config.presentacionTipo} cerrado${newCerrado !== 1 ? 's' : ''}`
                                     }
                                 </p>
                                 {!granel && initEnUso > 0 && (
@@ -391,8 +424,10 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                     </div>
 
                     <button onClick={handleSave} disabled={addCerrado <= 0 || saving}
-                        className="w-full bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-4 rounded-xl">
-                        {saving ? 'Guardando...' : 'Registrar Entrada'}
+                        className={`w-full disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-4 rounded-xl ${
+                            modoAjuste ? 'bg-amber-600 hover:bg-amber-500' : 'bg-teal-600 hover:bg-teal-500'
+                        }`}>
+                        {saving ? 'Guardando...' : modoAjuste ? 'Corregir Stock' : 'Registrar Entrada'}
                     </button>
                 </div>
             </div>
@@ -667,14 +702,16 @@ export default function MaterialsInventoryPage() {
         setAlerts(prev => prev.filter(a => a.id !== alertId));
     }
 
-    async function handleEntrada(mat, config, addCerrado, initEnUso, notas) {
+    async function handleEntrada(mat, config, addCerrado, initEnUso, notas, esAjuste = false) {
         const invDoc  = inventory[mat.id];
         const docRef  = doc(db, 'kroma_inventory_materials', mat.id);
         const granel  = config.presentacionTipo === 'granel';
 
-        const newCerrado = granel ? 0 : ((invDoc?.stockCerrado ?? 0) + addCerrado);
-        const newEnUso   = granel
-            ? ((invDoc?.stockEnUso ?? 0) + addCerrado)
+        const newCerrado = granel ? 0
+            : esAjuste ? addCerrado
+            : (invDoc?.stockCerrado ?? 0) + addCerrado;
+        const newEnUso = granel
+            ? (esAjuste ? addCerrado : (invDoc?.stockEnUso ?? 0) + addCerrado)
             : initEnUso;
 
         const data = {
