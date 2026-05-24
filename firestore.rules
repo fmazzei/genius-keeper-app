@@ -184,7 +184,15 @@ service cloud.firestore {
     }
 
     match /kroma_milk_reception/{id} {
-      allow read, write: if isKromaAccess();
+      allow read:   if isKromaAccess();
+      allow create: if isKromaAccess();
+      // Edit allowed only within 10 minutes of creation OR by master user
+      allow update: if isKromaAccess() && (
+        !('createdAt' in resource.data) ||
+        request.time < resource.data.createdAt + duration.value(600, 's') ||
+        isMaster()
+      );
+      allow delete: if false; // soft-delete only (active: false)
     }
 
     match /kroma_inventory_materials/{id} {

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/Firebase/config.js';
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { db, auth } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import {
     Droplets, Plus, ChevronLeft, ChevronRight, Check,
-    Snowflake, Zap,
+    Snowflake, Zap, Pencil, Trash2, Lock,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -16,40 +16,34 @@ const PARAMS = [
     { key: 'brix',        label: '°Brix',         unit: '°Bx',  step: 0.1,   decimals: 1 },
 ];
 
-const DEFAULT_PARAMS = { temperatura: 12, densidad: 1.028, pH: 6.70, brix: 11.5 };
-
-const LITER_STEPS = [1, 5, 10, 50];
+const DEFAULT_PARAMS  = { temperatura: 12, densidad: 1.028, pH: 6.70, brix: 11.5 };
+const LITER_STEPS     = [1, 5, 10, 50];
+const EDIT_WINDOW_MS  = 10 * 60 * 1000; // 10 min
+const MASTER_EMAIL    = 'lacteoca@lacteoca.com';
+const STEP_LABELS     = ['Ingreso', 'Parámetros', 'Destino'];
 
 const ROUTES = [
     {
         id: 'tanque',
         Icon: Snowflake,
         title: 'Tanque de Enfriamiento',
-        desc: 'La leche se almacena y enfría hasta su uso en producción.',
+        desc:  'La leche se almacena y enfría hasta su uso en producción.',
         active:   'border-blue-500 bg-blue-900/30',
-        iconBg:   'bg-blue-900/60',
-        iconText: 'text-blue-400',
-        text:     'text-blue-300',
-        check:    'border-blue-500 bg-blue-900/60',
-        pill:     'bg-blue-900/60 text-blue-300',
-        pillText: '🧊 Tanque',
+        iconBg:   'bg-blue-900/60',   iconText: 'text-blue-400',
+        text:     'text-blue-300',    check:    'border-blue-500 bg-blue-900/60',
+        pill:     'bg-blue-900/60 text-blue-300',  pillText: '🧊 Tanque',
     },
     {
         id: 'produccion',
         Icon: Zap,
         title: 'Directo a Producción',
-        desc: 'La leche entra de inmediato al proceso sin pasar por el tanque.',
+        desc:  'La leche entra de inmediato al proceso sin pasar por el tanque.',
         active:   'border-amber-500 bg-amber-900/30',
-        iconBg:   'bg-amber-900/60',
-        iconText: 'text-amber-400',
-        text:     'text-amber-300',
-        check:    'border-amber-500 bg-amber-900/60',
-        pill:     'bg-amber-900/50 text-amber-300',
-        pillText: '🏭 Producción',
+        iconBg:   'bg-amber-900/60',  iconText: 'text-amber-400',
+        text:     'text-amber-300',   check:    'border-amber-500 bg-amber-900/60',
+        pill:     'bg-amber-900/50 text-amber-300', pillText: '🏭 Producción',
     },
 ];
-
-const STEP_LABELS = ['Ingreso', 'Parámetros', 'Destino'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -59,9 +53,16 @@ function nowLocal() {
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+function toDate(ts) {
+    if (!ts) return null;
+    if (ts instanceof Date) return ts;
+    if (ts.toDate) return ts.toDate();
+    return new Date(ts);
+}
+
 function fmtDateShort(ts) {
-    if (!ts) return '—';
-    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const d = toDate(ts);
+    if (!d) return '—';
     return d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
@@ -69,7 +70,35 @@ function supplierName(s) {
     return s?.nombreComercial || s?.nombre || '—';
 }
 
-// ─── Reusable UI ──────────────────────────────────────────────────────────────
+function isMasterUser() {
+    return auth.currentUser?.email === MASTER_EMAIL;
+}
+
+function editTimeLeftMs(rec) {
+    const created = toDate(rec.createdAt);
+    if (!created) return 0;
+    return Math.max(0, EDIT_WINDOW_MS - (Date.now() - created.getTime()));
+}
+
+function canEditRec(rec) {
+    return editTimeLeftMs(rec) > 0 || isMasterUser();
+}
+
+function fmtTimeLeft(ms) {
+    const totalSec = Math.ceil(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function toDatetimeLocal(ts) {
+    const d = toDate(ts);
+    if (!d) return nowLocal();
+    const p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// ─── UI Components ────────────────────────────────────────────────────────────
 
 function SecLabel({ children }) {
     return (
@@ -192,12 +221,18 @@ function StepBar({ current }) {
 
 // ─── Reception Card ───────────────────────────────────────────────────────────
 
-function ReceptionCard({ rec }) {
-    const route = ROUTES.find(r => r.id === rec.enrutamiento) || ROUTES[0];
+function ReceptionCard({ rec, onEdit, onDelete }) {
+    const [confirmDelete, setConfirmDelete] = useState(false);
+    const route    = ROUTES.find(r => r.id === rec.enrutamiento) || ROUTES[0];
+    const canEdit  = canEditRec(rec);
+    const timeLeft = editTimeLeftMs(rec);
+
     return (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+
+            {/* Top row */}
             <div className="flex items-start justify-between mb-3">
-                <div>
+                <div className="flex-1 min-w-0">
                     <p className="text-white font-semibold text-sm">{rec.proveedorNombre || '—'}</p>
                     <p className="text-slate-500 text-xs mt-0.5">{fmtDateShort(rec.fecha || rec.createdAt)}</p>
                 </div>
@@ -206,24 +241,77 @@ function ReceptionCard({ rec }) {
                 </span>
             </div>
 
+            {/* Litros */}
             <div className="flex items-center gap-1.5 mb-3">
                 <Droplets size={15} className="text-blue-400" />
                 <span className="text-blue-300 font-bold text-xl font-mono">{rec.litros} L</span>
             </div>
 
+            {/* Parameters */}
             {rec.parametros && (
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-4 gap-2 mb-3">
                     {[
-                        { label: 'Temp',    value: `${rec.parametros.temperatura?.toFixed(1)}°C` },
-                        { label: 'Dens',    value: rec.parametros.densidad?.toFixed(3) },
-                        { label: 'pH',      value: rec.parametros.pH?.toFixed(2) },
-                        { label: '°Brix',   value: rec.parametros.brix?.toFixed(1) },
+                        { label: 'Temp',  value: `${rec.parametros.temperatura?.toFixed(1)}°C` },
+                        { label: 'Dens',  value: rec.parametros.densidad?.toFixed(3) },
+                        { label: 'pH',    value: rec.parametros.pH?.toFixed(2) },
+                        { label: '°Brix', value: rec.parametros.brix?.toFixed(1) },
                     ].map(({ label, value }) => (
                         <div key={label} className="bg-slate-700/50 rounded-lg px-2 py-1.5 text-center">
                             <p className="text-slate-500 text-xs">{label}</p>
                             <p className="text-slate-200 text-xs font-mono font-semibold">{value ?? '—'}</p>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* Edit window countdown */}
+            {timeLeft > 0 && (
+                <p className="text-slate-500 text-xs mb-2">
+                    Editable por{' '}
+                    <span className="text-slate-400 font-mono">{fmtTimeLeft(timeLeft)}</span>
+                </p>
+            )}
+
+            {/* Actions */}
+            {!confirmDelete ? (
+                canEdit ? (
+                    <div className="flex gap-2 mt-1">
+                        <button
+                            onClick={() => onEdit(rec)}
+                            className="flex-1 flex items-center justify-center gap-1.5 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 text-xs font-semibold py-2 px-3 rounded-xl"
+                        >
+                            <Pencil size={12} /> Editar
+                        </button>
+                        <button
+                            onClick={() => setConfirmDelete(true)}
+                            className="flex items-center justify-center gap-1 bg-red-900/40 hover:bg-red-900/70 active:scale-95 text-red-400 text-xs font-semibold py-2 px-3 rounded-xl"
+                        >
+                            <Trash2 size={13} />
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-1.5 text-slate-600 text-xs pt-1">
+                        <Lock size={11} />
+                        <span>Solo el usuario máster puede editar</span>
+                    </div>
+                )
+            ) : (
+                <div className="bg-red-900/20 border border-red-800/50 rounded-xl p-3">
+                    <p className="text-red-300 text-xs font-semibold mb-2">¿Eliminar esta recepción?</p>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setConfirmDelete(false)}
+                            className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold py-2 rounded-lg"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={() => { setConfirmDelete(false); onDelete(rec); }}
+                            className="flex-1 bg-red-700 hover:bg-red-600 text-white text-xs font-semibold py-2 rounded-lg"
+                        >
+                            Eliminar
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
@@ -240,10 +328,11 @@ export default function MilkInventoryPage() {
     const [loading, setLoading]       = useState(true);
     const [error, setError]           = useState(null);
 
-    const [view, setView]         = useState('list');
-    const [step, setStep]         = useState(0);
-    const [saving, setSaving]     = useState(false);
-    const [saveError, setSaveError] = useState(null);
+    const [view, setView]             = useState('list');
+    const [editingRec, setEditingRec] = useState(null); // null = create, object = edit
+    const [step, setStep]             = useState(0);
+    const [saving, setSaving]         = useState(false);
+    const [saveError, setSaveError]   = useState(null);
 
     // Form fields
     const [proveedorId, setProveedorId]     = useState('');
@@ -265,7 +354,7 @@ export default function MilkInventoryPage() {
 
             const recs = recSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
-                .filter(r => r.active !== false)
+                .filter(r => r.active !== false && r.status !== 'completada')
                 .sort((a, b) => {
                     const ta = a.fecha?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
                     const tb = b.fecha?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
@@ -286,7 +375,8 @@ export default function MilkInventoryPage() {
         }
     }
 
-    function openForm() {
+    function openCreate() {
+        setEditingRec(null);
         setProveedorId(suppliers[0]?.id || '');
         setLitros(100);
         setFecha(nowLocal());
@@ -295,6 +385,31 @@ export default function MilkInventoryPage() {
         setStep(0);
         setSaveError(null);
         setView('form');
+    }
+
+    function openEdit(rec) {
+        setEditingRec(rec);
+        setProveedorId(rec.proveedorId || '');
+        setLitros(rec.litros || 100);
+        setFecha(toDatetimeLocal(rec.fecha || rec.createdAt));
+        setParams({ ...DEFAULT_PARAMS, ...(rec.parametros || {}) });
+        setEnrutamiento(rec.enrutamiento || 'tanque');
+        setStep(0);
+        setSaveError(null);
+        setView('form');
+    }
+
+    async function handleDelete(rec) {
+        try {
+            await updateDoc(doc(db, 'kroma_milk_reception', rec.id), {
+                active:    false,
+                deletedAt: serverTimestamp(),
+                deletedBy: kromaUser?.id || '',
+            });
+            setReceptions(prev => prev.filter(r => r.id !== rec.id));
+        } catch (_) {
+            // Non-blocking — item still removed optimistically
+        }
     }
 
     function setParam(key, val) {
@@ -311,29 +426,44 @@ export default function MilkInventoryPage() {
         setSaving(true);
         setSaveError(null);
         try {
-            const prov = suppliers.find(s => s.id === proveedorId);
+            const prov      = suppliers.find(s => s.id === proveedorId);
             const fechaDate = new Date(fecha);
 
-            const data = {
-                proveedorId,
-                proveedorNombre: supplierName(prov),
-                litros,
-                fecha:          fechaDate,
-                parametros:     { ...params },
-                enrutamiento,
-                operarioId:     kromaUser?.id || '',
-                operarioNombre: kromaUser?.name || '',
-                active:         true,
-                createdAt:      serverTimestamp(),
-            };
-
-            const ref = await addDoc(collection(db, 'kroma_milk_reception'), data);
-
-            setReceptions(prev => [{
-                id: ref.id, ...data,
-                fecha: fechaDate,
-                createdAt: new Date(),
-            }, ...prev]);
+            if (editingRec) {
+                await updateDoc(doc(db, 'kroma_milk_reception', editingRec.id), {
+                    proveedorId,
+                    proveedorNombre: supplierName(prov),
+                    litros,
+                    fecha:        fechaDate,
+                    parametros:   { ...params },
+                    enrutamiento,
+                    updatedAt:    serverTimestamp(),
+                    updatedBy:    kromaUser?.id || '',
+                });
+                setReceptions(prev => prev.map(r =>
+                    r.id === editingRec.id
+                        ? { ...r, proveedorId, proveedorNombre: supplierName(prov), litros, fecha: fechaDate, parametros: { ...params }, enrutamiento }
+                        : r
+                ));
+            } else {
+                const data = {
+                    proveedorId,
+                    proveedorNombre: supplierName(prov),
+                    litros,
+                    fecha:          fechaDate,
+                    parametros:     { ...params },
+                    enrutamiento,
+                    operarioId:     kromaUser?.id || '',
+                    operarioNombre: kromaUser?.name || '',
+                    // status field for production module linkage:
+                    // 'pendiente' → active | 'completada' → archived with produccionId
+                    status:         'pendiente',
+                    active:         true,
+                    createdAt:      serverTimestamp(),
+                };
+                const ref = await addDoc(collection(db, 'kroma_milk_reception'), data);
+                setReceptions(prev => [{ id: ref.id, ...data, fecha: fechaDate, createdAt: new Date() }, ...prev]);
+            }
 
             setView('list');
         } catch (e) {
@@ -377,6 +507,7 @@ export default function MilkInventoryPage() {
     // ── Form View ─────────────────────────────────────────────────────────────
 
     if (view === 'form') {
+        const isEdit        = editingRec !== null;
         const selectedRoute = ROUTES.find(r => r.id === enrutamiento);
 
         return (
@@ -391,9 +522,9 @@ export default function MilkInventoryPage() {
                         <ChevronLeft size={20} />
                     </button>
                     <span className="text-white font-semibold text-sm flex-1">
-                        {step === 0 && 'Datos de Ingreso'}
-                        {step === 1 && 'Parámetros de Calidad'}
-                        {step === 2 && 'Destino de la Leche'}
+                        {isEdit ? 'Editar Recepción' : 'Nueva Recepción'}
+                        {step === 1 && ' — Parámetros'}
+                        {step === 2 && ' — Destino'}
                     </span>
                     {step < 2 ? (
                         <button
@@ -409,25 +540,25 @@ export default function MilkInventoryPage() {
                             disabled={saving}
                             className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white text-sm font-semibold px-4 py-2 rounded-xl"
                         >
-                            {saving ? 'Guardando…' : <><Check size={15} /> Guardar</>}
+                            {saving
+                                ? 'Guardando…'
+                                : <><Check size={15} /> {isEdit ? 'Actualizar' : 'Guardar'}</>
+                            }
                         </button>
                     )}
                 </div>
 
-                {/* Step bar */}
                 <StepBar current={step} />
 
-                {/* Save error */}
                 {saveError && (
                     <div className="mx-5 mt-3 shrink-0 bg-red-900/30 border border-red-700 rounded-xl px-4 py-2.5 text-red-300 text-xs font-mono">
                         {saveError}
                     </div>
                 )}
 
-                {/* Content */}
                 <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
 
-                    {/* ── Step 0 — Ingreso ─────────────────────────────── */}
+                    {/* ── Step 0 — Ingreso ────────────────────────── */}
                     {step === 0 && (
                         <>
                             <div>
@@ -444,9 +575,7 @@ export default function MilkInventoryPage() {
                                     >
                                         <option value="">Seleccionar proveedor…</option>
                                         {suppliers.map(s => (
-                                            <option key={s.id} value={s.id}>
-                                                {supplierName(s)}
-                                            </option>
+                                            <option key={s.id} value={s.id}>{supplierName(s)}</option>
                                         ))}
                                     </select>
                                 )}
@@ -466,7 +595,7 @@ export default function MilkInventoryPage() {
                         </>
                     )}
 
-                    {/* ── Step 1 — Parámetros ──────────────────────────── */}
+                    {/* ── Step 1 — Parámetros ─────────────────────── */}
                     {step === 1 && PARAMS.map(p => (
                         <ParamStepper
                             key={p.key}
@@ -476,12 +605,10 @@ export default function MilkInventoryPage() {
                         />
                     ))}
 
-                    {/* ── Step 2 — Destino ─────────────────────────────── */}
+                    {/* ── Step 2 — Destino ────────────────────────── */}
                     {step === 2 && (
                         <>
-                            <p className="text-slate-400 text-sm">
-                                ¿A dónde se envía la leche recibida?
-                            </p>
+                            <p className="text-slate-400 text-sm">¿A dónde se envía la leche recibida?</p>
 
                             <div className="space-y-3">
                                 {ROUTES.map(opt => {
@@ -493,9 +620,7 @@ export default function MilkInventoryPage() {
                                             type="button"
                                             onClick={() => setEnrutamiento(opt.id)}
                                             className={`w-full text-left flex items-start gap-4 p-5 rounded-2xl border-2 transition-all ${
-                                                selected
-                                                    ? opt.active
-                                                    : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                                                selected ? opt.active : 'border-slate-700 bg-slate-800 hover:border-slate-600'
                                             }`}
                                         >
                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
@@ -525,17 +650,17 @@ export default function MilkInventoryPage() {
                                     Resumen
                                 </p>
                                 {[
-                                    ['Proveedor',    supplierName(suppliers.find(s => s.id === proveedorId))],
-                                    ['Litros',       `${litros} L`],
-                                    ['Temperatura',  `${params.temperatura.toFixed(1)} °C`],
-                                    ['Densidad',     `${params.densidad.toFixed(3)} g/ml`],
-                                    ['pH',           params.pH.toFixed(2)],
-                                    ['°Brix',        params.brix.toFixed(1)],
-                                    ['Destino',      selectedRoute?.title],
+                                    ['Proveedor',   supplierName(suppliers.find(s => s.id === proveedorId))],
+                                    ['Litros',      `${litros} L`],
+                                    ['Temperatura', `${params.temperatura.toFixed(1)} °C`],
+                                    ['Densidad',    `${params.densidad.toFixed(3)} g/ml`],
+                                    ['pH',          params.pH.toFixed(2)],
+                                    ['°Brix',       params.brix.toFixed(1)],
+                                    ['Destino',     selectedRoute?.title],
                                 ].map(([label, value]) => (
                                     <div key={label} className="flex justify-between text-sm">
                                         <span className="text-slate-400">{label}</span>
-                                        <span className="text-white font-medium font-mono text-right max-w-48 truncate">
+                                        <span className="text-white font-medium text-right max-w-48 truncate">
                                             {value}
                                         </span>
                                     </div>
@@ -553,7 +678,6 @@ export default function MilkInventoryPage() {
     return (
         <div className="flex flex-col h-full overflow-hidden">
 
-            {/* Header */}
             <div className="px-5 pt-5 pb-3 flex items-start justify-between shrink-0">
                 <div>
                     <h2 className="text-xl font-bold text-white mb-0.5">Recepción de Leche</h2>
@@ -562,15 +686,14 @@ export default function MilkInventoryPage() {
                     </p>
                 </div>
                 <button
-                    onClick={openForm}
+                    onClick={openCreate}
                     className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-sm font-semibold px-4 py-2.5 rounded-xl"
                 >
-                    <Plus size={15} />
-                    Nueva
+                    <Plus size={15} /> Nueva
                 </button>
             </div>
 
-            {/* Tank status widget */}
+            {/* Tank widget */}
             <div className="mx-5 mb-4 shrink-0">
                 <div className="bg-blue-950/50 border border-blue-800/40 rounded-2xl px-5 py-4 flex items-center gap-4">
                     <div className="w-12 h-12 rounded-xl bg-blue-900/60 flex items-center justify-center shrink-0">
@@ -594,7 +717,7 @@ export default function MilkInventoryPage() {
                         <Droplets size={36} className="text-slate-700 mx-auto mb-3" />
                         <p className="text-slate-500 text-sm">Sin recepciones registradas</p>
                         <button
-                            onClick={openForm}
+                            onClick={openCreate}
                             className="mt-4 text-blue-400 hover:text-blue-300 text-sm font-semibold"
                         >
                             + Registrar primera recepción
@@ -603,7 +726,12 @@ export default function MilkInventoryPage() {
                 ) : (
                     <div className="space-y-3">
                         {receptions.map(rec => (
-                            <ReceptionCard key={rec.id} rec={rec} />
+                            <ReceptionCard
+                                key={rec.id}
+                                rec={rec}
+                                onEdit={openEdit}
+                                onDelete={handleDelete}
+                            />
                         ))}
                     </div>
                 )}
