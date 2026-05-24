@@ -4,6 +4,7 @@ import ProcessBuilderPageImpl from './operator/ProcessBuilderPage';
 import RecipeBuilderPageImpl from './operator/RecipeBuilderPage';
 import FichaBuilderPageImpl from './operator/FichaBuilderPage';
 import MaterialsInventoryPageImpl from './operator/MaterialsInventoryPage';
+import MilkInventoryPageImpl from './operator/MilkInventoryPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -47,18 +48,7 @@ export const OperatorHome = () => (
     </div>
 );
 
-export const MilkInventoryPage = () => (
-    <ComingSoon
-        title="Recepción e Inventario de Leche"
-        description="Registro de ingreso de leche por proveedor con parámetros físico-químicos."
-        items={[
-            { title: 'Recepción de leche', desc: 'Proveedor, litros, temperatura, densidad, pH, Brix.' },
-            { title: 'Enrutamiento', desc: 'La leche va al tanque de enfriamiento o directo a producción.' },
-            { title: 'Inventario en tanque', desc: 'Total en litros y desglose por proveedor.' },
-            { title: 'Parámetros pre-pasteurización', desc: 'Toma de muestras si la leche venía del tanque.' },
-        ]}
-    />
-);
+export const MilkInventoryPage = () => <MilkInventoryPageImpl />;
 
 export const MaterialsInventoryPage = () => <MaterialsInventoryPageImpl />;
 
