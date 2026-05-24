@@ -1538,7 +1538,7 @@ export default function DailyProductionPage() {
 
             <div className="flex-1 overflow-y-auto px-5 pb-8">
                 {logs.length === 0 ? (
-                    <div className="text-center py-16">
+                    <div className="text-center py-12">
                         <Factory size={36} className="text-slate-700 mx-auto mb-3" />
                         <p className="text-slate-500 text-sm">Sin producciones activas</p>
                         <button onClick={() => setView('select_ficha')}
@@ -1553,6 +1553,40 @@ export default function DailyProductionPage() {
                                 onOpen={openLog}
                                 onCancel={() => {}} />
                         ))}
+                    </div>
+                )}
+
+                {/* ── Historial ── */}
+                {historial.length > 0 && (
+                    <div className="mt-6">
+                        <button type="button" onClick={() => setShowHistorial(v => !v)}
+                            className="flex items-center gap-2 w-full text-slate-500 hover:text-slate-300 text-xs font-semibold uppercase tracking-widest pb-3">
+                            <span>Historial ({historial.length})</span>
+                            {showHistorial ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                        </button>
+                        {showHistorial && (
+                            <div className="space-y-3">
+                                {historial.map(log => (
+                                    <div key={log.id} className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 space-y-2 opacity-70">
+                                        <div className="flex items-start justify-between">
+                                            <div>
+                                                <p className="text-white font-semibold text-sm">{log.productoNombre}</p>
+                                                <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
+                                            </div>
+                                            <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-700 text-slate-300 border border-slate-600">
+                                                Completada
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-3 text-slate-500 text-xs">
+                                            <Droplets size={11} />
+                                            <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
+                                            {log.proveedorNombre && <><span>·</span><span>{log.proveedorNombre}</span></>}
+                                            {log.rendimientoKg > 0 && <><span>·</span><span className="text-emerald-600">{log.rendimientoKg.toFixed(2)} kg</span></>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
