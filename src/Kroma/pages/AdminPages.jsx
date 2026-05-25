@@ -5,6 +5,7 @@ import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction,
 import SuppliersPageImpl from './admin/SuppliersPage';
 import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
 import ProductCatalogPageImpl from './admin/ProductCatalogPage';
+import WarehousesPageImpl from './admin/WarehousesPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -49,18 +50,7 @@ export const AdminHome = () => (
     </div>
 );
 
-export const WarehousesPage = () => (
-    <ComingSoon
-        title="Almacenes y Depósitos"
-        description="Gestiona todas las ubicaciones físicas de la planta y sus inventarios."
-        items={[
-            { title: 'Crear almacén', desc: 'Bodega de insumos, tanque de enfriamiento, cava cuarto planta, depósito Caracas.' },
-            { title: 'Inventario por almacén', desc: 'Visualizar stock por ubicación con movimientos históricos.' },
-            { title: 'Gestión de lotes', desc: 'Todo movimiento vinculado a número de lote y fecha de caducidad.' },
-            { title: 'Transferencias internas', desc: 'Registro de traslados entre cavas con usuario y fecha.' },
-        ]}
-    />
-);
+export const WarehousesPage = () => <WarehousesPageImpl />;
 
 export const SuppliersPage = () => <SuppliersPageImpl />;
 

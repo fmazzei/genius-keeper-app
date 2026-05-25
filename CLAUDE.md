@@ -43,6 +43,8 @@ Regla Firestore base: `isKromaAccess() = getRole(uid) == 'produccion' || isMaste
 | `kroma_inventory_materials` | Inventario operativo de insumos |
 | `kroma_inventory_pt` | Inventario de producto terminado |
 | `kroma_production_logs` | Planillas de producción activa (histórico) |
+| `kroma_notifications` | Notificaciones push internas (producción completada, alertas) |
+| `kroma_warehouse_movements` | Movimientos entre almacenes (trazabilidad) |
 
 **Regla universal**: soft-delete con `active: false`. Nunca borrar documentos.
 **Índices**: evitar índices compuestos — filtrar y ordenar en cliente.
@@ -242,6 +244,64 @@ Los bloques son secuenciales. Cada uno es opcional excepto Pasteurización y Cua
 
 ---
 
+## Módulo 5 — Control del Sistema (SuperAdmin / Master)
+
+Panel de administración total. Accesible únicamente por rol `master`.
+
+### 5.1 Gestión de usuarios y personal
+- Crear usuario: nombre completo, email, cargo (texto libre), rol Firebase
+- Roles disponibles: `produccion`, `kroma_admin`, `kroma_gerencial`, `master`
+- Activar / desactivar acceso (soft-disable: campo `active: false` en `kroma_users`)
+- Editar cargo y datos de contacto
+
+### 5.2 Permisos y visibilidad de módulos
+Por usuario se puede activar/desactivar el acceso a cada módulo:
+```
+módulos: {
+  produccionDiaria: true | false,
+  inventarioMateriales: true | false,
+  inventarioPT: true | false,
+  almacenes: true | false,
+  historialProduccion: true | false,
+  dashboardsGerenciales: true | false,
+  catalogos: true | false,   ← productos, materiales, proveedores
+  constructores: true | false, ← procesos, recetas
+  controlSistema: true | false,
+}
+```
+Estos flags se leen en `KromaShell.jsx` para mostrar/ocultar ítems de navegación.
+
+### 5.3 Notificaciones y alertas
+- Configurar qué eventos generan notificación push (producción completada, stock bajo, lote sin empacar, etc.)
+- Activar / desactivar notificaciones por usuario
+- Configurar correo electrónico destino por usuario (campo `email` en `kroma_users`)
+- Historial de notificaciones enviadas (colección `kroma_notifications`, leídas/no leídas)
+
+### 5.4 Centro de notificaciones (badge global)
+- Ícono de campana en el header con badge de no leídas
+- Lista de notificaciones recientes: tipo, lote, fecha, leída
+- Al tocar: navega al registro relacionado
+- Marcar como leída / marcar todas como leídas
+
+### Modelo de datos — kroma_users (extendido)
+```
+nombre, email, cargo, rol, active,
+modulos: { produccionDiaria, inventarioMateriales, ... },
+notificaciones: { produccionCompletada, stockBajo, lotesPendientes },
+createdAt, updatedAt
+```
+
+### Modelo de datos — kroma_notifications
+```
+tipo, logId?, lote?, productoNombre?, mensaje,
+destinatarios: [uid | rol],
+leidaPor: [uid],
+leida: bool,
+createdAt
+```
+
+---
+
 ## Módulo 4 — Operación diaria (planilla activa)
 
 ### 4.1 Planilla inteligente
@@ -320,8 +380,16 @@ match /kroma_{collection}/{id} {
 | RecipeBuilderPage (Operario) | ✅ Completo — alineado con manual |
 | MilkInventoryPage | ✅ Completo — edición master dentro de 10 min |
 | MaterialsInventoryPage | ✅ Completo — stockCerrado/stockEnUso, alertas, ajuste, secciones |
-| DailyProductionPage | ✅ Completo — recepción leche, runner bloques, historial |
-| WarehousesPage | 🔲 Pendiente (Módulo 1.2) |
+| DailyProductionPage | ✅ Completo — recepción, runner bloques, historial, reporte lote, firmas, notificaciones |
+| WarehousesPage | 🔄 En desarrollo (Módulo 1.2) |
 | InventoryPTPage | 🔲 Pendiente (Módulo 1.2) |
 | ProductionHistoryPage | 🔲 Pendiente (Módulo 1.5) |
 | Dashboards Gerenciales | 🔲 Pendiente (Módulo 2) |
+| ControlSistemaPage | 🔲 Pendiente (Módulo 5) — usuarios, permisos, notificaciones |
+
+### Orden de construcción recomendado
+1. WarehousesPage — almacenes multialmacén + movimientos + PT
+2. InventoryPTPage — visualización y gestión del PT generado en producción
+3. ProductionHistoryPage — reportes históricos admin (Módulo 1.5)
+4. Dashboards Gerenciales — KPIs financieros, rendimiento, calidad (Módulo 2)
+5. ControlSistemaPage — usuarios, permisos, notificaciones push (Módulo 5)
