@@ -102,10 +102,11 @@ const MILK_STYLE = { cabra: 'bg-emerald-500/20 text-emerald-300 border-emerald-5
 
 function fmt(n) {
     if (n == null || isNaN(n)) return '—';
+    if (n === 0) return '0';
     if (n >= 1) return n.toFixed(2);
     if (n >= 0.01) return parseFloat(n.toFixed(4)).toString();
     if (n >= 0.0001) return parseFloat(n.toFixed(6)).toString();
-    return n.toExponential(3);
+    return parseFloat(n.toFixed(8)).toString();
 }
 
 function buildEmptyDosis(tipo, params) {
@@ -269,17 +270,24 @@ const TiempoRow = ({ value, unidad, onValueChange, onUnidadChange, min = 1, max 
 };
 
 function PrecisionStepper({ label, value, onChange }) {
-    const [step, setStep] = useState(0.1);
+    const [step, setStep] = useState(0.01);
     const STEPS = [0.001, 0.01, 0.1, 1];
     return (
         <div>
             {label && <SecLabel>{label}</SecLabel>}
             <div className="flex items-center gap-3 mb-3">
                 <button type="button" onClick={() => onChange(Math.max(0, parseFloat((value - step).toFixed(6))))}
-                    className="w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none">−</button>
-                <span className="flex-1 text-white font-bold text-2xl text-center tabular-nums">{fmt(value)}</span>
+                    className="w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none shrink-0">−</button>
+                <input
+                    type="number" min="0" step={step} value={value}
+                    onChange={e => {
+                        const v = parseFloat(e.target.value);
+                        onChange(!isNaN(v) && v >= 0 ? parseFloat(v.toFixed(6)) : 0);
+                    }}
+                    className="flex-1 min-w-0 bg-slate-700 border border-slate-600 rounded-xl text-white font-bold text-xl text-center px-2 py-3 focus:outline-none focus:border-emerald-500 tabular-nums transition-colors"
+                />
                 <button type="button" onClick={() => onChange(parseFloat((value + step).toFixed(6)))}
-                    className="w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none">+</button>
+                    className="w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none shrink-0">+</button>
             </div>
             <div className="flex gap-2">
                 {STEPS.map(s => (
