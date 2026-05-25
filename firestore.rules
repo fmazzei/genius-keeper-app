@@ -55,13 +55,9 @@ service cloud.firestore {
       allow create: if isAdmin();
       allow delete: if isMaster();
     }
-    
-    // ✅ NUEVA REGLA PARA PERMITIR LA LECTURA DE INVITACIONES DE RUTA
+
     match /delegation_invites/{inviteId} {
-        // Permite que cualquier usuario autenticado pueda leer una invitación.
-        // Esto es necesario para que el receptor del enlace de WhatsApp pueda ver los detalles de la ruta.
         allow get: if isAuthenticated();
-        // La creación y actualización solo se permiten a través de las Cloud Functions (backend).
         allow write: if false;
     }
 
@@ -72,7 +68,7 @@ service cloud.firestore {
       allow update: if isMaster();
       allow delete: if false;
     }
-    
+
     match /pagos_registrados/{pagoId} {
       allow read, write: if isAdmin();
       allow delete: if false;
@@ -92,11 +88,11 @@ service cloud.firestore {
         allow write: if isProduccion() || isAdmin();
       }
     }
-    
+
     match /ventas_pendientes/{saleId} {
         allow read, write, update: if isAdmin();
     }
-    
+
     match /movimientos_inventario/{movimientoId} {
         allow get, list: if isAdmin();
         allow create, update, delete: if false;
@@ -115,7 +111,7 @@ service cloud.firestore {
         allow list, get, write: if isAuthenticated() && (isAdmin() || isMerchandiser());
       }
     }
-    
+
     match /pdv_assignments/{pdvId} {
         allow read: if isAuthenticated() && (isAdmin() || isMerchandiser());
         allow write: if false;
@@ -153,8 +149,7 @@ service cloud.firestore {
     }
 
     match /kroma_users/{userId} {
-      allow read: if isKromaAccess();
-      allow write: if isKromaAccess();
+      allow read, write: if isKromaAccess();
     }
 
     match /kroma_products/{id} {
@@ -192,13 +187,12 @@ service cloud.firestore {
     match /kroma_milk_reception/{id} {
       allow read:   if isKromaAccess();
       allow create: if isKromaAccess();
-      // Edit allowed only within 10 minutes of creation OR by master user
       allow update: if isKromaAccess() && (
         !('createdAt' in resource.data) ||
         request.time < resource.data.createdAt + duration.value(600, 's') ||
         isMaster()
       );
-      allow delete: if false; // soft-delete only (active: false)
+      allow delete: if false;
     }
 
     match /kroma_inventory_materials/{id} {
