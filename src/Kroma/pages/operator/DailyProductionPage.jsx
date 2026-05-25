@@ -171,6 +171,82 @@ function NumStepper({ label, value, onChange, unit = '', step = 1, min }) {
     );
 }
 
+// Calculator-style numeric pad — tap field to open, OK to confirm and close
+function NumPadField({ label, value, onChange, unit = '', decimals = 2 }) {
+    const [open, setOpen] = useState(false);
+    const [raw, setRaw] = useState('');
+
+    function pressKey(k) {
+        if (k === '⌫') {
+            setRaw(r => {
+                const next = r.slice(0, -1);
+                const n = parseFloat(next);
+                if (next === '' || next === '-') return next;
+                if (!isNaN(n)) onChange(n);
+                return next;
+            });
+            return;
+        }
+        if (k === 'OK') {
+            const n = parseFloat(raw);
+            onChange(!isNaN(n) && n >= 0 ? n : 0);
+            setOpen(false);
+            setRaw('');
+            return;
+        }
+        if (k === '.') {
+            if (decimals === 0) return;
+            setRaw(r => r.includes('.') ? r : (r === '' ? '0.' : r + '.'));
+            return;
+        }
+        // digit
+        setRaw(r => {
+            const next = r === '0' ? k : r + k;
+            const dot = next.indexOf('.');
+            if (dot >= 0 && next.length - dot - 1 > decimals) return r;
+            const n = parseFloat(next);
+            if (!isNaN(n)) onChange(n);
+            return next;
+        });
+    }
+
+    const displayed = open
+        ? (raw === '' ? '0' : raw)
+        : (value === 0 ? '0' : String(value));
+
+    return (
+        <div>
+            {label && <SecLabel>{label}</SecLabel>}
+            <button type="button"
+                onClick={() => { setOpen(o => !o); setRaw(value > 0 ? String(value) : ''); }}
+                className={`w-full rounded-xl border px-4 py-3.5 flex items-baseline justify-between transition-colors ${
+                    open ? 'bg-slate-700 border-emerald-500' : 'bg-slate-800 border-slate-600 hover:border-slate-500'
+                }`}>
+                <span className="text-white font-bold text-2xl font-mono tabular-nums">{displayed}</span>
+                {unit && <span className="text-slate-400 text-sm">{unit}</span>}
+            </button>
+            {open && (
+                <div className="mt-1 rounded-2xl overflow-hidden border border-slate-700 select-none">
+                    <div className="grid grid-cols-3 divide-x divide-y divide-slate-700">
+                        {['7','8','9','4','5','6','1','2','3','⌫','0','.'].map(k => (
+                            <button key={k} type="button" onPointerDown={e => { e.preventDefault(); pressKey(k); }}
+                                className={`py-4 text-xl font-bold font-mono bg-slate-800 active:bg-slate-600 transition-colors ${
+                                    k === '⌫' ? 'text-red-400' : 'text-white'
+                                }`}>
+                                {k}
+                            </button>
+                        ))}
+                    </div>
+                    <button type="button" onPointerDown={e => { e.preventDefault(); pressKey('OK'); }}
+                        className="w-full py-4 bg-emerald-700 active:bg-emerald-600 text-white text-lg font-bold transition-colors">
+                        OK ✓
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function LitrosStepper({ value, onChange, label = 'Litros a procesar' }) {
     const STEPS = [1, 5, 10, 50];
     const [si, setSi] = useState(2);
@@ -533,9 +609,9 @@ function SaladoEditor({ bloque, reg, onChange }) {
 
     return (
         <div className="space-y-4">
-            <NumStepper label="Masa a salar (kg)"
-                value={masaKg}
-                onChange={v => onChange({ ...reg, masaKg: v })} unit="kg" step={0.5} />
+            <NumPadField label="Masa a salar (kg)"
+                value={masaKg} unit="kg" decimals={2}
+                onChange={v => onChange({ ...reg, masaKg: v })} />
 
             <div>
                 <SecLabel>Método de salado</SecLabel>
@@ -558,19 +634,22 @@ function SaladoEditor({ bloque, reg, onChange }) {
             {!isInSalmuera && (
                 masaKg > 0 ? (
                     <div className="space-y-3">
-                        <RefCard>
-                            <SecLabel>Dosis planificada</SecLabel>
-                            <RefRow label="Sal" value={`${cantSalRefGkg} g/kg`} />
-                            <RefRow label="Sal teórica" value={`${teoricoSalG} g`} />
-                        </RefCard>
-                        <div>
-                            <p className="text-slate-500 text-xs mb-1.5">Sal real aplicada (g) *</p>
-                            <input type="number" step={0.1}
-                                value={reg.cantidadSalReal ?? teoricoSalG}
-                                onChange={e => onChange({ ...reg, cantidadSalReal: Number(e.target.value) })}
-                                placeholder={String(teoricoSalG)}
-                                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white font-mono text-base focus:outline-none focus:border-emerald-500" />
+                        <div className="bg-slate-900/60 border border-slate-700/60 rounded-xl p-3 space-y-1.5">
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500 text-xs">Dosis de sal</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-300 text-xs font-mono font-medium">{cantSalRefGkg} g/kg</span>
+                                    <span className="text-slate-600 text-xs">(del proceso)</span>
+                                </div>
+                            </div>
+                            <div className="flex justify-between items-center pt-1 border-t border-slate-700/40">
+                                <span className="text-slate-400 text-xs font-semibold">Sal teórica</span>
+                                <span className="text-teal-300 text-sm font-bold font-mono">{teoricoSalG} g</span>
+                            </div>
                         </div>
+                        <NumPadField label="Sal real aplicada (g)"
+                            value={reg.cantidadSalReal ?? teoricoSalG} unit="g" decimals={1}
+                            onChange={v => onChange({ ...reg, cantidadSalReal: v })} />
                     </div>
                 ) : (
                     <p className="text-slate-600 text-xs text-center py-2">Declara la masa para ver la dosis de sal teórica</p>
@@ -585,15 +664,15 @@ function SaladoEditor({ bloque, reg, onChange }) {
                             Parámetros requeridos — puerta de calidad
                         </p>
                     </div>
-                    <NumStepper label="Temperatura salmuera (°C)"
-                        value={reg.salmueraTemp ?? p.temperatura ?? 12}
-                        onChange={v => onChange({ ...reg, salmueraTemp: v })} unit="°C" step={0.1} />
-                    <NumStepper label="Titulación (°D)"
-                        value={reg.titulacion ?? 0}
-                        onChange={v => onChange({ ...reg, titulacion: v })} unit="°D" step={0.5} />
-                    <NumStepper label="Salinidad (°Bé)"
-                        value={reg.salinidad ?? 0}
-                        onChange={v => onChange({ ...reg, salinidad: v })} unit="°Bé" step={0.5} />
+                    <NumPadField label="Temperatura salmuera (°C)"
+                        value={reg.salmueraTemp ?? p.temperatura ?? 12} unit="°C" decimals={1}
+                        onChange={v => onChange({ ...reg, salmueraTemp: v })} />
+                    <NumPadField label="Titulación (°D)"
+                        value={reg.titulacion ?? 0} unit="°D" decimals={1}
+                        onChange={v => onChange({ ...reg, titulacion: v })} />
+                    <NumPadField label="Salinidad (°Bé)"
+                        value={reg.salinidad ?? 0} unit="°Bé" decimals={1}
+                        onChange={v => onChange({ ...reg, salinidad: v })} />
                 </div>
                 {gateOk
                     ? <div className="flex items-center gap-2 bg-emerald-900/20 border border-emerald-700/40 rounded-xl px-4 py-2.5 text-emerald-400 text-xs"><Check size={13} /> Salmuera habilitada</div>
@@ -666,29 +745,37 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
         <div className="space-y-5">
             {/* ── 1. Producción total ── */}
             <div className="space-y-3">
-                <NumStepper label="Kg de queso producido"
-                    value={totalKgProducido}
-                    onChange={v => onChange({ ...reg, totalKgProducido: v })} unit="kg" step={0.1} />
+                <NumPadField label="Kg de queso producido"
+                    value={totalKgProducido} unit="kg" decimals={3}
+                    onChange={v => onChange({ ...reg, totalKgProducido: v })} />
 
-                {totalKgProducido > 0 && litrosNetos > 0 && (
-                    <div className="bg-emerald-900/20 border border-emerald-700/40 rounded-xl px-4 py-3 space-y-1">
-                        <div className="flex justify-between items-center">
-                            <span className="text-slate-400 text-sm">Rendimiento</span>
+                <div className={`rounded-xl px-4 py-3 space-y-1 border transition-colors ${
+                    totalKgProducido > 0
+                        ? 'bg-emerald-900/20 border-emerald-700/40'
+                        : 'bg-slate-800/40 border-slate-700/40'
+                }`}>
+                    <div className="flex justify-between items-center">
+                        <span className="text-slate-400 text-sm">Rendimiento</span>
+                        {totalKgProducido > 0 && litrosNetos > 0 ? (
                             <div>
-                                <span className="text-emerald-300 font-bold font-mono">{rendimiento} kg/L</span>
-                                <span className="text-emerald-700 text-xs ml-2">({(rendimiento * 1000).toFixed(1)} g/L)</span>
+                                <span className="text-emerald-300 font-bold font-mono text-base">{rendimiento} kg/L</span>
+                                <span className="text-emerald-700 text-xs ml-2">= {(rendimiento * 1000).toFixed(1)} g/L</span>
                             </div>
-                        </div>
+                        ) : (
+                            <span className="text-slate-600 text-xs">Ingresa los kg para calcular</span>
+                        )}
+                    </div>
+                    {totalKgProducido > 0 && litrosNetos > 0 && (
                         <div className="flex justify-between items-center">
-                            <span className="text-slate-600 text-xs">Base</span>
+                            <span className="text-slate-600 text-xs">Cálculo</span>
                             <span className="text-slate-600 text-xs font-mono">{totalKgProducido} kg ÷ {litrosNetos} L</span>
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
 
-                <NumStepper label="pH del queso"
-                    value={reg.phQueso ?? 5.8}
-                    onChange={v => onChange({ ...reg, phQueso: v })} step={0.01} />
+                <NumPadField label="pH del queso"
+                    value={reg.phQueso ?? 5.8} unit="" decimals={2}
+                    onChange={v => onChange({ ...reg, phQueso: v })} />
             </div>
 
             {/* ── 2. Disposición ── */}
@@ -828,9 +915,9 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
                                     {Math.max(0, +(totalKgProducido - kgEmpacados).toFixed(3))} kg
                                 </span>
                             </div>
-                            <NumStepper label="Kg a guardar sin envasar"
-                                value={kgSinEnvasar}
-                                onChange={v => onChange({ ...reg, kgSinEnvasar: v })} unit="kg" step={0.1} />
+                            <NumPadField label="Kg a guardar sin envasar"
+                                value={kgSinEnvasar} unit="kg" decimals={3}
+                                onChange={v => onChange({ ...reg, kgSinEnvasar: v })} />
                         </>
                     )}
                     <p className="text-slate-600 text-xs">Se registrará como producto sin envasar en cava PT</p>
