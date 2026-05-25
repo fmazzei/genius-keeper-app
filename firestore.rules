@@ -141,9 +141,15 @@ service cloud.firestore {
       allow update, delete: if isMaster();
     }
 
-    // ── Kroma collections (accesibles solo desde el rol produccion y master) ──
+    // ── Kroma collections ──
     function isKromaAccess() {
-      return getRole(request.auth.uid) == 'produccion' || isMaster();
+      return isMaster()
+        || getRole(request.auth.uid) == 'produccion'
+        || getRole(request.auth.uid) == 'kroma_admin'
+        || getRole(request.auth.uid) == 'kroma_gerencial';
+    }
+    function isKromaAdmin() {
+      return isMaster() || getRole(request.auth.uid) == 'kroma_admin';
     }
 
     match /kroma_users/{userId} {
@@ -207,6 +213,14 @@ service cloud.firestore {
     }
 
     match /kroma_inventory_pt/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_warehouse_movements/{id} {
+      allow read, write: if isKromaAccess();
+    }
+
+    match /kroma_notifications/{id} {
       allow read, write: if isKromaAccess();
     }
   }
