@@ -10,6 +10,7 @@ import {
     Clock, AlertTriangle, Package, Droplets,
     Calendar, Lock, ChevronDown, ChevronUp,
     Factory, Pause, FlaskConical, X, Zap,
+    Share2, PenLine, Award,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -117,6 +118,23 @@ function nowDatetimeLocal(offsetMs = 0) {
     const d = new Date(Date.now() + offsetMs);
     const p = n => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function generateLote(productoNombre) {
+    const now = new Date();
+    const p = n => String(n).padStart(2, '0');
+    const initials = (productoNombre || '')
+        .split(/\s+/).filter(Boolean)
+        .map(w => w[0].toUpperCase()).join('').slice(0, 4);
+    const date = `${now.getFullYear()}${p(now.getMonth()+1)}${p(now.getDate())}`;
+    const time = `${p(now.getHours())}${p(now.getMinutes())}`;
+    return `${initials}${date}-${time}`;
+}
+
+function fmtDate(ts) {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 // ─── Reusable UI ──────────────────────────────────────────────────────────────
@@ -1175,6 +1193,391 @@ function ProductionCard({ log, onOpen, onCancel }) {
     );
 }
 
+// ─── Production Report ────────────────────────────────────────────────────────
+
+function RowData({ label, value, highlight }) {
+    return (
+        <div className="flex justify-between items-start py-2 border-b border-slate-800 last:border-0 gap-3">
+            <span className="text-slate-500 text-sm shrink-0">{label}</span>
+            <span className={`text-sm font-mono text-right ${highlight ? 'text-emerald-300 font-bold' : 'text-slate-200'}`}>{value}</span>
+        </div>
+    );
+}
+
+function ReportBlockSummary({ bloque, data }) {
+    const reg = data?.registros || {};
+    const p = bloque.params || {};
+    const m = meta(bloque.tipo);
+
+    const rows = [];
+
+    switch (bloque.tipo) {
+        case 'pasteurizacion':
+            if (reg.temperatura)    rows.push({ l: 'Temperatura', v: `${reg.temperatura} °C` });
+            if (reg.merma != null)  rows.push({ l: 'Merma', v: `${reg.merma ?? 10} L` });
+            if (reg.litrosNetos != null) rows.push({ l: 'Litros netos', v: `${reg.litrosNetos} L`, hi: true });
+            break;
+        case 'agregar_insumo':
+        case 'inoculacion':
+            if (p.materialNombre)   rows.push({ l: 'Insumo', v: p.materialNombre });
+            if (reg.cantidadTeorica != null) rows.push({ l: 'Teórico', v: `${reg.cantidadTeorica} ${p.unidadRef || ''}` });
+            if (reg.cantidadReal != null)    rows.push({ l: 'Real aplicado', v: `${reg.cantidadReal} ${p.unidadRef || ''}`, hi: true });
+            break;
+        case 'cuajado':
+            if (reg.tempPreCuajado) rows.push({ l: 'Temperatura', v: `${reg.tempPreCuajado} °C` });
+            if (reg.phPreCuajado)   rows.push({ l: 'pH pre-cuajado', v: reg.phPreCuajado });
+            if (reg.calcioReal != null) rows.push({ l: 'CaCl₂ real', v: `${reg.calcioReal} ml` });
+            if (reg.cuajoReal != null)  rows.push({ l: 'Cuajo real', v: `${reg.cuajoReal} ml` });
+            if (reg.fermentoReal != null) rows.push({ l: 'Fermento real', v: `${reg.fermentoReal} g` });
+            if (reg.phSalida)       rows.push({ l: 'pH de salida', v: reg.phSalida });
+            break;
+        case 'salado':
+            if (reg.masaKg)         rows.push({ l: 'Masa a salar', v: `${reg.masaKg} kg` });
+            if (reg.cantidadSalReal != null) rows.push({ l: 'Sal real aplicada', v: `${reg.cantidadSalReal} g`, hi: true });
+            if (reg.tipo === 'salmuera') {
+                if (reg.salmueraTemp)  rows.push({ l: 'Temp. salmuera', v: `${reg.salmueraTemp} °C` });
+                if (reg.titulacion)    rows.push({ l: 'Titulación', v: `${reg.titulacion} °D` });
+                if (reg.salinidad)     rows.push({ l: 'Salinidad', v: `${reg.salinidad} °Bé` });
+            }
+            break;
+        case 'moldeado':
+            if (reg.phPostMoldeado) rows.push({ l: 'pH post-moldeado', v: reg.phPostMoldeado });
+            if (reg.observaciones)  rows.push({ l: 'Observaciones', v: reg.observaciones });
+            break;
+        case 'prensado':
+            if (p.numVueltas)       rows.push({ l: 'Vueltas', v: p.numVueltas });
+            break;
+        case 'maduracion':
+            if (reg.tempEntrada)    rows.push({ l: 'Temp. entrada cava', v: `${reg.tempEntrada} °C` });
+            if (reg.phEntrada)      rows.push({ l: 'pH entrada', v: reg.phEntrada });
+            if (p.duracion)         rows.push({ l: 'Estadía', v: `${p.duracion} ${p.unidadDuracion || 'días'}` });
+            if (reg.phSalida)       rows.push({ l: 'pH salida', v: reg.phSalida });
+            break;
+        default:
+            break;
+    }
+
+    if (rows.length === 0) return null;
+
+    return (
+        <div className={`rounded-xl border ${m.border} ${m.bg} p-3`}>
+            <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${m.color}`}>{blockLabel(bloque.tipo)}</p>
+            {rows.map((r, i) => (
+                <div key={i} className="flex justify-between items-center py-1">
+                    <span className="text-slate-500 text-xs">{r.l}</span>
+                    <span className={`text-xs font-mono ${r.hi ? 'text-emerald-300 font-bold' : 'text-slate-300'}`}>{r.v}</span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function ReportView({ log, kromaUser, onClose }) {
+    const [firmas, setFirmas] = useState(log.firmas || {});
+    const [almacenNombre, setAlmacenNombre] = useState('');
+    const [signing, setSigning] = useState(false);
+    const [shareMsg, setShareMsg] = useState('');
+
+    const bloques  = log.bloquesSnapshot || [];
+    const bData    = log.bloquesData || {};
+    const lote     = log.lote || log.id;
+
+    const empaqIdx = bloques.findIndex(b => b.tipo === 'empaque');
+    const empaqReg = empaqIdx >= 0 ? (bData[String(empaqIdx)]?.registros || {}) : {};
+    const presentaciones = empaqReg.presentaciones || [];
+    const kgEmpacados = presentaciones.reduce((s, p) => s + (p.pesoPorUnidad || 0) * (p.unidades || 0), 0);
+
+    async function signMaestro() {
+        if (signing) return;
+        setSigning(true);
+        try {
+            const firma = { nombre: kromaUser?.name || 'Operario', userId: kromaUser?.id || '', firmadoAt: new Date().toISOString() };
+            await updateDoc(doc(db, 'kroma_production_logs', log.id), { 'firmas.maestro': firma });
+            setFirmas(f => ({ ...f, maestro: firma }));
+        } finally { setSigning(false); }
+    }
+
+    async function signAlmacen() {
+        if (!almacenNombre.trim() || signing) return;
+        setSigning(true);
+        try {
+            const firma = { nombre: almacenNombre.trim(), firmadoAt: new Date().toISOString() };
+            await updateDoc(doc(db, 'kroma_production_logs', log.id), { 'firmas.almacen': firma });
+            setFirmas(f => ({ ...f, almacen: firma }));
+            setAlmacenNombre('');
+        } finally { setSigning(false); }
+    }
+
+    function buildReportText() {
+        const lines = [];
+        lines.push('═══════════════════════════════');
+        lines.push('  KROMA ERP — REPORTE DE LOTE');
+        lines.push('═══════════════════════════════');
+        lines.push(`Lote:     ${lote}`);
+        lines.push(`Producto: ${log.productoNombre}`);
+        lines.push(`Fecha:    ${fmtDateTime(log.createdAt)}`);
+        lines.push(`Operario: ${log.operarioNombre || '—'}`);
+        lines.push('');
+        lines.push('─── RECEPCIÓN DE LECHE ───');
+        for (const r of (log.recepciones || [])) {
+            lines.push(`• ${r.proveedorNombre || '—'}: ${r.litros} L`);
+            lines.push(`  T: ${r.temperatura}°C | pH: ${r.pH} | ρ: ${r.densidad} | Brix: ${r.Brix}`);
+            lines.push(`  Ruta: ${r.rutaLeche === 'tanque' ? 'Tanque de enfriamiento' : 'Directo a producción'}`);
+        }
+        lines.push(`Total recibido: ${log.litrosIngresados} L`);
+        if ((log.merma ?? 0) > 0) lines.push(`Merma pasteurizador: ${log.merma} L`);
+        lines.push(`Litros procesados: ${log.litrosNetos ?? log.litrosIngresados} L`);
+        lines.push('');
+        lines.push('─── RESULTADO ───');
+        if (log.totalKgProducido > 0) lines.push(`Kg producidos: ${log.totalKgProducido.toFixed(3)} kg`);
+        if (log.rendimientoKg > 0)    lines.push(`Rendimiento:   ${log.rendimientoKg.toFixed(2)} L/kg`);
+        if (empaqReg.phQueso)         lines.push(`pH queso:      ${empaqReg.phQueso}`);
+        if (presentaciones.length > 0) {
+            lines.push('');
+            lines.push('─── EMPAQUE ───');
+            for (const pr of presentaciones) {
+                lines.push(`• ${pr.nombre}: ${pr.unidades} ud × ${pr.pesoPorUnidad} kg = ${(pr.pesoPorUnidad * pr.unidades).toFixed(3)} kg`);
+            }
+            lines.push(`Total empacado: ${kgEmpacados.toFixed(3)} kg`);
+        }
+        lines.push('');
+        lines.push('─── FIRMAS ───');
+        lines.push(`Maestro Quesero:     ${firmas.maestro ? `${firmas.maestro.nombre} (${new Date(firmas.maestro.firmadoAt).toLocaleString('es-VE')})` : 'Pendiente'}`);
+        lines.push(`Resp. Almacén PT:    ${firmas.almacen ? `${firmas.almacen.nombre} (${new Date(firmas.almacen.firmadoAt).toLocaleString('es-VE')})` : 'Pendiente'}`);
+        lines.push('');
+        lines.push('Generado por KROMA ERP');
+        return lines.join('\n');
+    }
+
+    async function handleShare() {
+        const text = buildReportText();
+        const title = `Lote ${lote} — ${log.productoNombre}`;
+        if (navigator.share) {
+            try { await navigator.share({ title, text }); } catch (_) {}
+        } else {
+            try {
+                await navigator.clipboard.writeText(text);
+                setShareMsg('Copiado al portapapeles');
+                setTimeout(() => setShareMsg(''), 2500);
+            } catch (_) {}
+        }
+    }
+
+    const isMaestro = kromaUser?.id === log.operarioId || kromaUser?.rol === 'produccion' || kromaUser?.rol === 'master';
+
+    return (
+        <div className="min-h-screen bg-slate-950 flex flex-col">
+            {/* Header */}
+            <div className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+                <button onClick={onClose} className="text-slate-400 hover:text-white p-1 -ml-1">
+                    <ChevronLeft size={20} />
+                </button>
+                <div className="flex-1 min-w-0">
+                    <p className="text-white font-semibold text-sm truncate">{log.productoNombre}</p>
+                    <p className="text-slate-500 text-xs font-mono">{lote}</p>
+                </div>
+                <button onClick={handleShare}
+                    className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg border border-slate-700 transition-colors">
+                    <Share2 size={13} />
+                    <span>Compartir</span>
+                </button>
+            </div>
+
+            {shareMsg && (
+                <div className="mx-4 mt-3 bg-emerald-900/30 border border-emerald-700/50 rounded-xl px-4 py-2 text-emerald-300 text-sm text-center">
+                    {shareMsg}
+                </div>
+            )}
+
+            <div className="flex-1 px-4 py-5 space-y-5 overflow-y-auto pb-24">
+
+                {/* Lote badge */}
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 text-center">
+                    <div className="inline-flex items-center gap-2 bg-emerald-900/30 border border-emerald-700/50 rounded-full px-4 py-1.5 mb-3">
+                        <Award size={13} className="text-emerald-400" />
+                        <span className="text-emerald-300 text-xs font-semibold uppercase tracking-wider">Código de Lote</span>
+                    </div>
+                    <p className="text-white font-bold font-mono text-2xl tracking-widest">{lote}</p>
+                    <p className="text-slate-500 text-xs mt-2">{fmtDateTime(log.createdAt)} · {log.operarioNombre}</p>
+                    <div className="mt-3 inline-block bg-slate-800 rounded-full px-3 py-1">
+                        <span className="text-xs text-slate-400">Estado: </span>
+                        <span className="text-xs font-semibold text-emerald-400">Completada</span>
+                    </div>
+                </div>
+
+                {/* Recepción */}
+                <div>
+                    <SecLabel>Recepción de leche</SecLabel>
+                    <div className="space-y-2">
+                        {(log.recepciones || []).length > 0 ? (log.recepciones || []).map((r, i) => (
+                            <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-1">
+                                <div className="flex justify-between">
+                                    <span className="text-white text-sm font-semibold">{r.proveedorNombre || '—'}</span>
+                                    <span className="text-cyan-300 font-mono font-bold">{r.litros} L</span>
+                                </div>
+                                <div className="grid grid-cols-4 gap-1 text-xs text-slate-500 font-mono">
+                                    <span>T: {r.temperatura}°C</span>
+                                    <span>pH: {r.pH}</span>
+                                    <span>ρ: {r.densidad}</span>
+                                    <span>Brix: {r.Brix}</span>
+                                </div>
+                                <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${
+                                    r.rutaLeche === 'tanque'
+                                        ? 'bg-cyan-900/30 text-cyan-400 border border-cyan-800/50'
+                                        : 'bg-amber-900/30 text-amber-400 border border-amber-800/50'
+                                }`}>
+                                    {r.rutaLeche === 'tanque' ? 'Tanque de enfriamiento' : 'Directo a producción'}
+                                </span>
+                            </div>
+                        )) : (
+                            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+                                <RowData label="Proveedor" value={log.proveedorNombre || '—'} />
+                                <RowData label="Litros ingresados" value={`${log.litrosIngresados} L`} />
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Balance de litros */}
+                <div>
+                    <SecLabel>Balance de procesamiento</SecLabel>
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1">
+                        <RowData label="Litros recibidos" value={`${log.litrosIngresados} L`} />
+                        {(log.merma ?? 0) > 0 && <RowData label="Merma pasteurizador" value={`−${log.merma} L`} />}
+                        <RowData label="Litros procesados" value={`${log.litrosNetos ?? log.litrosIngresados} L`} highlight />
+                    </div>
+                </div>
+
+                {/* Blocks */}
+                {bloques.filter(b => b.tipo !== 'empaque' && bData[String(bloques.indexOf(b))]?.completado).length > 0 && (
+                    <div>
+                        <SecLabel>Proceso</SecLabel>
+                        <div className="space-y-2">
+                            {bloques.map((b, i) => {
+                                if (b.tipo === 'empaque') return null;
+                                const d = bData[String(i)];
+                                if (!d?.completado) return null;
+                                return <ReportBlockSummary key={i} bloque={b} data={d} />;
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Resultado */}
+                <div>
+                    <SecLabel>Resultado final</SecLabel>
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1">
+                        <RowData label="Kg producidos" value={`${(log.totalKgProducido || 0).toFixed(3)} kg`} highlight />
+                        {log.rendimientoKg > 0 && <RowData label="Rendimiento" value={`${log.rendimientoKg.toFixed(2)} L/kg`} highlight />}
+                        {empaqReg.phQueso  && <RowData label="pH del queso" value={empaqReg.phQueso} />}
+                    </div>
+                </div>
+
+                {/* Empaque */}
+                {presentaciones.length > 0 && (
+                    <div>
+                        <SecLabel>Empaque</SecLabel>
+                        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2">
+                            {presentaciones.map((pr, i) => (
+                                <div key={i} className="flex justify-between items-center">
+                                    <div>
+                                        <p className="text-slate-200 text-sm">{pr.nombre}</p>
+                                        <p className="text-slate-500 text-xs font-mono">{pr.unidades} ud × {pr.pesoPorUnidad} kg</p>
+                                    </div>
+                                    <span className="text-emerald-300 font-mono font-bold text-sm">
+                                        {(pr.pesoPorUnidad * pr.unidades).toFixed(3)} kg
+                                    </span>
+                                </div>
+                            ))}
+                            <div className="border-t border-slate-800 pt-2 flex justify-between">
+                                <span className="text-slate-400 text-sm">Total empacado</span>
+                                <span className="text-emerald-300 font-bold font-mono">{kgEmpacados.toFixed(3)} kg</span>
+                            </div>
+                            {/* Additional ops */}
+                            {(empaqReg.aspersionConservante || empaqReg.precintado || empaqReg.envalado) && (
+                                <div className="flex flex-wrap gap-2 pt-1">
+                                    {empaqReg.aspersionConservante && <span className="text-xs px-2 py-0.5 bg-teal-900/30 border border-teal-800/50 text-teal-400 rounded-full">Aspersión conservante</span>}
+                                    {empaqReg.precintado           && <span className="text-xs px-2 py-0.5 bg-teal-900/30 border border-teal-800/50 text-teal-400 rounded-full">Precintado / foil</span>}
+                                    {empaqReg.envalado             && <span className="text-xs px-2 py-0.5 bg-teal-900/30 border border-teal-800/50 text-teal-400 rounded-full">Envalado</span>}
+                                </div>
+                            )}
+                            {empaqReg.fechaVencimiento && (
+                                <div className="flex justify-between items-center text-xs text-slate-500 pt-1">
+                                    <span>Vence</span>
+                                    <span className="font-mono text-slate-300">{empaqReg.fechaVencimiento}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Firmas */}
+                <div>
+                    <SecLabel>Firmas de responsables</SecLabel>
+                    <div className="space-y-3">
+                        {/* Maestro Quesero */}
+                        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <PenLine size={14} className="text-violet-400" />
+                                <p className="text-white text-sm font-semibold">Maestro Quesero</p>
+                            </div>
+                            {firmas.maestro ? (
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <Check size={14} className="text-emerald-400" />
+                                        <span className="text-emerald-300 text-sm font-semibold">{firmas.maestro.nombre}</span>
+                                    </div>
+                                    <p className="text-slate-500 text-xs pl-5">{new Date(firmas.maestro.firmadoAt).toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                                </div>
+                            ) : isMaestro ? (
+                                <button onClick={signMaestro} disabled={signing}
+                                    className="w-full py-3 rounded-xl bg-violet-800/30 border border-violet-700/50 text-violet-300 text-sm font-semibold hover:bg-violet-800/50 transition-colors disabled:opacity-50">
+                                    Firmar como Maestro Quesero
+                                </button>
+                            ) : (
+                                <p className="text-slate-600 text-sm italic">Pendiente de firma</p>
+                            )}
+                        </div>
+
+                        {/* Responsable Almacén PT */}
+                        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                                <PenLine size={14} className="text-cyan-400" />
+                                <p className="text-white text-sm font-semibold">Responsable Almacén PT</p>
+                            </div>
+                            {firmas.almacen ? (
+                                <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <Check size={14} className="text-emerald-400" />
+                                        <span className="text-emerald-300 text-sm font-semibold">{firmas.almacen.nombre}</span>
+                                    </div>
+                                    <p className="text-slate-500 text-xs pl-5">{new Date(firmas.almacen.firmadoAt).toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    <input
+                                        type="text"
+                                        value={almacenNombre}
+                                        onChange={e => setAlmacenNombre(e.target.value)}
+                                        placeholder="Nombre del responsable de almacén"
+                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-cyan-600"
+                                    />
+                                    <button onClick={signAlmacen}
+                                        disabled={!almacenNombre.trim() || signing}
+                                        className="w-full py-3 rounded-xl bg-cyan-800/30 border border-cyan-700/50 text-cyan-300 text-sm font-semibold hover:bg-cyan-800/50 transition-colors disabled:opacity-40">
+                                        Firmar como Resp. Almacén PT
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function DailyProductionPage() {
@@ -1186,8 +1589,9 @@ export default function DailyProductionPage() {
     const [loading, setLoading]         = useState(true);
     const [error, setError]             = useState(null);
 
-    // views: 'list' | 'select_ficha' | 'setup_litros' | 'runner'
+    // views: 'list' | 'select_ficha' | 'setup_litros' | 'runner' | 'report'
     const [view, setView] = useState('list');
+    const [reportLog, setReportLog] = useState(null);
 
     // New production wizard
     const [selectedFicha, setSelectedFicha]   = useState(null);
@@ -1285,10 +1689,12 @@ export default function DailyProductionPage() {
         const proveedorNombre = recepciones.map(r => r.proveedorNombre).filter(Boolean).join(', ');
         setSaving(true); setSaveError(null);
         try {
+            const lote = generateLote(selectedFicha.productoNombre);
             const data = {
                 fichaId: selectedFicha.id,
                 productoId: selectedFicha.productoId,
                 productoNombre: selectedFicha.productoNombre,
+                lote,
                 bloquesSnapshot: selectedFicha.bloques || [],
                 litrosIngresados: litrosTotal,
                 litrosNetos: litrosTotal,
@@ -1404,8 +1810,8 @@ export default function DailyProductionPage() {
             productoNombre: log.productoNombre,
             fichaId:        log.fichaId,
             logId,
-            lote:           logId,
-            loteLabel:      `${log.productoNombre} — ${new Date().toLocaleDateString('es-VE')}`,
+            lote:           log.lote || logId,
+            loteLabel:      `${log.lote || logId} — ${log.productoNombre}`,
             operarioId:     kromaUser?.id || '',
             operarioNombre: kromaUser?.name || '',
             active:         true,
@@ -1514,8 +1920,25 @@ export default function DailyProductionPage() {
             setHoldOptions({});
 
             if (newEstado === 'completada') {
+                const completedLog = { ...activeLog, ...payload };
                 setLogs(prev => prev.filter(l => l.id !== activeLog.id));
-                if (isEmpaque) createInventoryPT(activeLog, reg, activeLog.id).catch(() => {});
+                setHistorial(prev => [completedLog, ...prev].slice(0, 20));
+                if (isEmpaque) {
+                    createInventoryPT(activeLog, reg, activeLog.id).catch(() => {});
+                    // Notify gerencia/admin
+                    addDoc(collection(db, 'kroma_notifications'), {
+                        tipo: 'produccion_completada',
+                        logId: activeLog.id,
+                        lote: activeLog.lote || activeLog.id,
+                        productoNombre: activeLog.productoNombre,
+                        totalKgProducido: payload.totalKgProducido ?? 0,
+                        rendimientoKg: payload.rendimientoKg ?? 0,
+                        operarioNombre: kromaUser?.name || '',
+                        leida: false,
+                        destinatarios: ['kroma_gerencial', 'kroma_admin'],
+                        createdAt: serverTimestamp(),
+                    }).catch(() => {});
+                }
                 setView('list');
             } else if (newEstado === 'en_hold') {
                 setLogs(prev => prev.map(l => l.id === activeLog.id ? { ...l, ...payload, holdHasta } : l));
@@ -1549,6 +1972,16 @@ export default function DailyProductionPage() {
             <button onClick={loadData} className="bg-slate-700 hover:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg">Reintentar</button>
         </div>
     );
+
+    // ── VIEW: report ─────────────────────────────────────────────────────────
+
+    if (view === 'report' && reportLog) {
+        return <ReportView
+            log={reportLog}
+            kromaUser={kromaUser}
+            onClose={() => { setView('list'); setReportLog(null); }}
+        />;
+    }
 
     // ── VIEW: select ficha ────────────────────────────────────────────────────
 
@@ -1991,15 +2424,25 @@ export default function DailyProductionPage() {
                         {showHistorial && (
                             <div className="space-y-3">
                                 {historial.map(log => (
-                                    <div key={log.id} className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 space-y-2 opacity-70">
+                                    <button key={log.id} type="button"
+                                        onClick={() => { setReportLog(log); setView('report'); }}
+                                        className="w-full text-left bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 space-y-2 hover:border-slate-600 hover:bg-slate-800/80 transition-colors">
                                         <div className="flex items-start justify-between">
-                                            <div>
+                                            <div className="flex-1 min-w-0 pr-2">
                                                 <p className="text-white font-semibold text-sm">{log.productoNombre}</p>
                                                 <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
+                                                {log.lote && <p className="text-slate-600 text-xs font-mono mt-0.5">{log.lote}</p>}
                                             </div>
-                                            <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-700 text-slate-300 border border-slate-600">
-                                                Completada
-                                            </span>
+                                            <div className="flex flex-col items-end gap-1 shrink-0">
+                                                <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-700 text-slate-300 border border-slate-600">
+                                                    Completada
+                                                </span>
+                                                {(log.firmas?.maestro && log.firmas?.almacen) ? (
+                                                    <span className="text-xs text-emerald-500">✓ Firmada</span>
+                                                ) : (log.firmas?.maestro || log.firmas?.almacen) ? (
+                                                    <span className="text-xs text-amber-500">Firma parcial</span>
+                                                ) : null}
+                                            </div>
                                         </div>
                                         <div className="flex items-center flex-wrap gap-2 text-slate-500 text-xs">
                                             <Droplets size={11} />
@@ -2008,7 +2451,7 @@ export default function DailyProductionPage() {
                                             {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
                                             {log.rendimientoKg > 0 && <><span>·</span><span className="text-teal-600 font-mono">{log.rendimientoKg.toFixed(2)} L/kg</span></>}
                                         </div>
-                                    </div>
+                                    </button>
                                 ))}
                             </div>
                         )}
