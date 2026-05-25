@@ -1305,8 +1305,13 @@ export default function DailyProductionPage() {
         const bloques = activeLog?.bloquesSnapshot || [];
         const pastIdx = bloques.findIndex(b => b.tipo === 'pasteurizacion');
         if (pastIdx >= 0) {
-            const merma = bloquesData[String(pastIdx)]?.registros?.merma;
-            if (merma != null) return Math.max(0, (activeLog?.litrosIngresados || 0) - merma);
+            const pastData = bloquesData[String(pastIdx)];
+            if (pastData?.completado) {
+                const merma = pastData.registros?.merma ?? 10;
+                return Math.max(0, (activeLog?.litrosIngresados || 0) - merma);
+            } else if (pastData?.registros?.merma != null) {
+                return Math.max(0, (activeLog?.litrosIngresados || 0) - pastData.registros.merma);
+            }
         }
         return activeLog?.litrosNetos ?? activeLog?.litrosIngresados ?? 300;
     }
@@ -1431,8 +1436,9 @@ export default function DailyProductionPage() {
 
         // Compute litros netos after pasteurizacion
         let litrosNetos = activeLog?.litrosNetos ?? activeLog?.litrosIngresados ?? 300;
-        if (bloque.tipo === 'pasteurizacion' && reg.merma != null) {
-            litrosNetos = Math.max(0, (activeLog?.litrosIngresados || 0) - reg.merma);
+        if (bloque.tipo === 'pasteurizacion') {
+            const mermaValue = reg.merma ?? 10;
+            litrosNetos = Math.max(0, (activeLog?.litrosIngresados || 0) - mermaValue);
         }
 
         const newData = {
@@ -1456,7 +1462,7 @@ export default function DailyProductionPage() {
                 bloqueActualIdx: isEmpaque ? idx : nextIdx,
                 estado:         newEstado,
                 litrosNetos,
-                merma:          bloque.tipo === 'pasteurizacion' ? (reg.merma || 0) : (activeLog?.merma || 0),
+                merma:          bloque.tipo === 'pasteurizacion' ? (reg.merma ?? 10) : (activeLog?.merma || 0),
                 ...(holdHasta  && { holdHasta, holdBloque }),
                 ...(!holdHasta && newEstado !== 'en_hold' && { holdHasta: null, holdBloque: null }),
                 ...(newEstado === 'completada' && {
