@@ -723,24 +723,48 @@ function MaduracionEditor({ bloque, reg, onChange }) {
     );
 }
 
-function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
+function EmpaqueEditor({ bloque, reg, onChange, litrosNetos, catalogPresentaciones }) {
     const totalKgProducido = reg.totalKgProducido ?? 0;
-    // Rendimiento = litros procesados / kg obtenidos  →  L/kg
     const rendimiento = totalKgProducido > 0 && litrosNetos > 0
         ? +(litrosNetos / totalKgProducido).toFixed(2) : 0;
     const disposicion = reg.disposicion ?? 'empacar_todo';
     const presentaciones = reg.presentaciones ?? [];
 
-    const kgEmpacados = presentaciones.reduce((s, pr) => s + (+(pr.pesoPorUnidad) * +(pr.unidades) || 0), 0);
+    // pesoNeto from catalog (g or kg) → kg
+    function skuToKg(sku) {
+        return sku.unidad === 'kg' ? (sku.pesoNeto || 0) : (sku.pesoNeto || 0) / 1000;
+    }
+
+    function toggleSku(sku) {
+        const already = presentaciones.find(p => p.catalogId === sku.id);
+        if (already) {
+            onChange({ ...reg, presentaciones: presentaciones.filter(p => p.catalogId !== sku.id) });
+        } else {
+            onChange({
+                ...reg,
+                presentaciones: [...presentaciones, {
+                    catalogId: sku.id,
+                    nombre: sku.nombre,
+                    pesoPorUnidad: skuToKg(sku),
+                    unidades: 0,
+                }],
+            });
+        }
+    }
+
+    function setUnidades(catalogId, val) {
+        onChange({
+            ...reg,
+            presentaciones: presentaciones.map(p =>
+                p.catalogId === catalogId ? { ...p, unidades: val } : p
+            ),
+        });
+    }
+
+    const kgEmpacados = presentaciones.reduce((s, pr) => s + (pr.pesoPorUnidad || 0) * (pr.unidades || 0), 0);
     const kgSinEnvasar = disposicion === 'empacar_todo' ? 0
         : disposicion === 'guardar_todo' ? totalKgProducido
         : reg.kgSinEnvasar ?? Math.max(0, +(totalKgProducido - kgEmpacados).toFixed(3));
-
-    function updPres(idx, field, val) {
-        const arr = [...presentaciones];
-        arr[idx] = { ...arr[idx], [field]: val };
-        onChange({ ...reg, presentaciones: arr });
-    }
 
     return (
         <div className="space-y-5">
@@ -782,8 +806,8 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
                     <SecLabel>¿Qué hará con esta producción?</SecLabel>
                     <div className="space-y-2">
                         {[
-                            { id: 'empacar_todo',  label: 'Empacar todo ahora',          desc: 'Toda la producción se empaca y va a cava PT' },
-                            { id: 'guardar_todo',  label: 'Guardar sin envasar',          desc: `${totalKgProducido} kg van a cava sin empacar` },
+                            { id: 'empacar_todo',  label: 'Empacar todo ahora',           desc: 'Toda la producción se empaca y va a cava PT' },
+                            { id: 'guardar_todo',  label: 'Guardar sin envasar',           desc: `${totalKgProducido} kg van a cava sin empacar` },
                             { id: 'mixto',         label: 'Empacar parte · Guardar parte', desc: 'Se empaca hoy, el resto queda sin envasar' },
                         ].map(({ id, label, desc }) => (
                             <button key={id} type="button"
@@ -801,7 +825,7 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
                 </div>
             )}
 
-            {/* ── 3. Presentaciones empacadas ── */}
+            {/* ── 3. Presentaciones del catálogo ── */}
             {totalKgProducido > 0 && disposicion !== 'guardar_todo' && (
                 <div className="space-y-3">
                     <div>
@@ -814,63 +838,62 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
 
                     <div>
                         <SecLabel>Presentaciones empacadas</SecLabel>
-                        {presentaciones.map((pr, idx) => (
-                            <div key={idx} className="bg-slate-800 border border-slate-700 rounded-xl p-3 mb-3 space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <input type="text" value={pr.nombre}
-                                        onChange={e => updPres(idx, 'nombre', e.target.value)}
-                                        placeholder="Ej: Bolsa al vacío 250g…"
-                                        className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none" />
-                                    {presentaciones.length > 0 && (
-                                        <button type="button"
-                                            onClick={() => onChange({ ...reg, presentaciones: presentaciones.filter((_, i) => i !== idx) })}
-                                            className="text-slate-600 hover:text-red-400 p-1 shrink-0 transition-colors">
-                                            <X size={14} />
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <p className="text-slate-500 text-xs mb-1">Peso por unidad (kg)</p>
-                                        <input type="number" value={pr.pesoPorUnidad ?? 0} min={0} step={0.001}
-                                            onChange={e => updPres(idx, 'pesoPorUnidad', Number(e.target.value))}
-                                            className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none" />
-                                    </div>
-                                    <div>
-                                        <p className="text-slate-500 text-xs mb-1">Unidades</p>
-                                        <input type="number" value={pr.unidades ?? 0} min={0}
-                                            onChange={e => updPres(idx, 'unidades', Number(e.target.value))}
-                                            className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none" />
-                                    </div>
-                                </div>
-                                {(pr.pesoPorUnidad ?? 0) > 0 && (pr.unidades ?? 0) > 0 && (
-                                    <p className="text-teal-600 text-xs font-mono text-right">
-                                        = {(pr.pesoPorUnidad * pr.unidades).toFixed(3)} kg
-                                    </p>
-                                )}
+
+                        {catalogPresentaciones.length === 0 ? (
+                            <div className="bg-amber-900/15 border border-amber-700/40 rounded-xl px-4 py-3">
+                                <p className="text-amber-300 text-sm font-semibold">Sin presentaciones en el catálogo</p>
+                                <p className="text-slate-500 text-xs mt-1">Define las presentaciones de este producto en el Catálogo de Productos.</p>
                             </div>
-                        ))}
-                        <button type="button"
-                            onClick={() => onChange({ ...reg, presentaciones: [...presentaciones, { nombre: '', pesoPorUnidad: 0, unidades: 0 }] })}
-                            className="w-full py-2.5 border-2 border-dashed border-slate-600 text-slate-500 hover:text-white hover:border-slate-500 rounded-xl text-sm">
-                            + Agregar presentación
-                        </button>
+                        ) : (
+                            <div className="space-y-2">
+                                {catalogPresentaciones.map(sku => {
+                                    const active = presentaciones.find(p => p.catalogId === sku.id);
+                                    const pesoPorUnidadKg = skuToKg(sku);
+                                    return (
+                                        <div key={sku.id} className={`rounded-xl border overflow-hidden transition-colors ${
+                                            active ? 'border-emerald-600/60 bg-emerald-900/10' : 'border-slate-700 bg-slate-800/60'
+                                        }`}>
+                                            <button type="button"
+                                                onClick={() => toggleSku(sku)}
+                                                className="w-full flex items-center gap-3 px-4 py-3 text-left">
+                                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                                                    active ? 'bg-emerald-600 border-emerald-500' : 'border-slate-600 bg-slate-800'
+                                                }`}>
+                                                    {active && <Check size={12} className="text-white" />}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-white text-sm font-semibold truncate">{sku.nombre}</p>
+                                                    <p className="text-slate-500 text-xs">{pesoPorUnidadKg.toFixed(3)} kg / unidad</p>
+                                                </div>
+                                                {active && (active.unidades ?? 0) > 0 && (
+                                                    <div className="text-right shrink-0">
+                                                        <p className="text-emerald-300 font-bold font-mono">{active.unidades} ud</p>
+                                                        <p className="text-slate-500 text-xs font-mono">{(pesoPorUnidadKg * active.unidades).toFixed(3)} kg</p>
+                                                    </div>
+                                                )}
+                                            </button>
+                                            {active && (
+                                                <div className="px-4 pb-4">
+                                                    <NumPadField label="Unidades empacadas" decimals={0}
+                                                        value={active.unidades ?? 0} unit="ud"
+                                                        onChange={v => setUnidades(sku.id, v)} />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
 
                         {kgEmpacados > 0 && (
-                            <div className={`flex justify-between items-center rounded-xl px-4 py-3 ${
-                                Math.abs(kgEmpacados - totalKgProducido) < 0.001
-                                    ? 'bg-emerald-900/20 border border-emerald-700/40'
-                                    : 'bg-slate-800 border border-slate-700'
-                            }`}>
-                                <span className="text-slate-400 text-sm">Kg empacados</span>
-                                <span className={`font-bold font-mono ${
-                                    Math.abs(kgEmpacados - totalKgProducido) < 0.001 ? 'text-emerald-300' : 'text-slate-300'
-                                }`}>{kgEmpacados.toFixed(3)} kg</span>
+                            <div className="flex justify-between items-center rounded-xl px-4 py-3 bg-slate-800 border border-slate-700">
+                                <span className="text-slate-400 text-sm">Total empacado</span>
+                                <span className="text-slate-300 font-bold font-mono">{kgEmpacados.toFixed(3)} kg</span>
                             </div>
                         )}
                     </div>
 
-                    {/* Operaciones */}
+                    {/* Operaciones adicionales */}
                     <div className="space-y-2">
                         <SecLabel>Operaciones adicionales</SecLabel>
                         {[
@@ -1031,7 +1054,7 @@ function GenericEditor({ bloque, reg, onChange }) {
 }
 
 // Dispatcher — picks the right editor per block type
-function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloquesData, onUpdate, materialsMap, rutaLeche }) {
+function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloquesData, onUpdate, materialsMap, rutaLeche, catalogPresentaciones }) {
     const reg = bloquesData[String(idx)]?.registros || {};
     const onChange = newReg => onUpdate(String(idx), { ...(bloquesData[String(idx)] || {}), registros: newReg });
     const props = { bloque, reg, onChange };
@@ -1043,7 +1066,7 @@ function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloqu
         case 'cuajado':        return <CuajadoEditor        {...props} litrosNetos={litrosNetos} materialsMap={materialsMap} />;
         case 'salado':         return <SaladoEditor         {...props} />;
         case 'maduracion':     return <MaduracionEditor     {...props} />;
-        case 'empaque':        return <EmpaqueEditor        {...props} litrosNetos={litrosNetos} />;
+        case 'empaque':        return <EmpaqueEditor        {...props} litrosNetos={litrosNetos} catalogPresentaciones={catalogPresentaciones} />;
         default:               return <GenericEditor        {...props} />;
     }
 }
@@ -1192,17 +1215,19 @@ export default function DailyProductionPage() {
     const [suppliers, setSuppliers]       = useState([]);
     const [historial, setHistorial]        = useState([]);
     const [showHistorial, setShowHistorial] = useState(false);
+    const [productsMap, setProductsMap]   = useState({}); // productoId → kroma_products doc
 
     useEffect(() => { loadData(); }, []);
 
     async function loadData() {
         setLoading(true); setError(null);
         try {
-            const [fichasSnap, logsSnap, matsSnap, suppSnap] = await Promise.all([
+            const [fichasSnap, logsSnap, matsSnap, suppSnap, prodsSnap] = await Promise.all([
                 getDocs(query(collection(db, 'kroma_fichas'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_production_logs')),
                 getDocs(query(collection(db, 'kroma_materials'), where('active', '==', true))),
                 getDocs(query(collection(db, 'kroma_suppliers'), where('active', '==', true))),
+                getDocs(query(collection(db, 'kroma_products'), where('active', '==', true))),
             ]);
             const fichasList = fichasSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
@@ -1218,9 +1243,13 @@ export default function DailyProductionPage() {
             const mMap = {};
             matsSnap.docs.forEach(d => { mMap[d.id] = { id: d.id, ...d.data() }; });
 
+            const pMap = {};
+            prodsSnap.docs.forEach(d => { pMap[d.id] = { id: d.id, ...d.data() }; });
+
             setFichas(fichasList);
             setLogs(logsList);
             setMaterialsMap(mMap);
+            setProductsMap(pMap);
             const suppList = suppSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
                 .filter(s => s.tipos?.includes('leche'))
@@ -1835,6 +1864,7 @@ export default function DailyProductionPage() {
                                     onUpdate={updateBlockLocal}
                                     materialsMap={materialsMap}
                                     rutaLeche={activeLog.rutaLeche}
+                                    catalogPresentaciones={productsMap[activeLog.productoId]?.presentaciones || []}
                                 />
                             </div>
 
