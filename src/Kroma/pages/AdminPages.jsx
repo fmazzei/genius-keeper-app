@@ -6,6 +6,7 @@ import SuppliersPageImpl from './admin/SuppliersPage';
 import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
 import ProductCatalogPageImpl from './admin/ProductCatalogPage';
 import WarehousesPageImpl from './admin/WarehousesPage';
+import ProductionHistoryPageImpl from './admin/ProductionHistoryPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -58,31 +59,7 @@ export const MaterialsMasterPage = () => <MaterialsMasterPageImpl />;
 
 export const ProductCatalogPage = () => <ProductCatalogPageImpl />;
 
-export const InventoryPTPage = () => (
-    <ComingSoon
-        title="Inventario de Producto Terminado"
-        description="Control del inventario listo para distribución y venta."
-        items={[
-            { title: 'Stock por producto y almacén', desc: 'Visualización en tiempo real por lote, SKU y ubicación.' },
-            { title: 'Movimientos históricos', desc: 'Todo ingreso o salida queda registrado permanentemente.' },
-            { title: 'Trazabilidad de lote', desc: 'Cada unidad vinculada a su proceso de producción y fecha de caducidad.' },
-            { title: 'Transferencias', desc: 'Mover producto entre cava cuarto planta y depósito Caracas.' },
-        ]}
-    />
-);
-
-export const ProductionHistoryPage = () => (
-    <ComingSoon
-        title="Historial de Producción"
-        description="Registro histórico de todos los procesos. Solo lectura — edición exclusiva del perfil Gerencial."
-        items={[
-            { title: 'Filtro por fecha y calendario', desc: 'Días con proceso resaltados en el calendario mensual.' },
-            { title: 'Balance de masa (leche)', desc: 'Litros pasteurizados, merma, litros netos a proceso.' },
-            { title: 'Consumo de insumos y empaques', desc: 'Desglose por producto procesado.' },
-            { title: 'Rendimiento y unidades finales', desc: 'Kg obtenidos, unidades por SKU, trazabilidad de personal.' },
-        ]}
-    />
-);
+export const ProductionHistoryPage = () => <ProductionHistoryPageImpl />;
 
 // ─── Kroma Users Page ─────────────────────────────────────────────────────────
 

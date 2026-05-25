@@ -7,7 +7,7 @@ import KromaUserSelect from './KromaUserSelect';
 // Admin pages
 import {
     AdminHome, WarehousesPage, SuppliersPage, MaterialsMasterPage,
-    ProductCatalogPage, InventoryPTPage, ProductionHistoryPage, KromaUsersPage,
+    ProductCatalogPage, ProductionHistoryPage, KromaUsersPage,
 } from './pages/AdminPages';
 
 // Manager pages
@@ -20,7 +20,7 @@ import {
 } from './pages/OperatorPages';
 
 import {
-    LayoutDashboard, Warehouse, Truck, Package, Archive, ClipboardList, Users, Tag,
+    LayoutDashboard, Warehouse, Truck, Package, ClipboardList, Users, Tag,
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
     LogOut, Menu, X, ChevronRight, BookOpen,
@@ -35,7 +35,6 @@ const NAV = {
         { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse },
         { id: 'suppliers',   label: 'Proveedores',         Icon: Truck },
         { id: 'materials',   label: 'Maestro Materiales',  Icon: Package },
-        { id: 'inventory_pt',label: 'Inventario PT',       Icon: Archive },
         { id: 'history',     label: 'Historial',           Icon: ClipboardList },
         { id: 'users',       label: 'Usuarios Kroma',      Icon: Users },
     ],
@@ -50,7 +49,6 @@ const NAV = {
         { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse,       section: 'Administración' },
         { id: 'suppliers',   label: 'Proveedores',         Icon: Truck,           section: 'Administración' },
         { id: 'materials',   label: 'Maestro Materiales',  Icon: Package,         section: 'Administración' },
-        { id: 'inventory_pt',label: 'Inventario PT',       Icon: Archive,         section: 'Administración' },
         { id: 'history',     label: 'Historial',           Icon: ClipboardList,   section: 'Administración' },
         { id: 'users',       label: 'Usuarios Kroma',      Icon: Users,           section: 'Administración' },
     ],
@@ -85,7 +83,6 @@ function renderPage(view, role) {
             case 'warehouses':   return <WarehousesPage />;
             case 'suppliers':    return <SuppliersPage />;
             case 'materials':    return <MaterialsMasterPage />;
-            case 'inventory_pt': return <InventoryPTPage />;
             case 'history':      return <ProductionHistoryPage />;
             case 'users':        return <KromaUsersPage />;
             default:             return <AdminHome />;
@@ -103,7 +100,6 @@ function renderPage(view, role) {
             case 'warehouses':   return <WarehousesPage />;
             case 'suppliers':    return <SuppliersPage />;
             case 'materials':    return <MaterialsMasterPage />;
-            case 'inventory_pt': return <InventoryPTPage />;
             case 'history':      return <ProductionHistoryPage />;
             case 'users':        return <KromaUsersPage />;
             default:             return <ManagerHome />;
