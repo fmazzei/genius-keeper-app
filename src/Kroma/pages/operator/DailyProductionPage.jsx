@@ -1392,16 +1392,39 @@ function ReportView({ log, kromaUser, onClose }) {
             <div className="flex-1 px-4 py-5 space-y-5 overflow-y-auto pb-24">
 
                 {/* Lote badge */}
-                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 text-center">
-                    <div className="inline-flex items-center gap-2 bg-emerald-900/30 border border-emerald-700/50 rounded-full px-4 py-1.5 mb-3">
+                <div className="bg-gradient-to-b from-slate-800 to-slate-900 border border-slate-700 rounded-2xl overflow-hidden">
+                    <div className="bg-emerald-900/20 border-b border-emerald-800/30 px-4 py-2 flex items-center justify-center gap-2">
                         <Award size={13} className="text-emerald-400" />
-                        <span className="text-emerald-300 text-xs font-semibold uppercase tracking-wider">Código de Lote</span>
+                        <span className="text-emerald-300 text-xs font-bold uppercase tracking-widest">Código de Lote</span>
                     </div>
-                    <p className="text-white font-bold font-mono text-2xl tracking-widest">{lote}</p>
-                    <p className="text-slate-500 text-xs mt-2">{fmtDateTime(log.createdAt)} · {log.operarioNombre}</p>
-                    <div className="mt-3 inline-block bg-slate-800 rounded-full px-3 py-1">
-                        <span className="text-xs text-slate-400">Estado: </span>
-                        <span className="text-xs font-semibold text-emerald-400">Completada</span>
+                    <div className="px-6 py-5 flex flex-col items-center gap-2">
+                        <p className="text-white font-black font-mono text-3xl tracking-[0.15em] text-center">{lote}</p>
+                        <p className="text-slate-500 text-xs text-center">{log.productoNombre}</p>
+                        <div className="flex items-center gap-3 mt-1">
+                            <span className="text-slate-600 text-xs">{fmtDateTime(log.createdAt)}</span>
+                            <span className="text-slate-700">·</span>
+                            <span className="text-slate-600 text-xs">{log.operarioNombre}</span>
+                        </div>
+                        <div className="mt-2">
+                            {(() => {
+                                const d = log.disposicion;
+                                if (!d || d === 'empacar_todo' || log.empaqueFinalizado) return (
+                                    <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-900/40 border border-emerald-700/50 text-emerald-400">
+                                        ✓ Empacada completa
+                                    </span>
+                                );
+                                if (d === 'guardar_todo') return (
+                                    <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-900/40 border border-amber-700/50 text-amber-400">
+                                        ⚠ Sin envasar
+                                    </span>
+                                );
+                                return (
+                                    <span className="text-xs font-semibold px-3 py-1 rounded-full bg-orange-900/40 border border-orange-700/50 text-orange-400">
+                                        ⚠ Parcialmente empacada
+                                    </span>
+                                );
+                            })()}
+                        </div>
                     </div>
                 </div>
 
@@ -1578,6 +1601,115 @@ function ReportView({ log, kromaUser, onClose }) {
     );
 }
 
+// ─── Finalizar Empaque Modal ──────────────────────────────────────────────────
+
+function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, onConfirm }) {
+    const kgDisponible = log.kgSinEnvasar ?? 0;
+    const [presentaciones, setPresentaciones] = useState([]);
+
+    function skuToKg(sku) {
+        return sku.unidad === 'kg' ? (sku.pesoNeto || 0) : (sku.pesoNeto || 0) / 1000;
+    }
+
+    function toggleSku(sku) {
+        const already = presentaciones.find(p => p.catalogId === sku.id);
+        if (already) {
+            setPresentaciones(prev => prev.filter(p => p.catalogId !== sku.id));
+        } else {
+            setPresentaciones(prev => [...prev, { catalogId: sku.id, nombre: sku.nombre, pesoPorUnidad: skuToKg(sku), unidades: 0 }]);
+        }
+    }
+
+    function setUnidades(catalogId, val) {
+        setPresentaciones(prev => prev.map(p => p.catalogId === catalogId ? { ...p, unidades: val } : p));
+    }
+
+    const kgEmpacados = presentaciones.reduce((s, p) => s + (p.pesoPorUnidad || 0) * (p.unidades || 0), 0);
+    const canConfirm  = presentaciones.some(p => (p.unidades || 0) > 0);
+
+    return (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm">
+            <div className="bg-slate-900 border-t border-slate-700 rounded-t-2xl max-h-[90vh] flex flex-col">
+                {/* Handle */}
+                <div className="flex justify-center pt-3 pb-1 shrink-0">
+                    <div className="w-10 h-1 bg-slate-700 rounded-full" />
+                </div>
+                {/* Header */}
+                <div className="px-5 py-3 border-b border-slate-800 shrink-0">
+                    <p className="text-white font-bold text-base">Finalizar empaque</p>
+                    <p className="text-slate-500 text-sm">{log.productoNombre}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                        <Package size={13} className="text-amber-400" />
+                        <span className="text-amber-300 text-sm font-mono font-semibold">{kgDisponible.toFixed(3)} kg</span>
+                        <span className="text-slate-600 text-xs">disponibles sin envasar</span>
+                    </div>
+                </div>
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+                    {catalogPresentaciones.length === 0 ? (
+                        <p className="text-amber-300 text-sm text-center py-8">
+                            Sin presentaciones en el catálogo de este producto.
+                        </p>
+                    ) : catalogPresentaciones.map(sku => {
+                        const active = presentaciones.find(p => p.catalogId === sku.id);
+                        const pkgKg = skuToKg(sku);
+                        return (
+                            <div key={sku.id} className={`rounded-xl border overflow-hidden transition-colors ${
+                                active ? 'border-emerald-600/60 bg-emerald-900/10' : 'border-slate-700 bg-slate-800/60'
+                            }`}>
+                                <button type="button" onClick={() => toggleSku(sku)}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-left">
+                                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                                        active ? 'bg-emerald-600 border-emerald-500' : 'border-slate-600 bg-slate-800'
+                                    }`}>
+                                        {active && <Check size={12} className="text-white" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-white text-sm font-semibold truncate">{sku.nombre}</p>
+                                        <p className="text-slate-500 text-xs">{pkgKg.toFixed(3)} kg / unidad</p>
+                                    </div>
+                                    {active && (active.unidades ?? 0) > 0 && (
+                                        <div className="text-right shrink-0">
+                                            <p className="text-emerald-300 font-bold font-mono">{active.unidades} ud</p>
+                                            <p className="text-slate-500 text-xs font-mono">{(pkgKg * active.unidades).toFixed(3)} kg</p>
+                                        </div>
+                                    )}
+                                </button>
+                                {active && (
+                                    <div className="px-4 pb-4">
+                                        <NumPadField label="Unidades" decimals={0}
+                                            value={active.unidades ?? 0} unit="ud"
+                                            onChange={v => setUnidades(sku.id, v)} />
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+                {/* Footer */}
+                {kgEmpacados > 0 && (
+                    <div className="px-5 py-2 border-t border-slate-800 flex justify-between items-center shrink-0">
+                        <span className="text-slate-400 text-sm">Total a empacar</span>
+                        <span className={`font-bold font-mono text-sm ${kgEmpacados > kgDisponible ? 'text-red-400' : 'text-emerald-300'}`}>
+                            {kgEmpacados.toFixed(3)} / {kgDisponible.toFixed(3)} kg
+                        </span>
+                    </div>
+                )}
+                <div className="px-5 py-4 flex gap-3 shrink-0">
+                    <button onClick={onClose}
+                        className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
+                        Cancelar
+                    </button>
+                    <button onClick={() => onConfirm(presentaciones)} disabled={!canConfirm || saving}
+                        className="flex-1 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold disabled:opacity-40 transition-colors">
+                        {saving ? 'Guardando…' : 'Confirmar empaque'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function DailyProductionPage() {
@@ -1591,7 +1723,10 @@ export default function DailyProductionPage() {
 
     // views: 'list' | 'select_ficha' | 'setup_litros' | 'runner' | 'report'
     const [view, setView] = useState('list');
-    const [reportLog, setReportLog] = useState(null);
+    const [reportLog, setReportLog]       = useState(null);
+    const [finalizarLog, setFinalizarLog] = useState(null); // log pending finalization
+    const [finSaving, setFinSaving]       = useState(false);
+    const [historialFilter, setHistorialFilter] = useState('todas'); // 'todas'|'empacada'|'sin_envasar'|'incompleta'
 
     // New production wizard
     const [selectedFicha, setSelectedFicha]   = useState(null);
@@ -1844,6 +1979,41 @@ export default function DailyProductionPage() {
             }));
         }
         await Promise.all(ops);
+    }
+
+    async function finalizarEmpaque(log, presentaciones) {
+        setFinSaving(true);
+        try {
+            const base = {
+                productoId: log.productoId, productoNombre: log.productoNombre,
+                fichaId: log.fichaId, logId: log.id,
+                lote: log.lote || log.id,
+                loteLabel: `${log.lote || log.id} — ${log.productoNombre}`,
+                operarioId: kromaUser?.id || '', operarioNombre: kromaUser?.name || '',
+                active: true, createdAt: serverTimestamp(),
+            };
+            const ops = presentaciones
+                .filter(p => (p.unidades || 0) > 0)
+                .map(p => addDoc(collection(db, 'kroma_inventory_pt'), {
+                    ...base, tipo: 'empacado',
+                    presentacion: p.nombre, pesoPorUnidad: p.pesoPorUnidad,
+                    unidades: p.unidades,
+                    totalKg: +((p.pesoPorUnidad || 0) * p.unidades).toFixed(3),
+                }));
+            await Promise.all(ops);
+
+            const update = {
+                kgSinEnvasar: 0,
+                disposicion: 'empacar_todo',
+                empaqueFinalizado: true,
+                presentacionesFinalizacion: presentaciones,
+                fechaFinalizacionEmpaque: serverTimestamp(),
+            };
+            await updateDoc(doc(db, 'kroma_production_logs', log.id), update);
+            setHistorial(prev => prev.map(l => l.id === log.id ? { ...l, ...update } : l));
+            setFinalizarLog(null);
+        } catch (e) { alert(e.message); }
+        finally { setFinSaving(false); }
     }
 
     async function completeBlock(idx) {
@@ -2413,7 +2583,80 @@ export default function DailyProductionPage() {
                     </div>
                 )}
 
-                {/* ── Historial ── */}
+                {/* ── Pendientes de empacar (siempre visibles) ── */}
+                {(() => {
+                    const pendientes = historial.filter(l =>
+                        !l.empaqueFinalizado && (l.disposicion === 'guardar_todo' || l.disposicion === 'mixto')
+                    );
+                    if (pendientes.length === 0) return null;
+                    return (
+                        <div className="mt-6">
+                            <div className="flex items-center gap-2 mb-3">
+                                <AlertTriangle size={13} className="text-amber-400" />
+                                <span className="text-amber-400 text-xs font-bold uppercase tracking-widest">
+                                    Pendiente de empacar ({pendientes.length})
+                                </span>
+                            </div>
+                            <div className="space-y-3">
+                                {pendientes.map(log => {
+                                    const tsMs = log.fechaCierre?.toMillis?.() || log.createdAt?.toMillis?.() || 0;
+                                    const dias = Math.max(0, Math.floor((Date.now() - tsMs) / 86400000));
+                                    const esMixto = log.disposicion === 'mixto';
+                                    const kgPend = log.kgSinEnvasar ?? log.totalKgProducido ?? 0;
+                                    return (
+                                        <div key={log.id} className={`rounded-xl border overflow-hidden ${
+                                            esMixto ? 'border-orange-700/50 bg-orange-900/10' : 'border-amber-700/50 bg-amber-900/10'
+                                        }`}>
+                                            <button type="button"
+                                                onClick={() => { setReportLog(log); setView('report'); }}
+                                                className="w-full text-left p-4 space-y-2">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-white font-semibold text-sm">{log.productoNombre}</p>
+                                                        {log.lote && <p className={`text-xs font-mono mt-0.5 ${esMixto ? 'text-orange-400/70' : 'text-amber-400/70'}`}>{log.lote}</p>}
+                                                        <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
+                                                    </div>
+                                                    <div className="shrink-0 text-right space-y-1">
+                                                        <span className={`inline-block text-xs font-bold px-2 py-1 rounded-full border ${
+                                                            esMixto
+                                                                ? 'bg-orange-900/30 border-orange-700/50 text-orange-300'
+                                                                : 'bg-amber-900/30 border-amber-700/50 text-amber-300'
+                                                        }`}>
+                                                            {esMixto ? 'Incompleta' : 'Sin envasar'}
+                                                        </span>
+                                                        <p className={`text-xs font-mono font-bold ${dias >= 3 ? 'text-red-400' : dias >= 1 ? 'text-amber-400' : 'text-slate-400'}`}>
+                                                            {dias === 0 ? 'Hoy' : `${dias}d pendiente`}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center flex-wrap gap-2 text-xs">
+                                                    <Package size={11} className={esMixto ? 'text-orange-400' : 'text-amber-400'} />
+                                                    <span className={`font-mono font-bold ${esMixto ? 'text-orange-300' : 'text-amber-300'}`}>
+                                                        {kgPend.toFixed(3)} kg sin envasar
+                                                    </span>
+                                                    {log.rendimientoKg > 0 && <><span className="text-slate-700">·</span><span className="text-slate-500">{log.rendimientoKg.toFixed(2)} L/kg</span></>}
+                                                </div>
+                                            </button>
+                                            <div className="px-4 pb-3">
+                                                <button type="button"
+                                                    onClick={() => setFinalizarLog(log)}
+                                                    className={`w-full py-2.5 rounded-xl text-sm font-bold border transition-colors ${
+                                                        esMixto
+                                                            ? 'border-orange-600/60 bg-orange-900/20 text-orange-300 hover:bg-orange-900/40'
+                                                            : 'border-amber-600/60 bg-amber-900/20 text-amber-300 hover:bg-amber-900/40'
+                                                    }`}>
+                                                    Finalizar empaque →
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* ── Historial con filtros ── */}
                 {historial.length > 0 && (
                     <div className="mt-6">
                         <button type="button" onClick={() => setShowHistorial(v => !v)}
@@ -2422,42 +2665,90 @@ export default function DailyProductionPage() {
                             {showHistorial ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                         </button>
                         {showHistorial && (
-                            <div className="space-y-3">
-                                {historial.map(log => (
-                                    <button key={log.id} type="button"
-                                        onClick={() => { setReportLog(log); setView('report'); }}
-                                        className="w-full text-left bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 space-y-2 hover:border-slate-600 hover:bg-slate-800/80 transition-colors">
-                                        <div className="flex items-start justify-between">
-                                            <div className="flex-1 min-w-0 pr-2">
-                                                <p className="text-white font-semibold text-sm">{log.productoNombre}</p>
-                                                <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
-                                                {log.lote && <p className="text-slate-600 text-xs font-mono mt-0.5">{log.lote}</p>}
-                                            </div>
-                                            <div className="flex flex-col items-end gap-1 shrink-0">
-                                                <span className="text-xs font-semibold px-2 py-1 rounded-full bg-slate-700 text-slate-300 border border-slate-600">
-                                                    Completada
-                                                </span>
-                                                {(log.firmas?.maestro && log.firmas?.almacen) ? (
-                                                    <span className="text-xs text-emerald-500">✓ Firmada</span>
-                                                ) : (log.firmas?.maestro || log.firmas?.almacen) ? (
-                                                    <span className="text-xs text-amber-500">Firma parcial</span>
-                                                ) : null}
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center flex-wrap gap-2 text-slate-500 text-xs">
-                                            <Droplets size={11} />
-                                            <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
-                                            {log.proveedorNombre && <><span>·</span><span className="truncate max-w-[120px]">{log.proveedorNombre}</span></>}
-                                            {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
-                                            {log.rendimientoKg > 0 && <><span>·</span><span className="text-teal-600 font-mono">{log.rendimientoKg.toFixed(2)} L/kg</span></>}
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
+                            <>
+                                {/* Filter tabs */}
+                                <div className="flex gap-2 mb-3 overflow-x-auto pb-1">
+                                    {[
+                                        { id: 'todas',       label: 'Todas' },
+                                        { id: 'empacada',    label: 'Empacada' },
+                                        { id: 'sin_envasar', label: 'Sin envasar' },
+                                        { id: 'incompleta',  label: 'Incompleta' },
+                                    ].map(({ id, label }) => (
+                                        <button key={id} type="button"
+                                            onClick={() => setHistorialFilter(id)}
+                                            className={`shrink-0 text-xs px-3 py-1.5 rounded-full border font-semibold transition-colors ${
+                                                historialFilter === id
+                                                    ? 'bg-slate-700 border-slate-500 text-white'
+                                                    : 'border-slate-700 text-slate-500 hover:border-slate-600'
+                                            }`}>
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div className="space-y-3">
+                                    {historial.filter(log => {
+                                        if (historialFilter === 'todas') return true;
+                                        if (historialFilter === 'empacada') return log.disposicion === 'empacar_todo' || log.empaqueFinalizado;
+                                        if (historialFilter === 'sin_envasar') return log.disposicion === 'guardar_todo' && !log.empaqueFinalizado;
+                                        if (historialFilter === 'incompleta') return log.disposicion === 'mixto' && !log.empaqueFinalizado;
+                                        return true;
+                                    }).map(log => {
+                                        const isPending = !log.empaqueFinalizado && (log.disposicion === 'guardar_todo' || log.disposicion === 'mixto');
+                                        const badgeColor = isPending
+                                            ? (log.disposicion === 'mixto' ? 'bg-orange-900/20 border-orange-700/50 text-orange-300' : 'bg-amber-900/20 border-amber-700/50 text-amber-300')
+                                            : 'bg-emerald-900/20 border-emerald-700/50 text-emerald-300';
+                                        const badgeLabel = isPending
+                                            ? (log.disposicion === 'mixto' ? 'Incompleta' : 'Sin envasar')
+                                            : 'Empacada';
+                                        return (
+                                            <button key={log.id} type="button"
+                                                onClick={() => { setReportLog(log); setView('report'); }}
+                                                className="w-full text-left bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 space-y-2 hover:border-slate-600 transition-colors">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-white font-semibold text-sm">{log.productoNombre}</p>
+                                                        {log.lote && <p className="text-slate-600 text-xs font-mono mt-0.5">{log.lote}</p>}
+                                                        <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
+                                                    </div>
+                                                    <div className="flex flex-col items-end gap-1 shrink-0">
+                                                        <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${badgeColor}`}>
+                                                            {badgeLabel}
+                                                        </span>
+                                                        {(log.firmas?.maestro && log.firmas?.almacen) ? (
+                                                            <span className="text-xs text-emerald-600">✓ Firmada</span>
+                                                        ) : (log.firmas?.maestro || log.firmas?.almacen) ? (
+                                                            <span className="text-xs text-amber-600">Firma parcial</span>
+                                                        ) : null}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center flex-wrap gap-2 text-slate-500 text-xs">
+                                                    <Droplets size={11} />
+                                                    <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
+                                                    {log.proveedorNombre && <><span>·</span><span className="truncate max-w-[100px]">{log.proveedorNombre}</span></>}
+                                                    {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
+                                                    {log.rendimientoKg > 0 && <><span>·</span><span className="text-teal-600 font-mono">{log.rendimientoKg.toFixed(2)} L/kg</span></>}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </>
                         )}
                     </div>
                 )}
             </div>
+
+            {/* ── Finalizar Empaque overlay ── */}
+            {finalizarLog && (
+                <FinalizarEmpaqueModal
+                    log={finalizarLog}
+                    catalogPresentaciones={productsMap[finalizarLog.productoId]?.presentaciones || []}
+                    saving={finSaving}
+                    onClose={() => setFinalizarLog(null)}
+                    onConfirm={(pres) => finalizarEmpaque(finalizarLog, pres)}
+                />
+            )}
         </div>
     );
 }
