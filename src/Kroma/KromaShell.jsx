@@ -33,54 +33,54 @@ const NAV = {
     master: [
         // — Sistema —
         { id: 'home',          label: 'Inicio',              Icon: LayoutDashboard,  section: 'Sistema' },
-        { id: 'control',       label: 'Control Sistema',     Icon: Shield,           section: 'Sistema' },
+        { id: 'control',       label: 'Control Sistema',     Icon: Shield,           section: 'Sistema',         modulo: 'controlSistema' },
         // — Administración —
-        { id: 'products',      label: 'Catálogo Productos',  Icon: Tag,              section: 'Administración' },
-        { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,        section: 'Administración' },
-        { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,            section: 'Administración' },
-        { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,          section: 'Administración' },
-        { id: 'history',       label: 'Historial',           Icon: ClipboardList,    section: 'Administración' },
-        { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,            section: 'Administración' },
+        { id: 'products',      label: 'Catálogo Productos',  Icon: Tag,              section: 'Administración',  modulo: 'catalogos' },
+        { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,        section: 'Administración',  modulo: 'almacenes' },
+        { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,            section: 'Administración',  modulo: 'catalogos' },
+        { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,          section: 'Administración',  modulo: 'catalogos' },
+        { id: 'history',       label: 'Historial',           Icon: ClipboardList,    section: 'Administración',  modulo: 'historialProduccion' },
+        { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,            section: 'Administración',  modulo: 'usuarios' },
         // — Gerencial —
-        { id: 'financial',     label: 'Financiero',          Icon: DollarSign,       section: 'Gerencial' },
-        { id: 'kpis',          label: 'KPIs Producción',     Icon: TrendingUp,       section: 'Gerencial' },
-        { id: 'quality',       label: 'Calidad',             Icon: ShieldCheck,      section: 'Gerencial' },
+        { id: 'financial',     label: 'Financiero',          Icon: DollarSign,       section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
+        { id: 'kpis',          label: 'KPIs Producción',     Icon: TrendingUp,       section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
+        { id: 'quality',       label: 'Calidad',             Icon: ShieldCheck,      section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
         // — Operativo —
-        { id: 'milk',          label: 'Leche',               Icon: Droplets,         section: 'Operativo' },
-        { id: 'materials_inv', label: 'Insumos',             Icon: PackageOpen,      section: 'Operativo' },
-        { id: 'fichas',        label: 'Fichas',              Icon: BookOpen,         section: 'Operativo' },
-        { id: 'production',    label: 'Producción',          Icon: Factory,          section: 'Operativo' },
+        { id: 'milk',          label: 'Leche',               Icon: Droplets,         section: 'Operativo',       modulo: 'leche' },
+        { id: 'materials_inv', label: 'Insumos',             Icon: PackageOpen,      section: 'Operativo',       modulo: 'inventarioMateriales' },
+        { id: 'fichas',        label: 'Fichas',              Icon: BookOpen,         section: 'Operativo',       modulo: 'constructores' },
+        { id: 'production',    label: 'Producción',          Icon: Factory,          section: 'Operativo',       modulo: 'produccionDiaria' },
     ],
     kroma_admin: [
         { id: 'home',        label: 'Inicio',              Icon: LayoutDashboard },
-        { id: 'products',    label: 'Catálogo Productos',  Icon: Tag },
-        { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse },
-        { id: 'suppliers',   label: 'Proveedores',         Icon: Truck },
-        { id: 'materials',   label: 'Maestro Materiales',  Icon: Package },
-        { id: 'history',     label: 'Historial',           Icon: ClipboardList },
-        { id: 'users',       label: 'Usuarios Kroma',      Icon: Users },
-        { id: 'control',     label: 'Control Sistema',     Icon: Shield },
+        { id: 'products',    label: 'Catálogo Productos',  Icon: Tag,           modulo: 'catalogos' },
+        { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse,     modulo: 'almacenes' },
+        { id: 'suppliers',   label: 'Proveedores',         Icon: Truck,         modulo: 'catalogos' },
+        { id: 'materials',   label: 'Maestro Materiales',  Icon: Package,       modulo: 'catalogos' },
+        { id: 'history',     label: 'Historial',           Icon: ClipboardList, modulo: 'historialProduccion' },
+        { id: 'users',       label: 'Usuarios Kroma',      Icon: Users,         modulo: 'usuarios' },
+        { id: 'control',     label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema' },
     ],
     kroma_gerencial: [
         // — Sección Gerencial —
-        { id: 'home',        label: 'Dashboard',           Icon: BarChart3,       section: 'Gerencial' },
-        { id: 'financial',   label: 'Financiero',          Icon: DollarSign,      section: 'Gerencial' },
-        { id: 'kpis',        label: 'KPIs Producción',     Icon: TrendingUp,      section: 'Gerencial' },
-        { id: 'quality',     label: 'Calidad',             Icon: ShieldCheck,     section: 'Gerencial' },
+        { id: 'home',        label: 'Dashboard',           Icon: BarChart3,     section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
+        { id: 'financial',   label: 'Financiero',          Icon: DollarSign,    section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
+        { id: 'kpis',        label: 'KPIs Producción',     Icon: TrendingUp,    section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
+        { id: 'quality',     label: 'Calidad',             Icon: ShieldCheck,   section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
         // — Sección Administración —
-        { id: 'products',    label: 'Catálogo Productos',  Icon: Tag,             section: 'Administración' },
-        { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse,       section: 'Administración' },
-        { id: 'suppliers',   label: 'Proveedores',         Icon: Truck,           section: 'Administración' },
-        { id: 'materials',   label: 'Maestro Materiales',  Icon: Package,         section: 'Administración' },
-        { id: 'history',     label: 'Historial',           Icon: ClipboardList,   section: 'Administración' },
-        { id: 'users',       label: 'Usuarios Kroma',      Icon: Users,           section: 'Administración' },
+        { id: 'products',    label: 'Catálogo Productos',  Icon: Tag,           section: 'Administración',  modulo: 'catalogos' },
+        { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse,     section: 'Administración',  modulo: 'almacenes' },
+        { id: 'suppliers',   label: 'Proveedores',         Icon: Truck,         section: 'Administración',  modulo: 'catalogos' },
+        { id: 'materials',   label: 'Maestro Materiales',  Icon: Package,       section: 'Administración',  modulo: 'catalogos' },
+        { id: 'history',     label: 'Historial',           Icon: ClipboardList, section: 'Administración',  modulo: 'historialProduccion' },
+        { id: 'users',       label: 'Usuarios Kroma',      Icon: Users,         section: 'Administración',  modulo: 'usuarios' },
     ],
     kroma_operario: [
         { id: 'home',          label: 'Inicio',          Icon: LayoutDashboard },
-        { id: 'milk',          label: 'Leche',           Icon: Droplets },
-        { id: 'materials_inv', label: 'Insumos',         Icon: PackageOpen },
-        { id: 'fichas',        label: 'Fichas',          Icon: BookOpen },
-        { id: 'production',    label: 'Producción',      Icon: Factory },
+        { id: 'milk',          label: 'Leche',           Icon: Droplets,   modulo: 'leche' },
+        { id: 'materials_inv', label: 'Insumos',         Icon: PackageOpen, modulo: 'inventarioMateriales' },
+        { id: 'fichas',        label: 'Fichas',          Icon: BookOpen,   modulo: 'constructores' },
+        { id: 'production',    label: 'Producción',      Icon: Factory,    modulo: 'produccionDiaria' },
     ],
 };
 
@@ -199,7 +199,16 @@ function KromaInner({ onExitKroma }) {
     }
 
     const navItems = NAV[kromaRole] || [];
-    const activeNavLabel = navItems.find(n => n.id === currentView)?.label || 'Inicio';
+    const modulos = kromaUser.modulos || {};
+
+    // master ignores all permission flags; everyone else hides items whose modulo is explicitly false
+    const visibleNavItems = kromaRole === 'master'
+        ? navItems
+        : navItems.filter(item => !item.modulo || modulos[item.modulo] !== false);
+
+    // If a permission was revoked while the user was on that view, fall back to home
+    const activeView = visibleNavItems.some(n => n.id === currentView) ? currentView : 'home';
+    const activeNavLabel = visibleNavItems.find(n => n.id === activeView)?.label || 'Inicio';
 
     const handleNav = (id) => {
         setCurrentView(id);
@@ -308,9 +317,9 @@ function KromaInner({ onExitKroma }) {
 
                     {/* Nav items */}
                     <nav className="flex-1 py-4 px-2 overflow-y-auto mt-14 md:mt-0">
-                        {navItems.map(({ id, label, Icon, section }, idx) => {
-                            const isActive = currentView === id;
-                            const prevSection = idx > 0 ? navItems[idx - 1].section : null;
+                        {visibleNavItems.map(({ id, label, Icon, section }, idx) => {
+                            const isActive = activeView === id;
+                            const prevSection = idx > 0 ? visibleNavItems[idx - 1].section : null;
                             const showSectionLabel = section && section !== prevSection;
                             return (
                                 <React.Fragment key={id}>
@@ -353,7 +362,7 @@ function KromaInner({ onExitKroma }) {
 
                 {/* ── Main content ── */}
                 <main className="flex-1 overflow-y-auto bg-slate-950">
-                    {renderPage(currentView, kromaRole, kromaUser)}
+                    {renderPage(activeView, kromaRole, kromaUser)}
                 </main>
             </div>
         </div>
