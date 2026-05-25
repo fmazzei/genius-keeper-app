@@ -521,6 +521,10 @@ function SaladoEditor({ bloque, reg, onChange }) {
     const p = bloque.params || {};
     const metodo = reg.metodo ?? p.metodo ?? 'superficie';
     const isInSalmuera = metodo === 'salmuera';
+    const masaKg = reg.masaKg ?? 0;
+    const cantSalRefGkg = p.cantidadSal ?? 20;
+    const teoricoSalG = masaKg > 0 ? +(masaKg * cantSalRefGkg).toFixed(1) : 0;
+
     const gateOk = !isInSalmuera || (
         (reg.salmueraTemp ?? 0) > 0 &&
         (reg.titulacion   ?? 0) > 0 &&
@@ -529,6 +533,10 @@ function SaladoEditor({ bloque, reg, onChange }) {
 
     return (
         <div className="space-y-4">
+            <NumStepper label="Masa a salar (kg)"
+                value={masaKg}
+                onChange={v => onChange({ ...reg, masaKg: v })} unit="kg" step={0.5} />
+
             <div>
                 <SecLabel>Método de salado</SecLabel>
                 <div className="flex gap-2">
@@ -548,9 +556,25 @@ function SaladoEditor({ bloque, reg, onChange }) {
             </div>
 
             {!isInSalmuera && (
-                <NumStepper label="Sal aplicada (g/kg de masa)"
-                    value={reg.cantidadSal ?? p.cantidadSal ?? 20}
-                    onChange={v => onChange({ ...reg, cantidadSal: v })} unit="g/kg" step={1} />
+                masaKg > 0 ? (
+                    <div className="space-y-3">
+                        <RefCard>
+                            <SecLabel>Dosis planificada</SecLabel>
+                            <RefRow label="Sal" value={`${cantSalRefGkg} g/kg`} />
+                            <RefRow label="Sal teórica" value={`${teoricoSalG} g`} />
+                        </RefCard>
+                        <div>
+                            <p className="text-slate-500 text-xs mb-1.5">Sal real aplicada (g) *</p>
+                            <input type="number" step={0.1}
+                                value={reg.cantidadSalReal ?? teoricoSalG}
+                                onChange={e => onChange({ ...reg, cantidadSalReal: Number(e.target.value) })}
+                                placeholder={String(teoricoSalG)}
+                                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-white font-mono text-base focus:outline-none focus:border-emerald-500" />
+                        </div>
+                    </div>
+                ) : (
+                    <p className="text-slate-600 text-xs text-center py-2">Declara la masa para ver la dosis de sal teórica</p>
+                )
             )}
 
             {isInSalmuera && <>
@@ -620,8 +644,17 @@ function MaduracionEditor({ bloque, reg, onChange }) {
     );
 }
 
-function EmpaqueEditor({ bloque, reg, onChange }) {
-    const presentaciones = reg.presentaciones ?? [{ nombre: '', unidades: 0, pesoKg: 0 }];
+function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
+    const totalKgProducido = reg.totalKgProducido ?? 0;
+    const rendimiento = litrosNetos > 0 && totalKgProducido > 0
+        ? +(totalKgProducido / litrosNetos).toFixed(4) : 0;
+    const disposicion = reg.disposicion ?? 'empacar_todo';
+    const presentaciones = reg.presentaciones ?? [];
+
+    const kgEmpacados = presentaciones.reduce((s, pr) => s + (+(pr.pesoPorUnidad) * +(pr.unidades) || 0), 0);
+    const kgSinEnvasar = disposicion === 'empacar_todo' ? 0
+        : disposicion === 'guardar_todo' ? totalKgProducido
+        : reg.kgSinEnvasar ?? Math.max(0, +(totalKgProducido - kgEmpacados).toFixed(3));
 
     function updPres(idx, field, val) {
         const arr = [...presentaciones];
@@ -629,64 +662,180 @@ function EmpaqueEditor({ bloque, reg, onChange }) {
         onChange({ ...reg, presentaciones: arr });
     }
 
-    const totalKg = presentaciones.reduce((s, p) => s + (+(p.pesoKg) * +(p.unidades) || 0), 0);
-
     return (
-        <div className="space-y-4">
-            <div>
-                <SecLabel>Presentaciones producidas</SecLabel>
-                {presentaciones.map((pr, idx) => (
-                    <div key={idx} className="bg-slate-800 border border-slate-700 rounded-xl p-3 mb-3 space-y-2">
-                        <input type="text" value={pr.nombre}
-                            onChange={e => updPres(idx, 'nombre', e.target.value)}
-                            placeholder="Ej: Queso 250g, Yogurt 500ml…"
-                            className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none" />
-                        <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-5">
+            {/* ── 1. Producción total ── */}
+            <div className="space-y-3">
+                <NumStepper label="Kg de queso producido"
+                    value={totalKgProducido}
+                    onChange={v => onChange({ ...reg, totalKgProducido: v })} unit="kg" step={0.1} />
+
+                {totalKgProducido > 0 && litrosNetos > 0 && (
+                    <div className="bg-emerald-900/20 border border-emerald-700/40 rounded-xl px-4 py-3 space-y-1">
+                        <div className="flex justify-between items-center">
+                            <span className="text-slate-400 text-sm">Rendimiento</span>
                             <div>
-                                <p className="text-slate-500 text-xs mb-1">Unidades</p>
-                                <input type="number" value={pr.unidades} min={0}
-                                    onChange={e => updPres(idx, 'unidades', Number(e.target.value))}
-                                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none" />
+                                <span className="text-emerald-300 font-bold font-mono">{rendimiento} kg/L</span>
+                                <span className="text-emerald-700 text-xs ml-2">({(rendimiento * 1000).toFixed(1)} g/L)</span>
                             </div>
-                            <div>
-                                <p className="text-slate-500 text-xs mb-1">Peso unit. (kg)</p>
-                                <input type="number" value={pr.pesoKg} min={0} step={0.001}
-                                    onChange={e => updPres(idx, 'pesoKg', Number(e.target.value))}
-                                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none" />
-                            </div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-slate-600 text-xs">Base</span>
+                            <span className="text-slate-600 text-xs font-mono">{totalKgProducido} kg ÷ {litrosNetos} L</span>
                         </div>
                     </div>
-                ))}
-                <button type="button"
-                    onClick={() => onChange({ ...reg, presentaciones: [...presentaciones, { nombre: '', unidades: 0, pesoKg: 0 }] })}
-                    className="w-full py-2.5 border-2 border-dashed border-slate-600 text-slate-500 hover:text-white hover:border-slate-500 rounded-xl text-sm">
-                    + Agregar presentación
-                </button>
+                )}
+
+                <NumStepper label="pH del queso"
+                    value={reg.phQueso ?? 5.8}
+                    onChange={v => onChange({ ...reg, phQueso: v })} step={0.01} />
             </div>
 
-            <div className="flex justify-between items-center bg-emerald-900/20 border border-emerald-700/40 rounded-xl px-4 py-3">
-                <span className="text-slate-400 text-sm">Total producido</span>
-                <span className="text-emerald-300 font-bold font-mono">{totalKg.toFixed(3)} kg</span>
-            </div>
+            {/* ── 2. Disposición ── */}
+            {totalKgProducido > 0 && (
+                <div>
+                    <SecLabel>¿Qué hará con esta producción?</SecLabel>
+                    <div className="space-y-2">
+                        {[
+                            { id: 'empacar_todo',  label: 'Empacar todo ahora',          desc: 'Toda la producción se empaca y va a cava PT' },
+                            { id: 'guardar_todo',  label: 'Guardar sin envasar',          desc: `${totalKgProducido} kg van a cava sin empacar` },
+                            { id: 'mixto',         label: 'Empacar parte · Guardar parte', desc: 'Se empaca hoy, el resto queda sin envasar' },
+                        ].map(({ id, label, desc }) => (
+                            <button key={id} type="button"
+                                onClick={() => onChange({ ...reg, disposicion: id })}
+                                className={`w-full text-left px-4 py-3 rounded-xl border transition-colors ${
+                                    disposicion === id
+                                        ? 'border-emerald-600/60 bg-emerald-900/20 text-white'
+                                        : 'border-slate-700 bg-slate-800/60 text-slate-400 hover:border-slate-600'
+                                }`}>
+                                <p className="text-sm font-semibold">{label}</p>
+                                <p className="text-xs opacity-60 mt-0.5">{desc}</p>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
 
-            <div className="space-y-2">
-                {[
-                    { key: 'aspersionConservante', label: 'Aspersión de conservante' },
-                    { key: 'precintado',           label: 'Precintado / foil / sello' },
-                    { key: 'envalado',             label: 'Envalado (paquetes/bultos)' },
-                ].map(({ key, label }) => (
-                    <button key={key} type="button"
-                        onClick={() => onChange({ ...reg, [key]: !reg[key] })}
-                        className="flex items-center gap-3 w-full text-left">
-                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
-                            reg[key] ? 'bg-emerald-600 border-emerald-500' : 'border-slate-600 bg-slate-800'
-                        }`}>
-                            {reg[key] && <Check size={12} className="text-white" />}
+            {/* ── 3. Presentaciones empacadas ── */}
+            {totalKgProducido > 0 && disposicion !== 'guardar_todo' && (
+                <div className="space-y-3">
+                    <div>
+                        <SecLabel>Fecha de vencimiento del lote</SecLabel>
+                        <input type="date"
+                            value={reg.fechaVencimiento ?? ''}
+                            onChange={e => onChange({ ...reg, fechaVencimiento: e.target.value })}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-slate-500" />
+                    </div>
+
+                    <div>
+                        <SecLabel>Presentaciones empacadas</SecLabel>
+                        {presentaciones.map((pr, idx) => (
+                            <div key={idx} className="bg-slate-800 border border-slate-700 rounded-xl p-3 mb-3 space-y-2">
+                                <div className="flex items-center gap-2">
+                                    <input type="text" value={pr.nombre}
+                                        onChange={e => updPres(idx, 'nombre', e.target.value)}
+                                        placeholder="Ej: Bolsa al vacío 250g…"
+                                        className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none" />
+                                    {presentaciones.length > 0 && (
+                                        <button type="button"
+                                            onClick={() => onChange({ ...reg, presentaciones: presentaciones.filter((_, i) => i !== idx) })}
+                                            className="text-slate-600 hover:text-red-400 p-1 shrink-0 transition-colors">
+                                            <X size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <p className="text-slate-500 text-xs mb-1">Peso por unidad (kg)</p>
+                                        <input type="number" value={pr.pesoPorUnidad ?? 0} min={0} step={0.001}
+                                            onChange={e => updPres(idx, 'pesoPorUnidad', Number(e.target.value))}
+                                            className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none" />
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-500 text-xs mb-1">Unidades</p>
+                                        <input type="number" value={pr.unidades ?? 0} min={0}
+                                            onChange={e => updPres(idx, 'unidades', Number(e.target.value))}
+                                            className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white font-mono text-sm focus:outline-none" />
+                                    </div>
+                                </div>
+                                {(pr.pesoPorUnidad ?? 0) > 0 && (pr.unidades ?? 0) > 0 && (
+                                    <p className="text-teal-600 text-xs font-mono text-right">
+                                        = {(pr.pesoPorUnidad * pr.unidades).toFixed(3)} kg
+                                    </p>
+                                )}
+                            </div>
+                        ))}
+                        <button type="button"
+                            onClick={() => onChange({ ...reg, presentaciones: [...presentaciones, { nombre: '', pesoPorUnidad: 0, unidades: 0 }] })}
+                            className="w-full py-2.5 border-2 border-dashed border-slate-600 text-slate-500 hover:text-white hover:border-slate-500 rounded-xl text-sm">
+                            + Agregar presentación
+                        </button>
+
+                        {kgEmpacados > 0 && (
+                            <div className={`flex justify-between items-center rounded-xl px-4 py-3 ${
+                                Math.abs(kgEmpacados - totalKgProducido) < 0.001
+                                    ? 'bg-emerald-900/20 border border-emerald-700/40'
+                                    : 'bg-slate-800 border border-slate-700'
+                            }`}>
+                                <span className="text-slate-400 text-sm">Kg empacados</span>
+                                <span className={`font-bold font-mono ${
+                                    Math.abs(kgEmpacados - totalKgProducido) < 0.001 ? 'text-emerald-300' : 'text-slate-300'
+                                }`}>{kgEmpacados.toFixed(3)} kg</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Operaciones */}
+                    <div className="space-y-2">
+                        <SecLabel>Operaciones adicionales</SecLabel>
+                        {[
+                            { key: 'aspersionConservante', label: 'Aspersión de conservante' },
+                            { key: 'precintado',           label: 'Precintado / foil / sello' },
+                            { key: 'envalado',             label: 'Envalado (paquetes/bultos)' },
+                        ].map(({ key, label }) => (
+                            <button key={key} type="button"
+                                onClick={() => onChange({ ...reg, [key]: !reg[key] })}
+                                className="flex items-center gap-3 w-full text-left">
+                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                                    reg[key] ? 'bg-emerald-600 border-emerald-500' : 'border-slate-600 bg-slate-800'
+                                }`}>
+                                    {reg[key] && <Check size={12} className="text-white" />}
+                                </div>
+                                <span className="text-slate-300 text-sm">{label}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* ── 4. Sin envasar ── */}
+            {totalKgProducido > 0 && disposicion !== 'empacar_todo' && (
+                <div className="bg-amber-900/15 border border-amber-700/40 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                        <Package size={14} className="text-amber-400" />
+                        <p className="text-amber-300 text-sm font-semibold">Masa sin envasar</p>
+                    </div>
+                    {disposicion === 'guardar_todo' ? (
+                        <div className="flex justify-between items-center">
+                            <span className="text-slate-400 text-sm">Total a guardar</span>
+                            <span className="text-amber-300 font-bold font-mono text-lg">{totalKgProducido.toFixed(3)} kg</span>
                         </div>
-                        <span className="text-slate-300 text-sm">{label}</span>
-                    </button>
-                ))}
-            </div>
+                    ) : (
+                        <>
+                            <div className="flex justify-between items-center">
+                                <span className="text-slate-500 text-xs">Disponible sin empacar</span>
+                                <span className="text-amber-400 text-xs font-mono">
+                                    {Math.max(0, +(totalKgProducido - kgEmpacados).toFixed(3))} kg
+                                </span>
+                            </div>
+                            <NumStepper label="Kg a guardar sin envasar"
+                                value={kgSinEnvasar}
+                                onChange={v => onChange({ ...reg, kgSinEnvasar: v })} unit="kg" step={0.1} />
+                        </>
+                    )}
+                    <p className="text-slate-600 text-xs">Se registrará como producto sin envasar en cava PT</p>
+                </div>
+            )}
         </div>
     );
 }
@@ -809,7 +958,7 @@ function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloqu
         case 'cuajado':        return <CuajadoEditor        {...props} litrosNetos={litrosNetos} materialsMap={materialsMap} />;
         case 'salado':         return <SaladoEditor         {...props} />;
         case 'maduracion':     return <MaduracionEditor     {...props} />;
-        case 'empaque':        return <EmpaqueEditor        {...props} />;
+        case 'empaque':        return <EmpaqueEditor        {...props} litrosNetos={litrosNetos} />;
         default:               return <GenericEditor        {...props} />;
     }
 }
@@ -1129,6 +1278,49 @@ export default function DailyProductionPage() {
         }
     }
 
+    async function createInventoryPT(log, empaqReg, logId) {
+        if (!empaqReg || !empaqReg.totalKgProducido) return;
+        const base = {
+            productoId:     log.productoId,
+            productoNombre: log.productoNombre,
+            fichaId:        log.fichaId,
+            logId,
+            lote:           logId,
+            loteLabel:      `${log.productoNombre} — ${new Date().toLocaleDateString('es-VE')}`,
+            operarioId:     kromaUser?.id || '',
+            operarioNombre: kromaUser?.name || '',
+            active:         true,
+            createdAt:      serverTimestamp(),
+        };
+        const disposicion = empaqReg.disposicion ?? 'empacar_todo';
+        const ops = [];
+        if (disposicion !== 'guardar_todo') {
+            for (const pr of (empaqReg.presentaciones || [])) {
+                if (!(pr.unidades > 0)) continue;
+                ops.push(addDoc(collection(db, 'kroma_inventory_pt'), {
+                    ...base,
+                    tipo:           'empacado',
+                    presentacion:   pr.nombre || 'Sin nombre',
+                    pesoPorUnidad:  pr.pesoPorUnidad || 0,
+                    unidades:       pr.unidades,
+                    totalKg:        +((pr.pesoPorUnidad || 0) * pr.unidades).toFixed(3),
+                    fechaVencimiento: empaqReg.fechaVencimiento || null,
+                }));
+            }
+        }
+        const kgSinEnv = disposicion === 'guardar_todo'
+            ? empaqReg.totalKgProducido
+            : disposicion === 'mixto' ? (empaqReg.kgSinEnvasar ?? 0) : 0;
+        if (kgSinEnv > 0) {
+            ops.push(addDoc(collection(db, 'kroma_inventory_pt'), {
+                ...base,
+                tipo:     'sin_envasar',
+                kgTotales: kgSinEnv,
+            }));
+        }
+        await Promise.all(ops);
+    }
+
     async function completeBlock(idx) {
         const idxStr = String(idx);
         const bloques = activeLog?.bloquesSnapshot || [];
@@ -1183,9 +1375,14 @@ export default function DailyProductionPage() {
                 ...(holdHasta  && { holdHasta, holdBloque }),
                 ...(!holdHasta && newEstado !== 'en_hold' && { holdHasta: null, holdBloque: null }),
                 ...(newEstado === 'completada' && {
-                    fechaCierre:    serverTimestamp(),
+                    fechaCierre:      serverTimestamp(),
+                    totalKgProducido: reg.totalKgProducido ?? 0,
                     productosFinales: reg.presentaciones || [],
-                    rendimientoKg: (reg.presentaciones || []).reduce((s, p) => s + (+(p.pesoKg) * +(p.unidades) || 0), 0),
+                    disposicion:      reg.disposicion ?? 'empacar_todo',
+                    fechaVencimiento: reg.fechaVencimiento ?? null,
+                    kgSinEnvasar:     reg.kgSinEnvasar ?? 0,
+                    rendimientoKg:    litrosNetos > 0 && (reg.totalKgProducido ?? 0) > 0
+                        ? +((reg.totalKgProducido) / litrosNetos).toFixed(4) : 0,
                 }),
             };
             await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), payload);
@@ -1198,6 +1395,7 @@ export default function DailyProductionPage() {
 
             if (newEstado === 'completada') {
                 setLogs(prev => prev.filter(l => l.id !== activeLog.id));
+                if (isEmpaque) createInventoryPT(activeLog, reg, activeLog.id).catch(() => {});
                 setView('list');
             } else if (newEstado === 'en_hold') {
                 setLogs(prev => prev.map(l => l.id === activeLog.id ? { ...l, ...payload, holdHasta } : l));
@@ -1682,11 +1880,12 @@ export default function DailyProductionPage() {
                                                 Completada
                                             </span>
                                         </div>
-                                        <div className="flex items-center gap-3 text-slate-500 text-xs">
+                                        <div className="flex items-center flex-wrap gap-2 text-slate-500 text-xs">
                                             <Droplets size={11} />
                                             <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
-                                            {log.proveedorNombre && <><span>·</span><span>{log.proveedorNombre}</span></>}
-                                            {log.rendimientoKg > 0 && <><span>·</span><span className="text-emerald-600">{log.rendimientoKg.toFixed(2)} kg</span></>}
+                                            {log.proveedorNombre && <><span>·</span><span className="truncate max-w-[120px]">{log.proveedorNombre}</span></>}
+                                            {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
+                                            {log.rendimientoKg > 0 && <><span>·</span><span className="text-teal-600 font-mono">{(log.rendimientoKg * 1000).toFixed(1)} g/L</span></>}
                                         </div>
                                     </div>
                                 ))}
