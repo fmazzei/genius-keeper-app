@@ -30,6 +30,27 @@ import {
 // ─── Navigation config per role ───────────────────────────────────────────────
 
 const NAV = {
+    master: [
+        // — Sistema —
+        { id: 'home',          label: 'Inicio',              Icon: LayoutDashboard,  section: 'Sistema' },
+        { id: 'control',       label: 'Control Sistema',     Icon: Shield,           section: 'Sistema' },
+        // — Administración —
+        { id: 'products',      label: 'Catálogo Productos',  Icon: Tag,              section: 'Administración' },
+        { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,        section: 'Administración' },
+        { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,            section: 'Administración' },
+        { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,          section: 'Administración' },
+        { id: 'history',       label: 'Historial',           Icon: ClipboardList,    section: 'Administración' },
+        { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,            section: 'Administración' },
+        // — Gerencial —
+        { id: 'financial',     label: 'Financiero',          Icon: DollarSign,       section: 'Gerencial' },
+        { id: 'kpis',          label: 'KPIs Producción',     Icon: TrendingUp,       section: 'Gerencial' },
+        { id: 'quality',       label: 'Calidad',             Icon: ShieldCheck,      section: 'Gerencial' },
+        // — Operativo —
+        { id: 'milk',          label: 'Leche',               Icon: Droplets,         section: 'Operativo' },
+        { id: 'materials_inv', label: 'Insumos',             Icon: PackageOpen,      section: 'Operativo' },
+        { id: 'fichas',        label: 'Fichas',              Icon: BookOpen,         section: 'Operativo' },
+        { id: 'production',    label: 'Producción',          Icon: Factory,          section: 'Operativo' },
+    ],
     kroma_admin: [
         { id: 'home',        label: 'Inicio',              Icon: LayoutDashboard },
         { id: 'products',    label: 'Catálogo Productos',  Icon: Tag },
@@ -64,12 +85,14 @@ const NAV = {
 };
 
 const ROLE_LABELS = {
+    master:          'Master',
     kroma_admin:     'Administrador',
     kroma_gerencial: 'Gerencial',
     kroma_operario:  'Operario',
 };
 
 const ROLE_COLORS = {
+    master:          'text-violet-400',
     kroma_admin:     'text-emerald-400',
     kroma_gerencial: 'text-amber-400',
     kroma_operario:  'text-blue-400',
@@ -78,6 +101,30 @@ const ROLE_COLORS = {
 // ─── Page renderer ────────────────────────────────────────────────────────────
 
 function renderPage(view, role, kromaUser) {
+    if (role === 'master') {
+        switch (view) {
+            // Sistema
+            case 'home':          return <AdminHome />;
+            case 'control':       return <ControlSistemaPage kromaUser={kromaUser} />;
+            // Administración
+            case 'products':      return <ProductCatalogPage />;
+            case 'warehouses':    return <WarehousesPage />;
+            case 'suppliers':     return <SuppliersPage />;
+            case 'materials':     return <MaterialsMasterPage />;
+            case 'history':       return <ProductionHistoryPage />;
+            case 'users':         return <KromaUsersPage />;
+            // Gerencial
+            case 'financial':     return <FinancialBoard />;
+            case 'kpis':          return <ProductionKPIsPage />;
+            case 'quality':       return <QualityBoard />;
+            // Operativo
+            case 'milk':          return <MilkInventoryPage />;
+            case 'materials_inv': return <MaterialsInventoryPage />;
+            case 'fichas':        return <FichaBuilderPage />;
+            case 'production':    return <DailyProductionPage />;
+            default:              return <AdminHome />;
+        }
+    }
     if (role === 'kroma_admin') {
         switch (view) {
             case 'home':         return <AdminHome />;

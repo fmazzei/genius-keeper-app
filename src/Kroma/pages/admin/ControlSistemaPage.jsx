@@ -15,10 +15,10 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ROLE_CFG = {
-    kroma_admin:     { label: 'Administrador', bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30' },
-    kroma_gerencial: { label: 'Gerencial',     bg: 'bg-amber-500/20',   text: 'text-amber-400',   border: 'border-amber-500/30' },
-    kroma_operario:  { label: 'Operario',       bg: 'bg-blue-500/20',    text: 'text-blue-400',    border: 'border-blue-500/30' },
-    master:          { label: 'Master',         bg: 'bg-violet-500/20',  text: 'text-violet-400',  border: 'border-violet-500/30' },
+    master:          { label: 'Master (SuperAdmin)', bg: 'bg-violet-500/20',  text: 'text-violet-400',  border: 'border-violet-500/30' },
+    kroma_admin:     { label: 'Administrador',       bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30' },
+    kroma_gerencial: { label: 'Gerencial',           bg: 'bg-amber-500/20',   text: 'text-amber-400',   border: 'border-amber-500/30' },
+    kroma_operario:  { label: 'Operario',            bg: 'bg-blue-500/20',    text: 'text-blue-400',    border: 'border-blue-500/30' },
 };
 
 const AVATAR_COLORS = [
@@ -104,8 +104,9 @@ function UsuariosTab() {
     const [loading,  setLoading]  = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [editing,  setEditing]  = useState(null);
-    const [saving,   setSaving]   = useState(false);
-    const [confirm,  setConfirm]  = useState(null);
+    const [saving,    setSaving]    = useState(false);
+    const [confirm,   setConfirm]   = useState(null);
+    const [roleError, setRoleError] = useState('');
     const [form, setForm] = useState({ name: '', email: '', cargo: '', role: 'kroma_operario' });
 
     const load = useCallback(async () => {
@@ -123,13 +124,22 @@ function UsuariosTab() {
 
     useEffect(() => { load(); }, [load]);
 
+    const UNIQUE_ROLES = ['kroma_admin', 'master'];
+
+    const roleSlotTaken = (role) => {
+        if (!UNIQUE_ROLES.includes(role)) return false;
+        return users.some(u => u.role === role && (!editing || u.id !== editing.id));
+    };
+
     const openCreate = () => {
         setEditing(null);
+        setRoleError('');
         setForm({ name: '', email: '', cargo: '', role: 'kroma_operario' });
         setShowForm(true);
     };
     const openEdit = (u) => {
         setEditing(u);
+        setRoleError('');
         setForm({ name: u.name || '', email: u.email || '', cargo: u.cargo || '', role: u.role || 'kroma_operario' });
         setShowForm(true);
     };
@@ -137,6 +147,10 @@ function UsuariosTab() {
     const save = async (e) => {
         e.preventDefault();
         if (!form.name.trim()) return;
+        if (roleSlotTaken(form.role)) {
+            setRoleError(`Ya existe un usuario con rol ${ROLE_CFG[form.role]?.label}. Solo puede haber uno.`);
+            return;
+        }
         setSaving(true);
         try {
             const data = { name: form.name.trim(), email: form.email.trim(), cargo: form.cargo.trim(), role: form.role, updatedAt: serverTimestamp() };
@@ -229,16 +243,24 @@ function UsuariosTab() {
                             ))}
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1">Rol</label>
-                                <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-                                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm">
+                                <select
+                                    value={form.role}
+                                    onChange={e => { setForm(f => ({ ...f, role: e.target.value })); setRoleError(''); }}
+                                    className={`w-full bg-slate-700 border rounded-lg px-3 py-2.5 text-white focus:outline-none text-sm ${roleError ? 'border-rose-500 focus:border-rose-500' : 'border-slate-600 focus:border-emerald-500'}`}
+                                >
                                     <option value="kroma_operario">Operario (Maestro Quesero)</option>
-                                    <option value="kroma_admin">Administrador</option>
                                     <option value="kroma_gerencial">Gerencial</option>
-                                    <option value="master">Master (SuperAdmin)</option>
+                                    <option value="kroma_admin" disabled={roleSlotTaken('kroma_admin')}>
+                                        Administrador{roleSlotTaken('kroma_admin') ? ' — único · ya existe' : ' — único'}
+                                    </option>
+                                    <option value="master" disabled={roleSlotTaken('master')}>
+                                        Master (SuperAdmin){roleSlotTaken('master') ? ' — único · ya existe' : ' — único'}
+                                    </option>
                                 </select>
+                                {roleError && <p className="text-rose-400 text-xs mt-1">{roleError}</p>}
                             </div>
                             <div className="flex gap-3 pt-2">
-                                <button type="button" onClick={() => setShowForm(false)} className="flex-1 border border-slate-600 text-slate-300 hover:text-white rounded-lg py-2.5 text-sm font-medium transition-colors">Cancelar</button>
+                                <button type="button" onClick={() => { setShowForm(false); setRoleError(''); }} className="flex-1 border border-slate-600 text-slate-300 hover:text-white rounded-lg py-2.5 text-sm font-medium transition-colors">Cancelar</button>
                                 <button type="submit" disabled={saving} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm flex items-center justify-center gap-2">
                                     {saving ? <Loader size={14} className="animate-spin" /> : null}
                                     {saving ? 'Guardando…' : editing ? 'Guardar' : 'Crear'}
