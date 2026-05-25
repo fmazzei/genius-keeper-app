@@ -171,12 +171,12 @@ function NumStepper({ label, value, onChange, unit = '', step = 1, min }) {
     );
 }
 
-function LitrosStepper({ value, onChange }) {
+function LitrosStepper({ value, onChange, label = 'Litros a procesar' }) {
     const STEPS = [1, 5, 10, 50];
     const [si, setSi] = useState(2);
     return (
         <div>
-            <SecLabel>Litros a procesar</SecLabel>
+            <SecLabel>{label}</SecLabel>
             <div className="flex gap-1 mb-2">
                 {STEPS.map((s, i) => (
                     <button key={s} type="button" onClick={() => setSi(i)}
@@ -934,7 +934,13 @@ export default function DailyProductionPage() {
 
     // New production wizard
     const [selectedFicha, setSelectedFicha]   = useState(null);
-    const [litrosIngresados, setLitrosIngresados] = useState(300);
+    const [recepciones, setRecepciones]       = useState([]);
+    const [newRec, setNewRec]                 = useState({
+        proveedorId: '', proveedorNombre: '',
+        litros: 100, temperatura: 4.0, densidad: 1.030, pH: 6.7, Brix: 12.0,
+        rutaLeche: 'directo',
+    });
+    const [showAddRecForm, setShowAddRecForm] = useState(true);
 
     // Active production runner
     const [activeLog, setActiveLog]       = useState(null);
@@ -950,11 +956,6 @@ export default function DailyProductionPage() {
     const [productionAlerts, setProductionAlerts] = useState([]);
 
     const [suppliers, setSuppliers]       = useState([]);
-    const [recepcion, setRecepcion]        = useState({
-        proveedorId: '', proveedorNombre: '',
-        temperatura: 4.0, densidad: 1.030, pH: 6.7, Brix: 12.0,
-        rutaLeche: 'tanque',
-    });
     const [historial, setHistorial]        = useState([]);
     const [showHistorial, setShowHistorial] = useState(false);
 
@@ -988,6 +989,7 @@ export default function DailyProductionPage() {
             setMaterialsMap(mMap);
             const suppList = suppSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
+                .filter(s => s.tipos?.includes('leche'))
                 .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
             setSuppliers(suppList);
             setHistorial(historialList);
@@ -1004,8 +1006,20 @@ export default function DailyProductionPage() {
         setView('runner');
     }
 
+    function addRecepcion() {
+        if (!newRec.proveedorNombre && !newRec.proveedorId) return;
+        if ((newRec.litros || 0) <= 0) return;
+        setRecepciones(prev => [...prev, { ...newRec }]);
+        setNewRec({ proveedorId: '', proveedorNombre: '', litros: 100, temperatura: 4.0, densidad: 1.030, pH: 6.7, Brix: 12.0, rutaLeche: 'directo' });
+        setShowAddRecForm(false);
+    }
+
     async function createLog() {
-        if (!selectedFicha || litrosIngresados <= 0) return;
+        if (!selectedFicha || recepciones.length === 0) return;
+        const litrosTotal = recepciones.reduce((s, r) => s + (r.litros || 0), 0);
+        if (litrosTotal <= 0) return;
+        const rutaLeche = recepciones.some(r => r.rutaLeche === 'tanque') ? 'tanque' : 'directo';
+        const proveedorNombre = recepciones.map(r => r.proveedorNombre).filter(Boolean).join(', ');
         setSaving(true); setSaveError(null);
         try {
             const data = {
@@ -1013,18 +1027,19 @@ export default function DailyProductionPage() {
                 productoId: selectedFicha.productoId,
                 productoNombre: selectedFicha.productoNombre,
                 bloquesSnapshot: selectedFicha.bloques || [],
-                litrosIngresados,
-                litrosNetos: litrosIngresados,
+                litrosIngresados: litrosTotal,
+                litrosNetos: litrosTotal,
                 merma: 0,
-                proveedorId:     recepcion.proveedorId,
-                proveedorNombre: recepcion.proveedorNombre,
-                rutaLeche:       recepcion.rutaLeche,
-                parametrosLeche: {
-                    temperatura: recepcion.temperatura,
-                    densidad:    recepcion.densidad,
-                    pH:          recepcion.pH,
-                    Brix:        recepcion.Brix,
-                },
+                recepciones,
+                proveedorId:     recepciones[0]?.proveedorId || '',
+                proveedorNombre,
+                rutaLeche,
+                parametrosLeche: recepciones[0] ? {
+                    temperatura: recepciones[0].temperatura,
+                    densidad:    recepciones[0].densidad,
+                    pH:          recepciones[0].pH,
+                    Brix:        recepciones[0].Brix,
+                } : {},
                 estado: 'activa',
                 bloqueActualIdx: 0,
                 holdHasta: null,
@@ -1232,14 +1247,14 @@ export default function DailyProductionPage() {
                 {fichas.length === 0 ? (
                     <div className="text-center py-16">
                         <FlaskConical size={32} className="text-slate-700 mx-auto mb-3" />
-                        <p className="text-slate-500 text-sm">No hay fichas creadas.</p>
-                        <p className="text-slate-600 text-xs mt-1">Crea una Ficha en el módulo de Fichas primero.</p>
+                        <p className="text-slate-500 text-sm">No hay plantillas creadas.</p>
+                        <p className="text-slate-600 text-xs mt-1">Crea una Plantilla en el módulo de Plantillas primero.</p>
                     </div>
                 ) : (
                     <div className="space-y-3">
                         {fichas.map(f => (
                             <button key={f.id}
-                                onClick={() => { setSelectedFicha(f); setView('setup_litros'); }}
+                                onClick={() => { setSelectedFicha(f); setRecepciones([]); setShowAddRecForm(true); setView('setup_litros'); }}
                                 className="w-full text-left bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-emerald-600/50 rounded-xl p-4 transition-colors">
                                 <p className="text-white font-semibold text-sm mb-1">{f.productoNombre}</p>
                                 <div className="flex flex-wrap gap-2 text-xs text-slate-400">
@@ -1263,122 +1278,178 @@ export default function DailyProductionPage() {
 
     // ── VIEW: setup litros ────────────────────────────────────────────────────
 
-    if (view === 'setup_litros') return (
-        <div className="flex flex-col h-full overflow-hidden bg-slate-950">
-            <div className="flex items-center gap-3 px-5 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
-                <button onClick={() => setView('select_ficha')} className="text-slate-400 hover:text-white p-1 -ml-1">
-                    <ChevronLeft size={20} />
-                </button>
-                <span className="text-white font-semibold text-sm flex-1 truncate">{selectedFicha?.productoNombre}</span>
-                <button onClick={createLog} disabled={litrosIngresados <= 0 || saving}
-                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-bold px-4 py-2 rounded-xl">
-                    {saving ? 'Iniciando…' : <><Play size={14} /> Iniciar</>}
-                </button>
-            </div>
+    if (view === 'setup_litros') {
+        const litrosTotal = recepciones.reduce((s, r) => s + (r.litros || 0), 0);
+        const canStart = recepciones.length > 0 && litrosTotal > 0;
+        return (
+            <div className="flex flex-col h-full overflow-hidden bg-slate-950">
+                <div className="flex items-center gap-3 px-5 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
+                    <button onClick={() => setView('select_ficha')} className="text-slate-400 hover:text-white p-1 -ml-1">
+                        <ChevronLeft size={20} />
+                    </button>
+                    <span className="text-white font-semibold text-sm flex-1 truncate">{selectedFicha?.productoNombre}</span>
+                    <button onClick={createLog} disabled={!canStart || saving}
+                        className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-bold px-4 py-2 rounded-xl">
+                        {saving ? 'Iniciando…' : <><Play size={14} /> Iniciar</>}
+                    </button>
+                </div>
 
-            <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-                {saveError && (
-                    <div className="bg-red-900/30 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-xs font-mono">{saveError}</div>
-                )}
+                <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+                    {saveError && (
+                        <div className="bg-red-900/30 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-xs font-mono">{saveError}</div>
+                    )}
 
-                {/* ── Recepción de leche ── */}
-                <div>
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Recepción de Leche</p>
+                    {/* ── Plantilla summary ── */}
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                        <SecLabel>Plantilla seleccionada</SecLabel>
+                        <p className="text-white font-bold text-sm mb-2">{selectedFicha?.productoNombre}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                            {(selectedFicha?.bloques || []).filter(b => !b.deprecated).map((b, i) => {
+                                const m = meta(b.tipo);
+                                return (
+                                    <span key={i} className={`text-xs px-2 py-0.5 rounded-full border ${m.bg} ${m.color} ${m.border}`}>
+                                        {blockLabel(b.tipo)}
+                                    </span>
+                                );
+                            })}
+                        </div>
+                    </div>
 
-                    {/* Proveedor */}
-                    <div className="mb-3">
-                        <SecLabel>Proveedor</SecLabel>
-                        {suppliers.length === 0 ? (
-                            <input type="text" placeholder="Nombre del productor…"
-                                value={recepcion.proveedorNombre}
-                                onChange={e => setRecepcion(r => ({ ...r, proveedorNombre: e.target.value, proveedorId: '' }))}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-slate-500" />
-                        ) : (
-                            <div className="flex flex-wrap gap-2">
-                                {suppliers.map(s => (
-                                    <button key={s.id} type="button"
-                                        onClick={() => setRecepcion(r => ({ ...r, proveedorId: s.id, proveedorNombre: s.nombre || s.nombreComercial || s.id }))}
-                                        className={`px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                                            recepcion.proveedorId === s.id
-                                                ? 'bg-teal-600 text-white'
-                                                : 'bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-600'
-                                        }`}>
-                                        {s.nombre || s.nombreComercial || s.id}
-                                    </button>
+                    {/* ── Recepciones de leche ── */}
+                    <div>
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Recepciones de Leche</p>
+                            {recepciones.length > 0 && (
+                                <span className="text-emerald-400 text-sm font-bold font-mono">{litrosTotal} L total</span>
+                            )}
+                        </div>
+
+                        {/* Added receptions list */}
+                        {recepciones.length > 0 && (
+                            <div className="space-y-2 mb-4">
+                                {recepciones.map((r, idx) => (
+                                    <div key={idx} className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-start gap-3">
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${r.rutaLeche === 'tanque' ? 'bg-blue-900/50 text-blue-300' : 'bg-orange-900/50 text-orange-300'}`}>
+                                                    {r.rutaLeche === 'tanque' ? 'Tanque' : 'Directo'}
+                                                </span>
+                                                <span className="text-white text-sm font-bold font-mono">{r.litros} L</span>
+                                            </div>
+                                            <p className="text-slate-300 text-xs font-semibold">{r.proveedorNombre || 'Sin proveedor'}</p>
+                                            <p className="text-slate-500 text-xs font-mono mt-0.5">
+                                                T: {r.temperatura}°C · pH: {r.pH} · D: {r.densidad} · Bx: {r.Brix}
+                                            </p>
+                                        </div>
+                                        <button type="button"
+                                            onClick={() => setRecepciones(prev => prev.filter((_, i) => i !== idx))}
+                                            className="text-slate-600 hover:text-red-400 shrink-0 p-1 transition-colors">
+                                            <X size={14} />
+                                        </button>
+                                    </div>
                                 ))}
                             </div>
                         )}
-                    </div>
 
-                    {/* Litros */}
-                    <LitrosStepper value={litrosIngresados} onChange={setLitrosIngresados} />
-                </div>
+                        {/* Inline add form */}
+                        {showAddRecForm ? (
+                            <div className="bg-slate-800/60 border border-teal-700/40 rounded-xl p-4 space-y-4">
+                                <p className="text-teal-400 text-xs font-semibold uppercase tracking-widest">
+                                    {recepciones.length === 0 ? 'Primera recepción' : `Recepción #${recepciones.length + 1}`}
+                                </p>
 
-                {/* ── Parámetros de calidad ── */}
-                <div>
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Parámetros de Calidad</p>
-                    <div className="grid grid-cols-2 gap-2">
-                        <ParamInput label="Temperatura (°C)" value={recepcion.temperatura} step={0.1}
-                            onChange={v => setRecepcion(r => ({ ...r, temperatura: v }))} unit="°C" />
-                        <ParamInput label="pH" value={recepcion.pH} step={0.01}
-                            onChange={v => setRecepcion(r => ({ ...r, pH: v }))} />
-                        <ParamInput label="Densidad" value={recepcion.densidad} step={0.001}
-                            onChange={v => setRecepcion(r => ({ ...r, densidad: v }))} unit="g/ml" />
-                        <ParamInput label="Brix (°Bx)" value={recepcion.Brix} step={0.1}
-                            onChange={v => setRecepcion(r => ({ ...r, Brix: v }))} unit="°Bx" />
-                    </div>
-                </div>
+                                {/* Proveedor */}
+                                <div>
+                                    <SecLabel>Proveedor</SecLabel>
+                                    {suppliers.length === 0 ? (
+                                        <input type="text" placeholder="Nombre del productor…"
+                                            value={newRec.proveedorNombre}
+                                            onChange={e => setNewRec(r => ({ ...r, proveedorNombre: e.target.value, proveedorId: '' }))}
+                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-teal-500" />
+                                    ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                            {suppliers.map(s => (
+                                                <button key={s.id} type="button"
+                                                    onClick={() => setNewRec(r => ({ ...r, proveedorId: s.id, proveedorNombre: s.nombre || s.nombreComercial || s.id }))}
+                                                    className={`px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                                                        newRec.proveedorId === s.id
+                                                            ? 'bg-teal-600 text-white'
+                                                            : 'bg-slate-800 border border-slate-700 text-slate-300 hover:border-teal-600/50'
+                                                    }`}>
+                                                    {s.nombre || s.nombreComercial || s.id}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
 
-                {/* ── Enrutamiento ── */}
-                <div>
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Enrutamiento</p>
-                    <div className="flex gap-3">
-                        <button type="button"
-                            onClick={() => setRecepcion(r => ({ ...r, rutaLeche: 'tanque' }))}
-                            className={`flex-1 flex flex-col items-center gap-2 py-4 rounded-xl font-semibold text-sm transition-colors ${
-                                recepcion.rutaLeche === 'tanque'
-                                    ? 'bg-blue-700 text-white'
-                                    : 'bg-slate-800 border border-slate-700 text-slate-400 hover:border-slate-600'
-                            }`}>
-                            <Droplets size={18} />
-                            <span>Tanque de enfriamiento</span>
-                        </button>
-                        <button type="button"
-                            onClick={() => setRecepcion(r => ({ ...r, rutaLeche: 'directo' }))}
-                            className={`flex-1 flex flex-col items-center gap-2 py-4 rounded-xl font-semibold text-sm transition-colors ${
-                                recepcion.rutaLeche === 'directo'
-                                    ? 'bg-orange-700 text-white'
-                                    : 'bg-slate-800 border border-slate-700 text-slate-400 hover:border-slate-600'
-                            }`}>
-                            <Zap size={18} />
-                            <span>Directo a producción</span>
-                        </button>
-                    </div>
-                    {recepcion.rutaLeche === 'directo' && (
-                        <p className="text-orange-400/70 text-xs mt-2 text-center">
-                            Los parámetros previos al pasteurizador no se registrarán
-                        </p>
-                    )}
-                </div>
+                                {/* Litros */}
+                                <LitrosStepper label="Litros recibidos" value={newRec.litros} onChange={v => setNewRec(r => ({ ...r, litros: v }))} />
 
-                {/* ── Ficha summary ── */}
-                <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                    <SecLabel>Ficha seleccionada</SecLabel>
-                    <p className="text-white font-bold text-sm mb-2">{selectedFicha?.productoNombre}</p>
-                    <div className="flex flex-wrap gap-1.5">
-                        {(selectedFicha?.bloques || []).filter(b => !b.deprecated).map((b, i) => {
-                            const m = meta(b.tipo);
-                            return (
-                                <span key={i} className={`text-xs px-2 py-0.5 rounded-full border ${m.bg} ${m.color} ${m.border}`}>
-                                    {blockLabel(b.tipo)}
-                                </span>
-                            );
-                        })}
+                                {/* Parámetros de calidad */}
+                                <div>
+                                    <SecLabel>Parámetros de Calidad</SecLabel>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <ParamInput label="Temperatura (°C)" value={newRec.temperatura} step={0.1}
+                                            onChange={v => setNewRec(r => ({ ...r, temperatura: v }))} unit="°C" />
+                                        <ParamInput label="pH" value={newRec.pH} step={0.01}
+                                            onChange={v => setNewRec(r => ({ ...r, pH: v }))} />
+                                        <ParamInput label="Densidad" value={newRec.densidad} step={0.001}
+                                            onChange={v => setNewRec(r => ({ ...r, densidad: v }))} unit="g/ml" />
+                                        <ParamInput label="Brix (°Bx)" value={newRec.Brix} step={0.1}
+                                            onChange={v => setNewRec(r => ({ ...r, Brix: v }))} unit="°Bx" />
+                                    </div>
+                                </div>
+
+                                {/* Enrutamiento */}
+                                <div>
+                                    <SecLabel>Enrutamiento</SecLabel>
+                                    <div className="flex gap-3">
+                                        <button type="button"
+                                            onClick={() => setNewRec(r => ({ ...r, rutaLeche: 'tanque' }))}
+                                            className={`flex-1 flex flex-col items-center gap-2 py-3 rounded-xl font-semibold text-sm transition-colors ${
+                                                newRec.rutaLeche === 'tanque'
+                                                    ? 'bg-blue-700 text-white'
+                                                    : 'bg-slate-800 border border-slate-700 text-slate-400 hover:border-slate-600'
+                                            }`}>
+                                            <Droplets size={16} />
+                                            <span>Tanque</span>
+                                        </button>
+                                        <button type="button"
+                                            onClick={() => setNewRec(r => ({ ...r, rutaLeche: 'directo' }))}
+                                            className={`flex-1 flex flex-col items-center gap-2 py-3 rounded-xl font-semibold text-sm transition-colors ${
+                                                newRec.rutaLeche === 'directo'
+                                                    ? 'bg-orange-700 text-white'
+                                                    : 'bg-slate-800 border border-slate-700 text-slate-400 hover:border-slate-600'
+                                            }`}>
+                                            <Zap size={16} />
+                                            <span>Directo</span>
+                                        </button>
+                                    </div>
+                                    {newRec.rutaLeche === 'directo' && (
+                                        <p className="text-orange-400/70 text-xs mt-2 text-center">
+                                            Sin parámetros previos al pasteurizador
+                                        </p>
+                                    )}
+                                </div>
+
+                                <button type="button" onClick={addRecepcion}
+                                    disabled={(!newRec.proveedorNombre && !newRec.proveedorId) || (newRec.litros || 0) <= 0}
+                                    className="w-full py-3 bg-teal-700 hover:bg-teal-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-bold rounded-xl transition-colors">
+                                    + Agregar esta recepción
+                                </button>
+                            </div>
+                        ) : (
+                            <button type="button" onClick={() => setShowAddRecForm(true)}
+                                className="w-full py-3 border-2 border-dashed border-slate-600 text-slate-500 hover:text-white hover:border-slate-500 rounded-xl text-sm transition-colors">
+                                + Agregar otra recepción
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    }
 
     // ── VIEW: runner ──────────────────────────────────────────────────────────
 
