@@ -171,10 +171,10 @@ function NumStepper({ label, value, onChange, unit = '', step = 1, min }) {
     );
 }
 
-// Calculator-style numeric pad — tap field to open, OK to confirm and close
-function NumPadField({ label, value, onChange, unit = '', decimals = 2 }) {
-    const [open, setOpen] = useState(false);
-    const [raw, setRaw] = useState('');
+// Calculator-style numeric pad — opens automatically if defaultOpen=true
+function NumPadField({ label, value, onChange, unit = '', decimals = 2, defaultOpen = false }) {
+    const [open, setOpen] = useState(defaultOpen);
+    const [raw, setRaw] = useState(() => defaultOpen && value > 0 ? String(value) : '');
 
     function pressKey(k) {
         if (k === '⌫') {
@@ -218,7 +218,7 @@ function NumPadField({ label, value, onChange, unit = '', decimals = 2 }) {
         <div>
             {label && <SecLabel>{label}</SecLabel>}
             <button type="button"
-                onClick={() => { setOpen(o => !o); setRaw(value > 0 ? String(value) : ''); }}
+                onClick={() => { setOpen(o => { if (!o) setRaw(''); return !o; }); }}
                 className={`w-full rounded-xl border px-4 py-3.5 flex items-baseline justify-between transition-colors ${
                     open ? 'bg-slate-700 border-emerald-500' : 'bg-slate-800 border-slate-600 hover:border-slate-500'
                 }`}>
@@ -610,7 +610,7 @@ function SaladoEditor({ bloque, reg, onChange }) {
     return (
         <div className="space-y-4">
             <NumPadField label="Masa a salar (kg)"
-                value={masaKg} unit="kg" decimals={2}
+                value={masaKg} unit="kg" decimals={2} defaultOpen
                 onChange={v => onChange({ ...reg, masaKg: v })} />
 
             <div>
@@ -725,8 +725,9 @@ function MaduracionEditor({ bloque, reg, onChange }) {
 
 function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
     const totalKgProducido = reg.totalKgProducido ?? 0;
-    const rendimiento = litrosNetos > 0 && totalKgProducido > 0
-        ? +(totalKgProducido / litrosNetos).toFixed(4) : 0;
+    // Rendimiento = litros procesados / kg obtenidos  →  L/kg
+    const rendimiento = totalKgProducido > 0 && litrosNetos > 0
+        ? +(litrosNetos / totalKgProducido).toFixed(2) : 0;
     const disposicion = reg.disposicion ?? 'empacar_todo';
     const presentaciones = reg.presentaciones ?? [];
 
@@ -746,7 +747,7 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
             {/* ── 1. Producción total ── */}
             <div className="space-y-3">
                 <NumPadField label="Kg de queso producido"
-                    value={totalKgProducido} unit="kg" decimals={3}
+                    value={totalKgProducido} unit="kg" decimals={3} defaultOpen
                     onChange={v => onChange({ ...reg, totalKgProducido: v })} />
 
                 <div className={`rounded-xl px-4 py-3 space-y-1 border transition-colors ${
@@ -757,10 +758,7 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
                     <div className="flex justify-between items-center">
                         <span className="text-slate-400 text-sm">Rendimiento</span>
                         {totalKgProducido > 0 && litrosNetos > 0 ? (
-                            <div>
-                                <span className="text-emerald-300 font-bold font-mono text-base">{rendimiento} kg/L</span>
-                                <span className="text-emerald-700 text-xs ml-2">= {(rendimiento * 1000).toFixed(1)} g/L</span>
-                            </div>
+                            <span className="text-emerald-300 font-bold font-mono text-lg">{rendimiento} L/kg</span>
                         ) : (
                             <span className="text-slate-600 text-xs">Ingresa los kg para calcular</span>
                         )}
@@ -768,7 +766,7 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos }) {
                     {totalKgProducido > 0 && litrosNetos > 0 && (
                         <div className="flex justify-between items-center">
                             <span className="text-slate-600 text-xs">Cálculo</span>
-                            <span className="text-slate-600 text-xs font-mono">{totalKgProducido} kg ÷ {litrosNetos} L</span>
+                            <span className="text-slate-600 text-xs font-mono">{litrosNetos} L ÷ {totalKgProducido} kg</span>
                         </div>
                     )}
                 </div>
@@ -1468,8 +1466,8 @@ export default function DailyProductionPage() {
                     disposicion:      reg.disposicion ?? 'empacar_todo',
                     fechaVencimiento: reg.fechaVencimiento ?? null,
                     kgSinEnvasar:     reg.kgSinEnvasar ?? 0,
-                    rendimientoKg:    litrosNetos > 0 && (reg.totalKgProducido ?? 0) > 0
-                        ? +((reg.totalKgProducido) / litrosNetos).toFixed(4) : 0,
+                    rendimientoKg:    (reg.totalKgProducido ?? 0) > 0 && litrosNetos > 0
+                        ? +(litrosNetos / reg.totalKgProducido).toFixed(2) : 0,
                 }),
             };
             await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), payload);
@@ -1972,7 +1970,7 @@ export default function DailyProductionPage() {
                                             <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
                                             {log.proveedorNombre && <><span>·</span><span className="truncate max-w-[120px]">{log.proveedorNombre}</span></>}
                                             {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
-                                            {log.rendimientoKg > 0 && <><span>·</span><span className="text-teal-600 font-mono">{(log.rendimientoKg * 1000).toFixed(1)} g/L</span></>}
+                                            {log.rendimientoKg > 0 && <><span>·</span><span className="text-teal-600 font-mono">{log.rendimientoKg.toFixed(2)} L/kg</span></>}
                                         </div>
                                     </div>
                                 ))}
