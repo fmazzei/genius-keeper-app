@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
-import { auth } from '@/Firebase/config.js';
+import { auth, db } from '@/Firebase/config.js';
+import { collection, getDocs } from 'firebase/firestore';
 import { KromaProvider, useKroma } from './KromaContext';
 import KromaUserSelect from './KromaUserSelect';
 
 // Admin pages
 import {
     AdminHome, WarehousesPage, SuppliersPage, MaterialsMasterPage,
-    ProductCatalogPage, ProductionHistoryPage, KromaUsersPage,
+    ProductCatalogPage, ProductionHistoryPage, KromaUsersPage, ControlSistemaPage,
 } from './pages/AdminPages';
 
 // Manager pages
@@ -23,7 +24,7 @@ import {
     LayoutDashboard, Warehouse, Truck, Package, ClipboardList, Users, Tag,
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
-    LogOut, Menu, X, ChevronRight, BookOpen,
+    LogOut, Menu, X, ChevronRight, BookOpen, Shield, Bell,
 } from 'lucide-react';
 
 // ─── Navigation config per role ───────────────────────────────────────────────
@@ -37,6 +38,7 @@ const NAV = {
         { id: 'materials',   label: 'Maestro Materiales',  Icon: Package },
         { id: 'history',     label: 'Historial',           Icon: ClipboardList },
         { id: 'users',       label: 'Usuarios Kroma',      Icon: Users },
+        { id: 'control',     label: 'Control Sistema',     Icon: Shield },
     ],
     kroma_gerencial: [
         // — Sección Gerencial —
@@ -75,7 +77,7 @@ const ROLE_COLORS = {
 
 // ─── Page renderer ────────────────────────────────────────────────────────────
 
-function renderPage(view, role) {
+function renderPage(view, role, kromaUser) {
     if (role === 'kroma_admin') {
         switch (view) {
             case 'home':         return <AdminHome />;
@@ -85,6 +87,7 @@ function renderPage(view, role) {
             case 'materials':    return <MaterialsMasterPage />;
             case 'history':      return <ProductionHistoryPage />;
             case 'users':        return <KromaUsersPage />;
+            case 'control':      return <ControlSistemaPage kromaUser={kromaUser} />;
             default:             return <AdminHome />;
         }
     }
@@ -120,10 +123,29 @@ function renderPage(view, role) {
 
 // ─── Inner shell (requires KromaProvider context) ─────────────────────────────
 
+function useUnreadCount(kromaUser) {
+    const [count, setCount] = useState(0);
+    useEffect(() => {
+        if (!kromaUser) return;
+        getDocs(collection(db, 'kroma_notifications')).then(snap => {
+            const uid  = kromaUser.id;
+            const role = kromaUser.role;
+            const unread = snap.docs.filter(d => {
+                const n = d.data();
+                const mine = (n.destinatarios || []).includes(uid) || (n.destinatarios || []).includes(role) || !(n.destinatarios || []).length;
+                return mine && !(n.leidaPor || []).includes(uid);
+            });
+            setCount(unread.length);
+        }).catch(() => {});
+    }, [kromaUser]);
+    return count;
+}
+
 function KromaInner({ onExitKroma }) {
     const { kromaUser, kromaRole, clearUser } = useKroma();
     const [currentView, setCurrentView] = useState('home');
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const unreadCount = useUnreadCount(kromaUser);
 
     if (!kromaUser) {
         return <KromaUserSelect onExitKroma={onExitKroma} />;
@@ -182,6 +204,22 @@ function KromaInner({ onExitKroma }) {
                         · {ROLE_LABELS[kromaRole]}
                     </span>
                 </button>
+
+                {/* Notification bell */}
+                {(kromaRole === 'kroma_admin' || kromaRole === 'master') && (
+                    <button
+                        onClick={() => setCurrentView('control')}
+                        className="relative text-slate-500 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors mr-1"
+                        title="Notificaciones"
+                    >
+                        <Bell size={18} />
+                        {unreadCount > 0 && (
+                            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-white font-bold text-[9px]">
+                                {unreadCount > 9 ? '9+' : unreadCount}
+                            </span>
+                        )}
+                    </button>
+                )}
 
                 {/* Logout */}
                 <button
@@ -268,7 +306,7 @@ function KromaInner({ onExitKroma }) {
 
                 {/* ── Main content ── */}
                 <main className="flex-1 overflow-y-auto bg-slate-950">
-                    {renderPage(currentView, kromaRole)}
+                    {renderPage(currentView, kromaRole, kromaUser)}
                 </main>
             </div>
         </div>

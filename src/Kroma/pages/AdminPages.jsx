@@ -7,6 +7,7 @@ import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
 import ProductCatalogPageImpl from './admin/ProductCatalogPage';
 import WarehousesPageImpl from './admin/WarehousesPage';
 import ProductionHistoryPageImpl from './admin/ProductionHistoryPage';
+import ControlSistemaPageImpl from './admin/ControlSistemaPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -60,6 +61,8 @@ export const MaterialsMasterPage = () => <MaterialsMasterPageImpl />;
 export const ProductCatalogPage = () => <ProductCatalogPageImpl />;
 
 export const ProductionHistoryPage = () => <ProductionHistoryPageImpl />;
+
+export const ControlSistemaPage = ({ kromaUser }) => <ControlSistemaPageImpl kromaUser={kromaUser} />;
 
 // ─── Kroma Users Page ─────────────────────────────────────────────────────────
 
