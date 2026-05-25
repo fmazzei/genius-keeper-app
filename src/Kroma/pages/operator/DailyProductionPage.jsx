@@ -1204,7 +1204,7 @@ function RowData({ label, value, highlight }) {
     );
 }
 
-function ReportBlockSummary({ bloque, data }) {
+function ReportBlockSummary({ bloque, data, litrosNetos = 0 }) {
     const reg = data?.registros || {};
     const p = bloque.params || {};
     const m = meta(bloque.tipo);
@@ -1223,14 +1223,29 @@ function ReportBlockSummary({ bloque, data }) {
             if (reg.cantidadTeorica != null) rows.push({ l: 'Teórico', v: `${reg.cantidadTeorica} ${p.unidadRef || ''}` });
             if (reg.cantidadReal != null)    rows.push({ l: 'Real aplicado', v: `${reg.cantidadReal} ${p.unidadRef || ''}`, hi: true });
             break;
-        case 'cuajado':
-            if (reg.tempPreCuajado) rows.push({ l: 'Temperatura', v: `${reg.tempPreCuajado} °C` });
-            if (reg.phPreCuajado)   rows.push({ l: 'pH pre-cuajado', v: reg.phPreCuajado });
-            if (reg.calcioReal != null) rows.push({ l: 'CaCl₂ real', v: `${reg.calcioReal} ml` });
-            if (reg.cuajoReal != null)  rows.push({ l: 'Cuajo real', v: `${reg.cuajoReal} ml` });
-            if (reg.fermentoReal != null) rows.push({ l: 'Fermento real', v: `${reg.fermentoReal} g` });
-            if (reg.phSalida)       rows.push({ l: 'pH de salida', v: reg.phSalida });
+        case 'cuajado': {
+            const d2 = bloque.dosis || {};
+            const ord = p.ingredienteOrden ?? ['calcio', 'conservante', 'cuajo', 'fermento'];
+            const insMap = {
+                calcio:      p.calcio !== 'no' && d2.calcio      ? { nom: d2.calcio.materialNombre || 'CaCl₂',       ref: d2.calcio,       real: reg.calcioReal,      un: d2.calcio?.unidad || 'ml'  } : null,
+                conservante: p.conservante === 'si' && d2.conservante ? { nom: d2.conservante.materialNombre || 'Conservante', ref: d2.conservante, real: reg.conservanteReal, un: d2.conservante?.unidad || 'g' } : null,
+                cuajo:       d2.cuajo                             ? { nom: d2.cuajo.materialNombre || 'Cuajo',         ref: d2.cuajo,        real: reg.cuajoReal,       un: d2.cuajo?.unidad || 'ml'   } : null,
+                fermento:    p.fermento !== 'no' && d2.fermento   ? { nom: d2.fermento.materialNombre || 'Fermento',  ref: d2.fermento,     real: reg.fermentoReal,    un: d2.fermento?.unidad || 'g' } : null,
+            };
+            if (reg.tempPreCuajadoReal != null) rows.push({ l: 'Temp pre-cuajado', v: `${reg.tempPreCuajadoReal} °C` });
+            if (reg.phPreCuajadoReal   != null) rows.push({ l: 'pH pre-cuajado',   v: reg.phPreCuajadoReal });
+            ord.forEach(k => {
+                const ins = insMap[k];
+                if (!ins) return;
+                const teo = ins.ref?.cantidad > 0 && litrosNetos > 0 ? +(ins.ref.cantidad * litrosNetos).toFixed(3) : null;
+                if (teo   != null) rows.push({ l: `${ins.nom} — Teórico`, v: `${teo} ${ins.un}` });
+                if (ins.real != null) rows.push({ l: `${ins.nom} — Real`,    v: `${ins.real} ${ins.un}`, hi: true });
+            });
+            if (reg.tiempoCoagulacionReal != null) rows.push({ l: `Tiempo coagulación real`,     v: `${reg.tiempoCoagulacionReal} ${p.unidadTiempoCoagulacion || 'h'}`, hi: true });
+            if (p.tiempoCoagulacion       != null) rows.push({ l: `Tiempo coagulación teórico`,  v: `${p.tiempoCoagulacion} ${p.unidadTiempoCoagulacion || 'h'}` });
+            if (reg.phSalida              != null) rows.push({ l: 'pH de salida',                v: reg.phSalida, hi: true });
             break;
+        }
         case 'salado':
             if (reg.masaKg)         rows.push({ l: 'Masa a salar', v: `${reg.masaKg} kg` });
             if (reg.cantidadSalReal != null) rows.push({ l: 'Sal real aplicada', v: `${reg.cantidadSalReal} g`, hi: true });
@@ -1257,7 +1272,15 @@ function ReportBlockSummary({ bloque, data }) {
             break;
     }
 
-    if (rows.length === 0) return null;
+    if (rows.length === 0 && !data?.tiempoRealMin && !data?.tiempoEsperaRealMin) return null;
+
+    const timingRows = [];
+    if (data?.tiempoEsperaRealMin != null && data.tiempoEsperaRealMin > 0)
+        timingRows.push({ l: 'Espera desde bloque anterior', v: fmtDuration(data.tiempoEsperaRealMin) });
+    if (data?.tiempoTeorico > 0)
+        timingRows.push({ l: 'Tiempo teórico',  v: fmtDuration(data.tiempoTeorico) });
+    if (data?.tiempoRealMin != null)
+        timingRows.push({ l: 'Tiempo real',     v: fmtDuration(data.tiempoRealMin), hi: true });
 
     return (
         <div className={`rounded-xl border ${m.border} ${m.bg} p-3`}>
@@ -1268,6 +1291,16 @@ function ReportBlockSummary({ bloque, data }) {
                     <span className={`text-xs font-mono ${r.hi ? 'text-emerald-300 font-bold' : 'text-slate-300'}`}>{r.v}</span>
                 </div>
             ))}
+            {timingRows.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-slate-700/50 space-y-0.5">
+                    {timingRows.map((r, i) => (
+                        <div key={i} className="flex justify-between items-center py-0.5">
+                            <span className="text-slate-600 text-xs">{r.l}</span>
+                            <span className={`text-xs font-mono ${r.hi ? 'text-cyan-300 font-semibold' : 'text-slate-500'}`}>{r.v}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
@@ -1398,7 +1431,11 @@ function ReportView({ log, kromaUser, onClose }) {
                         <span className="text-emerald-300 text-xs font-bold uppercase tracking-widest">Código de Lote</span>
                     </div>
                     <div className="px-6 py-5 flex flex-col items-center gap-2">
-                        <p className="text-white font-black font-mono text-3xl tracking-[0.15em] text-center">{lote}</p>
+                        <p className={`text-white font-black font-mono text-center ${
+                            lote.length <= 16 ? 'text-3xl tracking-[0.15em]'
+                            : lote.length <= 22 ? 'text-xl tracking-wide'
+                            : 'text-sm tracking-normal break-all'
+                        }`}>{lote}</p>
                         <p className="text-slate-500 text-xs text-center">{log.productoNombre}</p>
                         <div className="flex items-center gap-3 mt-1">
                             <span className="text-slate-600 text-xs">{fmtDateTime(log.createdAt)}</span>
@@ -1480,7 +1517,7 @@ function ReportView({ log, kromaUser, onClose }) {
                                 if (b.tipo === 'empaque') return null;
                                 const d = bData[String(i)];
                                 if (!d?.completado) return null;
-                                return <ReportBlockSummary key={i} bloque={b} data={d} />;
+                                return <ReportBlockSummary key={i} bloque={b} data={d} litrosNetos={log.litrosNetos ?? log.litrosIngresados ?? 0} />;
                             })}
                         </div>
                     </div>
@@ -1727,6 +1764,7 @@ export default function DailyProductionPage() {
     const [finalizarLog, setFinalizarLog] = useState(null); // log pending finalization
     const [finSaving, setFinSaving]       = useState(false);
     const [historialFilter, setHistorialFilter] = useState('todas'); // 'todas'|'empacada'|'sin_envasar'|'incompleta'
+    const [elapsedNotif, setElapsedNotif] = useState(null); // { bloqueAnterior, minutos }
 
     // New production wizard
     const [selectedFicha, setSelectedFicha]   = useState(null);
@@ -1800,9 +1838,31 @@ export default function DailyProductionPage() {
     }
 
     function openLog(log) {
+        const idx   = log.bloqueActualIdx || 0;
+        const bData = log.bloquesData || {};
+        const now   = new Date().toISOString();
+
+        // Set iniciadoAt for the current (not-yet-completed) block if missing
+        const updBData = { ...bData };
+        if (!updBData[String(idx)]?.iniciadoAt) {
+            updBData[String(idx)] = { ...(updBData[String(idx)] || {}), iniciadoAt: now };
+        }
+
+        // Calculate elapsed time since previous block completed
+        if (idx > 0) {
+            const prevData = bData[String(idx - 1)];
+            if (prevData?.completadoAt) {
+                const diffMin = Math.round((Date.now() - new Date(prevData.completadoAt).getTime()) / 60000);
+                if (diffMin >= 5) {
+                    const prevBloque = (log.bloquesSnapshot || [])[idx - 1];
+                    setElapsedNotif({ bloqueAnterior: blockLabel(prevBloque?.tipo || ''), minutos: diffMin });
+                }
+            }
+        }
+
         setActiveLog(log);
-        setBloqueActualIdx(log.bloqueActualIdx || 0);
-        setBloquesData(log.bloquesData || {});
+        setBloqueActualIdx(idx);
+        setBloquesData(updBData);
         setHoldOptions({});
         setSaveError(null);
         setView('runner');
@@ -2046,12 +2106,23 @@ export default function DailyProductionPage() {
             litrosNetos = Math.max(0, (activeLog?.litrosIngresados || 0) - mermaValue);
         }
 
+        const completadoAt = new Date();
+        const iniciadoAt   = bloquesData[idxStr]?.iniciadoAt || completadoAt.toISOString();
+        const prevData     = idx > 0 ? bloquesData[String(idx - 1)] : null;
+        const tiempoRealMin = Math.round((completadoAt - new Date(iniciadoAt)) / 60000);
+        const tiempoEsperaRealMin = prevData?.completadoAt
+            ? Math.round((new Date(iniciadoAt) - new Date(prevData.completadoAt)) / 60000) : null;
+        const tiempoTeorico = getPlannedMinutes(bloque);
+
         const newData = {
             ...bloquesData,
             [idxStr]: {
                 completado:    true,
-                iniciadoAt:    bloquesData[idxStr]?.iniciadoAt || new Date().toISOString(),
-                completadoAt:  new Date().toISOString(),
+                iniciadoAt:    iniciadoAt,
+                completadoAt:  completadoAt.toISOString(),
+                tiempoTeorico: tiempoTeorico || null,
+                tiempoRealMin: tiempoRealMin >= 0 ? tiempoRealMin : null,
+                tiempoEsperaRealMin,
                 registros:     reg,
             },
         };
@@ -2409,6 +2480,25 @@ export default function DailyProductionPage() {
                     </span>
                 </div>
 
+                {elapsedNotif && (
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 pb-8 px-4">
+                    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full space-y-4">
+                        <div className="flex items-center gap-2">
+                            <Clock size={18} className="text-amber-400" />
+                            <p className="text-white font-semibold">Retomaste la producción</p>
+                        </div>
+                        <p className="text-slate-300 text-sm">
+                            Desde el cierre de <strong className="text-white">{elapsedNotif.bloqueAnterior}</strong> han transcurrido{' '}
+                            <strong className="text-amber-300 text-base">{fmtDuration(elapsedNotif.minutos)}</strong>.
+                        </p>
+                        <p className="text-slate-500 text-xs">Este tiempo queda registrado en el reporte del lote como KPI de proceso.</p>
+                        <button onClick={() => setElapsedNotif(null)}
+                            className="w-full py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition-colors">
+                            Entendido, continuar
+                        </button>
+                    </div>
+                </div>
+            )}
                 {saveError && (
                     <div className="mx-4 mt-3 shrink-0 bg-red-900/30 border border-red-700 rounded-xl px-4 py-2.5 text-red-300 text-xs font-mono">{saveError}</div>
                 )}
