@@ -35,10 +35,10 @@ const AVATAR_COLORS = [
 
 // Default modules per role — mirrors KromaShell.DEFAULT_MODULES
 const DEFAULT_MODULES = {
-    kroma_operario:  { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  almacenes: false, historialProduccion: false, catalogos: false, usuarios: false, controlSistema: false, dashboardsGerenciales: false },
-    kroma_admin:     { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: false },
-    kroma_gerencial: { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: false, dashboardsGerenciales: true  },
-    master:          { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: true  },
+    kroma_operario:  { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  despachos: true,  almacenes: false, historialProduccion: false, catalogos: false, usuarios: false, controlSistema: false, dashboardsGerenciales: false },
+    kroma_admin:     { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, despachos: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: false },
+    kroma_gerencial: { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, despachos: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: false, dashboardsGerenciales: true  },
+    master:          { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  despachos: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: true  },
 };
 
 // All modules — no role restriction; master can assign any to any user
@@ -47,6 +47,7 @@ const MODULES = [
     { id: 'leche',                 label: 'Inventario de Leche',     desc: 'Recepción y control de leche',          Icon: Droplets },
     { id: 'inventarioMateriales',  label: 'Inventario de Insumos',   desc: 'Stock operativo de materiales',         Icon: Package },
     { id: 'constructores',         label: 'Constructores',           desc: 'Procesos y recetas',                    Icon: BookOpen },
+    { id: 'despachos',             label: 'Despachos',               desc: 'Declarar mercancía en tránsito',        Icon: Truck },
     { id: 'almacenes',             label: 'Almacenes',               desc: 'Gestión de almacenes y PT',             Icon: Warehouse },
     { id: 'historialProduccion',   label: 'Historial de Producción', desc: 'Reportes históricos',                  Icon: ClipboardList },
     { id: 'catalogos',             label: 'Catálogos',               desc: 'Productos, materiales y proveedores',   Icon: Tag },
@@ -60,7 +61,8 @@ const SHORTCUTS_CATALOG = [
     { id: 'nueva_produccion',   label: 'Nueva Producción',       desc: 'Registrar planilla de producción',     Icon: Factory,       color: 'emerald' },
     { id: 'recepcion_leche',    label: 'Recepción de Leche',     desc: 'Registrar entrada de leche',           Icon: Droplets,      color: 'blue' },
     { id: 'inventario_insumos', label: 'Inventario de Insumos',  desc: 'Revisar y ajustar stock',              Icon: Package,       color: 'amber' },
-    { id: 'almacenes',          label: 'Almacenes / Despacho',   desc: 'Gestionar almacenes y despachar PT',   Icon: Warehouse,     color: 'violet' },
+    { id: 'despacho',           label: 'Nuevo Despacho',         desc: 'Declarar mercancía en tránsito',       Icon: Truck,         color: 'emerald' },
+    { id: 'almacenes',          label: 'Almacenes',              desc: 'Gestionar almacenes y PT',             Icon: Warehouse,     color: 'violet' },
     { id: 'historial',          label: 'Historial',              desc: 'Ver historial de producciones',        Icon: ClipboardList, color: 'slate' },
     { id: 'fichas',             label: 'Fichas y Recetas',       desc: 'Acceder a recetas y procesos',         Icon: BookOpen,      color: 'cyan' },
     { id: 'catalogo_productos', label: 'Catálogo de Productos',  desc: 'Ver catálogo de productos terminados', Icon: Tag,           color: 'rose' },

@@ -10,12 +10,14 @@ import FichaBuilderPageImpl from './operator/FichaBuilderPage';
 import MaterialsInventoryPageImpl from './operator/MaterialsInventoryPage';
 import MilkInventoryPageImpl from './operator/MilkInventoryPage';
 import DailyProductionPageImpl from './operator/DailyProductionPage';
+import DespachoPageImpl from './operator/DespachoPage';
 
 const SHORTCUT_DEFS = {
     nueva_produccion:   { label: 'Nueva Producción',      desc: 'Iniciar planilla de producción', Icon: Factory,       color: 'emerald', view: 'production'    },
     recepcion_leche:    { label: 'Recepción de Leche',    desc: 'Registrar ingreso de leche',     Icon: Droplets,      color: 'blue',    view: 'milk'          },
     inventario_insumos: { label: 'Inventario de Insumos', desc: 'Stock de materiales e insumos',  Icon: Package,       color: 'amber',   view: 'materials_inv' },
-    almacenes:          { label: 'Almacenes / Despacho',  desc: 'Movimientos y despachos',        Icon: Warehouse,     color: 'violet',  view: 'warehouses'    },
+    despacho:           { label: 'Nuevo Despacho',        desc: 'Declarar mercancía en tránsito', Icon: Truck,         color: 'emerald', view: 'despacho'      },
+    almacenes:          { label: 'Almacenes',             desc: 'Gestión de almacenes',           Icon: Warehouse,     color: 'violet',  view: 'warehouses'    },
     historial:          { label: 'Historial',             desc: 'Producciones anteriores',        Icon: ClipboardList, color: 'slate',   view: 'history'       },
     fichas:             { label: 'Fichas y Recetas',      desc: 'Constructores de recetas',       Icon: BookOpen,      color: 'cyan',    view: 'fichas'        },
     catalogo_productos: { label: 'Catálogo Productos',    desc: 'Productos terminados',           Icon: Tag,           color: 'rose',    view: 'products'      },
@@ -110,3 +112,5 @@ export const RecipeBuilderPage = () => <RecipeBuilderPageImpl />;
 export const ProcessBuilderPage = () => <ProcessBuilderPageImpl />;
 
 export const DailyProductionPage = () => <DailyProductionPageImpl />;
+
+export const DespachoPage = () => <DespachoPageImpl />;

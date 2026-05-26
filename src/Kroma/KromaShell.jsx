@@ -18,6 +18,7 @@ import { ManagerHome, FinancialBoard, ProductionKPIsPage, QualityBoard } from '.
 import {
     OperatorHome, MilkInventoryPage, MaterialsInventoryPage,
     FichaBuilderPage, RecipeBuilderPage, ProcessBuilderPage, DailyProductionPage,
+    DespachoPage,
 } from './pages/OperatorPages';
 
 import {
@@ -31,10 +32,10 @@ import {
 // Used when a user has no explicit modulos saved. Master ignores this entirely.
 
 export const DEFAULT_MODULES = {
-    kroma_operario:  { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  almacenes: false, historialProduccion: false, catalogos: false, usuarios: false, controlSistema: false, dashboardsGerenciales: false },
-    kroma_admin:     { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: false },
-    kroma_gerencial: { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: false, dashboardsGerenciales: true  },
-    master:          { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: true  },
+    kroma_operario:  { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  despachos: true,  almacenes: false, historialProduccion: false, catalogos: false, usuarios: false, controlSistema: false, dashboardsGerenciales: false },
+    kroma_admin:     { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, despachos: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: false },
+    kroma_gerencial: { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, despachos: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: false, dashboardsGerenciales: true  },
+    master:          { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  despachos: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: true  },
 };
 
 // ─── Single universal nav list — filtered by effective modules ────────────────
@@ -46,6 +47,7 @@ const ALL_NAV_ITEMS = [
     { id: 'milk',          label: 'Leche',               Icon: Droplets,      modulo: 'leche',                section: 'Operativo' },
     { id: 'materials_inv', label: 'Insumos',             Icon: PackageOpen,   modulo: 'inventarioMateriales', section: 'Operativo' },
     { id: 'fichas',        label: 'Fichas',              Icon: BookOpen,      modulo: 'constructores',        section: 'Operativo' },
+    { id: 'despacho',     label: 'Despachos',           Icon: Truck,         modulo: 'despachos',            section: 'Operativo' },
     // — Administración —
     { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,     modulo: 'almacenes',            section: 'Administración' },
     { id: 'history',       label: 'Historial',           Icon: ClipboardList, modulo: 'historialProduccion',  section: 'Administración' },
@@ -89,6 +91,7 @@ function renderPage(view, role, kromaUser, onNavigate) {
         case 'milk':          return <MilkInventoryPage />;
         case 'materials_inv': return <MaterialsInventoryPage />;
         case 'fichas':        return <FichaBuilderPage />;
+        case 'despacho':      return <DespachoPage />;
         case 'warehouses':    return <WarehousesPage />;
         case 'history':       return <ProductionHistoryPage />;
         case 'products':      return <ProductCatalogPage />;
