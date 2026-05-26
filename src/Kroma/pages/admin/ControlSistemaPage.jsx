@@ -827,7 +827,7 @@ export default function ControlSistemaPage({ kromaUser }) {
     const uid  = kromaUser?.id   || '__none__';
     const role = kromaUser?.role || '';
 
-    const tabs = role === 'master' ? [...TABS_BASE, TAB_MANTENIMIENTO] : TABS_BASE;
+    const tabs = [...TABS_BASE, TAB_MANTENIMIENTO];
 
     return (
         <div className="p-4 md:p-6 max-w-2xl">
