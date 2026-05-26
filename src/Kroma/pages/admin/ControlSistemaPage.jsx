@@ -7,7 +7,7 @@ import {
 import {
     Shield, Users, Bell, Settings2, Loader, Plus, Edit2, Trash2,
     CheckCircle, AlertTriangle, Package, Factory, Warehouse,
-    ClipboardList, Tag, BookOpen, Droplets, BarChart3,
+    ClipboardList, Tag, BookOpen, Droplets, BarChart3, Truck,
     ToggleLeft, ToggleRight, Mail, Briefcase, ChevronDown, X,
     Check, Clock, KeyRound, Eye, EyeOff,
 } from 'lucide-react';
