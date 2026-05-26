@@ -9,7 +9,7 @@ import {
     CheckCircle, AlertTriangle, Package, Factory, Warehouse,
     ClipboardList, Tag, BookOpen, Droplets, BarChart3, Truck,
     ToggleLeft, ToggleRight, Mail, Briefcase, ChevronDown, X,
-    Check, Clock, KeyRound, Eye, EyeOff, Wrench,
+    Check, Clock, KeyRound, Eye, EyeOff, Wrench, ClipboardCheck,
 } from 'lucide-react';
 
 // ─── PIN hash helper ──────────────────────────────────────────────────────────
@@ -702,6 +702,8 @@ const CLEANUP_COLLECTIONS = [
     { id: 'kroma_warehouse_movements',  label: 'Movimientos de Almacén',    Icon: Warehouse,     color: 'text-rose-400' },
     { id: 'kroma_despachos',            label: 'Despachos',                 Icon: Truck,         color: 'text-rose-400' },
     { id: 'kroma_notifications',        label: 'Notificaciones',            Icon: Bell,          color: 'text-rose-400' },
+    { id: 'kroma_inventory_pt',         label: 'Inventario PT',             Icon: Package,       color: 'text-rose-400' },
+    { id: 'kroma_edit_requests',        label: 'Solicitudes de Edición',    Icon: ClipboardCheck, color: 'text-rose-400' },
 ];
 
 function MantenimientoTab() {
