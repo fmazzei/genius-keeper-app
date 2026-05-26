@@ -527,6 +527,7 @@ export default function MilkInventoryPage() {
     const [step, setStep]           = useState(0);
     const [saving, setSaving]       = useState(false);
     const [saveError, setSaveError] = useState(null);
+    const [actionError, setActionError] = useState(null);
 
     // Form fields
     const [proveedorId, setProveedorId]   = useState('');
@@ -628,15 +629,19 @@ export default function MilkInventoryPage() {
     }
 
     async function handleDelete(rec) {
+        setActionError(null);
         try {
             await updateDoc(doc(db, 'kroma_milk_reception', rec.id), {
                 active: false, deletedAt: serverTimestamp(), deletedBy: kromaUser?.id || '',
             });
             setAllReceptions(prev => prev.filter(r => r.id !== rec.id));
-        } catch (_) {}
+        } catch (e) {
+            setActionError(`No se pudo eliminar: ${e.message}`);
+        }
     }
 
     async function handleDisable(rec) {
+        setActionError(null);
         try {
             await updateDoc(doc(db, 'kroma_milk_reception', rec.id), {
                 status: 'inactivo', updatedAt: serverTimestamp(), updatedBy: kromaUser?.id || '',
@@ -644,10 +649,13 @@ export default function MilkInventoryPage() {
             setAllReceptions(prev => prev.map(r =>
                 r.id === rec.id ? { ...r, status: 'inactivo' } : r
             ));
-        } catch (_) {}
+        } catch (e) {
+            setActionError(`No se pudo inhabilitar: ${e.message}`);
+        }
     }
 
     async function handleEnable(rec) {
+        setActionError(null);
         try {
             await updateDoc(doc(db, 'kroma_milk_reception', rec.id), {
                 status: 'pendiente', updatedAt: serverTimestamp(), updatedBy: kromaUser?.id || '',
@@ -655,7 +663,9 @@ export default function MilkInventoryPage() {
             setAllReceptions(prev => prev.map(r =>
                 r.id === rec.id ? { ...r, status: 'pendiente' } : r
             ));
-        } catch (_) {}
+        } catch (e) {
+            setActionError(`No se pudo rehabilitar: ${e.message}`);
+        }
     }
 
     async function handleSaveConfig(newParams) {
@@ -930,6 +940,16 @@ export default function MilkInventoryPage() {
                     </button>
                 </div>
             </div>
+
+            {/* Action error banner */}
+            {actionError && (
+                <div className="mx-5 mb-3 shrink-0 bg-red-900/30 border border-red-700 rounded-xl px-4 py-3 flex items-start justify-between gap-3">
+                    <p className="text-red-300 text-xs font-mono">{actionError}</p>
+                    <button onClick={() => setActionError(null)} className="text-red-400 hover:text-red-200 shrink-0">
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
 
             {/* Tabs */}
             <div className="flex px-5 mb-3 gap-1 shrink-0">
