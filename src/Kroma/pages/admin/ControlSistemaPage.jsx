@@ -33,17 +33,38 @@ const AVATAR_COLORS = [
     'bg-violet-600', 'bg-rose-600', 'bg-cyan-600', 'bg-orange-600',
 ];
 
+// Default modules per role — mirrors KromaShell.DEFAULT_MODULES
+const DEFAULT_MODULES = {
+    kroma_operario:  { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  almacenes: false, historialProduccion: false, catalogos: false, usuarios: false, controlSistema: false, dashboardsGerenciales: false },
+    kroma_admin:     { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: false },
+    kroma_gerencial: { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: false, dashboardsGerenciales: true  },
+    master:          { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: true  },
+};
+
+// All modules — no role restriction; master can assign any to any user
 const MODULES = [
-    { id: 'produccionDiaria',     label: 'Producción Diaria',      desc: 'Planilla de producción activa',         Icon: Factory,      roles: ['kroma_operario'] },
-    { id: 'inventarioMateriales', label: 'Inventario de Insumos',  desc: 'Stock operativo de materiales',         Icon: Package,      roles: ['kroma_operario'] },
-    { id: 'leche',                label: 'Inventario de Leche',    desc: 'Recepción y control de leche',          Icon: Droplets,     roles: ['kroma_operario'] },
-    { id: 'constructores',        label: 'Constructores',          desc: 'Procesos y recetas',                    Icon: BookOpen,     roles: ['kroma_operario'] },
-    { id: 'almacenes',            label: 'Almacenes',              desc: 'Gestión de almacenes y PT',             Icon: Warehouse,    roles: ['kroma_admin'] },
-    { id: 'historialProduccion',  label: 'Historial de Producción', desc: 'Reportes históricos de administrador', Icon: ClipboardList, roles: ['kroma_admin'] },
-    { id: 'catalogos',            label: 'Catálogos',              desc: 'Productos, materiales y proveedores',   Icon: Tag,          roles: ['kroma_admin'] },
-    { id: 'usuarios',             label: 'Usuarios Kroma',         desc: 'Gestión de personal',                  Icon: Users,        roles: ['kroma_admin'] },
-    { id: 'dashboardsGerenciales', label: 'Dashboards Gerenciales', desc: 'KPIs y tableros financieros',         Icon: BarChart3,    roles: ['kroma_gerencial'] },
-    { id: 'controlSistema',       label: 'Control del Sistema',    desc: 'Permisos, usuarios y notificaciones',  Icon: Shield,       roles: ['kroma_admin', 'master'] },
+    { id: 'produccionDiaria',      label: 'Producción Diaria',       desc: 'Planilla de producción activa',         Icon: Factory },
+    { id: 'leche',                 label: 'Inventario de Leche',     desc: 'Recepción y control de leche',          Icon: Droplets },
+    { id: 'inventarioMateriales',  label: 'Inventario de Insumos',   desc: 'Stock operativo de materiales',         Icon: Package },
+    { id: 'constructores',         label: 'Constructores',           desc: 'Procesos y recetas',                    Icon: BookOpen },
+    { id: 'almacenes',             label: 'Almacenes',               desc: 'Gestión de almacenes y PT',             Icon: Warehouse },
+    { id: 'historialProduccion',   label: 'Historial de Producción', desc: 'Reportes históricos',                  Icon: ClipboardList },
+    { id: 'catalogos',             label: 'Catálogos',               desc: 'Productos, materiales y proveedores',   Icon: Tag },
+    { id: 'usuarios',              label: 'Usuarios Kroma',          desc: 'Gestión de personal',                  Icon: Users },
+    { id: 'dashboardsGerenciales', label: 'Dashboards Gerenciales',  desc: 'KPIs y tableros financieros',          Icon: BarChart3 },
+    { id: 'controlSistema',        label: 'Control del Sistema',     desc: 'Permisos, usuarios y notificaciones',  Icon: Shield },
+];
+
+// Available shortcuts catalog
+const SHORTCUTS_CATALOG = [
+    { id: 'nueva_produccion',   label: 'Nueva Producción',       desc: 'Registrar planilla de producción',     Icon: Factory,       color: 'emerald' },
+    { id: 'recepcion_leche',    label: 'Recepción de Leche',     desc: 'Registrar entrada de leche',           Icon: Droplets,      color: 'blue' },
+    { id: 'inventario_insumos', label: 'Inventario de Insumos',  desc: 'Revisar y ajustar stock',              Icon: Package,       color: 'amber' },
+    { id: 'almacenes',          label: 'Almacenes / Despacho',   desc: 'Gestionar almacenes y despachar PT',   Icon: Warehouse,     color: 'violet' },
+    { id: 'historial',          label: 'Historial',              desc: 'Ver historial de producciones',        Icon: ClipboardList, color: 'slate' },
+    { id: 'fichas',             label: 'Fichas y Recetas',       desc: 'Acceder a recetas y procesos',         Icon: BookOpen,      color: 'cyan' },
+    { id: 'catalogo_productos', label: 'Catálogo de Productos',  desc: 'Ver catálogo de productos terminados', Icon: Tag,           color: 'rose' },
+    { id: 'proveedores',        label: 'Proveedores',            desc: 'Consultar información de proveedores', Icon: Truck,         color: 'orange' },
 ];
 
 const NOTIF_EVENTS = [
@@ -354,33 +375,41 @@ function UsuariosTab() {
 // ─── Tab 2: Permisos de Módulos ───────────────────────────────────────────────
 
 function PermisosTab() {
-    const [users,      setUsers]      = useState([]);
-    const [selected,   setSelected]   = useState(null);
-    const [modulos,    setModulos]    = useState({});
-    const [notifCfg,   setNotifCfg]   = useState({});
-    const [loading,    setLoading]    = useState(true);
-    const [saving,     setSaving]     = useState(false);
-    const [saved,      setSaved]      = useState(false);
+    const [users,    setUsers]    = useState([]);
+    const [selected, setSelected] = useState(null);
+    const [modulos,  setModulos]  = useState({});
+    const [notifCfg, setNotifCfg] = useState({});
+    const [shortcuts, setShortcuts] = useState([]);
+    const [loading,  setLoading]  = useState(true);
+    const [saving,   setSaving]   = useState(false);
+    const [saved,    setSaved]    = useState(false);
 
     useEffect(() => {
         getDocs(collection(db, 'kroma_users'))
             .then(snap => {
                 const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.active !== false).sort((a, b) => a.name.localeCompare(b.name));
                 setUsers(list);
-                if (list.length) selectUser(list[0]);
+                if (list.length) applyUser(list[0]);
             })
             .finally(() => setLoading(false));
     }, []);
 
-    const selectUser = (u) => {
+    const applyUser = (u) => {
         setSelected(u);
-        const def = {};
-        MODULES.forEach(m => { def[m.id] = true; });
+        // Initialize with role-appropriate defaults, then apply any explicit overrides
+        const def = { ...(DEFAULT_MODULES[u.role] || {}) };
         setModulos({ ...def, ...(u.modulos || {}) });
         const defN = {};
         NOTIF_EVENTS.forEach(n => { defN[n.id] = true; });
         setNotifCfg({ ...defN, ...(u.notificaciones || {}) });
+        setShortcuts(u.shortcuts || []);
         setSaved(false);
+    };
+
+    const toggleShortcut = (id) => {
+        setShortcuts(prev =>
+            prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+        );
     };
 
     const handleSave = async () => {
@@ -388,12 +417,13 @@ function PermisosTab() {
         setSaving(true);
         try {
             await updateDoc(doc(db, 'kroma_users', selected.id), {
-                modulos: modulos,
+                modulos:       modulos,
                 notificaciones: notifCfg,
-                updatedAt: serverTimestamp(),
+                shortcuts,
+                updatedAt:     serverTimestamp(),
             });
             setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
+            setTimeout(() => setSaved(false), 2500);
         } catch (e) { console.error(e); }
         finally { setSaving(false); }
     };
@@ -408,7 +438,7 @@ function PermisosTab() {
                 <div className="relative">
                     <select
                         value={selected?.id || ''}
-                        onChange={e => { const u = users.find(x => x.id === e.target.value); if (u) selectUser(u); }}
+                        onChange={e => { const u = users.find(x => x.id === e.target.value); if (u) applyUser(u); }}
                         className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 text-sm appearance-none"
                     >
                         {users.map(u => <option key={u.id} value={u.id}>{u.name} — {ROLE_CFG[u.role]?.label || u.role}</option>)}
@@ -419,28 +449,54 @@ function PermisosTab() {
 
             {selected && (
                 <>
-                    {/* Modules */}
+                    {/* ── Modules — fully open, no role restriction ── */}
                     <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Módulos Visibles</p>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Módulos Visibles</p>
+                        <p className="text-slate-600 text-xs mb-3">Activa cualquier módulo para este usuario independientemente de su rol.</p>
                         <div className="space-y-2">
                             {MODULES.map(m => {
                                 const MIcon = m.Icon;
-                                const relevant = m.roles.includes(selected.role) || m.roles.includes('master');
+                                const isOn = modulos[m.id] !== false;
                                 return (
-                                    <div key={m.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${relevant ? 'bg-slate-800 border-slate-700' : 'bg-slate-800/40 border-slate-700/40 opacity-60'}`}>
-                                        <MIcon size={16} className="text-slate-500 shrink-0" />
+                                    <div key={m.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${isOn ? 'bg-slate-800 border-slate-700' : 'bg-slate-800/50 border-slate-700/50'}`}>
+                                        <MIcon size={16} className={isOn ? 'text-emerald-400 shrink-0' : 'text-slate-600 shrink-0'} />
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-slate-200 text-sm font-medium">{m.label}</p>
+                                            <p className={`text-sm font-medium ${isOn ? 'text-slate-200' : 'text-slate-500'}`}>{m.label}</p>
                                             <p className="text-slate-600 text-xs">{m.desc}</p>
                                         </div>
-                                        <Toggle checked={modulos[m.id] !== false} onChange={v => setModulos(prev => ({ ...prev, [m.id]: v }))} />
+                                        <Toggle checked={isOn} onChange={v => setModulos(prev => ({ ...prev, [m.id]: v }))} />
                                     </div>
                                 );
                             })}
                         </div>
                     </div>
 
-                    {/* Notifications config */}
+                    {/* ── Shortcuts ── */}
+                    <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Accesos Directos (Inicio)</p>
+                        <p className="text-slate-600 text-xs mb-3">Aparecen como tiles grandes en la pantalla de inicio del usuario.</p>
+                        <div className="space-y-2">
+                            {SHORTCUTS_CATALOG.map(s => {
+                                const SIcon = s.Icon;
+                                const active = shortcuts.includes(s.id);
+                                return (
+                                    <div key={s.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${active ? 'bg-slate-800 border-slate-700' : 'bg-slate-800/50 border-slate-700/50'}`}
+                                        onClick={() => toggleShortcut(s.id)}>
+                                        <SIcon size={16} className={active ? 'text-emerald-400 shrink-0' : 'text-slate-600 shrink-0'} />
+                                        <div className="flex-1 min-w-0">
+                                            <p className={`text-sm font-medium ${active ? 'text-slate-200' : 'text-slate-500'}`}>{s.label}</p>
+                                            <p className="text-slate-600 text-xs">{s.desc}</p>
+                                        </div>
+                                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${active ? 'bg-emerald-500 border-emerald-500' : 'border-slate-600'}`}>
+                                            {active && <Check size={11} className="text-white" />}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* ── Notifications ── */}
                     <div>
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Notificaciones Push</p>
                         <div className="space-y-2">
@@ -458,13 +514,10 @@ function PermisosTab() {
                     </div>
 
                     {/* Save */}
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
-                    >
+                    <button onClick={handleSave} disabled={saving}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3 rounded-xl transition-colors flex items-center justify-center gap-2">
                         {saving ? <Loader size={16} className="animate-spin" /> : saved ? <Check size={16} /> : <Settings2 size={16} />}
-                        {saving ? 'Guardando…' : saved ? 'Guardado' : 'Guardar Configuración'}
+                        {saving ? 'Guardando…' : saved ? '¡Guardado!' : 'Guardar Configuración'}
                     </button>
                 </>
             )}

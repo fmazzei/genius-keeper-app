@@ -27,62 +27,38 @@ import {
     LogOut, Menu, X, ChevronRight, BookOpen, Shield, Bell,
 } from 'lucide-react';
 
-// ─── Navigation config per role ───────────────────────────────────────────────
+// ─── Module defaults per role ─────────────────────────────────────────────────
+// Used when a user has no explicit modulos saved. Master ignores this entirely.
 
-const NAV = {
-    master: [
-        // — Sistema —
-        { id: 'home',          label: 'Inicio',              Icon: LayoutDashboard,  section: 'Sistema' },
-        { id: 'control',       label: 'Control Sistema',     Icon: Shield,           section: 'Sistema',         modulo: 'controlSistema' },
-        // — Administración —
-        { id: 'products',      label: 'Catálogo Productos',  Icon: Tag,              section: 'Administración',  modulo: 'catalogos' },
-        { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,        section: 'Administración',  modulo: 'almacenes' },
-        { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,            section: 'Administración',  modulo: 'catalogos' },
-        { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,          section: 'Administración',  modulo: 'catalogos' },
-        { id: 'history',       label: 'Historial',           Icon: ClipboardList,    section: 'Administración',  modulo: 'historialProduccion' },
-        { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,            section: 'Administración',  modulo: 'usuarios' },
-        // — Gerencial —
-        { id: 'financial',     label: 'Financiero',          Icon: DollarSign,       section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
-        { id: 'kpis',          label: 'KPIs Producción',     Icon: TrendingUp,       section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
-        { id: 'quality',       label: 'Calidad',             Icon: ShieldCheck,      section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
-        // — Operativo —
-        { id: 'milk',          label: 'Leche',               Icon: Droplets,         section: 'Operativo',       modulo: 'leche' },
-        { id: 'materials_inv', label: 'Insumos',             Icon: PackageOpen,      section: 'Operativo',       modulo: 'inventarioMateriales' },
-        { id: 'fichas',        label: 'Fichas',              Icon: BookOpen,         section: 'Operativo',       modulo: 'constructores' },
-        { id: 'production',    label: 'Producción',          Icon: Factory,          section: 'Operativo',       modulo: 'produccionDiaria' },
-    ],
-    kroma_admin: [
-        { id: 'home',        label: 'Inicio',              Icon: LayoutDashboard },
-        { id: 'products',    label: 'Catálogo Productos',  Icon: Tag,           modulo: 'catalogos' },
-        { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse,     modulo: 'almacenes' },
-        { id: 'suppliers',   label: 'Proveedores',         Icon: Truck,         modulo: 'catalogos' },
-        { id: 'materials',   label: 'Maestro Materiales',  Icon: Package,       modulo: 'catalogos' },
-        { id: 'history',     label: 'Historial',           Icon: ClipboardList, modulo: 'historialProduccion' },
-        { id: 'users',       label: 'Usuarios Kroma',      Icon: Users,         modulo: 'usuarios' },
-        { id: 'control',     label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema' },
-    ],
-    kroma_gerencial: [
-        // — Sección Gerencial —
-        { id: 'home',        label: 'Dashboard',           Icon: BarChart3,     section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
-        { id: 'financial',   label: 'Financiero',          Icon: DollarSign,    section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
-        { id: 'kpis',        label: 'KPIs Producción',     Icon: TrendingUp,    section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
-        { id: 'quality',     label: 'Calidad',             Icon: ShieldCheck,   section: 'Gerencial',       modulo: 'dashboardsGerenciales' },
-        // — Sección Administración —
-        { id: 'products',    label: 'Catálogo Productos',  Icon: Tag,           section: 'Administración',  modulo: 'catalogos' },
-        { id: 'warehouses',  label: 'Almacenes',           Icon: Warehouse,     section: 'Administración',  modulo: 'almacenes' },
-        { id: 'suppliers',   label: 'Proveedores',         Icon: Truck,         section: 'Administración',  modulo: 'catalogos' },
-        { id: 'materials',   label: 'Maestro Materiales',  Icon: Package,       section: 'Administración',  modulo: 'catalogos' },
-        { id: 'history',     label: 'Historial',           Icon: ClipboardList, section: 'Administración',  modulo: 'historialProduccion' },
-        { id: 'users',       label: 'Usuarios Kroma',      Icon: Users,         section: 'Administración',  modulo: 'usuarios' },
-    ],
-    kroma_operario: [
-        { id: 'home',          label: 'Inicio',          Icon: LayoutDashboard },
-        { id: 'milk',          label: 'Leche',           Icon: Droplets,   modulo: 'leche' },
-        { id: 'materials_inv', label: 'Insumos',         Icon: PackageOpen, modulo: 'inventarioMateriales' },
-        { id: 'fichas',        label: 'Fichas',          Icon: BookOpen,   modulo: 'constructores' },
-        { id: 'production',    label: 'Producción',      Icon: Factory,    modulo: 'produccionDiaria' },
-    ],
+export const DEFAULT_MODULES = {
+    kroma_operario:  { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  almacenes: false, historialProduccion: false, catalogos: false, usuarios: false, controlSistema: false, dashboardsGerenciales: false },
+    kroma_admin:     { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: false },
+    kroma_gerencial: { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: false, dashboardsGerenciales: true  },
+    master:          { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: true  },
 };
+
+// ─── Single universal nav list — filtered by effective modules ────────────────
+
+const ALL_NAV_ITEMS = [
+    { id: 'home',          label: 'Inicio',              Icon: LayoutDashboard },
+    // — Operativo —
+    { id: 'production',    label: 'Producción',          Icon: Factory,       modulo: 'produccionDiaria',     section: 'Operativo' },
+    { id: 'milk',          label: 'Leche',               Icon: Droplets,      modulo: 'leche',                section: 'Operativo' },
+    { id: 'materials_inv', label: 'Insumos',             Icon: PackageOpen,   modulo: 'inventarioMateriales', section: 'Operativo' },
+    { id: 'fichas',        label: 'Fichas',              Icon: BookOpen,      modulo: 'constructores',        section: 'Operativo' },
+    // — Administración —
+    { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,     modulo: 'almacenes',            section: 'Administración' },
+    { id: 'history',       label: 'Historial',           Icon: ClipboardList, modulo: 'historialProduccion',  section: 'Administración' },
+    { id: 'products',      label: 'Catálogo Productos',  Icon: Tag,           modulo: 'catalogos',            section: 'Administración' },
+    { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,         modulo: 'catalogos',            section: 'Administración' },
+    { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,       modulo: 'catalogos',            section: 'Administración' },
+    { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,         modulo: 'usuarios',             section: 'Administración' },
+    { id: 'control',       label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema',       section: 'Administración' },
+    // — Gerencial —
+    { id: 'financial',     label: 'Financiero',          Icon: DollarSign,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
+    { id: 'kpis',          label: 'KPIs Producción',     Icon: TrendingUp,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
+    { id: 'quality',       label: 'Calidad',             Icon: ShieldCheck,   modulo: 'dashboardsGerenciales', section: 'Gerencial' },
+];
 
 const ROLE_LABELS = {
     master:          'Master',
@@ -98,74 +74,33 @@ const ROLE_COLORS = {
     kroma_operario:  'text-blue-400',
 };
 
-// ─── Page renderer ────────────────────────────────────────────────────────────
+// ─── Universal page renderer ──────────────────────────────────────────────────
+// Role only determines the home page; all other views are available to anyone
+// whose modulos flags include that module.
 
-function renderPage(view, role, kromaUser) {
-    if (role === 'master') {
-        switch (view) {
-            // Sistema
-            case 'home':          return <AdminHome />;
-            case 'control':       return <ControlSistemaPage kromaUser={kromaUser} />;
-            // Administración
-            case 'products':      return <ProductCatalogPage />;
-            case 'warehouses':    return <WarehousesPage />;
-            case 'suppliers':     return <SuppliersPage />;
-            case 'materials':     return <MaterialsMasterPage />;
-            case 'history':       return <ProductionHistoryPage />;
-            case 'users':         return <KromaUsersPage />;
-            // Gerencial
-            case 'financial':     return <FinancialBoard />;
-            case 'kpis':          return <ProductionKPIsPage />;
-            case 'quality':       return <QualityBoard />;
-            // Operativo
-            case 'milk':          return <MilkInventoryPage />;
-            case 'materials_inv': return <MaterialsInventoryPage />;
-            case 'fichas':        return <FichaBuilderPage />;
-            case 'production':    return <DailyProductionPage />;
-            default:              return <AdminHome />;
-        }
+function renderPage(view, role, kromaUser, onNavigate) {
+    if (view === 'home') {
+        if (role === 'kroma_operario') return <OperatorHome onNavigate={onNavigate} />;
+        if (role === 'kroma_gerencial') return <ManagerHome />;
+        return <AdminHome />;
     }
-    if (role === 'kroma_admin') {
-        switch (view) {
-            case 'home':         return <AdminHome />;
-            case 'products':     return <ProductCatalogPage />;
-            case 'warehouses':   return <WarehousesPage />;
-            case 'suppliers':    return <SuppliersPage />;
-            case 'materials':    return <MaterialsMasterPage />;
-            case 'history':      return <ProductionHistoryPage />;
-            case 'users':        return <KromaUsersPage />;
-            case 'control':      return <ControlSistemaPage kromaUser={kromaUser} />;
-            default:             return <AdminHome />;
-        }
+    switch (view) {
+        case 'production':    return <DailyProductionPage />;
+        case 'milk':          return <MilkInventoryPage />;
+        case 'materials_inv': return <MaterialsInventoryPage />;
+        case 'fichas':        return <FichaBuilderPage />;
+        case 'warehouses':    return <WarehousesPage />;
+        case 'history':       return <ProductionHistoryPage />;
+        case 'products':      return <ProductCatalogPage />;
+        case 'suppliers':     return <SuppliersPage />;
+        case 'materials':     return <MaterialsMasterPage />;
+        case 'users':         return <KromaUsersPage />;
+        case 'control':       return <ControlSistemaPage kromaUser={kromaUser} />;
+        case 'financial':     return <FinancialBoard />;
+        case 'kpis':          return <ProductionKPIsPage />;
+        case 'quality':       return <QualityBoard />;
+        default:              return null;
     }
-    if (role === 'kroma_gerencial') {
-        switch (view) {
-            // Gerencial views
-            case 'home':         return <ManagerHome />;
-            case 'financial':    return <FinancialBoard />;
-            case 'kpis':         return <ProductionKPIsPage />;
-            case 'quality':      return <QualityBoard />;
-            // Admin views (gerencial has full access)
-            case 'products':     return <ProductCatalogPage />;
-            case 'warehouses':   return <WarehousesPage />;
-            case 'suppliers':    return <SuppliersPage />;
-            case 'materials':    return <MaterialsMasterPage />;
-            case 'history':      return <ProductionHistoryPage />;
-            case 'users':        return <KromaUsersPage />;
-            default:             return <ManagerHome />;
-        }
-    }
-    if (role === 'kroma_operario') {
-        switch (view) {
-            case 'home':          return <OperatorHome />;
-            case 'milk':          return <MilkInventoryPage />;
-            case 'materials_inv': return <MaterialsInventoryPage />;
-            case 'fichas':        return <FichaBuilderPage />;
-            case 'production':    return <DailyProductionPage />;
-            default:              return <OperatorHome />;
-        }
-    }
-    return null;
 }
 
 // ─── Inner shell (requires KromaProvider context) ─────────────────────────────
@@ -198,17 +133,21 @@ function KromaInner({ onExitKroma }) {
         return <KromaUserSelect onExitKroma={onExitKroma} />;
     }
 
-    const navItems = NAV[kromaRole] || [];
-    const modulos = kromaUser.modulos || {};
+    // Effective modules = role defaults merged with any explicit flags saved per user.
+    // Master bypasses all filters entirely.
+    const effective = kromaRole === 'master'
+        ? null
+        : { ...DEFAULT_MODULES[kromaRole], ...(kromaUser.modulos || {}) };
 
-    // master ignores all permission flags; everyone else hides items whose modulo is explicitly false
     const visibleNavItems = kromaRole === 'master'
-        ? navItems
-        : navItems.filter(item => !item.modulo || modulos[item.modulo] !== false);
+        ? ALL_NAV_ITEMS
+        : ALL_NAV_ITEMS.filter(item => !item.modulo || effective[item.modulo] !== false);
 
-    // If a permission was revoked while the user was on that view, fall back to home
+    // If the user is on a view that was just disabled, fall back to home
     const activeView = visibleNavItems.some(n => n.id === currentView) ? currentView : 'home';
     const activeNavLabel = visibleNavItems.find(n => n.id === activeView)?.label || 'Inicio';
+
+    const onNavigate = (view) => setCurrentView(view);
 
     const handleNav = (id) => {
         setCurrentView(id);
@@ -362,7 +301,7 @@ function KromaInner({ onExitKroma }) {
 
                 {/* ── Main content ── */}
                 <main className="flex-1 overflow-y-auto bg-slate-950">
-                    {renderPage(activeView, kromaRole, kromaUser)}
+                    {renderPage(activeView, kromaRole, kromaUser, onNavigate)}
                 </main>
             </div>
         </div>
