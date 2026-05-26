@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import {
     DollarSign, TrendingUp, TrendingDown, ShieldCheck, Droplets, Package,
-    BarChart3, Factory, RefreshCw, Loader, AlertTriangle, Award, CheckCircle, Clock,
+    BarChart3, Factory, RefreshCw, Loader, AlertTriangle, Award, CheckCircle, Clock, X,
 } from 'lucide-react';
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
@@ -108,15 +108,20 @@ function useKromaDashboard() {
 
 // ─── Shared UI primitives ─────────────────────────────────────────────────────
 
-function KpiCard({ label, value, sub, Icon, color = 'emerald' }) {
+function KpiCard({ label, value, sub, Icon, color = 'emerald', onClick }) {
     const cls = { emerald: 'text-emerald-400', blue: 'text-blue-400', amber: 'text-amber-400', rose: 'text-rose-400', cyan: 'text-cyan-400', slate: 'text-slate-500' };
+    const Wrap = onClick ? 'button' : 'div';
     return (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col">
+        <Wrap
+            onClick={onClick}
+            className={`bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col text-left w-full transition-all ${onClick ? 'hover:border-emerald-500/40 hover:bg-slate-800/80 cursor-pointer active:scale-[.98]' : ''}`}
+        >
             <Icon size={16} className={`${cls[color]} mb-2`} />
             <p className="text-white font-black text-2xl leading-none mb-1">{value}</p>
             <p className="text-slate-400 text-xs">{label}</p>
             {sub && <p className="text-slate-600 text-xs mt-0.5">{sub}</p>}
-        </div>
+            {onClick && <p className="text-slate-500 text-[10px] mt-auto pt-2">Ver detalle →</p>}
+        </Wrap>
     );
 }
 
@@ -168,10 +173,31 @@ function Shell({ loading, error, reload, children }) {
     return children;
 }
 
+// ─── KpiModal ─────────────────────────────────────────────────────────────────
+
+function KpiModal({ title, onClose, children }) {
+    return (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm overflow-y-auto">
+            <div className="min-h-full flex items-start justify-center p-4 pb-12">
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl mt-8">
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 sticky top-0 bg-slate-900 z-10 rounded-t-2xl">
+                        <p className="text-white font-bold text-lg">{title}</p>
+                        <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white hover:bg-slate-700 rounded-lg transition-colors">
+                            <X size={18} />
+                        </button>
+                    </div>
+                    <div className="p-5">{children}</div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── 1. ManagerHome ───────────────────────────────────────────────────────────
 
 export function ManagerHome() {
     const { data, loading, error, reload } = useKromaDashboard();
+    const [modal, setModal] = useState(null);
 
     const c = useMemo(() => {
         if (!data) return null;
@@ -192,10 +218,12 @@ export function ManagerHome() {
         const mermaP = totalLitros > 0 ? (totalMermaL / totalLitros) * 100 : null;
         const capitalMat = matInv.reduce((s, m) => s + ((m.stockCerrado || 0) + (m.stockEnUso || 0)) * (m.costoUnitario || 0), 0);
         const sinEmpacar = logs.filter(l => !l.empaqueFinalizado && (l.disposicion === 'guardar_todo' || l.disposicion === 'mixto')).length;
-        const recent = [...logs].sort((a, b) => { const da = logDate(a), db = logDate(b); return da && db ? db - da : 0; }).slice(0, 8);
+        const recent = [...logs].sort((a, b) => { const da = logDate(a), db_ = logDate(b); return da && db_ ? db_ - da : 0; }).slice(0, 8);
 
-        return { mLogs, totalLitros, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent };
+        return { mLogs, totalLitros, totalMermaL, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent };
     }, [data]);
+
+    const close = () => setModal(null);
 
     return (
         <Shell loading={loading} error={error} reload={reload}>
@@ -203,7 +231,7 @@ export function ManagerHome() {
                 <div className="p-4 md:p-6 max-w-4xl">
                     <div className="flex items-center justify-between mb-5">
                         <div>
-                            <h2 className="text-xl font-bold text-white">Dashboard Gerencial</h2>
+                            <h2 className="text-xl font-bold text-white">Dashboard</h2>
                             <p className="text-slate-400 text-sm capitalize">{new Date().toLocaleDateString('es-VE', { month: 'long', year: 'numeric' })}</p>
                         </div>
                         <button onClick={reload} className="p-2 text-slate-500 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors" title="Actualizar">
@@ -211,17 +239,24 @@ export function ManagerHome() {
                         </button>
                     </div>
 
+                    {/* KPI grid — each card is interactive */}
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-                        <KpiCard label="Capital en Inventario" value={c.capitalMat > 0 ? `$${c.capitalMat.toFixed(0)}` : '—'} sub="Materiales (USD)" Icon={DollarSign} color="emerald" />
-                        <KpiCard label="Producciones / mes"    value={c.mLogs.length} Icon={Factory} color="blue" />
-                        <KpiCard label="Litros procesados"     value={c.totalLitros > 0 ? `${c.totalLitros} L` : '—'} sub="Este mes" Icon={Droplets} color="cyan" />
+                        <KpiCard label="Capital en Inventario" value={c.capitalMat > 0 ? `$${c.capitalMat.toFixed(0)}` : '—'} sub="Materiales (USD)" Icon={DollarSign} color="emerald" onClick={() => setModal('capital')} />
+                        <KpiCard label="Producciones / mes"    value={c.mLogs.length} Icon={Factory} color="blue" onClick={() => setModal('producciones')} />
+                        <KpiCard label="Litros procesados"     value={c.totalLitros > 0 ? `${c.totalLitros} L` : '—'} sub="Este mes" Icon={Droplets} color="cyan" onClick={() => setModal('litros')} />
                         <KpiCard label="Rendimiento prom."     value={c.avgRend ? `${c.avgRend.toFixed(2)} L/kg` : '—'}
                             sub={c.rendTrend != null ? `${c.rendTrend >= 0 ? '↑' : '↓'} ${Math.abs(c.rendTrend).toFixed(1)}% vs mes anterior` : undefined}
-                            Icon={TrendingUp} color={c.rendTrend == null ? 'amber' : c.rendTrend >= 0 ? 'emerald' : 'amber'} />
-                        <KpiCard label="Merma pasteurizador"   value={c.mermaP != null ? `${c.mermaP.toFixed(1)}%` : '—'} Icon={TrendingDown} color={c.mermaP != null && c.mermaP > 8 ? 'rose' : 'amber'} />
-                        <KpiCard label="Lotes sin envasar"     value={c.sinEmpacar} sub={c.sinEmpacar > 0 ? 'Requiere atención' : 'Al día'} Icon={Package} color={c.sinEmpacar > 0 ? 'amber' : 'slate'} />
+                            Icon={TrendingUp} color={c.rendTrend == null ? 'amber' : c.rendTrend >= 0 ? 'emerald' : 'amber'}
+                            onClick={() => setModal('rendimiento')} />
+                        <KpiCard label="Merma pasteurizador"   value={c.mermaP != null ? `${c.mermaP.toFixed(1)}%` : '—'}
+                            Icon={TrendingDown} color={c.mermaP != null && c.mermaP > 8 ? 'rose' : 'amber'}
+                            onClick={() => setModal('merma')} />
+                        <KpiCard label="Lotes sin envasar"     value={c.sinEmpacar} sub={c.sinEmpacar > 0 ? 'Requiere atención' : 'Al día'}
+                            Icon={Package} color={c.sinEmpacar > 0 ? 'amber' : 'slate'}
+                            onClick={() => setModal('sin_envasar')} />
                     </div>
 
+                    {/* Recent productions */}
                     <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
                         <div className="px-4 py-3 border-b border-slate-700 flex items-center gap-2">
                             <Factory size={14} className="text-slate-400" />
@@ -258,6 +293,376 @@ export function ManagerHome() {
                             </div>
                         )}
                     </div>
+
+                    {/* ─── KPI Modals ─── */}
+
+                    {/* Capital */}
+                    {modal === 'capital' && data && (() => {
+                        const catMap = {};
+                        data.matInv.forEach(m => {
+                            const qty = (m.stockCerrado || 0) + (m.stockEnUso || 0);
+                            const val = qty * (m.costoUnitario || 0);
+                            if (val <= 0) return;
+                            catMap[m.categoria || 'otros'] = (catMap[m.categoria || 'otros'] || 0) + val;
+                        });
+                        const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+                        const totalMat = cats.reduce((s, [, v]) => s + v, 0);
+                        const capitalPT = data.ptItems.reduce((s, p) => {
+                            const qty = p.tipo === 'sin_envasar' ? (p.kgTotales || 0) : (p.unidades || 0);
+                            return s + qty * (p.costoUnitario || 0);
+                        }, 0);
+                        const top10 = [...data.matInv]
+                            .map(m => ({ name: m.nombre || '—', val: ((m.stockCerrado || 0) + (m.stockEnUso || 0)) * (m.costoUnitario || 0) }))
+                            .filter(m => m.val > 0).sort((a, b) => b.val - a.val).slice(0, 10);
+                        return (
+                            <KpiModal title="Capital en Inventario" onClose={close}>
+                                <div className="space-y-5">
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <div className="bg-slate-800 border border-emerald-500/30 rounded-xl p-4 text-center">
+                                            <p className="text-emerald-400 font-black text-xl">${(totalMat + capitalPT).toFixed(0)}</p>
+                                            <p className="text-slate-400 text-xs mt-1">Total USD</p>
+                                        </div>
+                                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
+                                            <p className="text-white font-bold text-xl">${totalMat.toFixed(0)}</p>
+                                            <p className="text-slate-400 text-xs mt-1">Materiales</p>
+                                        </div>
+                                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
+                                            <p className="text-white font-bold text-xl">${capitalPT.toFixed(0)}</p>
+                                            <p className="text-slate-400 text-xs mt-1">Prod. Term.</p>
+                                        </div>
+                                    </div>
+                                    {cats.length > 0 && (
+                                        <div>
+                                            <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Por Categoría</p>
+                                            <div className="space-y-2">
+                                                {cats.map(([cat, val], i) => (
+                                                    <div key={cat}>
+                                                        <div className="flex justify-between items-center mb-0.5">
+                                                            <span className="text-slate-300 text-xs capitalize">{CAT_LABELS[cat] || cat}</span>
+                                                            <span className="text-white text-xs font-bold">${val.toFixed(2)}</span>
+                                                        </div>
+                                                        <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                                            <div className="h-full rounded-full" style={{ width: `${totalMat > 0 ? (val / totalMat) * 100 : 0}%`, background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {top10.length > 0 && (
+                                        <div>
+                                            <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Top 10 Materiales</p>
+                                            <div className="space-y-1.5">
+                                                {top10.map((m, i) => (
+                                                    <div key={i} className="flex items-center gap-2">
+                                                        <span className="text-slate-600 text-xs w-5 shrink-0">{i + 1}</span>
+                                                        <span className="text-slate-300 text-sm flex-1 truncate">{m.name}</span>
+                                                        <span className="text-white font-semibold text-sm">${m.val.toFixed(2)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {cats.length === 0 && <Empty msg="Sin inventario valorado. Registra stock y costo en Maestro de Materiales." />}
+                                </div>
+                            </KpiModal>
+                        );
+                    })()}
+
+                    {/* Producciones */}
+                    {modal === 'producciones' && (() => {
+                        const sorted = [...c.mLogs].sort((a, b) => { const da = logDate(a), db_ = logDate(b); return da && db_ ? db_ - da : 0; });
+                        return (
+                            <KpiModal title="Producciones este mes" onClose={close}>
+                                <div className="space-y-3">
+                                    <div className="flex gap-3 text-xs text-slate-400">
+                                        <span>{sorted.length} produccion{sorted.length !== 1 ? 'es' : ''}</span>
+                                        <span>·</span>
+                                        <span>{c.totalLitros} L procesados</span>
+                                    </div>
+                                    {sorted.length === 0 ? <Empty msg="Sin producciones este mes" /> : (
+                                        <div className="divide-y divide-slate-700/50">
+                                            {sorted.map(log => {
+                                                const d = logDate(log);
+                                                const rend = getRendimiento(log);
+                                                const kg = getTotalKg(log);
+                                                const sinEnv = !log.empaqueFinalizado && (log.disposicion === 'guardar_todo' || log.disposicion === 'mixto');
+                                                return (
+                                                    <div key={log.id} className="py-3 flex items-start gap-3">
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-white text-sm font-semibold truncate">{log.productoNombre || '—'}</p>
+                                                            <p className="text-slate-500 text-xs font-mono">{(log.lote || log.id).slice(0, 20)}</p>
+                                                        </div>
+                                                        <div className="text-right shrink-0 text-xs space-y-0.5">
+                                                            <p className="text-slate-300">{log.litrosIngresados || 0} L → {getLitrosNetos(log)} L netos</p>
+                                                            {kg && <p className="text-slate-500">{kg.toFixed(1)} kg{rend ? ` · ${rend.toFixed(2)} L/kg` : ''}</p>}
+                                                            {sinEnv && <p className="text-amber-400">Sin envasar</p>}
+                                                        </div>
+                                                        {d && <p className="text-slate-600 text-xs shrink-0">{d.getDate()}/{d.getMonth() + 1}</p>}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            </KpiModal>
+                        );
+                    })()}
+
+                    {/* Litros */}
+                    {modal === 'litros' && data && (() => {
+                        const months = last6Months();
+                        const monthly = months.map(m => {
+                            const ml = data.logs.filter(l => { const d = logDate(l); return d && monthKey(d) === m.key; });
+                            return {
+                                mes: m.label,
+                                ingresados: ml.reduce((s, l) => s + (l.litrosIngresados || 0), 0),
+                                netos: ml.reduce((s, l) => s + getLitrosNetos(l), 0),
+                                merma: ml.reduce((s, l) => s + getMermaL(l), 0),
+                            };
+                        });
+                        return (
+                            <KpiModal title="Litros Procesados" onClose={close}>
+                                <div className="space-y-5">
+                                    {monthly.every(m => !m.ingresados) ? <Empty msg="Sin datos de producción" /> : (
+                                        <>
+                                            <ResponsiveContainer width="100%" height={180}>
+                                                <AreaChart data={monthly}>
+                                                    <defs>
+                                                        <linearGradient id="gLitM" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%"  stopColor={C.cyan} stopOpacity={0.3} />
+                                                            <stop offset="95%" stopColor={C.cyan} stopOpacity={0} />
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <XAxis dataKey="mes" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                                    <Tooltip content={<Tip fmt={v => `${v} L`} />} />
+                                                    <Area type="monotone" dataKey="netos" name="Netos" stroke={C.cyan} fill="url(#gLitM)" strokeWidth={2} dot={{ fill: C.cyan, r: 3 }} />
+                                                    <Area type="monotone" dataKey="ingresados" name="Ingresados" stroke={C.blue} fill="none" strokeWidth={2} strokeDasharray="4 2" dot={{ fill: C.blue, r: 2 }} />
+                                                </AreaChart>
+                                            </ResponsiveContainer>
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="border-b border-slate-700">
+                                                            <th className="text-left py-2 text-slate-500 text-xs font-semibold">Mes</th>
+                                                            <th className="text-right py-2 text-slate-500 text-xs font-semibold">Ingresados</th>
+                                                            <th className="text-right py-2 text-slate-500 text-xs font-semibold">Netos</th>
+                                                            <th className="text-right py-2 text-slate-500 text-xs font-semibold">Merma</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-700/40">
+                                                        {monthly.map(m => (
+                                                            <tr key={m.mes}>
+                                                                <td className="py-2.5 text-slate-300 font-medium">{m.mes}</td>
+                                                                <td className="text-right py-2.5 text-white font-mono">{m.ingresados} L</td>
+                                                                <td className="text-right py-2.5 text-cyan-400 font-mono">{m.netos} L</td>
+                                                                <td className="text-right py-2.5 text-rose-400 font-mono">{m.merma} L</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </KpiModal>
+                        );
+                    })()}
+
+                    {/* Rendimiento */}
+                    {modal === 'rendimiento' && data && (() => {
+                        const lotsRend = [...data.logs]
+                            .sort((a, b) => { const da = logDate(a), db_ = logDate(b); return da && db_ ? db_ - da : 0; })
+                            .slice(0, 20).reverse()
+                            .map(log => ({
+                                lote: (log.lote || log.id).slice(-7),
+                                rendimiento: (() => { const r = getRendimiento(log); return r ? parseFloat(r.toFixed(2)) : null; })(),
+                                producto: log.productoNombre || '—',
+                            }))
+                            .filter(l => l.rendimiento != null);
+                        const months = last6Months();
+                        const monthly = months.map(m => {
+                            const ml = data.logs.filter(l => { const d = logDate(l); return d && monthKey(d) === m.key; });
+                            const rends = ml.map(getRendimiento).filter(Boolean);
+                            return { mes: m.label, rendimiento: rends.length ? parseFloat(avg(rends).toFixed(2)) : null };
+                        });
+                        const best  = lotsRend.reduce((b, l) => (!b || l.rendimiento < b.rendimiento) ? l : b, null);
+                        const worst = lotsRend.reduce((w, l) => (!w || l.rendimiento > w.rendimiento) ? l : w, null);
+                        return (
+                            <KpiModal title="Rendimiento L/kg" onClose={close}>
+                                <div className="space-y-5">
+                                    {lotsRend.length === 0 ? <Empty msg="Sin lotes con kg registrados en empaque" /> : (
+                                        <>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {best && (
+                                                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+                                                        <p className="text-emerald-400 text-xs font-semibold mb-0.5">Mejor lote</p>
+                                                        <p className="text-white font-bold">{best.rendimiento} L/kg</p>
+                                                        <p className="text-slate-400 text-xs truncate">{best.lote} · {best.producto}</p>
+                                                    </div>
+                                                )}
+                                                {worst && (
+                                                    <div className="bg-rose-500/10 border border-rose-500/30 rounded-xl p-3">
+                                                        <p className="text-rose-400 text-xs font-semibold mb-0.5">Mayor merma</p>
+                                                        <p className="text-white font-bold">{worst.rendimiento} L/kg</p>
+                                                        <p className="text-slate-400 text-xs truncate">{worst.lote} · {worst.producto}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <p className="text-slate-500 text-xs mb-2">Por lote (últimos 20) · Menor = mejor rendimiento</p>
+                                                <ResponsiveContainer width="100%" height={180}>
+                                                    <BarChart data={lotsRend} barSize={16}>
+                                                        <XAxis dataKey="lote" tick={{ fill: '#64748b', fontSize: 9 }} axisLine={false} tickLine={false} />
+                                                        <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} domain={[0, 'auto']} />
+                                                        <Tooltip content={<Tip fmt={v => `${v} L/kg`} />} />
+                                                        <Bar dataKey="rendimiento" name="Rendimiento" radius={[3, 3, 0, 0]}>
+                                                            {lotsRend.map((e, i) => <Cell key={i} fill={e.rendimiento < 6 ? C.emerald : e.rendimiento < 8 ? C.amber : C.rose} />)}
+                                                        </Bar>
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                            {monthly.some(m => m.rendimiento) && (
+                                                <div>
+                                                    <p className="text-slate-500 text-xs mb-2">Tendencia mensual promedio</p>
+                                                    <ResponsiveContainer width="100%" height={140}>
+                                                        <LineChart data={monthly}>
+                                                            <XAxis dataKey="mes" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                                                            <Tooltip content={<Tip fmt={v => `${v} L/kg`} />} />
+                                                            <Line type="monotone" dataKey="rendimiento" name="L/kg" stroke={C.amber} strokeWidth={2} dot={{ fill: C.amber, r: 3 }} connectNulls />
+                                                        </LineChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            </KpiModal>
+                        );
+                    })()}
+
+                    {/* Merma */}
+                    {modal === 'merma' && data && (() => {
+                        const months = last6Months();
+                        const monthly = months.map(m => {
+                            const ml = data.logs.filter(l => { const d = logDate(l); return d && monthKey(d) === m.key; });
+                            const merma = ml.reduce((s, l) => s + getMermaL(l), 0);
+                            const ing   = ml.reduce((s, l) => s + (l.litrosIngresados || 0), 0);
+                            return { mes: m.label, merma, pct: ing > 0 ? parseFloat(((merma / ing) * 100).toFixed(1)) : 0 };
+                        });
+                        const worst5 = [...data.logs].filter(l => getMermaL(l) > 0)
+                            .sort((a, b) => getMermaL(b) - getMermaL(a)).slice(0, 5);
+                        return (
+                            <KpiModal title="Merma en Pasteurizador" onClose={close}>
+                                <div className="space-y-5">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                                            <p className="text-slate-400 text-xs mb-1">Merma total (mes actual)</p>
+                                            <p className="text-rose-400 font-black text-2xl">{c.totalMermaL} L</p>
+                                        </div>
+                                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                                            <p className="text-slate-400 text-xs mb-1">% de litros ingresados</p>
+                                            <p className={`font-black text-2xl ${c.mermaP != null && c.mermaP > 8 ? 'text-rose-400' : 'text-amber-400'}`}>
+                                                {c.mermaP != null ? `${c.mermaP.toFixed(1)}%` : '—'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {monthly.every(m => !m.merma) ? <Empty msg="Sin datos de merma" /> : (
+                                        <>
+                                            <ResponsiveContainer width="100%" height={160}>
+                                                <BarChart data={monthly} barSize={24}>
+                                                    <XAxis dataKey="mes" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                                    <Tooltip content={<Tip fmt={v => `${v} L`} />} />
+                                                    <Bar dataKey="merma" name="Merma" fill={C.rose} radius={[4, 4, 0, 0]} />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className="border-b border-slate-700">
+                                                        <th className="text-left py-2 text-slate-500 text-xs font-semibold">Mes</th>
+                                                        <th className="text-right py-2 text-slate-500 text-xs font-semibold">Merma (L)</th>
+                                                        <th className="text-right py-2 text-slate-500 text-xs font-semibold">% ingresados</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-700/40">
+                                                    {monthly.map(m => (
+                                                        <tr key={m.mes}>
+                                                            <td className="py-2 text-slate-300">{m.mes}</td>
+                                                            <td className="text-right py-2 text-rose-400 font-mono">{m.merma} L</td>
+                                                            <td className={`text-right py-2 font-mono ${m.pct > 8 ? 'text-rose-400' : 'text-amber-400'}`}>{m.pct}%</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </>
+                                    )}
+                                    {worst5.length > 0 && (
+                                        <div>
+                                            <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Top 5 Mayor Merma</p>
+                                            <div className="space-y-2">
+                                                {worst5.map((log, i) => (
+                                                    <div key={log.id} className="flex items-center gap-2 text-sm">
+                                                        <span className="text-slate-600 text-xs w-4 shrink-0">{i + 1}</span>
+                                                        <span className="text-slate-300 flex-1 truncate">{log.productoNombre || '—'}</span>
+                                                        <span className="text-rose-400 font-bold">{getMermaL(log)} L</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </KpiModal>
+                        );
+                    })()}
+
+                    {/* Sin envasar */}
+                    {modal === 'sin_envasar' && data && (() => {
+                        const sinEnvLogs = data.logs
+                            .filter(l => !l.empaqueFinalizado && (l.disposicion === 'guardar_todo' || l.disposicion === 'mixto'))
+                            .sort((a, b) => { const da = logDate(a), db_ = logDate(b); return da && db_ ? da - db_ : 0; });
+                        const now = new Date();
+                        return (
+                            <KpiModal title="Lotes Pendientes de Envasar" onClose={close}>
+                                <div className="space-y-3">
+                                    {sinEnvLogs.length === 0 ? (
+                                        <div className="text-center py-8">
+                                            <CheckCircle size={32} className="text-emerald-400 mx-auto mb-2" />
+                                            <p className="text-emerald-400 font-semibold">¡Al día! Sin lotes pendientes.</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <p className="text-amber-400 text-sm">{sinEnvLogs.length} lote{sinEnvLogs.length !== 1 ? 's' : ''} pendiente{sinEnvLogs.length !== 1 ? 's' : ''} de empacar</p>
+                                            <div className="divide-y divide-slate-700/50">
+                                                {sinEnvLogs.map(log => {
+                                                    const d = logDate(log);
+                                                    const daysAgo = d ? Math.floor((now - d) / 86400000) : null;
+                                                    return (
+                                                        <div key={log.id} className="py-3 flex items-center gap-3">
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-white text-sm font-semibold truncate">{log.productoNombre || '—'}</p>
+                                                                <p className="text-slate-500 text-xs font-mono">{(log.lote || log.id).slice(0, 20)}</p>
+                                                            </div>
+                                                            <div className="shrink-0 text-right text-xs">
+                                                                <p className="text-slate-400">{log.litrosIngresados || 0} L</p>
+                                                                {daysAgo != null && (
+                                                                    <p className={daysAgo > 3 ? 'text-rose-400' : 'text-amber-400'}>
+                                                                        hace {daysAgo} día{daysAgo !== 1 ? 's' : ''}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            </KpiModal>
+                        );
+                    })()}
                 </div>
             )}
         </Shell>

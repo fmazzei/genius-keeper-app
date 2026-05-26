@@ -22,8 +22,14 @@ export const KromaProvider = ({ children }) => {
         sessionStorage.removeItem('kromaActiveUser');
     };
 
+    const kromaRole = kromaUser?.role || null;
+
+    // Master always returns true; other roles require explicit permisos grant
+    const canEdit   = (module) => kromaRole === 'master' || !!(kromaUser?.permisos?.editar?.[module]);
+    const canDelete = (module) => kromaRole === 'master' || !!(kromaUser?.permisos?.eliminar?.[module]);
+
     return (
-        <KromaContext.Provider value={{ kromaUser, kromaRole: kromaUser?.role || null, selectUser, clearUser }}>
+        <KromaContext.Provider value={{ kromaUser, kromaRole, selectUser, clearUser, canEdit, canDelete }}>
             {children}
         </KromaContext.Provider>
     );

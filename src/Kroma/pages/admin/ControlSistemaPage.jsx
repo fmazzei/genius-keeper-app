@@ -380,6 +380,7 @@ function PermisosTab() {
     const [users,    setUsers]    = useState([]);
     const [selected, setSelected] = useState(null);
     const [modulos,  setModulos]  = useState({});
+    const [permisos, setPermisos] = useState({ editar: {}, eliminar: {} });
     const [notifCfg, setNotifCfg] = useState({});
     const [shortcuts, setShortcuts] = useState([]);
     const [loading,  setLoading]  = useState(true);
@@ -398,9 +399,9 @@ function PermisosTab() {
 
     const applyUser = (u) => {
         setSelected(u);
-        // Initialize with role-appropriate defaults, then apply any explicit overrides
         const def = { ...(DEFAULT_MODULES[u.role] || {}) };
         setModulos({ ...def, ...(u.modulos || {}) });
+        setPermisos({ editar: u.permisos?.editar || {}, eliminar: u.permisos?.eliminar || {} });
         const defN = {};
         NOTIF_EVENTS.forEach(n => { defN[n.id] = true; });
         setNotifCfg({ ...defN, ...(u.notificaciones || {}) });
@@ -419,10 +420,11 @@ function PermisosTab() {
         setSaving(true);
         try {
             await updateDoc(doc(db, 'kroma_users', selected.id), {
-                modulos:       modulos,
+                modulos,
+                permisos,
                 notificaciones: notifCfg,
                 shortcuts,
-                updatedAt:     serverTimestamp(),
+                updatedAt: serverTimestamp(),
             });
             setSaved(true);
             setTimeout(() => setSaved(false), 2500);
@@ -471,6 +473,51 @@ function PermisosTab() {
                                 );
                             })}
                         </div>
+                    </div>
+
+                    {/* ── Permisos de Acción ── */}
+                    <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Permisos de Edición y Eliminación</p>
+                        {selected?.role === 'master' ? (
+                            <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl px-4 py-3">
+                                <p className="text-violet-300 text-sm font-semibold">Acceso total — rol Master</p>
+                                <p className="text-violet-400/70 text-xs mt-0.5">El rol Master puede editar y eliminar cualquier dato sin restricciones.</p>
+                            </div>
+                        ) : (
+                            <>
+                                <p className="text-slate-600 text-xs mb-3">Permite crear, editar o eliminar registros en módulos específicos, además del acceso de solo lectura.</p>
+                                <div className="space-y-1.5">
+                                    <div className="flex items-center px-3 pb-1">
+                                        <span className="flex-1 text-[10px] text-slate-600 font-semibold uppercase tracking-widest">Módulo</span>
+                                        <span className="w-14 text-center text-[10px] text-slate-600 font-semibold uppercase tracking-widest">Editar</span>
+                                        <span className="w-14 text-center text-[10px] text-slate-600 font-semibold uppercase tracking-widest">Eliminar</span>
+                                    </div>
+                                    {MODULES.map(m => {
+                                        const MIcon = m.Icon;
+                                        const isVisible = modulos[m.id] !== false;
+                                        return (
+                                            <div key={m.id} className={`flex items-center px-3 py-2.5 rounded-xl border transition-colors ${isVisible ? 'bg-slate-800/50 border-slate-700/50' : 'opacity-40 bg-slate-800/20 border-slate-700/20'}`}>
+                                                <MIcon size={13} className="text-slate-500 shrink-0 mr-2" />
+                                                <span className="text-slate-300 text-sm flex-1 truncate">{m.label}</span>
+                                                <div className="w-14 flex justify-center">
+                                                    <Toggle
+                                                        checked={!!(permisos.editar?.[m.id])}
+                                                        onChange={v => setPermisos(p => ({ ...p, editar: { ...p.editar, [m.id]: v } }))}
+                                                    />
+                                                </div>
+                                                <div className="w-14 flex justify-center">
+                                                    <Toggle
+                                                        checked={!!(permisos.eliminar?.[m.id])}
+                                                        onChange={v => setPermisos(p => ({ ...p, eliminar: { ...p.eliminar, [m.id]: v } }))}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <p className="text-slate-700 text-[10px] mt-2 px-1">Los módulos atenuados no son visibles para este usuario — los permisos no tendrán efecto hasta activar el módulo.</p>
+                            </>
+                        )}
                     </div>
 
                     {/* ── Shortcuts ── */}

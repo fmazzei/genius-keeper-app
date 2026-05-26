@@ -83,7 +83,7 @@ const ROLE_COLORS = {
 function renderPage(view, role, kromaUser, onNavigate) {
     if (view === 'home') {
         if (role === 'kroma_operario') return <OperatorHome onNavigate={onNavigate} />;
-        if (role === 'kroma_gerencial') return <ManagerHome />;
+        if (role === 'kroma_gerencial' || role === 'master') return <ManagerHome />;
         return <AdminHome />;
     }
     switch (view) {
