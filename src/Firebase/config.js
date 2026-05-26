@@ -23,7 +23,14 @@ export const auth = initializeAuth(app, {
   persistence: browserLocalPersistence
 });
 export const db = getFirestore(app);
-export const messaging = getMessaging(app);
+/** @type {import('firebase/messaging').Messaging | null} */
+let messaging = null;
+try {
+    messaging = getMessaging(app);
+} catch (_) {
+    // Push Notifications not supported in this browser (e.g. iOS Safari in some modes)
+}
+export { messaging };
 export const functions = getFunctions(app, 'us-central1');
 // ✅ SE ELIMINA LA EXPORTACIÓN DE DYNAMIC LINKS
 // export const dynamicLinks = getDynamicLinks(app);
