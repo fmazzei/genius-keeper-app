@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
-    collection, getDocs, addDoc, updateDoc, doc,
+    collection, getDocs, addDoc, updateDoc, doc, deleteDoc,
     serverTimestamp, query, orderBy, limit,
 } from 'firebase/firestore';
 import {
@@ -9,7 +9,7 @@ import {
     CheckCircle, AlertTriangle, Package, Factory, Warehouse,
     ClipboardList, Tag, BookOpen, Droplets, BarChart3, Truck,
     ToggleLeft, ToggleRight, Mail, Briefcase, ChevronDown, X,
-    Check, Clock, KeyRound, Eye, EyeOff,
+    Check, Clock, KeyRound, Eye, EyeOff, Wrench,
 } from 'lucide-react';
 
 // ─── PIN hash helper ──────────────────────────────────────────────────────────
@@ -695,18 +695,139 @@ function NotificacionesTab({ kromaUserId, kromaUserRole }) {
     );
 }
 
+// ─── Tab 4: Mantenimiento (Master only) ──────────────────────────────────────
+
+const CLEANUP_COLLECTIONS = [
+    { id: 'kroma_production_logs',      label: 'Historial de Producción',   Icon: Factory,       color: 'text-rose-400' },
+    { id: 'kroma_warehouse_movements',  label: 'Movimientos de Almacén',    Icon: Warehouse,     color: 'text-rose-400' },
+    { id: 'kroma_despachos',            label: 'Despachos',                 Icon: Truck,         color: 'text-rose-400' },
+    { id: 'kroma_notifications',        label: 'Notificaciones',            Icon: Bell,          color: 'text-rose-400' },
+];
+
+function MantenimientoTab() {
+    const CONFIRM_WORD = 'LIMPIAR';
+    const [confirm, setConfirm]   = useState('');
+    const [running, setRunning]   = useState(false);
+    const [results, setResults]   = useState(null); // null | { col, deleted, error }[]
+    const [selected, setSelected] = useState(CLEANUP_COLLECTIONS.map(c => c.id));
+
+    const toggle = (id) => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
+
+    const run = async () => {
+        if (confirm.trim().toUpperCase() !== CONFIRM_WORD) return;
+        if (selected.length === 0) return;
+        setRunning(true);
+        setResults(null);
+        const out = [];
+        for (const col of CLEANUP_COLLECTIONS.filter(c => selected.includes(c.id))) {
+            try {
+                const snap = await getDocs(collection(db, col.id));
+                await Promise.all(snap.docs.map(d => deleteDoc(doc(db, col.id, d.id))));
+                out.push({ col: col.id, deleted: snap.docs.length, error: null });
+            } catch (e) {
+                out.push({ col: col.id, deleted: 0, error: e.message });
+            }
+        }
+        setResults(out);
+        setRunning(false);
+        setConfirm('');
+    };
+
+    return (
+        <div className="space-y-5">
+            <div className="bg-rose-950/40 border border-rose-800/50 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                    <AlertTriangle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+                    <div>
+                        <p className="text-rose-300 font-bold text-sm">Zona de peligro — operación irreversible</p>
+                        <p className="text-rose-400/70 text-xs mt-1">Los documentos eliminados no pueden recuperarse. Úsalo solo para limpiar datos de prueba antes de producción real.</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Collection selector */}
+            <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Seleccionar colecciones a eliminar</p>
+                <div className="space-y-2">
+                    {CLEANUP_COLLECTIONS.map(col => {
+                        const CIcon = col.Icon;
+                        const on = selected.includes(col.id);
+                        return (
+                            <div
+                                key={col.id}
+                                onClick={() => !running && toggle(col.id)}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-colors ${on ? 'bg-rose-900/20 border-rose-700/40' : 'bg-slate-800/40 border-slate-700/40 opacity-50'}`}
+                            >
+                                <CIcon size={15} className={on ? col.color : 'text-slate-600'} />
+                                <span className={`text-sm flex-1 ${on ? 'text-slate-200' : 'text-slate-500'}`}>{col.label}</span>
+                                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${on ? 'bg-rose-500 border-rose-500' : 'border-slate-600'}`}>
+                                    {on && <Check size={11} className="text-white" />}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Confirmation input */}
+            <div>
+                <p className="text-slate-400 text-xs mb-2">Escribe <span className="font-bold text-rose-400 font-mono">{CONFIRM_WORD}</span> para confirmar</p>
+                <input
+                    type="text"
+                    value={confirm}
+                    onChange={e => setConfirm(e.target.value)}
+                    disabled={running}
+                    placeholder={CONFIRM_WORD}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white font-mono text-sm placeholder-slate-600 focus:outline-none focus:border-rose-500 disabled:opacity-50"
+                />
+            </div>
+
+            {/* Execute button */}
+            <button
+                onClick={run}
+                disabled={confirm.trim().toUpperCase() !== CONFIRM_WORD || running || selected.length === 0}
+                className="w-full bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+            >
+                {running ? <Loader size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {running ? 'Eliminando…' : `Eliminar ${selected.length} colección${selected.length !== 1 ? 'es' : ''}`}
+            </button>
+
+            {/* Results */}
+            {results && (
+                <div className="space-y-2">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Resultado</p>
+                    {results.map(r => (
+                        <div key={r.col} className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm ${r.error ? 'bg-rose-900/20 border-rose-700/40' : 'bg-emerald-900/20 border-emerald-700/40'}`}>
+                            {r.error
+                                ? <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+                                : <CheckCircle   size={14} className="text-emerald-400 shrink-0" />}
+                            <span className="text-slate-300 flex-1 font-mono text-xs">{r.col}</span>
+                            <span className={r.error ? 'text-rose-400 text-xs' : 'text-emerald-400 font-bold text-xs'}>
+                                {r.error ? r.error : `${r.deleted} eliminados`}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TABS = [
+const TABS_BASE = [
     { id: 'usuarios',       label: 'Usuarios',         Icon: Users },
     { id: 'permisos',       label: 'Permisos',         Icon: Shield },
     { id: 'notificaciones', label: 'Notificaciones',   Icon: Bell },
 ];
+const TAB_MANTENIMIENTO = { id: 'mantenimiento', label: 'Mantenimiento', Icon: Wrench };
 
 export default function ControlSistemaPage({ kromaUser }) {
     const [tab, setTab] = useState('usuarios');
     const uid  = kromaUser?.id   || '__none__';
     const role = kromaUser?.role || '';
+
+    const tabs = role === 'master' ? [...TABS_BASE, TAB_MANTENIMIENTO] : TABS_BASE;
 
     return (
         <div className="p-4 md:p-6 max-w-2xl">
@@ -723,7 +844,7 @@ export default function ControlSistemaPage({ kromaUser }) {
 
             {/* Tab bar */}
             <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-xl p-1 mb-6">
-                {TABS.map(({ id, label, Icon }) => (
+                {tabs.map(({ id, label, Icon }) => (
                     <button
                         key={id}
                         onClick={() => setTab(id)}
@@ -739,6 +860,7 @@ export default function ControlSistemaPage({ kromaUser }) {
             {tab === 'usuarios'       && <UsuariosTab />}
             {tab === 'permisos'       && <PermisosTab />}
             {tab === 'notificaciones' && <NotificacionesTab kromaUserId={uid} kromaUserRole={role} />}
+            {tab === 'mantenimiento'  && <MantenimientoTab />}
         </div>
     );
 }
