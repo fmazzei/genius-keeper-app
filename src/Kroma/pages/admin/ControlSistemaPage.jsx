@@ -9,8 +9,15 @@ import {
     CheckCircle, AlertTriangle, Package, Factory, Warehouse,
     ClipboardList, Tag, BookOpen, Droplets, BarChart3,
     ToggleLeft, ToggleRight, Mail, Briefcase, ChevronDown, X,
-    Check, Clock,
+    Check, Clock, KeyRound, Eye, EyeOff,
 } from 'lucide-react';
+
+// ─── PIN hash helper ──────────────────────────────────────────────────────────
+
+async function hashPin(pin) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('kroma:' + pin));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -107,7 +114,7 @@ function UsuariosTab() {
     const [saving,    setSaving]    = useState(false);
     const [confirm,   setConfirm]   = useState(null);
     const [roleError, setRoleError] = useState('');
-    const [form, setForm] = useState({ name: '', email: '', cargo: '', role: 'kroma_operario' });
+    const [form, setForm] = useState({ name: '', email: '', cargo: '', role: 'kroma_operario', pin: '', showPin: false });
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -134,19 +141,23 @@ function UsuariosTab() {
     const openCreate = () => {
         setEditing(null);
         setRoleError('');
-        setForm({ name: '', email: '', cargo: '', role: 'kroma_operario' });
+        setForm({ name: '', email: '', cargo: '', role: 'kroma_operario', pin: '', showPin: false });
         setShowForm(true);
     };
     const openEdit = (u) => {
         setEditing(u);
         setRoleError('');
-        setForm({ name: u.name || '', email: u.email || '', cargo: u.cargo || '', role: u.role || 'kroma_operario' });
+        setForm({ name: u.name || '', email: u.email || '', cargo: u.cargo || '', role: u.role || 'kroma_operario', pin: '', showPin: false });
         setShowForm(true);
     };
 
     const save = async (e) => {
         e.preventDefault();
         if (!form.name.trim()) return;
+        if (form.pin && !/^\d{4}$/.test(form.pin)) {
+            setRoleError('El PIN debe ser exactamente 4 dígitos.');
+            return;
+        }
         if (roleSlotTaken(form.role)) {
             setRoleError(`Ya existe un usuario con rol ${ROLE_CFG[form.role]?.label}. Solo puede haber uno.`);
             return;
@@ -154,6 +165,9 @@ function UsuariosTab() {
         setSaving(true);
         try {
             const data = { name: form.name.trim(), email: form.email.trim(), cargo: form.cargo.trim(), role: form.role, updatedAt: serverTimestamp() };
+            if (form.pin.length === 4) {
+                data.pinHash = await hashPin(form.pin);
+            }
             if (editing) {
                 await updateDoc(doc(db, 'kroma_users', editing.id), data);
             } else {
@@ -163,6 +177,13 @@ function UsuariosTab() {
             await load();
         } catch (e) { console.error(e); }
         finally { setSaving(false); }
+    };
+
+    const clearPin = async (u) => {
+        try {
+            await updateDoc(doc(db, 'kroma_users', u.id), { pinHash: null });
+            setUsers(prev => prev.map(x => x.id === u.id ? { ...x, pinHash: null } : x));
+        } catch (e) { console.error(e); }
     };
 
     const deactivate = async () => {
@@ -202,6 +223,15 @@ function UsuariosTab() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
+                                {u.pinHash && (
+                                    <button
+                                        onClick={() => clearPin(u)}
+                                        className="p-2 text-amber-500 hover:text-amber-300 hover:bg-slate-700 rounded-lg transition-colors"
+                                        title="Eliminar PIN"
+                                    >
+                                        <KeyRound size={14} />
+                                    </button>
+                                )}
                                 <button onClick={() => openEdit(u)} className="p-2 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors"><Edit2 size={14} /></button>
                                 <button onClick={() => setConfirm(u)} className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"><Trash2 size={14} /></button>
                             </div>
@@ -259,6 +289,37 @@ function UsuariosTab() {
                                 </select>
                                 {roleError && <p className="text-rose-400 text-xs mt-1">{roleError}</p>}
                             </div>
+
+                            {/* PIN field */}
+                            <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1">
+                                    PIN de acceso (4 dígitos)
+                                    {editing?.pinHash && <span className="ml-2 text-amber-400 font-normal">· PIN activo</span>}
+                                </label>
+                                <div className="relative">
+                                    <KeyRound size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                                    <input
+                                        type={form.showPin ? 'text' : 'password'}
+                                        inputMode="numeric"
+                                        maxLength={4}
+                                        value={form.pin}
+                                        onChange={e => setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                                        placeholder={editing?.pinHash ? 'Dejar vacío para no cambiar' : 'Sin PIN (opcional)'}
+                                        className="w-full bg-slate-700 border border-slate-600 rounded-lg pl-8 pr-10 py-2.5 text-white placeholder-slate-400 focus:outline-none focus:border-emerald-500 text-sm tracking-widest"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setForm(f => ({ ...f, showPin: !f.showPin }))}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                                    >
+                                        {form.showPin ? <EyeOff size={14} /> : <Eye size={14} />}
+                                    </button>
+                                </div>
+                                <p className="text-slate-600 text-xs mt-1">
+                                    {editing?.pinHash ? 'Escribe 4 dígitos para cambiar el PIN.' : 'Configura un PIN opcional para proteger el perfil.'}
+                                </p>
+                            </div>
+
                             <div className="flex gap-3 pt-2">
                                 <button type="button" onClick={() => { setShowForm(false); setRoleError(''); }} className="flex-1 border border-slate-600 text-slate-300 hover:text-white rounded-lg py-2.5 text-sm font-medium transition-colors">Cancelar</button>
                                 <button type="submit" disabled={saving} className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition-colors disabled:opacity-60 text-sm flex items-center justify-center gap-2">

@@ -13,3 +13,10 @@ html, body, #root {
 body {
   background-color: #f1f5f9; /* bg-slate-100 */
 }
+
+@keyframes kroma-shake {
+  0%,100% { transform: translateX(0); }
+  20%,60% { transform: translateX(-6px); }
+  40%,80% { transform: translateX(6px); }
+}
+.kroma-shake { animation: kroma-shake 0.55s ease; }
