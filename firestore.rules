@@ -3,7 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- FUNCIONES DE ROL ---
     function getRole(uid) {
       return get(/databases/$(database)/documents/users_metadata/$(uid)).data.role;
     }
@@ -13,17 +12,28 @@ service cloud.firestore {
     function isMaster() {
       return request.auth.token.email == 'lacteoca@lacteoca.com';
     }
+    function isKromaMaster() {
+      return isMaster() || getRole(request.auth.uid) == 'master';
+    }
     function isMerchandiser() {
       return getRole(request.auth.uid) == 'merchandiser';
     }
     function isProduccion() {
-        return getRole(request.auth.uid) == 'produccion';
+      return getRole(request.auth.uid) == 'produccion';
     }
     function isAuthenticated() {
       return request.auth != null;
     }
-
-    // --- REGLAS DE COLECCIONES ---
+    function isKromaAccess() {
+      return isKromaMaster()
+        || getRole(request.auth.uid) == 'produccion'
+        || getRole(request.auth.uid) == 'kroma_admin'
+        || getRole(request.auth.uid) == 'kroma_gerencial'
+        || getRole(request.auth.uid) == 'kroma_operario';
+    }
+    function isKromaAdmin() {
+      return isKromaMaster() || getRole(request.auth.uid) == 'kroma_admin';
+    }
 
     match /users_metadata/{userId} {
       allow get: if (isAuthenticated() && (request.auth.uid == userId || isAdmin())) || !isAuthenticated();
@@ -57,8 +67,8 @@ service cloud.firestore {
     }
 
     match /delegation_invites/{inviteId} {
-        allow get: if isAuthenticated();
-        allow write: if false;
+      allow get: if isAuthenticated();
+      allow write: if false;
     }
 
     match /ajustes_pendientes/{ajusteId} {
@@ -90,12 +100,12 @@ service cloud.firestore {
     }
 
     match /ventas_pendientes/{saleId} {
-        allow read, write, update: if isAdmin();
+      allow read, write, update: if isAdmin();
     }
 
     match /movimientos_inventario/{movimientoId} {
-        allow get, list: if isAdmin();
-        allow create, update, delete: if false;
+      allow get, list: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     match /transfers/{transferId} {
@@ -113,12 +123,12 @@ service cloud.firestore {
     }
 
     match /pdv_assignments/{pdvId} {
-        allow read: if isAuthenticated() && (isAdmin() || isMerchandiser());
-        allow write: if false;
+      allow read: if isAuthenticated() && (isAdmin() || isMerchandiser());
+      allow write: if false;
     }
 
     match /delegation_requests/{requestId} {
-        allow read, write: if isAuthenticated() && (isAdmin() || isMerchandiser());
+      allow read, write: if isAuthenticated() && (isAdmin() || isMerchandiser());
     }
 
     match /settings/{settingId} {
@@ -137,85 +147,66 @@ service cloud.firestore {
       allow update, delete: if isMaster();
     }
 
-    // ── Kroma collections ──
-    function isKromaAccess() {
-      return isMaster()
-        || getRole(request.auth.uid) == 'produccion'
-        || getRole(request.auth.uid) == 'kroma_admin'
-        || getRole(request.auth.uid) == 'kroma_gerencial';
-    }
-    function isKromaAdmin() {
-      return isMaster() || getRole(request.auth.uid) == 'kroma_admin';
-    }
-
     match /kroma_users/{userId} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_products/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_warehouses/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_suppliers/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_materials/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_recipes/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_processes/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_fichas/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_production_logs/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_milk_reception/{id} {
       allow read:   if isKromaAccess();
       allow create: if isKromaAccess();
-      allow update: if isKromaAccess() && (
-        !('createdAt' in resource.data) ||
-        request.time < resource.data.createdAt + duration.value(600, 's') ||
-        isMaster()
-      );
-      allow delete: if false;
+      allow update: if isKromaAccess();
+      allow delete: if isKromaAdmin();
     }
-
     match /kroma_inventory_materials/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_alerts/{id} {
       allow read: if isKromaAccess();
       allow create: if isKromaAccess();
       allow update: if isKromaAccess();
-      allow delete: if isMaster();
+      allow delete: if isKromaMaster();
     }
-
     match /kroma_inventory_pt/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_warehouse_movements/{id} {
       allow read, write: if isKromaAccess();
     }
-
     match /kroma_notifications/{id} {
       allow read, write: if isKromaAccess();
+    }
+    match /kroma_despachos/{id} {
+      allow read, write: if isKromaAccess();
+    }
+    match /kroma_edit_requests/{id} {
+      allow read, write: if isKromaAccess();
+    }
+    match /kroma_config/{id} {
+      allow read: if isKromaAccess();
+      allow write: if isKromaMaster();
     }
   }
 }
