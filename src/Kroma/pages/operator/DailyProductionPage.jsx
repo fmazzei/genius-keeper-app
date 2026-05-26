@@ -1767,14 +1767,12 @@ export default function DailyProductionPage() {
     const [elapsedNotif, setElapsedNotif] = useState(null); // { bloqueAnterior, minutos }
 
     // New production wizard
-    const [selectedFicha, setSelectedFicha]   = useState(null);
-    const [recepciones, setRecepciones]       = useState([]);
-    const [newRec, setNewRec]                 = useState({
-        proveedorId: '', proveedorNombre: '',
-        litros: 100, temperatura: 4.0, densidad: 1.030, pH: 6.7, Brix: 12.0,
-        rutaLeche: 'directo',
-    });
-    const [showAddRecForm, setShowAddRecForm] = useState(true);
+    const [selectedFicha, setSelectedFicha]     = useState(null);
+    const [milkReceptions, setMilkReceptions]   = useState([]); // active pending receptions from kroma_milk_reception
+    const [selectedMilkIds, setSelectedMilkIds] = useState([]);
+    const [showQuickMilkForm, setShowQuickMilkForm] = useState(false);
+    const [quickMilk, setQuickMilk]             = useState({ proveedorId: '', litros: 100, temperatura: 4.0, pH: 6.7 });
+    const [quickMilkSaving, setQuickMilkSaving] = useState(false);
 
     // Active production runner
     const [activeLog, setActiveLog]       = useState(null);
@@ -1799,12 +1797,13 @@ export default function DailyProductionPage() {
     async function loadData() {
         setLoading(true); setError(null);
         try {
-            const [fichasSnap, logsSnap, matsSnap, suppSnap, prodsSnap] = await Promise.all([
+            const [fichasSnap, logsSnap, matsSnap, suppSnap, prodsSnap, milkSnap] = await Promise.all([
                 getDocs(query(collection(db, 'kroma_fichas'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_production_logs')),
                 getDocs(query(collection(db, 'kroma_materials'), where('active', '==', true))),
                 getDocs(query(collection(db, 'kroma_suppliers'), where('active', '==', true))),
                 getDocs(query(collection(db, 'kroma_products'), where('active', '==', true))),
+                getDocs(collection(db, 'kroma_milk_reception')),
             ]);
             const fichasList = fichasSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
@@ -1833,6 +1832,16 @@ export default function DailyProductionPage() {
                 .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
             setSuppliers(suppList);
             setHistorial(historialList);
+
+            const milkList = milkSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(r => r.active !== false && (r.status === 'pendiente' || !r.status))
+                .sort((a, b) => {
+                    const ta = a.fecha?.toMillis?.() || a.createdAt?.toMillis?.() || 0;
+                    const tb = b.fecha?.toMillis?.() || b.createdAt?.toMillis?.() || 0;
+                    return tb - ta;
+                });
+            setMilkReceptions(milkList);
         } catch (e) { setError(e.message); }
         finally { setLoading(false); }
     }
@@ -1868,20 +1877,53 @@ export default function DailyProductionPage() {
         setView('runner');
     }
 
-    function addRecepcion() {
-        if (!newRec.proveedorNombre && !newRec.proveedorId) return;
-        if ((newRec.litros || 0) <= 0) return;
-        setRecepciones(prev => [...prev, { ...newRec }]);
-        setNewRec({ proveedorId: '', proveedorNombre: '', litros: 100, temperatura: 4.0, densidad: 1.030, pH: 6.7, Brix: 12.0, rutaLeche: 'directo' });
-        setShowAddRecForm(false);
+    async function handleQuickMilkSave() {
+        if (!quickMilk.proveedorId || quickMilk.litros <= 0) return;
+        const prov = suppliers.find(s => s.id === quickMilk.proveedorId);
+        if (!prov) return;
+        setQuickMilkSaving(true);
+        try {
+            const data = {
+                proveedorId: quickMilk.proveedorId,
+                proveedorNombre: prov.nombre || prov.nombreComercial || quickMilk.proveedorId,
+                litros: quickMilk.litros,
+                parametros: { temperatura: quickMilk.temperatura, pH: quickMilk.pH },
+                enrutamiento: 'produccion',
+                operarioId: kromaUser?.id || '',
+                operarioNombre: kromaUser?.name || '',
+                status: 'pendiente',
+                active: true,
+                createdAt: serverTimestamp(),
+            };
+            const ref = await addDoc(collection(db, 'kroma_milk_reception'), data);
+            const newRec = { id: ref.id, ...data, createdAt: new Date() };
+            setMilkReceptions(prev => [newRec, ...prev]);
+            setSelectedMilkIds(prev => [...prev, ref.id]);
+            setShowQuickMilkForm(false);
+            setQuickMilk({ proveedorId: '', litros: 100, temperatura: 4.0, pH: 6.7 });
+        } catch (_) {}
+        finally { setQuickMilkSaving(false); }
     }
 
     async function createLog() {
-        if (!selectedFicha || recepciones.length === 0) return;
-        const litrosTotal = recepciones.reduce((s, r) => s + (r.litros || 0), 0);
+        if (!selectedFicha) return;
+        const selected = milkReceptions.filter(r => selectedMilkIds.includes(r.id));
+        if (selected.length === 0) return;
+        const litrosTotal = selected.reduce((s, r) => s + (r.litros || 0), 0);
         if (litrosTotal <= 0) return;
-        const rutaLeche = recepciones.some(r => r.rutaLeche === 'tanque') ? 'tanque' : 'directo';
-        const proveedorNombre = recepciones.map(r => r.proveedorNombre).filter(Boolean).join(', ');
+        const rutaLeche = selected.some(r => r.enrutamiento === 'tanque') ? 'tanque' : 'directo';
+        const proveedorNombre = [...new Set(selected.map(r => r.proveedorNombre).filter(Boolean))].join(', ');
+        const recepciones = selected.map(r => ({
+            proveedorId:     r.proveedorId || '',
+            proveedorNombre: r.proveedorNombre || '',
+            litros:          r.litros || 0,
+            rutaLeche:       r.enrutamiento || 'directo',
+            recepcionId:     r.id,
+            temperatura:     r.parametros?.temperatura,
+            densidad:        r.parametros?.densidad,
+            pH:              r.parametros?.pH,
+            Brix:            r.parametros?.brix,
+        }));
         setSaving(true); setSaveError(null);
         try {
             const lote = generateLote(selectedFicha.productoNombre);
@@ -1895,15 +1937,11 @@ export default function DailyProductionPage() {
                 litrosNetos: litrosTotal,
                 merma: 0,
                 recepciones,
-                proveedorId:     recepciones[0]?.proveedorId || '',
+                recepcionIds:    selected.map(r => r.id),
+                proveedorId:     selected[0]?.proveedorId || '',
                 proveedorNombre,
                 rutaLeche,
-                parametrosLeche: recepciones[0] ? {
-                    temperatura: recepciones[0].temperatura,
-                    densidad:    recepciones[0].densidad,
-                    pH:          recepciones[0].pH,
-                    Brix:        recepciones[0].Brix,
-                } : {},
+                parametrosLeche: selected[0]?.parametros || {},
                 estado: 'activa',
                 bloqueActualIdx: 0,
                 holdHasta: null,
@@ -1919,7 +1957,17 @@ export default function DailyProductionPage() {
                 createdAt: serverTimestamp(),
             };
             const ref = await addDoc(collection(db, 'kroma_production_logs'), data);
-            const newLog = { id: ref.id, ...data, fechaInicio: new Date(), createdAt: new Date() };
+            const newLogId = ref.id;
+
+            // Mark selected receptions as en_proceso
+            await Promise.all(selected.map(r =>
+                updateDoc(doc(db, 'kroma_milk_reception', r.id), {
+                    status: 'en_proceso', logId: newLogId, updatedAt: serverTimestamp(),
+                })
+            ));
+            setMilkReceptions(prev => prev.filter(r => !selectedMilkIds.includes(r.id)));
+
+            const newLog = { id: newLogId, ...data, fechaInicio: new Date(), createdAt: new Date() };
             setLogs(prev => [newLog, ...prev]);
             openLog(newLog);
         } catch (e) { setSaveError(e.message); }
@@ -2164,6 +2212,16 @@ export default function DailyProductionPage() {
                 const completedLog = { ...activeLog, ...payload };
                 setLogs(prev => prev.filter(l => l.id !== activeLog.id));
                 setHistorial(prev => [completedLog, ...prev].slice(0, 20));
+                // Mark linked milk receptions as completada
+                if (activeLog.recepcionIds?.length > 0) {
+                    Promise.all(activeLog.recepcionIds.map(rid =>
+                        updateDoc(doc(db, 'kroma_milk_reception', rid), {
+                            status: 'completada',
+                            lote: activeLog.lote || activeLog.id,
+                            updatedAt: serverTimestamp(),
+                        })
+                    )).catch(() => {});
+                }
                 if (isEmpaque) {
                     createInventoryPT(activeLog, reg, activeLog.id).catch(() => {});
                     // Notify gerencia/admin
@@ -2247,7 +2305,7 @@ export default function DailyProductionPage() {
                     <div className="space-y-3">
                         {fichas.map(f => (
                             <button key={f.id}
-                                onClick={() => { setSelectedFicha(f); setRecepciones([]); setShowAddRecForm(true); setView('setup_litros'); }}
+                                onClick={() => { setSelectedFicha(f); setSelectedMilkIds([]); setShowQuickMilkForm(false); setView('setup_litros'); }}
                                 className="w-full text-left bg-slate-800 hover:bg-slate-750 border border-slate-700 hover:border-emerald-600/50 rounded-xl p-4 transition-colors">
                                 <p className="text-white font-semibold text-sm mb-1">{f.productoNombre}</p>
                                 <div className="flex flex-wrap gap-2 text-xs text-slate-400">
@@ -2272,8 +2330,10 @@ export default function DailyProductionPage() {
     // ── VIEW: setup litros ────────────────────────────────────────────────────
 
     if (view === 'setup_litros') {
-        const litrosTotal = recepciones.reduce((s, r) => s + (r.litros || 0), 0);
-        const canStart = recepciones.length > 0 && litrosTotal > 0;
+        const selected   = milkReceptions.filter(r => selectedMilkIds.includes(r.id));
+        const litrosTotal = selected.reduce((s, r) => s + (r.litros || 0), 0);
+        const canStart   = selectedMilkIds.length > 0 && litrosTotal > 0;
+
         return (
             <div className="flex flex-col h-full overflow-hidden bg-slate-950">
                 <div className="flex items-center gap-3 px-5 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
@@ -2308,64 +2368,86 @@ export default function DailyProductionPage() {
                         </div>
                     </div>
 
-                    {/* ── Recepciones de leche ── */}
+                    {/* ── Leche a Procesar ── */}
                     <div>
                         <div className="flex items-center justify-between mb-3">
-                            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Recepciones de Leche</p>
-                            {recepciones.length > 0 && (
-                                <span className="text-emerald-400 text-sm font-bold font-mono">{litrosTotal} L total</span>
+                            <SecLabel>Leche a Procesar</SecLabel>
+                            {litrosTotal > 0 && (
+                                <span className="text-emerald-400 text-sm font-bold font-mono">{litrosTotal} L seleccionados</span>
                             )}
                         </div>
 
-                        {/* Added receptions list */}
-                        {recepciones.length > 0 && (
-                            <div className="space-y-2 mb-4">
-                                {recepciones.map((r, idx) => (
-                                    <div key={idx} className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-start gap-3">
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${r.rutaLeche === 'tanque' ? 'bg-blue-900/50 text-blue-300' : 'bg-orange-900/50 text-orange-300'}`}>
-                                                    {r.rutaLeche === 'tanque' ? 'Tanque' : 'Directo'}
+                        {/* List of available pending receptions */}
+                        {milkReceptions.length === 0 ? (
+                            <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl p-5 text-center mb-3">
+                                <Droplets size={24} className="text-amber-500 mx-auto mb-2" />
+                                <p className="text-amber-300 text-sm font-semibold">Sin recepciones registradas</p>
+                                <p className="text-slate-400 text-xs mt-1 leading-relaxed">
+                                    Registra la leche desde el módulo <span className="text-white font-semibold">Leche</span> antes de iniciar producción,
+                                    o usa el formulario de abajo para leche directa.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2 mb-3">
+                                {milkReceptions.map(r => {
+                                    const isSel = selectedMilkIds.includes(r.id);
+                                    return (
+                                        <button key={r.id} type="button"
+                                            onClick={() => setSelectedMilkIds(prev =>
+                                                prev.includes(r.id) ? prev.filter(id => id !== r.id) : [...prev, r.id]
+                                            )}
+                                            className={`w-full text-left rounded-xl border p-3 transition-all ${
+                                                isSel
+                                                    ? 'border-emerald-500 bg-emerald-900/20'
+                                                    : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+                                            }`}>
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 ${
+                                                    isSel ? 'border-emerald-500 bg-emerald-600' : 'border-slate-600'
+                                                }`}>
+                                                    {isSel && <Check size={10} className="text-white" />}
+                                                </div>
+                                                <span className="text-white text-sm font-semibold flex-1 truncate">
+                                                    {r.proveedorNombre || '—'}
                                                 </span>
-                                                <span className="text-white text-sm font-bold font-mono">{r.litros} L</span>
+                                                <span className="text-cyan-300 font-bold font-mono shrink-0">{r.litros} L</span>
                                             </div>
-                                            <p className="text-slate-300 text-xs font-semibold">{r.proveedorNombre || 'Sin proveedor'}</p>
-                                            <p className="text-slate-500 text-xs font-mono mt-0.5">
-                                                T: {r.temperatura}°C · pH: {r.pH} · D: {r.densidad} · Bx: {r.Brix}
-                                            </p>
-                                        </div>
-                                        <button type="button"
-                                            onClick={() => setRecepciones(prev => prev.filter((_, i) => i !== idx))}
-                                            className="text-slate-600 hover:text-red-400 shrink-0 p-1 transition-colors">
-                                            <X size={14} />
+                                            <div className="flex items-center gap-3 mt-1.5 pl-6">
+                                                <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                                                    r.enrutamiento === 'tanque'
+                                                        ? 'bg-blue-900/50 text-blue-300'
+                                                        : 'bg-amber-900/50 text-amber-300'
+                                                }`}>
+                                                    {r.enrutamiento === 'tanque' ? '🧊 Tanque' : '⚡ Directa'}
+                                                </span>
+                                                {r.parametros?.temperatura != null && (
+                                                    <span className="text-slate-500 text-xs font-mono">
+                                                        T:{r.parametros.temperatura?.toFixed(1)}° · pH:{r.parametros.pH?.toFixed(2)}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </button>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
 
-                        {/* Inline add form */}
-                        {showAddRecForm ? (
+                        {/* Quick direct reception form */}
+                        {showQuickMilkForm ? (
                             <div className="bg-slate-800/60 border border-teal-700/40 rounded-xl p-4 space-y-4">
-                                <p className="text-teal-400 text-xs font-semibold uppercase tracking-widest">
-                                    {recepciones.length === 0 ? 'Primera recepción' : `Recepción #${recepciones.length + 1}`}
-                                </p>
+                                <p className="text-teal-400 text-xs font-semibold uppercase tracking-widest">Leche Directa a Producción</p>
 
-                                {/* Proveedor */}
                                 <div>
                                     <SecLabel>Proveedor</SecLabel>
                                     {suppliers.length === 0 ? (
-                                        <input type="text" placeholder="Nombre del productor…"
-                                            value={newRec.proveedorNombre}
-                                            onChange={e => setNewRec(r => ({ ...r, proveedorNombre: e.target.value, proveedorId: '' }))}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-teal-500" />
+                                        <p className="text-slate-500 text-sm">Sin proveedores configurados</p>
                                     ) : (
                                         <div className="flex flex-wrap gap-2">
                                             {suppliers.map(s => (
                                                 <button key={s.id} type="button"
-                                                    onClick={() => setNewRec(r => ({ ...r, proveedorId: s.id, proveedorNombre: s.nombre || s.nombreComercial || s.id }))}
+                                                    onClick={() => setQuickMilk(q => ({ ...q, proveedorId: s.id }))}
                                                     className={`px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                                                        newRec.proveedorId === s.id
+                                                        quickMilk.proveedorId === s.id
                                                             ? 'bg-teal-600 text-white'
                                                             : 'bg-slate-800 border border-slate-700 text-slate-300 hover:border-teal-600/50'
                                                     }`}>
@@ -2376,66 +2458,34 @@ export default function DailyProductionPage() {
                                     )}
                                 </div>
 
-                                {/* Litros */}
-                                <LitrosStepper label="Litros recibidos" value={newRec.litros} onChange={v => setNewRec(r => ({ ...r, litros: v }))} />
+                                <LitrosStepper value={quickMilk.litros} onChange={v => setQuickMilk(q => ({ ...q, litros: v }))} />
 
-                                {/* Parámetros de calidad */}
                                 <div>
-                                    <SecLabel>Parámetros de Calidad</SecLabel>
+                                    <SecLabel>Parámetros clave</SecLabel>
                                     <div className="grid grid-cols-2 gap-2">
-                                        <ParamInput label="Temperatura (°C)" value={newRec.temperatura} step={0.1}
-                                            onChange={v => setNewRec(r => ({ ...r, temperatura: v }))} unit="°C" />
-                                        <ParamInput label="pH" value={newRec.pH} step={0.01}
-                                            onChange={v => setNewRec(r => ({ ...r, pH: v }))} />
-                                        <ParamInput label="Densidad" value={newRec.densidad} step={0.001}
-                                            onChange={v => setNewRec(r => ({ ...r, densidad: v }))} unit="g/ml" />
-                                        <ParamInput label="Brix (°Bx)" value={newRec.Brix} step={0.1}
-                                            onChange={v => setNewRec(r => ({ ...r, Brix: v }))} unit="°Bx" />
+                                        <ParamInput label="Temperatura (°C)" value={quickMilk.temperatura} step={0.1}
+                                            onChange={v => setQuickMilk(q => ({ ...q, temperatura: v }))} unit="°C" />
+                                        <ParamInput label="pH" value={quickMilk.pH} step={0.01}
+                                            onChange={v => setQuickMilk(q => ({ ...q, pH: v }))} />
                                     </div>
                                 </div>
 
-                                {/* Enrutamiento */}
-                                <div>
-                                    <SecLabel>Enrutamiento</SecLabel>
-                                    <div className="flex gap-3">
-                                        <button type="button"
-                                            onClick={() => setNewRec(r => ({ ...r, rutaLeche: 'tanque' }))}
-                                            className={`flex-1 flex flex-col items-center gap-2 py-3 rounded-xl font-semibold text-sm transition-colors ${
-                                                newRec.rutaLeche === 'tanque'
-                                                    ? 'bg-blue-700 text-white'
-                                                    : 'bg-slate-800 border border-slate-700 text-slate-400 hover:border-slate-600'
-                                            }`}>
-                                            <Droplets size={16} />
-                                            <span>Tanque</span>
-                                        </button>
-                                        <button type="button"
-                                            onClick={() => setNewRec(r => ({ ...r, rutaLeche: 'directo' }))}
-                                            className={`flex-1 flex flex-col items-center gap-2 py-3 rounded-xl font-semibold text-sm transition-colors ${
-                                                newRec.rutaLeche === 'directo'
-                                                    ? 'bg-orange-700 text-white'
-                                                    : 'bg-slate-800 border border-slate-700 text-slate-400 hover:border-slate-600'
-                                            }`}>
-                                            <Zap size={16} />
-                                            <span>Directo</span>
-                                        </button>
-                                    </div>
-                                    {newRec.rutaLeche === 'directo' && (
-                                        <p className="text-orange-400/70 text-xs mt-2 text-center">
-                                            Sin parámetros previos al pasteurizador
-                                        </p>
-                                    )}
+                                <div className="flex gap-2">
+                                    <button type="button" onClick={() => setShowQuickMilkForm(false)}
+                                        className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm font-semibold py-2.5 rounded-xl">
+                                        Cancelar
+                                    </button>
+                                    <button type="button" onClick={handleQuickMilkSave}
+                                        disabled={!quickMilk.proveedorId || quickMilk.litros <= 0 || quickMilkSaving}
+                                        className="flex-1 bg-teal-700 hover:bg-teal-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-bold py-2.5 rounded-xl transition-colors">
+                                        {quickMilkSaving ? 'Registrando…' : '+ Agregar y seleccionar'}
+                                    </button>
                                 </div>
-
-                                <button type="button" onClick={addRecepcion}
-                                    disabled={(!newRec.proveedorNombre && !newRec.proveedorId) || (newRec.litros || 0) <= 0}
-                                    className="w-full py-3 bg-teal-700 hover:bg-teal-600 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-bold rounded-xl transition-colors">
-                                    + Agregar esta recepción
-                                </button>
                             </div>
                         ) : (
-                            <button type="button" onClick={() => setShowAddRecForm(true)}
+                            <button type="button" onClick={() => setShowQuickMilkForm(true)}
                                 className="w-full py-3 border-2 border-dashed border-slate-600 text-slate-500 hover:text-white hover:border-slate-500 rounded-xl text-sm transition-colors">
-                                + Agregar otra recepción
+                                + Registrar leche directa a producción
                             </button>
                         )}
                     </div>
