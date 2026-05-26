@@ -52,9 +52,15 @@ const isExpiringSoon = (s) => { if (!s) return false; const d = new Date(s) - ne
 
 const getMaxQty  = (item) => item?.tipo === 'sin_envasar' ? (item.kgTotales  || 0) : (item?.unidades || 0);
 const getUnit    = (item) => item?.tipo === 'sin_envasar' ? 'kg' : 'ud';
-const getQtyLabel = (item, qty) => item?.tipo === 'sin_envasar'
-    ? `${qty} kg`
-    : `${qty} ${item?.presentacion ? `× ${item.presentacion}` : 'ud'}`;
+
+const docenasLabel = (item) => {
+    if (!item || item.tipo === 'sin_envasar') return '';
+    const total = item.unidades || 0;
+    const doc = Math.floor(total / 12);
+    const resto = total % 12;
+    if (doc === 0) return '';
+    return resto > 0 ? `${doc} doc + ${resto} ud` : `${doc} docena${doc !== 1 ? 's' : ''}`;
+};
 
 const destinoDisplay = (d) => {
     if (!d) return '';
@@ -62,10 +68,12 @@ const destinoDisplay = (d) => {
     return d.ciudad ? `${d.ciudad} (${d.estado})` : d.estado;
 };
 
-// ─── Inventory Picker ─────────────────────────────────────────────────────────
+// ─── Inventory Picker — full screen, inline qty ───────────────────────────────
 
 function InventoryPicker({ items, onSelect, onClose }) {
-    const [search, setSearch] = useState('');
+    const [search, setSearch]     = useState('');
+    const [expandedId, setExpandedId] = useState(null);
+    const [qty, setQty]           = useState(1);
 
     const sorted = useMemo(() =>
         [...items].sort((a, b) => {
@@ -76,77 +84,143 @@ function InventoryPicker({ items, onSelect, onClose }) {
     [items]);
 
     const filtered = search.trim()
-        ? sorted.filter(i => [i.productoNombre, i.presentacion, i.lote].some(
-            f => f?.toLowerCase().includes(search.toLowerCase())))
+        ? sorted.filter(i =>
+            [i.productoNombre, i.presentacion, i.fechaVencimiento].some(
+                f => f?.toLowerCase().includes(search.toLowerCase())))
         : sorted;
 
+    const handleTap = (item) => {
+        setExpandedId(item.id);
+        setQty(1);
+    };
+
+    const handleConfirm = (item) => {
+        const max = getMaxQty(item);
+        const safeQty = Math.min(max, Math.max(1, qty));
+        onSelect(item, safeQty);
+    };
+
     return (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/70 backdrop-blur-sm">
-            <div className="bg-slate-900 border-t border-slate-700 rounded-t-2xl w-full max-h-[88vh] flex flex-col">
-                <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-slate-800 shrink-0">
-                    <p className="text-white font-bold">Seleccionar producto del inventario</p>
-                    <button onClick={onClose} className="text-slate-500 hover:text-white p-1"><X size={18} /></button>
+        <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 pt-12 pb-3 border-b border-slate-800 shrink-0">
+                <p className="text-white font-bold text-lg">Seleccionar producto</p>
+                <button onClick={onClose} className="text-slate-500 hover:text-white p-2 -mr-1">
+                    <X size={20} />
+                </button>
+            </div>
+
+            {/* Search — no autoFocus so keyboard stays closed */}
+            <div className="px-4 py-3 shrink-0">
+                <div className="relative">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                        type="text"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="Buscar producto o presentación…"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    />
                 </div>
-                <div className="px-4 py-3 shrink-0">
-                    <div className="relative">
-                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                        <input
-                            type="text"
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Buscar por producto, presentación o lote…"
-                            autoFocus
-                            className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                        />
+            </div>
+
+            {/* Full-height list */}
+            <div className="overflow-y-auto flex-1 px-4 pb-10 space-y-2">
+                {filtered.length === 0 ? (
+                    <div className="text-center py-20">
+                        <Package size={32} className="text-slate-700 mx-auto mb-3" />
+                        <p className="text-slate-500 text-sm">Sin inventario disponible.</p>
+                        <p className="text-slate-600 text-xs mt-1">Registra una producción primero.</p>
                     </div>
-                </div>
-                <div className="overflow-y-auto flex-1 px-4 pb-6 space-y-2">
-                    {filtered.length === 0 ? (
-                        <div className="text-center py-12">
-                            <Package size={28} className="text-slate-700 mx-auto mb-2" />
-                            <p className="text-slate-500 text-sm">No hay inventario disponible.</p>
-                            <p className="text-slate-600 text-xs mt-1">Registra una producción primero.</p>
-                        </div>
-                    ) : (
-                        filtered.map(item => {
-                            const qty = getMaxQty(item);
-                            const exp = item.fechaVencimiento;
-                            const expColor = isExpired(exp) ? 'bg-red-900/30 border-red-700/40 text-red-400'
-                                           : isExpiringSoon(exp) ? 'bg-amber-900/30 border-amber-700/40 text-amber-400'
-                                           : 'bg-slate-700/50 border-slate-600 text-slate-400';
-                            return (
-                                <button
-                                    key={item.id}
-                                    onClick={() => onSelect(item)}
-                                    className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-emerald-500/50 rounded-xl p-3.5 text-left transition-all active:scale-[.98]"
-                                >
-                                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-white font-semibold text-sm">{item.productoNombre}</p>
-                                            <p className="text-slate-400 text-xs mt-0.5">
-                                                {item.tipo === 'sin_envasar' ? 'Sin envasar' : (item.presentacion || 'Empacado')}
-                                                {item.warehouseNombre ? ` · ${item.warehouseNombre}` : ''}
-                                            </p>
-                                        </div>
-                                        <span className={`font-bold font-mono text-sm shrink-0 ${qty > 10 ? 'text-emerald-400' : qty > 0 ? 'text-amber-400' : 'text-red-400'}`}>
-                                            {qty} {getUnit(item)}
-                                        </span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                        {item.lote && (
-                                            <span className="text-slate-600 font-mono text-[10px]">{item.lote.slice(-10)}</span>
-                                        )}
-                                        {exp && (
-                                            <span className={`px-1.5 py-0.5 rounded border text-[10px] ${expColor}`}>
-                                                Vence {exp}
-                                            </span>
-                                        )}
-                                    </div>
-                                </button>
-                            );
-                        })
-                    )}
-                </div>
+                ) : filtered.map(item => {
+                    const max   = getMaxQty(item);
+                    const unit  = getUnit(item);
+                    const exp   = item.fechaVencimiento;
+                    const doc   = docenasLabel(item);
+                    const isExp = expandedId === item.id;
+
+                    const expColor = isExpired(exp)
+                        ? 'text-red-400'
+                        : isExpiringSoon(exp)
+                        ? 'text-amber-400'
+                        : 'text-emerald-400';
+
+                    if (isExp) {
+                        return (
+                            <div key={item.id} className="bg-slate-800 border-2 border-emerald-500/60 rounded-2xl p-4">
+                                {/* Selected item summary */}
+                                <div className="flex items-start justify-between mb-1">
+                                    <p className="text-white font-bold">{item.productoNombre}</p>
+                                    <button onClick={() => setExpandedId(null)} className="text-slate-500 hover:text-white p-1 -mt-1 -mr-1">
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                                <p className="text-slate-400 text-xs mb-0.5">
+                                    {item.presentacion || (item.tipo === 'sin_envasar' ? 'Sin envasar' : 'Empacado')}
+                                    {item.warehouseNombre ? ` · ${item.warehouseNombre}` : ''}
+                                </p>
+                                <p className={`text-sm font-semibold mb-3 ${expColor}`}>
+                                    {exp ? `Vence ${exp}` : 'Sin fecha de vencimiento'}
+                                </p>
+
+                                <p className="text-xs text-slate-500 mb-3">
+                                    Disponible:&nbsp;
+                                    <span className="text-white font-bold">{max} {unit}</span>
+                                    {doc && <span className="text-slate-400 ml-2">({doc})</span>}
+                                </p>
+
+                                {/* Inline qty + confirm */}
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="number"
+                                        inputMode="numeric"
+                                        min="1"
+                                        max={max}
+                                        value={qty}
+                                        autoFocus
+                                        onChange={e => setQty(Math.min(max, Math.max(1, parseInt(e.target.value) || 1)))}
+                                        onKeyDown={e => e.key === 'Enter' && handleConfirm(item)}
+                                        className="flex-1 bg-slate-700 border border-slate-600 rounded-xl px-4 py-3 text-white font-bold font-mono text-2xl text-center focus:outline-none focus:border-emerald-500"
+                                    />
+                                    <span className="text-slate-400 text-sm shrink-0 w-6 text-center">{unit}</span>
+                                    <button
+                                        onClick={() => handleConfirm(item)}
+                                        disabled={qty < 1 || qty > max}
+                                        className="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl disabled:opacity-40 transition-colors text-sm"
+                                    >
+                                        OK
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    return (
+                        <button
+                            key={item.id}
+                            onClick={() => handleTap(item)}
+                            className="w-full bg-slate-800 hover:bg-slate-750 active:bg-slate-700 border border-slate-700 hover:border-emerald-500/40 rounded-xl px-4 py-3.5 text-left transition-all active:scale-[.99]"
+                        >
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-white font-semibold truncate">{item.productoNombre}</p>
+                                    <p className="text-slate-500 text-xs mt-0.5 truncate">
+                                        {item.presentacion || (item.tipo === 'sin_envasar' ? 'Sin envasar' : 'Empacado')}
+                                        {item.warehouseNombre ? ` · ${item.warehouseNombre}` : ''}
+                                    </p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <p className={`font-bold text-sm ${expColor}`}>
+                                        {exp ? `Vence ${exp}` : 'Sin fecha'}
+                                    </p>
+                                    <p className="text-slate-400 text-xs font-mono">
+                                        {max} {unit}{doc ? ` · ${doc}` : ''}
+                                    </p>
+                                </div>
+                            </div>
+                        </button>
+                    );
+                })}
             </div>
         </div>
     );
@@ -155,7 +229,7 @@ function InventoryPicker({ items, onSelect, onClose }) {
 // ─── City Picker ──────────────────────────────────────────────────────────────
 
 function CityPicker({ onSelect, onClose }) {
-    const [search, setSearch]   = useState('');
+    const [search, setSearch]     = useState('');
     const [expanded, setExpanded] = useState(null);
     const [otroText, setOtroText] = useState('');
     const [showOtro, setShowOtro] = useState(false);
@@ -174,94 +248,96 @@ function CityPicker({ onSelect, onClose }) {
     const autoExpand = search.trim().length > 0;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/70 backdrop-blur-sm">
-            <div className="bg-slate-900 border-t border-slate-700 rounded-t-2xl w-full max-h-[88vh] flex flex-col">
-                <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-slate-800 shrink-0">
-                    <p className="text-white font-bold">Seleccionar destino</p>
-                    <button onClick={onClose} className="text-slate-500 hover:text-white p-1"><X size={18} /></button>
+        <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 pt-12 pb-3 border-b border-slate-800 shrink-0">
+                <p className="text-white font-bold text-lg">Seleccionar destino</p>
+                <button onClick={onClose} className="text-slate-500 hover:text-white p-2 -mr-1">
+                    <X size={20} />
+                </button>
+            </div>
+
+            {/* Search — no autoFocus */}
+            <div className="px-4 py-3 shrink-0">
+                <div className="relative">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                        type="text"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="Buscar estado o ciudad…"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    />
                 </div>
-                <div className="px-4 py-3 shrink-0">
-                    <div className="relative">
-                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-4 pb-10">
+                {/* Otro destino */}
+                {!showOtro ? (
+                    <button
+                        onClick={() => setShowOtro(true)}
+                        className="w-full flex items-center gap-3 bg-slate-800/60 hover:bg-slate-700 border border-dashed border-slate-600 hover:border-emerald-500/50 rounded-xl px-4 py-3 mb-4 text-left transition-all"
+                    >
+                        <MapPin size={15} className="text-slate-500 shrink-0" />
+                        <div>
+                            <p className="text-white text-sm font-medium">Otro destino</p>
+                            <p className="text-slate-500 text-xs">Cliente específico o dirección personalizada</p>
+                        </div>
+                    </button>
+                ) : (
+                    <div className="bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 mb-4 space-y-2">
+                        <p className="text-slate-300 text-xs font-semibold uppercase tracking-widest">Otro destino</p>
                         <input
                             type="text"
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            placeholder="Buscar estado o ciudad…"
-                            autoFocus
-                            className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                            value={otroText}
+                            onChange={e => setOtroText(e.target.value)}
+                            placeholder="Ej: Juan Pérez – Valencia, o Almacén XYZ"
+                            className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                         />
-                    </div>
-                </div>
-                <div className="overflow-y-auto flex-1 px-4 pb-6">
-                    {/* Otro destino */}
-                    {!showOtro ? (
-                        <button
-                            onClick={() => setShowOtro(true)}
-                            className="w-full flex items-center gap-3 bg-slate-800/60 hover:bg-slate-700 border border-dashed border-slate-600 hover:border-emerald-500/50 rounded-xl px-4 py-3 mb-4 text-left transition-all"
-                        >
-                            <MapPin size={15} className="text-slate-500 shrink-0" />
-                            <div>
-                                <p className="text-white text-sm font-medium">Otro destino</p>
-                                <p className="text-slate-500 text-xs">Cliente específico o dirección personalizada</p>
-                            </div>
-                        </button>
-                    ) : (
-                        <div className="bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 mb-4 space-y-2">
-                            <p className="text-slate-300 text-xs font-semibold uppercase tracking-widest">Otro destino</p>
-                            <input
-                                type="text"
-                                value={otroText}
-                                onChange={e => setOtroText(e.target.value)}
-                                placeholder="Ej: Juan Pérez – Valencia, o Almacén XYZ"
-                                autoFocus
-                                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                            />
-                            <div className="flex gap-2">
-                                <button onClick={() => setShowOtro(false)} className="flex-1 border border-slate-600 text-slate-400 rounded-lg py-2 text-sm">Cancelar</button>
-                                <button
-                                    onClick={() => otroText.trim() && onSelect({ tipo: 'otro', texto: otroText.trim() })}
-                                    disabled={!otroText.trim()}
-                                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg py-2 text-sm disabled:opacity-40"
-                                >
-                                    Confirmar
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* States */}
-                    {filtered.map(e => (
-                        <div key={e.estado} className="mb-0.5">
+                        <div className="flex gap-2">
+                            <button onClick={() => setShowOtro(false)} className="flex-1 border border-slate-600 text-slate-400 rounded-lg py-2 text-sm">Cancelar</button>
                             <button
-                                onClick={() => setExpanded(ex => ex === e.estado ? null : e.estado)}
-                                className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-slate-800 rounded-lg transition-colors"
+                                onClick={() => otroText.trim() && onSelect({ tipo: 'otro', texto: otroText.trim() })}
+                                disabled={!otroText.trim()}
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg py-2 text-sm disabled:opacity-40"
                             >
-                                <span className="text-slate-200 font-semibold text-sm">{e.estado}</span>
-                                <ChevronDown size={14} className={`text-slate-600 transition-transform ${(expanded === e.estado || autoExpand) ? 'rotate-180' : ''}`} />
+                                Confirmar
                             </button>
-                            {(expanded === e.estado || autoExpand) && (
-                                <div className="pl-4 pb-1 space-y-0.5">
-                                    <button
-                                        onClick={() => onSelect({ tipo: 'estado', estado: e.estado })}
-                                        className="w-full text-left px-3 py-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 text-xs italic transition-colors"
-                                    >
-                                        {e.estado} (estado general)
-                                    </button>
-                                    {e.ciudades.map(ciudad => (
-                                        <button
-                                            key={ciudad}
-                                            onClick={() => onSelect({ tipo: 'ciudad', ciudad, estado: e.estado })}
-                                            className="w-full text-left px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 text-sm transition-colors"
-                                        >
-                                            {ciudad}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
                         </div>
-                    ))}
-                </div>
+                    </div>
+                )}
+
+                {/* States */}
+                {filtered.map(e => (
+                    <div key={e.estado} className="mb-0.5">
+                        <button
+                            onClick={() => setExpanded(ex => ex === e.estado ? null : e.estado)}
+                            className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-slate-800 rounded-lg transition-colors"
+                        >
+                            <span className="text-slate-200 font-semibold text-sm">{e.estado}</span>
+                            <ChevronDown size={14} className={`text-slate-600 transition-transform ${(expanded === e.estado || autoExpand) ? 'rotate-180' : ''}`} />
+                        </button>
+                        {(expanded === e.estado || autoExpand) && (
+                            <div className="pl-4 pb-1 space-y-0.5">
+                                <button
+                                    onClick={() => onSelect({ tipo: 'estado', estado: e.estado })}
+                                    className="w-full text-left px-3 py-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800/50 text-xs italic transition-colors"
+                                >
+                                    {e.estado} (estado general)
+                                </button>
+                                {e.ciudades.map(ciudad => (
+                                    <button
+                                        key={ciudad}
+                                        onClick={() => onSelect({ tipo: 'ciudad', ciudad, estado: e.estado })}
+                                        className="w-full text-left px-3 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 text-sm transition-colors"
+                                    >
+                                        {ciudad}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ))}
             </div>
         </div>
     );
@@ -319,7 +395,7 @@ function DespachoCard({ despacho, onMarkEntregado }) {
                                     {l.presentacion && <span className="text-slate-400 text-xs"> {l.presentacion}</span>}
                                     {' '}{l.productoNombre}
                                 </p>
-                                {l.lote && <p className="text-[10px] text-slate-600 font-mono">{l.lote}</p>}
+                                {l.fechaVencimiento && <p className="text-[10px] text-slate-500">Vence {l.fechaVencimiento}</p>}
                             </div>
                         </div>
                     ))}
@@ -349,17 +425,16 @@ const newLinea = () => ({ _id: ++lineaSeq, item: null, cantidad: 1, destino: nul
 
 export default function DespachoPage() {
     const { kromaUser } = useKroma();
-    const [tab, setTab]           = useState('nuevo');
+    const [tab, setTab]             = useState('nuevo');
     const [inventory, setInventory] = useState([]);
     const [loadingInv, setLoadingInv] = useState(true);
     const [historial, setHistorial] = useState([]);
     const [loadingHist, setLoadingHist] = useState(false);
-    const [saving, setSaving]     = useState(false);
-    const [saved, setSaved]       = useState(false);
-    const [lineas, setLineas]     = useState(() => [newLinea()]);
-    const [notas, setNotas]       = useState('');
+    const [saving, setSaving]       = useState(false);
+    const [saved, setSaved]         = useState(false);
+    const [lineas, setLineas]       = useState(() => [newLinea()]);
+    const [notas, setNotas]         = useState('');
 
-    // Which line is picking (null = none)
     const [pickingInvFor,  setPickingInvFor]  = useState(null);
     const [pickingCityFor, setPickingCityFor] = useState(null);
 
@@ -394,7 +469,6 @@ export default function DespachoPage() {
 
     useEffect(() => { if (tab === 'historial') loadHistorial(); }, [tab, loadHistorial]);
 
-    // ── Line mutations ──
     const updateLinea = (id, patch) =>
         setLineas(ls => ls.map(l => l._id === id ? { ...l, ...patch } : l));
     const removeLinea = (id) => {
@@ -402,10 +476,10 @@ export default function DespachoPage() {
         setLineas(ls => ls.filter(l => l._id !== id));
     };
 
-    // ── Pickers ──
-    const onSelectItem = (item) => {
+    // Item picker returns item + cantidad together
+    const onSelectItem = (item, cantidad) => {
         if (pickingInvFor == null) return;
-        updateLinea(pickingInvFor, { item, cantidad: Math.min(1, getMaxQty(item)) });
+        updateLinea(pickingInvFor, { item, cantidad: cantidad || 1 });
         setPickingInvFor(null);
     };
     const onSelectCity = (dest) => {
@@ -422,15 +496,15 @@ export default function DespachoPage() {
         try {
             const validLineas = lineas
                 .filter(l => l.item && l.destino)
-                .map(({ _id, item, cantidad, destino }) => ({
-                    inventoryId:  item.id,
-                    productoNombre: item.productoNombre,
-                    presentacion: item.presentacion || (item.tipo === 'sin_envasar' ? 'Sin envasar' : ''),
-                    tipo:         item.tipo,
-                    lote:         item.lote || '',
+                .map(({ item, cantidad, destino }) => ({
+                    inventoryId:     item.id,
+                    productoNombre:  item.productoNombre,
+                    presentacion:    item.presentacion || (item.tipo === 'sin_envasar' ? 'Sin envasar' : ''),
+                    tipo:            item.tipo,
+                    lote:            item.lote || '',
                     fechaVencimiento: item.fechaVencimiento || '',
                     cantidad,
-                    unit:         getUnit(item),
+                    unit:            getUnit(item),
                     destino,
                 }));
 
@@ -515,49 +589,54 @@ export default function DespachoPage() {
                                     </div>
 
                                     <div className="space-y-2">
-                                        {/* Producto */}
+                                        {/* Producto — tap to open picker */}
                                         <button
                                             onClick={() => setPickingInvFor(linea._id)}
                                             disabled={loadingInv}
-                                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm text-left transition-all ${
+                                            className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-sm text-left transition-all ${
                                                 linea.item
-                                                    ? 'bg-slate-700 border-emerald-500/40 text-white'
-                                                    : 'bg-slate-700 border-slate-600 text-slate-400'
+                                                    ? 'bg-slate-700 border-emerald-500/40'
+                                                    : 'bg-slate-700 border-slate-600'
                                             }`}
                                         >
                                             <div className="flex-1 min-w-0">
                                                 {linea.item ? (
                                                     <>
                                                         <p className="text-white font-medium truncate">{linea.item.productoNombre}</p>
-                                                        <p className="text-slate-400 text-xs">
+                                                        <p className="text-slate-400 text-xs mt-0.5">
                                                             {linea.item.tipo === 'sin_envasar' ? 'Sin envasar' : (linea.item.presentacion || 'Empacado')}
-                                                            {' · '}<span className="text-emerald-400">{getMaxQty(linea.item)} {getUnit(linea.item)} disponibles</span>
-                                                            {linea.item.fechaVencimiento && <span className={`ml-1 ${isExpired(linea.item.fechaVencimiento) ? 'text-red-400' : isExpiringSoon(linea.item.fechaVencimiento) ? 'text-amber-400' : ''}`}>· Vence {linea.item.fechaVencimiento}</span>}
+                                                            {linea.item.fechaVencimiento && (
+                                                                <span className={`ml-1.5 ${isExpired(linea.item.fechaVencimiento) ? 'text-red-400' : isExpiringSoon(linea.item.fechaVencimiento) ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                                    · Vence {linea.item.fechaVencimiento}
+                                                                </span>
+                                                            )}
                                                         </p>
                                                     </>
                                                 ) : (
-                                                    <span>{loadingInv ? 'Cargando inventario…' : 'Toca para seleccionar producto del inventario'}</span>
+                                                    <span className="text-slate-400">{loadingInv ? 'Cargando inventario…' : 'Toca para seleccionar producto del inventario'}</span>
                                                 )}
                                             </div>
                                             <Package size={15} className="shrink-0 ml-2 text-slate-500" />
                                         </button>
 
-                                        {/* Cantidad */}
+                                        {/* Cantidad — stepper (no keyboard) + available info */}
                                         {linea.item && (
-                                            <div className="flex items-center gap-2">
-                                                <div className="flex-1">
-                                                    <input
-                                                        type="number"
-                                                        inputMode="numeric"
-                                                        min="1"
-                                                        max={maxQty}
-                                                        value={linea.cantidad}
-                                                        onChange={e => updateLinea(linea._id, { cantidad: Math.min(maxQty, Math.max(1, parseInt(e.target.value) || 1)) })}
-                                                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white font-bold text-center font-mono focus:outline-none focus:border-emerald-500"
-                                                    />
-                                                </div>
-                                                <span className="text-slate-400 text-sm shrink-0">
-                                                    {getUnit(linea.item)} · máx {maxQty}
+                                            <div className="flex items-center gap-2 px-1">
+                                                <button
+                                                    onClick={() => updateLinea(linea._id, { cantidad: Math.max(1, linea.cantidad - 1) })}
+                                                    className="w-9 h-9 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg text-white font-bold flex items-center justify-center transition-colors text-lg leading-none"
+                                                >−</button>
+                                                <span className="text-white font-bold font-mono text-lg w-10 text-center">{linea.cantidad}</span>
+                                                <button
+                                                    onClick={() => updateLinea(linea._id, { cantidad: Math.min(maxQty, linea.cantidad + 1) })}
+                                                    className="w-9 h-9 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded-lg text-white font-bold flex items-center justify-center transition-colors text-lg leading-none"
+                                                >+</button>
+                                                <span className="text-slate-400 text-xs ml-1">
+                                                    {getUnit(linea.item)}
+                                                    {docenasLabel(linea.item) && (
+                                                        <span className="ml-1.5 text-slate-500">· disponible: {docenasLabel(linea.item)}</span>
+                                                    )}
+                                                    {!docenasLabel(linea.item) && <span className="ml-1.5 text-slate-500">· máx {maxQty}</span>}
                                                 </span>
                                             </div>
                                         )}
