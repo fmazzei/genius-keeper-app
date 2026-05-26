@@ -1305,7 +1305,7 @@ function ReportBlockSummary({ bloque, data, litrosNetos = 0 }) {
     );
 }
 
-function ReportView({ log, kromaUser, onClose }) {
+function ReportView({ log, kromaUser, kromaRole, onClose }) {
     const [firmas, setFirmas] = useState(log.firmas || {});
     const [almacenNombre, setAlmacenNombre] = useState('');
     const [signing, setSigning] = useState(false);
@@ -1396,7 +1396,7 @@ function ReportView({ log, kromaUser, onClose }) {
         }
     }
 
-    const isMaestro = kromaUser?.id === log.operarioId || kromaUser?.rol === 'produccion' || kromaUser?.rol === 'master';
+    const isMaestro = kromaUser?.id === log.operarioId || kromaRole === 'master';
 
     return (
         <div className="min-h-screen bg-slate-950 flex flex-col">
@@ -1750,7 +1750,7 @@ function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, on
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function DailyProductionPage() {
-    const { kromaUser } = useKroma();
+    const { kromaUser, kromaRole } = useKroma();
 
     const [fichas, setFichas]           = useState([]);
     const [logs, setLogs]               = useState([]);
@@ -2220,6 +2220,7 @@ export default function DailyProductionPage() {
         return <ReportView
             log={reportLog}
             kromaUser={kromaUser}
+            kromaRole={kromaRole}
             onClose={() => { setView('list'); setReportLog(null); }}
         />;
     }

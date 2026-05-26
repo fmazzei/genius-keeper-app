@@ -221,10 +221,10 @@ function StepBar({ current }) {
 
 // ─── Reception Card ───────────────────────────────────────────────────────────
 
-function ReceptionCard({ rec, onEdit, onDelete }) {
+function ReceptionCard({ rec, isMaster, onEdit, onDelete }) {
     const [confirmDelete, setConfirmDelete] = useState(false);
     const route    = ROUTES.find(r => r.id === rec.enrutamiento) || ROUTES[0];
-    const canEdit  = canEditRec(rec);
+    const canEdit  = editTimeLeftMs(rec) > 0 || isMaster;
     const timeLeft = editTimeLeftMs(rec);
 
     return (
@@ -321,7 +321,8 @@ function ReceptionCard({ rec, onEdit, onDelete }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function MilkInventoryPage() {
-    const { kromaUser } = useKroma();
+    const { kromaUser, kromaRole } = useKroma();
+    const isMaster = kromaRole === 'master';
 
     const [receptions, setReceptions] = useState([]);
     const [suppliers, setSuppliers]   = useState([]);
@@ -729,6 +730,7 @@ export default function MilkInventoryPage() {
                             <ReceptionCard
                                 key={rec.id}
                                 rec={rec}
+                                isMaster={isMaster}
                                 onEdit={openEdit}
                                 onDelete={handleDelete}
                             />

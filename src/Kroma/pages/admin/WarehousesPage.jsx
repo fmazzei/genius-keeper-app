@@ -81,13 +81,15 @@ function TransferModal({ item, warehouses, currentWarehouseId, saving, onClose, 
                 {/* Quantity */}
                 <div>
                     <SecLabel>Cantidad a transferir ({unit})</SecLabel>
-                    <div className="flex items-center gap-3">
-                        <button onClick={() => setQty(q => Math.max(1, q - 1))}
-                            className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 text-white text-xl font-bold flex items-center justify-center">−</button>
-                        <span className="flex-1 text-center text-white font-bold font-mono text-xl">{qty}</span>
-                        <button onClick={() => setQty(q => Math.min(maxQty, q + 1))}
-                            className="w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 text-white text-xl font-bold flex items-center justify-center">+</button>
-                    </div>
+                    <input
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        max={maxQty}
+                        value={qty}
+                        onChange={e => setQty(Math.min(maxQty, Math.max(1, parseInt(e.target.value) || 1)))}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-4 text-white font-bold font-mono text-2xl text-center focus:outline-none focus:border-emerald-500"
+                    />
                     <p className="text-slate-600 text-xs text-center mt-1">Máximo: {maxQty} {unit}</p>
                 </div>
 
