@@ -5,7 +5,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
-import { Package, Plus, AlertTriangle, X, Check, TrendingDown, Bell, Settings } from 'lucide-react';
+import { Package, Plus, AlertTriangle, X, Check, TrendingDown, Bell, Settings, Trash2 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -207,10 +207,11 @@ function PresConfigPanel({ config, onChange }) {
 
 // ─── Material Card ───────────────────────────────────────────────────────────
 
-function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo }) {
+function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo, isMaster, onDelete }) {
     const status = stockStatus(invDoc);
     const pct    = barPct(invDoc);
     const hasInv = invDoc != null;
+    const [confirmDel, setConfirmDel] = useState(false);
 
     return (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col gap-3">
@@ -219,10 +220,34 @@ function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo }) {
                     <p className="text-white font-semibold text-sm leading-snug">{mat.nombre}</p>
                     <p className="text-slate-500 text-xs mt-0.5 capitalize">{mat.categoria || 'otros'}</p>
                 </div>
-                {hasInv && status !== 'ok' && status !== 'none' && (
-                    <AlertTriangle size={14} className={`${TEXT_COLOR[status]} shrink-0 mt-0.5`} />
-                )}
+                <div className="flex items-center gap-1.5 shrink-0">
+                    {hasInv && status !== 'ok' && status !== 'none' && (
+                        <AlertTriangle size={14} className={`${TEXT_COLOR[status]} mt-0.5`} />
+                    )}
+                    {isMaster && (
+                        <button onClick={() => setConfirmDel(true)}
+                            className="text-slate-600 hover:text-rose-400 p-0.5 rounded transition-colors"
+                            title="Eliminar registro de inventario">
+                            <Trash2 size={13} />
+                        </button>
+                    )}
+                </div>
             </div>
+            {confirmDel && (
+                <div className="bg-rose-950/40 border border-rose-800/50 rounded-xl p-3">
+                    <p className="text-rose-300 text-xs font-semibold mb-2">¿Eliminar este registro de inventario?</p>
+                    <div className="flex gap-2">
+                        <button onClick={() => setConfirmDel(false)}
+                            className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold py-2 rounded-lg">
+                            Cancelar
+                        </button>
+                        <button onClick={() => { setConfirmDel(false); onDelete(mat, invDoc); }}
+                            className="flex-1 bg-rose-700 hover:bg-rose-600 text-white text-xs font-semibold py-2 rounded-lg">
+                            Eliminar
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <div>
                 <div className="flex items-end justify-between mb-1">
@@ -656,7 +681,8 @@ function AlertsBanner({ alerts, onDismiss }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function MaterialsInventoryPage() {
-    const { kromaUser } = useKroma();
+    const { kromaUser, kromaRole } = useKroma();
+    const isMaster = kromaRole === 'master';
     const [materials, setMaterials] = useState([]);
     const [inventory, setInventory] = useState({});
     const [alerts, setAlerts]       = useState([]);
@@ -754,6 +780,14 @@ export default function MaterialsInventoryPage() {
         const update = { materialId: mat.id, stockMinimo: minimo, stockMinimoEsBase: !!esBase, updatedAt: serverTimestamp() };
         await setDoc(docRef, update, { merge: true });
         setInventory(prev => ({ ...prev, [mat.id]: { ...prev[mat.id], ...update } }));
+    }
+
+    async function handleDeleteMaterial(mat, invDoc) {
+        if (invDoc) {
+            await updateDoc(doc(db, 'kroma_inventory_materials', mat.id), { active: false });
+        }
+        setMaterials(prev => prev.filter(m => m.id !== mat.id));
+        setInventory(prev => { const n = { ...prev }; delete n[mat.id]; return n; });
     }
 
     // ── Derived ───────────────────────────────────────────────────────────────
@@ -874,6 +908,7 @@ export default function MaterialsInventoryPage() {
                                             onEntrada={(m, inv) => setEntradaTarget({ mat: m, invDoc: inv })}
                                             onEnUso={(m, inv) => setEnUsoTarget({ mat: m, invDoc: inv })}
                                             onSetMinimo={(m, inv) => setMinimoTarget({ mat: m, invDoc: inv })}
+                                            isMaster={isMaster} onDelete={handleDeleteMaterial}
                                         />
                                     ))}
                                 </div>

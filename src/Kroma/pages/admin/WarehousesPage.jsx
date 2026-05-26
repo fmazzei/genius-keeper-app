@@ -6,7 +6,7 @@ import { db } from '@/Firebase/config.js';
 import {
     Warehouse, Package, Archive, Truck, Droplets, Plus, ChevronLeft,
     ArrowRight, Clock, Check, ChevronDown, ChevronUp, AlertTriangle, X,
-    Edit2, Send, ThumbsUp, ThumbsDown, MoreVertical, ClipboardCheck, Loader,
+    Edit2, Send, ThumbsUp, ThumbsDown, MoreVertical, ClipboardCheck, Loader, Trash2,
 } from 'lucide-react';
 import { useKroma } from '@/Kroma/KromaContext';
 
@@ -536,8 +536,10 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
 
 // ─── Warehouse Detail View ────────────────────────────────────────────────────
 
-function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaUser, kromaRole, onBack, onTransfer, onEditItem, onInventoryUpdated }) {
+function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaUser, kromaRole, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated }) {
     const [showMov, setShowMov] = useState(false);
+    const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+    const isMaster = kromaRole === 'master';
 
     const items     = inventoryPT.filter(i => (i.warehouseId || '__cava__') === (warehouse.id || '__cava__'));
     const empacados = items.filter(i => i.tipo === 'empacado' && (i.unidades ?? 0) > 0);
@@ -610,20 +612,39 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                            {canEditPT && (
-                                                <button onClick={() => onEditItem(item, warehouse.id)}
-                                                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-blue-500/50 hover:text-blue-300 transition-colors">
-                                                    <Edit2 size={11} />
-                                                    Editar
+                                        {deleteConfirmId === item.id ? (
+                                            <div className="flex gap-1.5">
+                                                <button onClick={() => setDeleteConfirmId(null)}
+                                                    className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-700 text-slate-400">
+                                                    Cancelar
                                                 </button>
-                                            )}
-                                            <button onClick={() => onTransfer(item, warehouse.id)}
-                                                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
-                                                <ArrowRight size={11} />
-                                                Transferir
-                                            </button>
-                                        </div>
+                                                <button onClick={() => { setDeleteConfirmId(null); onDeleteItem(item); }}
+                                                    className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-semibold">
+                                                    Confirmar
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                {canEditPT && (
+                                                    <button onClick={() => onEditItem(item, warehouse.id)}
+                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-blue-500/50 hover:text-blue-300 transition-colors">
+                                                        <Edit2 size={11} />
+                                                        Editar
+                                                    </button>
+                                                )}
+                                                {isMaster && (
+                                                    <button onClick={() => setDeleteConfirmId(item.id)}
+                                                        className="flex items-center justify-center text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-500 hover:border-rose-500/50 hover:text-rose-400 transition-colors">
+                                                        <Trash2 size={11} />
+                                                    </button>
+                                                )}
+                                                <button onClick={() => onTransfer(item, warehouse.id)}
+                                                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
+                                                    <ArrowRight size={11} />
+                                                    Transferir
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -647,20 +668,39 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
                                         {item.lote && <span className="text-slate-600 text-xs font-mono">{item.lote}</span>}
-                                        <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                                            {canEditPT && (
-                                                <button onClick={() => onEditItem(item, warehouse.id)}
-                                                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-blue-500/50 hover:text-blue-300 transition-colors">
-                                                    <Edit2 size={11} />
-                                                    Editar
+                                        {deleteConfirmId === item.id ? (
+                                            <div className="flex gap-1.5 ml-auto">
+                                                <button onClick={() => setDeleteConfirmId(null)}
+                                                    className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-700 text-slate-400">
+                                                    Cancelar
                                                 </button>
-                                            )}
-                                            <button onClick={() => onTransfer(item, warehouse.id)}
-                                                className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
-                                                <ArrowRight size={11} />
-                                                Transferir
-                                            </button>
-                                        </div>
+                                                <button onClick={() => { setDeleteConfirmId(null); onDeleteItem(item); }}
+                                                    className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-semibold">
+                                                    Confirmar
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                                                {canEditPT && (
+                                                    <button onClick={() => onEditItem(item, warehouse.id)}
+                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-blue-500/50 hover:text-blue-300 transition-colors">
+                                                        <Edit2 size={11} />
+                                                        Editar
+                                                    </button>
+                                                )}
+                                                {isMaster && (
+                                                    <button onClick={() => setDeleteConfirmId(item.id)}
+                                                        className="flex items-center justify-center text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-500 hover:border-rose-500/50 hover:text-rose-400 transition-colors">
+                                                        <Trash2 size={11} />
+                                                    </button>
+                                                )}
+                                                <button onClick={() => onTransfer(item, warehouse.id)}
+                                                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
+                                                    <ArrowRight size={11} />
+                                                    Transferir
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -1059,6 +1099,13 @@ export default function WarehousesPage() {
         setInventoryPT(prev => prev.map(i => i.id === documentId ? { ...i, ...updateData } : i));
     }
 
+    async function handleDeleteInventoryItem(item) {
+        try {
+            await updateDoc(doc(db, 'kroma_inventory_pt', item.id), { active: false });
+            setInventoryPT(prev => prev.filter(i => i.id !== item.id));
+        } catch (e) { alert(e.message); }
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     function countItems(wId) {
@@ -1105,6 +1152,7 @@ export default function WarehousesPage() {
                     onBack={() => setView('list')}
                     onTransfer={(item, warehouseId) => { setTransferItem(item); setTransferWId(warehouseId); }}
                     onEditItem={(item, warehouseId) => { setEditItem(item); setEditItemWId(warehouseId); }}
+                    onDeleteItem={handleDeleteInventoryItem}
                     onInventoryUpdated={handleInventoryUpdated}
                 />
                 {transferItem && (
