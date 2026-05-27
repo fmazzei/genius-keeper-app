@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KROMA — Guía del Operario</title>
+<style>
+  :root {
+    --verde:   #16a34a;
+    --verde-c: #dcfce7;
+    --azul:    #2563eb;
+    --azul-c:  #dbeafe;
+    --ambar:   #d97706;
+    --ambar-c: #fef3c7;
+    --rojo:    #dc2626;
+    --rojo-c:  #fee2e2;
+    --violeta: #7c3aed;
+    --violeta-c: #ede9fe;
+    --gris-os: #1e293b;
+    --gris-me: #475569;
+    --gris-cl: #f1f5f9;
+    --blanco:  #ffffff;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #f8fafc;
+    color: var(--gris-os);
+    font-size: 17px;
+    line-height: 1.6;
+  }
+
+  /* ── PORTADA ── */
+  .portada {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #0c4a6e 100%);
+    color: white;
+    padding: 48px 28px 56px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .portada::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 70% 30%, rgba(99,179,237,0.15) 0%, transparent 60%);
+  }
+  .logo-kroma {
+    font-size: 52px;
+    font-weight: 900;
+    letter-spacing: -2px;
+    background: linear-gradient(90deg, #60a5fa, #34d399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    position: relative;
+  }
+  .portada .subtitulo {
+    font-size: 13px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-top: 4px;
+    position: relative;
+  }
+  .portada .titulo-manual {
+    margin-top: 36px;
+    font-size: 30px;
+    font-weight: 800;
+    line-height: 1.2;
+    position: relative;
+  }
+  .portada .titulo-manual span {
+    display: block;
+    font-size: 18px;
+    font-weight: 400;
+    color: #94a3b8;
+    margin-top: 8px;
+  }
+  .portada .icono-grande {
+    font-size: 80px;
+    margin: 24px 0 0;
+    position: relative;
+  }
+
+  /* ── CONTENIDO ── */
+  .contenido { max-width: 680px; margin: 0 auto; padding: 0 20px 60px; }
+
+  /* ── SECCIÓN ── */
+  .seccion {
+    margin-top: 40px;
+  }
+  .seccion-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    border-radius: 16px 16px 0 0;
+    color: white;
+    font-size: 20px;
+    font-weight: 800;
+  }
+  .seccion-header .num {
+    width: 36px; height: 36px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 900;
+    flex-shrink: 0;
+  }
+  .seccion-header .emoji { font-size: 26px; }
+  .seccion-body {
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 16px 16px;
+    padding: 24px 20px;
+  }
+
+  /* Colores por módulo */
+  .c-verde   { background: var(--verde); }
+  .c-azul    { background: var(--azul); }
+  .c-ambar   { background: var(--ambar); }
+  .c-rojo    { background: var(--rojo); }
+  .c-violeta { background: var(--violeta); }
+  .c-gris    { background: #334155; }
+  .c-teal    { background: #0d9488; }
+  .c-naranja { background: #ea580c; }
+
+  /* ── PASO ── */
+  .paso {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 14px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .paso:last-child { border-bottom: none; padding-bottom: 0; }
+  .paso-num {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 16px;
+    color: white;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .paso-texto { flex: 1; }
+  .paso-texto strong { display: block; font-size: 16px; color: var(--gris-os); margin-bottom: 2px; }
+  .paso-texto p { font-size: 14px; color: var(--gris-me); margin: 0; }
+  .paso-emoji { font-size: 28px; flex-shrink: 0; }
+
+  /* ── CAMPO ── */
+  .campos {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 14px 0;
+  }
+  .campo {
+    background: var(--gris-cl);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .campo .c-icono { font-size: 22px; }
+  .campo .c-texto { font-size: 13px; font-weight: 600; color: var(--gris-os); }
+  .campo .c-sub   { font-size: 12px; color: var(--gris-me); margin-top: 2px; }
+
+  /* ── ALERTA ── */
+  .alerta {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 14px 0;
+  }
+  .alerta-icono { font-size: 22px; flex-shrink: 0; }
+  .alerta-texto { font-size: 14px; }
+  .alerta-texto strong { display: block; font-size: 15px; margin-bottom: 3px; }
+  .alerta-verde   { background: var(--verde-c);   color: #14532d; border-left: 4px solid var(--verde); }
+  .alerta-ambar   { background: var(--ambar-c);   color: #78350f; border-left: 4px solid var(--ambar); }
+  .alerta-rojo    { background: var(--rojo-c);    color: #7f1d1d; border-left: 4px solid var(--rojo); }
+  .alerta-azul    { background: var(--azul-c);    color: #1e3a8a; border-left: 4px solid var(--azul); }
+  .alerta-violeta { background: var(--violeta-c); color: #4c1d95; border-left: 4px solid var(--violeta); }
+
+  /* ── BLOQUE DE PROCESO ── */
+  .bloque-proceso {
+    border-radius: 14px;
+    margin: 12px 0;
+    overflow: hidden;
+  }
+  .bloque-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    color: white;
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .bloque-body {
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 14px 14px;
+    padding: 16px;
+  }
+  .bloque-body ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .bloque-body ul li {
+    padding: 7px 0;
+    font-size: 14px;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--gris-os);
+  }
+  .bloque-body ul li:last-child { border-bottom: none; }
+  .bloque-body ul li::before { content: '→'; color: #94a3b8; font-weight: 700; flex-shrink: 0; }
+
+  /* ── GUION ── */
+  .guion-bloque {
+    background: var(--gris-os);
+    color: white;
+    border-radius: 16px;
+    margin: 16px 0;
+    overflow: hidden;
+  }
+  .guion-hora {
+    background: rgba(255,255,255,0.1);
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .guion-lista { padding: 4px 0 12px; }
+  .guion-item {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 10px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .guion-item:last-child { border-bottom: none; }
+  .guion-item .gi-num {
+    width: 26px; height: 26px;
+    background: #3b82f6;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 900;
+    flex-shrink: 0;
+  }
+  .guion-item .gi-texto { font-size: 14px; line-height: 1.5; }
+  .guion-item .gi-texto b { color: #60a5fa; }
+  .guion-item .gi-emoji { font-size: 20px; flex-shrink: 0; }
+
+  /* ── TABLA ALERTAS ── */
+  .tabla-alertas { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  .tabla-alertas th {
+    background: var(--gris-os);
+    color: white;
+    padding: 10px 12px;
+    font-size: 13px;
+    text-align: left;
+    font-weight: 700;
+  }
+  .tabla-alertas td {
+    padding: 10px 12px;
+    font-size: 13px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+  .tabla-alertas tr:nth-child(even) td { background: var(--gris-cl); }
+  .tabla-alertas th:first-child { border-radius: 10px 0 0 0; }
+  .tabla-alertas th:last-child  { border-radius: 0 10px 0 0; }
+
+  /* ── BADGE ── */
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 99px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .badge-verde   { background: var(--verde-c);   color: #15803d; }
+  .badge-ambar   { background: var(--ambar-c);   color: #92400e; }
+  .badge-rojo    { background: var(--rojo-c);    color: #b91c1c; }
+  .badge-azul    { background: var(--azul-c);    color: #1d4ed8; }
+  .badge-violeta { background: var(--violeta-c); color: #6d28d9; }
+
+  /* ── SEPARADOR ── */
+  .sep { height: 2px; background: linear-gradient(90deg, #e2e8f0, transparent); margin: 36px 0 0; border-radius: 1px; }
+
+  /* ── REGLA DE ORO ── */
+  .regla-oro {
+    background: linear-gradient(135deg, #78350f, #b45309);
+    color: white;
+    border-radius: 16px;
+    padding: 20px 22px;
+    margin: 14px 0;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .regla-oro .ro-icono { font-size: 30px; flex-shrink: 0; }
+  .regla-oro .ro-texto { }
+  .regla-oro .ro-texto strong { display: block; font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+  .regla-oro .ro-texto p { font-size: 14px; opacity: 0.9; }
+
+  /* ── PASO GRANDE (guion) ── */
+  .paso-grande {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+    background: var(--gris-cl);
+    border-radius: 14px;
+    margin: 8px 0;
+  }
+  .paso-grande .pg-num {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; font-weight: 900;
+    color: white;
+    flex-shrink: 0;
+  }
+  .paso-grande .pg-emoji { font-size: 30px; flex-shrink: 0; }
+  .paso-grande .pg-texto strong { display: block; font-size: 16px; font-weight: 700; }
+  .paso-grande .pg-texto p { font-size: 13px; color: var(--gris-me); margin: 2px 0 0; }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--gris-os);
+    color: #64748b;
+    text-align: center;
+    padding: 24px;
+    font-size: 13px;
+    margin-top: 60px;
+  }
+  footer strong { color: #94a3b8; }
+
+  /* ── PRINT ── */
+  @media print {
+    body { font-size: 14px; background: white; }
+    .portada { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .seccion-header, .guion-bloque, .regla-oro { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .seccion { page-break-inside: avoid; }
+    footer { margin-top: 24px; }
+  }
+
+  @media (max-width: 480px) {
+    .campos { grid-template-columns: 1fr; }
+    .portada .titulo-manual { font-size: 24px; }
+    .logo-kroma { font-size: 42px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════
+     PORTADA
+════════════════════════════════════════════════ -->
+<div class="portada">
+  <div class="logo-kroma">KROMA</div>
+  <div class="subtitulo">Sistema de producción Lacteoca</div>
+  <div class="titulo-manual">
+    Guía del Operario
+    <span>Todo lo que necesitas saber para trabajar con KROMA</span>
+  </div>
+  <div class="icono-grande">🧀</div>
+</div>
+
+<div class="contenido">
+
+<!-- ═══════════════════════════════════════════════
+     INTRO
+════════════════════════════════════════════════ -->
+<div class="seccion">
+  <div class="seccion-header c-gris">
+    <span class="emoji">💡</span>
+    <span>¿Para qué sirve KROMA?</span>
+  </div>
+  <div class="seccion-body">
+    <p style="font-size:15px; color:var(--gris-me); margin-bottom:16px;">
+      KROMA es la libreta de producción digital de Lacteoca. Reemplaza el cuaderno de papel y calcula automáticamente las cantidades de cada ingrediente según los litros de leche que entraron ese día.
+    </p>
+
+    <div class="alerta alerta-verde">
+      <span class="alerta-icono">✅</span>
+      <div class="alerta-texto">
+        <strong>KROMA hace por ti:</strong>
+        Calcula cuánto cuajo, calcio y fermento necesitas · Genera el código del lote · Avisa cuando hay poco stock · Guarda el historial permanente de cada queso.
+      </div>
+    </div>
+
+    <div class="alerta alerta-ambar">
+      <span class="alerta-icono">👆</span>
+      <div class="alerta-texto">
+        <strong>Tú decides:</strong>
+        Los valores reales que mides en planta · Cuándo completar cada paso · La calidad del producto.
+      </div>
+    </div>
+
+    <div class="regla-oro">
+      <span class="ro-icono">⭐</span>
+      <div class="ro-texto">
+        <strong>Regla de oro</strong>
+        <p>Anota siempre lo que realmente pasó, no lo que debería haber pasado. KROMA sirve de guía pero tú eres el que manda en la planta.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     MÓDULO 1: LECHE
+════════════════════════════════════════════════ -->
+<div class="sep"></div>
+<div class="seccion">
+  <div class="seccion-header c-azul">
+    <span class="num">1</span>
+    <span class="emoji">🥛</span>
+    <span>Registrar la leche que llegó</span>
+  </div>
+  <div class="seccion-body">
+
+    <div class="alerta alerta-azul">
+      <span class="alerta-icono">📌</span>
+      <div class="alerta-texto">
+        <strong>Hazlo primero</strong>
+        Antes de arrancar cualquier producción, debes registrar la leche que llegó ese día.
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num c-azul" style="background:var(--azul)">1</div>
+      <div class="paso-texto">
+        <strong>Entra al módulo "Leche"</strong>
+        <p>Toca el ícono del menú ≡ y selecciona <b>Leche</b></p>
+      </div>
+      <span class="paso-emoji">🥛</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--azul)">2</div>
+      <div class="paso-texto">
+        <strong>Toca el botón azul "+ Nueva"</strong>
+        <p>Está arriba a la derecha de la pantalla</p>
+      </div>
+      <span class="paso-emoji">➕</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--azul)">3</div>
+      <div class="paso-texto">
+        <strong>Selecciona el proveedor</strong>
+        <p>El nombre del productor que trajo la leche hoy</p>
+      </div>
+      <span class="paso-emoji">👨‍🌾</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--azul)">4</div>
+      <div class="paso-texto">
+        <strong>Llena estos datos</strong>
+      </div>
+    </div>
+
+    <div class="campos">
+      <div class="campo">
+        <span class="c-icono">📏</span>
+        <div>
+          <div class="c-texto">Litros</div>
+          <div class="c-sub">Lo que midiste en el bidón</div>
+        </div>
+      </div>
+      <div class="campo">
+        <span class="c-icono">🌡️</span>
+        <div>
+          <div class="c-texto">Temperatura</div>
+          <div class="c-sub">Lo que marcó el termómetro</div>
+        </div>
+      </div>
+      <div class="campo">
+        <span class="c-icono">🔬</span>
+        <div>
+          <div class="c-texto">pH</div>
+          <div class="c-sub">Lectura del pHmetro</div>
+        </div>
+      </div>
+      <div class="campo">
+        <span class="c-icono">⚖️</span>
+        <div>
+          <div class="c-texto">Densidad</div>
+          <div class="c-sub">Lectura del lactodensímetro</div>
+        </div>
+      </div>
+      <div class="campo">
+        <span class="c-icono">🔭</span>
+        <div>
+          <div class="c-texto">°Brix</div>
+          <div class="c-sub">Lectura del refractómetro</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--azul)">5</div>
+      <div class="paso-texto">
+        <strong>¿A dónde va la leche?</strong>
+        <p>Tienes que elegir una de las dos opciones</p>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin: 8px 0 16px;">
+      <div style="background:#dbeafe; border-radius:12px; padding:14px; text-align:center; border:2px solid #93c5fd;">
+        <div style="font-size:28px;">🧊</div>
+        <div style="font-weight:800; font-size:14px; color:#1e3a8a; margin-top:6px;">Al Tanque</div>
+        <div style="font-size:12px; color:#3b82f6; margin-top:4px;">La guardan fría para usar después</div>
+      </div>
+      <div style="background:#fef3c7; border-radius:12px; padding:14px; text-align:center; border:2px solid #fcd34d;">
+        <div style="font-size:28px;">⚡</div>
+        <div style="font-weight:800; font-size:14px; color:#78350f; margin-top:6px;">Directo a producción</div>
+        <div style="font-size:12px; color:#d97706; margin-top:4px;">La usan el mismo día</div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--azul)">6</div>
+      <div class="paso-texto">
+        <strong>Toca "Guardar recepción"</strong>
+        <p>Listo, la leche queda registrada</p>
+      </div>
+      <span class="paso-emoji">💾</span>
+    </div>
+
+    <div class="alerta alerta-ambar">
+      <span class="alerta-icono">⏰</span>
+      <div class="alerta-texto">
+        <strong>Tienes 10 minutos para corregir</strong>
+        Si te equivocaste en algún número, tienes 10 minutos para volver y corregirlo. Después de eso solo puede editar el administrador.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     MÓDULO 2: INICIAR PRODUCCIÓN
+════════════════════════════════════════════════ -->
+<div class="sep"></div>
+<div class="seccion">
+  <div class="seccion-header c-verde">
+    <span class="num">2</span>
+    <span class="emoji">▶️</span>
+    <span>Iniciar una producción</span>
+  </div>
+  <div class="seccion-body">
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--verde)">1</div>
+      <div class="paso-texto">
+        <strong>Ve a "Producción Diaria"</strong>
+        <p>Toca el ícono ≡ → Producción Diaria</p>
+      </div>
+      <span class="paso-emoji">🏭</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--verde)">2</div>
+      <div class="paso-texto">
+        <strong>Toca el botón verde "+ Nueva"</strong>
+      </div>
+      <span class="paso-emoji">➕</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--verde)">3</div>
+      <div class="paso-texto">
+        <strong>Elige el queso que vas a hacer</strong>
+        <p>Busca en la lista y toca el nombre del producto</p>
+      </div>
+      <span class="paso-emoji">🧀</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--verde)">4</div>
+      <div class="paso-texto">
+        <strong>Selecciona la leche</strong>
+        <p>Toca las recepciones de leche que vas a usar hoy. Puedes seleccionar más de una si combinaste entregas.</p>
+      </div>
+      <span class="paso-emoji">🥛</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--verde)">5</div>
+      <div class="paso-texto">
+        <strong>Toca "▶ Iniciar"</strong>
+        <p>KROMA genera el código del lote automáticamente y arranca el proceso</p>
+      </div>
+      <span class="paso-emoji">🚀</span>
+    </div>
+
+    <div class="alerta alerta-verde">
+      <span class="alerta-icono">🏷️</span>
+      <div class="alerta-texto">
+        <strong>¿Qué es el código de lote?</strong>
+        Es el número único de identificación del queso. KROMA lo genera solo usando las iniciales del producto + fecha + hora. Ejemplo: <b>LCO20260527-0610</b>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     MÓDULO 3: BLOQUES DE PROCESO
+════════════════════════════════════════════════ -->
+<div class="sep"></div>
+<div class="seccion">
+  <div class="seccion-header c-naranja">
+    <span class="num">3</span>
+    <span class="emoji">⚙️</span>
+    <span>Los pasos del proceso (bloques)</span>
+  </div>
+  <div class="seccion-body">
+
+    <p style="font-size:14px; color:var(--gris-me); margin-bottom:16px;">
+      KROMA te muestra <b>un paso a la vez</b>. Cuando terminas uno, aparece el siguiente. Los pasos completados se ven en <span style="color:var(--verde); font-weight:700;">verde con ✓</span>.
+    </p>
+
+    <!-- PASTEURIZACIÓN -->
+    <div class="bloque-proceso">
+      <div class="bloque-header" style="background:#c2410c;">
+        <span style="font-size:22px;">🔥</span>
+        <span>PASTEURIZACIÓN</span>
+        <span class="badge badge-ambar" style="margin-left:auto; font-size:11px;">Siempre primero</span>
+      </div>
+      <div class="bloque-body">
+        <ul>
+          <li><b>Temperatura máxima alcanzada</b> — lo que marcó el termómetro en el punto más alto</li>
+          <li><b>Temperatura de salida</b> — temperatura al salir del pasteurizador</li>
+          <li><b>Merma</b> — selecciona entre 8 y 15 litros (lo que quedó pegado en el equipo)</li>
+        </ul>
+        <div class="alerta alerta-verde" style="margin-top:12px;">
+          <span class="alerta-icono">🧮</span>
+          <div class="alerta-texto">KROMA calcula solo: <b>Litros netos = litros recibidos − merma</b>. Todas las dosis del proceso se calculan sobre ese número.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CUAJADO -->
+    <div class="bloque-proceso">
+      <div class="bloque-header" style="background:#b45309;">
+        <span style="font-size:22px;">🧪</span>
+        <span>CUAJADO</span>
+        <span class="badge" style="background:rgba(255,255,255,0.2); color:white; margin-left:auto; font-size:11px;">El más importante</span>
+      </div>
+      <div class="bloque-body">
+        <p style="font-size:13px; color:var(--gris-me); margin-bottom:10px;">Aquí agregas todos los ingredientes. KROMA te dice la cantidad teórica y tú ingresas lo que realmente pusiste.</p>
+        <ul>
+          <li><b>Temperatura pre-cuajado</b> — temperatura de la leche antes de agregar nada</li>
+          <li><b>pH pre-cuajado</b> — lectura del pHmetro</li>
+          <li><b>Cloruro de Calcio (CaCl₂)</b> — KROMA calcula los ml de solución. Ingresa lo que añadiste.</li>
+          <li><b>Conservante</b> — cantidad real añadida</li>
+          <li><b>Cuajo</b> — cantidad real añadida</li>
+          <li><b>Fermento</b> — cantidad real añadida</li>
+          <li><b>Tiempo de coagulación real</b> — cuánto duró realmente</li>
+          <li><b>pH de salida</b> — lectura final antes de pasar al siguiente paso</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- CORTE / DESUERADO / MOLDEADO -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:10px 0;">
+      <div style="background:var(--gris-cl); border-radius:12px; padding:14px;">
+        <div style="font-size:22px; margin-bottom:6px;">✂️</div>
+        <div style="font-weight:800; font-size:14px; margin-bottom:6px;">CORTE DE CUAJADA</div>
+        <div style="font-size:12px; color:var(--gris-me);">Tamaño del grano · Temperatura · pH de acidificación</div>
+      </div>
+      <div style="background:var(--gris-cl); border-radius:12px; padding:14px;">
+        <div style="font-size:22px; margin-bottom:6px;">💧</div>
+        <div style="font-weight:800; font-size:14px; margin-bottom:6px;">DESUERADO</div>
+        <div style="font-size:12px; color:var(--gris-me);">Temperatura · Tiempo real · pH post-desuerado</div>
+      </div>
+      <div style="background:var(--gris-cl); border-radius:12px; padding:14px;">
+        <div style="font-size:22px; margin-bottom:6px;">🫙</div>
+        <div style="font-weight:800; font-size:14px; margin-bottom:6px;">MOLDEADO</div>
+        <div style="font-size:12px; color:var(--gris-me);">Tiempo de cada vuelta · pH · Observaciones</div>
+      </div>
+      <div style="background:var(--gris-cl); border-radius:12px; padding:14px;">
+        <div style="font-size:22px; margin-bottom:6px;">🗜️</div>
+        <div style="font-weight:800; font-size:14px; margin-bottom:6px;">PRENSADO</div>
+        <div style="font-size:12px; color:var(--gris-me);">Presión real (PSI) · Tiempo por vuelta</div>
+      </div>
+    </div>
+
+    <!-- SALADO -->
+    <div class="bloque-proceso">
+      <div class="bloque-header" style="background:#065f46;">
+        <span style="font-size:22px;">🧂</span>
+        <span>SALADO</span>
+      </div>
+      <div class="bloque-body">
+        <ul>
+          <li><b>Kg de masa a salar</b> — pesa la cuajada antes de salar</li>
+          <li><b>Método: En masa/superficie</b> → KROMA calcula la sal teórica. Tú ingresas la real.</li>
+          <li><b>Método: Salmuera</b> → primero debes ingresar temperatura, titulación y salinidad de la salmuera</li>
+        </ul>
+        <div class="alerta alerta-rojo" style="margin-top:12px;">
+          <span class="alerta-icono">🔒</span>
+          <div class="alerta-texto">
+            <strong>Salmuera bloqueada</strong>
+            Si usas salmuera, el proceso NO avanza hasta que ingreses los 3 parámetros de análisis: temperatura, titulación (°D) y salinidad (°Bé).
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- EMPAQUE -->
+    <div class="bloque-proceso">
+      <div class="bloque-header" style="background:#1d4ed8;">
+        <span style="font-size:22px;">📦</span>
+        <span>EMPAQUE</span>
+        <span class="badge" style="background:rgba(255,255,255,0.2); color:white; margin-left:auto; font-size:11px;">Último paso</span>
+      </div>
+      <div class="bloque-body">
+        <ul>
+          <li><b>Kg de queso producido</b> — pesa todo antes de empacar</li>
+          <li><b>pH del queso</b> — lectura final del pHmetro</li>
+          <li><b>¿Qué harás?</b> — Empacar todo / Guardar sin envasar / Parte y parte</li>
+          <li><b>Presentaciones</b> — cuántas unidades de cada tamaño (250g, 500g, 1kg…)</li>
+          <li><b>Fecha de vencimiento</b> del lote</li>
+          <li><b>Aspersión de conservante</b> — si aplica, ingresa envases rociados y gramos reales</li>
+        </ul>
+        <div class="alerta alerta-verde" style="margin-top:12px;">
+          <span class="alerta-icono">✅</span>
+          <div class="alerta-texto">
+            Al tocar <b>"✓ Cerrar Producción"</b>, KROMA registra el lote en el inventario de producto terminado y notifica al administrador.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     HOLD
+════════════════════════════════════════════════ -->
+<div class="sep"></div>
+<div class="seccion">
+  <div class="seccion-header c-ambar">
+    <span class="num">4</span>
+    <span class="emoji">⏸️</span>
+    <span>Pausar y continuar al día siguiente</span>
+  </div>
+  <div class="seccion-body">
+
+    <p style="font-size:14px; color:var(--gris-me); margin-bottom:16px;">
+      El queso a veces necesita horas o días en reposo. KROMA tiene el modo <b>Hold</b> para pausar el proceso y retomarlo después.
+    </p>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--ambar)">1</div>
+      <div class="paso-texto">
+        <strong>Activa "Poner en Hold"</strong>
+        <p>En los bloques de larga duración (Cuajado, Desuerado, Maduración) verás este botón. Tócalo — se pone en color naranja.</p>
+      </div>
+      <span class="paso-emoji">⏸️</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--ambar)">2</div>
+      <div class="paso-texto">
+        <strong>Elige cuándo reanudas</strong>
+        <p>Selecciona la fecha y hora en que vas a continuar</p>
+      </div>
+      <span class="paso-emoji">📅</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--ambar)">3</div>
+      <div class="paso-texto">
+        <strong>Toca "Completar y poner en Hold"</strong>
+        <p>La planilla queda pausada. En la lista verás la tarjeta con la fecha de reanudación.</p>
+      </div>
+      <span class="paso-emoji">💤</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--ambar)">4</div>
+      <div class="paso-texto">
+        <strong>Al día siguiente: toca "Reanudar"</strong>
+        <p>KROMA te muestra cuánto tiempo pasó desde la pausa y continúas donde quedaste.</p>
+      </div>
+      <span class="paso-emoji">▶️</span>
+    </div>
+
+    <div class="alerta alerta-ambar">
+      <span class="alerta-icono">⚠️</span>
+      <div class="alerta-texto">
+        <strong>Importante</strong>
+        Cuando pones el proceso en Hold para el día siguiente, KROMA te pide que reportes los consumibles antes de salir. No lo dejes para mañana.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     CIERRE DE JORNADA
+════════════════════════════════════════════════ -->
+<div class="sep"></div>
+<div class="seccion">
+  <div class="seccion-header c-teal">
+    <span class="num">5</span>
+    <span class="emoji">🧹</span>
+    <span>Cierre del día — consumibles</span>
+  </div>
+  <div class="seccion-body">
+
+    <div class="alerta alerta-azul">
+      <span class="alerta-icono">🕐</span>
+      <div class="alerta-texto">
+        <strong>¿Cuándo aparece?</strong>
+        KROMA lo abre automáticamente cuando pones el proceso en Hold para el día siguiente — antes de que te vayas de la planta.
+      </div>
+    </div>
+
+    <p style="font-size:14px; color:var(--gris-me); margin:14px 0;">
+      Registra lo que usaste ese día: jabón, cloro, soda cáustica, guantes, tapabocas, etc.
+    </p>
+
+    <div class="paso">
+      <div class="paso-num" style="background:#0d9488)">1</div>
+      <div class="paso-texto">
+        <strong>Aparece una lista con todos los consumibles</strong>
+      </div>
+      <span class="paso-emoji">📋</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:#0d9488">2</div>
+      <div class="paso-texto">
+        <strong>Toca "+" para sumar lo que usaste</strong>
+        <p>Los que no usaste déjalos en 0</p>
+      </div>
+      <span class="paso-emoji">➕</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:#0d9488">3</div>
+      <div class="paso-texto">
+        <strong>Toca "Confirmar y continuar"</strong>
+        <p>KROMA descuenta del inventario automáticamente</p>
+      </div>
+      <span class="paso-emoji">✅</span>
+    </div>
+
+    <div class="regla-oro">
+      <span class="ro-icono">🧠</span>
+      <div class="ro-texto">
+        <strong>¿Por qué hacerlo ahora y no mañana?</strong>
+        <p>Mañana ya nadie recuerda cuántos guantes se usaron ni cuánto cloro se gastó. Hazlo mientras todavía estás en la planta.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     REPORTE Y FIRMAS
+════════════════════════════════════════════════ -->
+<div class="sep"></div>
+<div class="seccion">
+  <div class="seccion-header c-violeta">
+    <span class="num">6</span>
+    <span class="emoji">📋</span>
+    <span>Reporte del lote y firmas</span>
+  </div>
+  <div class="seccion-body">
+
+    <p style="font-size:14px; color:var(--gris-me); margin-bottom:16px;">
+      Al cerrar la producción, KROMA genera automáticamente el reporte completo del lote.
+    </p>
+
+    <div style="background:var(--gris-cl); border-radius:14px; padding:16px; margin-bottom:16px;">
+      <p style="font-weight:700; font-size:14px; margin-bottom:10px;">El reporte incluye:</p>
+      <div style="display:grid; gap:6px;">
+        <div style="display:flex; gap:8px; align-items:center; font-size:13px;">🏷️ <span>Código de lote</span></div>
+        <div style="display:flex; gap:8px; align-items:center; font-size:13px;">🥛 <span>Recepción de leche (proveedor, litros, parámetros)</span></div>
+        <div style="display:flex; gap:8px; align-items:center; font-size:13px;">⚙️ <span>Cada paso del proceso (valores reales vs. planificados)</span></div>
+        <div style="display:flex; gap:8px; align-items:center; font-size:13px;">⚖️ <span>Kg producidos y rendimiento L/kg</span></div>
+        <div style="display:flex; gap:8px; align-items:center; font-size:13px;">📦 <span>Detalle de empaque por presentación</span></div>
+        <div style="display:flex; gap:8px; align-items:center; font-size:13px;">✍️ <span>Firmas de responsables</span></div>
+      </div>
+    </div>
+
+    <p style="font-weight:700; font-size:15px; margin-bottom:10px;">Firmas requeridas:</p>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
+      <div style="background:var(--violeta-c); border-radius:12px; padding:16px; text-align:center; border:2px solid #c4b5fd;">
+        <div style="font-size:26px; margin-bottom:6px;">👨‍🍳</div>
+        <div style="font-weight:800; font-size:13px; color:#4c1d95;">Maestro Quesero</div>
+        <div style="font-size:12px; color:#7c3aed; margin-top:4px;">Tú — toca el botón de firma</div>
+      </div>
+      <div style="background:#dbeafe; border-radius:12px; padding:16px; text-align:center; border:2px solid #93c5fd;">
+        <div style="font-size:26px; margin-bottom:6px;">🏪</div>
+        <div style="font-weight:800; font-size:13px; color:#1e3a8a;">Resp. Almacén PT</div>
+        <div style="font-size:12px; color:#2563eb; margin-top:4px;">La persona que recibe — escribe su nombre</div>
+      </div>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--violeta)">1</div>
+      <div class="paso-texto">
+        <strong>Toca "Firmar como Maestro Quesero"</strong>
+        <p>Confirmas que tú hiciste ese lote</p>
+      </div>
+      <span class="paso-emoji">✍️</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--violeta)">2</div>
+      <div class="paso-texto">
+        <strong>El de almacén escribe su nombre y firma</strong>
+        <p>Confirma que recibió el producto</p>
+      </div>
+      <span class="paso-emoji">📥</span>
+    </div>
+
+    <div class="paso">
+      <div class="paso-num" style="background:var(--violeta)">3</div>
+      <div class="paso-texto">
+        <strong>Comparte el reporte si te lo piden</strong>
+        <p>Toca el botón "Compartir" → se puede enviar por WhatsApp o copiar al portapapeles</p>
+      </div>
+      <span class="paso-emoji">📤</span>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     GUION DEL DÍA
+════════════════════════════════════════════════ -->
+<div class="sep"></div>
+<div class="seccion">
+  <div class="seccion-header" style="background:linear-gradient(90deg,#1e293b,#334155);">
+    <span class="emoji">📅</span>
+    <span>Guion de un día de trabajo</span>
+  </div>
+  <div class="seccion-body" style="padding:0;">
+
+    <div class="guion-bloque">
+      <div class="guion-hora">🌅 Al llegar a la planta</div>
+      <div class="guion-lista">
+        <div class="guion-item">
+          <div class="gi-num">1</div>
+          <span class="gi-emoji">📱</span>
+          <div class="gi-texto">Abre KROMA y selecciona <b>tu usuario</b></div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">2</div>
+          <span class="gi-emoji">⏸️</span>
+          <div class="gi-texto">Si hay un lote <b>En Hold</b> que reanuda hoy → tócalo → <b>Reanudar</b> → continúa desde donde quedaste</div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">3</div>
+          <span class="gi-emoji">🥛</span>
+          <div class="gi-texto">Si llegó leche hoy → <b>Módulo Leche → + Nueva</b> → registra todos los parámetros</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="guion-bloque">
+      <div class="guion-hora">🏭 Arranque de producción nueva</div>
+      <div class="guion-lista">
+        <div class="guion-item">
+          <div class="gi-num">4</div>
+          <span class="gi-emoji">➕</span>
+          <div class="gi-texto"><b>Producción Diaria → + Nueva</b></div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">5</div>
+          <span class="gi-emoji">🧀</span>
+          <div class="gi-texto">Elige la <b>Ficha del queso</b> que vas a elaborar</div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">6</div>
+          <span class="gi-emoji">✅</span>
+          <div class="gi-texto">Marca la leche que vas a usar → confirma los litros → <b>▶ Iniciar</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="guion-bloque">
+      <div class="guion-hora">🔥 Pasteurización</div>
+      <div class="guion-lista">
+        <div class="guion-item">
+          <div class="gi-num">7</div>
+          <span class="gi-emoji">🌡️</span>
+          <div class="gi-texto">Anota la <b>temperatura máxima</b> que marcó el equipo</div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">8</div>
+          <span class="gi-emoji">❄️</span>
+          <div class="gi-texto">Anota la <b>temperatura de salida</b></div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">9</div>
+          <span class="gi-emoji">📉</span>
+          <div class="gi-texto">Selecciona la <b>merma</b> (8–15 L) → KROMA calcula los litros netos</div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">10</div>
+          <span class="gi-emoji">✅</span>
+          <div class="gi-texto">Toca <b>✓ Completar bloque</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="guion-bloque">
+      <div class="guion-hora">🧪 Cuajado (el paso más largo)</div>
+      <div class="guion-lista">
+        <div class="guion-item">
+          <div class="gi-num">11</div>
+          <span class="gi-emoji">🌡️</span>
+          <div class="gi-texto">Mide la temperatura y el pH de la leche <b>antes de agregar nada</b></div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">12</div>
+          <span class="gi-emoji">🧴</span>
+          <div class="gi-texto">Agrega cada ingrediente en orden. Para cada uno: ingresa la <b>cantidad real añadida</b></div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">13</div>
+          <span class="gi-emoji">⏱️</span>
+          <div class="gi-texto">Espera el tiempo de coagulación → anota el <b>tiempo real</b> y el <b>pH de salida</b></div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">14</div>
+          <span class="gi-emoji">⏸️</span>
+          <div class="gi-texto">Si el cuajado termina mañana → activa <b>Hold</b> → elige la fecha/hora → Completar</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="guion-bloque">
+      <div class="guion-hora">🌙 Al salir de la planta (si hay Hold)</div>
+      <div class="guion-lista">
+        <div class="guion-item">
+          <div class="gi-num">15</div>
+          <span class="gi-emoji">🧹</span>
+          <div class="gi-texto">KROMA abre el <b>Cierre de Jornada</b> automáticamente</div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">16</div>
+          <span class="gi-emoji">🧼</span>
+          <div class="gi-texto">Registra: jabón, cloro, soda, guantes, tapabocas, etc. → <b>Confirmar y continuar</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="guion-bloque">
+      <div class="guion-hora">📦 Día del empaque</div>
+      <div class="guion-lista">
+        <div class="guion-item">
+          <div class="gi-num">17</div>
+          <span class="gi-emoji">⚖️</span>
+          <div class="gi-texto">Pesa el queso total → ingresa los <b>kg producidos</b></div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">18</div>
+          <span class="gi-emoji">📦</span>
+          <div class="gi-texto">Selecciona las presentaciones → ingresa cuántas unidades de cada una</div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">19</div>
+          <span class="gi-emoji">🗓️</span>
+          <div class="gi-texto">Ingresa la <b>fecha de vencimiento</b> del lote</div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">20</div>
+          <span class="gi-emoji">🌿</span>
+          <div class="gi-texto">Si hay aspersión de natamicina: ingresa envases rociados y gramos reales</div>
+        </div>
+        <div class="guion-item">
+          <div class="gi-num">21</div>
+          <span class="gi-emoji">🔒</span>
+          <div class="gi-texto">Toca <b>✓ Cerrar Producción</b> → firma el reporte → el de almacén firma también</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     ALERTAS COMUNES
+════════════════════════════════════════════════ -->
+<div class="sep"></div>
+<div class="seccion">
+  <div class="seccion-header c-rojo">
+    <span class="emoji">🚨</span>
+    <span>¿Qué hago si veo esto en la pantalla?</span>
+  </div>
+  <div class="seccion-body" style="padding:0 0 4px;">
+    <table class="tabla-alertas">
+      <thead>
+        <tr>
+          <th>Lo que ves</th>
+          <th>Qué significa</th>
+          <th>Qué hacer</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>🔒 <b>"Completa los 3 parámetros de salmuera"</b></td>
+          <td>Faltan datos de la salmuera</td>
+          <td>Haz el análisis y entra temperatura, titulación y salinidad</td>
+        </tr>
+        <tr>
+          <td>⚠️ <b>"Stock bajo: [nombre del insumo]"</b></td>
+          <td>Ese insumo está casi agotado</td>
+          <td>Avisa al administrador para que haga el pedido</td>
+        </tr>
+        <tr>
+          <td>⏸️ <b>"En Hold — Reanuda: [fecha]"</b></td>
+          <td>El proceso está pausado</td>
+          <td>No hay nada que hacer hasta esa fecha. Reanuda cuando llegues.</td>
+        </tr>
+        <tr>
+          <td>⚠️ <b>"Pendiente de empacar — X días"</b></td>
+          <td>Hay queso en cava sin empacar</td>
+          <td>Empaca lo antes posible. Toca la tarjeta → "Finalizar empaque"</td>
+        </tr>
+        <tr>
+          <td>🔔 <b>"X litros de leche liberados"</b></td>
+          <td>Cancelaron un proceso y la leche quedó libre</td>
+          <td>Inicia un nuevo proceso con esa leche si corresponde</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     REGLAS DE ORO
+════════════════════════════════════════════════ -->
+<div class="sep"></div>
+<div class="seccion">
+  <div class="seccion-header" style="background:linear-gradient(90deg,#78350f,#b45309);">
+    <span class="emoji">⭐</span>
+    <span>Las 5 reglas de oro</span>
+  </div>
+  <div class="seccion-body">
+    <div style="display:grid; gap:12px;">
+
+      <div class="regla-oro">
+        <span class="ro-icono">1️⃣</span>
+        <div class="ro-texto">
+          <strong>Anota siempre el valor real</strong>
+          <p>No lo que "debería ser". Si el termómetro marcó 71°C, escribe 71°C — aunque el plan decía 72°C.</p>
+        </div>
+      </div>
+
+      <div class="regla-oro">
+        <span class="ro-icono">2️⃣</span>
+        <div class="ro-texto">
+          <strong>Registra la leche antes de producir</strong>
+          <p>Sin leche registrada, KROMA no puede arrancar el proceso.</p>
+        </div>
+      </div>
+
+      <div class="regla-oro">
+        <span class="ro-icono">3️⃣</span>
+        <div class="ro-texto">
+          <strong>El cierre de jornada es antes de salir</strong>
+          <p>No mañana. Ahora. Mientras todavía recuerdas cuánto jabón y cloro usaste.</p>
+        </div>
+      </div>
+
+      <div class="regla-oro">
+        <span class="ro-icono">4️⃣</span>
+        <div class="ro-texto">
+          <strong>Nunca cierres un proceso sin pesar el queso</strong>
+          <p>El rendimiento (L/kg) es el dato más importante para gerencia. No te saltes ese campo.</p>
+        </div>
+      </div>
+
+      <div class="regla-oro">
+        <span class="ro-icono">5️⃣</span>
+        <div class="ro-texto">
+          <strong>Si algo no cuadra, avisa antes de continuar</strong>
+          <p>El historial de KROMA es permanente. Mejor preguntar que registrar algo incorrecto.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</div><!-- /contenido -->
+
+<footer>
+  <strong>KROMA ERP</strong> — Lacteoca &nbsp;·&nbsp; Guía del Operario &nbsp;·&nbsp; Mayo 2026<br>
+  <span style="font-size:11px; margin-top:6px; display:block;">Esta guía aplica para el sistema KROMA versión actual. Para dudas, consulta con el administrador del sistema.</span>
+</footer>
+
+</body>
+</html>
