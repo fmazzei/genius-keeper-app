@@ -1,11 +1,11 @@
 // RUTA: src/Pages/PosList.jsx
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { PlusCircle, ChevronDown, MapPin } from 'lucide-react';
+import { PlusCircle, ChevronDown, MapPin, ChevronLeft } from 'lucide-react';
 import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 
-const PosList = ({ posList, onSelectPos }) => {
+const PosList = ({ posList, onSelectPos, onBack, title = 'Puntos de Venta' }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [openCategories, setOpenCategories] = useState([]);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -50,8 +50,13 @@ const PosList = ({ posList, onSelectPos }) => {
     return (
         <div className="min-h-full w-full bg-slate-50 p-4 md:p-6">
             <div className="max-w-4xl mx-auto">
+                {onBack && (
+                    <button onClick={onBack} className="flex items-center gap-1 text-slate-500 hover:text-brand-blue mb-4 font-medium">
+                        <ChevronLeft size={20} /> Volver
+                    </button>
+                )}
                 <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-                    <h3 className="text-3xl font-bold text-slate-800">Puntos de Venta</h3>
+                    <h3 className="text-3xl font-bold text-slate-800">{title}</h3>
                     <button onClick={() => setIsAddModalOpen(true)} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-brand-yellow text-black font-bold px-4 py-2 rounded-lg hover:bg-opacity-90 shadow-md transition-transform transform hover:scale-105">
                         <PlusCircle size={20} /> Agregar Nuevo
                     </button>

@@ -76,7 +76,7 @@ const PedidoForm = ({ pos, selectedReporter, onBack }) => {
         }
         setSaving(true);
         try {
-            await addDoc(collection(db, 'pedidos'), {
+            await addDoc(collection(db, 'despachos'), {
                 posId:        pos.id,
                 posName:      pos.name,
                 chain:        pos.chain || '',

@@ -465,3 +465,56 @@ exports.sendManualReport = onCall({ region: "us-central1" }, async (request) => 
     const result = await buildAndSend(type, recipients);
     return { success: true, ...result, recipientCount: recipients.length };
 });
+
+// ── Tomar Pedido — save + email to ventas@lacteoca.com ────────────────────────
+
+exports.sendPedidoEmail = onCall({ region: "us-central1" }, async (request) => {
+    const { posId, posName, chain, cantidad, reporterId, reporterName } = request.data || {};
+    if (!posId || !cantidad) throw new Error("Datos incompletos");
+
+    // 1. Save to Firestore
+    const docRef = await admin.firestore().collection("pedidos").add({
+        posId,
+        posName:      posName      || '',
+        chain:        chain        || '',
+        cantidad:     Number(cantidad),
+        reporterId:   reporterId   || '',
+        reporterName: reporterName || '',
+        emailSent:    false,
+        createdAt:    admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 2. Send email
+    try {
+        const { transporter, from } = await getSmtpTransporter();
+        const fechaHora = new Date().toLocaleString("es-VE", {
+            weekday: "long", day: "numeric", month: "long", year: "numeric",
+            hour: "2-digit", minute: "2-digit",
+        });
+        await transporter.sendMail({
+            from,
+            to: "ventas@lacteoca.com",
+            subject: `📦 Nuevo Pedido — ${reporterName} en ${posName}`,
+            html: `
+                <div style="font-family:sans-serif;max-width:480px;margin:auto;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+                    <div style="background:#0D2B4C;padding:24px;text-align:center;">
+                        <h1 style="color:white;margin:0;font-size:22px;">Nuevo Pedido Verbal</h1>
+                        <p style="color:rgba(255,255,255,0.6);margin:4px 0 0">Genius Keeper · Pedidos de Campo</p>
+                    </div>
+                    <div style="padding:24px;background:#f8fafc;">
+                        <table style="width:100%;border-collapse:collapse;">
+                            <tr><td style="padding:10px 0;color:#64748b;font-size:14px;">Mercaderista</td><td style="padding:10px 0;font-weight:700;color:#1e293b;">${reporterName}</td></tr>
+                            <tr><td style="padding:10px 0;color:#64748b;font-size:14px;">Cliente</td><td style="padding:10px 0;font-weight:700;color:#1e293b;">${posName}${chain ? ' (' + chain + ')' : ''}</td></tr>
+                            <tr><td style="padding:10px 0;color:#64748b;font-size:14px;">Cantidad</td><td style="padding:10px 0;font-weight:900;color:#0D2B4C;font-size:20px;">${cantidad} ${Number(cantidad) === 1 ? 'docena' : 'docenas'}</td></tr>
+                            <tr><td style="padding:10px 0;color:#64748b;font-size:14px;">Fecha y Hora</td><td style="padding:10px 0;font-weight:600;color:#1e293b;">${fechaHora}</td></tr>
+                        </table>
+                    </div>
+                </div>`,
+        });
+        await docRef.update({ emailSent: true });
+        return { ok: true, id: docRef.id, emailSent: true };
+    } catch (err) {
+        logger.error("Error enviando email de pedido:", err);
+        return { ok: true, id: docRef.id, emailSent: false };
+    }
+});
