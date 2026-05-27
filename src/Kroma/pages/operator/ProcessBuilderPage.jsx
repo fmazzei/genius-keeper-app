@@ -76,7 +76,7 @@ const BLOCK_DEFAULTS = {
         vuelta1Tiempo: 4, vuelta1Unidad: 'h', vuelta2Tiempo: 4, vuelta2Unidad: 'h',
         vuelta3Tiempo: 4, vuelta3Unidad: 'h', vuelta4Tiempo: 4, vuelta4Unidad: 'h' },
     maduracion:      { temperatura: 12, humedadRelativa: 90, duracion: 21, unidadDuracion: 'dias', virajes: 'cada2dias', cepillado: 'no', frecuenciaCepillado: 'semanal', phEntrada: 5.8, phSalida: 5.4 },
-    empaque:            { tiposEmpaque: [], presentacionesPesos: ['250g'], aspersionConservante: false, precintado: false, envalado: false },
+    empaque:            { tiposEmpaque: [], presentacionesPesos: ['250g'], aspersionConservante: false, aspersionMaterialId: '', aspersionMaterialNombre: '', aspersionGramos: 1.5, aspersionMlAgua: 500, aspersionMlPorEnvase: 1, precintado: false, envalado: false },
     // Legacy defaults — kept for backward compat with old saved processes
     pesaje:             { unidadPeso: 'kg', registrarRendimiento: 'si', rendimientoEsperado: 10 },
     envasado:           { tipoEnvase: 'tina_plastica', pesoNeto: 250, unidadPeso: 'g', temperatura: 'frio' },
@@ -1352,6 +1352,66 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                 ))}
                             </div>
                         </div>
+
+                        {/* Aspersión detail — only when checkbox is on */}
+                        {params.aspersionConservante && (
+                            <div className="bg-teal-950/30 border border-teal-800/40 rounded-xl p-4 space-y-4">
+                                <SecLabel>Configuración — Aspersión de conservante</SecLabel>
+
+                                <div>
+                                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Material conservante</p>
+                                    <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-700 bg-slate-800 p-1.5 space-y-0.5">
+                                        {(materials || [])
+                                            .filter(m => ['reactivos', 'otros', 'consumibles'].includes(m.categoria))
+                                            .map(m => (
+                                                <button key={m.id} type="button"
+                                                    onClick={() => setParams(p => ({ ...p, aspersionMaterialId: m.id, aspersionMaterialNombre: m.nombre }))}
+                                                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                                                        params.aspersionMaterialId === m.id
+                                                            ? 'bg-teal-600/30 text-teal-300 border border-teal-500/40'
+                                                            : 'text-slate-300 hover:bg-slate-700 border border-transparent'
+                                                    }`}>
+                                                    <span className="font-medium">{m.nombre}</span>
+                                                    {m.categoria && <span className="text-slate-500 text-xs ml-2">{m.categoria}</span>}
+                                                </button>
+                                            ))
+                                        }
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <SecLabel>Conservante (g)</SecLabel>
+                                        <StepperField value={params.aspersionGramos ?? 1.5} min={0.1} max={20} step={0.1}
+                                            onChange={v => setParams(p => ({ ...p, aspersionGramos: +v.toFixed(1) }))} />
+                                    </div>
+                                    <div>
+                                        <SecLabel>Agua destilada (ml)</SecLabel>
+                                        <StepperField value={params.aspersionMlAgua ?? 500} min={50} max={2000} step={50}
+                                            onChange={v => setParams(p => ({ ...p, aspersionMlAgua: v }))} />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <SecLabel>ml de solución por envase</SecLabel>
+                                    <StepperField value={params.aspersionMlPorEnvase ?? 1} min={0.1} max={10} step={0.1}
+                                        onChange={v => setParams(p => ({ ...p, aspersionMlPorEnvase: +v.toFixed(1) }))} />
+                                </div>
+
+                                {params.aspersionMaterialId && (
+                                    <div className="bg-slate-800/60 rounded-xl px-4 py-3 space-y-1">
+                                        <p className="text-slate-500 text-xs">
+                                            Solución: <span className="text-white font-mono">{params.aspersionGramos ?? 1.5}g de {params.aspersionMaterialNombre} / {params.aspersionMlAgua ?? 500}ml agua destilada</span>
+                                        </p>
+                                        <p className="text-slate-500 text-xs">
+                                            Por envase: <span className="text-teal-300 font-mono">
+                                                {params.aspersionMlPorEnvase ?? 1} ml → {(((params.aspersionGramos ?? 1.5) / (params.aspersionMlAgua ?? 500)) * (params.aspersionMlPorEnvase ?? 1)).toFixed(4)} g de conservante
+                                            </span>
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 );
             }

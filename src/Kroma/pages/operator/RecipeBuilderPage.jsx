@@ -179,6 +179,7 @@ export default function RecipeBuilderPage() {
     const [ingMaterial, setIngMaterial] = useState(null);
     const [ingDosis,    setIngDosis]    = useState(0);
     const [ingUnidad,   setIngUnidad]   = useState('g');
+    const [ingTipoDosis, setIngTipoDosis] = useState('por_litro'); // 'por_litro' | 'por_envase'
     const [matFilter,   setMatFilter]   = useState('');
 
     // Create new ingredient mini-form
@@ -267,13 +268,13 @@ export default function RecipeBuilderPage() {
 
     // ── Ingredient modal ──────────────────────────────────────────────────────
     const openAddIng = () => {
-        setIngMaterial(null); setIngDosis(0); setIngUnidad('g'); setMatFilter('');
+        setIngMaterial(null); setIngDosis(0); setIngUnidad('g'); setIngTipoDosis('por_litro'); setMatFilter('');
         setIngModal({ mode: 'add' });
     };
     const openEditIng = (idx) => {
         const ing = ingredientes[idx];
         const mat = materials.find(m => m.id === ing.materialId) || { id: ing.materialId, nombre: ing.materialNombre };
-        setIngMaterial(mat); setIngDosis(ing.dosis); setIngUnidad(ing.unidadDosis); setMatFilter('');
+        setIngMaterial(mat); setIngDosis(ing.dosis); setIngUnidad(ing.unidadDosis); setIngTipoDosis(ing.tipoDosis || 'por_litro'); setMatFilter('');
         setIngModal({ mode: 'edit', index: idx });
     };
     const confirmIng = () => {
@@ -285,6 +286,7 @@ export default function RecipeBuilderPage() {
             categoria:        ingMaterial.categoria || 'otros',
             dosis:            ingDosis,
             unidadDosis:      ingUnidad,
+            tipoDosis:        ingTipoDosis,
             costoUsdUnidad:   ingMaterial.costoUSD && ingMaterial.cantidadPresentacion
                                 ? parseFloat(ingMaterial.costoUSD) / parseFloat(ingMaterial.cantidadPresentacion)
                                 : null,
@@ -775,7 +777,12 @@ export default function RecipeBuilderPage() {
                                                     <p className="text-white font-semibold text-sm truncate">{ing.materialNombre}</p>
                                                     <p className="text-slate-400 text-xs">
                                                         <span className="text-emerald-300 font-bold">{fmt(ing.dosis)} {ing.unidadDosis}</span>
-                                                        <span className="text-slate-600"> / L leche</span>
+                                                        <span className="text-slate-600">
+                                                            {ing.tipoDosis === 'por_envase' ? ' / envase' : ' / L leche'}
+                                                        </span>
+                                                        {ing.tipoDosis === 'por_envase' && (
+                                                            <span className="text-teal-500 ml-1.5 text-xs">⊕ aspersión</span>
+                                                        )}
                                                         {cost != null && (
                                                             <span className="text-slate-500 ml-2">· ${fmt(cost)}</span>
                                                         )}
@@ -946,6 +953,23 @@ export default function RecipeBuilderPage() {
                             {ingMaterial && (
                                 <>
                                     <div>
+                                        <SecLabel>Tipo de dosis</SecLabel>
+                                        <PillGroup
+                                            options={[
+                                                { id: 'por_litro',  label: 'Por litro de leche' },
+                                                { id: 'por_envase', label: 'Por envase terminado' },
+                                            ]}
+                                            value={ingTipoDosis}
+                                            onChange={v => v && setIngTipoDosis(v)}
+                                        />
+                                        {ingTipoDosis === 'por_envase' && (
+                                            <p className="text-teal-500 text-xs mt-1.5">
+                                                Usado para conservantes en aspersión. La dosis se calcula según el número de envases al empacar.
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div>
                                         <SecLabel>Unidad de dosis</SecLabel>
                                         <PillGroup
                                             options={DOSE_UNITS}
@@ -955,7 +979,7 @@ export default function RecipeBuilderPage() {
                                     </div>
 
                                     <PrecisionStepper
-                                        label="Cantidad por litro de leche"
+                                        label={ingTipoDosis === 'por_envase' ? 'Cantidad por envase terminado' : 'Cantidad por litro de leche'}
                                         value={ingDosis}
                                         unit={ingUnidad}
                                         onChange={setIngDosis}
@@ -964,9 +988,10 @@ export default function RecipeBuilderPage() {
                                     {/* Cost preview */}
                                     {(() => {
                                         const c = calcIngredientCost(ingMaterial, ingDosis, ingUnidad);
+                                        const label = ingTipoDosis === 'por_envase' ? 'por envase' : 'por litro de leche';
                                         return c != null && ingDosis > 0 ? (
                                             <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center justify-between">
-                                                <span className="text-slate-400 text-xs">Costo estimado por litro de leche</span>
+                                                <span className="text-slate-400 text-xs">Costo estimado {label}</span>
                                                 <span className="text-emerald-400 font-bold text-sm font-mono">${fmt(c)}</span>
                                             </div>
                                         ) : ingDosis > 0 ? (

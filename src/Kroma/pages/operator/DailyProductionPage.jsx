@@ -962,6 +962,49 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos, catalogPresentacion
                     <p className="text-slate-600 text-xs">Se registrará como producto sin envasar en cava PT</p>
                 </div>
             )}
+
+            {/* ── 5. Aspersión de conservante ── */}
+            {bloque.params?.aspersionConservante && bloque.params?.aspersionMaterialId && (
+                <div className="bg-teal-950/25 border border-teal-800/40 rounded-xl p-4 space-y-4">
+                    <div className="flex items-center gap-2">
+                        <span className="text-teal-400 text-sm font-semibold">Aspersión de Conservante</span>
+                        <span className="text-xs text-teal-600 font-mono">{bloque.params.aspersionMaterialNombre}</span>
+                    </div>
+                    <div className="bg-slate-800/60 rounded-xl px-4 py-2.5 space-y-1">
+                        <p className="text-slate-400 text-xs">
+                            Preparación: <span className="text-white font-mono">{bloque.params.aspersionGramos ?? 1.5}g / {bloque.params.aspersionMlAgua ?? 500}ml agua destilada</span>
+                        </p>
+                        <p className="text-slate-400 text-xs">
+                            Aplicación: <span className="text-teal-300 font-mono">{bloque.params.aspersionMlPorEnvase ?? 1} ml por envase</span>
+                        </p>
+                    </div>
+
+                    <NumPadField label="Número de envases a rociar"
+                        value={reg.aspersionEnvases ?? 0} unit="envases" decimals={0}
+                        onChange={v => onChange({ ...reg, aspersionEnvases: v })} />
+
+                    {(reg.aspersionEnvases ?? 0) > 0 && (() => {
+                        const mlSolucion  = (reg.aspersionEnvases) * (bloque.params.aspersionMlPorEnvase ?? 1);
+                        const gConservante = ((bloque.params.aspersionGramos ?? 1.5) / (bloque.params.aspersionMlAgua ?? 500)) * mlSolucion;
+                        return (
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="bg-slate-800 rounded-xl px-3 py-2.5 text-center">
+                                    <p className="text-slate-500 text-xs">Solución necesaria</p>
+                                    <p className="text-white font-bold font-mono">{mlSolucion.toFixed(1)} ml</p>
+                                </div>
+                                <div className="bg-teal-900/30 border border-teal-800/40 rounded-xl px-3 py-2.5 text-center">
+                                    <p className="text-slate-500 text-xs">{bloque.params.aspersionMaterialNombre}</p>
+                                    <p className="text-teal-300 font-bold font-mono">{gConservante.toFixed(3)} g</p>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    <NumPadField label="Cantidad real aplicada"
+                        value={reg.aspersionRealG ?? 0} unit="g" decimals={3}
+                        onChange={v => onChange({ ...reg, aspersionRealG: v })} />
+                </div>
+            )}
         </div>
     );
 }
@@ -1766,6 +1809,11 @@ export default function DailyProductionPage() {
     const [historialFilter, setHistorialFilter] = useState('todas'); // 'todas'|'empacada'|'sin_envasar'|'incompleta'
     const [elapsedNotif, setElapsedNotif] = useState(null); // { bloqueAnterior, minutos }
 
+    // Cierre de Jornada gate
+    const [cierreJornada, setCierreJornada] = useState(null); // null | { pendingIdx, dia }
+    const [cierreConsumos, setCierreConsumos] = useState([]); // [{ materialId, nombre, cantidad, unidad }]
+    const [consumiblesInv, setConsumiblesInv] = useState([]); // consumibles/detergentes from inventory
+
     // New production wizard
     const [selectedFicha, setSelectedFicha]     = useState(null);
     const [milkReceptions, setMilkReceptions]   = useState([]); // active pending receptions from kroma_milk_reception
@@ -1797,13 +1845,14 @@ export default function DailyProductionPage() {
     async function loadData() {
         setLoading(true); setError(null);
         try {
-            const [fichasSnap, logsSnap, matsSnap, suppSnap, prodsSnap, milkSnap] = await Promise.all([
+            const [fichasSnap, logsSnap, matsSnap, suppSnap, prodsSnap, milkSnap, invConsSnap] = await Promise.all([
                 getDocs(query(collection(db, 'kroma_fichas'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_production_logs')),
                 getDocs(query(collection(db, 'kroma_materials'), where('active', '==', true))),
                 getDocs(query(collection(db, 'kroma_suppliers'), where('active', '==', true))),
                 getDocs(query(collection(db, 'kroma_products'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_milk_reception')),
+                getDocs(collection(db, 'kroma_inventory_materials')),
             ]);
             const fichasList = fichasSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
@@ -1842,6 +1891,12 @@ export default function DailyProductionPage() {
                     return tb - ta;
                 });
             setMilkReceptions(milkList);
+
+            const consList = invConsSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(d => d.active !== false && ['consumibles', 'detergentes'].includes(d.categoria))
+                .sort((a, b) => (a.materialNombre || '').localeCompare(b.materialNombre || ''));
+            setConsumiblesInv(consList);
         } catch (e) { setError(e.message); }
         finally { setLoading(false); }
     }
@@ -1979,6 +2034,29 @@ export default function DailyProductionPage() {
     }
 
     // litrosNetos: derived from pasteurizacion block or ingresados
+    async function confirmCierreJornada() {
+        if (!cierreJornada || !activeLog) return;
+        const usados = cierreConsumos.filter(c => c.cantidad > 0);
+        // Save cierre to log
+        const jornadasConsumo = [...(activeLog.jornadasConsumo || []), {
+            dia:       cierreJornada.dia,
+            fecha:     new Date().toISOString(),
+            consumibles: usados,
+            reportadoPor: kromaUser?.id || '',
+        }];
+        await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), { jornadasConsumo }).catch(() => {});
+        setActiveLog(prev => ({ ...prev, jornadasConsumo }));
+        // Deduct inventory
+        if (usados.length > 0) {
+            decrementInventory(usados.map(c => ({ materialId: c.materialId, nombre: c.nombre, amount: c.cantidad, unidad: c.unidad })));
+        }
+        const pendingIdx = cierreJornada.pendingIdx;
+        setCierreJornada(null);
+        setCierreConsumos([]);
+        // Proceed with the original block completion
+        completeBlock(pendingIdx);
+    }
+
     function getLitrosNetos() {
         const bloques = activeLog?.bloquesSnapshot || [];
         const pastIdx = bloques.findIndex(b => b.tipo === 'pasteurizacion');
@@ -2130,6 +2208,23 @@ export default function DailyProductionPage() {
         const bloque  = bloques[idx];
         if (!bloque || saving) return;
 
+        // Cierre de Jornada gate: if the last completed block was on a different calendar day,
+        // ask the operator to report consumables before advancing.
+        if (!cierreJornada) {
+            const completedEntries = Object.values(activeLog?.bloquesData || {}).filter(b => b.completado && b.completadoAt);
+            if (completedEntries.length > 0) {
+                const lastDate = new Date(completedEntries.sort((a, b) => new Date(b.completadoAt) - new Date(a.completadoAt))[0].completadoAt);
+                const today = new Date();
+                const isNewDay = lastDate.toDateString() !== today.toDateString();
+                if (isNewDay) {
+                    const dayNum = completedEntries.length + 1;
+                    setCierreConsumos(consumiblesInv.map(c => ({ materialId: c.id, nombre: c.materialNombre, cantidad: 0, unidad: c.unidadBase || 'und' })));
+                    setCierreJornada({ pendingIdx: idx, dia: dayNum });
+                    return;
+                }
+            }
+        }
+
         const reg     = bloquesData[idxStr]?.registros || {};
         const isEmpaque     = bloque.tipo === 'empaque';
         const isMaduracion  = bloque.tipo === 'maduracion';
@@ -2249,6 +2344,16 @@ export default function DailyProductionPage() {
             // Decrement inventory for any ingredients used in this block
             const usedIngredients = extractBlockIngredients(bloque, reg);
             if (usedIngredients.length > 0) decrementInventory(usedIngredients);
+
+            // Decrement aspersión conservante if configured and real amount entered
+            if (isEmpaque && bloque.params?.aspersionMaterialId && (reg.aspersionRealG ?? 0) > 0) {
+                decrementInventory([{
+                    materialId: bloque.params.aspersionMaterialId,
+                    nombre:     bloque.params.aspersionMaterialNombre || 'Conservante aspersión',
+                    amount:     reg.aspersionRealG,
+                    unidad:     'g',
+                }]);
+            }
 
         } catch (e) { setSaveError(e.message); }
         finally { setSaving(false); }
@@ -2530,6 +2635,47 @@ export default function DailyProductionPage() {
                         {estadoStyle.label}
                     </span>
                 </div>
+
+                {/* ── Cierre de Jornada modal ── */}
+                {cierreJornada && (
+                <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/75">
+                    <div className="bg-slate-900 rounded-t-2xl max-h-[85vh] flex flex-col">
+                        <div className="px-5 pt-5 pb-3 shrink-0 border-b border-slate-800">
+                            <p className="text-white font-bold text-base">Cierre del Día {cierreJornada.dia - 1}</p>
+                            <p className="text-slate-400 text-sm mt-0.5">Reporta los consumibles utilizados hoy antes de continuar</p>
+                        </div>
+                        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+                            {cierreConsumos.length === 0 ? (
+                                <p className="text-slate-500 text-sm text-center py-6">No hay consumibles ni detergentes en inventario.</p>
+                            ) : cierreConsumos.map((c, i) => (
+                                <div key={c.materialId} className="flex items-center gap-3 bg-slate-800 rounded-xl px-4 py-3">
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-white text-sm font-medium truncate">{c.nombre}</p>
+                                        <p className="text-slate-500 text-xs">{c.unidad}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button onClick={() => setCierreConsumos(prev => prev.map((x, j) => j === i ? { ...x, cantidad: Math.max(0, +(x.cantidad - 1).toFixed(2)) } : x))}
+                                            className="w-9 h-9 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center">−</button>
+                                        <span className="text-white font-mono w-10 text-center text-sm">{c.cantidad}</span>
+                                        <button onClick={() => setCierreConsumos(prev => prev.map((x, j) => j === i ? { ...x, cantidad: +(x.cantidad + 1).toFixed(2) } : x))}
+                                            className="w-9 h-9 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center">+</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="px-5 py-4 flex gap-3 shrink-0 border-t border-slate-800">
+                            <button onClick={() => { setCierreJornada(null); setCierreConsumos([]); }}
+                                className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
+                                Cancelar
+                            </button>
+                            <button onClick={confirmCierreJornada}
+                                className="flex-1 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold transition-colors">
+                                Confirmar y continuar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                )}
 
                 {elapsedNotif && (
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 pb-8 px-4">
