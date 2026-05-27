@@ -64,7 +64,7 @@ const GeniusHero = ({ def, data, onOpen }) => {
     return (
         <div
             onClick={onOpen}
-            className="col-span-full cursor-pointer rounded-2xl overflow-hidden bg-gradient-to-br from-[#0D2B4C] via-[#112f58] to-[#1a4480] p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 shadow-xl hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-300 group"
+            className="col-span-full cursor-pointer rounded-2xl overflow-hidden bg-gradient-to-br from-[#0D2B4C] via-[#112f58] to-[#1a4480] p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 shadow-xl hover:shadow-2xl transition-shadow duration-300 group"
         >
             {/* Gauge */}
             <div className="relative shrink-0">
@@ -117,7 +117,7 @@ const MetricCard = ({ def, data, onOpen }) => {
     return (
         <div
             onClick={isClickable ? onOpen : undefined}
-            className={`group relative rounded-2xl bg-white border ${s.border} overflow-hidden transition-all duration-200 ${isClickable ? 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5' : ''}`}
+            className={`group relative rounded-2xl bg-white border ${s.border} overflow-hidden transition-shadow duration-200 ${isClickable ? 'cursor-pointer hover:shadow-lg' : ''}`}
         >
             {/* top accent bar */}
             <div className={`h-1 w-full ${s.top}`} />

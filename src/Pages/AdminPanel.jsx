@@ -214,31 +214,48 @@ const UserManagement = () => {
         const q = query(collection(db, "users_metadata"), where("role", "in", ["merchandiser", "produccion"]));
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const usersData = snapshot.docs
-                .map(doc => ({
-                    id: doc.id,
-                    uid: doc.id,
-                    name: doc.data().name || doc.id,
-                    role: doc.data().role,
-                    email: doc.data().email || 'No disponible',
-                    isSecurityBypassed: doc.data().isSecurityBypassed || false,
-                }));
+                .map(doc => {
+                    const data = doc.data();
+                    const name = data.name && data.name.trim() ? data.name : null;
+                    return {
+                        id: doc.id,
+                        uid: doc.id,
+                        name: name || doc.id,
+                        isPhantom: !name,
+                        role: data.role,
+                        email: data.email || 'No disponible',
+                        isSecurityBypassed: data.isSecurityBypassed || false,
+                    };
+                });
             setUsers(usersData);
             setLoading(false);
         });
         return () => unsubscribe();
     }, []);
-    
+
     const handleToggleSecurityBypass = async (userId, currentStatus) => {
         const userRef = doc(db, "users_metadata", userId);
         try {
-            await updateDoc(userRef, {
-                isSecurityBypassed: !currentStatus
-            });
+            await updateDoc(userRef, { isSecurityBypassed: !currentStatus });
         } catch (error) {
             console.error("Error al actualizar el bypass de seguridad:", error);
             alert("No se pudo actualizar la configuración de seguridad.");
         }
     };
+
+    const handleDeleteUser = async (user) => {
+        const label = user.isPhantom ? `el registro huérfano (${user.uid.slice(0, 8)}...)` : `al usuario ${user.name}`;
+        if (!window.confirm(`¿Eliminar ${label}? Esta acción no se puede deshacer.`)) return;
+        try {
+            await deleteDoc(doc(db, "users_metadata", user.uid));
+        } catch (error) {
+            console.error("Error al eliminar usuario:", error);
+            alert("No se pudo eliminar el usuario.");
+        }
+    };
+
+    const realUsers    = users.filter(u => !u.isPhantom);
+    const phantomUsers = users.filter(u => u.isPhantom);
 
     if (loading) return <LoadingSpinner />;
 
@@ -249,13 +266,13 @@ const UserManagement = () => {
                 <h3 className="text-xl font-semibold text-slate-700 mb-4">Usuarios de Campo</h3>
                 <div className="bg-white rounded-lg shadow overflow-hidden">
                     <ul className="divide-y divide-slate-200">
-                        {users.map(user => (
+                        {realUsers.map(user => (
                             <li key={user.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                <div className="flex items-center w-full sm:w-auto mb-3 sm:mb-0">
+                                <div className="flex items-center w-full sm:w-auto">
                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 ${user.role === 'produccion' ? 'bg-slate-600' : 'bg-brand-blue'}`}>
-                                        {user.name.charAt(0)}
+                                        {user.name.charAt(0).toUpperCase()}
                                     </div>
-                                    <div className="ml-4">
+                                    <div className="ml-3">
                                         <p className="font-semibold text-slate-800">{user.name}</p>
                                         <p className="text-sm text-slate-500 capitalize">{user.role}</p>
                                     </div>
@@ -267,17 +284,55 @@ const UserManagement = () => {
                                             {user.isSecurityBypassed ? 'Activado (Sin Contraseña/PIN)' : 'Desactivado (Requiere PIN)'}
                                         </p>
                                     </div>
-                                    <ToggleSwitch 
-                                        enabled={user.isSecurityBypassed} 
+                                    <ToggleSwitch
+                                        enabled={user.isSecurityBypassed}
                                         setEnabled={() => handleToggleSecurityBypass(user.uid, user.isSecurityBypassed)}
                                     />
+                                    <button onClick={() => handleDeleteUser(user)} title="Eliminar usuario" className="text-slate-300 hover:text-red-500 transition-colors ml-1">
+                                        <Trash2 size={16} />
+                                    </button>
                                 </div>
                             </li>
                         ))}
-                         {users.length === 0 && <p className="text-center text-slate-500 py-4">No se encontraron usuarios de campo.</p>}
+                        {realUsers.length === 0 && phantomUsers.length === 0 && (
+                            <p className="text-center text-slate-500 py-4">No se encontraron usuarios de campo.</p>
+                        )}
                     </ul>
                 </div>
             </div>
+
+            {phantomUsers.length > 0 && (
+                <div>
+                    <div className="flex items-center gap-2 mb-3">
+                        <h3 className="text-base font-semibold text-slate-600">Registros huérfanos</h3>
+                        <span className="text-xs bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full">{phantomUsers.length}</span>
+                    </div>
+                    <p className="text-sm text-slate-500 mb-3">Estos registros existen en Firestore pero no tienen nombre de usuario. Probablemente son cuentas sin configurar. Puedes eliminarlos sin riesgo.</p>
+                    <div className="bg-white rounded-lg shadow border border-amber-200 overflow-hidden">
+                        <ul className="divide-y divide-slate-100">
+                            {phantomUsers.map(user => (
+                                <li key={user.id} className="p-4 flex items-center justify-between gap-4 bg-amber-50/40">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="w-9 h-9 rounded-full bg-amber-200 flex items-center justify-center shrink-0">
+                                            <Users size={16} className="text-amber-700" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-mono text-slate-500 truncate">{user.uid}</p>
+                                            <p className="text-xs text-amber-700 font-semibold capitalize">{user.role} · Sin nombre</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => handleDeleteUser(user)}
+                                        className="flex items-center gap-1.5 text-xs font-semibold text-red-600 border border-red-200 bg-white px-3 py-1.5 rounded-lg hover:bg-red-50 shrink-0"
+                                    >
+                                        <Trash2 size={13} /> Eliminar
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -1465,26 +1520,35 @@ const ReportsAutoManagement = () => {
                         const isSending = sending === id;
                         const result    = sendResult[id];
                         return (
-                            <div key={id} className={`border rounded-xl p-5 transition-all ${enabled ? 'border-brand-blue/40 bg-blue-50/40' : 'border-slate-200'}`}>
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex items-start gap-3 flex-1">
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${enabled ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-400'}`}>
-                                            <Icon size={20} />
+                            <div key={id} className={`border rounded-xl p-4 sm:p-5 transition-all ${enabled ? 'border-brand-blue/40 bg-blue-50/40' : 'border-slate-200'}`}>
+                                <div className="flex items-start gap-3">
+                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${enabled ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                        <Icon size={20} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <p className="font-semibold text-slate-800">{label}</p>
+                                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium whitespace-nowrap">{schedule}</span>
                                         </div>
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                                <p className="font-semibold text-slate-800">{label}</p>
-                                                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">{schedule}</span>
-                                            </div>
-                                            <p className="text-sm text-slate-500 mt-1">{desc}</p>
-                                            {result && (
-                                                <p className={`text-xs mt-2 font-semibold ${result.ok ? 'text-green-600' : 'text-red-600'}`}>
-                                                    {result.ok ? `✅ Enviado a ${result.count} destinatario(s)` : `❌ ${result.error}`}
-                                                </p>
-                                            )}
+                                        <p className="text-sm text-slate-500 mt-1">{desc}</p>
+                                        {result && (
+                                            <p className={`text-xs mt-2 font-semibold ${result.ok ? 'text-green-600' : 'text-red-600'}`}>
+                                                {result.ok ? `✅ Enviado a ${result.count} destinatario(s)` : `❌ ${result.error}`}
+                                            </p>
+                                        )}
+                                        <div className="flex items-center gap-3 mt-3 sm:hidden">
+                                            <button
+                                                onClick={() => handleSendNow(id)}
+                                                disabled={isSending || activeRecipients === 0}
+                                                title={activeRecipients === 0 ? 'Agrega al menos un destinatario activo' : 'Enviar ahora'}
+                                                className="flex items-center gap-1.5 text-xs font-semibold bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg disabled:opacity-40"
+                                            >
+                                                {isSending ? <><RefreshCw size={13} className="animate-spin" /> Enviando...</> : <><Send size={13} /> Enviar Ahora</>}
+                                            </button>
+                                            <ToggleSwitch enabled={enabled} setEnabled={(v) => toggleReportType(id, v)} />
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3 shrink-0">
+                                    <div className="hidden sm:flex items-center gap-3 shrink-0">
                                         <button
                                             onClick={() => handleSendNow(id)}
                                             disabled={isSending || activeRecipients === 0}
