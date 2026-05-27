@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Guía del Gerente de Ventas — Genius Keeper</title>
+<style>
+  :root {
+    --blue:   #0D2B4C;
+    --yellow: #FFD700;
+    --green:  #16a34a;
+    --red:    #dc2626;
+    --amber:  #d97706;
+    --slate:  #64748b;
+    --light:  #f8fafc;
+    --border: #e2e8f0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--light); color: #1e293b; line-height: 1.6; }
+
+  /* Cover */
+  .cover {
+    background: linear-gradient(135deg, var(--blue) 0%, #1e3a5f 100%);
+    color: white;
+    min-height: 100vh;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    text-align: center; padding: 2rem;
+    page-break-after: always;
+  }
+  .cover .logo { width: 80px; height: 80px; border-radius: 20px; background: var(--yellow); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; }
+  .cover .logo span { font-size: 2.5rem; font-weight: 900; color: var(--blue); }
+  .cover h1 { font-size: 2.4rem; font-weight: 900; margin-bottom: .5rem; }
+  .cover .subtitle { font-size: 1.1rem; opacity: .8; margin-bottom: 2rem; }
+  .cover .badge { background: var(--yellow); color: var(--blue); font-weight: 800; padding: .5rem 1.5rem; border-radius: 999px; font-size: .95rem; display: inline-block; }
+
+  /* Layout */
+  .page { max-width: 820px; margin: 0 auto; padding: 2.5rem 1.5rem; }
+  .section { margin-bottom: 3rem; }
+  h2.section-title {
+    font-size: 1.6rem; font-weight: 800; color: var(--blue);
+    border-left: 5px solid var(--yellow); padding-left: 1rem; margin-bottom: 1.5rem;
+  }
+  h3.sub-title { font-size: 1.1rem; font-weight: 700; color: var(--blue); margin: 1.5rem 0 .75rem; }
+  p { margin-bottom: .9rem; color: #334155; }
+
+  /* Cards */
+  .card { background: white; border-radius: 14px; padding: 1.4rem; border: 1px solid var(--border); margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+  .card.blue-top  { border-top: 4px solid var(--blue); }
+  .card.yellow-top { border-top: 4px solid var(--yellow); }
+  .card.green-top { border-top: 4px solid var(--green); }
+  .card.red-top   { border-top: 4px solid var(--red); }
+
+  /* Grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  @media(max-width:600px){ .grid-2,.grid-3 { grid-template-columns: 1fr; } }
+
+  /* Nav pill */
+  .nav-row { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: 1.5rem; }
+  .nav-pill {
+    display: flex; align-items: center; gap: .5rem;
+    background: var(--blue); color: white; border-radius: 999px;
+    padding: .35rem 1rem; font-weight: 700; font-size: .85rem;
+  }
+  .nav-pill.active { background: var(--yellow); color: var(--blue); }
+  .nav-pill .icon { width: 20px; height: 20px; }
+
+  /* KPI block */
+  .kpi-block {
+    background: white; border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.2rem; display: flex; align-items: flex-start; gap: 1rem;
+  }
+  .kpi-icon {
+    width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center;
+    justify-content: center; font-size: 1.3rem; shrink: 0; flex-shrink: 0;
+  }
+  .kpi-icon.blue   { background: #eff6ff; }
+  .kpi-icon.green  { background: #f0fdf4; }
+  .kpi-icon.red    { background: #fef2f2; }
+  .kpi-icon.amber  { background: #fffbeb; }
+  .kpi-icon.purple { background: #faf5ff; }
+  .kpi-name { font-weight: 700; color: #1e293b; margin-bottom: .25rem; }
+  .kpi-desc { font-size: .85rem; color: var(--slate); line-height: 1.4; }
+  .kpi-tip  { font-size: .8rem; margin-top: .4rem; font-style: italic; color: var(--amber); font-weight: 600; }
+
+  /* Step */
+  .step { display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 1.2rem; }
+  .step-num {
+    width: 36px; height: 36px; border-radius: 50%; background: var(--blue); color: white;
+    font-weight: 900; font-size: 1rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .step-body { flex: 1; }
+  .step-body strong { display: block; color: var(--blue); font-weight: 700; margin-bottom: .2rem; }
+
+  /* Alert sample */
+  .alert-sample {
+    border-radius: 10px; padding: 1rem 1.2rem; display: flex; align-items: center; gap: 1rem; margin-bottom: .8rem;
+  }
+  .alert-sample.red    { background: #fef2f2; border: 1px solid #fecaca; }
+  .alert-sample.amber  { background: #fffbeb; border: 1px solid #fde68a; }
+  .alert-icon { font-size: 1.5rem; flex-shrink: 0; }
+  .alert-text strong { display: block; font-weight: 700; color: #1e293b; }
+  .alert-text span   { font-size: .85rem; color: var(--slate); }
+
+  /* Highlight box */
+  .highlight { background: #eff6ff; border-left: 4px solid var(--blue); border-radius: 0 10px 10px 0; padding: 1rem 1.2rem; margin: 1rem 0; }
+  .highlight.yellow { background: #fffbeb; border-left-color: var(--yellow); }
+  .highlight.green  { background: #f0fdf4; border-left-color: var(--green); }
+  .highlight.red    { background: #fef2f2; border-left-color: var(--red); }
+
+  /* Report section */
+  .report-field { background: white; border: 1px solid var(--border); border-radius: 10px; padding: .9rem 1.1rem; margin-bottom: .7rem; }
+  .report-field .field-name { font-weight: 700; color: var(--blue); font-size: .9rem; }
+  .report-field .field-desc { font-size: .85rem; color: var(--slate); margin-top: .2rem; }
+  .report-field .field-why  { font-size: .8rem; color: var(--green); font-weight: 600; margin-top: .3rem; }
+
+  /* Divider */
+  .divider { border: none; border-top: 2px solid var(--border); margin: 2.5rem 0; }
+
+  /* Footer */
+  footer { text-align: center; padding: 2rem; color: var(--slate); font-size: .85rem; border-top: 1px solid var(--border); margin-top: 3rem; }
+
+  /* Print */
+  @media print {
+    .cover { min-height: auto; padding: 4rem 2rem; }
+    .page  { padding: 1.5rem; }
+    .section { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════ COVER -->
+<div class="cover">
+  <div class="logo"><span>GK</span></div>
+  <h1>Genius Keeper</h1>
+  <p class="subtitle">Guía del Gerente de Ventas</p>
+  <div class="badge">📊 Manual de Operaciones — Lacteoca</div>
+  <p style="margin-top:2rem;opacity:.6;font-size:.9rem;">Tu herramienta para controlar las ventas, el campo y el inventario en tiempo real.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ PAGE -->
+<div class="page">
+
+  <!-- ── 1. Tu rol en el sistema ─────────────────────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">1. Tu Rol en Genius Keeper</h2>
+    <p>Como <strong>Gerente de Ventas</strong>, eres el puente entre la planta Lacteoca y el mercado. Genius Keeper te da visibilidad en tiempo real sobre:</p>
+    <div class="grid-2">
+      <div class="card blue-top">
+        <div class="kpi-name">📦 El Producto en Tienda</div>
+        <div class="kpi-desc">Quiebres de stock, frescura de los lotes, rotación y posición en anaquel.</div>
+      </div>
+      <div class="card yellow-top">
+        <div class="kpi-name">🎯 Tu Meta Mensual</div>
+        <div class="kpi-desc">Avance de la meta de ventas, velocidad de venta y proyección del mes.</div>
+      </div>
+      <div class="card green-top">
+        <div class="kpi-name">👥 Tu Equipo de Campo</div>
+        <div class="kpi-desc">Cobertura de PDVs, cumplimiento de agenda y actividad de cada reporter.</div>
+      </div>
+      <div class="card red-top">
+        <div class="kpi-name">🏪 La Competencia</div>
+        <div class="kpi-desc">Precios, nuevos entrantes y actividad promocional de competidores.</div>
+      </div>
+    </div>
+
+    <h3 class="sub-title">Cómo acceder</h3>
+    <div class="card">
+      <p style="margin:0;"><strong>Usuario:</strong> ventas@lacteoca.com<br>
+      <strong>Plataforma:</strong> Abre Genius Keeper desde el navegador o app. Elige tu usuario del equipo y listo.</p>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── 2. Navegación ───────────────────────────────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">2. Navegación — Menú Lateral</h2>
+    <p>Al iniciar sesión verás un menú a la izquierda (o el ícono ≡ en móvil). Estas son tus secciones:</p>
+
+    <div class="nav-row">
+      <div class="nav-pill active">🎯 Ventas</div>
+      <div class="nav-pill">📊 Dashboard</div>
+      <div class="nav-pill">🔔 Notificaciones</div>
+      <div class="nav-pill">🗓️ Planificador</div>
+      <div class="nav-pill">📦 Inventario</div>
+    </div>
+
+    <div class="card">
+      <div class="kpi-block" style="margin-bottom:.8rem;">
+        <div class="kpi-icon blue">🎯</div>
+        <div><div class="kpi-name">Ventas <span style="background:#eff6ff;color:var(--blue);font-size:.75rem;padding:.2rem .5rem;border-radius:999px;font-weight:700;">Vista principal</span></div>
+        <div class="kpi-desc">Tu pantalla de inicio. Muestra la meta mensual, velocidad de venta, radar de alertas, y gráfico de proyección. Siempre empieza aquí.</div></div>
+      </div>
+      <div class="kpi-block" style="margin-bottom:.8rem;">
+        <div class="kpi-icon amber">📊</div>
+        <div><div class="kpi-name">Dashboard</div>
+        <div class="kpi-desc">Tablero de KPIs configurado por el administrador. Muestra los indicadores de mercado que el master decidió activar para tu rol.</div></div>
+      </div>
+      <div class="kpi-block" style="margin-bottom:.8rem;">
+        <div class="kpi-icon blue">🔔</div>
+        <div><div class="kpi-name">Notificaciones</div>
+        <div class="kpi-desc">Centro de alertas y mensajes del sistema. Aquí llegan avisos de despachos, mercancía recibida, visitas vencidas y más.</div></div>
+      </div>
+      <div class="kpi-block" style="margin-bottom:.8rem;">
+        <div class="kpi-icon green">🗓️</div>
+        <div><div class="kpi-name">Planificador</div>
+        <div class="kpi-desc">Agenda semanal de visitas del equipo de campo. Puedes ver y gestionar las rutas por semana y mes.</div></div>
+      </div>
+      <div class="kpi-block">
+        <div class="kpi-icon purple">📦</div>
+        <div><div class="kpi-name">Inventario</div>
+        <div class="kpi-desc">Panel de inventario en los depósitos. Vista de stock por almacén, lotes, fechas de vencimiento.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── 3. Vista VENTAS (pantalla principal) ───────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">3. Vista Ventas — Tu Pantalla Principal</h2>
+    <p>Esta es la primera vista al entrar. Está diseñada para que en 10 segundos sepas exactamente cómo vas con la meta del mes y qué requiere tu atención hoy.</p>
+
+    <h3 class="sub-title">3.1 Meta de Ventas del Mes</h3>
+    <div class="card blue-top">
+      <p style="margin-bottom:.5rem;">La barra de progreso azul y amarilla muestra qué porcentaje de la meta mensual se ha alcanzado. Debajo verás: <strong>unidades vendidas / meta total</strong>.</p>
+      <div class="highlight yellow">
+        <strong>⚠️ "¡Foco en el cierre del mes!"</strong> aparece cuando el progreso está por debajo del 85%. Es una señal de que hay que acelerar las gestiones.
+      </div>
+    </div>
+
+    <h3 class="sub-title">3.2 Velocidad de Venta (Run Rate)</h3>
+    <div class="card">
+      <div class="grid-2" style="gap:.8rem;">
+        <div>
+          <strong style="color:var(--blue);">Velocidad Actual</strong>
+          <p style="margin-top:.3rem;">Promedio de unidades vendidas por día en lo que va del mes. Refleja el ritmo real del equipo.</p>
+        </div>
+        <div>
+          <strong style="color:var(--blue);">Velocidad Necesaria</strong>
+          <p style="margin-top:.3rem;">Cuántas unidades/día hay que vender los días que quedan para alcanzar la meta. Si es mucho más alta que la actual, hay que actuar.</p>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="sub-title">3.3 Radar de Acción Operativa</h3>
+    <p>Lista de alertas críticas y de alta prioridad que requieren tu intervención directa. Dos tipos:</p>
+    <div class="alert-sample red">
+      <div class="alert-icon">🔴</div>
+      <div class="alert-text"><strong>Alerta Crítica</strong><span>Problema severo — quiebre de stock, venta pendiente urgente. Acción inmediata.</span></div>
+    </div>
+    <div class="alert-sample amber">
+      <div class="alert-icon">🟡</div>
+      <div class="alert-text"><strong>Alerta Alta</strong><span>Situación que puede deteriorarse — inventario bajo, visita atrasada. Atender hoy.</span></div>
+    </div>
+    <p>Cada alerta tiene un botón <strong>"Resolver"</strong> que te lleva directamente a la sección correspondiente (Inventario o Planificador).</p>
+
+    <h3 class="sub-title">3.4 Mini KPIs (barra lateral derecha)</h3>
+    <div class="grid-3">
+      <div class="kpi-block">
+        <div class="kpi-icon red">📦</div>
+        <div><div class="kpi-name">Quiebres</div><div class="kpi-desc">Tiendas sin producto. Click → lista detallada.</div></div>
+      </div>
+      <div class="kpi-block">
+        <div class="kpi-icon green">📈</div>
+        <div><div class="kpi-name">Rotación</div><div class="kpi-desc">Unidades/día promedio del equipo.</div></div>
+      </div>
+      <div class="kpi-block">
+        <div class="kpi-icon amber">⚠️</div>
+        <div><div class="kpi-name">DOI</div><div class="kpi-desc">Días de inventario restantes.</div></div>
+      </div>
+    </div>
+
+    <h3 class="sub-title">3.5 Gráfico de Proyección Mensual</h3>
+    <p>Curva de ventas acumuladas del mes actual. Cada punto es un día. Te permite visualizar si el ritmo de ventas se está acelerando o frenando y anticipar el cierre del mes.</p>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── 4. Dashboard de KPIs ───────────────────────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">4. Dashboard — Indicadores de Mercado</h2>
+    <p>El Dashboard muestra los indicadores de campo que el administrador activó para tu rol. Cada tarjeta es un KPI que puedes tocar para ver el análisis completo en un modal.</p>
+
+    <div class="highlight">
+      Usa el filtro de tiempo — <strong>15d / 30d / 90d / Todo</strong> — para ver los indicadores en diferentes períodos y detectar tendencias.
+    </div>
+
+    <h3 class="sub-title">Indicadores disponibles</h3>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon green">📦</div>
+      <div><div class="kpi-name">Quiebres de Stock</div>
+      <div class="kpi-desc">Número de PDVs donde el mercaderista reportó que no había producto disponible. 0 es ideal.</div>
+      <div class="kpi-tip">⚡ Si sube → tu equipo o la cadena de reposición tiene un problema urgente.</div></div>
+    </div>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon blue">📈</div>
+      <div><div class="kpi-name">Rotación Diaria</div>
+      <div class="kpi-desc">Promedio de unidades vendidas por día según los reportes de visita. Refleja la velocidad de movimiento del producto en anaquel.</div></div>
+    </div>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon amber">⚠️</div>
+      <div><div class="kpi-name">Días de Inventario (DOI)</div>
+      <div class="kpi-desc">Cuántos días dura el stock actual al ritmo de venta actual. Rango saludable: 4–14 días.</div>
+      <div class="kpi-tip">⚡ Menos de 4 días → riesgo de quiebre. Más de 14 días → exceso de inventario.</div></div>
+    </div>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon blue">💧</div>
+      <div><div class="kpi-name">Índice de Frescura</div>
+      <div class="kpi-desc">% de lotes de producto en estado óptimo o fresco (no próximos a vencer ni vencidos). Meta: &gt; 80%.</div></div>
+    </div>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon green">📊</div>
+      <div><div class="kpi-name">Efectividad en Anaquel</div>
+      <div class="kpi-desc">% de visitas donde el producto estaba en posición de ojos o de manos (las más visibles y accesibles). Meta: &gt; 75%.</div></div>
+    </div>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon blue">✅</div>
+      <div><div class="kpi-name">Cumplimiento de Visitas</div>
+      <div class="kpi-desc">% de PDVs visitados según la agenda planificada. Meta: &gt; 90%.</div>
+      <div class="kpi-tip">⚡ Si baja → revisar la agenda o la situación del equipo.</div></div>
+    </div>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon amber">💵</div>
+      <div><div class="kpi-name">Índice de Precios vs Competencia</div>
+      <div class="kpi-desc">% de diferencia del precio de Lacteoca vs la competencia (normalizado a 100g). Negativo = somos más baratos, positivo = somos más caros.</div></div>
+    </div>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon red">🔍</div>
+      <div><div class="kpi-name">Nuevos Entrantes</div>
+      <div class="kpi-desc">Productos competidores detectados por primera vez por el equipo de campo. Alerta temprana de nuevos competidores en el mercado.</div></div>
+    </div>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon purple">🗺️</div>
+      <div><div class="kpi-name">Mapa de Calor</div>
+      <div class="kpi-desc">Visualización geográfica de la actividad del equipo. Identifica zonas con alta cobertura y zonas desatendidas.</div></div>
+    </div>
+
+    <div class="kpi-block" style="margin-bottom:.7rem;">
+      <div class="kpi-icon green">👁️</div>
+      <div><div class="kpi-name">Total Visitas / Cobertura PDVs / Reporters Activos</div>
+      <div class="kpi-desc">Actividad del equipo de campo en el período: cuántas visitas se realizaron, qué % de PDVs se cubrieron, y cuántos reporters estuvieron activos.</div></div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── 5. El Reporte del Mercaderista ─────────────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">5. El Reporte del Mercaderista — Por Qué Importa</h2>
+
+    <div class="highlight yellow">
+      <strong>⭐ Sección clave para el Gerente de Ventas</strong><br>
+      Todos los KPIs de tu dashboard, tu meta de ventas y las alertas de tu radar operativo se alimentan de los reportes que cada mercaderista crea en cada visita. Sin reportes completos y precisos, tu dashboard está ciego.
+    </div>
+
+    <h3 class="sub-title">¿Qué es un Reporte de Visita?</h3>
+    <p>Cada vez que un mercaderista visita un punto de venta (PDV), abre Genius Keeper y completa un formulario de visita. Este formulario captura la "foto" del momento: cómo está el producto en esa tienda específica, qué hace la competencia y qué pidió el cliente.</p>
+
+    <h3 class="sub-title">¿Qué información contiene un reporte?</h3>
+
+    <div class="report-field">
+      <div class="field-name">📍 Punto de Venta</div>
+      <div class="field-desc">Nombre y ubicación del PDV visitado. Se geolocaliza automáticamente.</div>
+      <div class="field-why">✓ Alimenta el Mapa de Calor y la Cobertura de PDVs.</div>
+    </div>
+
+    <div class="report-field">
+      <div class="field-name">📦 Inventario y Lotes</div>
+      <div class="field-desc">Cuántas unidades hay en tienda y en qué estado están (fecha de vencimiento de cada lote). El mercaderista escanea o ingresa cada lote.</div>
+      <div class="field-why">✓ Alimenta el DOI, el Índice de Frescura y las alertas de quiebre.</div>
+    </div>
+
+    <div class="report-field">
+      <div class="field-name">🛒 Cantidad Pedida (Orden de Compra)</div>
+      <div class="field-desc">Cuántas unidades pidió el cliente en esta visita. Es el dato de ventas que mueve la meta mensual.</div>
+      <div class="field-why">✓ Es la fuente principal de tu Meta de Ventas, la Rotación Diaria y el Run Rate.</div>
+    </div>
+
+    <div class="report-field">
+      <div class="field-name">💰 Precio en Tienda</div>
+      <div class="field-desc">El precio al que Lacteoca está en el anaquel en ese PDV ese día.</div>
+      <div class="field-why">✓ Alimenta el Índice de Precios vs Competencia.</div>
+    </div>
+
+    <div class="report-field">
+      <div class="field-name">📏 Posición en Anaquel</div>
+      <div class="field-desc">Nivel del anaquel donde está el producto: ojos, manos, superior, inferior. También el facing (cuántas unidades de frente) y la categoría adyacente.</div>
+      <div class="field-why">✓ Alimenta la Efectividad en Anaquel.</div>
+    </div>
+
+    <div class="report-field">
+      <div class="field-name">🏷️ Material POP</div>
+      <div class="field-desc">Si el material publicitario (afiches, stoppers, exhibidores) está exhibido correctamente.</div>
+      <div class="field-why">✓ Alimenta la Calidad del Material POP.</div>
+    </div>
+
+    <div class="report-field">
+      <div class="field-name">🆚 Competencia</div>
+      <div class="field-desc">Precio de los competidores principales (por gramaje), si tienen material POP activo, si hay degustaciones. También captura nuevos productos detectados.</div>
+      <div class="field-why">✓ Alimenta el Índice de Precios, Nuevos Entrantes y Actividad Promocional.</div>
+    </div>
+
+    <div class="report-field">
+      <div class="field-name">⏱️ Hora de inicio y fin</div>
+      <div class="field-desc">El sistema registra cuándo el mercaderista abre y cierra el formulario de cada visita.</div>
+      <div class="field-why">✓ Alimenta la Duración Promedio de Visita y el Cumplimiento de Agenda.</div>
+    </div>
+
+    <h3 class="sub-title">La cadena de datos: Mercaderista → Dashboard</h3>
+    <div class="card">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body"><strong>Mercaderista visita el PDV</strong> El mercaderista entra a la tienda, verifica el anaquel, habla con el encargado.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body"><strong>Abre Genius Keeper → Iniciar Reporte</strong> Selecciona el PDV y completa el formulario en 3–5 minutos.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body"><strong>El reporte se guarda en la nube</strong> Los datos viajan a Firestore en tiempo real.</div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body"><strong>Tu dashboard se actualiza</strong> En segundos, los KPIs de tu pantalla reflejan los nuevos datos del mercado.</div>
+      </div>
+    </div>
+
+    <div class="highlight red">
+      <strong>⚠️ Sin reporte = sin datos.</strong><br>
+      Si un mercaderista visita una tienda pero no completa el reporte, esa visita no existe para Genius Keeper. Los quiebres no se registran, las órdenes no se cuentan, y la meta no avanza. Asegúrate de que tu equipo reporte <em>cada visita</em>.
+    </div>
+
+    <h3 class="sub-title">Indicadores de calidad del reporte</h3>
+    <p>Un buen reporte tiene:</p>
+    <div class="grid-2">
+      <div class="card">
+        <div style="color:var(--green);font-weight:700;margin-bottom:.4rem;">✅ Reporte completo</div>
+        <ul style="color:#334155;padding-left:1.2rem;font-size:.9rem;line-height:1.8;">
+          <li>Inventario registrado con lotes</li>
+          <li>Orden de compra anotada</li>
+          <li>Precio en anaquel capturado</li>
+          <li>Posición en anaquel indicada</li>
+          <li>Competencia registrada</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div style="color:var(--red);font-weight:700;margin-bottom:.4rem;">❌ Reporte incompleto</div>
+        <ul style="color:#334155;padding-left:1.2rem;font-size:.9rem;line-height:1.8;">
+          <li>Campos vacíos o en 0</li>
+          <li>Sin competencia registrada</li>
+          <li>Duración menor a 2 minutos</li>
+          <li>Sin geolocalización</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── 6. Cómo hace el reporte el mercaderista ────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">6. Cómo Hace el Reporte el Mercaderista</h2>
+    <p>Como gerente, necesitas entender el proceso que sigue tu equipo para poder supervisarlo y apoyarlos cuando tengan dudas.</p>
+
+    <div class="card">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Abre la app → Selecciona su nombre</strong>
+          El mercaderista no tiene contraseña propia — selecciona su nombre de la lista de reporters que tú configuraste. Esto lo identifica en todos sus reportes.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Toca "Iniciar Reporte"</strong>
+          Entra al formulario de visita. Selecciona el PDV que está visitando de la lista.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Completa el formulario por secciones</strong>
+          Navega por las secciones: Inventario → Pedido → Precio → Anaquel → POP → Competencia → Observaciones.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Registra los lotes del producto</strong>
+          Para cada lote que hay en tienda: cantidad + fecha de vencimiento. Este es el dato más importante para el DOI y la frescura.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <strong>Anota la orden de compra</strong>
+          Si el encargado hizo un pedido, registra la cantidad. Este número mueve tu meta de ventas.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <strong>Registra la competencia</strong>
+          Precio del competidor principal por gramaje (p.ej. "$X por 300g"), si tiene POP o degustación activa.
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <strong>Envía el reporte</strong>
+          Click en "Enviar" — el reporte se guarda en tiempo real. No requiere conexión estable; se sincroniza cuando hay señal.
+        </div>
+      </div>
+    </div>
+
+    <h3 class="sub-title">El Despacho — qué hace diferente</h3>
+    <p>Además del reporte de visita, el mercaderista puede registrar un <strong>Despacho</strong>: cuando él mismo entrega unidades directamente a un PDV. Esto es diferente a un reporte — no captura datos del anaquel, solo registra:</p>
+    <div class="card">
+      <ul style="padding-left:1.2rem;color:#334155;line-height:2;">
+        <li>PDV (cliente) destinatario</li>
+        <li>Unidades entregadas</li>
+        <li>Número de Orden de Compra (OC)</li>
+        <li>Sucursal (obligatorio si es una cadena)</li>
+      </ul>
+    </div>
+    <p>Tú recibirás una notificación automática cada vez que un mercaderista registre un despacho.</p>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── 7. Planificador ───────────────────────────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">7. Planificador de Visitas</h2>
+    <p>El Planificador te da una vista mensual de las agendas del equipo. Puedes navegar por mes y semana para ver qué PDVs están asignados a cada reporter en cada día.</p>
+
+    <div class="card">
+      <div class="step">
+        <div class="step-num">→</div>
+        <div class="step-body"><strong>Vista Mensual</strong> Muestra las 4 semanas del mes con su estado (Pendiente / En Progreso / Completa).</div>
+      </div>
+      <div class="step">
+        <div class="step-num">→</div>
+        <div class="step-body"><strong>Vista Semanal</strong> Al tocar una semana, ves el detalle: qué PDV visitar cada día. Aquí es donde el mercaderista gestiona su ruta diaria.</div>
+      </div>
+    </div>
+
+    <div class="highlight green">
+      El <strong>Cumplimiento de Agenda</strong> del Dashboard se calcula comparando cuántos PDVs programados fueron realmente visitados (reporte creado) vs. los planificados. Si un mercaderista tiene 10 PDVs en agenda y visitó 8, su cumplimiento es 80%.
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── 8. Panel de Inventario ─────────────────────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">8. Panel de Inventario</h2>
+    <p>Muestra el stock disponible en los depósitos o almacenes configurados. Como Gerente de Ventas, tienes acceso de lectura a todos los depósitos y puedes ajustar el inventario del <strong>depósito secundario</strong> (Caracas).</p>
+
+    <div class="card">
+      <div class="kpi-block" style="margin-bottom:.7rem;">
+        <div class="kpi-icon blue">🏭</div>
+        <div><div class="kpi-name">Depósito Primario (Barinas)</div><div class="kpi-desc">El inventario que sale de la planta Lacteoca. Gestionado por producción/Kroma.</div></div>
+      </div>
+      <div class="kpi-block">
+        <div class="kpi-icon green">🏪</div>
+        <div><div class="kpi-name">Depósito Secundario (Caracas)</div><div class="kpi-desc">El inventario en Caracas listo para ser distribuido a los PDVs. Tú puedes registrar entradas y salidas aquí.</div></div>
+      </div>
+    </div>
+
+    <p>Cuando Kroma (planta) despacha mercancía hacia Caracas, llegas a ver el estado del envío: <strong>En Tránsito → Recibido</strong>. Recibirás una notificación cuando el despacho salga de Barinas y otra cuando llegue a Caracas.</p>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── 9. Notificaciones ───────────────────────────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">9. Centro de Notificaciones</h2>
+    <p>Genius Keeper te avisa automáticamente de los eventos importantes. Las notificaciones llegan como alertas push en tu dispositivo y se acumulan en el Centro de Notificaciones (ícono de campana 🔔).</p>
+
+    <div class="grid-2">
+      <div class="alert-sample amber">
+        <div class="alert-icon">🛒</div>
+        <div class="alert-text"><strong>Nuevo Despacho a PDV</strong><span>Un mercaderista registró unidades entregadas.</span></div>
+      </div>
+      <div class="alert-sample amber">
+        <div class="alert-icon">🚚</div>
+        <div class="alert-text"><strong>Despacho desde Barinas</strong><span>Kroma declaró mercancía en tránsito hacia Caracas.</span></div>
+      </div>
+      <div class="alert-sample amber">
+        <div class="alert-icon">📦</div>
+        <div class="alert-text"><strong>Mercancía Recibida</strong><span>El depósito confirmó recepción del despacho.</span></div>
+      </div>
+      <div class="alert-sample red">
+        <div class="alert-icon">📋</div>
+        <div class="alert-text"><strong>Nuevo Reporte</strong><span>Un mercaderista envió un reporte de visita.</span></div>
+      </div>
+    </div>
+
+    <p style="margin-top:1rem;">Para marcar una notificación como leída, simplemente tócala. El número en la campana disminuye conforme lees tus notificaciones.</p>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ── 10. Buenas prácticas ────────────────────────────────────────── -->
+  <div class="section">
+    <h2 class="section-title">10. Buenas Prácticas como Gerente</h2>
+
+    <div class="card blue-top">
+      <h3 class="sub-title" style="margin-top:0;">📋 Rutina diaria recomendada</h3>
+      <div class="step">
+        <div class="step-num">🌅</div>
+        <div class="step-body"><strong>Al iniciar el día</strong> Revisa la vista Ventas: ¿hay alertas críticas? ¿cómo va la meta? ¿el radar de acción tiene algo pendiente?</div>
+      </div>
+      <div class="step">
+        <div class="step-num">🌞</div>
+        <div class="step-body"><strong>A mediodía</strong> Revisa las Notificaciones: ¿llegaron despachos? ¿los mercaderistas están reportando?</div>
+      </div>
+      <div class="step">
+        <div class="step-num">🌇</div>
+        <div class="step-body"><strong>Al cerrar el día</strong> Mira el Dashboard: ¿cómo están el DOI y la cobertura de PDVs? ¿hay quiebres nuevos?</div>
+      </div>
+    </div>
+
+    <div class="card yellow-top">
+      <h3 class="sub-title" style="margin-top:0;">⭐ Las 3 métricas más importantes para ti</h3>
+      <ol style="padding-left:1.2rem;color:#334155;line-height:2.2;">
+        <li><strong>% Meta Mensual</strong> — ¿Vas en camino de cumplir?</li>
+        <li><strong>Quiebres de Stock</strong> — ¿El producto está disponible en tienda?</li>
+        <li><strong>Cumplimiento de Visitas</strong> — ¿Tu equipo está ejecutando la ruta?</li>
+      </ol>
+    </div>
+
+    <div class="highlight red">
+      <strong>🔑 Regla de oro:</strong> Si tu equipo no reporta, tus datos no son reales. La disciplina de reporte diario del mercaderista es lo que hace funcionar todo el sistema. Exige un reporte por visita, siempre.
+    </div>
+  </div>
+
+</div><!-- end .page -->
+
+<footer>
+  <p><strong>Genius Keeper — Lacteoca</strong> · Guía del Gerente de Ventas · v1.0</p>
+  <p style="margin-top:.3rem;">Generado para uso interno de Lacteoca.</p>
+</footer>
+
+</body>
+</html>

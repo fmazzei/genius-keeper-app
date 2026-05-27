@@ -15,9 +15,7 @@ import MarketTrendsView from './MarketTrendsView.jsx';
 import AlertsCenterView from './AlertsCenterView.jsx';
 import InventoryPanel from './InventoryPanel.jsx';
 import AdminPanel from './AdminPanel.jsx';
-import SalesFocusDashboard from './SalesFocusDashboard.jsx';
-import CommissionsView from './CommissionsView.jsx';
-import SalesDashboard from './SalesDashboard.jsx';
+import VentasView from './VentasView.jsx';
 
 // ✅ Se importan ambos componentes del planificador
 import MonthlyPlanner from './Planner/MonthlyPlanner.jsx';
@@ -33,7 +31,7 @@ const ManagerLayout = ({ user, role, onLogout }) => {
     
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [currentView, setCurrentView] = useState('dashboard');
+    const [currentView, setCurrentView] = useState(role === 'sales_manager' ? 'ventas' : 'dashboard');
     const [userMetadata, setUserMetadata] = useState({ name: '', email: '' });
 
     useEffect(() => {
@@ -47,15 +45,10 @@ const ManagerLayout = ({ user, role, onLogout }) => {
     }, [user?.uid]);
 
     useEffect(() => {
-        if (role === 'sales_manager') {
-            if (currentView === 'focus' && !modules.salesFocus) setCurrentView('alerts');
-            if (currentView === 'commissions' && !modules.commissions) setCurrentView('alerts');
-            if (currentView === 'sales' && !modules.salesGoals) setCurrentView('alerts');
-        }
         if (role === 'master') {
-            if (currentView === 'trends' && !modules.marketTrends) setCurrentView('dashboard');
+            if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
             if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('dashboard');
-            if (currentView === 'planner' && !modules.plannerManager) setCurrentView('dashboard');
+            if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
         }
     }, [modules, role, currentView]);
 
@@ -71,16 +64,13 @@ const ManagerLayout = ({ user, role, onLogout }) => {
 
     const getGreeting = () => {
         const viewTitles = {
-            dashboard: 'Dashboard Gerencial',
-            trends: 'Análisis de Tendencias',
-            alerts: 'Centro de Notificaciones',
-            inventory: 'Panel de Inventario', 
-            settings: 'Panel de Administración',
-            focus: 'Brújula de Ventas',
-            // El título ahora es más genérico para abarcar ambas vistas
-            planner: 'Centro de Planificación', 
-            commissions: 'Mis Comisiones',
-            sales: 'Metas de Venta'
+            dashboard:  'Dashboard Gerencial',
+            trends:    'Análisis de Tendencias',
+            alerts:    'Centro de Notificaciones',
+            inventory: 'Panel de Inventario',
+            settings:  'Panel de Administración',
+            ventas:    'Ventas',
+            planner:   'Centro de Planificación'
         };
         return viewTitles[currentView] || 'Genius Keeper';
     };
@@ -111,13 +101,11 @@ const ManagerLayout = ({ user, role, onLogout }) => {
 
         const salesManagerNav = (
             <ul>
+                <NavItem icon={<Target size={24} />} text="Ventas" active={currentView === 'ventas'} onClick={() => setCurrentView('ventas')} />
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
-                {modules.salesFocus && <NavItem icon={<Sun size={24} />} text="Brújula de Ventas" active={currentView === 'focus'} onClick={() => setCurrentView('focus')} />}
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
-                {modules.commissions && <NavItem icon={<DollarSign size={24} />} text="Comisiones" active={currentView === 'commissions'} onClick={() => setCurrentView('commissions')} />}
-                {modules.salesGoals && <NavItem icon={<Target size={24} />} text="Metas de Venta" active={currentView === 'sales'} onClick={() => setCurrentView('sales')} />}
             </ul>
         );
 
@@ -138,18 +126,17 @@ const ManagerLayout = ({ user, role, onLogout }) => {
         
         return (
             <>
+                <div className={currentView === 'ventas'    ? 'block h-full' : 'hidden'}><VentasView {...commonProps} allAlerts={[]} /></div>
                 <div className={currentView === 'dashboard' ? 'block h-full' : 'hidden'}><GerencialDashboard {...commonProps} role={role} /></div>
-                <div className={currentView === 'trends' ? 'block h-full' : 'hidden'}><MarketTrendsView {...commonProps} /></div>
-                <div className={currentView === 'alerts' ? 'block h-full' : 'hidden'}><AlertsCenterView onNavigate={setCurrentView} /></div>
+                <div className={currentView === 'trends'    ? 'block h-full' : 'hidden'}><MarketTrendsView {...commonProps} /></div>
+                <div className={currentView === 'alerts'    ? 'block h-full' : 'hidden'}><AlertsCenterView onNavigate={setCurrentView} /></div>
                 <div className={currentView === 'inventory' ? 'block h-full' : 'hidden'}><InventoryPanel role={role} /></div>
-                <div className={currentView === 'settings' ? 'block h-full' : 'hidden'}><AdminPanel user={user} {...commonProps} /></div>
-                <div className={currentView === 'focus' ? 'block h-full' : 'hidden'}><SalesFocusDashboard {...commonProps} /></div>
-                
-                {/* ✅ LÓGICA DE PLANIFICACIÓN ACTUALIZADA */}
+                <div className={currentView === 'settings'  ? 'block h-full' : 'hidden'}><AdminPanel user={user} {...commonProps} /></div>
+
                 <div className={currentView === 'planner' ? 'block h-full' : 'hidden'}>
                     {selectedWeekId ? (
-                        <Planner 
-                            role={role} 
+                        <Planner
+                            role={role}
                             allPossibleStops={posList}
                             selectedReporter={user}
                             weekId={selectedWeekId}
@@ -157,15 +144,12 @@ const ManagerLayout = ({ user, role, onLogout }) => {
                             onSelectPos={() => {}}
                         />
                     ) : (
-                        <MonthlyPlanner 
+                        <MonthlyPlanner
                             reporter={user}
                             onSelectWeek={(weekId) => setSelectedWeekId(weekId)}
                         />
                     )}
                 </div>
-                
-                <div className={currentView === 'commissions' ? 'block h-full' : 'hidden'}><CommissionsView /></div>
-                <div className={currentView === 'sales' ? 'block h-full' : 'hidden'}><SalesDashboard {...commonProps} /></div>
             </>
         );
     };
