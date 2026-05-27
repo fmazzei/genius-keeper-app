@@ -33,6 +33,21 @@ const customFileToDataURL = (file) => {
 
 // --- Constantes y Utilidades ---
 const TOTAL_STEPS = 4;
+
+const daysUntilExpiry = (dateStr) => {
+    if (!dateStr) return Infinity;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.ceil((new Date(dateStr + 'T00:00:00') - today) / (1000 * 60 * 60 * 24));
+};
+
+const getUrgency = (days) => {
+    if (days <= 0)  return { label: 'Vencido', badge: 'bg-red-800 text-white',   row: 'border-l-4 border-red-500 bg-red-50' };
+    if (days <= 7)  return { label: `${days}d`, badge: 'bg-red-500 text-white',   row: 'border-l-4 border-red-400 bg-red-50' };
+    if (days <= 15) return { label: `${days}d`, badge: 'bg-amber-500 text-white', row: 'border-l-4 border-amber-400 bg-amber-50' };
+    if (days <= 30) return { label: `${days}d`, badge: 'bg-yellow-400 text-black',row: 'border-l-4 border-yellow-400 bg-yellow-50' };
+    return              { label: `${days}d`, badge: 'bg-green-500 text-white',  row: 'bg-slate-100' };
+};
 const SHELF_LOCATIONS = [ { id: 'ojos', label: 'Nivel Ojos (Zona Caliente)' }, { id: 'manos', label: 'Nivel Manos (Zona Tibia)' }, { id: 'superior', label: 'Nivel Superior (Zona Fría)' }, { id: 'inferior', label: 'Nivel Inferior (Zona Fría)' } ];
 const ADJACENT_CATEGORIES = [ { id: 'Quesos crema', label: 'Quesos crema' }, { id: 'Quesos de Cabra', label: 'Quesos de Cabra' }, { id: 'Delicatessen', label: 'Delicatessen' }, { id: 'Nevera Charcutería', label: 'Nevera Charcutería' } ];
 const POP_STATUS_OPTIONS = [ { id: 'Exhibido correctamente', label: 'Exhibido OK', icon: <ThumbsUp/> }, { id: 'Dañado', label: 'Dañado', icon: <AlertCircle/> }, { id: 'Ausente', label: 'Ausente', icon: <X/> }, { id: 'Sin Campaña Activa', label: 'Sin Campaña', icon: <Info/> } ];
@@ -144,19 +159,40 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                 </div>
                 <div>
                     <h4 className="font-semibold text-slate-700 mb-2 mt-4">Lotes Registrados:</h4>
-                    <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                         {report.batches.length === 0 && !report.stockout && <p className="text-sm text-slate-400 text-center p-4">Aún no has añadido ningún lote.</p>}
                         {report.stockout && <p className="text-sm font-semibold text-red-600 text-center p-4 bg-red-50 rounded-lg">Quiebre de Stock reportado.</p>}
-                        {report.batches.map((batch, index) => (
-                            <div key={index} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-slate-100 rounded-lg animate-fade-in gap-2">
-                                <span className="font-semibold">Vence: {batch.expiryDate}</span>
-                                <div className="flex items-center justify-between w-full sm:w-auto">
-                                    <span className="font-bold text-lg text-brand-blue">{batch.quantity} <span className="text-sm font-normal text-slate-500">unid.</span></span>
-                                    {!isReadOnly && <button onClick={() => handleRemoveBatch(index)}><Trash2 className="text-red-500" size={18}/></button>}
-                                </div>
-                            </div>
-                        ))}
+                        {[...report.batches]
+                            .map((b, originalIdx) => ({ ...b, originalIdx }))
+                            .sort((a, b) => daysUntilExpiry(a.expiryDate) - daysUntilExpiry(b.expiryDate))
+                            .map((batch) => {
+                                const days = daysUntilExpiry(batch.expiryDate);
+                                const urg = getUrgency(days);
+                                return (
+                                    <div key={batch.originalIdx} className={`flex flex-col sm:flex-row justify-between sm:items-center p-3 rounded-lg animate-fade-in gap-2 ${urg.row}`}>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <span className="font-semibold text-slate-800">Vence: {batch.expiryDate}</span>
+                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${urg.badge}`}>{urg.label}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between w-full sm:w-auto gap-3">
+                                            <span className="font-bold text-lg text-brand-blue">{batch.quantity} <span className="text-sm font-normal text-slate-500">unid.</span></span>
+                                            {!isReadOnly && <button onClick={() => handleRemoveBatch(batch.originalIdx)}><Trash2 className="text-red-500" size={18}/></button>}
+                                        </div>
+                                    </div>
+                                );
+                        })}
                     </div>
+                    {(() => {
+                        const atRisk = report.batches.reduce((s, b) => s + (daysUntilExpiry(b.expiryDate) <= 15 ? b.quantity : 0), 0);
+                        return atRisk > 0 && !report.stockout ? (
+                            <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-lg p-3 mt-3">
+                                <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                                <p className="text-sm font-semibold text-amber-800">
+                                    {atRisk} unidad{atRisk !== 1 ? 'es' : ''} vence{atRisk !== 1 ? 'n' : ''} en ≤ 15 días — acción requerida
+                                </p>
+                            </div>
+                        ) : null;
+                    })()}
                 </div>
             </div>
             {!isReadOnly && <CameraScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onCapture={handleScanComplete} onStatusChange={setScannerStatus}/>}

@@ -10,9 +10,7 @@ admin.initializeApp();
 const triggers = require('./handlers/triggers');
 const callable = require('./handlers/callable');
 const scheduled = require('./handlers/scheduled');
-const webhooks = require('./handlers/webhooks');
+const webhooks  = require('./handlers/webhooks');
+const reports   = require('./handlers/reports');
 
-// Usamos Object.assign para fusionar todas las funciones 
-// de los archivos modulares en el objeto 'exports' principal.
-// Esto permite que Firebase las descubra individualmente con sus nombres originales.
-Object.assign(exports, triggers, callable, scheduled, webhooks);
+Object.assign(exports, triggers, callable, scheduled, webhooks, reports);

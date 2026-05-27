@@ -1,10 +1,10 @@
 // RUTA: src/Pages/AdminPanel.jsx
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { db } from '../Firebase/config.js';
+import { db, functions } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
-// ✅ Se añade el ícono 'Link2'
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2 } from 'lucide-react';
+import { httpsCallable } from 'firebase/functions';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
 import { WIDGET_REGISTRY, WIDGET_CATEGORIES } from '../config/widgetRegistry.js';
@@ -1348,6 +1348,166 @@ const AlertsManagement = () => {
     );
 };
 
+// ─── Reports Auto Management ──────────────────────────────────────────────────
+
+const REPORT_TYPES_META = [
+    { id: 'daily',   label: 'Reporte Diario',   Icon: Calendar,   schedule: 'Cada día · 8:00 AM',          desc: 'Resumen de visitas, quiebres y unidades repuestas del día anterior.' },
+    { id: 'weekly',  label: 'Reporte Semanal',  Icon: BarChart2,  schedule: 'Cada lunes · 8:00 AM',        desc: 'Visitas, rotación por PDV, frescura en anaquel y comparativa con la semana anterior.' },
+    { id: 'monthly', label: 'Reporte Mensual',  Icon: TrendingUp, schedule: '1° de cada mes · 8:00 AM',    desc: 'Meta de facturación, rotación global, calidad POP e inteligencia competitiva.' },
+];
+
+const ReportsAutoManagement = () => {
+    const [config, setConfig]   = useState({ recipients: [], daily: { enabled: false }, weekly: { enabled: false }, monthly: { enabled: false } });
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving]   = useState(false);
+    const [saved, setSaved]     = useState(false);
+    const [sending, setSending] = useState(null);
+    const [sendResult, setSendResult] = useState({});
+    const [newName, setNewName]   = useState('');
+    const [newEmail, setNewEmail] = useState('');
+
+    const configRef = doc(db, 'settings', 'reportsConfig');
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const snap = await getDoc(configRef);
+                if (snap.exists()) setConfig(prev => ({ ...prev, ...snap.data() }));
+            } catch (e) { console.error(e); }
+            finally { setLoading(false); }
+        };
+        load();
+    }, []);
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            await setDoc(configRef, config);
+            setSaved(true); setTimeout(() => setSaved(false), 3000);
+        } catch (e) { alert('Error al guardar. Intenta de nuevo.'); }
+        finally { setSaving(false); }
+    };
+
+    const handleAddRecipient = (e) => {
+        e.preventDefault();
+        const email = newEmail.trim().toLowerCase();
+        if (!email) return;
+        if (config.recipients.some(r => r.email === email)) { alert('Este correo ya está en la lista.'); return; }
+        setConfig(prev => ({ ...prev, recipients: [...prev.recipients, { name: newName.trim() || email, email, enabled: true }] }));
+        setNewName(''); setNewEmail('');
+    };
+
+    const toggleRecipient  = (email) => setConfig(prev => ({ ...prev, recipients: prev.recipients.map(r => r.email === email ? { ...r, enabled: !r.enabled } : r) }));
+    const deleteRecipient  = (email) => { if (window.confirm(`¿Eliminar ${email}?`)) setConfig(prev => ({ ...prev, recipients: prev.recipients.filter(r => r.email !== email) })); };
+    const toggleReportType = (id, val) => setConfig(prev => ({ ...prev, [id]: { ...(prev[id] || {}), enabled: val } }));
+
+    const handleSendNow = async (type) => {
+        setSending(type);
+        setSendResult(prev => ({ ...prev, [type]: null }));
+        try {
+            const fn = httpsCallable(functions, 'sendManualReport');
+            const res = await fn({ type });
+            setSendResult(prev => ({ ...prev, [type]: { ok: true, count: res.data.recipientCount } }));
+        } catch (e) {
+            setSendResult(prev => ({ ...prev, [type]: { ok: false, error: e.message } }));
+        } finally { setSending(null); }
+    };
+
+    const activeRecipients = config.recipients.filter(r => r.enabled !== false).length;
+
+    if (loading) return <LoadingSpinner />;
+
+    return (
+        <div className="space-y-8">
+            {/* Destinatarios */}
+            <div className="bg-white rounded-lg shadow p-5">
+                <div className="flex items-start justify-between mb-4 gap-4">
+                    <div>
+                        <h3 className="text-xl font-semibold text-slate-700">Destinatarios de Reportes</h3>
+                        <p className="text-sm text-slate-500 mt-1">Personas que recibirán los reportes automáticos y manuales por correo.</p>
+                    </div>
+                    <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-5 rounded-lg hover:bg-opacity-90 disabled:opacity-60 shrink-0">
+                        <Save size={16} />{saving ? 'Guardando...' : saved ? '¡Guardado!' : 'Guardar Cambios'}
+                    </button>
+                </div>
+                <form onSubmit={handleAddRecipient} className="flex flex-col sm:flex-row gap-3 mb-5">
+                    <input type="text"  value={newName}  onChange={e => setNewName(e.target.value)}  placeholder="Nombre (ej: Francisco Mazzei)" className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="correo@empresa.com" required   className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                    <button type="submit" className="flex items-center justify-center gap-2 bg-brand-blue text-white font-bold py-3 px-5 rounded-lg whitespace-nowrap"><PlusCircle size={18} /> Agregar</button>
+                </form>
+                {config.recipients.length === 0
+                    ? <p className="text-slate-400 text-center py-6">No hay destinatarios. Agrega al menos uno para activar el envío.</p>
+                    : <ul className="divide-y divide-slate-100">
+                        {config.recipients.map(r => (
+                            <li key={r.email} className="flex items-center justify-between py-3 gap-4">
+                                <div className="min-w-0">
+                                    <p className="font-semibold text-slate-800 truncate">{r.name}</p>
+                                    <p className="text-sm text-slate-500 truncate">{r.email}</p>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${r.enabled !== false ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{r.enabled !== false ? 'Activo' : 'Inactivo'}</span>
+                                    <ToggleSwitch enabled={r.enabled !== false} setEnabled={() => toggleRecipient(r.email)} />
+                                    <button onClick={() => deleteRecipient(r.email)} className="text-red-400 hover:text-red-600"><Trash2 size={18} /></button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                }
+            </div>
+
+            {/* Tipos de reporte */}
+            <div className="bg-white rounded-lg shadow p-5">
+                <h3 className="text-xl font-semibold text-slate-700 mb-1">Reportes Automáticos por Email</h3>
+                <p className="text-sm text-slate-500 mb-5">Activa cada tipo. El sistema los genera y envía automáticamente según el horario indicado.</p>
+                <div className="space-y-4">
+                    {REPORT_TYPES_META.map(({ id, label, Icon, schedule, desc }) => {
+                        const enabled   = config[id]?.enabled ?? false;
+                        const isSending = sending === id;
+                        const result    = sendResult[id];
+                        return (
+                            <div key={id} className={`border rounded-xl p-5 transition-all ${enabled ? 'border-brand-blue/40 bg-blue-50/40' : 'border-slate-200'}`}>
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-start gap-3 flex-1">
+                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${enabled ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                            <Icon size={20} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <p className="font-semibold text-slate-800">{label}</p>
+                                                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">{schedule}</span>
+                                            </div>
+                                            <p className="text-sm text-slate-500 mt-1">{desc}</p>
+                                            {result && (
+                                                <p className={`text-xs mt-2 font-semibold ${result.ok ? 'text-green-600' : 'text-red-600'}`}>
+                                                    {result.ok ? `✅ Enviado a ${result.count} destinatario(s)` : `❌ ${result.error}`}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        <button
+                                            onClick={() => handleSendNow(id)}
+                                            disabled={isSending || activeRecipients === 0}
+                                            title={activeRecipients === 0 ? 'Agrega al menos un destinatario activo' : 'Enviar ahora'}
+                                            className="flex items-center gap-1.5 text-xs font-semibold bg-white border border-slate-300 text-slate-700 py-1.5 px-3 rounded-lg hover:bg-slate-50 disabled:opacity-40 transition-colors"
+                                        >
+                                            {isSending ? <><RefreshCw size={13} className="animate-spin" /> Enviando...</> : <><Send size={13} /> Enviar Ahora</>}
+                                        </button>
+                                        <ToggleSwitch enabled={enabled} setEnabled={(v) => toggleReportType(id, v)} />
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+                <p className="text-xs text-slate-400 mt-5 p-3 bg-slate-50 rounded-lg">
+                    📧 Los reportes usan el servidor SMTP configurado en la pestaña <strong>Correos</strong>. Asegúrate de que esté activo antes de habilitar el envío automático.
+                </p>
+            </div>
+        </div>
+    );
+};
+
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
 const AdminPanel = ({ user, posList, reports, loading }) => {
@@ -1368,6 +1528,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     <TabButton id="modules" text="Módulos" icon={<LayoutGrid size={18} />} />
                     <TabButton id="dashboard" text="Dashboard" icon={<BarChart2 size={18} />} />
                     <TabButton id="emails" text="Correos" icon={<Mail size={18} />} />
+                    <TabButton id="auto_reports" text="Auto-Reportes" icon={<Calendar size={18} />} />
                     <TabButton id="alerts" text="Alertas" icon={<Bell size={18} />} />
                     <TabButton id="settings" text="Configuración" icon={<Settings size={18} />} />
                 </div>
@@ -1381,6 +1542,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     {activeTab === 'modules' && <ModuleManagement />}
                     {activeTab === 'dashboard' && <DashboardManagement />}
                     {activeTab === 'emails' && <EmailManagement />}
+                    {activeTab === 'auto_reports' && <ReportsAutoManagement />}
                     {activeTab === 'alerts' && <AlertsManagement />}
                     {activeTab === 'settings' && <GeneralSettings />}
                 </div>
