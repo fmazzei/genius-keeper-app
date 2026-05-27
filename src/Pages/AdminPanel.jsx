@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
 // ✅ Se añade el ícono 'Link2'
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
@@ -1047,6 +1047,154 @@ const EmailManagement = () => {
     );
 };
 
+// ─── Alerts Management ────────────────────────────────────────────────────────
+
+const ALL_ROLES = [
+    { id: 'master',          label: 'Master' },
+    { id: 'sales_manager',   label: 'Gerente de Ventas' },
+    { id: 'kroma_admin',     label: 'Admin Kroma' },
+    { id: 'kroma_gerencial', label: 'Gerencial Kroma' },
+    { id: 'merchandiser',    label: 'Merchandiser' },
+];
+
+const ALL_EVENTS = [
+    { id: 'nuevo_reporte',        label: 'Nuevo Reporte de Visita',            desc: 'Cuando un merchandiser envía un nuevo reporte desde un PDV',        Icon: FileText,      defaultDests: ['master'] },
+    { id: 'nuevo_pedido',         label: 'Nuevo Despacho a PDV (GK)',          desc: 'Cuando un merchandiser registra unidades entregadas a un cliente',   Icon: ShoppingCart,  defaultDests: ['master', 'sales_manager'] },
+    { id: 'nuevo_despacho',       label: 'Despacho desde Barinas (Kroma)',     desc: 'Cuando Kroma declara mercancía en tránsito hacia Caracas',           Icon: Truck,         defaultDests: ['master', 'sales_manager', 'kroma_gerencial', 'kroma_admin'] },
+    { id: 'despacho_entregado',   label: 'Despacho Entregado en Destino',      desc: 'Cuando se confirma que el despacho de Kroma llegó a su destino',     Icon: CheckCircle,   defaultDests: ['master', 'sales_manager', 'kroma_gerencial', 'kroma_admin'] },
+    { id: 'transfer_recibida',    label: 'Mercancía Recibida en Caracas',      desc: 'Cuando se confirma recepción en el almacén de Caracas (GK)',         Icon: Package,       defaultDests: ['master', 'sales_manager'] },
+    { id: 'visita_vencida',       label: 'Visita Vencida',                     desc: 'Cuando una visita programada no fue completada a tiempo',            Icon: AlertCircle,   defaultDests: ['master'] },
+    { id: 'produccion_completada',label: 'Producción Completada (Kroma)',      desc: 'Cuando se finaliza una planilla de producción en Kroma',             Icon: TrendingUp,    defaultDests: ['kroma_gerencial', 'kroma_admin'] },
+    { id: 'solicitud_edicion',    label: 'Solicitud de Edición (Kroma)',       desc: 'Cuando el operario solicita editar un registro en Kroma',            Icon: ClipboardList, defaultDests: ['kroma_admin', 'master'] },
+];
+
+const AlertsManagement = () => {
+    const [config, setConfig]   = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving]   = useState(false);
+    const [saved, setSaved]     = useState(false);
+
+    const configRef = doc(db, 'settings', 'notificationsConfig');
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const snap = await getDoc(configRef);
+                if (snap.exists()) {
+                    setConfig(snap.data());
+                } else {
+                    const defaults = {};
+                    ALL_EVENTS.forEach(e => { defaults[e.id] = { enabled: true, destinations: e.defaultDests }; });
+                    setConfig({ events: defaults });
+                }
+            } catch (e) { console.error(e); }
+            finally { setLoading(false); }
+        };
+        load();
+    }, []);
+
+    const toggleEvent = (eventId) => {
+        setConfig(prev => {
+            const cur = (prev.events || {})[eventId] || {};
+            return { ...prev, events: { ...prev.events, [eventId]: { ...cur, enabled: cur.enabled === false } } };
+        });
+    };
+
+    const toggleDest = (eventId, roleId) => {
+        setConfig(prev => {
+            const cur   = (prev.events || {})[eventId] || {};
+            const dests = cur.destinations || [];
+            return {
+                ...prev,
+                events: {
+                    ...prev.events,
+                    [eventId]: {
+                        ...cur,
+                        destinations: dests.includes(roleId) ? dests.filter(d => d !== roleId) : [...dests, roleId],
+                    },
+                },
+            };
+        });
+    };
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            await setDoc(configRef, config);
+            setSaved(true);
+            setTimeout(() => setSaved(false), 3000);
+        } catch (e) { alert('Error al guardar. Intenta de nuevo.'); }
+        finally { setSaving(false); }
+    };
+
+    if (loading) return <LoadingSpinner />;
+
+    return (
+        <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow p-5">
+                <div className="flex items-start justify-between mb-1 gap-4">
+                    <div>
+                        <h3 className="text-xl font-semibold text-slate-700">Configuración de Alertas</h3>
+                        <p className="text-sm text-slate-500 mt-1">Activa o desactiva cada evento y selecciona qué roles reciben la notificación.</p>
+                    </div>
+                    <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-5 rounded-lg hover:bg-opacity-90 disabled:opacity-60 shrink-0"
+                    >
+                        <Save size={16} />
+                        {saving ? 'Guardando...' : saved ? '¡Guardado!' : 'Guardar'}
+                    </button>
+                </div>
+
+                <div className="mt-6 space-y-4">
+                    {ALL_EVENTS.map(({ id, label, desc, Icon, defaultDests }) => {
+                        const ev      = (config?.events || {})[id] || { enabled: true, destinations: defaultDests };
+                        const enabled = ev.enabled !== false;
+                        const dests   = ev.destinations || defaultDests;
+
+                        return (
+                            <div key={id} className={`border rounded-lg p-4 transition-all ${enabled ? 'border-slate-200' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                                        <div className="w-9 h-9 rounded-lg bg-brand-blue/10 flex items-center justify-center shrink-0 mt-0.5">
+                                            <Icon size={18} className="text-brand-blue" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-semibold text-slate-800 leading-tight">{label}</p>
+                                            <p className="text-sm text-slate-500 mt-0.5">{desc}</p>
+                                            {enabled && (
+                                                <div className="flex flex-wrap gap-1.5 mt-3">
+                                                    {ALL_ROLES.map(role => (
+                                                        <button
+                                                            key={role.id}
+                                                            onClick={() => toggleDest(id, role.id)}
+                                                            className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
+                                                                dests.includes(role.id)
+                                                                    ? 'bg-brand-blue text-white border-brand-blue'
+                                                                    : 'bg-white text-slate-500 border-slate-300 hover:border-brand-blue hover:text-brand-blue'
+                                                            }`}
+                                                        >
+                                                            {role.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <ToggleSwitch enabled={enabled} setEnabled={() => toggleEvent(id)} />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ─── Admin Panel ──────────────────────────────────────────────────────────────
+
 const AdminPanel = ({ user, posList, reports, loading }) => {
     const [activeTab, setActiveTab] = useState('settings');
     const TabButton = ({ id, text, icon }) => ( <button onClick={() => setActiveTab(id)} className={`flex items-center px-3 sm:px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === id ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-200'}`}>{icon}<span className="ml-2 hidden sm:inline">{text}</span></button> );
@@ -1064,6 +1212,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     <TabButton id="sales_goals" text="Metas de Venta" icon={<Target size={18} />} />
                     <TabButton id="modules" text="Módulos" icon={<LayoutGrid size={18} />} />
                     <TabButton id="emails" text="Correos" icon={<Mail size={18} />} />
+                    <TabButton id="alerts" text="Alertas" icon={<Bell size={18} />} />
                     <TabButton id="settings" text="Configuración" icon={<Settings size={18} />} />
                 </div>
                 <div className="animate-fade-in">
@@ -1075,6 +1224,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     {activeTab === 'sales_goals' && <SalesGoalsManagement />}
                     {activeTab === 'modules' && <ModuleManagement />}
                     {activeTab === 'emails' && <EmailManagement />}
+                    {activeTab === 'alerts' && <AlertsManagement />}
                     {activeTab === 'settings' && <GeneralSettings />}
                 </div>
             </div>

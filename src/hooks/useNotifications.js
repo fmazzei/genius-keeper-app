@@ -64,5 +64,15 @@ export const useNotifications = () => {
         }
     };
 
-    return { notifications, loading, markAsRead, deleteNotification, viewReport };
+    const unreadCount = notifications.filter(n => !n.read).length;
+
+    const markAllAsRead = async () => {
+        const unread = notifications.filter(n => !n.read);
+        if (!unread.length) return;
+        await Promise.all(unread.map(n =>
+            updateDoc(doc(db, 'notifications', n.id), { read: true })
+        ));
+    };
+
+    return { notifications, loading, markAsRead, deleteNotification, viewReport, unreadCount, markAllAsRead };
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { KromaProvider, useKroma } from './KromaContext';
 import KromaUserSelect from './KromaUserSelect';
 
@@ -112,16 +112,17 @@ function useUnreadCount(kromaUser) {
     const [count, setCount] = useState(0);
     useEffect(() => {
         if (!kromaUser) return;
-        getDocs(collection(db, 'kroma_notifications')).then(snap => {
-            const uid  = kromaUser.id;
-            const role = kromaUser.role;
+        const uid  = kromaUser.id;
+        const role = kromaUser.role;
+        const unsub = onSnapshot(collection(db, 'kroma_notifications'), (snap) => {
             const unread = snap.docs.filter(d => {
                 const n = d.data();
                 const mine = (n.destinatarios || []).includes(uid) || (n.destinatarios || []).includes(role) || !(n.destinatarios || []).length;
                 return mine && !(n.leidaPor || []).includes(uid);
             });
             setCount(unread.length);
-        }).catch(() => {});
+        }, () => {});
+        return () => unsub();
     }, [kromaUser]);
     return count;
 }

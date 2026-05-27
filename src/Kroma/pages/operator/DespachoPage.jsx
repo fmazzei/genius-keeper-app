@@ -346,14 +346,16 @@ function CityPicker({ onSelect, onClose }) {
 // ─── Despacho history card ────────────────────────────────────────────────────
 
 function DespachoCard({ despacho, onMarkEntregado }) {
-    const [expanded, setExpanded] = useState(false);
-    const [marking, setMarking]   = useState(false);
+    const [expanded, setExpanded]     = useState(false);
+    const [marking, setMarking]       = useState(false);
+    const [confirmOpen, setConfirmOpen] = useState(false);
     const lineas   = despacho.lineas || [];
     const destinos = [...new Set(lineas.map(l => destinoDisplay(l.destino)).filter(Boolean))];
     const isTransito = despacho.estado === 'en_transito';
 
     const handleMark = async () => {
         setMarking(true);
+        setConfirmOpen(false);
         await onMarkEntregado();
         setMarking(false);
     };
@@ -403,14 +405,45 @@ function DespachoCard({ despacho, onMarkEntregado }) {
                         <p className="text-xs text-slate-500 italic border-t border-slate-700 pt-2">{despacho.notas}</p>
                     )}
                     {isTransito && (
-                        <button
-                            onClick={handleMark}
-                            disabled={marking}
-                            className="w-full mt-1 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/30 text-emerald-400 font-medium py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-60"
-                        >
-                            {marking ? <Loader size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                            {marking ? 'Actualizando…' : 'Marcar como Entregado'}
-                        </button>
+                        <>
+                            <button
+                                onClick={() => setConfirmOpen(true)}
+                                disabled={marking}
+                                className="w-full mt-1 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/30 text-emerald-400 font-medium py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-60"
+                            >
+                                {marking ? <Loader size={14} className="animate-spin" /> : <CheckCircle size={14} />}
+                                {marking ? 'Actualizando…' : 'Marcar como Entregado'}
+                            </button>
+
+                            {confirmOpen && (
+                                <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+                                    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+                                        <div className="w-12 h-12 rounded-xl bg-emerald-500/15 flex items-center justify-center mx-auto mb-4">
+                                            <CheckCircle size={22} className="text-emerald-400" />
+                                        </div>
+                                        <p className="text-white font-bold text-lg text-center mb-2">¿Confirmar entrega?</p>
+                                        <p className="text-slate-400 text-sm text-center mb-6">
+                                            Esto marcará el despacho como <span className="text-emerald-400 font-medium">entregado en destino</span>. La acción no se puede deshacer.
+                                        </p>
+                                        <div className="flex gap-3">
+                                            <button
+                                                onClick={() => setConfirmOpen(false)}
+                                                className="flex-1 border border-slate-600 text-slate-400 hover:text-white rounded-xl py-2.5 text-sm font-medium transition-colors"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                onClick={handleMark}
+                                                disabled={marking}
+                                                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl py-2.5 text-sm transition-colors disabled:opacity-60"
+                                            >
+                                                {marking ? 'Actualizando…' : 'Confirmar'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
             )}

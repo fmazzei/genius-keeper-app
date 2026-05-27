@@ -6,12 +6,13 @@ const admin = require("firebase-admin");
 // --- Helper de Notificaciones ---
 const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
     if (!userId) return;
-    
+
     // 1. Crear notificación en la base de datos (para el centro de notificaciones interno)
     await admin.firestore().collection("notifications").add({
         userId,
         title: notificationPayload.title,
         body: notificationPayload.body,
+        tipo: dataPayload.tipo || 'general',
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         read: false,
         link: dataPayload.link || ''
@@ -33,6 +34,61 @@ const sendNotificationToUser = async (userId, notificationPayload, dataPayload) 
 
     await admin.messaging().sendEachForMulticast({ tokens, ...payload });
     console.log(`Notificación push enviada a ${tokens.length} dispositivo(s) del usuario ${userId}`);
+};
+
+// --- Helpers de configuración y enrutamiento de notificaciones ---
+
+const getNotifConfig = async () => {
+    try {
+        const snap = await admin.firestore().doc("settings/notificationsConfig").get();
+        return snap.exists ? snap.data() : {};
+    } catch { return {}; }
+};
+
+const sendKromaNotif = async ({ tipo, mensaje, logId, lote, productoNombre, destinatarios }) => {
+    await admin.firestore().collection("kroma_notifications").add({
+        tipo,
+        mensaje,
+        logId: logId || null,
+        lote: lote || null,
+        productoNombre: productoNombre || null,
+        destinatarios: destinatarios || [],
+        leidaPor: [],
+        leida: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+};
+
+// Routes notification to GK push OR Kroma internal depending on destination roles
+const notifyByDestinations = async (destinations, notifPayload, dataPayload) => {
+    const db = admin.firestore();
+    const GK_ROLES    = ["master", "sales_manager", "merchandiser"];
+    const KROMA_ROLES = ["kroma_admin", "kroma_gerencial"];
+
+    const gkDests    = destinations.filter(d => GK_ROLES.includes(d));
+    const kromaDests = destinations.filter(d => KROMA_ROLES.includes(d));
+
+    if (gkDests.length > 0) {
+        try {
+            const usersSnap = await db.collection("users_metadata").where("role", "in", gkDests).get();
+            const active = usersSnap.docs.filter(d => d.data().active !== false);
+            await Promise.all(active.map(d => sendNotificationToUser(d.id, notifPayload, dataPayload)));
+        } catch (err) {
+            functions.logger.error("notifyByDestinations GK error:", err);
+        }
+    }
+
+    if (kromaDests.length > 0) {
+        try {
+            await sendKromaNotif({
+                tipo: dataPayload.tipo || "general",
+                mensaje: `${notifPayload.title}: ${notifPayload.body}`,
+                destinatarios: kromaDests,
+            });
+        } catch (err) {
+            functions.logger.error("notifyByDestinations Kroma error:", err);
+        }
+    }
 };
 
 // =========================================================================================
@@ -342,6 +398,84 @@ exports.onPedidoCreated = functions.firestore
         } catch (err) {
             functions.logger.error("Error enviando correo de pedido:", err);
         }
+
+        return null;
+    });
+
+// =========================================================================================
+// TRIGGERS: Cadena de suministro Kroma ↔ Genius Keeper
+// =========================================================================================
+
+exports.onDespachoCreated = functions.firestore
+    .document("kroma_despachos/{despachoId}")
+    .onCreate(async (snap) => {
+        const despacho = snap.data();
+
+        const config = await getNotifConfig();
+        const eventConfig = (config.events || {}).nuevo_despacho;
+        if (eventConfig && eventConfig.enabled === false) return null;
+
+        const destinations = (eventConfig && eventConfig.destinations) ||
+            ["master", "sales_manager", "kroma_gerencial", "kroma_admin"];
+
+        const lineas     = despacho.lineas || [];
+        const totalItems = lineas.reduce((s, l) => s + (l.cantidad || 0), 0);
+
+        await notifyByDestinations(destinations, {
+            title: "Nuevo Despacho desde Barinas",
+            body: `${despacho.responsable?.nombre || "Kroma"} despachó ${totalItems} unidades (${lineas.length} línea${lineas.length !== 1 ? "s" : ""}) — en tránsito.`,
+        }, { link: "/supply_chain", tipo: "nuevo_despacho" });
+
+        return null;
+    });
+
+exports.onDespachoUpdated = functions.firestore
+    .document("kroma_despachos/{despachoId}")
+    .onUpdate(async (change) => {
+        const before = change.before.data();
+        const after  = change.after.data();
+
+        if (before.estado === after.estado) return null;
+        if (after.estado !== "entregado") return null;
+
+        const config = await getNotifConfig();
+        const eventConfig = (config.events || {}).despacho_entregado;
+        if (eventConfig && eventConfig.enabled === false) return null;
+
+        const destinations = (eventConfig && eventConfig.destinations) ||
+            ["master", "sales_manager", "kroma_gerencial", "kroma_admin"];
+
+        const lineas     = after.lineas || [];
+        const totalItems = lineas.reduce((s, l) => s + (l.cantidad || 0), 0);
+
+        await notifyByDestinations(destinations, {
+            title: "Despacho Entregado en Destino",
+            body: `El despacho de ${totalItems} unidades ha sido confirmado como entregado.`,
+        }, { link: "/supply_chain", tipo: "despacho_entregado" });
+
+        return null;
+    });
+
+exports.onTransferReceived = functions.firestore
+    .document("transfers/{transferId}")
+    .onUpdate(async (change) => {
+        const before = change.before.data();
+        const after  = change.after.data();
+
+        if (before.status === after.status) return null;
+        if (!["recibido", "recibida", "received"].includes(after.status)) return null;
+
+        const config = await getNotifConfig();
+        const eventConfig = (config.events || {}).transfer_recibida;
+        if (eventConfig && eventConfig.enabled === false) return null;
+
+        const destinations = (eventConfig && eventConfig.destinations) ||
+            ["master", "sales_manager"];
+
+        await notifyByDestinations(destinations, {
+            title: "Mercancía Recibida en Caracas",
+            body: `La transferencia de ${after.totalQuantity || 0} unidades fue confirmada en el almacén de Caracas.`,
+        }, { link: "/logistics", tipo: "transfer_recibida" });
 
         return null;
     });
