@@ -2210,20 +2210,7 @@ export default function DailyProductionPage() {
 
         // Cierre de Jornada gate: if the last completed block was on a different calendar day,
         // ask the operator to report consumables before advancing.
-        if (!cierreJornada) {
-            const completedEntries = Object.values(activeLog?.bloquesData || {}).filter(b => b.completado && b.completadoAt);
-            if (completedEntries.length > 0) {
-                const lastDate = new Date(completedEntries.sort((a, b) => new Date(b.completadoAt) - new Date(a.completadoAt))[0].completadoAt);
-                const today = new Date();
-                const isNewDay = lastDate.toDateString() !== today.toDateString();
-                if (isNewDay) {
-                    const dayNum = completedEntries.length + 1;
-                    setCierreConsumos(consumiblesInv.map(c => ({ materialId: c.id, nombre: c.materialNombre, cantidad: 0, unidad: c.unidadBase || 'und' })));
-                    setCierreJornada({ pendingIdx: idx, dia: dayNum });
-                    return;
-                }
-            }
-        }
+        // Cierre de Jornada gate moved below — needs holdHasta computed first
 
         const reg     = bloquesData[idxStr]?.registros || {};
         const isEmpaque     = bloque.tipo === 'empaque';
@@ -2240,6 +2227,16 @@ export default function DailyProductionPage() {
                 || (plannedMin > 0 ? nowDatetimeLocal(plannedMin * 60 * 1000) : null);
             holdHasta  = holdDateStr ? new Date(holdDateStr) : null;
             holdBloque = blockLabel(bloque.tipo);
+        }
+
+        // Cierre de Jornada: trigger when the operator is setting a hold that
+        // resumes on a different calendar day — they're still in the plant and
+        // remember exactly what they used today.
+        if (!cierreJornada && wantHold && holdHasta && holdHasta.toDateString() !== new Date().toDateString()) {
+            const completedSoFar = Object.values(activeLog?.bloquesData || {}).filter(b => b.completado).length;
+            setCierreConsumos(consumiblesInv.map(c => ({ materialId: c.id, nombre: c.materialNombre, cantidad: 0, unidad: c.unidadBase || 'und' })));
+            setCierreJornada({ pendingIdx: idx, dia: completedSoFar + 1 });
+            return;
         }
 
         // Compute litros netos after pasteurizacion
