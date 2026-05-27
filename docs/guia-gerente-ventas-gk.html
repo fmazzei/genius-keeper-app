@@ -3,658 +3,2068 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Guía del Gerente de Ventas — Genius Keeper</title>
+<title>Genius Keeper · Guía del Gerente de Ventas</title>
 <style>
-  :root {
-    --blue:   #0D2B4C;
-    --yellow: #FFD700;
-    --green:  #16a34a;
-    --red:    #dc2626;
-    --amber:  #d97706;
-    --slate:  #64748b;
-    --light:  #f8fafc;
-    --border: #e2e8f0;
+  /* ── Reset & Base ─────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: #f1f5f9;
+    color: #1e293b;
+    line-height: 1.65;
+    font-size: 15px;
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--light); color: #1e293b; line-height: 1.6; }
+  a { color: #0D2B4C; text-decoration: none; }
+  a:hover { text-decoration: underline; }
 
-  /* Cover */
+  /* ── Cover Page ───────────────────────────────────────────── */
   .cover {
-    background: linear-gradient(135deg, var(--blue) 0%, #1e3a5f 100%);
-    color: white;
+    background: linear-gradient(145deg, #0D2B4C 0%, #1e3a5f 60%, #0a2040 100%);
+    color: #fff;
     min-height: 100vh;
-    display: flex; flex-direction: column; justify-content: center; align-items: center;
-    text-align: center; padding: 2rem;
-    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 60px 32px;
+    position: relative;
+    overflow: hidden;
   }
-  .cover .logo { width: 80px; height: 80px; border-radius: 20px; background: var(--yellow); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; }
-  .cover .logo span { font-size: 2.5rem; font-weight: 900; color: var(--blue); }
-  .cover h1 { font-size: 2.4rem; font-weight: 900; margin-bottom: .5rem; }
-  .cover .subtitle { font-size: 1.1rem; opacity: .8; margin-bottom: 2rem; }
-  .cover .badge { background: var(--yellow); color: var(--blue); font-weight: 800; padding: .5rem 1.5rem; border-radius: 999px; font-size: .95rem; display: inline-block; }
-
-  /* Layout */
-  .page { max-width: 820px; margin: 0 auto; padding: 2.5rem 1.5rem; }
-  .section { margin-bottom: 3rem; }
-  h2.section-title {
-    font-size: 1.6rem; font-weight: 800; color: var(--blue);
-    border-left: 5px solid var(--yellow); padding-left: 1rem; margin-bottom: 1.5rem;
+  .cover::before {
+    content: '';
+    position: absolute;
+    top: -80px; right: -80px;
+    width: 400px; height: 400px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,215,0,0.08) 0%, transparent 70%);
   }
-  h3.sub-title { font-size: 1.1rem; font-weight: 700; color: var(--blue); margin: 1.5rem 0 .75rem; }
-  p { margin-bottom: .9rem; color: #334155; }
-
-  /* Cards */
-  .card { background: white; border-radius: 14px; padding: 1.4rem; border: 1px solid var(--border); margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(0,0,0,.05); }
-  .card.blue-top  { border-top: 4px solid var(--blue); }
-  .card.yellow-top { border-top: 4px solid var(--yellow); }
-  .card.green-top { border-top: 4px solid var(--green); }
-  .card.red-top   { border-top: 4px solid var(--red); }
-
-  /* Grid */
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
-  @media(max-width:600px){ .grid-2,.grid-3 { grid-template-columns: 1fr; } }
-
-  /* Nav pill */
-  .nav-row { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: 1.5rem; }
-  .nav-pill {
-    display: flex; align-items: center; gap: .5rem;
-    background: var(--blue); color: white; border-radius: 999px;
-    padding: .35rem 1rem; font-weight: 700; font-size: .85rem;
+  .cover::after {
+    content: '';
+    position: absolute;
+    bottom: -60px; left: -60px;
+    width: 300px; height: 300px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(79,70,229,0.12) 0%, transparent 70%);
   }
-  .nav-pill.active { background: var(--yellow); color: var(--blue); }
-  .nav-pill .icon { width: 20px; height: 20px; }
-
-  /* KPI block */
-  .kpi-block {
-    background: white; border: 1px solid var(--border); border-radius: 12px;
-    padding: 1.2rem; display: flex; align-items: flex-start; gap: 1rem;
+  .cover-badge {
+    display: inline-block;
+    background: rgba(255,215,0,0.15);
+    border: 1px solid rgba(255,215,0,0.4);
+    color: #FFD700;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 18px;
+    border-radius: 999px;
+    margin-bottom: 28px;
   }
-  .kpi-icon {
-    width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center;
-    justify-content: center; font-size: 1.3rem; shrink: 0; flex-shrink: 0;
+  .cover-logo {
+    font-size: 52px;
+    margin-bottom: 12px;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
   }
-  .kpi-icon.blue   { background: #eff6ff; }
-  .kpi-icon.green  { background: #f0fdf4; }
-  .kpi-icon.red    { background: #fef2f2; }
-  .kpi-icon.amber  { background: #fffbeb; }
-  .kpi-icon.purple { background: #faf5ff; }
-  .kpi-name { font-weight: 700; color: #1e293b; margin-bottom: .25rem; }
-  .kpi-desc { font-size: .85rem; color: var(--slate); line-height: 1.4; }
-  .kpi-tip  { font-size: .8rem; margin-top: .4rem; font-style: italic; color: var(--amber); font-weight: 600; }
+  .cover h1 {
+    font-size: clamp(28px, 5vw, 48px);
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 10px;
+    letter-spacing: -0.5px;
+  }
+  .cover h1 span { color: #FFD700; }
+  .cover h2 {
+    font-size: clamp(16px, 3vw, 22px);
+    font-weight: 400;
+    color: rgba(255,255,255,0.75);
+    margin-bottom: 40px;
+  }
+  .cover-meta {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 48px;
+  }
+  .cover-meta-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .cover-meta-label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .cover-meta-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #FFD700;
+  }
+  .cover-divider {
+    width: 80px;
+    height: 3px;
+    background: linear-gradient(90deg, #FFD700, transparent);
+    border-radius: 2px;
+    margin: 0 auto 40px;
+  }
+  .cover-roles {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .role-pill {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .role-pill.active {
+    background: #FFD700;
+    border-color: #FFD700;
+    color: #0D2B4C;
+    font-weight: 700;
+  }
 
-  /* Step */
-  .step { display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 1.2rem; }
+  /* ── Main Layout ──────────────────────────────────────────── */
+  .page-wrap {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 48px 20px 80px;
+  }
+
+  /* ── Table of Contents ────────────────────────────────────── */
+  .toc {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 2px 20px rgba(0,0,0,0.07);
+    padding: 36px 40px;
+    margin-bottom: 48px;
+  }
+  .toc h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0D2B4C;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 32px;
+  }
+  @media (max-width: 600px) { .toc-grid { grid-template-columns: 1fr; } }
+  .toc-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+    font-size: 14px;
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .toc-item:hover { color: #0D2B4C; }
+  .toc-num {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: #0D2B4C;
+    color: #FFD700;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* ── Section Headers ──────────────────────────────────────── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    margin-top: 56px;
+  }
+  .section-accent {
+    width: 5px;
+    border-radius: 3px;
+    align-self: stretch;
+    min-height: 48px;
+    background: #FFD700;
+    flex-shrink: 0;
+  }
+  .section-header-text h2 {
+    font-size: 26px;
+    font-weight: 800;
+    color: #0D2B4C;
+    line-height: 1.2;
+  }
+  .section-header-text p {
+    font-size: 14px;
+    color: #64748b;
+    margin-top: 4px;
+  }
+
+  /* ── Cards ────────────────────────────────────────────────── */
+  .card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+    padding: 28px 32px;
+    margin-bottom: 24px;
+  }
+  .card-border-yellow { border-top: 4px solid #FFD700; }
+  .card-border-emerald { border-top: 4px solid #059669; }
+  .card-border-blue { border-top: 4px solid #4f46e5; }
+  .card-border-amber { border-top: 4px solid #d97706; }
+  .card-border-red { border-top: 4px solid #dc2626; }
+  .card-border-navy { border-top: 4px solid #0D2B4C; }
+  .card-border-slate { border-top: 4px solid #64748b; }
+
+  .card h3 {
+    font-size: 17px;
+    font-weight: 700;
+    color: #0D2B4C;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card p { color: #475569; margin-bottom: 10px; }
+  .card p:last-child { margin-bottom: 0; }
+
+  /* ── KPI Grid ─────────────────────────────────────────────── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 720px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 400px) { .kpi-grid { grid-template-columns: 1fr; } }
+  .kpi-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px 18px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border-left: 4px solid #0D2B4C;
+    position: relative;
+  }
+  .kpi-card.emerald { border-left-color: #059669; }
+  .kpi-card.amber { border-left-color: #d97706; }
+  .kpi-card.red { border-left-color: #dc2626; }
+  .kpi-card.indigo { border-left-color: #4f46e5; }
+  .kpi-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #94a3b8;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .kpi-value {
+    font-size: 30px;
+    font-weight: 800;
+    color: #0D2B4C;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .kpi-sub {
+    font-size: 12px;
+    color: #64748b;
+  }
+  .kpi-trend {
+    position: absolute;
+    top: 16px; right: 14px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .kpi-trend.up { color: #059669; }
+  .kpi-trend.down { color: #dc2626; }
+
+  /* ── Info Boxes ───────────────────────────────────────────── */
+  .info-box {
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 18px;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .info-box .icon { font-size: 22px; flex-shrink: 0; margin-top: 1px; }
+  .info-box .content { flex: 1; }
+  .info-box .content strong { display: block; font-weight: 700; margin-bottom: 4px; font-size: 14px; }
+  .info-box .content p { font-size: 13.5px; margin: 0; line-height: 1.5; }
+
+  .info-tip { background: #eff6ff; border-left: 4px solid #3b82f6; color: #1e40af; }
+  .info-warn { background: #fffbeb; border-left: 4px solid #d97706; color: #92400e; }
+  .info-ok { background: #f0fdf4; border-left: 4px solid #059669; color: #14532d; }
+  .info-action { background: #f0f4ff; border-left: 4px solid #0D2B4C; color: #0D2B4C; }
+
+  /* ── Steps ────────────────────────────────────────────────── */
+  .steps { list-style: none; }
+  .step {
+    display: flex;
+    gap: 18px;
+    margin-bottom: 20px;
+    align-items: flex-start;
+  }
   .step-num {
-    width: 36px; height: 36px; border-radius: 50%; background: var(--blue); color: white;
-    font-weight: 900; font-size: 1rem; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: #0D2B4C;
+    color: #FFD700;
+    font-size: 14px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
   }
   .step-body { flex: 1; }
-  .step-body strong { display: block; color: var(--blue); font-weight: 700; margin-bottom: .2rem; }
-
-  /* Alert sample */
-  .alert-sample {
-    border-radius: 10px; padding: 1rem 1.2rem; display: flex; align-items: center; gap: 1rem; margin-bottom: .8rem;
+  .step-body strong {
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    color: #0D2B4C;
+    margin-bottom: 4px;
   }
-  .alert-sample.red    { background: #fef2f2; border: 1px solid #fecaca; }
-  .alert-sample.amber  { background: #fffbeb; border: 1px solid #fde68a; }
-  .alert-icon { font-size: 1.5rem; flex-shrink: 0; }
-  .alert-text strong { display: block; font-weight: 700; color: #1e293b; }
-  .alert-text span   { font-size: .85rem; color: var(--slate); }
-
-  /* Highlight box */
-  .highlight { background: #eff6ff; border-left: 4px solid var(--blue); border-radius: 0 10px 10px 0; padding: 1rem 1.2rem; margin: 1rem 0; }
-  .highlight.yellow { background: #fffbeb; border-left-color: var(--yellow); }
-  .highlight.green  { background: #f0fdf4; border-left-color: var(--green); }
-  .highlight.red    { background: #fef2f2; border-left-color: var(--red); }
-
-  /* Report section */
-  .report-field { background: white; border: 1px solid var(--border); border-radius: 10px; padding: .9rem 1.1rem; margin-bottom: .7rem; }
-  .report-field .field-name { font-weight: 700; color: var(--blue); font-size: .9rem; }
-  .report-field .field-desc { font-size: .85rem; color: var(--slate); margin-top: .2rem; }
-  .report-field .field-why  { font-size: .8rem; color: var(--green); font-weight: 600; margin-top: .3rem; }
-
-  /* Divider */
-  .divider { border: none; border-top: 2px solid var(--border); margin: 2.5rem 0; }
-
-  /* Footer */
-  footer { text-align: center; padding: 2rem; color: var(--slate); font-size: .85rem; border-top: 1px solid var(--border); margin-top: 3rem; }
-
-  /* Print */
-  @media print {
-    .cover { min-height: auto; padding: 4rem 2rem; }
-    .page  { padding: 1.5rem; }
-    .section { page-break-inside: avoid; }
+  .step-body p { font-size: 14px; color: #475569; margin: 0; }
+  .step-body .field-hint {
+    display: inline-block;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 12.5px;
+    color: #475569;
+    margin-top: 6px;
+    font-family: monospace;
   }
+
+  /* ── Gauge Visual ─────────────────────────────────────────── */
+  .gauge-section {
+    background: linear-gradient(135deg, #0D2B4C 0%, #1e3a5f 100%);
+    border-radius: 16px;
+    padding: 36px 40px;
+    color: #fff;
+    margin-bottom: 24px;
+  }
+  .gauge-section h3 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #FFD700;
+    margin-bottom: 6px;
+  }
+  .gauge-section p { color: rgba(255,255,255,0.75); font-size: 14px; margin-bottom: 28px; }
+  .gauge-wrap {
+    display: flex;
+    align-items: center;
+    gap: 48px;
+    flex-wrap: wrap;
+  }
+  .gauge-svg-wrap { flex-shrink: 0; position: relative; }
+  .gauge-center-text {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .gauge-score {
+    font-size: 38px;
+    font-weight: 900;
+    color: #FFD700;
+    line-height: 1;
+  }
+  .gauge-label-text { font-size: 11px; color: rgba(255,255,255,0.6); letter-spacing: 1px; text-transform: uppercase; }
+  .gauge-legend { flex: 1; min-width: 200px; }
+  .gauge-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .gauge-legend-item:last-child { border-bottom: none; }
+  .gauge-dot {
+    width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  }
+  .gauge-legend-label { font-size: 14px; color: rgba(255,255,255,0.85); flex: 1; }
+  .gauge-legend-range { font-size: 12px; color: rgba(255,255,255,0.5); }
+  .gauge-legend-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 999px;
+  }
+
+  /* ── Category Cards ───────────────────────────────────────── */
+  .cat-card {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .cat-card-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+  }
+  .cat-bar {
+    width: 5px;
+    align-self: stretch;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .cat-card-title { font-size: 15px; font-weight: 700; color: #0D2B4C; flex: 1; }
+  .cat-card-body { padding: 0 20px 16px 39px; }
+  .cat-metric {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid #f8fafc;
+    font-size: 13.5px;
+  }
+  .cat-metric:last-child { border-bottom: none; }
+  .cat-metric-name { color: #475569; }
+  .cat-metric-val { font-weight: 700; color: #0D2B4C; }
+
+  /* ── Progress Bar ─────────────────────────────────────────── */
+  .progress-wrap { margin-bottom: 24px; }
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #475569;
+    margin-bottom: 8px;
+  }
+  .progress-bar-bg {
+    height: 20px;
+    background: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #059669, #34d399);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    transition: width 0.3s;
+  }
+  .run-rate {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 999px;
+    padding: 6px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #059669;
+    margin-top: 10px;
+  }
+
+  /* ── Alert Row ────────────────────────────────────────────── */
+  .alert-list { list-style: none; }
+  .alert-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    font-size: 14px;
+  }
+  .alert-item.red { background: #fef2f2; color: #7f1d1d; border-left: 4px solid #dc2626; }
+  .alert-item.amber { background: #fffbeb; color: #78350f; border-left: 4px solid #d97706; }
+  .alert-item.slate { background: #f8fafc; color: #334155; border-left: 4px solid #94a3b8; }
+  .alert-icon { font-size: 20px; flex-shrink: 0; }
+  .alert-text { flex: 1; }
+  .alert-text strong { font-weight: 700; display: block; }
+  .alert-badge {
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  /* ── Table ────────────────────────────────────────────────── */
+  .table-wrap { overflow-x: auto; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th {
+    background: #0D2B4C;
+    color: #FFD700;
+    text-align: left;
+    padding: 11px 16px;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  th:first-child { border-radius: 8px 0 0 0; }
+  th:last-child { border-radius: 0 8px 0 0; }
+  td { padding: 10px 16px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+  tr:last-child td { border-bottom: none; }
+  tr:nth-child(even) td { background: #f8fafc; }
+  tr:hover td { background: #eff6ff; }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .badge-green { background: #dcfce7; color: #14532d; }
+  .badge-red { background: #fee2e2; color: #7f1d1d; }
+  .badge-amber { background: #fef9c3; color: #78350f; }
+  .badge-blue { background: #dbeafe; color: #1e40af; }
+  .badge-slate { background: #f1f5f9; color: #475569; }
+
+  /* ── Toggle UI ────────────────────────────────────────────── */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 14px;
+  }
+  .toggle-row:last-child { border-bottom: none; }
+  .toggle-left { flex: 1; }
+  .toggle-left strong { display: block; font-weight: 600; color: #1e293b; }
+  .toggle-left span { font-size: 12px; color: #94a3b8; }
+  .toggle-pill {
+    width: 44px; height: 24px;
+    border-radius: 12px;
+    background: #059669;
+    position: relative;
+    flex-shrink: 0;
+    cursor: default;
+  }
+  .toggle-pill::after {
+    content: '';
+    position: absolute;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    top: 3px; right: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .toggle-pill.off {
+    background: #e2e8f0;
+  }
+  .toggle-pill.off::after { right: auto; left: 3px; }
+
+  /* ── Report Type Card ──────────────────────────────────────── */
+  .report-type {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 14px rgba(0,0,0,0.07);
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .report-type-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 24px;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .report-type-icon {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  .rt-blue { background: #dbeafe; }
+  .rt-indigo { background: #e0e7ff; }
+  .rt-amber { background: #fef9c3; }
+  .report-type-title { flex: 1; }
+  .report-type-title strong { font-size: 16px; font-weight: 700; color: #0D2B4C; display: block; }
+  .report-type-title span { font-size: 12.5px; color: #64748b; }
+  .send-now-btn {
+    background: #0D2B4C;
+    color: #FFD700;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: default;
+    letter-spacing: 0.3px;
+  }
+  .report-type-body { padding: 16px 24px; }
+  .report-includes { list-style: none; }
+  .report-includes li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 13.5px;
+    color: #475569;
+  }
+  .report-includes li::before {
+    content: 'v';
+    color: #059669;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+    font-family: monospace;
+  }
+
+  /* ── PDV freq selector ────────────────────────────────────── */
+  .freq-selector {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1e40af;
+    display: inline-block;
+  }
+
+  /* ── Pedidos email status ─────────────────────────────────── */
+  .email-sent { color: #059669; font-weight: 600; font-size: 13px; }
+  .email-pending { color: #d97706; font-weight: 600; font-size: 13px; }
+
+  /* ── Tips Section ─────────────────────────────────────────── */
+  .tips-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 600px) { .tips-grid { grid-template-columns: 1fr; } }
+  .tip-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px 22px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    border-top: 3px solid #FFD700;
+  }
+  .tip-card .tip-icon { font-size: 28px; margin-bottom: 10px; }
+  .tip-card h4 { font-size: 14px; font-weight: 700; color: #0D2B4C; margin-bottom: 8px; }
+  .tip-card p { font-size: 13px; color: #475569; }
+
+  /* ── Orphan Section ───────────────────────────────────────── */
+  .orphan-box {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-top: 14px;
+  }
+  .orphan-box h4 { font-size: 14px; font-weight: 700; color: #92400e; margin-bottom: 8px; }
+  .orphan-box p { font-size: 13px; color: #78350f; margin: 0; }
+
+  /* ── Divider ──────────────────────────────────────────────── */
+  .section-divider {
+    height: 1px;
+    background: linear-gradient(90deg, #FFD700 0%, #e2e8f0 40%, transparent 100%);
+    margin: 40px 0;
+    border: none;
+  }
+
+  /* ── Highlight Box ────────────────────────────────────────── */
+  .highlight-box {
+    background: linear-gradient(135deg, #0D2B4C, #1e3a5f);
+    color: #fff;
+    border-radius: 14px;
+    padding: 28px 32px;
+    margin-bottom: 24px;
+  }
+  .highlight-box h3 { color: #FFD700; font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+  .highlight-box p { color: rgba(255,255,255,0.8); font-size: 14px; line-height: 1.6; }
+
+  /* ── Footer ───────────────────────────────────────────────── */
+  .footer {
+    background: #0D2B4C;
+    color: rgba(255,255,255,0.5);
+    text-align: center;
+    padding: 32px 20px;
+    font-size: 13px;
+    margin-top: 60px;
+  }
+  .footer strong { color: #FFD700; }
+
+  /* ── Anchor offset ────────────────────────────────────────── */
+  [id] { scroll-margin-top: 24px; }
 </style>
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════════════════════ COVER -->
+<!-- ===================================================
+     COVER PAGE
+=================================================== -->
 <div class="cover">
-  <div class="logo"><span>GK</span></div>
-  <h1>Genius Keeper</h1>
-  <p class="subtitle">Guía del Gerente de Ventas</p>
-  <div class="badge">📊 Manual de Operaciones — Lacteoca</div>
-  <p style="margin-top:2rem;opacity:.6;font-size:.9rem;">Tu herramienta para controlar las ventas, el campo y el inventario en tiempo real.</p>
+  <div class="cover-badge">Guia Oficial · Version 1.0</div>
+  <div class="cover-logo">🧠</div>
+  <h1>Genius Keeper<br/><span>Guia del Gerente</span></h1>
+  <h2>Manual completo para el Gerente de Ventas</h2>
+  <div class="cover-divider"></div>
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      <span class="cover-meta-label">Empresa</span>
+      <span class="cover-meta-value">Lacteoca</span>
+    </div>
+    <div class="cover-meta-item">
+      <span class="cover-meta-label">Version</span>
+      <span class="cover-meta-value">1.0.0</span>
+    </div>
+    <div class="cover-meta-item">
+      <span class="cover-meta-label">Fecha</span>
+      <span class="cover-meta-value">Mayo 2026</span>
+    </div>
+    <div class="cover-meta-item">
+      <span class="cover-meta-label">Modulo</span>
+      <span class="cover-meta-value">Gerencial</span>
+    </div>
+  </div>
+  <div class="cover-roles">
+    <span class="role-pill">👷 Mercaderista</span>
+    <span class="role-pill active">👔 Gerente de Ventas &lt;-- Este Manual</span>
+    <span class="role-pill">⚙️ Master</span>
+  </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════ PAGE -->
-<div class="page">
-
-  <!-- ── 1. Tu rol en el sistema ─────────────────────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">1. Tu Rol en Genius Keeper</h2>
-    <p>Como <strong>Gerente de Ventas</strong>, eres el puente entre la planta Lacteoca y el mercado. Genius Keeper te da visibilidad en tiempo real sobre:</p>
-    <div class="grid-2">
-      <div class="card blue-top">
-        <div class="kpi-name">📦 El Producto en Tienda</div>
-        <div class="kpi-desc">Quiebres de stock, frescura de los lotes, rotación y posición en anaquel.</div>
-      </div>
-      <div class="card yellow-top">
-        <div class="kpi-name">🎯 Tu Meta Mensual</div>
-        <div class="kpi-desc">Avance de la meta de ventas, velocidad de venta y proyección del mes.</div>
-      </div>
-      <div class="card green-top">
-        <div class="kpi-name">👥 Tu Equipo de Campo</div>
-        <div class="kpi-desc">Cobertura de PDVs, cumplimiento de agenda y actividad de cada reporter.</div>
-      </div>
-      <div class="card red-top">
-        <div class="kpi-name">🏪 La Competencia</div>
-        <div class="kpi-desc">Precios, nuevos entrantes y actividad promocional de competidores.</div>
-      </div>
-    </div>
-
-    <h3 class="sub-title">Cómo acceder</h3>
-    <div class="card">
-      <p style="margin:0;"><strong>Usuario:</strong> ventas@lacteoca.com<br>
-      <strong>Plataforma:</strong> Abre Genius Keeper desde el navegador o app. Elige tu usuario del equipo y listo.</p>
+<!-- ===================================================
+     TABLE OF CONTENTS
+=================================================== -->
+<div class="page-wrap">
+  <div class="toc" id="inicio">
+    <h2>📋 Contenido de esta Guia</h2>
+    <div class="toc-grid">
+      <a class="toc-item" href="#login"><span class="toc-num">1</span>Como iniciar sesion</a>
+      <a class="toc-item" href="#vista-ventas"><span class="toc-num">2</span>Vista de Ventas (pantalla principal)</a>
+      <a class="toc-item" href="#dashboard"><span class="toc-num">3</span>Dashboard Gerencial</a>
+      <a class="toc-item" href="#genius-index"><span class="toc-num">4</span>Genius Index — el indicador clave</a>
+      <a class="toc-item" href="#categorias"><span class="toc-num">5</span>Categorias del Dashboard</a>
+      <a class="toc-item" href="#auto-reportes"><span class="toc-num">6</span>Auto-Reportes por Email</a>
+      <a class="toc-item" href="#pdvs"><span class="toc-num">7</span>Gestion de Puntos de Venta</a>
+      <a class="toc-item" href="#reportes-historicos"><span class="toc-num">8</span>Reportes Historicos</a>
+      <a class="toc-item" href="#usuarios"><span class="toc-num">9</span>Gestion de Usuarios</a>
+      <a class="toc-item" href="#pedidos-verbales"><span class="toc-num">10</span>Pedidos Verbales</a>
+      <a class="toc-item" href="#configurar-dashboard"><span class="toc-num">11</span>Configurar el Dashboard</a>
+      <a class="toc-item" href="#tips"><span class="toc-num">12</span>Consejos para el Gerente</a>
     </div>
   </div>
 
-  <hr class="divider">
-
-  <!-- ── 2. Navegación ───────────────────────────────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">2. Navegación — Menú Lateral</h2>
-    <p>Al iniciar sesión verás un menú a la izquierda (o el ícono ≡ en móvil). Estas son tus secciones:</p>
-
-    <div class="nav-row">
-      <div class="nav-pill active">🎯 Ventas</div>
-      <div class="nav-pill">📊 Dashboard</div>
-      <div class="nav-pill">🔔 Notificaciones</div>
-      <div class="nav-pill">🗓️ Planificador</div>
-      <div class="nav-pill">📦 Inventario</div>
-    </div>
-
-    <div class="card">
-      <div class="kpi-block" style="margin-bottom:.8rem;">
-        <div class="kpi-icon blue">🎯</div>
-        <div><div class="kpi-name">Ventas <span style="background:#eff6ff;color:var(--blue);font-size:.75rem;padding:.2rem .5rem;border-radius:999px;font-weight:700;">Vista principal</span></div>
-        <div class="kpi-desc">Tu pantalla de inicio. Muestra la meta mensual, velocidad de venta, radar de alertas, y gráfico de proyección. Siempre empieza aquí.</div></div>
-      </div>
-      <div class="kpi-block" style="margin-bottom:.8rem;">
-        <div class="kpi-icon amber">📊</div>
-        <div><div class="kpi-name">Dashboard</div>
-        <div class="kpi-desc">Tablero de KPIs configurado por el administrador. Muestra los indicadores de mercado que el master decidió activar para tu rol.</div></div>
-      </div>
-      <div class="kpi-block" style="margin-bottom:.8rem;">
-        <div class="kpi-icon blue">🔔</div>
-        <div><div class="kpi-name">Notificaciones</div>
-        <div class="kpi-desc">Centro de alertas y mensajes del sistema. Aquí llegan avisos de despachos, mercancía recibida, visitas vencidas y más.</div></div>
-      </div>
-      <div class="kpi-block" style="margin-bottom:.8rem;">
-        <div class="kpi-icon green">🗓️</div>
-        <div><div class="kpi-name">Planificador</div>
-        <div class="kpi-desc">Agenda semanal de visitas del equipo de campo. Puedes ver y gestionar las rutas por semana y mes.</div></div>
-      </div>
-      <div class="kpi-block">
-        <div class="kpi-icon purple">📦</div>
-        <div><div class="kpi-name">Inventario</div>
-        <div class="kpi-desc">Panel de inventario en los depósitos. Vista de stock por almacén, lotes, fechas de vencimiento.</div></div>
-      </div>
-    </div>
-  </div>
-
-  <hr class="divider">
-
-  <!-- ── 3. Vista VENTAS (pantalla principal) ───────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">3. Vista Ventas — Tu Pantalla Principal</h2>
-    <p>Esta es la primera vista al entrar. Está diseñada para que en 10 segundos sepas exactamente cómo vas con la meta del mes y qué requiere tu atención hoy.</p>
-
-    <h3 class="sub-title">3.1 Meta de Ventas del Mes</h3>
-    <div class="card blue-top">
-      <p style="margin-bottom:.5rem;">La barra de progreso azul y amarilla muestra qué porcentaje de la meta mensual se ha alcanzado. Debajo verás: <strong>unidades vendidas / meta total</strong>.</p>
-      <div class="highlight yellow">
-        <strong>⚠️ "¡Foco en el cierre del mes!"</strong> aparece cuando el progreso está por debajo del 85%. Es una señal de que hay que acelerar las gestiones.
+  <!-- ===================================================
+       SECTION 1 — LOGIN
+  =================================================== -->
+  <div id="login">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>1 · Como iniciar sesion</h2>
+        <p>Acceso desde cualquier dispositivo, sin instalar nada</p>
       </div>
     </div>
 
-    <h3 class="sub-title">3.2 Velocidad de Venta (Run Rate)</h3>
-    <div class="card">
-      <div class="grid-2" style="gap:.8rem;">
-        <div>
-          <strong style="color:var(--blue);">Velocidad Actual</strong>
-          <p style="margin-top:.3rem;">Promedio de unidades vendidas por día en lo que va del mes. Refleja el ritmo real del equipo.</p>
-        </div>
-        <div>
-          <strong style="color:var(--blue);">Velocidad Necesaria</strong>
-          <p style="margin-top:.3rem;">Cuántas unidades/día hay que vender los días que quedan para alcanzar la meta. Si es mucho más alta que la actual, hay que actuar.</p>
-        </div>
-      </div>
+    <div class="card card-border-yellow">
+      <h3>🌐 Acceso al sistema</h3>
+      <p>Genius Keeper funciona directamente desde el navegador web (Chrome, Safari, Firefox). Tambien puedes instalarlo como aplicacion en tu telefono o computadora — se llama <strong>PWA (Progressive Web App)</strong> y funciona igual que una app normal.</p>
     </div>
 
-    <h3 class="sub-title">3.3 Radar de Acción Operativa</h3>
-    <p>Lista de alertas críticas y de alta prioridad que requieren tu intervención directa. Dos tipos:</p>
-    <div class="alert-sample red">
-      <div class="alert-icon">🔴</div>
-      <div class="alert-text"><strong>Alerta Crítica</strong><span>Problema severo — quiebre de stock, venta pendiente urgente. Acción inmediata.</span></div>
-    </div>
-    <div class="alert-sample amber">
-      <div class="alert-icon">🟡</div>
-      <div class="alert-text"><strong>Alerta Alta</strong><span>Situación que puede deteriorarse — inventario bajo, visita atrasada. Atender hoy.</span></div>
-    </div>
-    <p>Cada alerta tiene un botón <strong>"Resolver"</strong> que te lleva directamente a la sección correspondiente (Inventario o Planificador).</p>
-
-    <h3 class="sub-title">3.4 Mini KPIs (barra lateral derecha)</h3>
-    <div class="grid-3">
-      <div class="kpi-block">
-        <div class="kpi-icon red">📦</div>
-        <div><div class="kpi-name">Quiebres</div><div class="kpi-desc">Tiendas sin producto. Click → lista detallada.</div></div>
-      </div>
-      <div class="kpi-block">
-        <div class="kpi-icon green">📈</div>
-        <div><div class="kpi-name">Rotación</div><div class="kpi-desc">Unidades/día promedio del equipo.</div></div>
-      </div>
-      <div class="kpi-block">
-        <div class="kpi-icon amber">⚠️</div>
-        <div><div class="kpi-name">DOI</div><div class="kpi-desc">Días de inventario restantes.</div></div>
-      </div>
-    </div>
-
-    <h3 class="sub-title">3.5 Gráfico de Proyección Mensual</h3>
-    <p>Curva de ventas acumuladas del mes actual. Cada punto es un día. Te permite visualizar si el ritmo de ventas se está acelerando o frenando y anticipar el cierre del mes.</p>
-  </div>
-
-  <hr class="divider">
-
-  <!-- ── 4. Dashboard de KPIs ───────────────────────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">4. Dashboard — Indicadores de Mercado</h2>
-    <p>El Dashboard muestra los indicadores de campo que el administrador activó para tu rol. Cada tarjeta es un KPI que puedes tocar para ver el análisis completo en un modal.</p>
-
-    <div class="highlight">
-      Usa el filtro de tiempo — <strong>15d / 30d / 90d / Todo</strong> — para ver los indicadores en diferentes períodos y detectar tendencias.
-    </div>
-
-    <h3 class="sub-title">Indicadores disponibles</h3>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon green">📦</div>
-      <div><div class="kpi-name">Quiebres de Stock</div>
-      <div class="kpi-desc">Número de PDVs donde el mercaderista reportó que no había producto disponible. 0 es ideal.</div>
-      <div class="kpi-tip">⚡ Si sube → tu equipo o la cadena de reposición tiene un problema urgente.</div></div>
-    </div>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon blue">📈</div>
-      <div><div class="kpi-name">Rotación Diaria</div>
-      <div class="kpi-desc">Promedio de unidades vendidas por día según los reportes de visita. Refleja la velocidad de movimiento del producto en anaquel.</div></div>
-    </div>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon amber">⚠️</div>
-      <div><div class="kpi-name">Días de Inventario (DOI)</div>
-      <div class="kpi-desc">Cuántos días dura el stock actual al ritmo de venta actual. Rango saludable: 4–14 días.</div>
-      <div class="kpi-tip">⚡ Menos de 4 días → riesgo de quiebre. Más de 14 días → exceso de inventario.</div></div>
-    </div>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon blue">💧</div>
-      <div><div class="kpi-name">Índice de Frescura</div>
-      <div class="kpi-desc">% de lotes de producto en estado óptimo o fresco (no próximos a vencer ni vencidos). Meta: &gt; 80%.</div></div>
-    </div>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon green">📊</div>
-      <div><div class="kpi-name">Efectividad en Anaquel</div>
-      <div class="kpi-desc">% de visitas donde el producto estaba en posición de ojos o de manos (las más visibles y accesibles). Meta: &gt; 75%.</div></div>
-    </div>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon blue">✅</div>
-      <div><div class="kpi-name">Cumplimiento de Visitas</div>
-      <div class="kpi-desc">% de PDVs visitados según la agenda planificada. Meta: &gt; 90%.</div>
-      <div class="kpi-tip">⚡ Si baja → revisar la agenda o la situación del equipo.</div></div>
-    </div>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon amber">💵</div>
-      <div><div class="kpi-name">Índice de Precios vs Competencia</div>
-      <div class="kpi-desc">% de diferencia del precio de Lacteoca vs la competencia (normalizado a 100g). Negativo = somos más baratos, positivo = somos más caros.</div></div>
-    </div>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon red">🔍</div>
-      <div><div class="kpi-name">Nuevos Entrantes</div>
-      <div class="kpi-desc">Productos competidores detectados por primera vez por el equipo de campo. Alerta temprana de nuevos competidores en el mercado.</div></div>
-    </div>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon purple">🗺️</div>
-      <div><div class="kpi-name">Mapa de Calor</div>
-      <div class="kpi-desc">Visualización geográfica de la actividad del equipo. Identifica zonas con alta cobertura y zonas desatendidas.</div></div>
-    </div>
-
-    <div class="kpi-block" style="margin-bottom:.7rem;">
-      <div class="kpi-icon green">👁️</div>
-      <div><div class="kpi-name">Total Visitas / Cobertura PDVs / Reporters Activos</div>
-      <div class="kpi-desc">Actividad del equipo de campo en el período: cuántas visitas se realizaron, qué % de PDVs se cubrieron, y cuántos reporters estuvieron activos.</div></div>
-    </div>
-  </div>
-
-  <hr class="divider">
-
-  <!-- ── 5. El Reporte del Mercaderista ─────────────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">5. El Reporte del Mercaderista — Por Qué Importa</h2>
-
-    <div class="highlight yellow">
-      <strong>⭐ Sección clave para el Gerente de Ventas</strong><br>
-      Todos los KPIs de tu dashboard, tu meta de ventas y las alertas de tu radar operativo se alimentan de los reportes que cada mercaderista crea en cada visita. Sin reportes completos y precisos, tu dashboard está ciego.
-    </div>
-
-    <h3 class="sub-title">¿Qué es un Reporte de Visita?</h3>
-    <p>Cada vez que un mercaderista visita un punto de venta (PDV), abre Genius Keeper y completa un formulario de visita. Este formulario captura la "foto" del momento: cómo está el producto en esa tienda específica, qué hace la competencia y qué pidió el cliente.</p>
-
-    <h3 class="sub-title">¿Qué información contiene un reporte?</h3>
-
-    <div class="report-field">
-      <div class="field-name">📍 Punto de Venta</div>
-      <div class="field-desc">Nombre y ubicación del PDV visitado. Se geolocaliza automáticamente.</div>
-      <div class="field-why">✓ Alimenta el Mapa de Calor y la Cobertura de PDVs.</div>
-    </div>
-
-    <div class="report-field">
-      <div class="field-name">📦 Inventario y Lotes</div>
-      <div class="field-desc">Cuántas unidades hay en tienda y en qué estado están (fecha de vencimiento de cada lote). El mercaderista escanea o ingresa cada lote.</div>
-      <div class="field-why">✓ Alimenta el DOI, el Índice de Frescura y las alertas de quiebre.</div>
-    </div>
-
-    <div class="report-field">
-      <div class="field-name">🛒 Cantidad Pedida (Orden de Compra)</div>
-      <div class="field-desc">Cuántas unidades pidió el cliente en esta visita. Es el dato de ventas que mueve la meta mensual.</div>
-      <div class="field-why">✓ Es la fuente principal de tu Meta de Ventas, la Rotación Diaria y el Run Rate.</div>
-    </div>
-
-    <div class="report-field">
-      <div class="field-name">💰 Precio en Tienda</div>
-      <div class="field-desc">El precio al que Lacteoca está en el anaquel en ese PDV ese día.</div>
-      <div class="field-why">✓ Alimenta el Índice de Precios vs Competencia.</div>
-    </div>
-
-    <div class="report-field">
-      <div class="field-name">📏 Posición en Anaquel</div>
-      <div class="field-desc">Nivel del anaquel donde está el producto: ojos, manos, superior, inferior. También el facing (cuántas unidades de frente) y la categoría adyacente.</div>
-      <div class="field-why">✓ Alimenta la Efectividad en Anaquel.</div>
-    </div>
-
-    <div class="report-field">
-      <div class="field-name">🏷️ Material POP</div>
-      <div class="field-desc">Si el material publicitario (afiches, stoppers, exhibidores) está exhibido correctamente.</div>
-      <div class="field-why">✓ Alimenta la Calidad del Material POP.</div>
-    </div>
-
-    <div class="report-field">
-      <div class="field-name">🆚 Competencia</div>
-      <div class="field-desc">Precio de los competidores principales (por gramaje), si tienen material POP activo, si hay degustaciones. También captura nuevos productos detectados.</div>
-      <div class="field-why">✓ Alimenta el Índice de Precios, Nuevos Entrantes y Actividad Promocional.</div>
-    </div>
-
-    <div class="report-field">
-      <div class="field-name">⏱️ Hora de inicio y fin</div>
-      <div class="field-desc">El sistema registra cuándo el mercaderista abre y cierra el formulario de cada visita.</div>
-      <div class="field-why">✓ Alimenta la Duración Promedio de Visita y el Cumplimiento de Agenda.</div>
-    </div>
-
-    <h3 class="sub-title">La cadena de datos: Mercaderista → Dashboard</h3>
-    <div class="card">
-      <div class="step">
-        <div class="step-num">1</div>
-        <div class="step-body"><strong>Mercaderista visita el PDV</strong> El mercaderista entra a la tienda, verifica el anaquel, habla con el encargado.</div>
-      </div>
-      <div class="step">
-        <div class="step-num">2</div>
-        <div class="step-body"><strong>Abre Genius Keeper → Iniciar Reporte</strong> Selecciona el PDV y completa el formulario en 3–5 minutos.</div>
-      </div>
-      <div class="step">
-        <div class="step-num">3</div>
-        <div class="step-body"><strong>El reporte se guarda en la nube</strong> Los datos viajan a Firestore en tiempo real.</div>
-      </div>
-      <div class="step">
-        <div class="step-num">4</div>
-        <div class="step-body"><strong>Tu dashboard se actualiza</strong> En segundos, los KPIs de tu pantalla reflejan los nuevos datos del mercado.</div>
-      </div>
-    </div>
-
-    <div class="highlight red">
-      <strong>⚠️ Sin reporte = sin datos.</strong><br>
-      Si un mercaderista visita una tienda pero no completa el reporte, esa visita no existe para Genius Keeper. Los quiebres no se registran, las órdenes no se cuentan, y la meta no avanza. Asegúrate de que tu equipo reporte <em>cada visita</em>.
-    </div>
-
-    <h3 class="sub-title">Indicadores de calidad del reporte</h3>
-    <p>Un buen reporte tiene:</p>
-    <div class="grid-2">
-      <div class="card">
-        <div style="color:var(--green);font-weight:700;margin-bottom:.4rem;">✅ Reporte completo</div>
-        <ul style="color:#334155;padding-left:1.2rem;font-size:.9rem;line-height:1.8;">
-          <li>Inventario registrado con lotes</li>
-          <li>Orden de compra anotada</li>
-          <li>Precio en anaquel capturado</li>
-          <li>Posición en anaquel indicada</li>
-          <li>Competencia registrada</li>
-        </ul>
-      </div>
-      <div class="card">
-        <div style="color:var(--red);font-weight:700;margin-bottom:.4rem;">❌ Reporte incompleto</div>
-        <ul style="color:#334155;padding-left:1.2rem;font-size:.9rem;line-height:1.8;">
-          <li>Campos vacíos o en 0</li>
-          <li>Sin competencia registrada</li>
-          <li>Duración menor a 2 minutos</li>
-          <li>Sin geolocalización</li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <hr class="divider">
-
-  <!-- ── 6. Cómo hace el reporte el mercaderista ────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">6. Cómo Hace el Reporte el Mercaderista</h2>
-    <p>Como gerente, necesitas entender el proceso que sigue tu equipo para poder supervisarlo y apoyarlos cuando tengan dudas.</p>
-
-    <div class="card">
-      <div class="step">
+    <ul class="steps">
+      <li class="step">
         <div class="step-num">1</div>
         <div class="step-body">
-          <strong>Abre la app → Selecciona su nombre</strong>
-          El mercaderista no tiene contraseña propia — selecciona su nombre de la lista de reporters que tú configuraste. Esto lo identifica en todos sus reportes.
+          <strong>Abre tu navegador y ve a la direccion de Genius Keeper</strong>
+          <p>La direccion te la proporcionara tu equipo de soporte Lacteoca.</p>
         </div>
-      </div>
-      <div class="step">
+      </li>
+      <li class="step">
         <div class="step-num">2</div>
         <div class="step-body">
-          <strong>Toca "Iniciar Reporte"</strong>
-          Entra al formulario de visita. Selecciona el PDV que está visitando de la lista.
+          <strong>Ingresa tu correo electronico y contrasena</strong>
+          <p>Usa las credenciales que te asigno el administrador del sistema.</p>
+          <span class="field-hint">📧 correo@lacteoca.com</span>
+          <span class="field-hint"> &nbsp;🔑 tu contrasena</span>
         </div>
-      </div>
-      <div class="step">
+      </li>
+      <li class="step">
         <div class="step-num">3</div>
         <div class="step-body">
-          <strong>Completa el formulario por secciones</strong>
-          Navega por las secciones: Inventario → Pedido → Precio → Anaquel → POP → Competencia → Observaciones.
+          <strong>El sistema reconoce tu rol automaticamente</strong>
+          <p>Si tu cuenta tiene rol <strong>Gerente de Ventas</strong> o <strong>Master</strong>, veras directamente la Vista de Ventas con todos los dashboards gerenciales habilitados.</p>
         </div>
-      </div>
-      <div class="step">
-        <div class="step-num">4</div>
-        <div class="step-body">
-          <strong>Registra los lotes del producto</strong>
-          Para cada lote que hay en tienda: cantidad + fecha de vencimiento. Este es el dato más importante para el DOI y la frescura.
-        </div>
-      </div>
-      <div class="step">
-        <div class="step-num">5</div>
-        <div class="step-body">
-          <strong>Anota la orden de compra</strong>
-          Si el encargado hizo un pedido, registra la cantidad. Este número mueve tu meta de ventas.
-        </div>
-      </div>
-      <div class="step">
-        <div class="step-num">6</div>
-        <div class="step-body">
-          <strong>Registra la competencia</strong>
-          Precio del competidor principal por gramaje (p.ej. "$X por 300g"), si tiene POP o degustación activa.
-        </div>
-      </div>
-      <div class="step">
-        <div class="step-num">7</div>
-        <div class="step-body">
-          <strong>Envía el reporte</strong>
-          Click en "Enviar" — el reporte se guarda en tiempo real. No requiere conexión estable; se sincroniza cuando hay señal.
-        </div>
+      </li>
+    </ul>
+
+    <div class="info-box info-tip">
+      <span class="icon">💡</span>
+      <div class="content">
+        <strong>Instalar como app en el telefono</strong>
+        <p>En Chrome, toca el icono del menu y selecciona "Anadir a pantalla de inicio". Asi tendras Genius Keeper como icono en tu pantalla, igual que cualquier otra aplicacion.</p>
       </div>
     </div>
 
-    <h3 class="sub-title">El Despacho — qué hace diferente</h3>
-    <p>Además del reporte de visita, el mercaderista puede registrar un <strong>Despacho</strong>: cuando él mismo entrega unidades directamente a un PDV. Esto es diferente a un reporte — no captura datos del anaquel, solo registra:</p>
-    <div class="card">
-      <ul style="padding-left:1.2rem;color:#334155;line-height:2;">
-        <li>PDV (cliente) destinatario</li>
-        <li>Unidades entregadas</li>
-        <li>Número de Orden de Compra (OC)</li>
-        <li>Sucursal (obligatorio si es una cadena)</li>
+    <div class="info-box info-warn">
+      <span class="icon">⚠️</span>
+      <div class="content">
+        <strong>¿Olvidaste tu contrasena?</strong>
+        <p>Contacta al administrador del sistema para que restablezca tu acceso. No existe autoservicio de contrasena en esta version.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 2 — VISTA DE VENTAS
+  =================================================== -->
+  <div id="vista-ventas">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>2 · Vista de Ventas</h2>
+        <p>La primera pantalla que ves al entrar — el resumen ejecutivo del dia</p>
+      </div>
+    </div>
+
+    <div class="card card-border-emerald">
+      <h3>📊 ¿Que es la Vista de Ventas?</h3>
+      <p>Es la pantalla principal del Gerente. Muestra de un vistazo el estado de las ventas esta semana: si se va a llegar a la meta, cuantos PDVs tienen problemas y que acciones son urgentes.</p>
+      <p>Esta disenada para revisarse en 2 minutos cada manana antes de comenzar el dia.</p>
+    </div>
+
+    <!-- Meta Progress Bar -->
+    <div class="card card-border-emerald">
+      <h3>🎯 Barra de Progreso de Meta</h3>
+      <p>La barra mas grande de la pantalla muestra cuanto has avanzado hacia la meta de ventas del mes:</p>
+      <div class="progress-wrap">
+        <div class="progress-label">
+          <span>Meta del mes: $12,500</span>
+          <span>Alcanzado: $8,750</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" style="width:70%">70%</div>
+        </div>
+        <span class="run-rate">✅ Ritmo actual: vas a llegar a la meta — en camino</span>
+      </div>
+      <p>Debajo de la barra aparece el <strong>indicador de ritmo (Run Rate)</strong>: el sistema calcula si, con el ritmo de ventas actual, lograras alcanzar la meta a fin de mes.</p>
+      <ul style="margin-top:12px; padding-left:20px; color:#475569; font-size:14px; line-height:2;">
+        <li><span style="color:#059669; font-weight:700;">✅ Verde</span> — Vas bien, el ritmo es suficiente</li>
+        <li><span style="color:#d97706; font-weight:700;">⚠️ Ambar</span> — Riesgo: el ritmo actual no alcanza la meta</li>
+        <li><span style="color:#dc2626; font-weight:700;">🔴 Rojo</span> — Alerta: se necesita accion inmediata</li>
       </ul>
     </div>
-    <p>Tú recibirás una notificación automática cada vez que un mercaderista registre un despacho.</p>
-  </div>
 
-  <hr class="divider">
+    <!-- KPI Cards -->
+    <div class="card card-border-navy">
+      <h3>📋 Tarjetas KPI de la semana</h3>
+      <p>Cuatro indicadores clave de la semana en curso:</p>
+    </div>
 
-  <!-- ── 7. Planificador ───────────────────────────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">7. Planificador de Visitas</h2>
-    <p>El Planificador te da una vista mensual de las agendas del equipo. Puedes navegar por mes y semana para ver qué PDVs están asignados a cada reporter en cada día.</p>
-
-    <div class="card">
-      <div class="step">
-        <div class="step-num">→</div>
-        <div class="step-body"><strong>Vista Mensual</strong> Muestra las 4 semanas del mes con su estado (Pendiente / En Progreso / Completa).</div>
+    <div class="kpi-grid">
+      <div class="kpi-card emerald">
+        <div class="kpi-label">Visitas esta semana</div>
+        <div class="kpi-value">47</div>
+        <div class="kpi-sub">de 60 programadas</div>
+        <div class="kpi-trend up">+8%</div>
       </div>
-      <div class="step">
-        <div class="step-num">→</div>
-        <div class="step-body"><strong>Vista Semanal</strong> Al tocar una semana, ves el detalle: qué PDV visitar cada día. Aquí es donde el mercaderista gestiona su ruta diaria.</div>
+      <div class="kpi-card red">
+        <div class="kpi-label">PDVs con quiebre</div>
+        <div class="kpi-value">6</div>
+        <div class="kpi-sub">sin stock de algun producto</div>
+        <div class="kpi-trend down">+2</div>
+      </div>
+      <div class="kpi-card indigo">
+        <div class="kpi-label">Unidades repuestas</div>
+        <div class="kpi-value">312</div>
+        <div class="kpi-sub">unidades reabastecidas</div>
+        <div class="kpi-trend up">+15%</div>
+      </div>
+      <div class="kpi-card amber">
+        <div class="kpi-label">Cumplimiento POP</div>
+        <div class="kpi-value">78%</div>
+        <div class="kpi-sub">material en punto de venta</div>
+        <div class="kpi-trend down">-3%</div>
       </div>
     </div>
 
-    <div class="highlight green">
-      El <strong>Cumplimiento de Agenda</strong> del Dashboard se calcula comparando cuántos PDVs programados fueron realmente visitados (reporte creado) vs. los planificados. Si un mercaderista tiene 10 PDVs en agenda y visitó 8, su cumplimiento es 80%.
-    </div>
-  </div>
-
-  <hr class="divider">
-
-  <!-- ── 8. Panel de Inventario ─────────────────────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">8. Panel de Inventario</h2>
-    <p>Muestra el stock disponible en los depósitos o almacenes configurados. Como Gerente de Ventas, tienes acceso de lectura a todos los depósitos y puedes ajustar el inventario del <strong>depósito secundario</strong> (Caracas).</p>
-
-    <div class="card">
-      <div class="kpi-block" style="margin-bottom:.7rem;">
-        <div class="kpi-icon blue">🏭</div>
-        <div><div class="kpi-name">Depósito Primario (Barinas)</div><div class="kpi-desc">El inventario que sale de la planta Lacteoca. Gestionado por producción/Kroma.</div></div>
-      </div>
-      <div class="kpi-block">
-        <div class="kpi-icon green">🏪</div>
-        <div><div class="kpi-name">Depósito Secundario (Caracas)</div><div class="kpi-desc">El inventario en Caracas listo para ser distribuido a los PDVs. Tú puedes registrar entradas y salidas aquí.</div></div>
-      </div>
+    <!-- Weekly trend chart visual -->
+    <div class="card card-border-blue">
+      <h3>📈 Grafico de Tendencia Semanal</h3>
+      <p>Debajo de las tarjetas KPI encontraras un grafico de barras con la tendencia de la semana. Muestra dia a dia:</p>
+      <ul style="padding-left:20px; color:#475569; font-size:14px; line-height:2; margin-top:8px;">
+        <li>Numero de visitas completadas por dia</li>
+        <li>PDVs con quiebre de stock detectados</li>
+        <li>Unidades repuestas por dia</li>
+      </ul>
+      <p style="margin-top:12px;">El grafico te permite detectar patrones: ¿los lunes hay menos visitas? ¿Los viernes hay mas quiebres? Esa informacion te ayuda a redistribuir el equipo.</p>
     </div>
 
-    <p>Cuando Kroma (planta) despacha mercancía hacia Caracas, llegas a ver el estado del envío: <strong>En Tránsito → Recibido</strong>. Recibirás una notificación cuando el despacho salga de Barinas y otra cuando llegue a Caracas.</p>
-  </div>
-
-  <hr class="divider">
-
-  <!-- ── 9. Notificaciones ───────────────────────────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">9. Centro de Notificaciones</h2>
-    <p>Genius Keeper te avisa automáticamente de los eventos importantes. Las notificaciones llegan como alertas push en tu dispositivo y se acumulan en el Centro de Notificaciones (ícono de campana 🔔).</p>
-
-    <div class="grid-2">
-      <div class="alert-sample amber">
-        <div class="alert-icon">🛒</div>
-        <div class="alert-text"><strong>Nuevo Despacho a PDV</strong><span>Un mercaderista registró unidades entregadas.</span></div>
-      </div>
-      <div class="alert-sample amber">
-        <div class="alert-icon">🚚</div>
-        <div class="alert-text"><strong>Despacho desde Barinas</strong><span>Kroma declaró mercancía en tránsito hacia Caracas.</span></div>
-      </div>
-      <div class="alert-sample amber">
-        <div class="alert-icon">📦</div>
-        <div class="alert-text"><strong>Mercancía Recibida</strong><span>El depósito confirmó recepción del despacho.</span></div>
-      </div>
-      <div class="alert-sample red">
-        <div class="alert-icon">📋</div>
-        <div class="alert-text"><strong>Nuevo Reporte</strong><span>Un mercaderista envió un reporte de visita.</span></div>
-      </div>
+    <!-- Alerts -->
+    <div class="card card-border-red">
+      <h3>🚨 Seccion de Alertas</h3>
+      <p>Al final de la Vista de Ventas veras las alertas activas, clasificadas por urgencia:</p>
     </div>
 
-    <p style="margin-top:1rem;">Para marcar una notificación como leída, simplemente tócala. El número en la campana disminuye conforme lees tus notificaciones.</p>
-  </div>
+    <ul class="alert-list">
+      <li class="alert-item red">
+        <span class="alert-icon">🔴</span>
+        <div class="alert-text">
+          <strong>PDVs con quiebre de stock</strong>
+          Supermercado La Colina · Queso Mozzarella · Sin stock desde ayer
+        </div>
+        <span class="alert-badge" style="background:#dc2626;">Urgente</span>
+      </li>
+      <li class="alert-item red">
+        <span class="alert-icon">🔴</span>
+        <div class="alert-text">
+          <strong>PDVs con quiebre de stock</strong>
+          Bodegon El Rosal · Queso Crema · Sin stock — 2 dias
+        </div>
+        <span class="alert-badge" style="background:#dc2626;">Urgente</span>
+      </li>
+      <li class="alert-item amber">
+        <span class="alert-icon">⏰</span>
+        <div class="alert-text">
+          <strong>Lotes proximos a vencer (15 dias o menos)</strong>
+          3 lotes en Deposito Comercial — Queso Gouda — vence en 12 dias
+        </div>
+        <span class="alert-badge" style="background:#d97706;">Atencion</span>
+      </li>
+      <li class="alert-item slate">
+        <span class="alert-icon">📅</span>
+        <div class="alert-text">
+          <strong>Visitas pendientes sin completar</strong>
+          4 PDVs sin visita en los ultimos 7 dias — fuera de frecuencia
+        </div>
+        <span class="alert-badge" style="background:#94a3b8;">Revision</span>
+      </li>
+    </ul>
 
-  <hr class="divider">
-
-  <!-- ── 10. Buenas prácticas ────────────────────────────────────────── -->
-  <div class="section">
-    <h2 class="section-title">10. Buenas Prácticas como Gerente</h2>
-
-    <div class="card blue-top">
-      <h3 class="sub-title" style="margin-top:0;">📋 Rutina diaria recomendada</h3>
-      <div class="step">
-        <div class="step-num">🌅</div>
-        <div class="step-body"><strong>Al iniciar el día</strong> Revisa la vista Ventas: ¿hay alertas críticas? ¿cómo va la meta? ¿el radar de acción tiene algo pendiente?</div>
+    <div class="info-box info-action">
+      <span class="icon">🎯</span>
+      <div class="content">
+        <strong>Rutina de manana recomendada</strong>
+        <p>Revisa la Vista de Ventas cada manana antes de las 9 AM. Si hay alertas rojas, comunicate con el mercaderista responsable de ese PDV de inmediato.</p>
       </div>
-      <div class="step">
-        <div class="step-num">🌞</div>
-        <div class="step-body"><strong>A mediodía</strong> Revisa las Notificaciones: ¿llegaron despachos? ¿los mercaderistas están reportando?</div>
-      </div>
-      <div class="step">
-        <div class="step-num">🌇</div>
-        <div class="step-body"><strong>Al cerrar el día</strong> Mira el Dashboard: ¿cómo están el DOI y la cobertura de PDVs? ¿hay quiebres nuevos?</div>
-      </div>
-    </div>
-
-    <div class="card yellow-top">
-      <h3 class="sub-title" style="margin-top:0;">⭐ Las 3 métricas más importantes para ti</h3>
-      <ol style="padding-left:1.2rem;color:#334155;line-height:2.2;">
-        <li><strong>% Meta Mensual</strong> — ¿Vas en camino de cumplir?</li>
-        <li><strong>Quiebres de Stock</strong> — ¿El producto está disponible en tienda?</li>
-        <li><strong>Cumplimiento de Visitas</strong> — ¿Tu equipo está ejecutando la ruta?</li>
-      </ol>
-    </div>
-
-    <div class="highlight red">
-      <strong>🔑 Regla de oro:</strong> Si tu equipo no reporta, tus datos no son reales. La disciplina de reporte diario del mercaderista es lo que hace funcionar todo el sistema. Exige un reporte por visita, siempre.
     </div>
   </div>
 
-</div><!-- end .page -->
+  <hr class="section-divider" />
 
-<footer>
-  <p><strong>Genius Keeper — Lacteoca</strong> · Guía del Gerente de Ventas · v1.0</p>
-  <p style="margin-top:.3rem;">Generado para uso interno de Lacteoca.</p>
-</footer>
+  <!-- ===================================================
+       SECTION 3 — DASHBOARD GERENCIAL
+  =================================================== -->
+  <div id="dashboard">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>3 · Dashboard Gerencial</h2>
+        <p>Analisis profundo con todos los indicadores del negocio</p>
+      </div>
+    </div>
+
+    <div class="card card-border-navy">
+      <h3>🖥️ ¿Que es el Dashboard Gerencial?</h3>
+      <p>Es la pantalla mas completa del sistema. Agrupa todos los indicadores clave del negocio en categorias tematicas. Cada tarjeta es interactiva: al hacerle clic muestra un desglose detallado.</p>
+      <p>Accedes desde el menu principal → <strong>"Dashboard"</strong>.</p>
+    </div>
+
+    <!-- Time range selector -->
+    <div class="card card-border-yellow">
+      <h3>📅 Selector de Periodo de Tiempo</h3>
+      <p>En la parte superior del dashboard encontraras cuatro botones para cambiar el periodo de analisis. Todos los indicadores se actualizan al instante:</p>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+        <div style="background:#0D2B4C; color:#FFD700; font-weight:700; padding:8px 20px; border-radius:8px; font-size:14px;">15d</div>
+        <div style="background:#f1f5f9; color:#475569; font-weight:600; padding:8px 20px; border-radius:8px; font-size:14px;">30d</div>
+        <div style="background:#f1f5f9; color:#475569; font-weight:600; padding:8px 20px; border-radius:8px; font-size:14px;">90d</div>
+        <div style="background:#f1f5f9; color:#475569; font-weight:600; padding:8px 20px; border-radius:8px; font-size:14px;">Todo</div>
+      </div>
+      <div style="margin-top:16px; color:#475569; font-size:14px; line-height:1.7;">
+        <strong style="color:#0D2B4C;">15d</strong> — Ultimas dos semanas · Ideal para revisiones semanales<br/>
+        <strong style="color:#0D2B4C;">30d</strong> — Ultimo mes · Perfecto para reuniones mensuales<br/>
+        <strong style="color:#0D2B4C;">90d</strong> — Ultimos 3 meses · Analisis de tendencias trimestrales<br/>
+        <strong style="color:#0D2B4C;">Todo</strong> — Desde el inicio — historial completo
+      </div>
+    </div>
+
+    <div class="info-box info-tip">
+      <span class="icon">💡</span>
+      <div class="content">
+        <strong>¿Cual periodo usar en cada situacion?</strong>
+        <p>Usa <strong>30d</strong> para tus revisiones mensuales, <strong>15d</strong> para el seguimiento semanal, y <strong>90d</strong> cuando quieras identificar tendencias de mediano plazo.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 4 — GENIUS INDEX
+  =================================================== -->
+  <div id="genius-index">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>4 · Genius Index — El indicador mas importante</h2>
+        <p>Un solo numero que resume la salud general del negocio</p>
+      </div>
+    </div>
+
+    <div class="gauge-section">
+      <h3>🧠 Genius Index</h3>
+      <p>Indicador global que combina todos los pilares del negocio en una puntuacion del 0 al 100.</p>
+      <div class="gauge-wrap">
+        <div class="gauge-svg-wrap">
+          <!-- Animated SVG circular gauge -->
+          <svg width="180" height="180" viewBox="0 0 180 180">
+            <!-- Track circle -->
+            <circle cx="90" cy="90" r="72" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="14"/>
+            <!-- Red zone: 0-50 (half circle, 226px of 452px total circumference) -->
+            <circle cx="90" cy="90" r="72" fill="none" stroke="#dc2626" stroke-width="14"
+              stroke-dasharray="226 226"
+              stroke-linecap="butt"
+              transform="rotate(-90 90 90)" opacity="0.3"/>
+            <!-- Amber zone: 50-80 (135px of 452px) -->
+            <circle cx="90" cy="90" r="72" fill="none" stroke="#d97706" stroke-width="14"
+              stroke-dasharray="135 317"
+              stroke-dashoffset="-226"
+              stroke-linecap="butt"
+              transform="rotate(-90 90 90)" opacity="0.3"/>
+            <!-- Green zone: 80-100 (90px of 452px) -->
+            <circle cx="90" cy="90" r="72" fill="none" stroke="#059669" stroke-width="14"
+              stroke-dasharray="90 362"
+              stroke-dashoffset="-361"
+              stroke-linecap="butt"
+              transform="rotate(-90 90 90)" opacity="0.3"/>
+            <!-- Value indicator for score 73 (73% of 452 = ~330) -->
+            <circle cx="90" cy="90" r="72" fill="none" stroke="#FFD700" stroke-width="14"
+              stroke-dasharray="330 122"
+              stroke-dashoffset="0"
+              stroke-linecap="round"
+              transform="rotate(-90 90 90)"/>
+          </svg>
+          <div class="gauge-center-text">
+            <div class="gauge-score">73</div>
+            <div class="gauge-label-text">/ 100</div>
+          </div>
+        </div>
+        <div class="gauge-legend">
+          <div class="gauge-legend-item">
+            <div class="gauge-dot" style="background:#059669;"></div>
+            <div class="gauge-legend-label">Presencia Fuerte</div>
+            <div class="gauge-legend-range">80 o mas</div>
+            <span class="gauge-legend-badge" style="background:#dcfce7; color:#14532d;">Excelente</span>
+          </div>
+          <div class="gauge-legend-item">
+            <div class="gauge-dot" style="background:#d97706;"></div>
+            <div class="gauge-legend-label">En Desarrollo</div>
+            <div class="gauge-legend-range">50 a 79</div>
+            <span class="gauge-legend-badge" style="background:#fef9c3; color:#78350f;">Atencion</span>
+          </div>
+          <div class="gauge-legend-item">
+            <div class="gauge-dot" style="background:#dc2626;"></div>
+            <div class="gauge-legend-label">Requiere Atencion</div>
+            <div class="gauge-legend-range">Menos de 50</div>
+            <span class="gauge-legend-badge" style="background:#fee2e2; color:#7f1d1d;">Urgente</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-border-yellow">
+      <h3>🔍 ¿Como se calcula el Genius Index?</h3>
+      <p>El Genius Index es un promedio ponderado de los cuatro grandes pilares del negocio. Cada pilar agrupa varios indicadores:</p>
+      <div class="table-wrap" style="margin-top:14px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Pilar</th>
+              <th>Indicadores incluidos</th>
+              <th>Peso</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>🟢 Salud del Producto</td>
+              <td>Quiebres, Frescura, Inventario, Rotacion</td>
+              <td><strong>30%</strong></td>
+            </tr>
+            <tr>
+              <td>🔵 Actividad de Campo</td>
+              <td>Cumplimiento de visitas, Duracion promedio</td>
+              <td><strong>25%</strong></td>
+            </tr>
+            <tr>
+              <td>🟡 Eficiencia Operativa</td>
+              <td>Calidad POP, Posicionamiento, Demanda geografica</td>
+              <td><strong>25%</strong></td>
+            </tr>
+            <tr>
+              <td>🔴 Inteligencia Competitiva</td>
+              <td>Indice de precios, Actividad promo, Competencia</td>
+              <td><strong>20%</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card card-border-yellow">
+      <h3>📂 Modal de Desglose del Genius Index</h3>
+      <p>Haz clic sobre el gauge del Genius Index para abrir un <strong>modal de desglose completo</strong>. Ahi veras la puntuacion de cada pilar por separado, que indicadores estan bajando el score global y cuales estan contribuyendo positivamente.</p>
+      <p>Esto te permite saber exactamente <strong>donde enfocar los esfuerzos del equipo</strong> esta semana.</p>
+    </div>
+
+    <div class="info-box info-warn">
+      <span class="icon">⚠️</span>
+      <div class="content">
+        <strong>Genius Index por debajo de 50 — accion inmediata</strong>
+        <p>Si el indice cae por debajo de 50, el sistema lo mostrara en color rojo brillante. Esto indica que hay multiples areas del negocio deterioradas al mismo tiempo. Revisa el desglose de inmediato y activa un plan de accion con el equipo de campo.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 5 — CATEGORIAS DEL DASHBOARD
+  =================================================== -->
+  <div id="categorias">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>5 · Categorias del Dashboard</h2>
+        <p>Cuatro pilares del negocio, cada uno con sus propios indicadores</p>
+      </div>
+    </div>
+
+    <div class="card card-border-navy">
+      <h3>🗂️ Como estan organizadas las tarjetas</h3>
+      <p>Despues del Genius Index, el dashboard muestra cuatro categorias. Cada una tiene una <strong>barra de color a la izquierda</strong> que la identifica a simple vista. Cada tarjeta dentro de una categoria es <strong>interactiva</strong>: al hacer clic abre un modal con el desglose historico completo.</p>
+    </div>
+
+    <!-- Categoria 1 — Salud del Producto -->
+    <div class="cat-card">
+      <div class="cat-card-header">
+        <div class="cat-bar" style="background:#059669; min-height:40px;"></div>
+        <div class="cat-card-title">🟢 Salud del Producto</div>
+        <span class="badge badge-green">4 indicadores</span>
+      </div>
+      <div class="cat-card-body">
+        <div class="cat-metric">
+          <span class="cat-metric-name">📦 Stockout % — Porcentaje de PDVs con quiebre de stock</span>
+          <span class="cat-metric-val">8.3%</span>
+        </div>
+        <div class="cat-metric">
+          <span class="cat-metric-name">🕐 Frescura — Promedio de dias a vencimiento del inventario</span>
+          <span class="cat-metric-val">22 dias</span>
+        </div>
+        <div class="cat-metric">
+          <span class="cat-metric-name">🗄️ Inventario — Unidades totales disponibles en PDVs</span>
+          <span class="cat-metric-val">1,840 u.</span>
+        </div>
+        <div class="cat-metric">
+          <span class="cat-metric-name">🔄 Rotacion — Velocidad de salida del producto</span>
+          <span class="cat-metric-val">4.2x / mes</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Categoria 2 — Actividad de Campo -->
+    <div class="cat-card">
+      <div class="cat-card-header">
+        <div class="cat-bar" style="background:#4f46e5; min-height:40px;"></div>
+        <div class="cat-card-title">🔵 Actividad de Campo</div>
+        <span class="badge badge-blue">2 indicadores</span>
+      </div>
+      <div class="cat-card-body">
+        <div class="cat-metric">
+          <span class="cat-metric-name">✅ Cumplimiento de Visitas — porcentaje realizadas vs programadas</span>
+          <span class="cat-metric-val">78.3%</span>
+        </div>
+        <div class="cat-metric">
+          <span class="cat-metric-name">⏱️ Duracion Promedio de Visita — minutos por visita</span>
+          <span class="cat-metric-val">28 min</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Categoria 3 — Eficiencia Operativa -->
+    <div class="cat-card">
+      <div class="cat-card-header">
+        <div class="cat-bar" style="background:#d97706; min-height:40px;"></div>
+        <div class="cat-card-title">🟡 Eficiencia Operativa</div>
+        <span class="badge badge-amber">3 indicadores</span>
+      </div>
+      <div class="cat-card-body">
+        <div class="cat-metric">
+          <span class="cat-metric-name">🪧 Calidad POP — Material publicitario colocado correctamente</span>
+          <span class="cat-metric-val">72%</span>
+        </div>
+        <div class="cat-metric">
+          <span class="cat-metric-name">📍 Posicionamiento — Ubicacion del producto en gondola</span>
+          <span class="cat-metric-val">85%</span>
+        </div>
+        <div class="cat-metric">
+          <span class="cat-metric-name">🗺️ Demanda Geografica — Zonas con mayor movimiento</span>
+          <span class="cat-metric-val">Zona Norte</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Categoria 4 — Inteligencia Competitiva -->
+    <div class="cat-card">
+      <div class="cat-card-header">
+        <div class="cat-bar" style="background:#dc2626; min-height:40px;"></div>
+        <div class="cat-card-title">🔴 Inteligencia Competitiva</div>
+        <span class="badge badge-red">3 indicadores</span>
+      </div>
+      <div class="cat-card-body">
+        <div class="cat-metric">
+          <span class="cat-metric-name">💵 Indice de Precios — Relacion precio Lacteoca vs competencia</span>
+          <span class="cat-metric-val">+4% premium</span>
+        </div>
+        <div class="cat-metric">
+          <span class="cat-metric-name">🎪 Actividad Promocional — Promociones detectadas en PDVs</span>
+          <span class="cat-metric-val">3 activas</span>
+        </div>
+        <div class="cat-metric">
+          <span class="cat-metric-name">🏆 Inteligencia Competitiva — Marcas reportadas por mercaderistas</span>
+          <span class="cat-metric-val">5 marcas</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box info-tip">
+      <span class="icon">💡</span>
+      <div class="content">
+        <strong>Las tarjetas son interactivas</strong>
+        <p>Haz clic en cualquier tarjeta del dashboard para ver un <strong>modal con el desglose detallado</strong>: historico por semana, comparativa por zona, ranking por mercaderista y mas. Toda la informacion esta a un clic de distancia.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 6 — AUTO-REPORTES
+  =================================================== -->
+  <div id="auto-reportes">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>6 · Auto-Reportes por Email</h2>
+        <p>El sistema envia reportes automaticos a tu correo — sin que tengas que hacer nada</p>
+      </div>
+    </div>
+
+    <div class="card card-border-blue">
+      <h3>📧 ¿Que son los Auto-Reportes?</h3>
+      <p>Son correos electronicos que Genius Keeper envia automaticamente segun un horario predefinido. No necesitas entrar al sistema para recibirlos: llegan directo a tu bandeja de entrada.</p>
+      <p>Los configuras en el menu <strong>Admin → pestana Auto-Reportes</strong>.</p>
+    </div>
+
+    <div class="info-box info-warn">
+      <span class="icon">⚠️</span>
+      <div class="content">
+        <strong>Requisito previo: configurar el servidor de correo</strong>
+        <p>Para que los Auto-Reportes funcionen, el administrador del sistema debe configurar el servidor SMTP en <strong>Admin → Correos</strong>. Sin esa configuracion, los correos no se enviaran.</p>
+      </div>
+    </div>
+
+    <!-- Gestion de Destinatarios -->
+    <div class="card card-border-navy">
+      <h3>👥 Paso 1 — Gestion de Destinatarios</h3>
+      <p>Antes de activar los reportes, configura quienes los van a recibir.</p>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Ve a Admin → pestana Auto-Reportes</strong>
+          <p>En la seccion de Destinatarios veras la lista de personas que recibiran los correos.</p>
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Agrega un nuevo destinatario</strong>
+          <p>Haz clic en "+ Agregar destinatario" e ingresa el nombre completo y el correo electronico.</p>
+          <span class="field-hint">👤 Nombre completo</span>
+          <span class="field-hint"> 📧 correo@empresa.com</span>
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Activa o desactiva cada destinatario</strong>
+          <p>Cada destinatario tiene un toggle (interruptor). Si lo desactivas, esa persona deja de recibir los reportes sin necesidad de eliminarla de la lista.</p>
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Elimina destinatarios innecesarios</strong>
+          <p>Usa el boton de papelera para eliminar un destinatario permanentemente de la lista.</p>
+        </div>
+      </li>
+    </ul>
+
+    <!-- Report Types -->
+    <div class="card card-border-navy" style="margin-bottom:8px;">
+      <h3>📋 Paso 2 — Tipos de Reporte Disponibles</h3>
+      <p>Hay tres tipos de reporte. Cada uno tiene su propio horario y contenido. Puedes activar uno, dos o los tres al mismo tiempo.</p>
+    </div>
+
+    <!-- Reporte Diario -->
+    <div class="report-type">
+      <div class="report-type-header">
+        <div class="report-type-icon rt-blue">📅</div>
+        <div class="report-type-title">
+          <strong>Reporte Diario</strong>
+          <span>Enviado a las 8:00 AM · Todos los dias</span>
+        </div>
+        <div class="toggle-pill" style="margin-right:12px;"></div>
+        <div class="send-now-btn">Enviar Ahora</div>
+      </div>
+      <div class="report-type-body">
+        <ul class="report-includes">
+          <li>Visitas completadas el dia anterior vs programadas</li>
+          <li>Quiebres de stock nuevos detectados ayer</li>
+          <li>Unidades repuestas ayer por cada mercaderista</li>
+          <li>Resumen de PDVs sin visitar fuera de frecuencia</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Reporte Semanal -->
+    <div class="report-type">
+      <div class="report-type-header">
+        <div class="report-type-icon rt-indigo">📊</div>
+        <div class="report-type-title">
+          <strong>Reporte Semanal</strong>
+          <span>Enviado a las 8:00 AM · Todos los lunes</span>
+        </div>
+        <div class="toggle-pill" style="margin-right:12px;"></div>
+        <div class="send-now-btn">Enviar Ahora</div>
+      </div>
+      <div class="report-type-body">
+        <ul class="report-includes">
+          <li>Rotacion por PDV durante la semana</li>
+          <li>Cumplimiento de POP en la semana — porcentaje por mercaderista</li>
+          <li>Alertas de frescura — lotes con 15 dias o menos a vencer</li>
+          <li>Comparativa semana actual vs semana anterior en todas las metricas</li>
+          <li>Ranking de mercaderistas por visitas completadas</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Reporte Mensual -->
+    <div class="report-type">
+      <div class="report-type-header">
+        <div class="report-type-icon rt-amber">📈</div>
+        <div class="report-type-title">
+          <strong>Reporte Mensual</strong>
+          <span>Enviado a las 8:00 AM · Dia 1 de cada mes</span>
+        </div>
+        <div class="toggle-pill" style="margin-right:12px;"></div>
+        <div class="send-now-btn">Enviar Ahora</div>
+      </div>
+      <div class="report-type-body">
+        <ul class="report-includes">
+          <li>Porcentaje de meta de ventas alcanzado el mes anterior</li>
+          <li>Rotacion total y por categoria de producto</li>
+          <li>Inteligencia competitiva — reporte de marcas y precios registrados</li>
+          <li>Comparativa mes anterior vs mes previo — variacion porcentual</li>
+          <li>Top 10 PDVs por volumen de ventas</li>
+          <li>PDVs con peor desempeno — candidatos a revision de ruta</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="info-box info-ok">
+      <span class="icon">✅</span>
+      <div class="content">
+        <strong>Prueba el envio antes de activar el horario automatico</strong>
+        <p>Cada tipo de reporte tiene un boton <strong>"Enviar Ahora"</strong> que manda el reporte de inmediato a todos los destinatarios activos. Usalo para verificar que el correo llega correctamente antes de activar el envio automatico.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 7 — GESTION DE PDVs
+  =================================================== -->
+  <div id="pdvs">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>7 · Gestion de Puntos de Venta</h2>
+        <p>Configura la frecuencia de visitas por PDV y cadena comercial</p>
+      </div>
+    </div>
+
+    <div class="card card-border-emerald">
+      <h3>🏪 ¿Que puedes hacer en esta seccion?</h3>
+      <p>En <strong>Admin → pestana PDV</strong> tienes la vista completa de todos los puntos de venta registrados. Puedes ver el estado de cada uno y configurar con que frecuencia debe visitarse.</p>
+    </div>
+
+    <div class="card card-border-yellow">
+      <h3>🔍 Vista por cadena comercial</h3>
+      <p>Los PDVs estan agrupados por <strong>cadena comercial</strong> (por ejemplo: Farmatodo, Excelsior, supermercados independientes). Puedes expandir cada cadena para ver todos sus PDVs individuales.</p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>PDV</th>
+            <th>Cadena</th>
+            <th>Zona</th>
+            <th>Frecuencia configurada</th>
+            <th>Ultima Visita</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>La Colina CC</strong></td>
+            <td>Excelsior Gama</td>
+            <td>Norte</td>
+            <td><span class="freq-selector">Cada 3 dias</span></td>
+            <td>Hace 2 dias</td>
+            <td><span class="badge badge-green">✅ Al dia</span></td>
+          </tr>
+          <tr>
+            <td><strong>El Rosal</strong></td>
+            <td>Independiente</td>
+            <td>Este</td>
+            <td><span class="freq-selector">Cada 5 dias</span></td>
+            <td>Hace 7 dias</td>
+            <td><span class="badge badge-red">🔴 Atrasado</span></td>
+          </tr>
+          <tr>
+            <td><strong>Bello Campo</strong></td>
+            <td>Farmatodo</td>
+            <td>Centro</td>
+            <td><span class="freq-selector">Cada 7 dias</span></td>
+            <td>Hace 5 dias</td>
+            <td><span class="badge badge-green">✅ Al dia</span></td>
+          </tr>
+          <tr>
+            <td><strong>Las Mercedes</strong></td>
+            <td>Farmatodo</td>
+            <td>Sur</td>
+            <td><span class="freq-selector">Cada 7 dias</span></td>
+            <td>Hace 8 dias</td>
+            <td><span class="badge badge-amber">⚠️ Por vencer</span></td>
+          </tr>
+          <tr>
+            <td><strong>Altamira</strong></td>
+            <td>Excelsior Gama</td>
+            <td>Norte</td>
+            <td><span class="freq-selector">Cada 3 dias</span></td>
+            <td>Ayer</td>
+            <td><span class="badge badge-green">✅ Al dia</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card card-border-blue">
+      <h3>⚙️ Configurar la frecuencia de visitas</h3>
+      <p>Para cada PDV puedes definir cuantos dias pueden pasar como maximo entre visitas. Genius Keeper usara este valor para marcar el PDV como "atrasado" en las alertas.</p>
+      <ul style="padding-left:20px; color:#475569; font-size:14px; line-height:2.2; margin-top:10px;">
+        <li><strong>PDV de alto volumen:</strong> cada 2 a 3 dias</li>
+        <li><strong>PDV de volumen medio:</strong> cada 5 a 7 dias</li>
+        <li><strong>PDV de bajo volumen:</strong> cada 10 a 15 dias</li>
+      </ul>
+    </div>
+
+    <div class="highlight-box">
+      <h3>⚡ Actualizacion masiva por cadena</h3>
+      <p>Si necesitas cambiar la frecuencia de visita a <strong>todos los PDVs de una cadena al mismo tiempo</strong>, usa el boton de actualizacion masiva que aparece en el encabezado de cada cadena. Por ejemplo: cambiar todos los Excelsior Gama a "cada 3 dias" con un solo clic.</p>
+    </div>
+
+    <div class="info-box info-action">
+      <span class="icon">🎯</span>
+      <div class="content">
+        <strong>Revision trimestral de frecuencias</strong>
+        <p>Revisa las frecuencias de visita cada trimestre. PDVs con alta rotacion merecen mas visitas; PDVs con ventas bajas quizas puedan visitarse con menos frecuencia para optimizar las rutas del equipo.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 8 — REPORTES HISTORICOS
+  =================================================== -->
+  <div id="reportes-historicos">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>8 · Gestion de Reportes Historicos</h2>
+        <p>Consulta, filtra y edita todos los reportes de campo del equipo</p>
+      </div>
+    </div>
+
+    <div class="card card-border-amber">
+      <h3>📂 ¿Que son los Reportes Historicos?</h3>
+      <p>Cada vez que un mercaderista completa una visita en campo, genera un <strong>reporte de visita</strong>. En esta seccion puedes ver todos esos reportes, filtrarlos y editarlos si hay errores.</p>
+      <p>Accedes desde el menu <strong>Admin → pestana Reportes</strong>.</p>
+    </div>
+
+    <!-- Filtros -->
+    <div class="card card-border-yellow">
+      <h3>🔍 Filtros disponibles</h3>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-top:12px;">
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px;">
+          <div style="font-size:11px; text-transform:uppercase; color:#94a3b8; letter-spacing:1px; margin-bottom:6px;">📅 Por fecha</div>
+          <div style="font-size:13px; color:#475569;">Rango de fechas — selecciona desde/hasta</div>
+        </div>
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px;">
+          <div style="font-size:11px; text-transform:uppercase; color:#94a3b8; letter-spacing:1px; margin-bottom:6px;">🏪 Por PDV</div>
+          <div style="font-size:13px; color:#475569;">Filtra reportes de un punto de venta especifico</div>
+        </div>
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 16px;">
+          <div style="font-size:11px; text-transform:uppercase; color:#94a3b8; letter-spacing:1px; margin-bottom:6px;">👤 Por reportero</div>
+          <div style="font-size:13px; color:#475569;">Ver solo los reportes de un mercaderista</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-border-navy">
+      <h3>📄 Ver el detalle de un reporte</h3>
+      <p>Haz clic en cualquier fila de la lista para ver el reporte completo de esa visita. Veras:</p>
+      <ul style="padding-left:20px; color:#475569; font-size:14px; line-height:2.2; margin-top:8px;">
+        <li>Datos del PDV visitado y el mercaderista responsable</li>
+        <li>Fotografias tomadas durante la visita</li>
+        <li>Stock encontrado vs stock esperado por producto</li>
+        <li>Quiebres detectados y unidades repuestas</li>
+        <li>Estado del material POP</li>
+        <li>Precios de competencia registrados</li>
+        <li>Pedido verbal realizado (si aplica)</li>
+        <li>Fecha, hora y duracion de la visita</li>
+      </ul>
+    </div>
+
+    <div class="card card-border-amber">
+      <h3>✏️ Editar datos de un reporte</h3>
+      <p>Si un mercaderista ingreso datos incorrectos, puedes corregirlos directamente desde esta pantalla. Haz clic en el boton <strong>"Editar"</strong> en el reporte y modifica los campos que necesitas.</p>
+      <p style="margin-top:10px; color:#d97706; font-weight:600;">⚠️ Editar un reporte deja registro de quien lo modifico y cuando — hay trazabilidad completa de todos los cambios.</p>
+    </div>
+
+    <div class="info-box info-tip">
+      <span class="icon">💡</span>
+      <div class="content">
+        <strong>Busqueda rapida antes de revisar la semana</strong>
+        <p>Filtra por la semana que quieres revisar usando el selector de fecha, y luego ordena por "PDVs con quiebre" para identificar rapidamente cuales necesitan atencion.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 9 — GESTION DE USUARIOS
+  =================================================== -->
+  <div id="usuarios">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>9 · Gestion de Usuarios</h2>
+        <p>Administra el acceso del equipo de mercaderistas</p>
+      </div>
+    </div>
+
+    <div class="card card-border-slate">
+      <h3>👥 ¿Que puedes hacer en esta seccion?</h3>
+      <p>En <strong>Admin → pestana Usuarios</strong> veras la lista de todos los mercaderistas registrados en Genius Keeper. Desde aqui puedes controlar sus permisos de acceso.</p>
+    </div>
+
+    <div class="card card-border-navy">
+      <h3>📋 Lista de mercaderistas</h3>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Zona asignada</th>
+            <th>Ultima visita</th>
+            <th>Acceso de Confianza</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Maria Gonzalez</strong></td>
+            <td>Zona Norte</td>
+            <td>Hoy · 10:32 AM</td>
+            <td><div class="toggle-pill"></div></td>
+            <td><span class="badge badge-green">Activo</span></td>
+          </tr>
+          <tr>
+            <td><strong>Carlos Perez</strong></td>
+            <td>Zona Este</td>
+            <td>Ayer · 3:15 PM</td>
+            <td><div class="toggle-pill off"></div></td>
+            <td><span class="badge badge-green">Activo</span></td>
+          </tr>
+          <tr>
+            <td><strong>Luisa Martinez</strong></td>
+            <td>Zona Sur</td>
+            <td>Hace 3 dias</td>
+            <td><div class="toggle-pill"></div></td>
+            <td><span class="badge badge-green">Activo</span></td>
+          </tr>
+          <tr>
+            <td><strong>Roberto Sanchez</strong></td>
+            <td>Zona Centro</td>
+            <td>Hace 5 dias</td>
+            <td><div class="toggle-pill off"></div></td>
+            <td><span class="badge badge-amber">Inactivo</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Acceso de Confianza -->
+    <div class="card card-border-yellow">
+      <h3>🔓 ¿Que es el "Acceso de Confianza"?</h3>
+      <p>Por defecto, cuando el mercaderista abre la app en campo, el sistema puede pedirle un <strong>PIN de verificacion</strong> para confirmar que es el quien esta operando.</p>
+      <p style="margin-top:10px;">Si activas el <strong>Acceso de Confianza</strong> para un usuario, ese PIN se omite automaticamente. Usalo para mercaderistas veteranos de total confianza en quienes no necesitas verificacion adicional.</p>
+      <ul style="padding-left:20px; color:#475569; font-size:14px; line-height:2.2; margin-top:8px;">
+        <li><strong>Toggle activo (verde)</strong> — No se pide PIN, acceso directo</li>
+        <li><strong>Toggle inactivo (gris)</strong> — Se solicita PIN en el dispositivo</li>
+      </ul>
+    </div>
+
+    <!-- Registros Huerfanos -->
+    <div class="orphan-box">
+      <h4>👻 Registros Huerfanos — ¿que son?</h4>
+      <p>Un "registro huerfano" aparece cuando existe una cuenta en el sistema pero no tiene un usuario activo asociado — por ejemplo, cuentas de personas que ya no trabajan en la empresa. Aparecen destacados en <strong>color ambar</strong> en la parte inferior de la lista de usuarios.</p>
+      <p style="margin-top:8px;">Puedes eliminarlos de forma segura sin afectar el historial de reportes. El sistema te pedira confirmacion antes de borrar cualquier registro.</p>
+    </div>
+
+    <div class="info-box info-warn">
+      <span class="icon">⚠️</span>
+      <div class="content">
+        <strong>Limpia los registros huerfanos regularmente</strong>
+        <p>Es buena practica revisar y eliminar registros huerfanos cada mes, especialmente cuando hay rotacion de personal. Asi mantienes la lista de usuarios limpia y evitas confusiones en los reportes.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 10 — PEDIDOS VERBALES
+  =================================================== -->
+  <div id="pedidos-verbales">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>10 · Pedidos Verbales Recibidos</h2>
+        <p>Todos los pedidos tomados por el equipo de campo esta semana</p>
+      </div>
+    </div>
+
+    <div class="card card-border-emerald">
+      <h3>🛒 ¿Que son los Pedidos Verbales?</h3>
+      <p>Cuando un mercaderista visita un PDV y el encargado de la tienda solicita producto, el mercaderista registra ese pedido verbal en la app. Como gerente, ves todos esos pedidos en esta seccion.</p>
+      <p style="margin-top:10px;">Esta vista muestra los pedidos tomados <strong>durante la semana en curso</strong>. Cada pedido indica si el correo de notificacion fue enviado correctamente al equipo de ventas.</p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Tienda / PDV</th>
+            <th>Mercaderista</th>
+            <th>Producto / Docenas</th>
+            <th>Fecha y Hora</th>
+            <th>Email enviado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Supermercado La Colina</strong></td>
+            <td>Maria Gonzalez</td>
+            <td>Queso Mozzarella · 5 doc.</td>
+            <td>Lun 25 May · 9:14 AM</td>
+            <td><span class="email-sent">✅ Enviado</span></td>
+          </tr>
+          <tr>
+            <td><strong>Bodegon El Rosal</strong></td>
+            <td>Carlos Perez</td>
+            <td>Queso Blanco · 3 doc.</td>
+            <td>Lun 25 May · 11:30 AM</td>
+            <td><span class="email-sent">✅ Enviado</span></td>
+          </tr>
+          <tr>
+            <td><strong>Farmatodo Bello Campo</strong></td>
+            <td>Luisa Martinez</td>
+            <td>Queso Crema · 8 doc.</td>
+            <td>Mar 26 May · 10:02 AM</td>
+            <td><span class="email-pending">⏳ Pendiente</span></td>
+          </tr>
+          <tr>
+            <td><strong>Excelsior Altamira</strong></td>
+            <td>Maria Gonzalez</td>
+            <td>Queso Gouda · 2 doc.</td>
+            <td>Mar 26 May · 2:45 PM</td>
+            <td><span class="email-sent">✅ Enviado</span></td>
+          </tr>
+          <tr>
+            <td><strong>Abastos Centro</strong></td>
+            <td>Carlos Perez</td>
+            <td>Queso Mozzarella · 12 doc.</td>
+            <td>Mie 27 May · 8:50 AM</td>
+            <td><span class="email-sent">✅ Enviado</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info-box info-tip">
+      <span class="icon">💡</span>
+      <div class="content">
+        <strong>Email "Pendiente" — que significa</strong>
+        <p>Si un pedido aparece como "Pendiente", el correo de notificacion no se envio aun. Verifica que el servidor SMTP este correctamente configurado en <strong>Admin → Correos</strong>. Si el problema persiste, contacta al soporte tecnico.</p>
+      </div>
+    </div>
+
+    <div class="info-box info-action">
+      <span class="icon">🎯</span>
+      <div class="content">
+        <strong>Usalo para priorizar la logistica</strong>
+        <p>Revisa esta lista los martes y jueves para identificar que PDVs necesitan reabastecimiento urgente. Coordina con el equipo de distribucion usando estos pedidos como referencia real de demanda.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 11 — CONFIGURAR DASHBOARD
+  =================================================== -->
+  <div id="configurar-dashboard">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>11 · Configurar el Dashboard</h2>
+        <p>Elige que tarjetas KPI aparecen y cuales se ocultan por rol</p>
+      </div>
+    </div>
+
+    <div class="card card-border-blue">
+      <h3>⚙️ ¿Para que sirve esta configuracion?</h3>
+      <p>Puedes personalizar el Dashboard Gerencial para que muestre solo las tarjetas relevantes para cada tipo de usuario. Esta configuracion esta en <strong>Admin → pestana Dashboard</strong>.</p>
+    </div>
+
+    <ul class="steps">
+      <li class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Ve a Admin → pestana Dashboard</strong>
+          <p>Veras la lista de todas las categorias y tarjetas KPI disponibles en el sistema.</p>
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Activa o desactiva tarjetas individuales por rol</strong>
+          <p>Cada tarjeta KPI tiene un toggle. Si lo desactivas, esa tarjeta desaparece del dashboard para los usuarios de ese rol. Los cambios aplican de inmediato, sin necesidad de recargar la pagina.</p>
+        </div>
+      </li>
+      <li class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Habilita o deshabilita categorias completas</strong>
+          <p>Si una categoria entera no es relevante para tu equipo, puedes desactivarla con un solo toggle. Esto oculta todas las tarjetas de esa categoria de inmediato.</p>
+        </div>
+      </li>
+    </ul>
+
+    <div class="card card-border-yellow">
+      <h3>🎛️ Ejemplo de configuracion de toggles</h3>
+      <div class="toggle-row">
+        <div class="toggle-left">
+          <strong>📦 Stockout % — Salud del Producto</strong>
+          <span>Muestra el porcentaje de PDVs con quiebre de stock</span>
+        </div>
+        <div class="toggle-pill"></div>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-left">
+          <strong>🕐 Frescura promedio — Salud del Producto</strong>
+          <span>Promedio de dias a vencimiento en todos los PDVs</span>
+        </div>
+        <div class="toggle-pill"></div>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-left">
+          <strong>🔴 Inteligencia Competitiva — Categoria completa</strong>
+          <span>Incluye indice de precios, actividad promo y marcas competidoras</span>
+        </div>
+        <div class="toggle-pill off"></div>
+      </div>
+      <div class="toggle-row">
+        <div class="toggle-left">
+          <strong>🟡 Eficiencia Operativa — Categoria completa</strong>
+          <span>Incluye calidad POP, posicionamiento y demanda geografica</span>
+        </div>
+        <div class="toggle-pill"></div>
+      </div>
+    </div>
+
+    <div class="info-box info-ok">
+      <span class="icon">✅</span>
+      <div class="content">
+        <strong>Los cambios aplican inmediatamente</strong>
+        <p>No necesitas guardar ni recargar la pagina. En cuanto cambias un toggle, la configuracion se actualiza y el dashboard refleja el cambio de inmediato para todos los usuarios del rol correspondiente.</p>
+      </div>
+    </div>
+
+    <div class="info-box info-tip">
+      <span class="icon">💡</span>
+      <div class="content">
+        <strong>Muestra menos tarjetas para simplificar</strong>
+        <p>Si el dashboard tiene demasiada informacion, considera desactivar las categorias que menos usas. Un dashboard mas limpio facilita el enfoque en lo que realmente importa cada semana.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       SECTION 12 — TIPS PARA EL GERENTE
+  =================================================== -->
+  <div id="tips">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>12 · Consejos para el Gerente de Ventas</h2>
+        <p>Practicas recomendadas para sacar el maximo provecho del sistema</p>
+      </div>
+    </div>
+
+    <div class="tips-grid">
+      <div class="tip-card">
+        <div class="tip-icon">📅</div>
+        <h4>Usa el periodo de 30 dias para revisiones mensuales</h4>
+        <p>En las reuniones mensuales, selecciona el periodo "30d" en el dashboard. Tendras todos los indicadores del mes en una sola vista, sin necesidad de exportar datos.</p>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon">🧠</div>
+        <h4>Revisa el Genius Index cada lunes</h4>
+        <p>Empieza la semana con el Genius Index. Si esta por debajo de 50, abre el desglose y activa un plan de accion antes del mediodia. No esperes al viernes.</p>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon">📧</div>
+        <h4>Configura los destinatarios antes de activar el horario</h4>
+        <p>Agrega todos los destinatarios de los reportes automaticos primero. Luego activa los toggles de cada tipo de reporte. El orden importa para evitar envios vacios.</p>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon">🧪</div>
+        <h4>Prueba el correo con "Enviar Ahora" primero</h4>
+        <p>Antes de activar el envio automatico de cualquier reporte, usa el boton "Enviar Ahora" para verificar que el correo llega correctamente a todos los destinatarios.</p>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon">📍</div>
+        <h4>Revisa pedidos verbales martes y jueves</h4>
+        <p>Los pedidos verbales son demanda real del mercado. Coordina con logistica esos dos dias para atender los pedidos con la mayor velocidad posible.</p>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon">🔴</div>
+        <h4>Las alertas rojas son de accion inmediata</h4>
+        <p>Un PDV con quiebre de stock representa ventas perdidas hoy. No lo dejes para manana. Contacta al mercaderista responsable en el momento en que veas la alerta.</p>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon">👻</div>
+        <h4>Elimina cuentas huerfanas mensualmente</h4>
+        <p>Revisa la seccion de Usuarios cada mes y elimina los registros huerfanos. Mantiene la lista limpia y evita confusiones en los reportes historicos.</p>
+      </div>
+      <div class="tip-card">
+        <div class="tip-icon">⏰</div>
+        <h4>El Reporte Diario detecta visitas faltantes temprano</h4>
+        <p>Si recibes el reporte diario a las 8 AM y ves PDVs sin visitar, puedes actuar en las primeras horas del dia. Mucho mejor que enterarse al final del dia.</p>
+      </div>
+    </div>
+
+    <!-- Semaforo del Genius Index -->
+    <div class="card card-border-navy" style="margin-top:32px;">
+      <h3>📌 Referencia rapida — Semaforo del Genius Index</h3>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; margin-top:16px;">
+        <div style="background:#f0fdf4; border:2px solid #059669; border-radius:12px; padding:18px; text-align:center;">
+          <div style="font-size:32px; font-weight:900; color:#059669; margin-bottom:6px;">80+</div>
+          <div style="font-size:14px; font-weight:700; color:#14532d;">Presencia Fuerte</div>
+          <div style="font-size:12px; color:#166534; margin-top:4px;">El negocio funciona bien — mantener el ritmo</div>
+        </div>
+        <div style="background:#fffbeb; border:2px solid #d97706; border-radius:12px; padding:18px; text-align:center;">
+          <div style="font-size:32px; font-weight:900; color:#d97706; margin-bottom:6px;">50-79</div>
+          <div style="font-size:14px; font-weight:700; color:#92400e;">En Desarrollo</div>
+          <div style="font-size:12px; color:#78350f; margin-top:4px;">Hay oportunidades — identificar que esta bajando</div>
+        </div>
+        <div style="background:#fef2f2; border:2px solid #dc2626; border-radius:12px; padding:18px; text-align:center;">
+          <div style="font-size:32px; font-weight:900; color:#dc2626; margin-bottom:6px;">-50</div>
+          <div style="font-size:14px; font-weight:700; color:#7f1d1d;">Requiere Atencion</div>
+          <div style="font-size:12px; color:#7f1d1d; margin-top:4px;">Accion inmediata — abrir el desglose ahora</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rutina semanal -->
+    <div class="card card-border-yellow" style="margin-top:0;">
+      <h3>🗓️ Rutina semanal recomendada del Gerente</h3>
+      <div style="margin-top:14px;">
+        <div style="display:flex; align-items:flex-start; gap:14px; padding:12px 0; border-bottom:1px solid #f1f5f9;">
+          <div style="min-width:72px; font-size:13px; font-weight:700; color:#FFD700; background:#0D2B4C; border-radius:6px; padding:4px 10px; text-align:center; flex-shrink:0;">Lunes</div>
+          <div style="font-size:14px; color:#475569; padding-top:2px;">Revisar Reporte Semanal por email + Genius Index del dashboard + Asignar acciones del equipo para la semana</div>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:14px; padding:12px 0; border-bottom:1px solid #f1f5f9;">
+          <div style="min-width:72px; font-size:13px; font-weight:700; color:#1e40af; background:#dbeafe; border-radius:6px; padding:4px 10px; text-align:center; flex-shrink:0;">Martes</div>
+          <div style="font-size:14px; color:#475569; padding-top:2px;">Revisar Pedidos Verbales + Coordinar logistica de reposicion con equipo de distribucion</div>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:14px; padding:12px 0; border-bottom:1px solid #f1f5f9;">
+          <div style="min-width:72px; font-size:13px; font-weight:700; color:#14532d; background:#dcfce7; border-radius:6px; padding:4px 10px; text-align:center; flex-shrink:0;">Mier.</div>
+          <div style="font-size:14px; color:#475569; padding-top:2px;">Revisar KPIs de Actividad de Campo — ¿los mercaderistas estan completando sus rutas al ritmo correcto?</div>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:14px; padding:12px 0; border-bottom:1px solid #f1f5f9;">
+          <div style="min-width:72px; font-size:13px; font-weight:700; color:#78350f; background:#fef9c3; border-radius:6px; padding:4px 10px; text-align:center; flex-shrink:0;">Jueves</div>
+          <div style="font-size:14px; color:#475569; padding-top:2px;">Revisar Pedidos Verbales + Alertas activas + PDVs con quiebre sin resolver desde el lunes</div>
+        </div>
+        <div style="display:flex; align-items:flex-start; gap:14px; padding:12px 0;">
+          <div style="min-width:72px; font-size:13px; font-weight:700; color:#7f1d1d; background:#fee2e2; border-radius:6px; padding:4px 10px; text-align:center; flex-shrink:0;">Viernes</div>
+          <div style="font-size:14px; color:#475569; padding-top:2px;">Cierre de semana: Progreso de meta mensual + Comparativa vs semana anterior + Planificar rutas de la semana que viene</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-divider" />
+
+  <!-- ===================================================
+       GLOSARIO
+  =================================================== -->
+  <div id="glosario">
+    <div class="section-header">
+      <div class="section-accent"></div>
+      <div class="section-header-text">
+        <h2>📖 Glosario de Terminos</h2>
+        <p>Significado de los conceptos mas usados en Genius Keeper</p>
+      </div>
+    </div>
+
+    <div class="card card-border-slate">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Termino</th>
+              <th>Significado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>PDV</strong></td>
+              <td>Punto de Venta — tienda, supermercado, bodegon o farmacia donde se vende el producto</td>
+            </tr>
+            <tr>
+              <td><strong>Quiebre de stock / Stockout</strong></td>
+              <td>Cuando un PDV se queda sin inventario de un producto — ventas perdidas</td>
+            </tr>
+            <tr>
+              <td><strong>Genius Index</strong></td>
+              <td>Indicador global de salud del negocio en escala 0-100, calculado en tiempo real</td>
+            </tr>
+            <tr>
+              <td><strong>POP</strong></td>
+              <td>Point of Purchase — material publicitario colocado en el punto de venta (afiches, stoppers, etc.)</td>
+            </tr>
+            <tr>
+              <td><strong>Run Rate</strong></td>
+              <td>Ritmo de ventas actual proyectado — indica si vas a cumplir la meta a fin de mes</td>
+            </tr>
+            <tr>
+              <td><strong>Pedido Verbal</strong></td>
+              <td>Solicitud de producto hecha por el dueno de la tienda al mercaderista durante la visita</td>
+            </tr>
+            <tr>
+              <td><strong>Rotacion</strong></td>
+              <td>Velocidad con que el producto sale del anaquel — mas rotaciones significa producto mas vendido</td>
+            </tr>
+            <tr>
+              <td><strong>Frescura</strong></td>
+              <td>Dias promedio que le quedan a los lotes activos antes de su fecha de vencimiento</td>
+            </tr>
+            <tr>
+              <td><strong>SMTP</strong></td>
+              <td>Servidor de correo electronico — necesario para que funcionen los Auto-Reportes</td>
+            </tr>
+            <tr>
+              <td><strong>Acceso de Confianza</strong></td>
+              <td>Permiso que evita que el mercaderista tenga que ingresar su PIN en campo</td>
+            </tr>
+            <tr>
+              <td><strong>Registro Huerfano</strong></td>
+              <td>Cuenta de usuario en el sistema sin mercaderista activo asociado — puede eliminarse de forma segura</td>
+            </tr>
+            <tr>
+              <td><strong>PWA</strong></td>
+              <td>Aplicacion web progresiva — Genius Keeper instalado en el telefono como app</td>
+            </tr>
+            <tr>
+              <td><strong>Cadena comercial</strong></td>
+              <td>Grupo de PDVs que pertenecen a la misma empresa — ejemplo: todos los Farmatodo</td>
+            </tr>
+            <tr>
+              <td><strong>Frecuencia de visita</strong></td>
+              <td>Dias maximos que pueden pasar entre una visita y la siguiente a un PDV especifico</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===================================================
+     FOOTER
+=================================================== -->
+<div class="footer">
+  <p><strong>Genius Keeper</strong> · Guia del Gerente de Ventas · Version 1.0.0</p>
+  <p style="margin-top:6px;">Lacteoca · Mayo 2026 · Uso interno confidencial</p>
+  <p style="margin-top:10px; font-size:12px;">Este documento describe las funciones disponibles para el rol Gerente de Ventas y Master.<br/>Para soporte tecnico, contacta al administrador del sistema.</p>
+</div>
 
 </body>
 </html>

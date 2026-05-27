@@ -1,1561 +1,1864 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Guía del Reporter — Genius Keeper</title>
-<style>
-  /* ===== VARIABLES DE COLOR ===== */
-  :root {
-    --azul:       #0ea5e9;
-    --azul-osc:   #0369a1;
-    --azul-fondo: #e0f2fe;
-    --verde:      #22c55e;
-    --verde-osc:  #15803d;
-    --verde-fond: #dcfce7;
-    --ambar:      #f59e0b;
-    --ambar-osc:  #b45309;
-    --ambar-fond: #fef3c7;
-    --rojo:       #ef4444;
-    --rojo-osc:   #b91c1c;
-    --rojo-fond:  #fee2e2;
-    --violeta:    #8b5cf6;
-    --violeta-f:  #ede9fe;
-    --gris:       #64748b;
-    --gris-clar:  #f1f5f9;
-    --gris-bord:  #cbd5e1;
-    --texto:      #1e293b;
-    --blanco:     #ffffff;
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Genius Keeper · Guía del Mercaderista</title>
+  <style>
+    /* ─── Reset & base ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      line-height: 1.65;
+      font-size: 16px;
+    }
 
-    --radio:      12px;
-    --radio-lg:   20px;
-    --sombra:     0 2px 10px rgba(0,0,0,0.08);
-    --sombra-lg:  0 4px 20px rgba(0,0,0,0.12);
-  }
+    /* ─── Variables ─── */
+    :root {
+      --navy:   #0D2B4C;
+      --blue:   #1a56db;
+      --blue-light: #dbeafe;
+      --yellow: #FFD700;
+      --yellow-soft: #fefce8;
+      --emerald: #059669;
+      --emerald-light: #d1fae5;
+      --red:    #dc2626;
+      --red-light: #fee2e2;
+      --amber:  #d97706;
+      --amber-light: #fef3c7;
+      --slate:  #64748b;
+      --slate-light: #f8fafc;
+      --white:  #ffffff;
+      --shadow: 0 2px 12px rgba(13,43,76,.10);
+      --shadow-lg: 0 8px 32px rgba(13,43,76,.14);
+      --radius: 14px;
+      --radius-sm: 8px;
+    }
 
-  /* ===== RESET & BASE ===== */
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* ─── Typography ─── */
+    h1 { font-size: clamp(2rem, 6vw, 3.2rem); font-weight: 800; }
+    h2 { font-size: clamp(1.35rem, 4vw, 1.9rem); font-weight: 700; }
+    h3 { font-size: clamp(1.1rem, 3vw, 1.4rem); font-weight: 700; }
+    h4 { font-size: 1rem; font-weight: 700; }
+    p  { margin-bottom: .75rem; }
+    ul, ol { padding-left: 1.4rem; margin-bottom: .75rem; }
+    li { margin-bottom: .35rem; }
+    strong { font-weight: 700; }
 
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #f8fafc;
-    color: var(--texto);
-    font-size: 16px;
-    line-height: 1.6;
-  }
+    /* ─── Layout ─── */
+    .page-wrapper { max-width: 900px; margin: 0 auto; padding: 0 16px 60px; }
 
-  /* ===== PORTADA ===== */
-  .portada {
-    background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0369a1 100%);
-    color: white;
-    text-align: center;
-    padding: 60px 24px 50px;
-    position: relative;
-    overflow: hidden;
-  }
-  .portada::before {
-    content: '';
-    position: absolute;
-    top: -80px; right: -80px;
-    width: 300px; height: 300px;
-    background: rgba(14,165,233,0.12);
-    border-radius: 50%;
-  }
-  .portada::after {
-    content: '';
-    position: absolute;
-    bottom: -60px; left: -60px;
-    width: 220px; height: 220px;
-    background: rgba(255,255,255,0.05);
-    border-radius: 50%;
-  }
-  .portada-logo {
-    font-size: 13px;
-    letter-spacing: 4px;
-    text-transform: uppercase;
-    color: var(--azul);
-    margin-bottom: 16px;
-    position: relative; z-index: 1;
-  }
-  .portada h1 {
-    font-size: 34px;
-    font-weight: 800;
-    line-height: 1.2;
-    margin-bottom: 10px;
-    position: relative; z-index: 1;
-  }
-  .portada h1 span { color: var(--azul); }
-  .portada-sub {
-    font-size: 16px;
-    color: rgba(255,255,255,0.7);
-    margin-bottom: 28px;
-    position: relative; z-index: 1;
-  }
-  .portada-badge {
-    display: inline-block;
-    background: rgba(255,255,255,0.12);
-    border: 1px solid rgba(255,255,255,0.2);
-    border-radius: 50px;
-    padding: 8px 20px;
-    font-size: 13px;
-    color: rgba(255,255,255,0.85);
-    position: relative; z-index: 1;
-  }
-  .portada-icon {
-    font-size: 64px;
-    margin-bottom: 16px;
-    position: relative; z-index: 1;
-    display: block;
-  }
+    /* ─── COVER ─── */
+    .cover {
+      background: linear-gradient(145deg, #0D2B4C 0%, #1a56db 55%, #0ea5e9 100%);
+      color: #fff;
+      padding: 70px 32px 60px;
+      text-align: center;
+      border-radius: 0 0 40px 40px;
+      margin-bottom: 48px;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover::before {
+      content: '';
+      position: absolute;
+      top: -80px; right: -80px;
+      width: 320px; height: 320px;
+      background: rgba(255,255,255,.06);
+      border-radius: 50%;
+    }
+    .cover::after {
+      content: '';
+      position: absolute;
+      bottom: -60px; left: -60px;
+      width: 240px; height: 240px;
+      background: rgba(255,215,0,.07);
+      border-radius: 50%;
+    }
+    .cover-badge {
+      display: inline-block;
+      background: rgba(255,215,0,.18);
+      border: 1.5px solid rgba(255,215,0,.5);
+      color: #FFD700;
+      font-size: .8rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      padding: 5px 18px;
+      border-radius: 99px;
+      margin-bottom: 24px;
+    }
+    .cover h1 { margin-bottom: 12px; text-shadow: 0 2px 12px rgba(0,0,0,.2); }
+    .cover .subtitle {
+      font-size: 1.15rem;
+      opacity: .88;
+      margin-bottom: 32px;
+      max-width: 540px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .cover-meta {
+      display: flex;
+      justify-content: center;
+      gap: 28px;
+      flex-wrap: wrap;
+      font-size: .85rem;
+      opacity: .75;
+    }
+    .cover-meta span { display: flex; align-items: center; gap: 6px; }
+    .cover-icon {
+      font-size: 5rem;
+      display: block;
+      margin-bottom: 20px;
+      filter: drop-shadow(0 4px 12px rgba(0,0,0,.25));
+    }
 
-  /* ===== CONTENEDOR PRINCIPAL ===== */
-  .contenedor {
-    max-width: 680px;
-    margin: 0 auto;
-    padding: 0 16px 60px;
-  }
+    /* ─── TOC ─── */
+    .toc-card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px 32px;
+      margin-bottom: 40px;
+    }
+    .toc-card h2 { margin-bottom: 18px; color: var(--navy); }
+    .toc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 10px;
+    }
+    .toc-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--slate-light);
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      color: var(--navy);
+      font-size: .92rem;
+      font-weight: 600;
+      transition: background .18s, transform .15s;
+      border-left: 3px solid var(--blue);
+    }
+    .toc-item:hover { background: var(--blue-light); transform: translateX(2px); }
+    .toc-num {
+      background: var(--blue);
+      color: #fff;
+      font-size: .7rem;
+      font-weight: 800;
+      min-width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
 
-  /* ===== ÍNDICE ===== */
-  .indice {
-    background: var(--blanco);
-    border-radius: var(--radio-lg);
-    border: 1px solid var(--gris-bord);
-    padding: 24px;
-    margin: 28px 0;
-    box-shadow: var(--sombra);
-  }
-  .indice h2 {
-    font-size: 13px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: var(--gris);
-    margin-bottom: 16px;
-  }
-  .indice-lista {
-    list-style: none;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .indice-lista li a {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    color: var(--texto);
-    font-size: 14px;
-    font-weight: 500;
-    padding: 8px 10px;
-    border-radius: 8px;
-    transition: background 0.15s;
-  }
-  .indice-lista li a:hover { background: var(--gris-clar); }
-  .indice-num {
-    width: 22px; height: 22px;
-    background: var(--azul);
-    color: white;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    font-weight: 700;
-    flex-shrink: 0;
-  }
+    /* ─── Section headers ─── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 52px 0 22px;
+    }
+    .section-bar {
+      width: 6px;
+      height: 44px;
+      border-radius: 3px;
+      background: var(--blue);
+      flex-shrink: 0;
+    }
+    .section-bar.yellow  { background: var(--amber); }
+    .section-bar.green   { background: var(--emerald); }
+    .section-bar.red     { background: var(--red); }
+    .section-bar.navy    { background: var(--navy); }
+    .section-bar.purple  { background: #7c3aed; }
+    .section-emoji { font-size: 2rem; }
+    .section-title h2 { color: var(--navy); margin-bottom: 2px; }
+    .section-title p  { color: var(--slate); font-size: .95rem; margin: 0; }
 
-  /* ===== SECCIÓN ===== */
-  .seccion {
-    margin: 32px 0 0;
-  }
-  .seccion-header {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    margin-bottom: 18px;
-  }
-  .sec-num {
-    width: 42px; height: 42px;
-    background: var(--azul);
-    color: white;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    font-weight: 800;
-    flex-shrink: 0;
-  }
-  .sec-num.verde  { background: var(--verde); }
-  .sec-num.ambar  { background: var(--ambar); }
-  .sec-num.rojo   { background: var(--rojo); }
-  .sec-num.violeta{ background: var(--violeta); }
-  .sec-num.gris   { background: var(--gris); }
-  .sec-num.azul2  { background: #06b6d4; }
-  .sec-num.naranja{ background: #f97316; }
+    /* ─── Cards ─── */
+    .card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 24px 28px;
+      margin-bottom: 20px;
+    }
+    .card h3 { color: var(--navy); margin-bottom: 14px; }
+    .card h4 { color: var(--navy); margin-bottom: 10px; }
 
-  .seccion-header h2 {
-    font-size: 22px;
-    font-weight: 800;
-    color: var(--texto);
-    line-height: 1.2;
-  }
-  .seccion-header p {
-    font-size: 13px;
-    color: var(--gris);
-    margin-top: 2px;
-  }
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 18px;
+      margin-bottom: 20px;
+    }
 
-  /* ===== TARJETA BASE ===== */
-  .tarjeta {
-    background: var(--blanco);
-    border-radius: var(--radio-lg);
-    border: 1px solid var(--gris-bord);
-    padding: 20px;
-    margin-bottom: 14px;
-    box-shadow: var(--sombra);
-  }
+    /* ─── Action buttons (hero) ─── */
+    .action-buttons {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 18px;
+      margin-bottom: 28px;
+    }
+    .action-btn {
+      border-radius: var(--radius);
+      padding: 28px 20px;
+      text-align: center;
+      box-shadow: var(--shadow-lg);
+      position: relative;
+      overflow: hidden;
+    }
+    .action-btn::after {
+      content: '';
+      position: absolute;
+      top: -30px; right: -30px;
+      width: 100px; height: 100px;
+      background: rgba(255,255,255,.12);
+      border-radius: 50%;
+    }
+    .action-btn.blue   { background: linear-gradient(135deg, #1a56db, #0ea5e9); color: #fff; }
+    .action-btn.yellow { background: linear-gradient(135deg, #ca8a04, #FFD700); color: #1e293b; }
+    .action-btn.green  { background: linear-gradient(135deg, #059669, #34d399); color: #fff; }
+    .action-btn-icon { font-size: 2.6rem; display: block; margin-bottom: 10px; }
+    .action-btn-label { font-size: 1.05rem; font-weight: 800; display: block; margin-bottom: 6px; }
+    .action-btn-desc  { font-size: .82rem; opacity: .85; display: block; }
 
-  /* ===== PASOS ===== */
-  .paso {
-    display: flex;
-    gap: 14px;
-    margin-bottom: 14px;
-    background: var(--blanco);
-    border-radius: var(--radio-lg);
-    border: 1px solid var(--gris-bord);
-    padding: 16px 18px;
-    box-shadow: var(--sombra);
-    align-items: flex-start;
-  }
-  .paso-num {
-    width: 32px; height: 32px;
-    background: var(--azul);
-    color: white;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    font-weight: 800;
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
-  .paso-num.verde   { background: var(--verde); }
-  .paso-num.ambar   { background: var(--ambar); }
-  .paso-num.rojo    { background: var(--rojo); }
-  .paso-num.violeta { background: var(--violeta); }
-  .paso-num.naranja { background: #f97316; }
-  .paso-num.gris    { background: var(--gris); }
-  .paso-num.azul2   { background: #06b6d4; }
+    /* ─── Steps ─── */
+    .steps { margin-bottom: 12px; }
+    .step {
+      display: flex;
+      gap: 18px;
+      margin-bottom: 28px;
+      align-items: flex-start;
+    }
+    .step-num {
+      flex-shrink: 0;
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      background: var(--blue);
+      color: #fff;
+      font-size: 1.3rem;
+      font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 12px rgba(26,86,219,.35);
+    }
+    .step-num.yellow { background: linear-gradient(135deg, #ca8a04, #FFD700); color: #1e293b; box-shadow: 0 4px 12px rgba(202,138,4,.3); }
+    .step-num.green  { background: linear-gradient(135deg, #059669, #34d399); box-shadow: 0 4px 12px rgba(5,150,105,.3); }
+    .step-num.red    { background: linear-gradient(135deg, #dc2626, #f87171); box-shadow: 0 4px 12px rgba(220,38,38,.3); }
+    .step-num.navy   { background: var(--navy); box-shadow: 0 4px 12px rgba(13,43,76,.3); }
+    .step-num.purple { background: linear-gradient(135deg, #7c3aed, #a78bfa); box-shadow: 0 4px 12px rgba(124,58,237,.3); }
+    .step-body { flex: 1; }
+    .step-body h4 { font-size: 1.05rem; color: var(--navy); margin-bottom: 8px; }
 
-  .paso-cuerpo { flex: 1; min-width: 0; }
-  .paso-cuerpo strong {
-    font-size: 15px;
-    font-weight: 700;
-    display: block;
-    margin-bottom: 4px;
-  }
-  .paso-cuerpo p, .paso-cuerpo li {
-    font-size: 14px;
-    color: #334155;
-    line-height: 1.6;
-  }
-  .paso-cuerpo ul {
-    padding-left: 16px;
-    margin-top: 6px;
-  }
-  .paso-emoji {
-    font-size: 22px;
-    flex-shrink: 0;
-    margin-top: 3px;
-  }
+    /* ─── Info boxes ─── */
+    .info-box {
+      border-radius: var(--radius-sm);
+      padding: 16px 20px;
+      margin: 18px 0;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .info-box-icon { font-size: 1.4rem; flex-shrink: 0; margin-top: 2px; }
+    .info-box-body { flex: 1; }
+    .info-box-body strong { display: block; margin-bottom: 4px; font-size: .95rem; }
+    .info-box-body p, .info-box-body ul { margin: 0; font-size: .92rem; }
+    .info-box.tip      { background: var(--blue-light);    border-left: 4px solid var(--blue); }
+    .info-box.warning  { background: var(--amber-light);   border-left: 4px solid var(--amber); }
+    .info-box.success  { background: var(--emerald-light); border-left: 4px solid var(--emerald); }
+    .info-box.danger   { background: var(--red-light);     border-left: 4px solid var(--red); }
 
-  /* ===== ALERTAS ===== */
-  .alerta {
-    display: flex;
-    gap: 12px;
-    border-radius: var(--radio);
-    padding: 14px 16px;
-    margin-bottom: 14px;
-    align-items: flex-start;
-  }
-  .alerta-icon { font-size: 20px; flex-shrink: 0; margin-top: 1px; }
-  .alerta-cuerpo { flex: 1; }
-  .alerta-cuerpo strong { font-size: 14px; font-weight: 700; display: block; margin-bottom: 2px; }
-  .alerta-cuerpo p { font-size: 13px; line-height: 1.5; }
+    /* ─── Batch / expiry badges ─── */
+    .batch-list { display: flex; flex-direction: column; gap: 10px; margin: 16px 0; }
+    .batch-badge {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      font-weight: 700;
+      font-size: .9rem;
+    }
+    .batch-badge .date-label { font-size: .85rem; font-weight: 600; }
+    .batch-badge .units-label { font-size: 1.05rem; }
+    .batch-expired   { background: #7f1d1d; color: #fff; }
+    .batch-red       { background: #dc2626; color: #fff; }
+    .batch-amber     { background: #d97706; color: #fff; }
+    .batch-yellow    { background: #ca8a04; color: #fff; }
+    .batch-green     { background: #059669; color: #fff; }
+    .batch-tag {
+      font-size: .72rem;
+      padding: 2px 10px;
+      border-radius: 99px;
+      background: rgba(255,255,255,.22);
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
 
-  .alerta.verde   { background: var(--verde-fond);  border: 1px solid #86efac; }
-  .alerta.verde   .alerta-cuerpo strong { color: var(--verde-osc); }
-  .alerta.verde   .alerta-cuerpo p     { color: #166534; }
+    /* ─── Flow diagram ─── */
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin: 16px 0;
+      padding: 16px 20px;
+      background: var(--slate-light);
+      border-radius: var(--radius-sm);
+    }
+    .flow-step {
+      background: var(--white);
+      border-radius: var(--radius-sm);
+      padding: 8px 14px;
+      font-size: .88rem;
+      font-weight: 700;
+      box-shadow: 0 1px 4px rgba(0,0,0,.09);
+      color: var(--navy);
+      white-space: nowrap;
+    }
+    .flow-arrow { font-size: 1.2rem; color: var(--slate); font-weight: 700; }
+    .flow-step.blue   { background: var(--blue);    color: #fff; }
+    .flow-step.green  { background: var(--emerald); color: #fff; }
+    .flow-step.yellow { background: var(--amber);   color: #fff; }
+    .flow-step.red    { background: var(--red);     color: #fff; }
 
-  .alerta.ambar   { background: var(--ambar-fond);  border: 1px solid #fcd34d; }
-  .alerta.ambar   .alerta-cuerpo strong { color: var(--ambar-osc); }
-  .alerta.ambar   .alerta-cuerpo p     { color: #92400e; }
+    /* ─── Shelf location grid ─── */
+    .shelf-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 6px;
+      margin: 14px 0;
+    }
+    .shelf-row {
+      background: #f8fafc;
+      border-radius: var(--radius-sm);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      font-size: .92rem;
+      border: 2px solid #e2e8f0;
+    }
+    .shelf-row.eyes   { border-color: var(--blue); background: var(--blue-light); }
+    .shelf-row.hands  { border-color: var(--emerald); background: var(--emerald-light); }
+    .shelf-row .shelf-icon { font-size: 1.3rem; }
 
-  .alerta.rojo    { background: var(--rojo-fond);   border: 1px solid #fca5a5; }
-  .alerta.rojo    .alerta-cuerpo strong { color: var(--rojo-osc); }
-  .alerta.rojo    .alerta-cuerpo p     { color: #991b1b; }
+    /* ─── Competitor table ─── */
+    .comp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .88rem;
+      margin: 14px 0;
+    }
+    .comp-table th {
+      background: var(--navy);
+      color: #fff;
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 700;
+    }
+    .comp-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .comp-table tr:nth-child(even) td { background: var(--slate-light); }
+    .comp-table .check { color: var(--emerald); font-weight: 800; }
+    .comp-table .cross  { color: var(--red);     font-weight: 800; }
 
-  .alerta.azul    { background: var(--azul-fondo);  border: 1px solid #7dd3fc; }
-  .alerta.azul    .alerta-cuerpo strong { color: var(--azul-osc); }
-  .alerta.azul    .alerta-cuerpo p     { color: #0c4a6e; }
+    /* ─── Sidebar nav mockup ─── */
+    .sidebar-mockup {
+      background: var(--navy);
+      border-radius: var(--radius);
+      padding: 24px 20px;
+      color: #fff;
+      margin: 16px 0;
+    }
+    .sidebar-mockup h4 { color: rgba(255,255,255,.6); font-size: .75rem; text-transform: uppercase; letter-spacing: .1em; margin-bottom: 14px; }
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 6px;
+      font-weight: 600;
+      font-size: .95rem;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .sidebar-item:hover, .sidebar-item.active { background: rgba(255,255,255,.12); }
+    .sidebar-item-icon { font-size: 1.3rem; width: 28px; text-align: center; }
+    .sidebar-badge {
+      margin-left: auto;
+      background: var(--red);
+      color: #fff;
+      font-size: .72rem;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 99px;
+    }
 
-  .alerta.violeta { background: var(--violeta-f);   border: 1px solid #c4b5fd; }
-  .alerta.violeta .alerta-cuerpo strong { color: #5b21b6; }
-  .alerta.violeta .alerta-cuerpo p     { color: #4c1d95; }
+    /* ─── POP status badges ─── */
+    .pop-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .pop-badge {
+      padding: 6px 16px;
+      border-radius: 99px;
+      font-size: .85rem;
+      font-weight: 700;
+    }
+    .pop-ok     { background: var(--emerald-light); color: #065f46; border: 1.5px solid #6ee7b7; }
+    .pop-dmg    { background: var(--red-light);     color: #991b1b; border: 1.5px solid #fca5a5; }
+    .pop-absent { background: var(--amber-light);   color: #92400e; border: 1.5px solid #fcd34d; }
+    .pop-none   { background: #f1f5f9;              color: #475569; border: 1.5px solid #cbd5e1; }
 
-  /* ===== CAMPO / FORMULARIO ===== */
-  .campo {
-    background: var(--gris-clar);
-    border-radius: var(--radio);
-    padding: 12px 16px;
-    margin-bottom: 10px;
-    border-left: 4px solid var(--azul);
-  }
-  .campo.verde  { border-left-color: var(--verde); }
-  .campo.ambar  { border-left-color: var(--ambar); }
-  .campo.rojo   { border-left-color: var(--rojo); }
-  .campo.violeta{ border-left-color: var(--violeta); }
-  .campo.gris   { border-left-color: var(--gris); }
+    /* ─── Tips grid ─── */
+    .tips-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+      margin: 16px 0;
+    }
+    .tip-card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .tip-card-icon { font-size: 2rem; }
+    .tip-card h4   { color: var(--navy); margin: 0; font-size: .97rem; }
+    .tip-card p    { color: var(--slate); font-size: .88rem; margin: 0; }
 
-  .campo-label {
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    font-weight: 700;
-    color: var(--gris);
-    margin-bottom: 3px;
-  }
-  .campo-valor {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--texto);
-  }
-  .campo-desc {
-    font-size: 13px;
-    color: #64748b;
-    margin-top: 3px;
-  }
+    /* ─── Offline banner ─── */
+    .offline-banner {
+      background: #d1fae5;
+      border: 1.5px solid #6ee7b7;
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      font-size: .92rem;
+      color: #065f46;
+      margin: 14px 0;
+    }
+    .warning-banner {
+      background: var(--amber-light);
+      border: 1.5px solid #fcd34d;
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      font-size: .92rem;
+      color: #92400e;
+      margin: 14px 0;
+    }
 
-  /* ===== PASOS DE FORMULARIO ===== */
-  .form-steps {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-  .form-step {
-    flex: 1;
-    min-width: 120px;
-    background: var(--blanco);
-    border-radius: var(--radio);
-    border: 2px solid var(--gris-bord);
-    padding: 12px 14px;
-    text-align: center;
-  }
-  .form-step.activo { border-color: var(--azul); background: var(--azul-fondo); }
-  .form-step-num {
-    font-size: 20px;
-    font-weight: 800;
-    color: var(--gris);
-  }
-  .form-step.activo .form-step-num { color: var(--azul); }
-  .form-step-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--gris);
-    margin-top: 3px;
-  }
-  .form-step.activo .form-step-label { color: var(--azul-osc); }
+    /* ─── Numpad mockup ─── */
+    .numpad {
+      background: #1e293b;
+      border-radius: var(--radius);
+      padding: 20px;
+      max-width: 260px;
+      margin: 16px auto;
+    }
+    .numpad-display {
+      background: #0f172a;
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      text-align: right;
+      color: #fff;
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+      letter-spacing: .05em;
+    }
+    .numpad-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+    .numpad-key {
+      background: #334155;
+      color: #fff;
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      text-align: center;
+      font-size: 1.2rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .numpad-key.confirm { background: var(--emerald); grid-column: span 3; font-size: 1rem; padding: 16px; }
+    .numpad-key.del     { background: #7f1d1d; }
+    .numpad-key.zero    { grid-column: span 1; }
 
-  /* ===== BOTONES ===== */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 12px 20px;
-    border-radius: var(--radio);
-    font-size: 14px;
-    font-weight: 700;
-    border: none;
-    cursor: pointer;
-    text-decoration: none;
-  }
-  .btn-azul    { background: var(--azul);    color: white; }
-  .btn-verde   { background: var(--verde);   color: white; }
-  .btn-ambar   { background: var(--ambar);   color: white; }
-  .btn-rojo    { background: var(--rojo);    color: white; }
-  .btn-gris    { background: var(--gris-clar); color: var(--texto); border: 1px solid var(--gris-bord); }
+    /* ─── Notification mockup ─── */
+    .notif-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 18px;
+      border-radius: var(--radius-sm);
+      background: var(--white);
+      box-shadow: 0 1px 4px rgba(0,0,0,.07);
+      margin-bottom: 10px;
+    }
+    .notif-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--blue);
+      flex-shrink: 0;
+      margin-top: 5px;
+    }
+    .notif-dot.read { background: #cbd5e1; }
+    .notif-text { flex: 1; }
+    .notif-text strong { font-size: .93rem; color: var(--navy); display: block; margin-bottom: 2px; }
+    .notif-text span   { font-size: .82rem; color: var(--slate); }
 
-  .btn-row {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin: 14px 0;
-  }
-  .btn-grande {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    background: var(--blanco);
-    border: 2px solid var(--gris-bord);
-    border-radius: var(--radio-lg);
-    padding: 16px 18px;
-    margin-bottom: 12px;
-    cursor: pointer;
-    width: 100%;
-    text-align: left;
-    text-decoration: none;
-    color: var(--texto);
-  }
-  .btn-grande.azul   { border-color: var(--azul);   background: var(--azul-fondo); }
-  .btn-grande.ambar  { border-color: var(--ambar);  background: var(--ambar-fond); }
-  .btn-grande.verde  { border-color: var(--verde);  background: var(--verde-fond); }
-  .btn-grande.violeta{ border-color: var(--violeta);background: var(--violeta-f); }
-  .btn-grande-icon  { font-size: 28px; flex-shrink: 0; }
-  .btn-grande-texto strong { font-size: 15px; font-weight: 700; display: block; }
-  .btn-grande-texto span   { font-size: 12px; color: var(--gris); }
+    /* ─── Task item ─── */
+    .task-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 18px;
+      border-radius: var(--radius-sm);
+      background: var(--white);
+      box-shadow: 0 1px 4px rgba(0,0,0,.07);
+      margin-bottom: 10px;
+    }
+    .task-icon { font-size: 1.4rem; flex-shrink: 0; }
+    .task-text { flex: 1; }
+    .task-text strong { font-size: .93rem; color: var(--navy); display: block; }
+    .task-text span   { font-size: .82rem; color: var(--slate); }
+    .task-status {
+      font-size: .75rem;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-weight: 700;
+    }
+    .task-pending   { background: var(--amber-light);   color: #92400e; }
+    .task-done      { background: var(--emerald-light); color: #065f46; }
 
-  /* ===== TABLA ===== */
-  .tabla-wrapper { overflow-x: auto; margin: 14px 0; border-radius: var(--radio); }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    background: var(--blanco);
-    border-radius: var(--radio);
-    overflow: hidden;
-    border: 1px solid var(--gris-bord);
-  }
-  th {
-    background: #0f172a;
-    color: white;
-    padding: 10px 14px;
-    text-align: left;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    font-weight: 700;
-  }
-  td { padding: 10px 14px; border-bottom: 1px solid var(--gris-bord); vertical-align: top; }
-  tr:last-child td { border-bottom: none; }
-  tr:nth-child(even) td { background: var(--gris-clar); }
-  td:first-child { font-weight: 600; }
+    /* ─── Highlight chip ─── */
+    .chip {
+      display: inline-block;
+      padding: 3px 12px;
+      border-radius: 99px;
+      font-size: .82rem;
+      font-weight: 700;
+    }
+    .chip.blue   { background: var(--blue-light);    color: #1e40af; }
+    .chip.green  { background: var(--emerald-light); color: #065f46; }
+    .chip.amber  { background: var(--amber-light);   color: #92400e; }
+    .chip.red    { background: var(--red-light);     color: #991b1b; }
 
-  /* ===== PILL TAGS ===== */
-  .pill {
-    display: inline-block;
-    border-radius: 50px;
-    padding: 2px 10px;
-    font-size: 11px;
-    font-weight: 700;
-    margin: 2px;
-  }
-  .pill-verde   { background: var(--verde-fond); color: var(--verde-osc); border: 1px solid #86efac; }
-  .pill-rojo    { background: var(--rojo-fond);  color: var(--rojo-osc);  border: 1px solid #fca5a5; }
-  .pill-ambar   { background: var(--ambar-fond); color: var(--ambar-osc); border: 1px solid #fcd34d; }
-  .pill-azul    { background: var(--azul-fondo); color: var(--azul-osc);  border: 1px solid #7dd3fc; }
-  .pill-gris    { background: var(--gris-clar);  color: var(--gris);      border: 1px solid var(--gris-bord); }
-  .pill-violeta { background: var(--violeta-f);  color: #5b21b6;          border: 1px solid #c4b5fd; }
+    /* ─── Footer ─── */
+    .footer {
+      margin-top: 60px;
+      padding: 32px;
+      background: var(--navy);
+      border-radius: var(--radius) var(--radius) 0 0;
+      color: rgba(255,255,255,.65);
+      text-align: center;
+      font-size: .85rem;
+    }
+    .footer strong { color: #fff; }
 
-  /* ===== ANAQUEL VISUAL ===== */
-  .anaquel {
-    background: var(--blanco);
-    border: 1px solid var(--gris-bord);
-    border-radius: var(--radio-lg);
-    overflow: hidden;
-    margin: 14px 0;
-    box-shadow: var(--sombra);
-  }
-  .anaquel-fila {
-    display: flex;
-    align-items: stretch;
-    border-bottom: 1px solid var(--gris-bord);
-  }
-  .anaquel-fila:last-child { border-bottom: none; }
-  .anaquel-etiqueta {
-    width: 130px;
-    flex-shrink: 0;
-    padding: 12px 14px;
-    font-size: 12px;
-    font-weight: 700;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 2px;
-  }
-  .anaquel-etiqueta span { font-size: 10px; font-weight: 500; color: var(--gris); }
-  .anaquel-fila.ojos    .anaquel-etiqueta { background: #fef08a; color: #713f12; border-right: 3px solid #eab308; }
-  .anaquel-fila.manos   .anaquel-etiqueta { background: #fed7aa; color: #7c2d12; border-right: 3px solid #f97316; }
-  .anaquel-fila.superior .anaquel-etiqueta { background: var(--gris-clar); color: var(--gris); border-right: 3px solid #94a3b8; }
-  .anaquel-fila.inferior .anaquel-etiqueta { background: #f1f5f9; color: #64748b; border-right: 3px solid #cbd5e1; }
-  .anaquel-desc {
-    flex: 1;
-    padding: 12px 14px;
-    font-size: 13px;
-    color: #334155;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
-  .anaquel-desc b { font-size: 13px; color: var(--texto); margin-bottom: 2px; display: block; }
+    /* ─── Divider ─── */
+    .divider {
+      height: 1px;
+      background: #e2e8f0;
+      margin: 24px 0;
+    }
 
-  /* ===== FLUJO GPS ===== */
-  .flujo {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    margin: 14px 0;
-  }
-  .flujo-paso {
-    display: flex;
-    gap: 14px;
-    align-items: flex-start;
-    position: relative;
-  }
-  .flujo-linea {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-    flex-shrink: 0;
-  }
-  .flujo-circulo {
-    width: 32px; height: 32px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 15px;
-    flex-shrink: 0;
-    background: var(--azul-fondo);
-    border: 2px solid var(--azul);
-    color: var(--azul);
-  }
-  .flujo-barra {
-    width: 2px;
-    flex: 1;
-    min-height: 24px;
-    background: var(--gris-bord);
-    margin: 2px 0;
-  }
-  .flujo-texto {
-    flex: 1;
-    padding: 4px 0 20px;
-    font-size: 14px;
-    color: #334155;
-  }
-  .flujo-texto strong { display: block; font-size: 14px; color: var(--texto); margin-bottom: 2px; }
-
-  /* ===== DIVISOR ===== */
-  .divisor {
-    border: none;
-    border-top: 1px solid var(--gris-bord);
-    margin: 32px 0;
-  }
-
-  /* ===== CHECKLIST ===== */
-  .checklist {
-    list-style: none;
-    margin: 12px 0;
-  }
-  .checklist li {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    font-size: 14px;
-    color: #334155;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--gris-bord);
-    line-height: 1.5;
-  }
-  .checklist li:last-child { border-bottom: none; }
-  .check-icon { flex-shrink: 0; font-size: 18px; margin-top: 0px; }
-
-  /* ===== REGLAS DE ORO ===== */
-  .reglas-oro {
-    background: linear-gradient(135deg, #fef3c7 0%, #fff7ed 100%);
-    border: 2px solid #fbbf24;
-    border-radius: var(--radio-lg);
-    padding: 24px;
-    margin: 28px 0;
-  }
-  .reglas-oro h3 {
-    font-size: 16px;
-    font-weight: 800;
-    color: #78350f;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .regla-item {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    margin-bottom: 12px;
-  }
-  .regla-item:last-child { margin-bottom: 0; }
-  .regla-num {
-    width: 26px; height: 26px;
-    background: #f59e0b;
-    color: white;
-    border-radius: 50%;
-    font-size: 12px;
-    font-weight: 800;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-  .regla-texto { font-size: 14px; color: #78350f; line-height: 1.6; }
-  .regla-texto strong { color: #451a03; }
-
-  /* ===== GUIÓN DEL DÍA ===== */
-  .guion {
-    background: #0f172a;
-    color: white;
-    border-radius: var(--radio-lg);
-    overflow: hidden;
-    margin: 14px 0;
-  }
-  .guion-header {
-    background: var(--azul);
-    padding: 12px 18px;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    font-weight: 700;
-  }
-  .guion-bloque {
-    display: flex;
-    gap: 14px;
-    align-items: flex-start;
-    padding: 14px 18px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
-  }
-  .guion-bloque:last-child { border-bottom: none; }
-  .guion-emoji { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
-  .guion-texto strong {
-    font-size: 14px;
-    font-weight: 700;
-    color: white;
-    display: block;
-    margin-bottom: 3px;
-  }
-  .guion-texto p {
-    font-size: 13px;
-    color: rgba(255,255,255,0.6);
-    line-height: 1.5;
-  }
-
-  /* ===== MINI MOCKUP PANTALLA ===== */
-  .mockup {
-    background: var(--blanco);
-    border: 1px solid var(--gris-bord);
-    border-radius: var(--radio-lg);
-    overflow: hidden;
-    margin: 14px 0;
-    box-shadow: var(--sombra-lg);
-    max-width: 320px;
-  }
-  .mockup-barra {
-    background: #0f172a;
-    padding: 10px 16px;
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--azul);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-  }
-  .mockup-cuerpo { padding: 14px 16px; }
-  .mockup-cuerpo p { font-size: 13px; color: var(--gris); margin-bottom: 8px; }
-
-  /* ===== GRID 2 COLUMNAS ===== */
-  .grid2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin: 12px 0;
-  }
-
-  /* ===== FOOTER ===== */
-  .footer {
-    background: #0f172a;
-    color: rgba(255,255,255,0.5);
-    text-align: center;
-    padding: 24px;
-    font-size: 12px;
-    margin-top: 40px;
-  }
-  .footer strong { color: var(--azul); }
-
-  /* ===== PRINT ===== */
-  @media print {
-    body { background: white; font-size: 12pt; }
-    .portada { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-    .seccion { page-break-inside: avoid; }
-    .tarjeta, .paso { page-break-inside: avoid; }
-    .footer { display: none; }
-  }
-
-  /* ===== MOBILE ===== */
-  @media (max-width: 480px) {
-    .portada h1 { font-size: 26px; }
-    .indice-lista { grid-template-columns: 1fr; }
-    .grid2 { grid-template-columns: 1fr; }
-    .form-steps { flex-direction: column; }
-    .anaquel-etiqueta { width: 100px; }
-    .btn-grande { padding: 12px 14px; }
-    .btn-grande-icon { font-size: 22px; }
-  }
-</style>
+    /* ─── Responsive ─── */
+    @media (max-width: 600px) {
+      .card { padding: 18px 16px; }
+      .cover { padding: 50px 20px 44px; }
+      .action-buttons { grid-template-columns: 1fr; }
+      .card-grid { grid-template-columns: 1fr; }
+      .tips-grid { grid-template-columns: 1fr; }
+      .toc-grid  { grid-template-columns: 1fr 1fr; }
+      .section-header { margin: 36px 0 16px; }
+      .comp-table { font-size: .78rem; }
+      .comp-table th, .comp-table td { padding: 8px 10px; }
+    }
+  </style>
 </head>
 <body>
 
-<!-- ===== PORTADA ===== -->
-<div class="portada">
-  <span class="portada-icon">📋</span>
-  <p class="portada-logo">Genius Keeper</p>
-  <h1>Guía del <span>Reporter</span></h1>
-  <p class="portada-sub">Todo lo que necesitas saber para hacer tu trabajo<br>paso a paso y sin complicaciones</p>
-  <span class="portada-badge">📱 Para usar en el teléfono o en papel</span>
+<!-- =============================================================== COVER == -->
+<div class="cover">
+  <span class="cover-icon">🛒</span>
+  <div class="cover-badge">Mercaderista · Reporter</div>
+  <h1>Genius Keeper</h1>
+  <p class="subtitle">
+    Guía completa para el Mercaderista de campo — todo lo que necesitas saber para
+    registrar visitas, despachos y pedidos desde tu iPhone.
+  </p>
+  <div class="cover-meta">
+    <span>📱 iOS · PWA</span>
+    <span>📅 Versión 2026</span>
+    <span>🏢 Lacteoca</span>
+    <span>✅ Sin contraseña</span>
+  </div>
 </div>
 
-<div class="contenedor">
+<div class="page-wrapper">
 
-  <!-- ===== ÍNDICE ===== -->
-  <div class="indice">
-    <h2>¿Qué vamos a ver?</h2>
-    <ul class="indice-lista">
-      <li><a href="#sec1"><span class="indice-num">1</span> Abrir la app</a></li>
-      <li><a href="#sec2"><span class="indice-num">2</span> Pantalla principal</a></li>
-      <li><a href="#sec3"><span class="indice-num">3</span> Lista de tiendas</a></li>
-      <li><a href="#sec4"><span class="indice-num">4</span> Hacer un reporte</a></li>
-      <li><a href="#sec5"><span class="indice-num">5</span> Registrar un despacho</a></li>
-      <li><a href="#sec6"><span class="indice-num">6</span> Recibir mercancía</a></li>
-      <li><a href="#sec7"><span class="indice-num">7</span> Tareas asignadas</a></li>
-      <li><a href="#sec8"><span class="indice-num">8</span> Sin internet</a></li>
-    </ul>
-  </div>
-
-  <div class="alerta ambar">
-    <span class="alerta-icon">⭐</span>
-    <div class="alerta-cuerpo">
-      <strong>Antes de empezar</strong>
-      <p>Esta guía es tuya. Léela una vez despacio y después úsala como referencia cuando tengas dudas. No hay preguntas tontas.</p>
+  <!-- ====================================================== TABLE OF CONTENTS == -->
+  <div class="toc-card">
+    <h2>📋 Contenido</h2>
+    <div class="toc-grid">
+      <a class="toc-item" href="#sec-login"><span class="toc-num">1</span>Iniciar sesión</a>
+      <a class="toc-item" href="#sec-home"><span class="toc-num">2</span>Pantalla principal</a>
+      <a class="toc-item" href="#sec-report"><span class="toc-num">3</span>Iniciar Reporte</a>
+      <a class="toc-item" href="#sec-inventario"><span class="toc-num">4</span>Inventario y Frescura</a>
+      <a class="toc-item" href="#sec-ejecucion"><span class="toc-num">5</span>Ejecución en Anaquel</a>
+      <a class="toc-item" href="#sec-competencia"><span class="toc-num">6</span>Competencia</a>
+      <a class="toc-item" href="#sec-despacho"><span class="toc-num">7</span>Registrar Despacho</a>
+      <a class="toc-item" href="#sec-pedido"><span class="toc-num">8</span>Tomar Pedido</a>
+      <a class="toc-item" href="#sec-sidebar"><span class="toc-num">9</span>Menú lateral</a>
+      <a class="toc-item" href="#sec-offline"><span class="toc-num">10</span>Modo sin internet</a>
+      <a class="toc-item" href="#sec-referencia"><span class="toc-num">11</span>Referencia rápida</a>
+      <a class="toc-item" href="#sec-tips"><span class="toc-num">12</span>Consejos finales</a>
     </div>
   </div>
 
-  <!-- ===== SECCIÓN 1 — ABRIR LA APP ===== -->
-  <div class="seccion" id="sec1">
-    <div class="seccion-header">
-      <div class="sec-num azul">1</div>
+
+  <!-- =========================================================== 1. LOGIN == -->
+  <div id="sec-login" class="section-header">
+    <div class="section-bar navy"></div>
+    <div class="section-emoji">🔓</div>
+    <div class="section-title">
+      <h2>1 · Iniciar Sesión</h2>
+      <p>Sin contraseña — solo elige tu nombre</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>¿Cómo entrar a la aplicación?</h3>
+    <p>Genius Keeper funciona directamente en el navegador de tu iPhone, como una aplicación instalada. No necesitas recordar ninguna contraseña.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num navy">1</div>
+        <div class="step-body">
+          <h4>Abre la aplicación</h4>
+          <p>Busca el ícono de <strong>Genius Keeper</strong> en tu pantalla de inicio (parece un ícono de app normal). Tócalo para abrirlo.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num navy">2</div>
+        <div class="step-body">
+          <h4>Selecciona tu nombre</h4>
+          <p>Verás una lista con todos los mercaderistas del equipo. Busca <strong>tu nombre</strong> y tócalo. No hay contraseña ni PIN que recordar.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num navy">3</div>
+        <div class="step-body">
+          <h4>¡Listo! Ya estás adentro</h4>
+          <p>La app te lleva directamente a tu pantalla principal (Centro de Operaciones). Todo lo que registres quedará asociado a tu nombre automáticamente.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box tip">
+      <span class="info-box-icon">💡</span>
+      <div class="info-box-body">
+        <strong>Tip — Agrega el ícono a tu pantalla de inicio</strong>
+        <p>En Safari: toca el botón de compartir (cuadro con flecha hacia arriba) → "Añadir a pantalla de inicio". Así Genius Keeper abre como una app normal, sin barra del navegador, y funciona como cualquier otra aplicación instalada.</p>
+      </div>
+    </div>
+
+    <div class="info-box warning">
+      <span class="info-box-icon">⚠️</span>
+      <div class="info-box-body">
+        <strong>Importante — Elige siempre tu propio nombre</strong>
+        <p>Si seleccionas el nombre de otro compañero, los reportes aparecerán registrados con el nombre equivocado. Si te equivocas, cierra la app completamente y vuelve a abrirla para elegir el nombre correcto.</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ============================================================= 2. HOME == -->
+  <div id="sec-home" class="section-header">
+    <div class="section-bar blue"></div>
+    <div class="section-emoji">🏠</div>
+    <div class="section-title">
+      <h2>2 · Centro de Operaciones</h2>
+      <p>Tu pantalla principal — tres acciones grandes</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>La pantalla principal tiene tres botones grandes</h3>
+    <p>Cada botón te lleva a una función diferente. Fíjate en el <strong>color</strong> para saber qué hace cada uno:</p>
+
+    <div class="action-buttons">
+      <div class="action-btn blue">
+        <span class="action-btn-icon">📊</span>
+        <span class="action-btn-label">Iniciar Reporte</span>
+        <span class="action-btn-desc">Visita un punto de venta e inspecciona el anaquel — 4 pasos rápidos</span>
+      </div>
+      <div class="action-btn yellow">
+        <span class="action-btn-icon">📦</span>
+        <span class="action-btn-label">Registrar Despacho</span>
+        <span class="action-btn-desc">Declara unidades físicamente entregadas en un punto de venta</span>
+      </div>
+      <div class="action-btn green">
+        <span class="action-btn-icon">🛍️</span>
+        <span class="action-btn-label">Tomar Pedido</span>
+        <span class="action-btn-desc">Anota un pedido verbal — el correo va solo al equipo de ventas</span>
+      </div>
+    </div>
+
+    <div class="info-box tip">
+      <span class="info-box-icon">💡</span>
+      <div class="info-box-body">
+        <strong>¿Cuál usar en cada situación?</strong>
+        <ul>
+          <li><strong>Azul (Reporte)</strong> → cuando llegas a una tienda y quieres documentar cómo está el producto en el anaquel: fechas, precios, exhibición, competencia</li>
+          <li><strong>Amarillo (Despacho)</strong> → cuando físicamente estás dejando producto en una tienda y quieres dejar constancia de esa entrega</li>
+          <li><strong>Verde (Pedido)</strong> → cuando el encargado de la tienda te dice verbalmente cuánto quiere pedir, pero el producto aún no ha llegado</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================== 3. REPORTE OVERVIEW == -->
+  <div id="sec-report" class="section-header">
+    <div class="section-bar blue"></div>
+    <div class="section-emoji">📊</div>
+    <div class="section-title">
+      <h2>3 · Iniciar Reporte — Visión General</h2>
+      <p>El formulario de visita tiene 4 pasos en secuencia</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Los 4 pasos del reporte de visita</h3>
+    <p>Cuando tocas <strong>"Iniciar Reporte"</strong> (botón azul), la app te guía por cuatro pasos en orden. Cada paso es una pantalla distinta. No puedes saltarte ninguno.</p>
+
+    <div class="flow">
+      <div class="flow-step blue">📦 Paso 1<br/>Inventario &amp; Frescura</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step">💰 Paso 2<br/>PVP &amp; Reposición</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step green">🏪 Paso 3<br/>Ejecución Anaquel</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step yellow">🥊 Paso 4<br/>Competencia</div>
+    </div>
+
+    <div class="card-grid" style="margin-top:20px;">
+      <div style="background:var(--blue-light); border-radius:var(--radius-sm); padding:16px 18px;">
+        <h4 style="color:var(--blue); margin-bottom:8px;">📦 Paso 1</h4>
+        <p style="margin:0; font-size:.9rem;">¿Hay producto en el anaquel? ¿Hasta cuándo vence? ¿Cuántas unidades?</p>
+      </div>
+      <div style="background:#f0fdf4; border-radius:var(--radius-sm); padding:16px 18px;">
+        <h4 style="color:#166534; margin-bottom:8px;">💰 Paso 2</h4>
+        <p style="margin:0; font-size:.9rem;">¿A qué precio está vendiendo la tienda el producto?</p>
+      </div>
+      <div style="background:var(--emerald-light); border-radius:var(--radius-sm); padding:16px 18px;">
+        <h4 style="color:#065f46; margin-bottom:8px;">🏪 Paso 3</h4>
+        <p style="margin:0; font-size:.9rem;">¿En qué nivel del anaquel está? ¿Cuántos facings? ¿Cómo está el material POP?</p>
+      </div>
+      <div style="background:var(--amber-light); border-radius:var(--radius-sm); padding:16px 18px;">
+        <h4 style="color:#92400e; margin-bottom:8px;">🥊 Paso 4</h4>
+        <p style="margin:0; font-size:.9rem;">¿Qué marcas competidoras hay? ¿A qué precio? ¿Tienen actividades especiales?</p>
+      </div>
+    </div>
+
+    <div class="info-box success">
+      <span class="info-box-icon">✅</span>
+      <div class="info-box-body">
+        <strong>Al finalizar el Paso 4</strong>
+        <p>Toca el botón "Enviar Reporte". Si tienes internet, se envía al instante. Si no tienes señal, se guarda en el teléfono y se envía automáticamente cuando regrese la conexión. Nunca se pierde ningún dato.</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================== 4. INVENTARIO == -->
+  <div id="sec-inventario" class="section-header">
+    <div class="section-bar blue"></div>
+    <div class="section-emoji">📦</div>
+    <div class="section-title">
+      <h2>4 · Paso 1 — Inventario y Frescura</h2>
+      <p>¿Qué hay en el anaquel y hasta cuándo vence?</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Caso A: El anaquel está vacío — Quiebre de Stock</h3>
+    <p>Si cuando llegas a la tienda el anaquel está completamente vacío (sin ningún producto de Lacteoca visible), activa el interruptor de <strong>"Quiebre de Stock"</strong>.</p>
+
+    <div class="info-box danger">
+      <span class="info-box-icon">🚨</span>
+      <div class="info-box-body">
+        <strong>Quiebre de Stock activado</strong>
+        <p>Cuando marcas Quiebre de Stock, <strong>no necesitas llenar nada más</strong> en el Paso 1. La app entiende que no hay producto en anaquel. Avanza directamente al Paso 2.</p>
+      </div>
+    </div>
+
+    <div class="info-box warning">
+      <span class="info-box-icon">⚠️</span>
+      <div class="info-box-body">
+        <strong>No confundas "no hay en anaquel" con "no tienen nada"</strong>
+        <p>El quiebre de stock significa que el anaquel está vacío en ese momento. La tienda puede tener producto en bodega que aún no han repuesto. Eso no es lo mismo.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Caso B: Hay producto — Registrar lotes por fecha</h3>
+    <p>Si hay producto en el anaquel, debes registrar cada lote separado. Un lote diferente = una fecha de vencimiento diferente. Sigue estos pasos para cada lote:</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Toca "Agregar lote"</h4>
+          <p>Aparece el selector de fecha de vencimiento. Tienes dos maneras de ingresar la fecha:</p>
+          <div style="display:flex; flex-direction:column; gap:10px; margin-top:10px;">
+            <div style="background:var(--blue-light); border-radius:var(--radius-sm); padding:12px 16px; display:flex; gap:12px; align-items:center;">
+              <span style="font-size:1.5rem;">📅</span>
+              <div>
+                <strong style="font-size:.92rem; color:var(--navy);">Opción 1 — Selector manual</strong>
+                <p style="font-size:.85rem; margin:0; color:var(--slate);">Usa el selector de fecha que muestra la app: desliza el mes, día y año hasta llegar a la fecha del empaque.</p>
+              </div>
+            </div>
+            <div style="background:var(--emerald-light); border-radius:var(--radius-sm); padding:12px 16px; display:flex; gap:12px; align-items:center;">
+              <span style="font-size:1.5rem;">📷</span>
+              <div>
+                <strong style="font-size:.92rem; color:var(--navy);">Opción 2 — Escanear con la cámara (recomendado)</strong>
+                <p style="font-size:.85rem; margin:0; color:var(--slate);">Toca el ícono de cámara. Apunta al código de vencimiento del empaque. La IA lee la fecha automáticamente en segundos.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>El numpad se abre automáticamente</h4>
+          <p>En cuanto confirmas la fecha, la app muestra automáticamente el <strong>teclado numérico grande</strong>. No tienes que buscarlo ni tocarlo — aparece solo.</p>
+          <div class="numpad">
+            <div class="numpad-display">24</div>
+            <div class="numpad-grid">
+              <div class="numpad-key">1</div>
+              <div class="numpad-key">2</div>
+              <div class="numpad-key">3</div>
+              <div class="numpad-key">4</div>
+              <div class="numpad-key">5</div>
+              <div class="numpad-key">6</div>
+              <div class="numpad-key">7</div>
+              <div class="numpad-key">8</div>
+              <div class="numpad-key">9</div>
+              <div class="numpad-key del">⌫</div>
+              <div class="numpad-key zero">0</div>
+              <div class="numpad-key">.</div>
+              <div class="numpad-key confirm">✅ Confirmar</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num green">3</div>
+        <div class="step-body">
+          <h4>Escribe la cantidad de unidades de ese lote</h4>
+          <p>Con el numpad abierto, escribe cuántas unidades hay de ese lote específico en el anaquel. Toca el botón verde <strong>"Confirmar"</strong>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num green">4</div>
+        <div class="step-body">
+          <h4>El lote aparece en la lista con su color</h4>
+          <p>Cada lote registrado se pinta con un color según qué tan urgente es. Los lotes se ordenan solos del más urgente al menos urgente.</p>
+          <p>Si tienes otro lote con fecha diferente, toca "Agregar lote" otra vez y repite.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box tip">
+      <span class="info-box-icon">💡</span>
+      <div class="info-box-body">
+        <strong>Tip — Usar la cámara para las fechas</strong>
+        <p>Escanear la fecha con la cámara es mucho más rápido que buscarla en el selector manual. Funciona con la mayoría de los formatos de fecha impresos en los empaques. Cuando hay muchos lotes en la tienda, la diferencia de tiempo es notable.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Colores de los lotes — ¿qué significan?</h3>
+    <p>El sistema asigna un color automático a cada lote según cuántos días faltan para que venza. Los lotes más urgentes siempre aparecen primero.</p>
+
+    <div class="batch-list">
+      <div class="batch-badge batch-expired">
+        <span class="date-label">📅 10 Ene 2026 — Vencido hace 5 meses</span>
+        <span class="units-label">6 uds</span>
+        <span class="batch-tag">VENCIDO</span>
+      </div>
+      <div class="batch-badge batch-red">
+        <span class="date-label">📅 01 Jun 2026 — Vence en 5 días</span>
+        <span class="units-label">8 uds</span>
+        <span class="batch-tag">≤ 7 días</span>
+      </div>
+      <div class="batch-badge batch-amber">
+        <span class="date-label">📅 08 Jun 2026 — Vence en 12 días</span>
+        <span class="units-label">24 uds</span>
+        <span class="batch-tag">8 – 15 días</span>
+      </div>
+      <div class="batch-badge batch-yellow">
+        <span class="date-label">📅 18 Jun 2026 — Vence en 22 días</span>
+        <span class="units-label">36 uds</span>
+        <span class="batch-tag">16 – 30 días</span>
+      </div>
+      <div class="batch-badge batch-green">
+        <span class="date-label">📅 11 Jul 2026 — Vence en 45 días</span>
+        <span class="units-label">48 uds</span>
+        <span class="batch-tag">&gt; 30 días</span>
+      </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:10px; margin-top:18px;">
+      <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f8fafc; border-radius:8px;">
+        <div style="width:16px; height:16px; border-radius:4px; background:#7f1d1d; flex-shrink:0;"></div>
+        <span style="font-size:.88rem;"><strong>Rojo oscuro</strong> — Vencido</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f8fafc; border-radius:8px;">
+        <div style="width:16px; height:16px; border-radius:4px; background:#dc2626; flex-shrink:0;"></div>
+        <span style="font-size:.88rem;"><strong>Rojo</strong> — 7 días o menos</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f8fafc; border-radius:8px;">
+        <div style="width:16px; height:16px; border-radius:4px; background:#d97706; flex-shrink:0;"></div>
+        <span style="font-size:.88rem;"><strong>Ámbar</strong> — 8 a 15 días</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f8fafc; border-radius:8px;">
+        <div style="width:16px; height:16px; border-radius:4px; background:#ca8a04; flex-shrink:0;"></div>
+        <span style="font-size:.88rem;"><strong>Amarillo</strong> — 16 a 30 días</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f8fafc; border-radius:8px;">
+        <div style="width:16px; height:16px; border-radius:4px; background:#059669; flex-shrink:0;"></div>
+        <span style="font-size:.88rem;"><strong>Verde</strong> — Más de 30 días</span>
+      </div>
+    </div>
+
+    <div class="warning-banner" style="margin-top:18px;">
+      <span>⚠️</span>
+      <span><strong>Aviso automático:</strong> Si algún lote vence en 15 días o menos, aparece un banner ámbar de advertencia al pie de la pantalla. Es una señal para que coordines acción con tu supervisor.</span>
+    </div>
+
+    <div class="info-box danger">
+      <span class="info-box-icon">🚨</span>
+      <div class="info-box-body">
+        <strong>¿Qué hago si hay producto vencido?</strong>
+        <p>Registra el lote tal como está — el sistema lo marcará en rojo oscuro y el gerente lo verá. No retires producto sin autorización previa. Notifica inmediatamente a tu supervisor.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Paso 2 — PVP y Reposición</h3>
+    <p>Este paso tiene un solo campo: el <strong>precio de venta al público (PVP)</strong> que tiene el producto en ese punto de venta específico.</p>
+
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h4>Lee el precio en el anaquel y escríbelo</h4>
+        <p>Observa la etiqueta de precio que tiene el producto en esa tienda. Toca el campo y escribe el número. Ejemplo: <strong>4.50</strong>. Si el precio está en otra moneda, escríbelo igual y tu gerente sabrá interpretarlo.</p>
+      </div>
+    </div>
+
+    <div class="info-box tip">
+      <span class="info-box-icon">💡</span>
+      <div class="info-box-body">
+        <strong>¿No ves precio en la tienda?</strong>
+        <p>Pregunta amablemente al encargado. Si no lo saben o prefieren no decirlo, escribe 0 y déjalo anotado en las observaciones del Paso 4.</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================== 5. EJECUCION == -->
+  <div id="sec-ejecucion" class="section-header">
+    <div class="section-bar green"></div>
+    <div class="section-emoji">🏪</div>
+    <div class="section-title">
+      <h2>5 · Paso 3 — Ejecución en Anaquel</h2>
+      <p>Cómo está presentado el producto en la tienda</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Ubicación en el anaquel (Nivel)</h3>
+    <p>¿En qué altura está el producto? Selecciona una de las cuatro opciones:</p>
+
+    <div class="shelf-grid">
+      <div class="shelf-row eyes">
+        <span class="shelf-icon">👁️</span>
+        <div>
+          <strong>Nivel Ojos</strong>
+          <div style="font-size:.83rem; color:#1e40af; margin-top:2px;">La mejor posición — el cliente lo ve primero al mirar el anaquel</div>
+        </div>
+      </div>
+      <div class="shelf-row hands">
+        <span class="shelf-icon">🤲</span>
+        <div>
+          <strong>Nivel Manos</strong>
+          <div style="font-size:.83rem; color:#065f46; margin-top:2px;">Buena posición — fácil de alcanzar y tomar</div>
+        </div>
+      </div>
+      <div class="shelf-row">
+        <span class="shelf-icon">⬆️</span>
+        <div>
+          <strong>Nivel Superior</strong>
+          <div style="font-size:.83rem; color:var(--slate); margin-top:2px;">Por encima del nivel de la vista — menos visible</div>
+        </div>
+      </div>
+      <div class="shelf-row">
+        <span class="shelf-icon">⬇️</span>
+        <div>
+          <strong>Nivel Inferior</strong>
+          <div style="font-size:.83rem; color:var(--slate); margin-top:2px;">Cerca del piso — el cliente debe agacharse para verlo</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Caras visibles (Facings)</h3>
+    <p>Los <strong>"facings"</strong> son la cantidad de frentes visibles del producto en el anaquel cuando estás de frente a él.</p>
+
+    <div class="card-grid">
       <div>
-        <h2>Abrir la app y entrar</h2>
-        <p>Qué hacer la primera vez que abres Genius Keeper</p>
+        <h4>¿Cómo contarlos?</h4>
+        <p>Párate frente al anaquel. Cuenta cuántos envases de Lacteoca ves directamente de frente, de izquierda a derecha. Ese número es el de facings.</p>
+        <div class="info-box tip" style="margin-top:10px;">
+          <span class="info-box-icon">💡</span>
+          <div class="info-box-body">
+            <strong>Ejemplo</strong>
+            <p style="margin:0;">Si ves 3 envases de frente aunque haya 2 filas de profundidad → facings = <strong>3</strong>. Solo cuentas lo que se ve de frente.</p>
+          </div>
+        </div>
       </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num">1</div>
-      <span class="paso-emoji">📱</span>
-      <div class="paso-cuerpo">
-        <strong>Abre Genius Keeper en tu teléfono</strong>
-        <p>Busca el ícono en tu pantalla. Si no lo tienes, el supervisor te dará el enlace para abrirlo desde el navegador.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num">2</div>
-      <span class="paso-emoji">🔐</span>
-      <div class="paso-cuerpo">
-        <strong>Ingresa tu usuario y contraseña</strong>
-        <p>La cuenta es de la empresa. Tu supervisor te dio los datos. Escríbelos exactamente como te los dieron, sin espacios extra.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num">3</div>
-      <span class="paso-emoji">👤</span>
-      <div class="paso-cuerpo">
-        <strong>Selecciona tu nombre en la lista</strong>
-        <p>Varios reporteros pueden usar la misma cuenta. Aparecerá una lista con nombres — toca el tuyo para continuar.</p>
-      </div>
-    </div>
-
-    <div class="alerta azul">
-      <span class="alerta-icon">💡</span>
-      <div class="alerta-cuerpo">
-        <strong>¿No ves tu nombre?</strong>
-        <p>Avísale al supervisor para que te agregue a la lista. Mientras tanto no podrás hacer reportes.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num">4</div>
-      <span class="paso-emoji">🔒</span>
-      <div class="paso-cuerpo">
-        <strong>Desbloquea con tu huella o PIN</strong>
-        <p>La app puede pedirte que confirmes tu identidad al entrar. Usa tu huella dactilar o el PIN que configuraste.</p>
-      </div>
-    </div>
-
-    <div class="alerta verde">
-      <span class="alerta-icon">✅</span>
-      <div class="alerta-cuerpo">
-        <strong>¡Ya entraste!</strong>
-        <p>Verás la pantalla principal con las opciones del día.</p>
-      </div>
-    </div>
-  </div>
-
-  <hr class="divisor">
-
-  <!-- ===== SECCIÓN 2 — PANTALLA PRINCIPAL ===== -->
-  <div class="seccion" id="sec2">
-    <div class="seccion-header">
-      <div class="sec-num verde">2</div>
       <div>
-        <h2>La pantalla principal</h2>
-        <p>Tu centro de operaciones del día</p>
-      </div>
-    </div>
-
-    <p style="font-size: 14px; color: #334155; margin-bottom: 16px;">
-      Cuando entras, ves dos botones grandes. Cada uno te lleva a una tarea distinta:
-    </p>
-
-    <a class="btn-grande azul" href="#sec3">
-      <span class="btn-grande-icon">📋</span>
-      <div class="btn-grande-texto">
-        <strong>Iniciar Reporte</strong>
-        <span>Seleccionar una tienda y llenar el formulario de visita</span>
-      </div>
-    </a>
-
-    <a class="btn-grande ambar" href="#sec5">
-      <span class="btn-grande-icon">🛒</span>
-      <div class="btn-grande-texto">
-        <strong>Despacho</strong>
-        <span>Registrar las unidades que entregaste a un PDV</span>
-      </div>
-    </a>
-
-    <div class="alerta ambar" style="margin-top: 14px;">
-      <span class="alerta-icon">⚠️</span>
-      <div class="alerta-cuerpo">
-        <strong>Alerta de transferencia pendiente</strong>
-        <p>Si el almacén te envió mercancía, aparece un aviso en naranja en la parte de arriba de la pantalla. Toca ese aviso para confirmar la recepción.</p>
+        <h4>¿Cómo ingresarlos?</h4>
+        <ol>
+          <li>Toca el botón "Caras visibles"</li>
+          <li>El numpad grande se abre</li>
+          <li>Escribe el número de facings</li>
+          <li>Toca Confirmar</li>
+        </ol>
       </div>
     </div>
   </div>
 
-  <hr class="divisor">
-
-  <!-- ===== SECCIÓN 3 — LISTA DE TIENDAS (PDV) ===== -->
-  <div class="seccion" id="sec3">
-    <div class="seccion-header">
-      <div class="sec-num ambar">3</div>
-      <div>
-        <h2>Escoger la tienda a visitar</h2>
-        <p>La lista de todos tus puntos de venta</p>
-      </div>
+  <div class="card">
+    <h3>Categoría adyacente</h3>
+    <p>Anota qué tipo de producto está inmediatamente <strong>al lado</strong> de nuestro producto en el anaquel. La app muestra una lista de opciones para seleccionar.</p>
+    <p>Ejemplos típicos de categorías adyacentes:</p>
+    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
+      <span class="chip blue">Lácteos</span>
+      <span class="chip amber">Embutidos</span>
+      <span class="chip green">Refrigerados</span>
+      <span class="chip red">Bebidas</span>
+      <span class="chip blue">Yogurt</span>
+      <span class="chip amber">Untables</span>
     </div>
-
-    <div class="paso">
-      <div class="paso-num">1</div>
-      <span class="paso-emoji">🔍</span>
-      <div class="paso-cuerpo">
-        <strong>Busca la tienda por su nombre</strong>
-        <p>Hay una barra de búsqueda arriba. Escribe las primeras letras del nombre y la lista se filtra sola.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num">2</div>
-      <span class="paso-emoji">📂</span>
-      <div class="paso-cuerpo">
-        <strong>Las tiendas están agrupadas por cadena</strong>
-        <p>Primero aparecen las cadenas grandes (Central Madeirense, Excelsior Gama, etc.) y luego los automercados individuales.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num">3</div>
-      <span class="paso-emoji">📍</span>
-      <div class="paso-cuerpo">
-        <strong>Toca el nombre de la tienda</strong>
-        <p>La app verificará que estás en el lugar correcto usando el GPS de tu teléfono.</p>
-      </div>
-    </div>
-
-    <div class="alerta rojo">
-      <span class="alerta-icon">📍</span>
-      <div class="alerta-cuerpo">
-        <strong>Ícono rojo de GPS en una tienda</strong>
-        <p>Significa que la tienda no tiene su ubicación registrada. La primera vez que la visites, la app te pedirá confirmar las coordenadas. Solo acepta y listo.</p>
-      </div>
-    </div>
-
-    <div class="alerta ambar">
-      <span class="alerta-icon">🗺️</span>
-      <div class="alerta-cuerpo">
-        <strong>Si la app dice "Estás lejos"</strong>
-        <p>La app mide que estés a menos de 500 metros de la tienda. Si el GPS de tu teléfono está fallando, activa el "GPS de alta precisión" en los ajustes del teléfono.</p>
-      </div>
-    </div>
-
-    <!-- FLUJO GPS -->
-    <div class="flujo">
-      <div class="flujo-paso">
-        <div class="flujo-linea">
-          <div class="flujo-circulo">📍</div>
-          <div class="flujo-barra"></div>
-        </div>
-        <div class="flujo-texto">
-          <strong>Tocas el nombre de la tienda</strong>
-          La app empieza a medir tu ubicación
-        </div>
-      </div>
-      <div class="flujo-paso">
-        <div class="flujo-linea">
-          <div class="flujo-circulo" style="background:#dcfce7; border-color:#22c55e; color:#15803d;">✓</div>
-          <div class="flujo-barra"></div>
-        </div>
-        <div class="flujo-texto">
-          <strong>Estás cerca (menos de 500 m)</strong>
-          Pasa directamente al formulario de reporte
-        </div>
-      </div>
-      <div class="flujo-paso">
-        <div class="flujo-linea">
-          <div class="flujo-circulo" style="background:#fee2e2; border-color:#ef4444; color:#b91c1c;">✗</div>
-        </div>
-        <div class="flujo-texto">
-          <strong>Estás lejos o el GPS falla</strong>
-          La app te avisa. Activa el GPS de alta precisión y vuelve a intentarlo
-        </div>
+    <div class="info-box tip" style="margin-top:14px;">
+      <span class="info-box-icon">💡</span>
+      <div class="info-box-body">
+        <strong>¿Por qué importa la categoría adyacente?</strong>
+        <p>Saber qué hay al lado del producto ayuda al equipo a entender si está bien ubicado en el lineal o si podría estar en una posición más favorable para el consumidor.</p>
       </div>
     </div>
   </div>
 
-  <hr class="divisor">
+  <div class="card">
+    <h3>Estado del material POP</h3>
+    <p>El <strong>material POP</strong> (Point of Purchase) incluye afiches, habladores, stickers, cenefas y cualquier material publicitario de Lacteoca que la tienda debería tener exhibido. Selecciona cuál de los cuatro estados describe mejor lo que ves:</p>
 
-  <!-- ===== SECCIÓN 4 — HACER UN REPORTE ===== -->
-  <div class="seccion" id="sec4">
-    <div class="seccion-header">
-      <div class="sec-num rojo">4</div>
-      <div>
-        <h2>Hacer el reporte de visita</h2>
-        <p>El formulario tiene 4 pasos — uno por uno, sin apuro</p>
-      </div>
+    <div class="pop-badges">
+      <span class="pop-badge pop-ok">✅ Exhibido OK</span>
+      <span class="pop-badge pop-dmg">❌ Dañado</span>
+      <span class="pop-badge pop-absent">⚠️ Ausente</span>
+      <span class="pop-badge pop-none">➖ Sin Campaña</span>
     </div>
 
-    <div class="form-steps">
-      <div class="form-step activo">
-        <div class="form-step-num">1</div>
-        <div class="form-step-label">Inventario</div>
-      </div>
-      <div class="form-step">
-        <div class="form-step-num">2</div>
-        <div class="form-step-label">Precio</div>
-      </div>
-      <div class="form-step">
-        <div class="form-step-num">3</div>
-        <div class="form-step-label">Anaquel</div>
-      </div>
-      <div class="form-step">
-        <div class="form-step-num">4</div>
-        <div class="form-step-label">Competencia</div>
-      </div>
-    </div>
-
-    <!-- PASO 1 -->
-    <div class="tarjeta">
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-        <div style="width:32px; height:32px; background:var(--azul); border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-weight:800; font-size:14px; flex-shrink:0;">1</div>
-        <h3 style="font-size:17px; font-weight:800;">Inventario y fechas de vencimiento</h3>
-      </div>
-
-      <div class="paso">
-        <div class="paso-num">a</div>
-        <span class="paso-emoji">❌</span>
-        <div class="paso-cuerpo">
-          <strong>¿El anaquel está vacío? (Quiebre de stock)</strong>
-          <p>Si no hay ningún producto nuestro en el anaquel, activa el interruptor de "Quiebre de Stock". El paso siguiente se saltará automáticamente.</p>
-        </div>
-      </div>
-
-      <div class="paso">
-        <div class="paso-num">b</div>
-        <span class="paso-emoji">📅</span>
-        <div class="paso-cuerpo">
-          <strong>Si hay producto: registra las fechas de vencimiento</strong>
-          <p>Puedes hacerlo de dos formas:</p>
-          <ul>
-            <li><strong>Cámara 📷:</strong> Toca el botón "Escanear Fecha", apunta al empaque del producto y la app lee la fecha sola.</li>
-            <li><strong>Manual ✏️:</strong> Escribe la fecha tú mismo en formato día/mes/año.</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="paso">
-        <div class="paso-num">c</div>
-        <span class="paso-emoji">🔢</span>
-        <div class="paso-cuerpo">
-          <strong>Escribe cuántas unidades tienen esa fecha</strong>
-          <p>Toca el botón "Añadir Cantidad" y escribe el número de unidades con esa fecha de vencimiento. Si hay varias fechas distintas, agrégalas una por una.</p>
-        </div>
-      </div>
-
-      <div class="alerta azul">
-        <span class="alerta-icon">💡</span>
-        <div class="alerta-cuerpo">
-          <strong>¿Varias fechas en el anaquel?</strong>
-          <p>Normal. Agrega una fila por cada fecha diferente. Así el sistema sabe exactamente qué hay en la tienda.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- PASO 2 -->
-    <div class="tarjeta">
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-        <div style="width:32px; height:32px; background:#16a34a; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-weight:800; font-size:14px; flex-shrink:0;">2</div>
-        <h3 style="font-size:17px; font-weight:800;">Precio y pedido</h3>
-      </div>
-
-      <div class="campo">
-        <div class="campo-label">PVP — Precio de Venta al Público</div>
-        <div class="campo-valor">Escribe el precio en dólares que está en la etiqueta del anaquel</div>
-        <div class="campo-desc">Obligatorio. Si el precio no está visible, pregúntalo en caja.</div>
-      </div>
-
-      <div class="campo verde">
-        <div class="campo-label">OC — Orden de Compra (opcional)</div>
-        <div class="campo-valor">¿Cuántas unidades quieren pedir?</div>
-        <div class="campo-desc">Solo si el gerente de la tienda quiere hacer un pedido. Si no, déjalo vacío.</div>
-      </div>
-    </div>
-
-    <!-- PASO 3 -->
-    <div class="tarjeta">
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-        <div style="width:32px; height:32px; background:#f97316; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-weight:800; font-size:14px; flex-shrink:0;">3</div>
-        <h3 style="font-size:17px; font-weight:800;">Posición en el anaquel</h3>
-      </div>
-
-      <p style="font-size:14px; color:#334155; margin-bottom:12px;">¿En qué parte del anaquel está ubicado el producto?</p>
-
-      <div class="anaquel">
-        <div class="anaquel-fila ojos">
-          <div class="anaquel-etiqueta">
-            <b>Nivel Ojos</b>
-            <span>⭐ La mejor posición</span>
-          </div>
-          <div class="anaquel-desc">
-            <b>A la altura de los ojos del cliente</b>
-            Es donde más se vende. Si estamos aquí, ¡excelente!
-          </div>
-        </div>
-        <div class="anaquel-fila manos">
-          <div class="anaquel-etiqueta">
-            <b>Nivel Manos</b>
-            <span>Buena posición</span>
-          </div>
-          <div class="anaquel-desc">
-            <b>A la altura de las manos</b>
-            Fácil de agarrar. Segunda mejor opción.
-          </div>
-        </div>
-        <div class="anaquel-fila superior">
-          <div class="anaquel-etiqueta">
-            <b>Nivel Superior</b>
-            <span>Poco visible</span>
-          </div>
-          <div class="anaquel-desc">
-            <b>Arriba del anaquel</b>
-            Difícil de ver. Hay que trabajar para subir.
-          </div>
-        </div>
-        <div class="anaquel-fila inferior">
-          <div class="anaquel-etiqueta">
-            <b>Nivel Inferior</b>
-            <span>Casi no se ve</span>
-          </div>
-          <div class="anaquel-desc">
-            <b>En el piso del anaquel</b>
-            La peor posición. Intenta mover el producto.
-          </div>
-        </div>
-      </div>
-
-      <div style="margin-top: 16px;">
-        <div class="campo ambar">
-          <div class="campo-label">Caras visibles (Facing)</div>
-          <div class="campo-valor">¿Cuántos productos se ven de frente?</div>
-          <div class="campo-desc">Si hay 3 quesos uno al lado del otro mirando hacia ti, el facing es 3.</div>
-        </div>
-
-        <div class="campo">
-          <div class="campo-label">Categoría adyacente</div>
-          <div class="campo-valor">¿Qué está al lado de nuestro producto?</div>
-          <div class="campo-desc">Selecciona la opción más parecida: Quesos crema, Quesos de Cabra, Delicatessen, Charcutería.</div>
-        </div>
-
-        <div class="campo violeta">
-          <div class="campo-label">Material POP</div>
-          <div class="campo-valor">¿Hay afiches, carteles o decoración nuestra?</div>
-          <div class="campo-desc">
-            <span class="pill pill-verde">✅ Exhibido OK</span>
-            <span class="pill pill-ambar">⚠️ Dañado</span>
-            <span class="pill pill-rojo">✗ Ausente</span>
-            <span class="pill pill-gris">⚪ Sin campaña</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- PASO 4 -->
-    <div class="tarjeta">
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-        <div style="width:32px; height:32px; background:var(--violeta); border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; font-weight:800; font-size:14px; flex-shrink:0;">4</div>
-        <h3 style="font-size:17px; font-weight:800;">Competencia y observaciones</h3>
-      </div>
-
-      <div class="paso">
-        <div class="paso-num violeta">a</div>
-        <span class="paso-emoji">🔍</span>
-        <div class="paso-cuerpo">
-          <strong>Reportar competidores</strong>
-          <p>Selecciona un producto de la competencia de la lista, anota su precio y si tienen material publicitario (POP) o degustaciones activas.</p>
-        </div>
-      </div>
-
-      <div class="campo violeta">
-        <div class="campo-label">Competidores que rastreamos</div>
-        <div class="campo-valor" style="font-size:13px; line-height:1.8;">
-          • Ananke Artesanal Natural 200g<br>
-          • Ananke Natural Extra Cremoso 150g / 225g<br>
-          • Cheva Capri 180g<br>
-          • Las Cumbres Natural 200g<br>
-          • Capri Cream Natural 170g
-        </div>
-      </div>
-
-      <div class="paso">
-        <div class="paso-num violeta">b</div>
-        <span class="paso-emoji">🆕</span>
-        <div class="paso-cuerpo">
-          <strong>¿Ves un producto nuevo que no conoces?</strong>
-          <p>Toca "Declarar Nuevo Entrante". Escribe la marca, la presentación y la categoría. Esto es información muy valiosa para el equipo.</p>
-        </div>
-      </div>
-
-      <div class="paso">
-        <div class="paso-num violeta">c</div>
-        <span class="paso-emoji">📝</span>
-        <div class="paso-cuerpo">
-          <strong>Notas adicionales</strong>
-          <p>Escribe cualquier cosa importante que quieras reportar. Habla con el gerente, situaciones especiales, comentarios del personal. Todo suma.</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- ENVIAR REPORTE -->
-    <div class="tarjeta" style="border-color: var(--verde); background: var(--verde-fond);">
-      <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-        <span style="font-size:28px;">✅</span>
-        <h3 style="font-size:17px; font-weight:800; color: var(--verde-osc);">Enviar el reporte</h3>
-      </div>
-      <p style="font-size:14px; color:#166534; margin-bottom:12px;">Después del Paso 4, toca el botón <strong>ENVIAR</strong>. Aparecerá una pantalla verde de confirmación.</p>
-      <ul class="checklist">
-        <li><span class="check-icon">✓</span> Revisa que el anaquel quedó ordenado</li>
-        <li><span class="check-icon">✓</span> Asegúrate que el precio esté correcto y visible</li>
-        <li><span class="check-icon">✓</span> ¿El material POP está en buen estado y bien ubicado?</li>
-        <li><span class="check-icon">✓</span> Conversar con el personal de la tienda es clave</li>
-        <li><span class="check-icon">✓</span> ¡Un espacio más en el anaquel es una nueva oportunidad!</li>
-      </ul>
-    </div>
-
-    <div class="alerta azul">
-      <span class="alerta-icon">💾</span>
-      <div class="alerta-cuerpo">
-        <strong>¿Sin internet en ese momento?</strong>
-        <p>No te preocupes. El reporte se guarda en el teléfono y se envía automáticamente cuando vuelve la señal. Tú no tienes que hacer nada extra.</p>
-      </div>
-    </div>
-  </div>
-
-  <hr class="divisor">
-
-  <!-- ===== SECCIÓN 5 — DESPACHO ===== -->
-  <div class="seccion" id="sec5">
-    <div class="seccion-header">
-      <div class="sec-num azul2">5</div>
-      <div>
-        <h2>Registrar un despacho</h2>
-        <p>Cuando entregas producto a una tienda</p>
-      </div>
-    </div>
-
-    <div class="alerta azul">
-      <span class="alerta-icon">💡</span>
-      <div class="alerta-cuerpo">
-        <strong>¿Qué es un despacho?</strong>
-        <p>Tú no recibes el pedido — <strong>tú llevas el producto</strong>. Cuando vas a una tienda y le entregas unidades de nuestros quesos, aquí es donde lo registras. El sistema lleva la cuenta de cuánto despachaste y a quién.</p>
-      </div>
-    </div>
-
-    <p style="font-size:14px; color:#334155; margin-bottom:16px;">Para registrar un despacho, toca el botón amarillo <strong>Despacho</strong> desde la pantalla principal.</p>
-
-    <div class="paso">
-      <div class="paso-num azul2">1</div>
-      <span class="paso-emoji">🏪</span>
-      <div class="paso-cuerpo">
-        <strong>Selecciona la tienda a la que le entregaste</strong>
-        <p>Elige el nombre del PDV de la lista desplegable.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num azul2">2</div>
-      <span class="paso-emoji">📍</span>
-      <div class="paso-cuerpo">
-        <strong>Sucursal (solo para cadenas)</strong>
-        <p>Si es una cadena grande (Gama, Madeirense, Plazas, Río Market, Páramo), debes escribir cuál sucursal. Este campo es <strong>obligatorio</strong> en esos casos.</p>
-      </div>
-    </div>
-
-    <div class="campo ambar">
-      <div class="campo-label">Unidades Despachadas</div>
-      <div class="campo-valor">¿Cuántas unidades entregaste tú en esta visita?</div>
-      <div class="campo-desc">Obligatorio. Escribe el número exacto de lo que llevaste físicamente.</div>
-    </div>
-
-    <div class="campo">
-      <div class="campo-label">Número de OC (Orden de Compra)</div>
-      <div class="campo-valor">El número del documento de compra de la tienda</div>
-      <div class="campo-desc">Obligatorio. La tienda tiene una OC de compra — pídela al gerente o al encargado de recepción. Sin este número no puedes guardar el despacho.</div>
-    </div>
-
-    <div class="alerta verde">
-      <span class="alerta-icon">✅</span>
-      <div class="alerta-cuerpo">
-        <strong>Despacho guardado</strong>
-        <p>Verás un ✓ verde que dice "¡Despacho Registrado!". El formulario se limpia solo después de 2-3 segundos. Listo para el siguiente.</p>
-      </div>
-    </div>
-  </div>
-
-  <hr class="divisor">
-
-  <!-- ===== SECCIÓN 6 — LOGÍSTICA / RECIBIR MERCANCÍA ===== -->
-  <div class="seccion" id="sec6">
-    <div class="seccion-header">
-      <div class="sec-num naranja">6</div>
-      <div>
-        <h2>Recibir mercancía del almacén</h2>
-        <p>Cuando te envían producto desde Barinas</p>
-      </div>
-    </div>
-
-    <div class="alerta ambar">
-      <span class="alerta-icon">⚠️</span>
-      <div class="alerta-cuerpo">
-        <strong>Aviso en la pantalla principal</strong>
-        <p>Cuando el almacén te envía mercancía, aparece un rectángulo naranja en la pantalla principal que dice "¡Acción Requerida! Tienes una carga de X unidades pendiente por recibir". No lo ignores.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num naranja">1</div>
-      <span class="paso-emoji">🚚</span>
-      <div class="paso-cuerpo">
-        <strong>Toca "Logística" en el menú</strong>
-        <p>Verás cuántas unidades están en camino desde el depósito de Barinas.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num naranja">2</div>
-      <span class="paso-emoji">📦</span>
-      <div class="paso-cuerpo">
-        <strong>Confirma que recibiste la mercancía</strong>
-        <p>Toca el botón <strong>RECIBIR</strong>. Hazlo solo cuando tengas la mercancía física en tus manos.</p>
-      </div>
-    </div>
-
-    <div class="alerta azul">
-      <span class="alerta-icon">💡</span>
-      <div class="alerta-cuerpo">
-        <strong>¿No hay nada pendiente?</strong>
-        <p>La pantalla de logística dirá "No hay traslados pendientes". Esto es normal cuando no hay envíos activos.</p>
-      </div>
-    </div>
-  </div>
-
-  <hr class="divisor">
-
-  <!-- ===== SECCIÓN 7 — TAREAS ===== -->
-  <div class="seccion" id="sec7">
-    <div class="seccion-header">
-      <div class="sec-num violeta">7</div>
-      <div>
-        <h2>Tareas asignadas</h2>
-        <p>Lo que el supervisor te encargó hacer</p>
-      </div>
-    </div>
-
-    <p style="font-size:14px; color:#334155; margin-bottom:16px;">El supervisor puede asignarte tareas específicas desde la oficina. Las verás en el menú lateral con un número en rojo que indica cuántas tienes pendientes.</p>
-
-    <div class="paso">
-      <div class="paso-num violeta">1</div>
-      <span class="paso-emoji">📋</span>
-      <div class="paso-cuerpo">
-        <strong>Revisa tus tareas al iniciar el día</strong>
-        <p>En el menú lateral hay un ícono de "Tareas" con un número. Si el número es mayor que cero, tienes trabajo asignado.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num violeta">2</div>
-      <span class="paso-emoji">📖</span>
-      <div class="paso-cuerpo">
-        <strong>Lee la descripción de cada tarea</strong>
-        <p>Cada tarea tiene título, descripción y fecha límite. Si no entiendes algo, contacta al supervisor antes de salir.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="paso-num violeta">3</div>
-      <span class="paso-emoji">✔️</span>
-      <div class="paso-cuerpo">
-        <strong>Marca la tarea como completada</strong>
-        <p>Cuando termines la tarea, tócala y marca "Completada". El supervisor lo verá en tiempo real.</p>
-      </div>
-    </div>
-  </div>
-
-  <hr class="divisor">
-
-  <!-- ===== SECCIÓN 8 — SIN INTERNET ===== -->
-  <div class="seccion" id="sec8">
-    <div class="seccion-header">
-      <div class="sec-num gris">8</div>
-      <div>
-        <h2>¿Qué pasa si no hay internet?</h2>
-        <p>La app funciona aunque no tengas señal</p>
-      </div>
-    </div>
-
-    <div class="alerta verde">
-      <span class="alerta-icon">✅</span>
-      <div class="alerta-cuerpo">
-        <strong>La app guarda todo sin internet</strong>
-        <p>Si haces un reporte sin señal, la app lo guarda en el teléfono. Cuando vuelva la conexión, lo envía solo automáticamente. No tienes que hacer nada.</p>
-      </div>
-    </div>
-
-    <div class="flujo">
-      <div class="flujo-paso">
-        <div class="flujo-linea">
-          <div class="flujo-circulo">📱</div>
-          <div class="flujo-barra"></div>
-        </div>
-        <div class="flujo-texto">
-          <strong>Haces el reporte normalmente</strong>
-          Llenas los 4 pasos del formulario
-        </div>
-      </div>
-      <div class="flujo-paso">
-        <div class="flujo-linea">
-          <div class="flujo-circulo" style="background:var(--ambar-fond); border-color:var(--ambar); color:var(--ambar-osc);">💾</div>
-          <div class="flujo-barra"></div>
-        </div>
-        <div class="flujo-texto">
-          <strong>La app dice "¡Reporte Guardado Localmente!"</strong>
-          Está en el teléfono, seguro
-        </div>
-      </div>
-      <div class="flujo-paso">
-        <div class="flujo-linea">
-          <div class="flujo-circulo" style="background:var(--verde-fond); border-color:var(--verde); color:var(--verde-osc);">📡</div>
-        </div>
-        <div class="flujo-texto">
-          <strong>Cuando vuelve la señal</strong>
-          La app envía todo automáticamente. Nadie pierde nada.
-        </div>
-      </div>
-    </div>
-
-    <div class="alerta rojo">
-      <span class="alerta-icon">⚠️</span>
-      <div class="alerta-cuerpo">
-        <strong>No borres la app ni el caché</strong>
-        <p>Si borras los datos de la app mientras hay reportes sin enviar, esos reportes se pierden para siempre. Espera a que se sincronicen primero.</p>
-      </div>
-    </div>
-  </div>
-
-  <hr class="divisor">
-
-  <!-- ===== GUIÓN DEL DÍA ===== -->
-  <h2 style="font-size:20px; font-weight:800; margin-bottom:14px;">📅 Guión del día — De principio a fin</h2>
-  <p style="font-size:14px; color:#334155; margin-bottom:14px;">Sigue estos pasos cada día de trabajo y todo saldrá bien:</p>
-
-  <div class="guion">
-    <div class="guion-header">Tu jornada — paso a paso</div>
-
-    <div class="guion-bloque">
-      <span class="guion-emoji">🌅</span>
-      <div class="guion-texto">
-        <strong>AL LLEGAR AL PRIMER PDV</strong>
-        <p>Abre la app → Selecciona tu nombre → Revisa si tienes tareas pendientes o alertas de mercancía</p>
-      </div>
-    </div>
-
-    <div class="guion-bloque">
-      <span class="guion-emoji">📍</span>
-      <div class="guion-texto">
-        <strong>EN CADA TIENDA</strong>
-        <p>Busca la tienda en la lista → Toca su nombre → Espera la verificación GPS</p>
-      </div>
-    </div>
-
-    <div class="guion-bloque">
-      <span class="guion-emoji">📋</span>
-      <div class="guion-texto">
-        <strong>LLENA EL REPORTE (4 pasos)</strong>
-        <p>Paso 1: Inventario y fechas → Paso 2: Precio → Paso 3: Anaquel → Paso 4: Competencia y notas</p>
-      </div>
-    </div>
-
-    <div class="guion-bloque">
-      <span class="guion-emoji">✅</span>
-      <div class="guion-texto">
-        <strong>ENVÍA Y CIERRA</strong>
-        <p>Toca ENVIAR → Lee el checklist de cierre → Ordena el anaquel si hace falta → Pasa a la siguiente tienda</p>
-      </div>
-    </div>
-
-    <div class="guion-bloque">
-      <span class="guion-emoji">🛒</span>
-      <div class="guion-texto">
-        <strong>SI ENTREGASTE PRODUCTO A UNA TIENDA</strong>
-        <p>Ve a Despacho → Selecciona la tienda → Ingresa las unidades despachadas y el número de OC → Guarda</p>
-      </div>
-    </div>
-
-    <div class="guion-bloque">
-      <span class="guion-emoji">🚚</span>
-      <div class="guion-texto">
-        <strong>SI RECIBES MERCANCÍA</strong>
-        <p>Revisa el aviso naranja en la pantalla principal → Ve a Logística → Confirma la recepción</p>
-      </div>
-    </div>
-
-    <div class="guion-bloque">
-      <span class="guion-emoji">🌆</span>
-      <div class="guion-texto">
-        <strong>AL TERMINAR EL DÍA</strong>
-        <p>Confirma que todos los reportes se enviaron → Cierra sesión desde el menú lateral</p>
-      </div>
-    </div>
-  </div>
-
-  <hr class="divisor">
-
-  <!-- ===== TABLA DE ALERTAS ===== -->
-  <h2 style="font-size:20px; font-weight:800; margin-bottom:14px;">🚨 Tabla de situaciones comunes</h2>
-
-  <div class="tabla-wrapper">
-    <table>
+    <table class="comp-table" style="margin-top:14px;">
       <thead>
         <tr>
-          <th>Lo que ves</th>
-          <th>Qué significa</th>
-          <th>Qué hacer</th>
+          <th>Estado</th>
+          <th>¿Qué significa?</th>
+          <th>¿Qué hacer?</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td>📍 Ícono rojo en la tienda</td>
-          <td>No tiene GPS registrado</td>
-          <td>Toca igual, la app te pedirá confirmar la ubicación</td>
+          <td><strong>Exhibido OK</strong></td>
+          <td>El material está presente, en buen estado y bien colocado</td>
+          <td>Registrar y seguir — todo bien</td>
         </tr>
         <tr>
-          <td>⚠️ "Estás lejos de la tienda"</td>
-          <td>GPS dice que no estás ahí</td>
-          <td>Activa GPS de alta precisión en ajustes del teléfono</td>
+          <td><strong>Dañado</strong></td>
+          <td>Está presente pero roto, mojado, manchado o deteriorado</td>
+          <td>Registrar + notificar al supervisor para reposición</td>
         </tr>
         <tr>
-          <td>🟧 Aviso naranja en pantalla</td>
-          <td>Mercancía pendiente por recibir</td>
-          <td>Ve a Logística y confirma la recepción</td>
+          <td><strong>Ausente</strong></td>
+          <td>Debería haber material pero no está visible</td>
+          <td>Registrar + notificar al supervisor</td>
         </tr>
         <tr>
-          <td>💾 "Reporte Guardado Localmente"</td>
-          <td>Sin conexión a internet</td>
-          <td>Nada, se envía solo cuando vuelve la señal</td>
-        </tr>
-        <tr>
-          <td>🔢 Número rojo en Tareas</td>
-          <td>Tienes tareas sin completar</td>
-          <td>Ábrelas, léelas y márcalas cuando las termines</td>
-        </tr>
-        <tr>
-          <td>"Completa todos los campos"</td>
-          <td>Falta algo obligatorio</td>
-          <td>Busca el campo marcado en rojo y llénalo</td>
-        </tr>
-        <tr>
-          <td>Cuenta bloqueada / suspendida</td>
-          <td>El acceso fue desactivado</td>
-          <td>Contacta a tu supervisor urgente</td>
-        </tr>
-        <tr>
-          <td>App no abre o da error</td>
-          <td>Problema técnico</td>
-          <td>Cierra y vuelve a abrir. Si sigue, llama al soporte</td>
+          <td><strong>Sin Campaña</strong></td>
+          <td>No hay campaña activa para esta tienda (situación normal)</td>
+          <td>Registrar — no requiere acción</td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <hr class="divisor">
 
-  <!-- ===== REGLAS DE ORO ===== -->
-  <div class="reglas-oro">
-    <h3>⭐ Las 5 reglas de oro del Reporter</h3>
-    <div class="regla-item">
-      <div class="regla-num">1</div>
-      <p class="regla-texto"><strong>Un reporte por tienda, en cada visita.</strong> Si visitas la tienda, debes hacer el reporte. Sin excepción.</p>
+  <!-- =========================================================== 6. COMPETENCIA == -->
+  <div id="sec-competencia" class="section-header">
+    <div class="section-bar red"></div>
+    <div class="section-emoji">🥊</div>
+    <div class="section-title">
+      <h2>6 · Paso 4 — Inteligencia de Competencia</h2>
+      <p>Documenta lo que hacen las otras marcas</p>
     </div>
-    <div class="regla-item">
-      <div class="regla-num">2</div>
-      <p class="regla-texto"><strong>El precio siempre va.</strong> Nunca dejes el campo de PVP vacío. Si no está visible, búscalo en caja.</p>
+  </div>
+
+  <div class="card">
+    <h3>¿Por qué es importante reportar la competencia?</h3>
+    <p>Esta información ayuda al equipo comercial de Lacteoca a entender cómo se mueve el mercado y tomar decisiones inteligentes sobre precios, exhibición y promociones. Solo toma 2 minutos adicionales y es muy valiosa.</p>
+
+    <h4 style="margin-top:18px; margin-bottom:12px;">¿Qué registrar por cada producto competidor?</h4>
+
+    <table class="comp-table">
+      <thead>
+        <tr>
+          <th>Campo</th>
+          <th>Qué anotar</th>
+          <th>Ejemplo</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Marca / Nombre</strong></td>
+          <td>Nombre del producto o fabricante competidor</td>
+          <td>Queso Andino X / Marca ABC</td>
+        </tr>
+        <tr>
+          <td><strong>Precio (PVP)</strong></td>
+          <td>El precio que tiene ese producto en esa tienda</td>
+          <td>$3.80</td>
+        </tr>
+        <tr>
+          <td><strong>¿Tiene POP?</strong></td>
+          <td>¿Tiene material publicitario visible?</td>
+          <td><span class="check">✓ Sí</span> / <span class="cross">✗ No</span></td>
+        </tr>
+        <tr>
+          <td><strong>¿Tiene degustación?</strong></td>
+          <td>¿Hay una promotora dando muestras del producto?</td>
+          <td><span class="check">✓ Sí</span> / <span class="cross">✗ No</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="info-box tip">
+      <span class="info-box-icon">💡</span>
+      <div class="info-box-body">
+        <strong>Puedes agregar varios competidores</strong>
+        <p>Si hay 3 marcas diferentes en la misma tienda, toca "Agregar competidor" para añadir cada una por separado. No hay límite de competidores por reporte.</p>
+      </div>
     </div>
-    <div class="regla-item">
-      <div class="regla-num">3</div>
-      <p class="regla-texto"><strong>Quiebre de stock = reporte igualmente.</strong> Aunque no haya producto, la app necesita saber. Activa el interruptor y envía.</p>
+  </div>
+
+  <div class="card">
+    <h3>Notas y observaciones</h3>
+    <p>Al final del Paso 4 hay un campo de texto libre donde puedes escribir cualquier cosa importante que hayas observado durante la visita que no tenga un campo específico. Por ejemplo:</p>
+    <ul>
+      <li>El refrigerador de la tienda tiene problemas de temperatura o no enfría bien</li>
+      <li>El encargado solicita material POP nuevo o en buen estado</li>
+      <li>Hay producto con etiquetas despegadas o empaques deteriorados</li>
+      <li>La tienda va a remodelar o a cerrar temporalmente</li>
+      <li>El encargado hace algún comentario sobre el producto o la marca</li>
+      <li>Hay una promoción especial de la competencia que no tiene casilla</li>
+    </ul>
+
+    <div class="divider"></div>
+
+    <h3>Enviar el reporte</h3>
+    <p>Cuando hayas completado los 4 pasos, toca el botón grande <strong>"Enviar Reporte"</strong>. La app elige automáticamente el mejor método:</p>
+
+    <div class="flow" style="margin-top:14px;">
+      <div class="flow-step blue">📤 Tocas "Enviar Reporte"</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step green">✅ Con internet: envío inmediato</div>
     </div>
-    <div class="regla-item">
-      <div class="regla-num">4</div>
-      <p class="regla-texto"><strong>Nunca borres la app con datos pendientes.</strong> Si ves reportes sin enviar, espera a que haya internet primero.</p>
+    <div class="flow" style="margin-top:8px;">
+      <div class="flow-step blue">📤 Tocas "Enviar Reporte"</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step yellow">💾 Sin internet: guardado local</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step green">📶 Regresa señal: envío automático</div>
     </div>
-    <div class="regla-item">
-      <div class="regla-num">5</div>
-      <p class="regla-texto"><strong>Habla con el personal de cada tienda.</strong> La información que ellos te dan no está en ningún sistema. Escríbela en las notas.</p>
+
+    <div class="offline-banner" style="margin-top:16px;">
+      <span>✅</span>
+      <span><strong>Reporte guardado correctamente.</strong> Se enviará automáticamente cuando tu teléfono detecte conexión a internet.</span>
+    </div>
+  </div>
+
+
+  <!-- =========================================================== 7. DESPACHO == -->
+  <div id="sec-despacho" class="section-header">
+    <div class="section-bar yellow"></div>
+    <div class="section-emoji">📦</div>
+    <div class="section-title">
+      <h2>7 · Registrar Despacho</h2>
+      <p>Documenta las unidades que entregas físicamente</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>¿Qué es un despacho?</h3>
+    <p>Un <strong>despacho</strong> es cuando físicamente entregas unidades de producto a una tienda. Registrarlo deja constancia digital de esa entrega: qué, cuánto, a quién, y cuándo.</p>
+  </div>
+
+  <div class="card">
+    <h3>Pasos para registrar un despacho</h3>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num yellow">1</div>
+        <div class="step-body">
+          <h4>Toca "Registrar Despacho" en la pantalla principal</h4>
+          <p>Es el botón amarillo. Se abre una lista con todos los puntos de venta.</p>
+          <div class="info-box tip" style="margin-top:10px;">
+            <span class="info-box-icon">💡</span>
+            <div class="info-box-body">
+              <strong>¿La tienda no está en la lista?</strong>
+              <p>Toca el botón amarillo <strong>"Agregar Nuevo"</strong> que aparece en la lista de PDVs. Puedes dar de alta una tienda nueva directamente desde aquí.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num yellow">2</div>
+        <div class="step-body">
+          <h4>Selecciona el punto de venta</h4>
+          <p>Busca la tienda en la lista y tócala. Si necesitas cancelar, usa el botón <strong>"← Atrás"</strong> disponible en la parte superior.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num yellow">3</div>
+        <div class="step-body">
+          <h4>El formulario se abre con datos automáticos</h4>
+          <p>La app ya rellenó el nombre del PDV y la fecha y hora exactas. No necesitas tocar esos campos.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num yellow">4</div>
+        <div class="step-body">
+          <h4>Ingresa la cantidad de unidades</h4>
+          <p>Toca el campo de cantidad → se abre el numpad grande → escribe la cantidad de unidades que estás entregando en ese momento → toca Confirmar.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num yellow">5</div>
+        <div class="step-body">
+          <h4>Fecha de vencimiento del producto entregado</h4>
+          <p>Agrega la fecha de vencimiento del lote específico que estás entregando. Igual que en el reporte, tienes dos opciones:</p>
+          <ul>
+            <li>Elegirla con el <strong>calendario</strong> de la app</li>
+            <li>Usar la <strong>cámara</strong> 📷 para escanear la fecha del empaque (la IA la lee automáticamente)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num yellow">6</div>
+        <div class="step-body">
+          <h4>Número de OC (opcional)</h4>
+          <p>Si el cliente tiene un número de <strong>Orden de Compra</strong>, escríbelo aquí. Es un campo opcional — si no tienes ese dato, déjalo vacío.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num green">7</div>
+        <div class="step-body">
+          <h4>Toca "Confirmar Despacho"</h4>
+          <p>El registro queda guardado en el sistema con todos los datos: PDV, fecha, hora, cantidad de unidades, fecha de vencimiento del lote, número de OC (si lo había) y tu nombre.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box success">
+      <span class="info-box-icon">✅</span>
+      <div class="info-box-body">
+        <strong>Despacho confirmado</strong>
+        <p>El sistema guarda el despacho automáticamente a tu nombre con fecha y hora exactas. Tu gerente puede ver todos los despachos del día en tiempo real desde su panel.</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================== 8. PEDIDO == -->
+  <div id="sec-pedido" class="section-header">
+    <div class="section-bar green"></div>
+    <div class="section-emoji">🛍️</div>
+    <div class="section-title">
+      <h2>8 · Tomar Pedido</h2>
+      <p>El correo a Ventas sale automáticamente</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>¿Qué es un pedido?</h3>
+    <p>Un <strong>pedido</strong> es cuando el dueño o encargado de una tienda te dice verbalmente cuánto producto quiere comprar. Tú lo anotas en la app y el sistema envía automáticamente un correo al equipo de ventas con todos los detalles.</p>
+  </div>
+
+  <div class="card">
+    <h3>Pasos para tomar un pedido</h3>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num green">1</div>
+        <div class="step-body">
+          <h4>Toca "Tomar Pedido" en la pantalla principal</h4>
+          <p>Es el botón verde. Aparece un menú para seleccionar la tienda.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num green">2</div>
+        <div class="step-body">
+          <h4>Selecciona la tienda del menú desplegable</h4>
+          <p>Busca y elige el nombre de la tienda que está realizando el pedido.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num green">3</div>
+        <div class="step-body">
+          <h4>Escribe la cantidad en docenas</h4>
+          <p>Los pedidos se registran en <strong>docenas</strong> (grupos de 12 unidades). Toca el campo → se abre el numpad → escribe cuántas docenas → confirma.</p>
+          <div class="info-box tip" style="margin-top:10px;">
+            <span class="info-box-icon">💡</span>
+            <div class="info-box-body">
+              <strong>Conversión rápida</strong>
+              <p>Si la tienda dice "quiero 36 unidades" → eso son <strong>3 docenas</strong>.<br/>
+              Si dice "quiero 24 unidades" → son <strong>2 docenas</strong>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num green">4</div>
+        <div class="step-body">
+          <h4>Toca "Enviar Pedido a Ventas"</h4>
+          <p>La app envía automáticamente un correo a <strong>ventas@lacteoca.com</strong> con todos los detalles: tienda, cantidad en docenas, tu nombre, fecha y hora exactas.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <div class="flow-step blue">🛍️ Tienda pide X docenas</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step green">Seleccionas tienda + docenas</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step yellow">📧 Correo automático a ventas@lacteoca.com</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-step green">✅ Ventas coordina la entrega</div>
+    </div>
+
+    <div class="info-box warning">
+      <span class="info-box-icon">⚠️</span>
+      <div class="info-box-body">
+        <strong>Un pedido no es una entrega</strong>
+        <p>Tomar un pedido avisa al equipo de ventas. Cuando efectivamente lleves el producto y lo entregues físicamente, deberás registrar eso por separado con <strong>"Registrar Despacho"</strong> (botón amarillo).</p>
+      </div>
+    </div>
+
+    <div class="info-box success">
+      <span class="info-box-icon">✅</span>
+      <div class="info-box-body">
+        <strong>El pedido queda en tu historial</strong>
+        <p>Puedes revisar todos los pedidos que tomaste esta semana en el menú lateral → <strong>Pedidos</strong>. También verás confirmado si el correo llegó correctamente al equipo de ventas.</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================== 9. SIDEBAR == -->
+  <div id="sec-sidebar" class="section-header">
+    <div class="section-bar navy"></div>
+    <div class="section-emoji">☰</div>
+    <div class="section-title">
+      <h2>9 · Menú Lateral</h2>
+      <p>Tu historial, notificaciones y tareas asignadas</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>¿Cómo abrir el menú lateral?</h3>
+    <p>Tienes dos formas de abrir el menú:</p>
+    <div class="card-grid">
+      <div style="background:var(--blue-light); border-radius:var(--radius-sm); padding:16px 18px; display:flex; gap:12px; align-items:center;">
+        <span style="font-size:2rem;">👆</span>
+        <div>
+          <strong style="color:var(--navy);">Desliza desde el borde izquierdo</strong>
+          <p style="font-size:.87rem; margin:0; color:var(--slate); margin-top:4px;">Pon el dedo en el borde izquierdo de la pantalla y desliza hacia la derecha</p>
+        </div>
+      </div>
+      <div style="background:var(--emerald-light); border-radius:var(--radius-sm); padding:16px 18px; display:flex; gap:12px; align-items:center;">
+        <span style="font-size:2rem;">☰</span>
+        <div>
+          <strong style="color:var(--navy);">Toca el ícono ☰</strong>
+          <p style="font-size:.87rem; margin:0; color:var(--slate); margin-top:4px;">Toca las tres líneas horizontales en la esquina superior izquierda de cualquier pantalla</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>El menú lateral en detalle</h3>
+    <p>Vista de cómo se ve el menú lateral en la app:</p>
+
+    <div class="sidebar-mockup">
+      <h4>GENIUS KEEPER</h4>
+      <div class="sidebar-item active">
+        <span class="sidebar-item-icon">🏠</span>
+        <span>Inicio</span>
+      </div>
+      <div class="sidebar-item">
+        <span class="sidebar-item-icon">📊</span>
+        <span>Reportes</span>
+        <span class="sidebar-badge" style="background:#059669;">5 esta semana</span>
+      </div>
+      <div class="sidebar-item">
+        <span class="sidebar-item-icon">🛍️</span>
+        <span>Pedidos</span>
+        <span class="sidebar-badge" style="background:#ca8a04;">2 hoy</span>
+      </div>
+      <div class="sidebar-item">
+        <span class="sidebar-item-icon">🔔</span>
+        <span>Notificaciones</span>
+        <span class="sidebar-badge">3 nuevas</span>
+      </div>
+      <div class="sidebar-item">
+        <span class="sidebar-item-icon">✅</span>
+        <span>Tareas</span>
+        <span class="sidebar-badge" style="background:#7c3aed;">2 pendientes</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card" style="margin-bottom:0;">
+      <h3>📊 Sección Reportes</h3>
+      <p>Lista de todas las visitas que hiciste <strong>esta semana</strong>. Cada visita muestra:</p>
+      <ul>
+        <li>Nombre del punto de venta</li>
+        <li>Fecha y hora de la visita</li>
+        <li>Estado del envío: <span class="chip green">✓ Enviado</span> o <span class="chip red">✗ Error</span></li>
+      </ul>
+      <p>Toca cualquier visita para ver su detalle completo, incluyendo todos los datos que registraste.</p>
+      <p>Usa el botón <strong>"← Inicio"</strong> para volver a la pantalla principal.</p>
+    </div>
+    <div class="card" style="margin-bottom:0;">
+      <h3>🛍️ Sección Pedidos</h3>
+      <p>Lista de los pedidos verbales que tomaste <strong>esta semana</strong>. Cada pedido muestra:</p>
+      <ul>
+        <li>Nombre de la tienda</li>
+        <li>Cantidad en docenas</li>
+        <li>Estado del correo: <span class="chip green">✓ Enviado</span> o <span class="chip red">✗ Error</span></li>
+        <li>Fecha y hora en que lo tomaste</li>
+      </ul>
+      <p>Usa el botón <strong>"← Inicio"</strong> para volver a la pantalla principal.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <h3>🔔 Sección Notificaciones</h3>
+    <p>Mensajes en tiempo real que te envía el sistema o tu gerente. El punto azul indica que aún no la has leído. Toca una notificación para abrirla y marcarla como leída.</p>
+
+    <div class="notif-item">
+      <div class="notif-dot"></div>
+      <div class="notif-text">
+        <strong>Nueva tarea asignada — PDV El Bodegón</strong>
+        <span>Hace 15 minutos · Tu gerente te asignó una tarea de verificación de exhibición</span>
+      </div>
+    </div>
+    <div class="notif-item">
+      <div class="notif-dot"></div>
+      <div class="notif-text">
+        <strong>Pedido confirmado — Abasto La Esquina</strong>
+        <span>Hace 1 hora · El equipo de ventas procesó y confirmó tu pedido de 3 docenas</span>
+      </div>
+    </div>
+    <div class="notif-item">
+      <div class="notif-dot read"></div>
+      <div class="notif-text">
+        <strong>Reporte recibido — Supermercado Rápido</strong>
+        <span>Ayer, 2:30 PM · Leída</span>
+      </div>
+    </div>
+
+    <div class="info-box tip">
+      <span class="info-box-icon">💡</span>
+      <div class="info-box-body">
+        <strong>Notificaciones en tiempo real</strong>
+        <p>Cuando tu gerente te escribe o asigna una tarea, la notificación llega al instante, incluso si la app está en segundo plano. Revísalas al inicio de cada jornada y durante el día.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>✅ Sección Tareas</h3>
+    <p>Tu gerente puede asignarte tareas específicas que debes completar durante tu ruta. Verás aquí todas las tareas pendientes y las ya completadas.</p>
+
+    <div class="task-item">
+      <span class="task-icon">🏪</span>
+      <div class="task-text">
+        <strong>Verificar exhibición en PDV El Bodegón</strong>
+        <span>Asignada hoy, 8:00 AM · Plazo: antes de las 5 PM</span>
+      </div>
+      <span class="task-status task-pending">Pendiente</span>
+    </div>
+    <div class="task-item">
+      <span class="task-icon">📸</span>
+      <div class="task-text">
+        <strong>Confirmar estado material POP en Supermercado ABC</strong>
+        <span>Asignada ayer · Completada 11:20 AM</span>
+      </div>
+      <span class="task-status task-done">Completada</span>
+    </div>
+    <div class="task-item">
+      <span class="task-icon">📦</span>
+      <div class="task-text">
+        <strong>Registrar despacho de 2 docenas en Mini Market Sol</strong>
+        <span>Asignada hoy, 9:00 AM · Plazo: hoy</span>
+      </div>
+      <span class="task-status task-pending">Pendiente</span>
+    </div>
+
+    <div class="info-box success">
+      <span class="info-box-icon">✅</span>
+      <div class="info-box-body">
+        <strong>Botón "Inicio" siempre disponible</strong>
+        <p>En todas las secciones del menú lateral (Reportes, Pedidos, Notificaciones, Tareas) hay un botón <strong>"← Inicio"</strong> que te lleva de regreso a la pantalla principal en cualquier momento.</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================== 10. OFFLINE == -->
+  <div id="sec-offline" class="section-header">
+    <div class="section-bar purple"></div>
+    <div class="section-emoji">📵</div>
+    <div class="section-title">
+      <h2>10 · Modo Sin Internet</h2>
+      <p>La app funciona aunque no tengas señal</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>No necesitas señal para trabajar</h3>
+    <p>Genius Keeper está diseñada para funcionar <strong>completamente sin internet</strong>. Si estás en una zona sin señal (sótano, mercado cerrado, zona rural), sigue trabajando con total normalidad.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num purple">1</div>
+        <div class="step-body">
+          <h4>La app funciona exactamente igual</h4>
+          <p>Puedes crear reportes, registrar despachos y tomar pedidos exactamente igual que cuando tienes internet. No hay funciones bloqueadas por falta de señal.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">2</div>
+        <div class="step-body">
+          <h4>Los datos se guardan en tu teléfono</h4>
+          <p>Todo queda almacenado de forma segura en el almacenamiento local de tu iPhone hasta que la conexión regrese.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num purple">3</div>
+        <div class="step-body">
+          <h4>Sincronización automática al recuperar señal</h4>
+          <p>En cuanto tu iPhone detecta conexión (wifi o datos móviles), <strong>todo se sube automáticamente</strong> al sistema. No tienes que tocar nada ni abrir la app de nuevo.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num green">4</div>
+        <div class="step-body">
+          <h4>Banner verde de confirmación</h4>
+          <p>La app muestra un banner verde confirmando cuántos reportes y registros se sincronizaron exitosamente.</p>
+          <div class="offline-banner" style="margin-top:12px;">
+            <span>✅</span>
+            <span><strong>Sincronizado.</strong> 3 reportes y 1 despacho enviados correctamente al sistema.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box warning">
+      <span class="info-box-icon">⚠️</span>
+      <div class="info-box-body">
+        <strong>Espera la confirmación verde antes de cerrar la app</strong>
+        <p>Si llevas reportes guardados sin internet, no cierres completamente la app hasta ver el banner verde de sincronización. Si el teléfono se queda sin batería antes de sincronizar, podrías perder los datos de esa sesión.</p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- =========================================================== 11. REFERENCIA RAPIDA == -->
+  <div id="sec-referencia" class="section-header">
+    <div class="section-bar navy"></div>
+    <div class="section-emoji">📌</div>
+    <div class="section-title">
+      <h2>11 · Referencia Rápida</h2>
+      <p>Todo en una sola vista para consultar en campo</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Flujo completo de un día de trabajo</h3>
+
+    <div style="display:flex; flex-direction:column; gap:12px; margin:16px 0;">
+      <div style="display:flex; align-items:center; gap:14px; background:var(--slate-light); border-radius:var(--radius-sm); padding:12px 16px;">
+        <div style="background:var(--navy); color:#fff; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.9rem; flex-shrink:0;">1</div>
+        <div><strong>🔓 Abro la app</strong> → Selecciono mi nombre de la lista → Estoy adentro</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; background:var(--slate-light); border-radius:var(--radius-sm); padding:12px 16px;">
+        <div style="background:var(--navy); color:#fff; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.9rem; flex-shrink:0;">2</div>
+        <div><strong>🔔 Reviso notificaciones</strong> → Abro el menú ☰ → Veo si hay tareas nuevas o mensajes del gerente</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; background:var(--blue-light); border-radius:var(--radius-sm); padding:12px 16px;">
+        <div style="background:var(--blue); color:#fff; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.9rem; flex-shrink:0;">3</div>
+        <div><strong>🏪 Llego a un PDV</strong> → Toco "Iniciar Reporte" (azul) → 4 pasos → Enviar</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; background:var(--amber-light); border-radius:var(--radius-sm); padding:12px 16px;">
+        <div style="background:var(--amber); color:#fff; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.9rem; flex-shrink:0;">4</div>
+        <div><strong>📦 Entrego producto</strong> → Toco "Registrar Despacho" (amarillo) → PDV → cantidad → fecha lote → confirmar</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; background:var(--emerald-light); border-radius:var(--radius-sm); padding:12px 16px;">
+        <div style="background:var(--emerald); color:#fff; border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.9rem; flex-shrink:0;">5</div>
+        <div><strong>🛍️ Tienda quiere pedir</strong> → Toco "Tomar Pedido" (verde) → tienda → docenas → enviar</div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <h3 style="margin-bottom:16px;">Colores de botones — regla mnemotécnica</h3>
+    <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:8px;">
+      <div style="background:linear-gradient(135deg,#1a56db,#0ea5e9); color:#fff; border-radius:10px; padding:12px 20px; font-weight:700; font-size:.92rem; box-shadow:0 3px 10px rgba(26,86,219,.3);">
+        🔵 Azul = "Veo e inspecciono"<br/><span style="font-size:.8rem; opacity:.85;">→ Reporte de visita</span>
+      </div>
+      <div style="background:linear-gradient(135deg,#ca8a04,#FFD700); color:#1e293b; border-radius:10px; padding:12px 20px; font-weight:700; font-size:.92rem; box-shadow:0 3px 10px rgba(202,138,4,.3);">
+        🟡 Amarillo = "Dejo producto"<br/><span style="font-size:.8rem; opacity:.75;">→ Despacho físico</span>
+      </div>
+      <div style="background:linear-gradient(135deg,#059669,#34d399); color:#fff; border-radius:10px; padding:12px 20px; font-weight:700; font-size:.92rem; box-shadow:0 3px 10px rgba(5,150,105,.3);">
+        🟢 Verde = "Anoto un deseo"<br/><span style="font-size:.8rem; opacity:.85;">→ Pedido verbal</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <h3 style="margin-bottom:16px;">Colores de lotes — tabla de referencia</h3>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+      <div style="display:flex; align-items:center; gap:14px; padding:10px 16px; border-radius:var(--radius-sm); background:#7f1d1d;">
+        <span style="color:#fff; font-weight:800; font-size:.9rem; min-width:80px;">VENCIDO</span>
+        <span style="color:#fca5a5; font-size:.88rem;">Producto vencido — notifica al supervisor inmediatamente, no retires sin autorización</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; padding:10px 16px; border-radius:var(--radius-sm); background:#dc2626;">
+        <span style="color:#fff; font-weight:800; font-size:.9rem; min-width:80px;">≤ 7 días</span>
+        <span style="color:#fecaca; font-size:.88rem;">Urgente — requiere acción inmediata de reposición o retiro</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; padding:10px 16px; border-radius:var(--radius-sm); background:#d97706;">
+        <span style="color:#fff; font-weight:800; font-size:.9rem; min-width:80px;">8–15 días</span>
+        <span style="color:#fde68a; font-size:.88rem;">Atención pronto — notifica en tu próximo reporte al gerente</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; padding:10px 16px; border-radius:var(--radius-sm); background:#ca8a04;">
+        <span style="color:#fff; font-weight:800; font-size:.9rem; min-width:80px;">16–30 días</span>
+        <span style="color:#fef08a; font-size:.88rem;">Vigilar — no es urgente hoy, pero requiere seguimiento</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px; padding:10px 16px; border-radius:var(--radius-sm); background:#059669;">
+        <span style="color:#fff; font-weight:800; font-size:.9rem; min-width:80px;">&gt; 30 días</span>
+        <span style="color:#a7f3d0; font-size:.88rem;">Sin preocupaciones — el producto tiene suficiente vida útil</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── FAQ ─── -->
+  <div class="card" style="margin-top:20px;">
+    <h3>Preguntas frecuentes</h3>
+    <div style="display:flex; flex-direction:column; gap:20px; margin-top:8px;">
+
+      <div>
+        <h4 style="color:var(--blue); margin-bottom:6px;">¿Qué hago si seleccioné el nombre equivocado al entrar?</h4>
+        <p style="margin:0;">Cierra la app completamente (en iPhone: desliza hacia arriba desde el Dock y desliza la app para cerrarla). Vuelve a abrirla y elige tu nombre correcto.</p>
+      </div>
+
+      <div class="divider" style="margin:4px 0;"></div>
+
+      <div>
+        <h4 style="color:var(--blue); margin-bottom:6px;">¿Puedo corregir un reporte ya enviado?</h4>
+        <p style="margin:0;">No, desde la app no se puede editar. Comunícate con tu gerente para que haga la corrección desde el panel de administración.</p>
+      </div>
+
+      <div class="divider" style="margin:4px 0;"></div>
+
+      <div>
+        <h4 style="color:var(--blue); margin-bottom:6px;">La cámara no lee bien la fecha, ¿qué hago?</h4>
+        <p style="margin:0;">Asegúrate de tener buena iluminación y que el texto de la fecha esté enfocado. Si sigue fallando, escribe la fecha a mano con el selector — funciona exactamente igual.</p>
+      </div>
+
+      <div class="divider" style="margin:4px 0;"></div>
+
+      <div>
+        <h4 style="color:var(--blue); margin-bottom:6px;">¿Puedo registrar más de un reporte para la misma tienda el mismo día?</h4>
+        <p style="margin:0;">Sí. Si visitaste la misma tienda dos veces, haz dos reportes separados. Quedarán registrados con la hora exacta de cada visita.</p>
+      </div>
+
+      <div class="divider" style="margin:4px 0;"></div>
+
+      <div>
+        <h4 style="color:var(--blue); margin-bottom:6px;">¿Cuántos lotes puedo agregar en un reporte?</h4>
+        <p style="margin:0;">No hay límite. Agrega tantos lotes como fechas de vencimiento diferentes encuentres en el anaquel de esa tienda.</p>
+      </div>
+
+      <div class="divider" style="margin:4px 0;"></div>
+
+      <div>
+        <h4 style="color:var(--blue); margin-bottom:6px;">El botón de enviar da error, ¿qué hago?</h4>
+        <p style="margin:0;">Intenta nuevamente. Si el error persiste y tienes internet, anota los datos en papel y notifica a tu supervisor. Los datos que ya guardaste localmente no se perderán.</p>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- =========================================================== 12. TIPS == -->
+  <div id="sec-tips" class="section-header">
+    <div class="section-bar yellow"></div>
+    <div class="section-emoji">⭐</div>
+    <div class="section-title">
+      <h2>12 · Consejos para el Mercaderista</h2>
+      <p>Haz tu ruta más rápida y tus reportes más completos</p>
+    </div>
+  </div>
+
+  <div class="tips-grid">
+    <div class="tip-card">
+      <div class="tip-card-icon">📷</div>
+      <h4>Usa siempre la cámara para fechas</h4>
+      <p>Escanear la fecha con la cámara es hasta 5 veces más rápido que el selector manual. Ahorra tiempo en tiendas con muchos lotes.</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-icon">📵</div>
+      <h4>Sin señal no es problema</h4>
+      <p>Trabaja con total normalidad aunque no tengas internet. Todo se guarda y sube automáticamente cuando regrese la conexión.</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-icon">🔢</div>
+      <h4>El numpad aparece solo</h4>
+      <p>No busques dónde escribir la cantidad — al confirmar una fecha, el numpad grande aparece automáticamente. Es mucho más cómodo que el teclado normal.</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-icon">🏪</div>
+      <h4>Agrega tiendas nuevas desde la lista</h4>
+      <p>Si encuentras una tienda que no está en el sistema, toca el botón amarillo "Agregar Nuevo" directamente desde la lista de PDVs.</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-icon">🔔</div>
+      <h4>Revisa notificaciones cada mañana</h4>
+      <p>Tu gerente puede enviarte instrucciones especiales o cambios en la ruta. Revísalas antes de salir para no perderte nada importante.</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-icon">✅</div>
+      <h4>Reporta aunque no haya producto</h4>
+      <p>Un anaquel vacío también es información. Usa el interruptor de Quiebre de Stock y el sistema alertará automáticamente al equipo.</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-icon">🥊</div>
+      <h4>La competencia importa</h4>
+      <p>Anotar precios y actividades de marcas competidoras toma 2 minutos y ayuda al equipo a tomar decisiones comerciales inteligentes.</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-icon">📊</div>
+      <h4>Revisa tu historial en Reportes</h4>
+      <p>En el menú lateral puedes confirmar que todos tus reportes de la semana se enviaron correctamente. Un ojo verde = enviado; una X roja = error.</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-icon">📝</div>
+      <h4>Aprovecha el campo de notas</h4>
+      <p>El campo de observaciones del Paso 4 es tu espacio libre. Escribe todo lo que creas relevante aunque no tenga casilla específica.</p>
+    </div>
+    <div class="tip-card">
+      <div class="tip-card-icon">⚡</div>
+      <h4>Confirma antes de cerrar la app</h4>
+      <p>Si estuviste sin señal, espera el banner verde de sincronización antes de cerrar la app. Así te aseguras de que todo llegó al sistema.</p>
+    </div>
+  </div>
+
+  <!-- ─── Contacto ─── -->
+  <div class="card" style="background:linear-gradient(135deg,#0D2B4C,#1a56db); color:#fff; margin-top:28px;">
+    <h3 style="color:#fff; margin-bottom:10px;">📞 ¿Necesitas ayuda?</h3>
+    <p style="opacity:.9; margin-bottom:20px;">Si tienes problemas con la aplicación o una pregunta que no está en esta guía, habla con tu supervisor o gerente de ruta. Ellos pueden escalar el problema al equipo técnico de Lacteoca.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:12px;">
+      <div style="background:rgba(255,255,255,.12); border-radius:10px; padding:14px 22px;">
+        <div style="font-size:.78rem; opacity:.65; margin-bottom:4px; text-transform:uppercase; letter-spacing:.06em;">Primera línea de soporte</div>
+        <div style="font-weight:700; font-size:1rem;">Tu gerente de ruta</div>
+      </div>
+      <div style="background:rgba(255,215,0,.18); border-radius:10px; padding:14px 22px; border:1.5px solid rgba(255,215,0,.4);">
+        <div style="font-size:.78rem; opacity:.65; margin-bottom:4px; text-transform:uppercase; letter-spacing:.06em;">Pedidos enviados a</div>
+        <div style="font-weight:700; font-size:1rem; color:#FFD700;">ventas@lacteoca.com</div>
+      </div>
+      <div style="background:rgba(255,255,255,.08); border-radius:10px; padding:14px 22px;">
+        <div style="font-size:.78rem; opacity:.65; margin-bottom:4px; text-transform:uppercase; letter-spacing:.06em;">Plataforma</div>
+        <div style="font-weight:700; font-size:1rem;">Genius Keeper PWA · iOS</div>
+      </div>
     </div>
   </div>
 
 </div>
 
-<!-- ===== FOOTER ===== -->
+<!-- ============================================================= FOOTER == -->
 <div class="footer">
-  <p><strong>Genius Keeper</strong> — Guía del Reporter</p>
-  <p style="margin-top:6px;">Para soporte técnico, contacta a tu supervisor directo.</p>
+  <strong>Genius Keeper · Guía del Mercaderista (Reporter)</strong><br/>
+  Versión 2026 &nbsp;·&nbsp; Lacteoca &nbsp;·&nbsp; Uso interno exclusivo del equipo de campo<br/>
+  <span style="opacity:.45; font-size:.78rem; margin-top:6px; display:block;">Todos los derechos reservados. Este documento es de uso exclusivo del personal de Lacteoca.</span>
 </div>
 
 </body>
