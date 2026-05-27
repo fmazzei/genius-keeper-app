@@ -6,7 +6,7 @@ import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { useSwipeable } from 'react-swipeable';
 // ✅ CORRECCIÓN: Se añade 'Check' a la lista de importaciones para solucionar el error.
-import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check } from 'lucide-react';
+import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, AlertTriangle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check } from 'lucide-react';
 import { FormInput, ToggleButton, FormSection } from '@/Components/FormControls.jsx';
 import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
@@ -125,6 +125,7 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
             
             if (finalResult) {
                 setCurrentDate(finalResult);
+                if (!isReadOnly) setNumpadOpen(true);
             } else {
                 setScannerStatus("No se encontró formato de fecha. Intenta de nuevo.");
                 setTimeout(() => setScannerStatus(''), 2500);
@@ -151,10 +152,24 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                     <div className="bg-slate-50 p-4 rounded-lg border space-y-4">
                         <div className="w-full p-3 border-2 rounded-lg text-center">
                             <label className="text-sm font-semibold text-slate-600">Fecha del Lote a Añadir</label>
-                            <input type="date" value={currentDate} onChange={e => setCurrentDate(e.target.value)} className="w-full text-center font-bold text-xl bg-transparent border-none focus:ring-0 p-0 mt-1 disabled:bg-slate-100 disabled:cursor-not-allowed" disabled={isReadOnly}/>
+                            <input
+                                type="date"
+                                value={currentDate}
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    setCurrentDate(val);
+                                    if (!isReadOnly && val && /^\d{4}-\d{2}-\d{2}$/.test(val)) setNumpadOpen(true);
+                                }}
+                                className="w-full text-center font-bold text-xl bg-transparent border-none focus:ring-0 p-0 mt-1 disabled:bg-slate-100 disabled:cursor-not-allowed"
+                                disabled={isReadOnly}
+                            />
                         </div>
                         {!isReadOnly && <button type="button" onClick={() => setScannerOpen(true)} className="w-full flex items-center justify-center gap-3 bg-brand-blue text-white font-bold py-3 px-4 rounded-lg text-lg active:scale-95 transition-transform"><Camera size={24}/> Escanear Fecha</button>}
-                        {!isReadOnly && <button type="button" onClick={openNumpad} disabled={!currentDate || isReadOnly} className="w-full bg-brand-yellow text-black font-bold py-3 px-4 rounded-lg text-lg active:scale-95 transition-transform disabled:opacity-50">Añadir Cantidad</button>}
+                        {!isReadOnly && currentDate && (
+                            <button type="button" onClick={openNumpad} className="w-full bg-brand-yellow text-black font-bold py-3 px-4 rounded-lg text-lg active:scale-95 transition-transform">
+                                Ingresar Cantidad para {currentDate}
+                            </button>
+                        )}
                     </div>
                 </div>
                 <div>
