@@ -62,8 +62,8 @@ const PedidoForm = ({ posList = [], selectedReporter, onBack }) => {
         return (
             <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
                 <CheckCircle size={72} className="text-green-500" />
-                <h3 className="text-2xl font-bold text-slate-800">¡Pedido Registrado!</h3>
-                <p className="text-slate-500">El pedido fue guardado exitosamente.</p>
+                <h3 className="text-2xl font-bold text-slate-800">¡Despacho Registrado!</h3>
+                <p className="text-slate-500">Las unidades fueron registradas exitosamente.</p>
             </div>
         );
     }
@@ -79,8 +79,8 @@ const PedidoForm = ({ posList = [], selectedReporter, onBack }) => {
                     <ShoppingCart size={24} className="text-black" />
                 </div>
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800">Registrar Pedido</h2>
-                    <p className="text-slate-500 text-sm">Completa los datos del pedido del cliente</p>
+                    <h2 className="text-2xl font-bold text-slate-800">Registrar Despacho</h2>
+                    <p className="text-slate-500 text-sm">Registra las unidades que entregaste a este PDV</p>
                 </div>
             </div>
 
@@ -139,7 +139,7 @@ const PedidoForm = ({ posList = [], selectedReporter, onBack }) => {
                 {/* 4. Cantidad */}
                 <div>
                     <label className="block text-sm font-semibold text-slate-700 mb-1">
-                        Cantidad de Unidades <span className="text-red-500">*</span>
+                        Unidades Despachadas <span className="text-red-500">*</span>
                     </label>
                     <input
                         type="number"
@@ -172,7 +172,7 @@ const PedidoForm = ({ posList = [], selectedReporter, onBack }) => {
                     disabled={saving}
                     className="w-full bg-brand-blue text-white font-bold py-4 rounded-lg hover:bg-opacity-90 disabled:opacity-60 transition-colors text-lg"
                 >
-                    {saving ? 'Guardando...' : 'Guardar Pedido'}
+                    {saving ? 'Guardando...' : 'Guardar Despacho'}
                 </button>
             </form>
         </div>

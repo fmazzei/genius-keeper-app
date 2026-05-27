@@ -732,7 +732,7 @@
       <li><a href="#sec2"><span class="indice-num">2</span> Pantalla principal</a></li>
       <li><a href="#sec3"><span class="indice-num">3</span> Lista de tiendas</a></li>
       <li><a href="#sec4"><span class="indice-num">4</span> Hacer un reporte</a></li>
-      <li><a href="#sec5"><span class="indice-num">5</span> Registrar un pedido</a></li>
+      <li><a href="#sec5"><span class="indice-num">5</span> Registrar un despacho</a></li>
       <li><a href="#sec6"><span class="indice-num">6</span> Recibir mercancía</a></li>
       <li><a href="#sec7"><span class="indice-num">7</span> Tareas asignadas</a></li>
       <li><a href="#sec8"><span class="indice-num">8</span> Sin internet</a></li>
@@ -823,7 +823,7 @@
     </div>
 
     <p style="font-size: 14px; color: #334155; margin-bottom: 16px;">
-      Cuando entras, ves cuatro botones grandes. Cada uno te lleva a una tarea distinta:
+      Cuando entras, ves dos botones grandes. Cada uno te lleva a una tarea distinta:
     </p>
 
     <a class="btn-grande azul" href="#sec3">
@@ -837,34 +837,16 @@
     <a class="btn-grande ambar" href="#sec5">
       <span class="btn-grande-icon">🛒</span>
       <div class="btn-grande-texto">
-        <strong>Pedidos</strong>
-        <span>Registrar un pedido de un cliente</span>
+        <strong>Despacho</strong>
+        <span>Registrar las unidades que entregaste a un PDV</span>
       </div>
     </a>
 
-    <div class="grid2">
-      <a class="btn-grande verde" href="#sec7" style="margin-bottom:0;">
-        <span class="btn-grande-icon">✅</span>
-        <div class="btn-grande-texto">
-          <strong>Tareas</strong>
-          <span>Ver las tareas que te asignaron</span>
-        </div>
-      </a>
-      <a class="btn-grande violeta" href="#sec6" style="margin-bottom:0;">
-        <span class="btn-grande-icon">🚚</span>
-        <div class="btn-grande-texto">
-          <strong>Logística</strong>
-          <span>Recibir mercancía del almacén</span>
-        </div>
-      </a>
-    </div>
-
-    <br>
-    <div class="alerta ambar">
+    <div class="alerta ambar" style="margin-top: 14px;">
       <span class="alerta-icon">⚠️</span>
       <div class="alerta-cuerpo">
         <strong>Alerta de transferencia pendiente</strong>
-        <p>Si el almacén te envió mercancía, aparece un aviso en naranja en la parte de arriba de la pantalla. No lo ignores — debes confirmar que la recibiste.</p>
+        <p>Si el almacén te envió mercancía, aparece un aviso en naranja en la parte de arriba de la pantalla. Toca ese aviso para confirmar la recepción.</p>
       </div>
     </div>
   </div>
@@ -1207,24 +1189,32 @@
 
   <hr class="divisor">
 
-  <!-- ===== SECCIÓN 5 — PEDIDOS ===== -->
+  <!-- ===== SECCIÓN 5 — DESPACHO ===== -->
   <div class="seccion" id="sec5">
     <div class="seccion-header">
       <div class="sec-num azul2">5</div>
       <div>
-        <h2>Registrar un pedido</h2>
-        <p>Cuando el cliente quiere comprar</p>
+        <h2>Registrar un despacho</h2>
+        <p>Cuando entregas producto a una tienda</p>
       </div>
     </div>
 
-    <p style="font-size:14px; color:#334155; margin-bottom:16px;">Si el gerente de la tienda quiere hacer un pedido, ve a <strong>Pedidos</strong> desde la pantalla principal.</p>
+    <div class="alerta azul">
+      <span class="alerta-icon">💡</span>
+      <div class="alerta-cuerpo">
+        <strong>¿Qué es un despacho?</strong>
+        <p>Tú no recibes el pedido — <strong>tú llevas el producto</strong>. Cuando vas a una tienda y le entregas unidades de nuestros quesos, aquí es donde lo registras. El sistema lleva la cuenta de cuánto despachaste y a quién.</p>
+      </div>
+    </div>
+
+    <p style="font-size:14px; color:#334155; margin-bottom:16px;">Para registrar un despacho, toca el botón amarillo <strong>Despacho</strong> desde la pantalla principal.</p>
 
     <div class="paso">
       <div class="paso-num azul2">1</div>
       <span class="paso-emoji">🏪</span>
       <div class="paso-cuerpo">
-        <strong>Selecciona el cliente (tienda)</strong>
-        <p>Elige la tienda de la lista desplegable.</p>
+        <strong>Selecciona la tienda a la que le entregaste</strong>
+        <p>Elige el nombre del PDV de la lista desplegable.</p>
       </div>
     </div>
 
@@ -1233,27 +1223,27 @@
       <span class="paso-emoji">📍</span>
       <div class="paso-cuerpo">
         <strong>Sucursal (solo para cadenas)</strong>
-        <p>Si la tienda es de una cadena grande (Gama, Madeirense, Plazas, Río Market, Páramo), este campo es <strong>obligatorio</strong>. Escribe el nombre o número de la sucursal.</p>
+        <p>Si es una cadena grande (Gama, Madeirense, Plazas, Río Market, Páramo), debes escribir cuál sucursal. Este campo es <strong>obligatorio</strong> en esos casos.</p>
       </div>
     </div>
 
-    <div class="campo">
-      <div class="campo-label">Cantidad de unidades</div>
-      <div class="campo-valor">¿Cuántas unidades quiere?</div>
-      <div class="campo-desc">Obligatorio. Escribe el número exacto.</div>
+    <div class="campo ambar">
+      <div class="campo-label">Unidades Despachadas</div>
+      <div class="campo-valor">¿Cuántas unidades entregaste tú en esta visita?</div>
+      <div class="campo-desc">Obligatorio. Escribe el número exacto de lo que llevaste físicamente.</div>
     </div>
 
-    <div class="campo ambar">
+    <div class="campo">
       <div class="campo-label">Número de OC (Orden de Compra)</div>
-      <div class="campo-valor">El número que te da el cliente</div>
-      <div class="campo-desc">Obligatorio. Pídelo al gerente de la tienda. Sin este número no puedes guardar el pedido.</div>
+      <div class="campo-valor">El número del documento de compra de la tienda</div>
+      <div class="campo-desc">Obligatorio. La tienda tiene una OC de compra — pídela al gerente o al encargado de recepción. Sin este número no puedes guardar el despacho.</div>
     </div>
 
     <div class="alerta verde">
       <span class="alerta-icon">✅</span>
       <div class="alerta-cuerpo">
-        <strong>Pedido guardado</strong>
-        <p>Verás un ✓ verde y el formulario se limpia solo después de 2-3 segundos. Listo para el siguiente.</p>
+        <strong>Despacho guardado</strong>
+        <p>Verás un ✓ verde que dice "¡Despacho Registrado!". El formulario se limpia solo después de 2-3 segundos. Listo para el siguiente.</p>
       </div>
     </div>
   </div>
@@ -1452,8 +1442,8 @@
     <div class="guion-bloque">
       <span class="guion-emoji">🛒</span>
       <div class="guion-texto">
-        <strong>SI TE HACEN UN PEDIDO</strong>
-        <p>Ve a Pedidos → Selecciona la tienda → Ingresa cantidad y número de OC → Guarda</p>
+        <strong>SI ENTREGASTE PRODUCTO A UNA TIENDA</strong>
+        <p>Ve a Despacho → Selecciona la tienda → Ingresa las unidades despachadas y el número de OC → Guarda</p>
       </div>
     </div>
 

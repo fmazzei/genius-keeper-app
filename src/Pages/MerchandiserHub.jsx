@@ -80,8 +80,8 @@ const MerchandiserHub = ({ onNavigate, selectedReporter }) => {
                     >
                         <ShoppingCart size={40} className="mr-4"/>
                         <div>
-                            <h3 className="text-xl font-bold">Pedidos</h3>
-                            <p className="text-sm opacity-70">Registrar pedido de un cliente.</p>
+                            <h3 className="text-xl font-bold">Despacho</h3>
+                            <p className="text-sm opacity-70">Registrar unidades entregadas a un PDV.</p>
                         </div>
                     </button>
                     {(modules.plannerMerchandiser || modules.logisticsMerchandiser) && (
