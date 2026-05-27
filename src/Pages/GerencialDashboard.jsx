@@ -1,29 +1,26 @@
 // RUTA: src/Pages/GerencialDashboard.jsx
-// Dashboard gerencial configurable. Arranca en blanco y muestra solo los
-// widgets que el master habilitó para cada rol en AdminPanel → Dashboard.
 
 import React, { useState, useMemo } from 'react';
 import { useKpiCalculations } from '@/hooks/useKpiCalculations';
 import { useDashboardConfig } from '@/hooks/useDashboardConfig';
-import { LayoutGrid, Settings } from 'lucide-react';
+import { LayoutGrid, Settings, ChevronRight } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import Modal from '@/Components/Modal';
-import KpiCard from '@/Components/KpiCard';
-import { WIDGET_MAP } from '@/config/widgetRegistry';
+import { WIDGET_MAP, WIDGET_CATEGORIES } from '@/config/widgetRegistry';
 
-import StockoutModalContent      from '@/Components/StockoutModalContent';
+import StockoutModalContent         from '@/Components/StockoutModalContent';
 import GeographicDemandModalContent from '@/Components/GeographicDemandModalContent';
-import PositioningModalContent   from '@/Components/PositioningModalContent';
-import InventoryModalContent     from '@/Components/InventoryModalContent';
-import RotationModalContent      from '@/Components/RotationModalContent';
-import FreshnessModalContent     from '@/Components/FreshnessModalContent';
-import VisitComplianceModalContent from '@/Components/VisitComplianceModalContent';
-import PopQualityModalContent    from '@/Components/PopQualityModalContent';
-import PriceIndexModalContent    from '@/Components/PriceIndexModalContent';
+import PositioningModalContent      from '@/Components/PositioningModalContent';
+import InventoryModalContent        from '@/Components/InventoryModalContent';
+import RotationModalContent         from '@/Components/RotationModalContent';
+import FreshnessModalContent        from '@/Components/FreshnessModalContent';
+import VisitComplianceModalContent  from '@/Components/VisitComplianceModalContent';
+import PopQualityModalContent       from '@/Components/PopQualityModalContent';
+import PriceIndexModalContent       from '@/Components/PriceIndexModalContent';
 import CompetitionIntelModalContent from '@/Components/CompetitionIntelModalContent';
-import PromoActivityModalContent from '@/Components/PromoActivityModalContent';
-import VisitDurationModalContent from '@/Components/VisitDurationModalContent';
-import GeniusIndexModalContent   from '@/Components/GeniusIndexModalContent';
+import PromoActivityModalContent    from '@/Components/PromoActivityModalContent';
+import VisitDurationModalContent    from '@/Components/VisitDurationModalContent';
+import GeniusIndexModalContent      from '@/Components/GeniusIndexModalContent';
 
 const MODAL_COMPONENTS = {
     stockout:         (p) => <StockoutModalContent {...p} />,
@@ -41,15 +38,139 @@ const MODAL_COMPONENTS = {
     geniusIndex:      (p) => <GeniusIndexModalContent {...p} />,
 };
 
-const LARGE_MODALS = new Set(['geoDemand', 'priceIndex']);
+// ── Category visual config ─────────────────────────────────────────────────────
+const CAT_META = {
+    'Salud del Producto':       { bar: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-500' },
+    'Actividad de Campo':       { bar: 'bg-blue-500',    text: 'text-blue-700',    bg: 'bg-blue-500' },
+    'Eficiencia Operativa':     { bar: 'bg-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-500' },
+    'Inteligencia Competitiva': { bar: 'bg-rose-500',    text: 'text-rose-700',    bg: 'bg-rose-500' },
+    'Índice Global':            { bar: 'bg-indigo-600',  text: 'text-indigo-700',  bg: 'bg-indigo-600' },
+};
 
+// ── Sentiment helpers ──────────────────────────────────────────────────────────
+const SENTIMENT = {
+    good:    { border: 'border-emerald-200', top: 'bg-emerald-500', icon: 'bg-emerald-100 text-emerald-700', value: 'text-emerald-700', bar: 'bg-emerald-500' },
+    bad:     { border: 'border-red-200',     top: 'bg-red-500',     icon: 'bg-red-100 text-red-600',         value: 'text-red-700',     bar: 'bg-red-500' },
+    neutral: { border: 'border-slate-200',   top: 'bg-brand-blue',  icon: 'bg-slate-100 text-brand-blue',    value: 'text-slate-800',   bar: 'bg-brand-blue' },
+};
+
+// ── Genius Index hero card ─────────────────────────────────────────────────────
+const GeniusHero = ({ def, data, onOpen }) => {
+    const score = parseFloat(data.value) || 0;
+    const color = score >= 80 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
+    const label = score >= 80 ? 'Presencia Fuerte' : score >= 50 ? 'En Desarrollo' : 'Requiere Atención';
+    const r = 40, circ = 2 * Math.PI * r;
+
+    return (
+        <div
+            onClick={onOpen}
+            className="col-span-full cursor-pointer rounded-2xl overflow-hidden bg-gradient-to-br from-[#0D2B4C] via-[#112f58] to-[#1a4480] p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 shadow-xl hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-300 group"
+        >
+            {/* Gauge */}
+            <div className="relative shrink-0">
+                <svg width="130" height="130" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
+                    <circle
+                        cx="50" cy="50" r={r} fill="none"
+                        stroke={color} strokeWidth="10"
+                        strokeDasharray={`${circ * Math.min(score, 100) / 100} ${circ}`}
+                        strokeLinecap="round"
+                        transform="rotate(-90 50 50)"
+                        style={{ transition: 'stroke-dasharray 1s ease' }}
+                    />
+                    <text x="50" y="44" textAnchor="middle" fill="white"      fontSize="24" fontWeight="900">{Math.round(score)}</text>
+                    <text x="50" y="60" textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize="10">/ 100</text>
+                </svg>
+            </div>
+
+            {/* Text */}
+            <div className="flex-1 text-center sm:text-left">
+                <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-1">Índice Genius</p>
+                <h3 className="text-2xl sm:text-3xl font-black text-white mb-2">{label}</h3>
+                <p className="text-white/50 text-sm leading-relaxed max-w-md">{def.description}</p>
+                <div className="mt-4 flex items-center gap-3 justify-center sm:justify-start">
+                    <div className="h-2 w-40 bg-white/10 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${score}%`, background: color }} />
+                    </div>
+                    <span className="text-white/50 text-xs font-semibold">{Math.round(score)}%</span>
+                </div>
+            </div>
+
+            {/* CTA */}
+            <div className="shrink-0 flex items-center gap-2 text-sm font-semibold text-white/60 bg-white/10 px-4 py-2.5 rounded-xl group-hover:bg-white/20 transition-colors">
+                Ver diagnóstico <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+            </div>
+        </div>
+    );
+};
+
+// ── Standard metric card ───────────────────────────────────────────────────────
+const MetricCard = ({ def, data, onOpen }) => {
+    const WidgetIcon = def.Icon;
+    const isClickable = !!data.modalType && !!onOpen;
+    const s = SENTIMENT[data.sentiment] || SENTIMENT.neutral;
+
+    const rawStr  = String(data.value);
+    const isPct   = rawStr.includes('%');
+    const pctVal  = isPct ? Math.min(100, Math.max(0, parseFloat(rawStr))) : null;
+
+    return (
+        <div
+            onClick={isClickable ? onOpen : undefined}
+            className={`group relative rounded-2xl bg-white border ${s.border} overflow-hidden transition-all duration-200 ${isClickable ? 'cursor-pointer hover:shadow-lg hover:-translate-y-0.5' : ''}`}
+        >
+            {/* top accent bar */}
+            <div className={`h-1 w-full ${s.top}`} />
+
+            <div className="p-5">
+                {/* Header row */}
+                <div className="flex items-start justify-between mb-4">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${s.icon}`}>
+                        <WidgetIcon size={20} />
+                    </div>
+                    {isClickable && (
+                        <ChevronRight
+                            size={16}
+                            className="text-slate-200 group-hover:text-brand-blue group-hover:translate-x-0.5 transition-all mt-1"
+                        />
+                    )}
+                </div>
+
+                {/* Label */}
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400 mb-1.5">{def.label}</p>
+
+                {/* Value */}
+                <p className={`text-3xl font-black leading-none ${s.value}`}>
+                    {data.value}
+                    {data.unit && (
+                        <span className="text-sm font-semibold text-slate-400 ml-1.5">{data.unit}</span>
+                    )}
+                </p>
+
+                {/* Progress bar for % values */}
+                {isPct && pctVal !== null && (
+                    <div className="mt-3 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                            className={`h-full rounded-full ${s.bar} transition-all duration-700`}
+                            style={{ width: `${pctVal}%` }}
+                        />
+                    </div>
+                )}
+
+                {/* Description */}
+                <p className="text-xs text-slate-400 mt-2 leading-snug line-clamp-2">{def.description}</p>
+            </div>
+        </div>
+    );
+};
+
+// ── Main dashboard ─────────────────────────────────────────────────────────────
 const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => {
     const { getEnabledWidgets, loading: configLoading } = useDashboardConfig();
     const [timeRange, setTimeRange]   = useState('30d');
     const [activeModal, setActiveModal] = useState(null);
 
-    const kpis = useKpiCalculations(reports, posList, timeRange);
-
+    const kpis  = useKpiCalculations(reports, posList, timeRange);
     const extra = useMemo(() => {
         const r = kpis.reports || [];
         const uniquePdvs = new Set(r.map(x => x.posId)).size;
@@ -61,6 +182,17 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
     }, [kpis.reports, posList]);
 
     const enabledIds = getEnabledWidgets(role);
+
+    const widgetGroups = useMemo(() => {
+        const groups = {};
+        enabledIds.forEach(id => {
+            const def = WIDGET_MAP[id];
+            if (!def) return;
+            if (!groups[def.category]) groups[def.category] = [];
+            groups[def.category].push(id);
+        });
+        return groups;
+    }, [enabledIds]);
 
     if (loading || configLoading) {
         return <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>;
@@ -79,7 +211,7 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
                 {onNavigate && (
                     <button
                         onClick={() => onNavigate('settings')}
-                        className="flex items-center gap-2 bg-brand-blue text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-opacity-90 transition-colors"
+                        className="flex items-center gap-2 bg-brand-blue text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-opacity-90"
                     >
                         <Settings size={16} /> Configurar Dashboard
                     </button>
@@ -88,19 +220,7 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
         );
     }
 
-    const TimeBtn = ({ range, label }) => (
-        <button
-            onClick={() => setTimeRange(range)}
-            className={`px-3 py-1.5 text-sm font-semibold rounded-md transition-colors ${
-                timeRange === range
-                    ? 'bg-brand-blue text-white shadow'
-                    : 'bg-white text-slate-600 hover:bg-slate-100'
-            }`}
-        >
-            {label}
-        </button>
-    );
-
+    const openModal = (title, type) => setActiveModal({ title, type });
     const modalProps = { reports: kpis.reports, posList: posList || [], kpis };
     const renderModal = () => {
         if (!activeModal) return null;
@@ -108,59 +228,93 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
         return fn ? fn(modalProps) : null;
     };
 
+    // Category rendering order (Índice Global always goes to hero slot)
+    const categoryOrder = WIDGET_CATEGORIES.filter(c => c !== 'Índice Global');
+
     return (
-        <div className="w-full">
-            <div className="max-w-7xl mx-auto">
-                {/* Header */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
-                    <h2 className="text-2xl sm:text-3xl font-bold text-slate-800">Dashboard Gerencial</h2>
-                    <div className="flex items-center gap-2">
-                        <TimeBtn range="15d" label="15d" />
-                        <TimeBtn range="30d" label="30d" />
-                        <TimeBtn range="90d" label="90d" />
-                        <TimeBtn range="all" label="Todo" />
-                    </div>
-                </div>
+        <div className="w-full max-w-7xl mx-auto space-y-8">
 
-                {/* Widget grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {enabledIds.map(id => {
-                        const def = WIDGET_MAP[id];
-                        if (!def) return null;
-                        const data = def.getData(kpis, extra);
-                        const WidgetIcon = def.Icon;
-                        return (
-                            <KpiCard
-                                key={id}
-                                icon={<WidgetIcon size={20} />}
-                                title={def.label}
-                                value={data.value}
-                                unit={data.unit}
-                                sentiment={data.sentiment}
-                                onClick={
-                                    data.modalType
-                                        ? () => setActiveModal({ title: data.modalTitle, type: data.modalType })
-                                        : undefined
-                                }
-                            />
-                        );
-                    })}
+            {/* ── Header row ── */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                    <h2 className="text-2xl sm:text-3xl font-black text-slate-800 leading-tight">Dashboard Gerencial</h2>
+                    <p className="text-sm text-slate-400 mt-0.5">Indicadores clave del período seleccionado</p>
                 </div>
-
-                <Modal
-                    isOpen={!!activeModal}
-                    onClose={() => setActiveModal(null)}
-                    title={activeModal?.title || ''}
-                    size={
-                        activeModal?.type === 'geoDemand' ? '7xl'
-                        : activeModal?.type === 'priceIndex' ? '4xl'
-                        : '2xl'
-                    }
-                    canExpand={activeModal?.type === 'geoDemand'}
-                >
-                    {renderModal()}
-                </Modal>
+                <div className="flex items-center gap-1 bg-white rounded-xl p-1 shadow-sm border border-slate-200">
+                    {[['15d','15d'],['30d','30d'],['90d','90d'],['all','Todo']].map(([val, lbl]) => (
+                        <button
+                            key={val}
+                            onClick={() => setTimeRange(val)}
+                            className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${
+                                timeRange === val ? 'bg-brand-blue text-white shadow' : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                        >
+                            {lbl}
+                        </button>
+                    ))}
+                </div>
             </div>
+
+            {/* ── Genius Index hero (if enabled) ── */}
+            {widgetGroups['Índice Global']?.includes('genius_index') && (() => {
+                const def  = WIDGET_MAP['genius_index'];
+                const data = def.getData(kpis, extra);
+                return (
+                    <GeniusHero
+                        def={def}
+                        data={data}
+                        onOpen={() => openModal(data.modalTitle, data.modalType)}
+                    />
+                );
+            })()}
+
+            {/* ── Category sections ── */}
+            {categoryOrder
+                .filter(cat => widgetGroups[cat]?.length > 0)
+                .map(cat => {
+                    const meta = CAT_META[cat] || { bar: 'bg-slate-400', text: 'text-slate-600' };
+                    const ids  = widgetGroups[cat];
+
+                    return (
+                        <section key={cat}>
+                            {/* Section header */}
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className={`h-5 w-1.5 rounded-full ${meta.bg}`} />
+                                <h3 className={`text-xs font-black uppercase tracking-widest ${meta.text}`}>{cat}</h3>
+                                <div className="flex-1 h-px bg-slate-100" />
+                            </div>
+
+                            {/* Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                {ids.map(id => {
+                                    const def  = WIDGET_MAP[id];
+                                    if (!def) return null;
+                                    const data = def.getData(kpis, extra);
+                                    return (
+                                        <MetricCard
+                                            key={id}
+                                            def={def}
+                                            data={data}
+                                            onOpen={data.modalType ? () => openModal(data.modalTitle, data.modalType) : undefined}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    );
+                })
+            }
+
+            {/* ── Modal ── */}
+            <Modal
+                isOpen={!!activeModal}
+                onClose={() => setActiveModal(null)}
+                title={activeModal?.title || ''}
+                size={activeModal?.type === 'geoDemand' ? '7xl' : activeModal?.type === 'priceIndex' ? '4xl' : '2xl'}
+                canExpand={activeModal?.type === 'geoDemand'}
+            >
+                {renderModal()}
+            </Modal>
         </div>
     );
 };
