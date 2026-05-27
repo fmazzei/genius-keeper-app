@@ -7,7 +7,7 @@ import { useMerchandiserData } from '@/hooks/useMerchandiserData.js';
 import { useOfflineSync } from '@/hooks/useOfflineSync.js';
 import { useDelegatedTasks } from '@/hooks/useDelegatedTasks.jsx';
 import { useReporter } from '@/context/ReporterContext.jsx';
-import { LogOut, ChevronsRight, FileText, Truck, Map, ShoppingCart, Menu, ClipboardList, AlertTriangle, UserCheck, Users, Bell } from 'lucide-react';
+import { LogOut, ChevronsRight, ChevronLeft, FileText, Truck, Map, ShoppingCart, Menu, ClipboardList, AlertTriangle, UserCheck, Users, Bell } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import MerchandiserHub from '@/Pages/MerchandiserHub.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
@@ -271,13 +271,21 @@ const AppShell = ({ user, role, onLogout }) => {
             case 'pedidos': return <PosList posList={masterStopList} title="Selecciona el PDV del despacho" onSelectPos={(pos) => { setSelectedPos(pos); setCurrentView('pedido_form'); }} onBack={() => setCurrentView('hub')} />;
             case 'pedido_form': return <PedidoForm pos={selectedPos} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
             case 'tomar_pedido': return <TomarPedidoForm posList={masterStopList} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
-            case 'reportes_historial': return <ReportesHistorial selectedReporter={selectedReporter} />;
-            case 'pedidos_historial': return <PedidosHistorial selectedReporter={selectedReporter} />;
-            case 'notificaciones': return <NotificacionesMerchandiser user={user} />;
+            case 'reportes_historial': return <ReportesHistorial selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
+            case 'pedidos_historial': return <PedidosHistorial selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
+            case 'notificaciones': return <NotificacionesMerchandiser user={user} onBack={() => setCurrentView('hub')} />;
             case 'logistics': return <LogisticsPanel />;
             case 'report': return <PosList posList={masterStopList} onSelectPos={navigateToReport} />;
-            case 'tasks': 
-                return ( <div className="p-4 md:p-8"><h2 className="text-3xl font-bold text-slate-800 mb-6">Mis Tareas Pendientes</h2><TaskList tasks={tasks} onCompleteTask={completeTask} loading={tasksLoading} onResolveDelegation={handleResolveDelegation}/></div> );
+            case 'tasks':
+                return (
+                    <div className="p-4 md:p-8 max-w-2xl mx-auto w-full">
+                        <button onClick={() => setCurrentView('hub')} className="flex items-center gap-1 text-slate-500 hover:text-brand-blue mb-5 font-medium">
+                            <ChevronLeft size={20} /> Inicio
+                        </button>
+                        <h2 className="text-3xl font-bold text-slate-800 mb-6">Mis Tareas Pendientes</h2>
+                        <TaskList tasks={tasks} onCompleteTask={completeTask} loading={tasksLoading} onResolveDelegation={handleResolveDelegation} />
+                    </div>
+                );
             case 'visit_report': 
                 return <VisitReportForm pos={selectedPos} user={user} selectedReporter={selectedReporter} backToList={() => setCurrentView('hub')} />;
             default: return <MerchandiserHub onNavigate={setCurrentView} selectedReporter={selectedReporter} />;

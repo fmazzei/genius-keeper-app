@@ -3,10 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
-import { Bell, CheckCheck } from 'lucide-react';
+import { Bell, CheckCheck, ChevronLeft } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 
-const NotificacionesMerchandiser = ({ user }) => {
+const NotificacionesMerchandiser = ({ user, onBack }) => {
     const [notifications, setNotifications] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -40,6 +40,11 @@ const NotificacionesMerchandiser = ({ user }) => {
 
     return (
         <div className="p-4 md:p-8 max-w-2xl mx-auto w-full">
+            {onBack && (
+                <button onClick={onBack} className="flex items-center gap-1 text-slate-500 hover:text-brand-blue mb-5 font-medium">
+                    <ChevronLeft size={20} /> Inicio
+                </button>
+            )}
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
                     <Bell size={28} className="text-brand-blue" />

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, query, where, orderBy, getDocs, Timestamp } from 'firebase/firestore';
-import { ClipboardList, CheckCircle, AlertCircle, Clock, Mail } from 'lucide-react';
+import { ClipboardList, CheckCircle, AlertCircle, Clock, Mail, ChevronLeft } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 
 const startOfWeek = () => {
@@ -13,7 +13,7 @@ const startOfWeek = () => {
     return d;
 };
 
-const PedidosHistorial = ({ selectedReporter }) => {
+const PedidosHistorial = ({ selectedReporter, onBack }) => {
     const [pedidos, setPedidos] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -43,6 +43,11 @@ const PedidosHistorial = ({ selectedReporter }) => {
 
     return (
         <div className="p-4 md:p-8 max-w-2xl mx-auto w-full">
+            {onBack && (
+                <button onClick={onBack} className="flex items-center gap-1 text-slate-500 hover:text-brand-blue mb-5 font-medium">
+                    <ChevronLeft size={20} /> Inicio
+                </button>
+            )}
             <div className="flex items-center gap-3 mb-6">
                 <ClipboardList size={28} className="text-emerald-600" />
                 <div>
