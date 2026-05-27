@@ -194,7 +194,8 @@ const AppShell = ({ user, role, onLogout }) => {
             logistics: 'Panel de Logística',
             report: 'Seleccionar Punto de Venta',
             tasks: 'Mis Tareas Pendientes',
-            pedidos: 'Registrar Pedido',
+            pedidos: 'Despacho — Seleccionar PDV',
+            pedido_form: `Despacho: ${selectedPos?.name || ''}`,
             visit_report: `Reporte: ${selectedPos?.name || ''}`,
         };
         return viewTitles[currentView] || 'Genius Keeper';
@@ -250,7 +251,8 @@ const AppShell = ({ user, role, onLogout }) => {
                             selectedReporter={selectedReporter}
                         />;
 
-            case 'pedidos': return <PedidoForm posList={masterStopList} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
+            case 'pedidos': return <PosList posList={masterStopList} onSelectPos={(pos) => { setSelectedPos(pos); setCurrentView('pedido_form'); }} />;
+            case 'pedido_form': return <PedidoForm pos={selectedPos} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
             case 'logistics': return <LogisticsPanel />;
             case 'report': return <PosList posList={masterStopList} onSelectPos={navigateToReport} />;
             case 'tasks': 
