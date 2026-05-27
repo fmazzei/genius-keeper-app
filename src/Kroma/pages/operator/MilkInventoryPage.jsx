@@ -563,7 +563,7 @@ export default function MilkInventoryPage() {
 
             const supps = suppSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
-                .filter(s => s.active !== false)
+                .filter(s => s.active !== false && s.tipos?.includes('leche'))
                 .sort((a, b) => supplierName(a).localeCompare(supplierName(b)));
 
             setAllReceptions(recs);
