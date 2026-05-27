@@ -4,8 +4,10 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
 // ✅ Se añade el ícono 'Link2'
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2 } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
+import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
+import { WIDGET_REGISTRY, WIDGET_CATEGORIES } from '../config/widgetRegistry.js';
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
@@ -1047,6 +1049,159 @@ const EmailManagement = () => {
     );
 };
 
+// ─── Dashboard Management ─────────────────────────────────────────────────────
+
+const DASH_ROLES = [
+    { id: 'master',        label: 'Master' },
+    { id: 'sales_manager', label: 'Gerente de Ventas' },
+];
+
+const DashboardManagement = () => {
+    const { config, loading: configLoading, saveRoleConfig } = useDashboardConfig();
+    const [activeRole, setActiveRole] = useState('master');
+    const [widgetState, setWidgetState] = useState({});
+    const [saving, setSaving]   = useState(false);
+    const [saved, setSaved]     = useState(false);
+
+    // Sync local state when config loads
+    useEffect(() => {
+        if (configLoading) return;
+        const next = {};
+        DASH_ROLES.forEach(({ id: role }) => {
+            const saved = config?.roles?.[role]?.widgets || [];
+            const savedMap = Object.fromEntries(saved.map(w => [w.id, w]));
+            next[role] = WIDGET_REGISTRY.map((w, idx) => ({
+                id:      w.id,
+                enabled: savedMap[w.id]?.enabled ?? (role === 'master'),
+                order:   savedMap[w.id]?.order   ?? idx,
+            }));
+        });
+        setWidgetState(next);
+    }, [config, configLoading]);
+
+    const toggleWidget = (role, widgetId) => {
+        setWidgetState(prev => ({
+            ...prev,
+            [role]: prev[role].map(w => w.id === widgetId ? { ...w, enabled: !w.enabled } : w),
+        }));
+    };
+
+    const enableAll = (role) => {
+        setWidgetState(prev => ({
+            ...prev,
+            [role]: prev[role].map(w => ({ ...w, enabled: true })),
+        }));
+    };
+
+    const disableAll = (role) => {
+        setWidgetState(prev => ({
+            ...prev,
+            [role]: prev[role].map(w => ({ ...w, enabled: false })),
+        }));
+    };
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            for (const { id: role } of DASH_ROLES) {
+                if (widgetState[role]) await saveRoleConfig(role, widgetState[role]);
+            }
+            setSaved(true);
+            setTimeout(() => setSaved(false), 3000);
+        } catch (e) { alert('Error al guardar. Intenta de nuevo.'); }
+        finally { setSaving(false); }
+    };
+
+    if (configLoading || !Object.keys(widgetState).length) return <LoadingSpinner />;
+
+    const currentWidgets   = widgetState[activeRole] || [];
+    const enabledCount     = currentWidgets.filter(w => w.enabled).length;
+
+    return (
+        <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow p-5">
+                <div className="flex items-start justify-between mb-5 gap-4">
+                    <div>
+                        <h3 className="text-xl font-semibold text-slate-700">Configurador de Dashboard Gerencial</h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                            Activa los KPIs que cada rol verá en su dashboard. El canvas del Gerente de Ventas arranca en blanco.
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-5 rounded-lg hover:bg-opacity-90 disabled:opacity-60 shrink-0"
+                    >
+                        <Save size={16} />
+                        {saving ? 'Guardando...' : saved ? '¡Guardado!' : 'Guardar'}
+                    </button>
+                </div>
+
+                {/* Role tabs */}
+                <div className="flex items-center gap-2 border-b border-slate-200 pb-4 mb-6">
+                    {DASH_ROLES.map(({ id, label }) => (
+                        <button
+                            key={id}
+                            onClick={() => setActiveRole(id)}
+                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${activeRole === id ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+                        >
+                            {label}
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${activeRole === id ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                {(widgetState[id] || []).filter(w => w.enabled).length}
+                            </span>
+                        </button>
+                    ))}
+                    <div className="ml-auto flex gap-2">
+                        <button onClick={() => enableAll(activeRole)} className="text-xs text-brand-blue hover:underline font-medium">Activar todos</button>
+                        <span className="text-slate-300">·</span>
+                        <button onClick={() => disableAll(activeRole)} className="text-xs text-slate-500 hover:underline font-medium">Desactivar todos</button>
+                    </div>
+                </div>
+
+                {/* Widget list grouped by category */}
+                <div className="space-y-6">
+                    {WIDGET_CATEGORIES.map(cat => {
+                        const catWidgets = WIDGET_REGISTRY.filter(w => w.category === cat);
+                        return (
+                            <div key={cat}>
+                                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">{cat}</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {catWidgets.map(({ id, label, description, Icon }) => {
+                                        const wCfg = currentWidgets.find(w => w.id === id);
+                                        const enabled = wCfg?.enabled ?? false;
+                                        return (
+                                            <button
+                                                key={id}
+                                                onClick={() => toggleWidget(activeRole, id)}
+                                                className={`flex items-center gap-3 p-3 rounded-lg border text-left transition-all ${
+                                                    enabled
+                                                        ? 'border-brand-blue bg-brand-blue/5'
+                                                        : 'border-slate-200 bg-white hover:border-brand-blue/30'
+                                                }`}
+                                            >
+                                                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${enabled ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-400'}`}>
+                                                    <Icon size={18} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`font-semibold text-sm ${enabled ? 'text-brand-blue' : 'text-slate-700'}`}>{label}</p>
+                                                    <p className="text-xs text-slate-400 truncate">{description}</p>
+                                                </div>
+                                                <div className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-colors ${enabled ? 'border-brand-blue bg-brand-blue' : 'border-slate-300'}`}>
+                                                    {enabled && <CheckCircle size={12} className="text-white" />}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // ─── Alerts Management ────────────────────────────────────────────────────────
 
 const ALL_ROLES = [
@@ -1211,6 +1366,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     <TabButton id="users" text="Usuarios" icon={<Users size={18} />} />
                     <TabButton id="sales_goals" text="Metas de Venta" icon={<Target size={18} />} />
                     <TabButton id="modules" text="Módulos" icon={<LayoutGrid size={18} />} />
+                    <TabButton id="dashboard" text="Dashboard" icon={<BarChart2 size={18} />} />
                     <TabButton id="emails" text="Correos" icon={<Mail size={18} />} />
                     <TabButton id="alerts" text="Alertas" icon={<Bell size={18} />} />
                     <TabButton id="settings" text="Configuración" icon={<Settings size={18} />} />
@@ -1223,6 +1379,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     {activeTab === 'users' && <UserManagement />}
                     {activeTab === 'sales_goals' && <SalesGoalsManagement />}
                     {activeTab === 'modules' && <ModuleManagement />}
+                    {activeTab === 'dashboard' && <DashboardManagement />}
                     {activeTab === 'emails' && <EmailManagement />}
                     {activeTab === 'alerts' && <AlertsManagement />}
                     {activeTab === 'settings' && <GeneralSettings />}

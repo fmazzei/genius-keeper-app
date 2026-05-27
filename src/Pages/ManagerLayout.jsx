@@ -10,7 +10,7 @@ import { auth, db } from '@/Firebase/config.js';
 import { LogOut, BarChart2, TrendingUp, Bell, Settings, Package, Sun, DollarSign, Target, Map as MapIcon, Menu, ChevronsRight } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import LoadingSpinner from '@/Components/LoadingSpinner';
-import ManagerDashboard from './ManagerDashboard.jsx';
+import GerencialDashboard from './GerencialDashboard.jsx';
 import MarketTrendsView from './MarketTrendsView.jsx';
 import AlertsCenterView from './AlertsCenterView.jsx';
 import InventoryPanel from './InventoryPanel.jsx';
@@ -33,7 +33,7 @@ const ManagerLayout = ({ user, role, onLogout }) => {
     
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [currentView, setCurrentView] = useState(role === 'sales_manager' ? 'focus' : 'dashboard');
+    const [currentView, setCurrentView] = useState('dashboard');
     const [userMetadata, setUserMetadata] = useState({ name: '', email: '' });
 
     useEffect(() => {
@@ -111,6 +111,7 @@ const ManagerLayout = ({ user, role, onLogout }) => {
 
         const salesManagerNav = (
             <ul>
+                <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
                 {modules.salesFocus && <NavItem icon={<Sun size={24} />} text="Brújula de Ventas" active={currentView === 'focus'} onClick={() => setCurrentView('focus')} />}
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
@@ -137,7 +138,7 @@ const ManagerLayout = ({ user, role, onLogout }) => {
         
         return (
             <>
-                <div className={currentView === 'dashboard' ? 'block h-full' : 'hidden'}><ManagerDashboard {...commonProps} /></div>
+                <div className={currentView === 'dashboard' ? 'block h-full' : 'hidden'}><GerencialDashboard {...commonProps} role={role} /></div>
                 <div className={currentView === 'trends' ? 'block h-full' : 'hidden'}><MarketTrendsView {...commonProps} /></div>
                 <div className={currentView === 'alerts' ? 'block h-full' : 'hidden'}><AlertsCenterView onNavigate={setCurrentView} /></div>
                 <div className={currentView === 'inventory' ? 'block h-full' : 'hidden'}><InventoryPanel role={role} /></div>
