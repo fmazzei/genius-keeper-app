@@ -1197,6 +1197,8 @@ function BlockPendingCard({ bloque, idx, totalBlocks }) {
 // ─── Master Delete Modal ──────────────────────────────────────────────────────
 
 function MasterDeleteModal({ log, saving, onClose, onConfirm }) {
+    const recCount = (log.recepcionIds || []).length;
+    const totalL   = log.litrosIngresados || 0;
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 px-6">
             <div className="bg-slate-900 border border-red-800/60 rounded-2xl p-5 space-y-4 max-w-sm w-full">
@@ -1206,9 +1208,18 @@ function MasterDeleteModal({ log, saving, onClose, onConfirm }) {
                 </div>
                 <p className="text-slate-400 text-sm leading-relaxed">
                     ¿Eliminar <strong className="text-white">{log.productoNombre}</strong>
-                    {log.lote && <> — lote <span className="font-mono text-slate-300">{log.lote}</span></>}?{' '}
-                    Esta acción no se puede deshacer.
+                    {log.lote && <> — lote <span className="font-mono text-slate-300">{log.lote}</span></>}?
                 </p>
+                {recCount > 0 && (
+                    <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl px-4 py-3 space-y-1">
+                        <p className="text-amber-300 text-xs font-semibold">
+                            Se liberarán {recCount} recepción{recCount > 1 ? 'es' : ''} de leche ({totalL} L)
+                        </p>
+                        <p className="text-slate-500 text-xs">
+                            Quedarán disponibles para un nuevo proceso. Se enviará notificación a los responsables.
+                        </p>
+                    </div>
+                )}
                 <div className="flex gap-3">
                     <button onClick={onClose}
                         className="flex-1 py-3 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
@@ -2484,13 +2495,60 @@ export default function DailyProductionPage() {
         if (!masterDeleteLog) return;
         setMasterDeleting(true);
         try {
-            await updateDoc(doc(db, 'kroma_production_logs', masterDeleteLog.id), {
+            const logToDelete = masterDeleteLog;
+            await updateDoc(doc(db, 'kroma_production_logs', logToDelete.id), {
                 active:    false,
                 deletedAt: serverTimestamp(),
             });
-            setLogs(prev => prev.filter(l => l.id !== masterDeleteLog.id));
-            setHistorial(prev => prev.filter(l => l.id !== masterDeleteLog.id));
-            const wasActive = activeLog?.id === masterDeleteLog.id;
+
+            // Free any linked milk receptions back to 'pendiente'
+            const recIds = logToDelete.recepcionIds || [];
+            if (recIds.length > 0) {
+                await Promise.all(recIds.map(rid =>
+                    updateDoc(doc(db, 'kroma_milk_reception', rid), {
+                        status:    'pendiente',
+                        logId:     null,
+                        updatedAt: serverTimestamp(),
+                    })
+                ));
+                // Push notification: milk freed and waiting for a new process
+                const totalL = (logToDelete.litrosIngresados || 0);
+                const provName = logToDelete.proveedorNombre || '';
+                addDoc(collection(db, 'kroma_notifications'), {
+                    tipo:           'leche_liberada',
+                    logId:          logToDelete.id,
+                    lote:           logToDelete.lote || logToDelete.id,
+                    productoNombre: logToDelete.productoNombre,
+                    mensaje:        `Proceso eliminado por master — ${totalL} L de leche (${provName}) liberados y disponibles para nueva producción.`,
+                    destinatarios:  ['kroma_admin', 'produccion', 'master'],
+                    leida:          false,
+                    leidaPor:       [],
+                    createdAt:      serverTimestamp(),
+                }).catch(() => {});
+                tryBrowserNotification(
+                    'Leche liberada',
+                    `${totalL} L (${provName}) disponibles para nuevo proceso.`
+                );
+            }
+
+            setLogs(prev => prev.filter(l => l.id !== logToDelete.id));
+            setHistorial(prev => prev.filter(l => l.id !== logToDelete.id));
+            // Re-add freed receptions to the pending list
+            if (recIds.length > 0) {
+                const freed = (logToDelete.recepciones || []).map(r => ({
+                    id: r.recepcionId,
+                    proveedorId: r.proveedorId,
+                    proveedorNombre: r.proveedorNombre,
+                    litros: r.litros,
+                    enrutamiento: r.rutaLeche || 'directo',
+                    parametros: { temperatura: r.temperatura, pH: r.pH, densidad: r.densidad, brix: r.Brix },
+                    status: 'pendiente',
+                    active: true,
+                })).filter(r => r.id);
+                if (freed.length > 0) setMilkReceptions(prev => [...freed, ...prev]);
+            }
+
+            const wasActive = activeLog?.id === logToDelete.id;
             setMasterDeleteLog(null);
             if (wasActive) setView('list');
         } catch (e) {
