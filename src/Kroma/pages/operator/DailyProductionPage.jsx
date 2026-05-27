@@ -10,7 +10,7 @@ import {
     Clock, AlertTriangle, Package, Droplets,
     Calendar, Lock, ChevronDown, ChevronUp,
     Factory, Pause, FlaskConical, X, Zap,
-    Share2, PenLine, Award,
+    Share2, PenLine, Award, Trash2, RotateCcw,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1134,22 +1134,41 @@ function BlockEditorDispatch({ bloque, idx, litrosIngresados, litrosNetos, bloqu
 
 // ─── Block List Items ─────────────────────────────────────────────────────────
 
-function BlockDoneCard({ bloque, idx, data }) {
+function BlockDoneCard({ bloque, idx, data, isMaster, onMasterEdit, onMasterReset }) {
     const m = meta(bloque.tipo);
     return (
-        <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${m.border} ${m.bg} opacity-70`}>
-            <div className={`w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center shrink-0`}>
-                <Check size={13} className="text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-                <p className={`text-sm font-semibold ${m.color}`}>{blockLabel(bloque.tipo)}</p>
-                {bloque.params?.materialNombre && (
-                    <p className="text-slate-500 text-xs truncate">{bloque.params.materialNombre}</p>
+        <div className={`rounded-xl border ${m.border} ${m.bg} ${isMaster ? '' : 'opacity-70'}`}>
+            <div className="flex items-center gap-3 px-4 py-3">
+                <div className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center shrink-0">
+                    <Check size={13} className="text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-semibold ${m.color}`}>{blockLabel(bloque.tipo)}</p>
+                    {bloque.params?.materialNombre && (
+                        <p className="text-slate-500 text-xs truncate">{bloque.params.materialNombre}</p>
+                    )}
+                    {data?.editadoPorMaster && (
+                        <p className="text-violet-400 text-xs">✎ editado por master</p>
+                    )}
+                </div>
+                <span className="text-slate-500 text-xs shrink-0">
+                    {data?.completadoAt ? fmtDateTime(new Date(data.completadoAt)) : '✓'}
+                </span>
+                {isMaster && (
+                    <div className="flex items-center gap-1 shrink-0 ml-1">
+                        <button type="button" onClick={() => onMasterEdit?.(idx)}
+                            className="w-7 h-7 rounded-lg bg-violet-800/60 hover:bg-violet-700 text-violet-300 flex items-center justify-center"
+                            title="Editar bloque">
+                            <PenLine size={12} />
+                        </button>
+                        <button type="button" onClick={() => onMasterReset?.(idx)}
+                            className="w-7 h-7 rounded-lg bg-amber-900/60 hover:bg-amber-800 text-amber-400 flex items-center justify-center"
+                            title="Reabrir bloque">
+                            <RotateCcw size={12} />
+                        </button>
+                    </div>
                 )}
             </div>
-            <span className="text-slate-500 text-xs shrink-0">
-                {data?.completadoAt ? fmtDateTime(new Date(data.completadoAt)) : '✓'}
-            </span>
         </div>
     );
 }
@@ -1175,9 +1194,39 @@ function BlockPendingCard({ bloque, idx, totalBlocks }) {
     );
 }
 
+// ─── Master Delete Modal ──────────────────────────────────────────────────────
+
+function MasterDeleteModal({ log, saving, onClose, onConfirm }) {
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 px-6">
+            <div className="bg-slate-900 border border-red-800/60 rounded-2xl p-5 space-y-4 max-w-sm w-full">
+                <div className="flex items-center gap-2">
+                    <Trash2 size={18} className="text-red-400" />
+                    <p className="text-white font-bold">Eliminar planilla de producción</p>
+                </div>
+                <p className="text-slate-400 text-sm leading-relaxed">
+                    ¿Eliminar <strong className="text-white">{log.productoNombre}</strong>
+                    {log.lote && <> — lote <span className="font-mono text-slate-300">{log.lote}</span></>}?{' '}
+                    Esta acción no se puede deshacer.
+                </p>
+                <div className="flex gap-3">
+                    <button onClick={onClose}
+                        className="flex-1 py-3 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
+                        Cancelar
+                    </button>
+                    <button onClick={onConfirm} disabled={saving}
+                        className="flex-1 py-3 rounded-xl bg-red-700 hover:bg-red-600 text-white text-sm font-bold disabled:opacity-40 transition-colors">
+                        {saving ? 'Eliminando…' : 'Eliminar'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Production Card (list view) ─────────────────────────────────────────────
 
-function ProductionCard({ log, onOpen, onCancel }) {
+function ProductionCard({ log, onOpen, onDelete, isMaster }) {
     const estado = ESTADO_STYLE[log.estado] || ESTADO_STYLE.activa;
     const bloques = log.bloquesSnapshot || [];
     const done    = Object.values(log.bloquesData || {}).filter(b => b.completado).length;
@@ -1228,10 +1277,19 @@ function ProductionCard({ log, onOpen, onCancel }) {
                 <span>{log.operarioNombre || '—'}</span>
             </div>
 
-            <button onClick={() => onOpen(log)}
-                className="w-full bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white text-sm font-bold py-3 rounded-xl">
-                {log.estado === 'en_hold' ? 'Reanudar' : 'Continuar'}
-            </button>
+            <div className="flex gap-2">
+                <button onClick={() => onOpen(log)}
+                    className="flex-1 bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white text-sm font-bold py-3 rounded-xl">
+                    {log.estado === 'en_hold' ? 'Reanudar' : 'Continuar'}
+                </button>
+                {isMaster && (
+                    <button onClick={() => onDelete?.(log)}
+                        className="w-12 h-12 rounded-xl bg-red-900/30 hover:bg-red-900/60 border border-red-800/50 text-red-400 flex items-center justify-center shrink-0"
+                        title="Eliminar planilla (master)">
+                        <Trash2 size={16} />
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
@@ -1794,6 +1852,7 @@ function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, on
 
 export default function DailyProductionPage() {
     const { kromaUser, kromaRole } = useKroma();
+    const isMaster = kromaRole === 'master';
 
     const [fichas, setFichas]           = useState([]);
     const [logs, setLogs]               = useState([]);
@@ -1834,6 +1893,13 @@ export default function DailyProductionPage() {
 
     // In-session stock alerts from production decrement
     const [productionAlerts, setProductionAlerts] = useState([]);
+
+    // Master edit / delete
+    const [masterEditIdx, setMasterEditIdx]       = useState(null);
+    const [masterEditData, setMasterEditData]     = useState({});
+    const [masterEditSaving, setMasterEditSaving] = useState(false);
+    const [masterDeleteLog, setMasterDeleteLog]   = useState(null);
+    const [masterDeleting, setMasterDeleting]     = useState(false);
 
     const [suppliers, setSuppliers]       = useState([]);
     const [historial, setHistorial]        = useState([]);
@@ -2356,6 +2422,84 @@ export default function DailyProductionPage() {
         finally { setSaving(false); }
     }
 
+    // ── Master: open edit modal for completed block ───────────────────────────
+    function openMasterEdit(idx) {
+        const idxStr = String(idx);
+        setMasterEditData({ [idxStr]: { ...(bloquesData[idxStr] || {}) } });
+        setMasterEditIdx(idx);
+    }
+
+    // ── Master: save edits to a completed block ───────────────────────────────
+    async function saveMasterEdit() {
+        if (masterEditIdx === null || !activeLog) return;
+        setMasterEditSaving(true);
+        const idxStr = String(masterEditIdx);
+        try {
+            const newReg = masterEditData[idxStr]?.registros || bloquesData[idxStr]?.registros || {};
+            const updatedBlock = {
+                ...(bloquesData[idxStr] || {}),
+                registros:        newReg,
+                editadoPorMaster: true,
+                editadoAt:        new Date().toISOString(),
+            };
+            const newBloquesData = { ...bloquesData, [idxStr]: updatedBlock };
+            await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), { bloquesData: newBloquesData });
+            setBloquesData(newBloquesData);
+            setActiveLog(prev => ({ ...prev, bloquesData: newBloquesData }));
+            setMasterEditIdx(null);
+            setMasterEditData({});
+        } catch (e) {
+            setSaveError(e.message);
+        } finally {
+            setMasterEditSaving(false);
+        }
+    }
+
+    // ── Master: reopen (reset) a completed block back to current ─────────────
+    async function masterResetBlock(idx) {
+        if (!activeLog) return;
+        const idxStr = String(idx);
+        const newBloquesData = { ...bloquesData };
+        delete newBloquesData[idxStr];
+        const newBloqueIdx = Math.min(idx, bloqueActualIdx);
+        try {
+            await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), {
+                bloquesData:     newBloquesData,
+                bloqueActualIdx: newBloqueIdx,
+                estado:          'activa',
+                holdHasta:       null,
+                holdBloque:      null,
+            });
+            setBloquesData(newBloquesData);
+            setBloqueActualIdx(newBloqueIdx);
+            setActiveLog(prev => ({ ...prev, bloquesData: newBloquesData, bloqueActualIdx: newBloqueIdx, estado: 'activa', holdHasta: null }));
+            setLogs(prev => prev.map(l => l.id === activeLog.id ? { ...l, estado: 'activa', holdHasta: null } : l));
+        } catch (e) {
+            setSaveError(e.message);
+        }
+    }
+
+    // ── Master: soft-delete any production log ────────────────────────────────
+    async function confirmMasterDelete() {
+        if (!masterDeleteLog) return;
+        setMasterDeleting(true);
+        try {
+            await updateDoc(doc(db, 'kroma_production_logs', masterDeleteLog.id), {
+                active:    false,
+                deletedAt: serverTimestamp(),
+            });
+            setLogs(prev => prev.filter(l => l.id !== masterDeleteLog.id));
+            setHistorial(prev => prev.filter(l => l.id !== masterDeleteLog.id));
+            const wasActive = activeLog?.id === masterDeleteLog.id;
+            setMasterDeleteLog(null);
+            if (wasActive) setView('list');
+        } catch (e) {
+            alert(e.message);
+        } finally {
+            setMasterDeleting(false);
+        }
+    }
+
     // ── loading / error ───────────────────────────────────────────────────────
 
     if (loading) return (
@@ -2631,6 +2775,13 @@ export default function DailyProductionPage() {
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border shrink-0 ${estadoStyle.bg} ${estadoStyle.text} ${estadoStyle.border}`}>
                         {estadoStyle.label}
                     </span>
+                    {isMaster && (
+                        <button onClick={() => setMasterDeleteLog(activeLog)}
+                            className="w-8 h-8 rounded-lg bg-red-900/30 hover:bg-red-900/60 border border-red-800/50 text-red-400 flex items-center justify-center shrink-0"
+                            title="Eliminar planilla">
+                            <Trash2 size={14} />
+                        </button>
+                    )}
                 </div>
 
                 {/* ── Cierre de Jornada modal ── */}
@@ -2713,7 +2864,11 @@ export default function DailyProductionPage() {
                     {/* Completed blocks */}
                     {bloques.map((b, i) => {
                         if (i < bloqueActualIdx) return (
-                            <BlockDoneCard key={i} bloque={b} idx={i} data={bloquesData[String(i)]} />
+                            <BlockDoneCard key={i} bloque={b} idx={i} data={bloquesData[String(i)]}
+                                isMaster={isMaster}
+                                onMasterEdit={openMasterEdit}
+                                onMasterReset={masterResetBlock}
+                            />
                         );
                         return null;
                     })}
@@ -2826,6 +2981,63 @@ export default function DailyProductionPage() {
                         </div>
                     )}
                 </div>
+
+                {/* ── Master: edit completed block ── */}
+                {masterEditIdx !== null && (() => {
+                    const editBloque = bloques[masterEditIdx];
+                    if (!editBloque) return null;
+                    const editLitrosNetos = getLitrosNetos();
+                    return (
+                        <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/80">
+                            <div className="bg-slate-900 border-t border-violet-800/50 rounded-t-2xl max-h-[92vh] flex flex-col">
+                                <div className="px-5 pt-4 pb-3 shrink-0 border-b border-slate-800 flex items-center gap-3">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-violet-400 shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-white font-bold text-sm">Editar — {blockLabel(editBloque.tipo)}</p>
+                                        <p className="text-violet-400 text-xs">Modo master · bloque {masterEditIdx + 1}</p>
+                                    </div>
+                                    <button onClick={() => { setMasterEditIdx(null); setMasterEditData({}); }}
+                                        className="text-slate-500 hover:text-white p-1">
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                                <div className="flex-1 overflow-y-auto px-4 py-4">
+                                    <BlockEditorDispatch
+                                        bloque={editBloque}
+                                        idx={masterEditIdx}
+                                        litrosIngresados={activeLog.litrosIngresados}
+                                        litrosNetos={editLitrosNetos}
+                                        bloquesData={masterEditData}
+                                        onUpdate={(idxStr, d) => setMasterEditData(prev => ({ ...prev, [idxStr]: d }))}
+                                        materialsMap={materialsMap}
+                                        rutaLeche={activeLog.rutaLeche}
+                                        catalogPresentaciones={productsMap[activeLog.productoId]?.presentaciones || []}
+                                    />
+                                </div>
+                                <div className="px-5 py-4 flex gap-3 shrink-0 border-t border-slate-800">
+                                    <button onClick={() => { setMasterEditIdx(null); setMasterEditData({}); }}
+                                        className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
+                                        Cancelar
+                                    </button>
+                                    <button onClick={saveMasterEdit} disabled={masterEditSaving}
+                                        className="flex-1 py-3.5 rounded-xl bg-violet-700 hover:bg-violet-600 text-white text-sm font-bold disabled:opacity-40 transition-colors">
+                                        {masterEditSaving ? 'Guardando…' : 'Guardar cambios'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Master delete confirmation */}
+                {masterDeleteLog && (
+                    <MasterDeleteModal
+                        log={masterDeleteLog}
+                        saving={masterDeleting}
+                        onClose={() => setMasterDeleteLog(null)}
+                        onConfirm={confirmMasterDelete}
+                    />
+                )}
             </div>
         );
     }
@@ -2862,7 +3074,8 @@ export default function DailyProductionPage() {
                         {logs.map(log => (
                             <ProductionCard key={log.id} log={log}
                                 onOpen={openLog}
-                                onCancel={() => {}} />
+                                isMaster={isMaster}
+                                onDelete={l => setMasterDeleteLog(l)} />
                         ))}
                     </div>
                 )}
@@ -2986,34 +3199,45 @@ export default function DailyProductionPage() {
                                             ? (log.disposicion === 'mixto' ? 'Incompleta' : 'Sin envasar')
                                             : 'Empacada';
                                         return (
-                                            <button key={log.id} type="button"
-                                                onClick={() => { setReportLog(log); setView('report'); }}
-                                                className="w-full text-left bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 space-y-2 hover:border-slate-600 transition-colors">
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-white font-semibold text-sm">{log.productoNombre}</p>
-                                                        {log.lote && <p className="text-slate-600 text-xs font-mono mt-0.5">{log.lote}</p>}
-                                                        <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
+                                            <div key={log.id} className="bg-slate-800/60 border border-slate-700/60 rounded-xl overflow-hidden hover:border-slate-600 transition-colors">
+                                                <button type="button"
+                                                    onClick={() => { setReportLog(log); setView('report'); }}
+                                                    className="w-full text-left p-4 space-y-2">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-white font-semibold text-sm">{log.productoNombre}</p>
+                                                            {log.lote && <p className="text-slate-600 text-xs font-mono mt-0.5">{log.lote}</p>}
+                                                            <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
+                                                        </div>
+                                                        <div className="flex flex-col items-end gap-1 shrink-0">
+                                                            <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${badgeColor}`}>
+                                                                {badgeLabel}
+                                                            </span>
+                                                            {(log.firmas?.maestro && log.firmas?.almacen) ? (
+                                                                <span className="text-xs text-emerald-600">✓ Firmada</span>
+                                                            ) : (log.firmas?.maestro || log.firmas?.almacen) ? (
+                                                                <span className="text-xs text-amber-600">Firma parcial</span>
+                                                            ) : null}
+                                                        </div>
                                                     </div>
-                                                    <div className="flex flex-col items-end gap-1 shrink-0">
-                                                        <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${badgeColor}`}>
-                                                            {badgeLabel}
-                                                        </span>
-                                                        {(log.firmas?.maestro && log.firmas?.almacen) ? (
-                                                            <span className="text-xs text-emerald-600">✓ Firmada</span>
-                                                        ) : (log.firmas?.maestro || log.firmas?.almacen) ? (
-                                                            <span className="text-xs text-amber-600">Firma parcial</span>
-                                                        ) : null}
+                                                    <div className="flex items-center flex-wrap gap-2 text-slate-500 text-xs">
+                                                        <Droplets size={11} />
+                                                        <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
+                                                        {log.proveedorNombre && <><span>·</span><span className="truncate max-w-[100px]">{log.proveedorNombre}</span></>}
+                                                        {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
+                                                        {log.rendimientoKg > 0 && <><span>·</span><span className="text-teal-600 font-mono">{log.rendimientoKg.toFixed(2)} L/kg</span></>}
                                                     </div>
-                                                </div>
-                                                <div className="flex items-center flex-wrap gap-2 text-slate-500 text-xs">
-                                                    <Droplets size={11} />
-                                                    <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
-                                                    {log.proveedorNombre && <><span>·</span><span className="truncate max-w-[100px]">{log.proveedorNombre}</span></>}
-                                                    {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
-                                                    {log.rendimientoKg > 0 && <><span>·</span><span className="text-teal-600 font-mono">{log.rendimientoKg.toFixed(2)} L/kg</span></>}
-                                                </div>
-                                            </button>
+                                                </button>
+                                                {isMaster && (
+                                                    <div className="border-t border-slate-700/50 px-4 py-2 flex justify-end">
+                                                        <button type="button"
+                                                            onClick={() => setMasterDeleteLog(log)}
+                                                            className="flex items-center gap-1.5 text-red-500 hover:text-red-400 text-xs font-semibold">
+                                                            <Trash2 size={12} /> Eliminar planilla
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         );
                                     })}
                                 </div>
@@ -3031,6 +3255,16 @@ export default function DailyProductionPage() {
                     saving={finSaving}
                     onClose={() => setFinalizarLog(null)}
                     onConfirm={(pres) => finalizarEmpaque(finalizarLog, pres)}
+                />
+            )}
+
+            {/* ── Master: delete confirmation ── */}
+            {masterDeleteLog && (
+                <MasterDeleteModal
+                    log={masterDeleteLog}
+                    saving={masterDeleting}
+                    onClose={() => setMasterDeleteLog(null)}
+                    onConfirm={confirmMasterDelete}
                 />
             )}
         </div>
