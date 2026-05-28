@@ -26,7 +26,7 @@ import {
     LayoutDashboard, Warehouse, Truck, Package, ClipboardList, Users, Tag,
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
-    LogOut, Menu, X, ChevronRight, BookOpen, Shield, Bell,
+    LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell,
 } from 'lucide-react';
 
 // ─── Module defaults per role ─────────────────────────────────────────────────
@@ -56,8 +56,7 @@ const ALL_NAV_ITEMS = [
     { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,         modulo: 'catalogos',            section: 'Administración' },
     { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,       modulo: 'catalogos',            section: 'Administración' },
     { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,         modulo: 'usuarios',             section: 'Administración' },
-    { id: 'control',       label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema',       section: 'Administración' },
-    { id: 'notifications', label: 'Notificaciones',      Icon: Bell,                                          section: 'Administración' },
+    { id: 'control',       label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema',       section: 'Administración', delegation: ['csGestionarUsuarios', 'csConfigPermisos'] },
     // — Gerencial —
     { id: 'financial',     label: 'Financiero',          Icon: DollarSign,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
     { id: 'kpis',          label: 'KPIs Producción',     Icon: TrendingUp,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
@@ -131,8 +130,9 @@ function useUnreadCount(kromaUser) {
 }
 
 function KromaInner({ onExitKroma }) {
-    const { kromaUser, kromaRole, clearUser } = useKroma();
+    const { kromaUser, kromaRole, clearUser, canDo } = useKroma();
     const [currentView, setCurrentView] = useState('home');
+    const [prevView,    setPrevView]    = useState(null); // set when navigating from home tiles/shortcuts
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const unreadCount = useUnreadCount(kromaUser);
 
@@ -147,23 +147,43 @@ function KromaInner({ onExitKroma }) {
         : { ...DEFAULT_MODULES[kromaRole], ...(kromaUser.modulos || {}) };
 
     const visibleNavItems = kromaRole === 'master'
-        ? ALL_NAV_ITEMS
-        : ALL_NAV_ITEMS.filter(item => !item.modulo || effective[item.modulo] !== false);
+        ? ALL_NAV_ITEMS.filter(item => item.id !== 'notifications')
+        : ALL_NAV_ITEMS.filter(item => {
+            if (item.id === 'notifications') return false; // bell in header is sufficient
+            if (!item.modulo) return true;
+            // Special case: show 'control' if any delegation action is granted
+            if (item.delegation?.some(a => canDo(a))) return true;
+            return effective[item.modulo] !== false;
+          });
 
     // If the user is on a view that was just disabled, fall back to home
-    const activeView = visibleNavItems.some(n => n.id === currentView) ? currentView : 'home';
+    const activeView = visibleNavItems.some(n => n.id === currentView) || currentView === 'notifications'
+        ? currentView
+        : 'home';
     const activeNavLabel = visibleNavItems.find(n => n.id === activeView)?.label || 'Inicio';
 
-    const onNavigate = (view) => setCurrentView(view);
+    // onNavigate = called from home tiles/shortcuts → track return path
+    const onNavigate = (view) => {
+        setPrevView('home');
+        setCurrentView(view);
+    };
 
+    // handleNav = called from sidebar → clear back-path
     const handleNav = (id) => {
+        setPrevView(null);
         setCurrentView(id);
         setSidebarOpen(false);
+    };
+
+    const goBack = () => {
+        setCurrentView(prevView || 'home');
+        setPrevView(null);
     };
 
     const handleSwitchUser = () => {
         clearUser();
         setCurrentView('home');
+        setPrevView(null);
     };
 
     const initials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -173,13 +193,27 @@ function KromaInner({ onExitKroma }) {
 
             {/* ── Top Header ── */}
             <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center px-4 shrink-0 z-20">
-                {/* Mobile hamburger */}
-                <button
-                    className="md:hidden mr-3 text-slate-400 hover:text-white p-1 rounded"
-                    onClick={() => setSidebarOpen(s => !s)}
-                >
-                    {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-                </button>
+                {/* Mobile hamburger (hidden when back button is shown) */}
+                {!prevView && (
+                    <button
+                        className="md:hidden mr-3 text-slate-400 hover:text-white p-1 rounded"
+                        onClick={() => setSidebarOpen(s => !s)}
+                    >
+                        {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                    </button>
+                )}
+
+                {/* Back button — shown when navigated from home tiles/shortcuts */}
+                {prevView && (
+                    <button
+                        onClick={goBack}
+                        className="flex items-center gap-1 text-slate-400 hover:text-white mr-3 p-1 rounded transition-colors"
+                        title="Volver al inicio"
+                    >
+                        <ChevronLeft size={20} />
+                        <span className="text-sm font-medium hidden sm:block">Inicio</span>
+                    </button>
+                )}
 
                 {/* Logo */}
                 <div className="flex items-center gap-2 mr-auto">
