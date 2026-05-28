@@ -357,8 +357,9 @@ export default function KromaUserSelect({ onExitKroma }) {
                         </div>
                     )}
 
-                    {/* Create user */}
-                    {!showCreate ? (
+                    {/* Create user — only available with no users (bootstrap) */}
+                    {users.length === 0 && (
+                    !showCreate ? (
                         <button
                             onClick={() => setShowCreate(true)}
                             className="w-full flex items-center justify-center gap-2 border border-dashed border-slate-600 hover:border-emerald-500 text-slate-500 hover:text-emerald-400 rounded-2xl py-3 transition-colors text-sm font-medium"
@@ -404,7 +405,7 @@ export default function KromaUserSelect({ onExitKroma }) {
                                 {creating ? 'Creando…' : 'Crear Usuario'}
                             </button>
                         </form>
-                    )}
+                    ))}
 
                     <button
                         onClick={onExitKroma}

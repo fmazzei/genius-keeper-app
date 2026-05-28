@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useKroma } from '@/Kroma/KromaContext';
 import { db } from '@/Firebase/config.js';
 import {
     collection, getDocs, addDoc, updateDoc, doc, deleteDoc,
@@ -77,6 +78,20 @@ const NOTIF_EVENTS = [
 
 // Granular action permissions — keyed under permisos.acciones
 const ACTIONS = [
+    {
+        id:    'csGestionarUsuarios',
+        label: 'Control Sistema: Gestionar Usuarios',
+        desc:  'Crear, editar y desactivar usuarios Kroma',
+        Icon:  Users,
+        color: 'text-violet-400',
+    },
+    {
+        id:    'csConfigPermisos',
+        label: 'Control Sistema: Configurar Permisos',
+        desc:  'Modificar módulos visibles y permisos de acción por usuario',
+        Icon:  Shield,
+        color: 'text-emerald-400',
+    },
     {
         id:    'cargarInventarioPT',
         label: 'Cargar inventario en almacenes PT',
@@ -855,19 +870,29 @@ function MantenimientoTab() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TABS_BASE = [
-    { id: 'usuarios',       label: 'Usuarios',         Icon: Users },
-    { id: 'permisos',       label: 'Permisos',         Icon: Shield },
-    { id: 'notificaciones', label: 'Notificaciones',   Icon: Bell },
-];
-const TAB_MANTENIMIENTO = { id: 'mantenimiento', label: 'Mantenimiento', Icon: Wrench };
+const TAB_USUARIOS      = { id: 'usuarios',     label: 'Usuarios',     Icon: Users  };
+const TAB_PERMISOS      = { id: 'permisos',     label: 'Permisos',     Icon: Shield };
+const TAB_MANTENIMIENTO = { id: 'mantenimiento',label: 'Mantenimiento',Icon: Wrench };
 
 export default function ControlSistemaPage({ kromaUser }) {
-    const [tab, setTab] = useState('usuarios');
+    const { canDo } = useKroma();
+    const [tab, setTab] = useState(null); // initialized after tabs computed
     const uid  = kromaUser?.id   || '__none__';
     const role = kromaUser?.role || '';
 
-    const tabs = [...TABS_BASE, TAB_MANTENIMIENTO];
+    const isMaster = role === 'master';
+    const canManageUsers    = isMaster || canDo('csGestionarUsuarios');
+    const canConfigPermisos = isMaster || canDo('csConfigPermisos');
+
+    const tabs = [
+        ...(canManageUsers    ? [TAB_USUARIOS]      : []),
+        ...(canConfigPermisos ? [TAB_PERMISOS]       : []),
+        ...(isMaster          ? [TAB_MANTENIMIENTO]  : []),
+    ];
+
+    // Set first visible tab on mount / whenever tabs change
+    const firstTabId = tabs[0]?.id || null;
+    const activeTab  = tab && tabs.some(t => t.id === tab) ? tab : firstTabId;
 
     return (
         <div className="p-4 md:p-6 max-w-2xl">
@@ -878,29 +903,39 @@ export default function ControlSistemaPage({ kromaUser }) {
                 </div>
                 <div>
                     <h2 className="text-xl font-bold text-white">Control del Sistema</h2>
-                    <p className="text-slate-400 text-sm">Usuarios · Permisos · Notificaciones</p>
+                    <p className="text-slate-400 text-sm">Usuarios · Permisos · Configuración</p>
                 </div>
             </div>
 
+            {/* No access state */}
+            {tabs.length === 0 && (
+                <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 text-center">
+                    <Shield size={32} className="text-slate-600 mx-auto mb-3" />
+                    <p className="text-slate-400 text-sm">No tienes funciones asignadas en Control del Sistema.</p>
+                    <p className="text-slate-600 text-xs mt-1">Solicita permisos al Master.</p>
+                </div>
+            )}
+
             {/* Tab bar */}
-            <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-xl p-1 mb-6">
-                {tabs.map(({ id, label, Icon }) => (
-                    <button
-                        key={id}
-                        onClick={() => setTab(id)}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-colors ${tab === id ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                    >
-                        <Icon size={14} />
-                        <span className="hidden sm:inline">{label}</span>
-                    </button>
-                ))}
-            </div>
+            {tabs.length > 1 && (
+                <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-xl p-1 mb-6">
+                    {tabs.map(({ id, label, Icon }) => (
+                        <button
+                            key={id}
+                            onClick={() => setTab(id)}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-colors ${activeTab === id ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            <Icon size={14} />
+                            <span className="hidden sm:inline">{label}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* Tab content */}
-            {tab === 'usuarios'       && <UsuariosTab />}
-            {tab === 'permisos'       && <PermisosTab />}
-            {tab === 'notificaciones' && <NotificacionesTab kromaUserId={uid} kromaUserRole={role} />}
-            {tab === 'mantenimiento'  && <MantenimientoTab />}
+            {activeTab === 'usuarios'      && <UsuariosTab />}
+            {activeTab === 'permisos'      && <PermisosTab />}
+            {activeTab === 'mantenimiento' && <MantenimientoTab />}
         </div>
     );
 }

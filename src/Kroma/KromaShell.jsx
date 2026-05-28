@@ -10,6 +10,7 @@ import {
     AdminHome, WarehousesPage, SuppliersPage, MaterialsMasterPage,
     ProductCatalogPage, ProductionHistoryPage, KromaUsersPage, ControlSistemaPage,
 } from './pages/AdminPages';
+import KromaNotificationsPage from './pages/admin/KromaNotificationsPage';
 
 // Manager pages
 import { ManagerHome, FinancialBoard, ProductionKPIsPage, QualityBoard } from './pages/ManagerPages';
@@ -56,6 +57,7 @@ const ALL_NAV_ITEMS = [
     { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,       modulo: 'catalogos',            section: 'Administración' },
     { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,         modulo: 'usuarios',             section: 'Administración' },
     { id: 'control',       label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema',       section: 'Administración' },
+    { id: 'notifications', label: 'Notificaciones',      Icon: Bell,                                          section: 'Administración' },
     // — Gerencial —
     { id: 'financial',     label: 'Financiero',          Icon: DollarSign,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
     { id: 'kpis',          label: 'KPIs Producción',     Icon: TrendingUp,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
@@ -83,8 +85,8 @@ const ROLE_COLORS = {
 function renderPage(view, role, kromaUser, onNavigate) {
     if (view === 'home') {
         if (role === 'kroma_operario') return <OperatorHome onNavigate={onNavigate} />;
-        if (role === 'kroma_gerencial' || role === 'master') return <ManagerHome />;
-        return <AdminHome />;
+        if (role === 'kroma_gerencial' || role === 'master') return <ManagerHome onNavigate={onNavigate} />;
+        return <AdminHome onNavigate={onNavigate} />;
     }
     switch (view) {
         case 'production':    return <DailyProductionPage />;
@@ -99,6 +101,7 @@ function renderPage(view, role, kromaUser, onNavigate) {
         case 'materials':     return <MaterialsMasterPage />;
         case 'users':         return <KromaUsersPage />;
         case 'control':       return <ControlSistemaPage kromaUser={kromaUser} />;
+        case 'notifications': return <KromaNotificationsPage />;
         case 'financial':     return <FinancialBoard />;
         case 'kpis':          return <ProductionKPIsPage />;
         case 'quality':       return <QualityBoard />;
@@ -204,21 +207,19 @@ function KromaInner({ onExitKroma }) {
                     </span>
                 </button>
 
-                {/* Notification bell */}
-                {(kromaRole === 'kroma_admin' || kromaRole === 'master') && (
-                    <button
-                        onClick={() => setCurrentView('control')}
-                        className="relative text-slate-500 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors mr-1"
-                        title="Notificaciones"
-                    >
-                        <Bell size={18} />
-                        {unreadCount > 0 && (
-                            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-white font-bold text-[9px]">
-                                {unreadCount > 9 ? '9+' : unreadCount}
-                            </span>
-                        )}
-                    </button>
-                )}
+                {/* Notification bell — visible to all users */}
+                <button
+                    onClick={() => setCurrentView('notifications')}
+                    className="relative text-slate-500 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors mr-1"
+                    title="Notificaciones"
+                >
+                    <Bell size={18} />
+                    {unreadCount > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-white font-bold text-[9px]">
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                    )}
+                </button>
 
                 {/* Logout */}
                 <button
