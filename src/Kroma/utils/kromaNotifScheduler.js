@@ -4,6 +4,7 @@
 
 const PENDING_KEY = 'kroma_hold_notifs';
 const CONFIG_KEY  = 'kroma_notif_config';
+const FIRED_KEY   = 'kroma_hold_fired'; // logIds already notified in this hold cycle
 const activeTimers = new Map(); // logId -> timeoutId
 
 // ─── Permiso del navegador ────────────────────────────────────────────────────
@@ -67,6 +68,25 @@ function savePending(map) {
     try { localStorage.setItem(PENDING_KEY, JSON.stringify(map)); } catch {}
 }
 
+// ─── Ya disparados (para no repetir por session ni por re-login) ──────────────
+
+function getFired() {
+    try { return JSON.parse(localStorage.getItem(FIRED_KEY) || '{}'); }
+    catch { return {}; }
+}
+function markFired(logId) {
+    try {
+        const f = getFired(); f[logId] = Date.now();
+        localStorage.setItem(FIRED_KEY, JSON.stringify(f));
+    } catch {}
+}
+function clearFired(logId) {
+    try {
+        const f = getFired(); delete f[logId];
+        localStorage.setItem(FIRED_KEY, JSON.stringify(f));
+    } catch {}
+}
+
 // ─── Disparo de notificación ──────────────────────────────────────────────────
 
 async function fireNotif(logId, title, body) {
@@ -85,6 +105,7 @@ async function fireNotif(logId, title, body) {
             new Notification(title, opts);
         }
     } catch {}
+    markFired(logId); // prevent re-firing on next login
     const p = getPending(); delete p[logId]; savePending(p);
     activeTimers.delete(logId);
 }
@@ -98,9 +119,19 @@ async function fireNotif(logId, title, body) {
 export function scheduleHoldNotif({ logId, lote, productoNombre, holdHasta, holdBloque, minutoAntes = 60 }) {
     if (getNotifPermission() !== 'granted') return;
 
+    // Already notified for this hold cycle — skip until the operario resumes
+    if (getFired()[logId]) return;
+
     const finTime   = holdHasta?.toDate ? holdHasta.toDate() : new Date(holdHasta);
     const alertTime = new Date(finTime.getTime() - minutoAntes * 60_000);
     const msUntil   = alertTime.getTime() - Date.now();
+
+    // If the hold end time itself is already in the past, skip — the block ended
+    // and no fresh alert is useful. The operario must resume it manually.
+    if (finTime.getTime() < Date.now()) {
+        markFired(logId); // prevent repeated checks from firing again
+        return;
+    }
 
     // Persistir para recuperar al reabrir
     const pending = getPending();
@@ -131,6 +162,7 @@ export function scheduleHoldNotif({ logId, lote, productoNombre, holdHasta, hold
 export function cancelHoldNotif(logId) {
     if (activeTimers.has(logId)) { clearTimeout(activeTimers.get(logId)); activeTimers.delete(logId); }
     const p = getPending(); delete p[logId]; savePending(p);
+    clearFired(logId); // reset so a new hold on the same logId can notify again
 }
 
 /**

@@ -2677,6 +2677,10 @@ export default function DailyProductionPage() {
                 if (freed.length > 0) setMilkReceptions(prev => [...freed, ...prev]);
             }
 
+            // Cancel any scheduled notifications for this log
+            cancelHoldNotif(logToDelete.id);
+            cancelFirestoreScheduledNotif(db, logToDelete.id).catch(() => {});
+
             const wasActive = activeLog?.id === logToDelete.id;
             setMasterDeleteLog(null);
             if (wasActive) setView('list');

@@ -152,7 +152,10 @@ function KromaInner({ onExitKroma }) {
                     where('estado', '==', 'en_hold')
                 ));
                 if (cancelled) return;
-                const holdLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                // exclude soft-deleted logs
+                const holdLogs = snap.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(l => l.active !== false);
                 checkHoldsOnLoad(holdLogs, kromaUser.id);
 
                 const perm = getNotifPermission();
@@ -310,11 +313,8 @@ function KromaInner({ onExitKroma }) {
                             if (granted) {
                                 // Registrar token FCM para notificaciones con app cerrada
                                 registerKromaFCMToken(db, kromaUser?.id).catch(() => {});
-                                // Re-programar alertas locales
-                                try {
-                                    const snap = await getDocs(query(collection(db, 'kroma_production_logs'), where('estado', '==', 'en_hold')));
-                                    checkHoldsOnLoad(snap.docs.map(d => ({ id: d.id, ...d.data() })), kromaUser?.id);
-                                } catch {}
+                                // checkHoldsOnLoad ya se ejecutó en el useEffect de login;
+                                // no repetir aquí para no disparar notificaciones duplicadas
                             }
                         }}
                         className="text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded-lg transition-colors shrink-0"
