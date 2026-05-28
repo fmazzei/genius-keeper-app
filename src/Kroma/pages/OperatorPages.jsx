@@ -46,19 +46,24 @@ export function OperatorHome({ onNavigate }) {
     useEffect(() => {
         const load = async () => {
             try {
-                const [milkSnap, matSnap, recSnap] = await Promise.all([
+                const [milkSnap, matSnap, fichasSnap] = await Promise.all([
                     getDocs(query(collection(db, 'kroma_milk_reception'), where('active', '!=', false))),
                     getDocs(query(collection(db, 'kroma_inventory_materials'), where('active', '!=', false))),
-                    getDocs(collection(db, 'kroma_recipes')),
+                    getDocs(query(collection(db, 'kroma_fichas'), where('active', '!=', false))),
                 ]);
                 const milkDocs = milkSnap.docs.map(d => d.data());
                 const litrosTanque = milkDocs
                     .filter(r => r.enrutamiento === 'tanque' && r.status !== 'en_proceso' && r.status !== 'inactivo')
                     .reduce((s, r) => s + (r.litros || 0), 0);
+                // "en proceso" = already linked to a production log (status en_proceso)
+                //              + direct milk (enrutamiento produccion) pending use
                 const litrosEnProceso = milkDocs
-                    .filter(r => r.status === 'en_proceso')
+                    .filter(r =>
+                        r.status === 'en_proceso' ||
+                        (r.enrutamiento === 'produccion' && r.status !== 'inactivo' && r.status !== 'completada')
+                    )
                     .reduce((s, r) => s + (r.litros || 0), 0);
-                const recetas = recSnap.size;
+                const recetas = fichasSnap.size;
                 setStats({ litrosTanque, litrosEnProceso, insumos: matSnap.size, recetas });
             } catch {}
         };
@@ -69,11 +74,11 @@ export function OperatorHome({ onNavigate }) {
         {
             label: 'Leche en Tanque',
             value: stats.litrosTanque === null ? null : `${stats.litrosTanque} L`,
-            sub:   stats.litrosEnProceso > 0 ? `${stats.litrosEnProceso} L en proceso` : null,
+            sub:   stats.litrosEnProceso > 0 ? `${stats.litrosEnProceso} L en producción` : null,
             color: 'blue', Icon: Droplets, view: 'milk',
         },
         { label: 'Insumos Activos', value: stats.insumos,  color: 'emerald', Icon: Package,      view: 'materials_inv' },
-        { label: 'Recetas Creadas', value: stats.recetas,  color: 'violet',  Icon: FlaskConical,  view: 'fichas'        },
+        { label: 'Fichas Creadas',  value: stats.recetas,  color: 'violet',  Icon: FlaskConical,  view: 'fichas'        },
     ];
 
     return (
