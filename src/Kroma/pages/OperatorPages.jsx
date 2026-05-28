@@ -41,7 +41,7 @@ const COLOR_MAP = {
 export function OperatorHome({ onNavigate }) {
     const { kromaUser } = useKroma();
     const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
-    const [stats, setStats] = useState({ litrosTanque: null, insumos: null, recetas: null });
+    const [stats, setStats] = useState({ litrosTanque: null, litrosEnProceso: null, insumos: null, recetas: null });
 
     useEffect(() => {
         const load = async () => {
@@ -49,27 +49,31 @@ export function OperatorHome({ onNavigate }) {
                 const [milkSnap, matSnap, recSnap] = await Promise.all([
                     getDocs(query(collection(db, 'kroma_milk_reception'), where('active', '!=', false))),
                     getDocs(query(collection(db, 'kroma_inventory_materials'), where('active', '!=', false))),
-                    getDocs(query(collection(db, 'kroma_recipes'),             where('active', '==', true))),
+                    getDocs(collection(db, 'kroma_recipes')),
                 ]);
-                // Milk in tank: sum litros where enrutamiento==='tanque' and not consumed/inactive
-                const litrosTanque = milkSnap.docs
-                    .map(d => d.data())
+                const milkDocs = milkSnap.docs.map(d => d.data());
+                const litrosTanque = milkDocs
                     .filter(r => r.enrutamiento === 'tanque' && r.status !== 'en_proceso' && r.status !== 'inactivo')
                     .reduce((s, r) => s + (r.litros || 0), 0);
-                setStats({
-                    litrosTanque,
-                    insumos: matSnap.size,
-                    recetas: recSnap.size,
-                });
+                const litrosEnProceso = milkDocs
+                    .filter(r => r.status === 'en_proceso')
+                    .reduce((s, r) => s + (r.litros || 0), 0);
+                const recetas = recSnap.docs.filter(d => d.data().active !== false).length;
+                setStats({ litrosTanque, litrosEnProceso, insumos: matSnap.size, recetas });
             } catch {}
         };
         load();
     }, []);
 
     const STAT_TILES = [
-        { label: 'Leche en Tanque', value: stats.litrosTanque === null ? null : `${stats.litrosTanque} L`, color: 'blue',   Icon: Droplets,    view: 'milk'          },
-        { label: 'Insumos Activos', value: stats.insumos,                                                   color: 'emerald', Icon: Package,     view: 'materials_inv' },
-        { label: 'Recetas Creadas', value: stats.recetas,                                                    color: 'violet',  Icon: FlaskConical, view: 'fichas'       },
+        {
+            label: 'Leche en Tanque',
+            value: stats.litrosTanque === null ? null : `${stats.litrosTanque} L`,
+            sub:   stats.litrosEnProceso > 0 ? `${stats.litrosEnProceso} L en proceso` : null,
+            color: 'blue', Icon: Droplets, view: 'milk',
+        },
+        { label: 'Insumos Activos', value: stats.insumos,  color: 'emerald', Icon: Package,      view: 'materials_inv' },
+        { label: 'Recetas Creadas', value: stats.recetas,  color: 'violet',  Icon: FlaskConical,  view: 'fichas'        },
     ];
 
     return (
@@ -107,7 +111,7 @@ export function OperatorHome({ onNavigate }) {
             <section>
                 <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Resumen</p>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {STAT_TILES.map(({ label, value, color, Icon, view }) => {
+                    {STAT_TILES.map(({ label, value, sub, color, Icon, view }) => {
                         const c = COLOR_MAP[color] || COLOR_MAP.slate;
                         return (
                             <button key={label} onClick={() => onNavigate?.(view)}
@@ -119,6 +123,7 @@ export function OperatorHome({ onNavigate }) {
                                     {value === null ? <span className="text-slate-600 text-base">—</span> : value}
                                 </p>
                                 <p className="text-slate-400 text-sm mt-1">{label}</p>
+                                {sub && <p className="text-slate-500 text-xs mt-0.5">{sub}</p>}
                             </button>
                         );
                     })}
