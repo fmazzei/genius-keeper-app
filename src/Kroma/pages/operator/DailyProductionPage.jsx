@@ -6,6 +6,7 @@ import {
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import { scheduleHoldNotif, cancelHoldNotif, getNotifConfig, saveNotifConfig, NOTIF_BLOCKS, getNotifPermission, requestNotifPermission } from '../../utils/kromaNotifScheduler';
+import { createFirestoreScheduledNotif, cancelFirestoreScheduledNotif } from '../../utils/kromaFCM';
 import {
     ChevronLeft, ChevronRight, Check, Plus, Play,
     Clock, AlertTriangle, Package, Droplets,
@@ -2103,6 +2104,7 @@ export default function DailyProductionPage() {
         }
 
         cancelHoldNotif(log.id); // clear any pending timer when resuming
+        cancelFirestoreScheduledNotif(db, log.id).catch(() => {}); // cancel Cloud Function FCM
         setActiveLog(log);
         setBloqueActualIdx(idx);
         setBloquesData(updBData);
@@ -2517,14 +2519,25 @@ export default function DailyProductionPage() {
                 const bloqueKey = bloque.tipo; // e.g. 'cuajado', 'desuerado'
                 const blockCfg  = notifCfg[bloqueKey];
                 if (blockCfg?.enabled) {
+                    const minBefore = blockCfg.minutoAntes ?? 60;
                     scheduleHoldNotif({
                         logId:          activeLog.id,
                         lote:           activeLog.lote || activeLog.id.slice(0, 8).toUpperCase(),
                         productoNombre: activeLog.productoNombre || 'Producción',
                         holdHasta,
                         holdBloque,
-                        minutoAntes:    blockCfg.minutoAntes ?? 60,
+                        minutoAntes:    minBefore,
                     });
+                    createFirestoreScheduledNotif(db, {
+                        logId:          activeLog.id,
+                        userId:         kromaUser?.id,
+                        productoNombre: activeLog.productoNombre || 'Producción',
+                        lote:           activeLog.lote || activeLog.id.slice(0, 8).toUpperCase(),
+                        holdBloque,
+                        holdBloqueKey:  bloque.tipo,
+                        holdHasta,
+                        minutoAntes:    minBefore,
+                    }).catch(() => {});
                 }
                 setView('list');
             } else {

@@ -5,6 +5,7 @@ import { collection, onSnapshot, getDocs, query, where } from 'firebase/firestor
 import { KromaProvider, useKroma } from './KromaContext';
 import KromaUserSelect from './KromaUserSelect';
 import { getNotifPermission, requestNotifPermission, checkHoldsOnLoad } from './utils/kromaNotifScheduler';
+import { registerKromaFCMToken } from './utils/kromaFCM';
 
 // Admin pages
 import {
@@ -154,7 +155,11 @@ function KromaInner({ onExitKroma }) {
                 const holdLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                 checkHoldsOnLoad(holdLogs, kromaUser.id);
 
-                if (holdLogs.length > 0 && getNotifPermission() === 'default' && !localStorage.getItem(DISMISSED_KEY)) {
+                const perm = getNotifPermission();
+                if (perm === 'granted') {
+                    // Registro silencioso del token FCM (para notificaciones con app cerrada)
+                    registerKromaFCMToken(db, kromaUser.id).catch(() => {});
+                } else if (holdLogs.length > 0 && perm === 'default' && !localStorage.getItem(DISMISSED_KEY)) {
                     setNotifBanner(true);
                 }
             } catch {}
@@ -303,10 +308,12 @@ function KromaInner({ onExitKroma }) {
                             setNotifBanner(false);
                             localStorage.setItem('kroma_notif_dismissed', '1');
                             if (granted) {
-                                // Re-run scheduling now that permission is granted
+                                // Registrar token FCM para notificaciones con app cerrada
+                                registerKromaFCMToken(db, kromaUser?.id).catch(() => {});
+                                // Re-programar alertas locales
                                 try {
                                     const snap = await getDocs(query(collection(db, 'kroma_production_logs'), where('estado', '==', 'en_hold')));
-                                    checkHoldsOnLoad(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                                    checkHoldsOnLoad(snap.docs.map(d => ({ id: d.id, ...d.data() })), kromaUser?.id);
                                 } catch {}
                             }
                         }}
