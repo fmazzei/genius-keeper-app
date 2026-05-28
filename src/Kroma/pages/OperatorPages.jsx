@@ -58,7 +58,7 @@ export function OperatorHome({ onNavigate }) {
                 const litrosEnProceso = milkDocs
                     .filter(r => r.status === 'en_proceso')
                     .reduce((s, r) => s + (r.litros || 0), 0);
-                const recetas = recSnap.docs.filter(d => d.data().active !== false).length;
+                const recetas = recSnap.size;
                 setStats({ litrosTanque, litrosEnProceso, insumos: matSnap.size, recetas });
             } catch {}
         };

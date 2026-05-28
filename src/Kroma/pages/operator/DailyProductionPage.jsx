@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
+import { scheduleHoldNotif, cancelHoldNotif } from '../../utils/kromaNotifScheduler';
 import {
     ChevronLeft, ChevronRight, Check, Plus, Play,
     Clock, AlertTriangle, Package, Droplets,
@@ -2001,6 +2002,7 @@ export default function DailyProductionPage() {
             }
         }
 
+        cancelHoldNotif(log.id); // clear any pending timer when resuming
         setActiveLog(log);
         setBloqueActualIdx(idx);
         setBloquesData(updBData);
@@ -2410,6 +2412,13 @@ export default function DailyProductionPage() {
                 setView('list');
             } else if (newEstado === 'en_hold') {
                 setLogs(prev => prev.map(l => l.id === activeLog.id ? { ...l, ...payload, holdHasta } : l));
+                scheduleHoldNotif({
+                    logId:          activeLog.id,
+                    lote:           activeLog.lote || activeLog.id.slice(0, 8).toUpperCase(),
+                    productoNombre: activeLog.productoNombre || 'Producción',
+                    holdHasta,
+                    holdBloque,
+                });
                 setView('list');
             } else {
                 setLogs(prev => prev.map(l => l.id === activeLog.id ? { ...l, ...payload } : l));

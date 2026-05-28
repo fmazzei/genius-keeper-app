@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, query, where } from 'firebase/firestore';
 import { KromaProvider, useKroma } from './KromaContext';
 import KromaUserSelect from './KromaUserSelect';
+import { getNotifPermission, requestNotifPermission, checkHoldsOnLoad } from './utils/kromaNotifScheduler';
 
 // Admin pages
 import {
@@ -134,7 +135,36 @@ function KromaInner({ onExitKroma }) {
     const [currentView, setCurrentView] = useState('home');
     const [prevView,    setPrevView]    = useState(null); // set when navigating from home tiles/shortcuts
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [notifBanner, setNotifBanner] = useState(false); // show "enable notifications" banner
     const unreadCount = useUnreadCount(kromaUser);
+
+    // On login: load active holds, schedule notifications (if permission granted),
+    // or show banner if permission not yet requested.
+    useEffect(() => {
+        if (!kromaUser) return;
+        const DISMISSED_KEY = 'kroma_notif_dismissed';
+        let cancelled = false;
+
+        const run = async () => {
+            try {
+                const snap = await getDocs(query(
+                    collection(db, 'kroma_production_logs'),
+                    where('estado', '==', 'en_hold')
+                ));
+                if (cancelled) return;
+                const holdLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                checkHoldsOnLoad(holdLogs);
+
+                // Show banner to enable notifications if there are active holds
+                // and permission hasn't been asked yet
+                if (holdLogs.length > 0 && getNotifPermission() === 'default' && !localStorage.getItem(DISMISSED_KEY)) {
+                    setNotifBanner(true);
+                }
+            } catch {}
+        };
+        run();
+        return () => { cancelled = true; };
+    }, [kromaUser?.id]);
 
     if (!kromaUser) {
         return <KromaUserSelect onExitKroma={onExitKroma} />;
@@ -264,6 +294,37 @@ function KromaInner({ onExitKroma }) {
                     <LogOut size={18} />
                 </button>
             </header>
+
+            {/* ── Push notification permission banner ── */}
+            {notifBanner && (
+                <div className="bg-amber-900/40 border-b border-amber-700/50 px-4 py-2.5 flex items-center gap-3 shrink-0 z-10">
+                    <Bell size={15} className="text-amber-400 shrink-0" />
+                    <p className="text-amber-200 text-xs flex-1">Hay producciones en hold. Activa las notificaciones para saber cuándo están listas.</p>
+                    <button
+                        onClick={async () => {
+                            const granted = await requestNotifPermission();
+                            setNotifBanner(false);
+                            localStorage.setItem('kroma_notif_dismissed', '1');
+                            if (granted) {
+                                // Re-run scheduling now that permission is granted
+                                try {
+                                    const snap = await getDocs(query(collection(db, 'kroma_production_logs'), where('estado', '==', 'en_hold')));
+                                    checkHoldsOnLoad(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                                } catch {}
+                            }
+                        }}
+                        className="text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded-lg transition-colors shrink-0"
+                    >
+                        Activar
+                    </button>
+                    <button
+                        onClick={() => { setNotifBanner(false); localStorage.setItem('kroma_notif_dismissed', '1'); }}
+                        className="text-amber-400 hover:text-white p-1 rounded shrink-0"
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
 
             <div className="flex flex-1 overflow-hidden">
 
