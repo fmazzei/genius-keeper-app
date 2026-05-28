@@ -9,7 +9,7 @@ import {
     Edit2, Send, ThumbsUp, ThumbsDown, MoreVertical, ClipboardCheck, Loader, Trash2,
     PackageOpen, Scale, Calendar, Hash,
 } from 'lucide-react';
-import { useKroma } from '@/Kroma/KromaContext';
+import { useKroma } from '@/Kroma/KromaContext.jsx';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -769,7 +769,7 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
 
 // ─── Warehouse Detail View ────────────────────────────────────────────────────
 
-function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaUser, kromaRole, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
+function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaUser, kromaRole, canDo, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
     const [showMov, setShowMov] = useState(false);
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const isMaster = kromaRole === 'master';
@@ -784,6 +784,7 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
     const canEditPT = kromaRole === 'master' || kromaRole === 'kroma_admin' || kromaRole === 'kroma_operario' || kromaRole === 'kroma_gerencial';
     const isAdminOrMaster = kromaRole === 'master' || kromaRole === 'kroma_admin';
     const isPT = warehouse.tipo === 'PT' || warehouse.tipo === 'mixto';
+    const canCargar = canDo ? canDo('cargarInventarioPT') : false;
 
     return (
         <div className="min-h-full">
@@ -796,7 +797,7 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
                     <p className="text-white font-bold text-sm truncate">{warehouse.nombre}</p>
                     <span className={`text-xs font-semibold ${m.color}`}>{m.label}</span>
                 </div>
-                {isPT && canEditPT && (
+                {isPT && canCargar && (
                     <button onClick={onAddItem}
                         className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0">
                         <Plus size={13} /> Cargar
@@ -1125,7 +1126,7 @@ function WarehouseCard({ wh, count, warn, canEdit, canDelete, onOpen, onEdit, on
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WarehousesPage() {
-    const { kromaUser, kromaRole, canEdit, canDelete } = useKroma();
+    const { kromaUser, kromaRole, canEdit, canDelete, canDo } = useKroma();
 
     const [warehouses,   setWarehouses]   = useState([]);
     const [inventoryPT,  setInventoryPT]  = useState([]);
@@ -1434,6 +1435,7 @@ export default function WarehousesPage() {
                     warehouses={warehouses}
                     kromaUser={kromaUser}
                     kromaRole={kromaRole}
+                    canDo={canDo}
                     onBack={() => setView('list')}
                     onTransfer={(item, warehouseId) => { setTransferItem(item); setTransferWId(warehouseId); }}
                     onEditItem={(item, warehouseId) => { setEditItem(item); setEditItemWId(warehouseId); }}
