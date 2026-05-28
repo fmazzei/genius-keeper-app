@@ -7,6 +7,34 @@ const CONFIG_KEY  = 'kroma_notif_config';
 const FIRED_KEY   = 'kroma_hold_fired'; // logIds already notified in this hold cycle
 const activeTimers = new Map(); // logId -> timeoutId
 
+// ─── Purge stale entries on module load ──────────────────────────────────────
+// Runs immediately when this module is imported. Removes any localStorage
+// pending entries whose holdHasta has already passed, preventing them from
+// ever being rescheduled even if old code was the one that wrote them.
+;(function purgeExpiredPending() {
+    try {
+        const now  = Date.now();
+        const raw  = localStorage.getItem(PENDING_KEY);
+        if (!raw) return;
+        const map  = JSON.parse(raw);
+        const fired = JSON.parse(localStorage.getItem(FIRED_KEY) || '{}');
+        let changed = false;
+        Object.values(map).forEach(item => {
+            if (!item.holdHasta) return;
+            const fin = new Date(item.holdHasta).getTime();
+            if (fin < now) {
+                delete map[item.logId];
+                fired[item.logId] = now;
+                changed = true;
+            }
+        });
+        if (changed) {
+            localStorage.setItem(PENDING_KEY, JSON.stringify(map));
+            localStorage.setItem(FIRED_KEY, JSON.stringify(fired));
+        }
+    } catch {}
+})();
+
 // ─── Permiso del navegador ────────────────────────────────────────────────────
 
 export function getNotifPermission() {

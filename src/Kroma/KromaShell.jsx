@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
-import { collection, onSnapshot, getDocs, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, updateDoc, doc, query, where } from 'firebase/firestore';
 import { KromaProvider, useKroma } from './KromaContext';
 import KromaUserSelect from './KromaUserSelect';
-import { getNotifPermission, requestNotifPermission, checkHoldsOnLoad } from './utils/kromaNotifScheduler';
-import { registerKromaFCMToken } from './utils/kromaFCM';
+import { getNotifPermission, requestNotifPermission, checkHoldsOnLoad, cancelHoldNotif } from './utils/kromaNotifScheduler';
+import { registerKromaFCMToken, cancelFirestoreScheduledNotif } from './utils/kromaFCM';
 
 // Admin pages
 import {
@@ -152,17 +152,43 @@ function KromaInner({ onExitKroma }) {
                     where('estado', '==', 'en_hold')
                 ));
                 if (cancelled) return;
+
+                const now = Date.now();
                 // exclude soft-deleted logs
-                const holdLogs = snap.docs
+                const allHolds = snap.docs
                     .map(d => ({ id: d.id, ...d.data() }))
                     .filter(l => l.active !== false);
-                checkHoldsOnLoad(holdLogs, kromaUser.id);
+
+                // Separate expired holds from active ones
+                const expired = allHolds.filter(l => {
+                    if (!l.holdHasta) return false;
+                    const fin = l.holdHasta?.toDate ? l.holdHasta.toDate() : new Date(l.holdHasta);
+                    return fin.getTime() < now;
+                });
+                const activeHolds = allHolds.filter(l => !expired.find(e => e.id === l.id));
+
+                // Clean up expired holds: null out holdHasta in Firestore so they never trigger again,
+                // cancel local timers, and deactivate the FCM scheduled notif doc.
+                if (expired.length > 0) {
+                    expired.forEach(l => cancelHoldNotif(l.id));
+                    Promise.all([
+                        ...expired.map(l =>
+                            updateDoc(doc(db, 'kroma_production_logs', l.id), {
+                                holdHasta: null,
+                                holdExpired: true,
+                            })
+                        ),
+                        ...expired.map(l => cancelFirestoreScheduledNotif(db, l.id)),
+                    ]).catch(() => {});
+                }
+
+                checkHoldsOnLoad(activeHolds, kromaUser.id);
 
                 const perm = getNotifPermission();
                 if (perm === 'granted') {
                     // Registro silencioso del token FCM (para notificaciones con app cerrada)
                     registerKromaFCMToken(db, kromaUser.id).catch(() => {});
-                } else if (holdLogs.length > 0 && perm === 'default' && !localStorage.getItem(DISMISSED_KEY)) {
+                } else if (activeHolds.length > 0 && perm === 'default' && !localStorage.getItem(DISMISSED_KEY)) {
                     setNotifBanner(true);
                 }
             } catch {}
