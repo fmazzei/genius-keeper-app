@@ -1,0 +1,1469 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KROMA · Manual del Operario</title>
+<style>
+/* ── Reset & Base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: #f1f5f9;
+  color: #1e293b;
+  line-height: 1.65;
+  font-size: 16px;
+}
+
+/* ── Cover ────────────────────────────────────────────────────── */
+.cover {
+  background: linear-gradient(150deg, #0a1628 0%, #0f172a 40%, #1a2e4a 100%);
+  color: #fff;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 28px;
+  position: relative;
+  overflow: hidden;
+}
+.cover::before {
+  content: '';
+  position: absolute;
+  top: -120px; right: -120px;
+  width: 500px; height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245,158,11,0.10) 0%, transparent 65%);
+}
+.cover::after {
+  content: '';
+  position: absolute;
+  bottom: -80px; left: -80px;
+  width: 350px; height: 350px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(52,211,153,0.08) 0%, transparent 65%);
+}
+.cover-badge {
+  display: inline-block;
+  background: rgba(245,158,11,0.15);
+  border: 1px solid rgba(245,158,11,0.4);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  padding: 7px 20px;
+  border-radius: 999px;
+  margin-bottom: 32px;
+  position: relative;
+}
+.cover-emoji {
+  font-size: 72px;
+  margin-bottom: 20px;
+  position: relative;
+  filter: drop-shadow(0 8px 24px rgba(245,158,11,0.3));
+}
+.cover h1 {
+  font-size: clamp(32px, 6vw, 56px);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -1px;
+  margin-bottom: 8px;
+  position: relative;
+}
+.cover h1 .brand { color: #fbbf24; }
+.cover-subtitle {
+  font-size: clamp(15px, 2.5vw, 20px);
+  font-weight: 400;
+  color: rgba(255,255,255,0.65);
+  margin-bottom: 40px;
+  position: relative;
+}
+.cover-divider {
+  width: 80px;
+  height: 3px;
+  background: linear-gradient(90deg, #fbbf24, transparent);
+  border-radius: 2px;
+  margin: 0 auto 36px;
+}
+.cover-meta {
+  display: flex;
+  gap: 36px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 48px;
+  position: relative;
+}
+.cover-meta-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.cover-meta-label {
+  font-size: 10px;
+  color: rgba(255,255,255,0.45);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+.cover-meta-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fbbf24;
+}
+.cover-roles {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  position: relative;
+}
+.role-pill {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+  color: #fff;
+  padding: 8px 22px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.role-pill.active {
+  background: #fbbf24;
+  border-color: #fbbf24;
+  color: #0a1628;
+  font-weight: 800;
+}
+
+/* ── Layout ───────────────────────────────────────────────────── */
+.page-wrap { max-width: 900px; margin: 0 auto; padding: 48px 20px 96px; }
+
+/* ── Table of Contents ────────────────────────────────────────── */
+.toc {
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  padding: 36px 40px;
+  margin-bottom: 56px;
+}
+.toc-title {
+  font-size: 19px;
+  font-weight: 800;
+  color: #0a1628;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.toc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 24px;
+}
+@media (max-width: 560px) { .toc-grid { grid-template-columns: 1fr; } }
+.toc-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid #f1f5f9;
+  color: #1e293b;
+  font-size: 14px;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.toc-item:hover { color: #0a1628; }
+.toc-num {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: #0a1628;
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ── Section Headers ──────────────────────────────────────────── */
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 28px;
+  margin-top: 64px;
+}
+.section-accent {
+  width: 5px;
+  border-radius: 3px;
+  align-self: stretch;
+  min-height: 52px;
+  flex-shrink: 0;
+}
+.section-accent.amber { background: #f59e0b; }
+.section-accent.emerald { background: #10b981; }
+.section-accent.blue { background: #3b82f6; }
+.section-accent.violet { background: #7c3aed; }
+.section-accent.rose { background: #f43f5e; }
+.section-accent.cyan { background: #06b6d4; }
+.section-accent.navy { background: #0a1628; }
+.section-header-text h2 {
+  font-size: 26px;
+  font-weight: 900;
+  color: #0a1628;
+  line-height: 1.2;
+}
+.section-header-text p {
+  font-size: 14px;
+  color: #64748b;
+  margin-top: 5px;
+  max-width: 560px;
+}
+
+/* ── Cards ────────────────────────────────────────────────────── */
+.card {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+  padding: 26px 30px;
+  margin-bottom: 20px;
+}
+.card-amber  { border-top: 4px solid #f59e0b; }
+.card-emerald{ border-top: 4px solid #10b981; }
+.card-blue   { border-top: 4px solid #3b82f6; }
+.card-violet { border-top: 4px solid #7c3aed; }
+.card-rose   { border-top: 4px solid #f43f5e; }
+.card-navy   { border-top: 4px solid #0a1628; }
+.card-cyan   { border-top: 4px solid #06b6d4; }
+.card h3 {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0a1628;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.card p { color: #475569; margin-bottom: 10px; font-size: 15px; }
+.card p:last-child { margin-bottom: 0; }
+
+/* ── Big Step list ────────────────────────────────────────────── */
+.big-steps { display: flex; flex-direction: column; gap: 0; }
+.big-step {
+  display: flex;
+  gap: 20px;
+  padding: 24px 0;
+  border-bottom: 1px solid #f1f5f9;
+  align-items: flex-start;
+}
+.big-step:last-child { border-bottom: none; }
+.step-num-big {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  font-size: 22px;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+}
+.step-num-big.amber  { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 4px 12px rgba(245,158,11,0.35); }
+.step-num-big.emerald{ background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 4px 12px rgba(16,185,129,0.35); }
+.step-num-big.blue   { background: linear-gradient(135deg, #3b82f6, #1d4ed8); box-shadow: 0 4px 12px rgba(59,130,246,0.35); }
+.step-num-big.violet { background: linear-gradient(135deg, #7c3aed, #5b21b6); box-shadow: 0 4px 12px rgba(124,58,237,0.35); }
+.step-num-big.navy   { background: linear-gradient(135deg, #1e3a5f, #0a1628); box-shadow: 0 4px 12px rgba(10,22,40,0.35); }
+.step-num-big.rose   { background: linear-gradient(135deg, #f43f5e, #be185d); box-shadow: 0 4px 12px rgba(244,63,94,0.35); }
+.step-content { flex: 1; }
+.step-content .step-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0a1628;
+  margin-bottom: 6px;
+}
+.step-content p {
+  font-size: 15px;
+  color: #475569;
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+.step-content p:last-child { margin-bottom: 0; }
+
+/* ── Info Boxes ───────────────────────────────────────────────── */
+.info-box {
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.info-box .icon { font-size: 22px; flex-shrink: 0; margin-top: 2px; }
+.info-box .content strong { display: block; font-weight: 800; margin-bottom: 3px; font-size: 14px; }
+.info-box .content p { font-size: 14px; margin: 0; line-height: 1.5; color: inherit; }
+.info-tip    { background: #eff6ff; border-left: 4px solid #3b82f6; color: #1e40af; }
+.info-warn   { background: #fffbeb; border-left: 4px solid #f59e0b; color: #78350f; }
+.info-ok     { background: #f0fdf4; border-left: 4px solid #10b981; color: #14532d; }
+.info-danger { background: #fff1f2; border-left: 4px solid #f43f5e; color: #9f1239; }
+.info-navy   { background: #f0f4ff; border-left: 4px solid #0a1628; color: #0a1628; }
+
+/* ── Process Flow ─────────────────────────────────────────────── */
+.flow-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin: 20px 0;
+}
+.flow-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  min-width: 90px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+.flow-arrow { font-size: 20px; color: #94a3b8; flex-shrink: 0; }
+.flow-emoji { font-size: 26px; }
+.flow-orange { background: #fff7ed; color: #c2410c; border: 2px solid #fdba74; }
+.flow-yellow { background: #fffbeb; color: #92400e; border: 2px solid #fcd34d; }
+.flow-blue   { background: #eff6ff; color: #1d4ed8; border: 2px solid #93c5fd; }
+.flow-purple { background: #f5f3ff; color: #5b21b6; border: 2px solid #c4b5fd; }
+.flow-slate  { background: #f8fafc; color: #334155; border: 2px solid #cbd5e1; }
+.flow-teal   { background: #f0fdfa; color: #0f766e; border: 2px solid #5eead4; }
+.flow-green  { background: #f0fdf4; color: #15803d; border: 2px solid #86efac; }
+
+/* ── Block Reference Cards ────────────────────────────────────── */
+.blocks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.block-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 20px 18px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.block-emoji { font-size: 32px; }
+.block-name  { font-size: 15px; font-weight: 800; color: #0a1628; }
+.block-desc  { font-size: 13px; color: #64748b; line-height: 1.45; }
+.block-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.badge-obligatorio { background: #fee2e2; color: #991b1b; }
+.badge-opcional    { background: #f1f5f9; color: #475569; }
+.badge-hold        { background: #fef3c7; color: #78350f; }
+
+/* ── Do / Dont ────────────────────────────────────────────────── */
+.do-dont {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+@media (max-width: 560px) { .do-dont { grid-template-columns: 1fr; } }
+.do-box, .dont-box {
+  border-radius: 12px;
+  padding: 20px;
+}
+.do-box   { background: #f0fdf4; border: 2px solid #86efac; }
+.dont-box { background: #fff1f2; border: 2px solid #fecdd3; }
+.do-box h4   { color: #15803d; font-size: 15px; font-weight: 800; margin-bottom: 12px; }
+.dont-box h4 { color: #be185d; font-size: 15px; font-weight: 800; margin-bottom: 12px; }
+.do-item, .dont-item {
+  display: flex; gap: 8px; align-items: flex-start;
+  font-size: 14px; margin-bottom: 8px; color: #1e293b;
+}
+.do-item:last-child, .dont-item:last-child { margin-bottom: 0; }
+.check-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+
+/* ── Screen Mockup ────────────────────────────────────────────── */
+.phone-frame {
+  background: #0a1628;
+  border-radius: 20px;
+  padding: 20px 16px;
+  max-width: 320px;
+  margin: 0 auto 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  border: 3px solid #1e3a5f;
+}
+.phone-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 14px;
+}
+.phone-logo { color: #fbbf24; font-weight: 900; font-size: 14px; letter-spacing: 1px; }
+.phone-user { background: #1e3a5f; color: #94a3b8; font-size: 11px; padding: 4px 10px; border-radius: 999px; }
+.phone-title { color: #fff; font-size: 16px; font-weight: 800; margin-bottom: 4px; padding: 0 8px; }
+.phone-subtitle { color: #64748b; font-size: 12px; padding: 0 8px; margin-bottom: 14px; }
+.phone-tile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 8px 8px;
+}
+.phone-tile {
+  background: #1e3a5f;
+  border-radius: 12px;
+  padding: 14px 12px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.phone-tile .tile-icon { font-size: 20px; margin-bottom: 8px; display: block; }
+.phone-tile .tile-val  { color: #fff; font-size: 20px; font-weight: 900; line-height: 1; margin-bottom: 3px; }
+.phone-tile .tile-lbl  { color: #64748b; font-size: 11px; }
+.phone-tile.blue-tint  { border-color: rgba(59,130,246,0.3); }
+.phone-tile.green-tint { border-color: rgba(16,185,129,0.3); }
+.phone-tile.violet-tint{ border-color: rgba(124,58,237,0.3); }
+.phone-nav {
+  margin: 12px 0 4px;
+  background: #111827;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  color: #64748b;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.nav-item:last-child { border-bottom: none; }
+.nav-item.active { background: rgba(245,158,11,0.12); color: #fbbf24; font-weight: 700; }
+
+/* ── Hold Visual ──────────────────────────────────────────────── */
+.hold-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+@media (max-width: 480px) { .hold-compare { grid-template-columns: 1fr; } }
+.hold-card {
+  border-radius: 14px;
+  padding: 22px 20px;
+  text-align: center;
+}
+.hold-card.playing { background: linear-gradient(135deg, #f0fdf4, #dcfce7); border: 2px solid #86efac; }
+.hold-card.paused  { background: linear-gradient(135deg, #fffbeb, #fef3c7); border: 2px solid #fcd34d; }
+.hold-icon   { font-size: 42px; margin-bottom: 8px; }
+.hold-title  { font-size: 15px; font-weight: 800; margin-bottom: 6px; }
+.hold-card.playing .hold-title { color: #15803d; }
+.hold-card.paused  .hold-title { color: #78350f; }
+.hold-desc   { font-size: 13px; color: #475569; line-height: 1.4; }
+
+/* ── Notif Banner Example ─────────────────────────────────────── */
+.notif-preview {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px 20px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+  max-width: 380px;
+  margin: 0 auto 16px;
+  border: 1px solid #e2e8f0;
+}
+.notif-app-icon {
+  width: 42px; height: 42px;
+  background: linear-gradient(135deg, #0a1628, #1e3a5f);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.notif-text .notif-title { font-size: 14px; font-weight: 700; color: #0a1628; }
+.notif-text .notif-body  { font-size: 13px; color: #64748b; }
+.notif-time { font-size: 12px; color: #94a3b8; flex-shrink: 0; }
+
+/* ── Number Pill Grid ─────────────────────────────────────────── */
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0;
+}
+.pill-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-radius: 999px;
+  padding: 8px 16px 8px 8px;
+  box-shadow: 0 1px 8px rgba(0,0,0,0.07);
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.pill-dot {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+/* ── Module Grid ──────────────────────────────────────────────── */
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 14px;
+  margin: 20px 0;
+}
+.module-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 22px 16px;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  transition: transform 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.module-card:hover { transform: translateY(-2px); }
+.module-icon-wrap {
+  width: 56px; height: 56px;
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28px;
+}
+.module-name { font-size: 15px; font-weight: 800; color: #0a1628; }
+.module-sub  { font-size: 12px; color: #64748b; }
+.mod-blue    { background: #dbeafe; }
+.mod-green   { background: #dcfce7; }
+.mod-amber   { background: #fef3c7; }
+.mod-violet  { background: #ede9fe; }
+.mod-rose    { background: #ffe4e6; }
+
+/* ── Quick Ref Table ──────────────────────────────────────────── */
+.ref-table { width: 100%; border-collapse: collapse; margin: 16px 0; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+.ref-table th { background: #0a1628; color: #fbbf24; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; padding: 12px 16px; text-align: left; }
+.ref-table td { padding: 12px 16px; font-size: 14px; color: #1e293b; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+.ref-table tr:last-child td { border-bottom: none; }
+.ref-table tr:nth-child(even) td { background: #f8fafc; }
+.td-icon { font-size: 20px; text-align: center; width: 40px; }
+
+/* ── Footer ───────────────────────────────────────────────────── */
+.footer {
+  background: #0a1628;
+  color: rgba(255,255,255,0.5);
+  text-align: center;
+  padding: 40px 24px;
+  font-size: 13px;
+}
+.footer strong { color: #fbbf24; }
+
+/* ── Divider ──────────────────────────────────────────────────── */
+.hr { height: 1px; background: #e2e8f0; margin: 40px 0; }
+
+/* Print ── */
+@media print {
+  .cover { min-height: auto; padding: 40px 24px; break-after: page; }
+  .page-wrap { padding: 24px 16px 40px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════════
+     PORTADA
+══════════════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-badge">🧀 Sistema KROMA — Lacteoca</div>
+  <div class="cover-emoji">🧑‍🏭</div>
+  <h1>Manual del <span class="brand">Operario</span></h1>
+  <p class="cover-subtitle">Todo lo que necesitas saber para trabajar con KROMA</p>
+  <div class="cover-divider"></div>
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      <span class="cover-meta-label">Versión</span>
+      <span class="cover-meta-value">2.0</span>
+    </div>
+    <div class="cover-meta-item">
+      <span class="cover-meta-label">Idioma</span>
+      <span class="cover-meta-value">Español</span>
+    </div>
+    <div class="cover-meta-item">
+      <span class="cover-meta-label">Empresa</span>
+      <span class="cover-meta-value">Lacteoca</span>
+    </div>
+    <div class="cover-meta-item">
+      <span class="cover-meta-label">Módulo</span>
+      <span class="cover-meta-value">KROMA</span>
+    </div>
+  </div>
+  <div class="cover-roles">
+    <span class="role-pill active">👷 Operario / Maestro Quesero</span>
+    <span class="role-pill">📱 Celular Android</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     CONTENIDO
+══════════════════════════════════════════════════════════════════ -->
+<div class="page-wrap">
+
+  <!-- TABLA DE CONTENIDOS -->
+  <div class="toc">
+    <p class="toc-title">📋 ¿Qué vas a aprender?</p>
+    <div class="toc-grid">
+      <a class="toc-item" href="#sec-que-es"><span class="toc-num">1</span> ¿Para qué sirve KROMA?</a>
+      <a class="toc-item" href="#sec-entrar"><span class="toc-num">2</span> Cómo entrar a la app</a>
+      <a class="toc-item" href="#sec-inicio"><span class="toc-num">3</span> Tu pantalla de inicio</a>
+      <a class="toc-item" href="#sec-leche"><span class="toc-num">4</span> Recibir leche</a>
+      <a class="toc-item" href="#sec-produccion"><span class="toc-num">5</span> Arrancar una producción</a>
+      <a class="toc-item" href="#sec-bloques"><span class="toc-num">6</span> Los bloques del proceso</a>
+      <a class="toc-item" href="#sec-hold"><span class="toc-num">7</span> El HOLD — cómo pausar</a>
+      <a class="toc-item" href="#sec-completar"><span class="toc-num">8</span> Completar la producción</a>
+      <a class="toc-item" href="#sec-notif"><span class="toc-num">9</span> Las alertas de tu celular</a>
+      <a class="toc-item" href="#sec-reglas"><span class="toc-num">10</span> Reglas importantes</a>
+    </div>
+  </div>
+
+  <!-- ─── SECCIÓN 1: QUÉ ES ──────────────────────────────────── -->
+  <div id="sec-que-es" class="section-header">
+    <div class="section-accent amber"></div>
+    <div class="section-header-text">
+      <h2>1 · ¿Para qué sirve KROMA?</h2>
+      <p>KROMA es tu asistente digital de producción. Te ayuda a anotar todo lo que haces en la planta.</p>
+    </div>
+  </div>
+
+  <div class="card card-amber">
+    <h3>🧠 En palabras sencillas…</h3>
+    <p>Antes anotabas todo en papel. Con KROMA lo haces en el celular. La app recuerda todo, hace los cálculos y avisa cuando algo está listo.</p>
+  </div>
+
+  <div class="module-grid">
+    <div class="module-card">
+      <div class="module-icon-wrap mod-blue">🥛</div>
+      <div class="module-name">Leche</div>
+      <div class="module-sub">Anotar recepciones</div>
+    </div>
+    <div class="module-card">
+      <div class="module-icon-wrap mod-green">📦</div>
+      <div class="module-name">Insumos</div>
+      <div class="module-sub">Ver el stock</div>
+    </div>
+    <div class="module-card">
+      <div class="module-icon-wrap mod-amber">🏭</div>
+      <div class="module-name">Producción</div>
+      <div class="module-sub">Registrar el proceso</div>
+    </div>
+    <div class="module-card">
+      <div class="module-icon-wrap mod-violet">📋</div>
+      <div class="module-name">Fichas</div>
+      <div class="module-sub">Ver recetas y pasos</div>
+    </div>
+    <div class="module-card">
+      <div class="module-icon-wrap mod-rose">🔔</div>
+      <div class="module-name">Alertas</div>
+      <div class="module-sub">Te avisa en el celular</div>
+    </div>
+  </div>
+
+  <div class="info-box info-ok">
+    <span class="icon">✅</span>
+    <div class="content">
+      <strong>KROMA NO toma decisiones por ti</strong>
+      <p>Tú eres el maestro quesero. KROMA solo registra, calcula y recuerda. Las decisiones técnicas siempre son tuyas.</p>
+    </div>
+  </div>
+
+  <!-- ─── SECCIÓN 2: CÓMO ENTRAR ────────────────────────────── -->
+  <div id="sec-entrar" class="section-header">
+    <div class="section-accent emerald"></div>
+    <div class="section-header-text">
+      <h2>2 · Cómo entrar a la app</h2>
+      <p>KROMA es una app en tu celular. Se abre como una página web, sin descargar nada extra.</p>
+    </div>
+  </div>
+
+  <div class="card card-emerald">
+    <h3>📱 3 pasos para entrar</h3>
+    <div class="big-steps">
+      <div class="big-step">
+        <div class="step-num-big emerald">1</div>
+        <div class="step-content">
+          <div class="step-title">Abre la app en tu celular</div>
+          <p>Toca el ícono de <strong>Genius Keeper</strong> en tu pantalla de inicio. Si no lo tienes, abre Chrome y entra a la dirección que te dio tu supervisor.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big emerald">2</div>
+        <div class="step-content">
+          <div class="step-title">Entra con tu correo y contraseña</div>
+          <p>Escribe el correo y la clave que te asignaron. Toca <strong>"Iniciar sesión"</strong>.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big emerald">3</div>
+        <div class="step-content">
+          <div class="step-title">Selecciona tu perfil de KROMA</div>
+          <p>Verás una lista de nombres. Toca tu nombre (por ejemplo: <strong>Diana Hurtado</strong>). Listo, ya estás dentro.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box info-warn">
+    <span class="icon">⚠️</span>
+    <div class="content">
+      <strong>Tu contraseña es personal</strong>
+      <p>No la compartas con nadie. Si la olvidaste, avísale a tu supervisor para que te la restablezcan.</p>
+    </div>
+  </div>
+
+  <!-- ─── SECCIÓN 3: PANTALLA DE INICIO ────────────────────── -->
+  <div id="sec-inicio" class="section-header">
+    <div class="section-accent blue"></div>
+    <div class="section-header-text">
+      <h2>3 · Tu pantalla de inicio</h2>
+      <p>Cuando entras, ves tu panel con un resumen del día y los menús principales.</p>
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+    <div class="phone-frame">
+      <div class="phone-header">
+        <span class="phone-logo">K</span>
+        <span class="phone-user">Diana H.</span>
+      </div>
+      <div class="phone-title">Hola, Diana</div>
+      <div class="phone-subtitle">Bienvenida a tu panel</div>
+      <div class="phone-tile-grid">
+        <div class="phone-tile blue-tint">
+          <span class="tile-icon">🥛</span>
+          <div class="tile-val">848 L</div>
+          <div class="tile-lbl">En producción</div>
+        </div>
+        <div class="phone-tile green-tint">
+          <span class="tile-icon">📦</span>
+          <div class="tile-val">11</div>
+          <div class="tile-lbl">Insumos Activos</div>
+        </div>
+        <div class="phone-tile violet-tint" style="grid-column: span 2;">
+          <span class="tile-icon">📋</span>
+          <div class="tile-val">1</div>
+          <div class="tile-lbl">Fichas Creadas</div>
+        </div>
+      </div>
+      <div class="phone-nav">
+        <div class="nav-item active">🏠 Inicio</div>
+        <div class="nav-item">🏭 Producción</div>
+        <div class="nav-item">🥛 Leche</div>
+        <div class="nav-item">📦 Insumos</div>
+        <div class="nav-item">📋 Fichas</div>
+      </div>
+    </div>
+    <div>
+      <div class="card card-blue" style="margin-bottom:12px;">
+        <h3>📊 Las tarjetas de resumen</h3>
+        <p>Al entrar ves 3 tarjetas con información del día. <strong>Toca cualquier tarjeta</strong> para ir directo a esa sección.</p>
+      </div>
+      <div class="info-box info-tip">
+        <span class="icon">💡</span>
+        <div class="content">
+          <strong>Menú lateral</strong>
+          <p>Toca el ícono <strong>☰</strong> (tres rayas) en la esquina para ver el menú completo.</p>
+        </div>
+      </div>
+      <div class="info-box info-navy">
+        <span class="icon">🔔</span>
+        <div class="content">
+          <strong>Campana en arriba</strong>
+          <p>Las notificaciones del sistema aparecen aquí. El número rojo indica cuántas no leíste.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SECCIÓN 4: RECIBIR LECHE ─────────────────────────── -->
+  <div id="sec-leche" class="section-header">
+    <div class="section-accent cyan"></div>
+    <div class="section-header-text">
+      <h2>4 · Recibir leche</h2>
+      <p>Cada vez que llega leche de un productor, la registras en la app antes de usarla.</p>
+    </div>
+  </div>
+
+  <div class="card card-cyan">
+    <h3>🥛 Cómo registrar una recepción</h3>
+    <div class="big-steps">
+      <div class="big-step">
+        <div class="step-num-big blue">1</div>
+        <div class="step-content">
+          <div class="step-title">Ve a "Leche" en el menú</div>
+          <p>Toca <strong>🥛 Leche</strong> en el menú lateral.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big blue">2</div>
+        <div class="step-content">
+          <div class="step-title">Toca el botón "+ Nueva"</div>
+          <p>Está en la esquina superior derecha, de color azul.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big blue">3</div>
+        <div class="step-content">
+          <div class="step-title">Elige el productor y escribe los litros</div>
+          <p>Selecciona el nombre del productor de la lista y escribe cuántos litros recibiste.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big blue">4</div>
+        <div class="step-content">
+          <div class="step-title">Anota los parámetros de calidad</div>
+          <p>Escribe la <strong>temperatura</strong>, <strong>densidad</strong>, <strong>pH</strong> y <strong>°Brix</strong> que mediste con tus equipos.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big blue">5</div>
+        <div class="step-content">
+          <div class="step-title">Elige el destino de la leche</div>
+          <p>Selecciona <strong>⚡ Directa a producción</strong> (si la vas a usar ahora) o <strong>❄️ Tanque de enfriamiento</strong> (si va al tanque primero).</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big blue">6</div>
+        <div class="step-content">
+          <div class="step-title">Toca "Guardar"</div>
+          <p>La recepción queda registrada. Aparecerá en la lista de "Activas".</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <table class="ref-table">
+    <tr>
+      <th class="td-icon"></th>
+      <th>Parámetro</th>
+      <th>¿Qué mides?</th>
+      <th>Equipo</th>
+    </tr>
+    <tr>
+      <td class="td-icon">🌡️</td>
+      <td><strong>Temperatura</strong></td>
+      <td>Qué tan fría o caliente llega</td>
+      <td>Termómetro</td>
+    </tr>
+    <tr>
+      <td class="td-icon">⚖️</td>
+      <td><strong>Densidad</strong></td>
+      <td>Concentración de la leche (g/mL)</td>
+      <td>Lactodensímetro</td>
+    </tr>
+    <tr>
+      <td class="td-icon">🧪</td>
+      <td><strong>pH</strong></td>
+      <td>Acidez de la leche</td>
+      <td>pH-metro</td>
+    </tr>
+    <tr>
+      <td class="td-icon">🔬</td>
+      <td><strong>°Brix</strong></td>
+      <td>Azúcares disueltos</td>
+      <td>Refractómetro</td>
+    </tr>
+  </table>
+
+  <div class="info-box info-warn">
+    <span class="icon">⚠️</span>
+    <div class="content">
+      <strong>Anota los valores reales, no los que "deberían ser"</strong>
+      <p>KROMA guarda lo que escribes. Si el pH fue 6.2, anota 6.2. Si hay diferencias, el sistema puede detectar problemas.</p>
+    </div>
+  </div>
+
+  <!-- ─── SECCIÓN 5: ARRANCAR PRODUCCIÓN ───────────────────── -->
+  <div id="sec-produccion" class="section-header">
+    <div class="section-accent amber"></div>
+    <div class="section-header-text">
+      <h2>5 · Arrancar una producción</h2>
+      <p>Esta es la función más importante. Aquí registras todo el proceso de fabricación del queso.</p>
+    </div>
+  </div>
+
+  <div class="card card-amber">
+    <h3>🏭 Cómo iniciar una planilla nueva</h3>
+    <div class="big-steps">
+      <div class="big-step">
+        <div class="step-num-big amber">1</div>
+        <div class="step-content">
+          <div class="step-title">Ve a "Producción"</div>
+          <p>Toca <strong>🏭 Producción</strong> en el menú lateral.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big amber">2</div>
+        <div class="step-content">
+          <div class="step-title">Toca "+ Nueva planilla"</div>
+          <p>Botón verde en la parte superior. Se abrirá un formulario.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big amber">3</div>
+        <div class="step-content">
+          <div class="step-title">Selecciona el producto que vas a hacer</div>
+          <p>Toca el nombre del queso de la lista (ej: <em>Lacteoca Chèvre Original</em>). KROMA carga automáticamente la receta y los pasos.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big amber">4</div>
+        <div class="step-content">
+          <div class="step-title">Selecciona la leche que vas a usar</div>
+          <p>Verás las recepciones disponibles. Toca la leche que vas a usar. Puedes usar más de una si necesitas mezclar.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big amber">5</div>
+        <div class="step-content">
+          <div class="step-title">Toca "Iniciar producción"</div>
+          <p>KROMA crea la planilla y te lleva directo al primer bloque del proceso: <strong>Pasteurización</strong>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box info-ok">
+    <span class="icon">🧠</span>
+    <div class="content">
+      <strong>KROMA hace los cálculos por ti</strong>
+      <p>Cuando seleccionas el producto y los litros de leche, la app calcula automáticamente cuánto de cada insumo necesitas. Tú solo confirmas lo que realmente usaste.</p>
+    </div>
+  </div>
+
+  <!-- ─── SECCIÓN 6: BLOQUES DEL PROCESO ───────────────────── -->
+  <div id="sec-bloques" class="section-header">
+    <div class="section-accent violet"></div>
+    <div class="section-header-text">
+      <h2>6 · Los bloques del proceso</h2>
+      <p>El proceso de fabricación está dividido en pasos llamados "bloques". Cada bloque es una etapa diferente.</p>
+    </div>
+  </div>
+
+  <div class="card card-violet">
+    <h3>🔄 El proceso paso a paso</h3>
+    <p style="margin-bottom:16px;">Los bloques van en orden. No puedes saltarte uno. KROMA te lleva de uno a otro automáticamente.</p>
+    <div class="flow-row">
+      <div class="flow-block flow-orange">
+        <span class="flow-emoji">🔥</span>
+        Pasteu-<br>rización
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-block flow-yellow">
+        <span class="flow-emoji">🥚</span>
+        Cuajado
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-block flow-blue">
+        <span class="flow-emoji">💧</span>
+        Desue-<br>rado
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-block flow-purple">
+        <span class="flow-emoji">🧩</span>
+        Moldea-<br>do
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-block flow-teal">
+        <span class="flow-emoji">🧂</span>
+        Salado
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-block flow-green">
+        <span class="flow-emoji">📦</span>
+        Empaque
+      </div>
+    </div>
+  </div>
+
+  <!-- PASTEURIZACIÓN -->
+  <div class="card card-amber" style="border-top-color:#c2410c;">
+    <h3>🔥 Bloque 1 — Pasteurización</h3>
+    <p><strong>¿Qué es?</strong> Calentar la leche a temperatura alta para eliminar bacterias dañinas.</p>
+    <p><strong>¿Qué anotas?</strong></p>
+    <div class="pill-row">
+      <div class="pill-item"><div class="pill-dot" style="background:#c2410c;">°C</div> Temperatura alcanzada</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#c2410c;">⏱</div> Tiempo que la mantuviste</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#c2410c;">💧</div> Litros de merma (lo que quedó en el equipo)</div>
+    </div>
+    <div class="info-box info-warn" style="margin-top:14px; margin-bottom:0;">
+      <span class="icon">⚠️</span>
+      <div class="content">
+        <strong>La merma debe ser entre 8 y 15 litros</strong>
+        <p>Si la merma fue menos de 8 L o más de 15 L, revisa con tu supervisor antes de continuar.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- CUAJADO -->
+  <div class="card card-amber" style="border-top-color:#92400e;">
+    <h3>🥚 Bloque 2 — Cuajado</h3>
+    <p><strong>¿Qué es?</strong> Agregar los ingredientes (cuajo, fermento, etc.) para que la leche se solidifique.</p>
+    <p><strong>¿Qué anotas?</strong></p>
+    <div class="pill-row">
+      <div class="pill-item"><div class="pill-dot" style="background:#92400e;">🌡</div> Temperatura pre-cuajado</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#92400e;">🧪</div> pH antes de cuajar</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#92400e;">💊</div> Cantidad real de cada insumo</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#92400e;">⏱</div> Tiempo de coagulación</div>
+    </div>
+    <div class="info-box info-tip" style="margin-top:14px; margin-bottom:0;">
+      <span class="icon">💡</span>
+      <div class="content">
+        <strong>KROMA te dice la dosis teórica</strong>
+        <p>Ves cuánto <em>debería</em> ir según la receta. Tú anotas cuánto pusiste <em>realmente</em>. Los dos valores pueden ser distintos — eso es normal.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- DESUERADO -->
+  <div class="card card-blue">
+    <h3>💧 Bloque 3 — Desuerado</h3>
+    <p><strong>¿Qué es?</strong> Sacar el suero de la cuajada. La masa del queso va tomando forma.</p>
+    <p><strong>¿Qué anotas?</strong></p>
+    <div class="pill-row">
+      <div class="pill-item"><div class="pill-dot" style="background:#1d4ed8;">🌡</div> Temperatura</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#1d4ed8;">⏱</div> Tiempo de desuerado</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#1d4ed8;">🧪</div> pH post-desuerado</div>
+    </div>
+  </div>
+
+  <!-- MOLDEADO / PRENSADO -->
+  <div class="card card-violet">
+    <h3>🧩 Bloque 4 — Moldeado y Prensado <span class="block-badge badge-opcional">Opcional</span></h3>
+    <p><strong>¿Qué es?</strong> Darle la forma al queso usando moldes. En algunos quesos también se aplica presión.</p>
+    <p><strong>¿Qué anotas?</strong></p>
+    <div class="pill-row">
+      <div class="pill-item"><div class="pill-dot" style="background:#5b21b6;">🔄</div> Número de vueltas dadas</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#5b21b6;">⏱</div> Tiempo entre vueltas</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#5b21b6;">🧪</div> pH post-moldeado</div>
+    </div>
+  </div>
+
+  <!-- SALADO -->
+  <div class="card card-emerald">
+    <h3>🧂 Bloque 5 — Salado</h3>
+    <p><strong>¿Qué es?</strong> Salar el queso. Puede ser en masa (añadir sal directamente) o en salmuera (baño de sal y agua).</p>
+
+    <div class="do-dont" style="margin-top:12px;">
+      <div class="do-box">
+        <h4>🧂 Sal en masa</h4>
+        <div class="do-item"><span class="check-icon">→</span> Anotas gramos de sal por kilo de masa</div>
+        <div class="do-item"><span class="check-icon">→</span> No necesitas parámetros previos</div>
+      </div>
+      <div class="do-box" style="background:#fffbeb; border-color:#fcd34d;">
+        <h4 style="color:#78350f;">💦 Salmuera</h4>
+        <div class="do-item"><span class="check-icon">⚠️</span> Primero mides temperatura, titulación (°D) y salinidad (°Bé)</div>
+        <div class="do-item"><span class="check-icon">→</span> Si los valores no están, el sistema no te deja continuar</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EMPAQUE -->
+  <div class="card card-navy">
+    <h3>📦 Bloque 6 — Empaque</h3>
+    <p><strong>¿Qué es?</strong> El último paso. Empacar el queso en su presentación final.</p>
+    <p><strong>¿Qué anotas?</strong></p>
+    <div class="pill-row">
+      <div class="pill-item"><div class="pill-dot" style="background:#0a1628;">📦</div> Tipo de empaque usado</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#0a1628;">⚖️</div> Peso y presentación</div>
+      <div class="pill-item"><div class="pill-dot" style="background:#0a1628;">🔢</div> Cantidad de unidades</div>
+    </div>
+    <div class="info-box info-ok" style="margin-top:14px; margin-bottom:0;">
+      <span class="icon">✅</span>
+      <div class="content">
+        <strong>Al terminar el empaque, la producción se completa</strong>
+        <p>El sistema cierra la planilla, guarda todo el registro y descuenta los insumos del inventario automáticamente.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box info-tip">
+    <span class="icon">💡</span>
+    <div class="content">
+      <strong>No todos los bloques aplican a todos los quesos</strong>
+      <p>Cada producto tiene su propia ficha. KROMA solo te muestra los bloques que corresponden al queso que estás haciendo. No verás pasos que no necesites.</p>
+    </div>
+  </div>
+
+  <!-- ─── SECCIÓN 7: HOLD ───────────────────────────────────── -->
+  <div id="sec-hold" class="section-header">
+    <div class="section-accent rose"></div>
+    <div class="section-header-text">
+      <h2>7 · El HOLD — Cómo pausar</h2>
+      <p>Algunos pasos del proceso toman muchas horas. El HOLD es la forma de decirle a KROMA: "estoy esperando, regreso después".</p>
+    </div>
+  </div>
+
+  <div class="card card-rose">
+    <h3>⏸️ ¿Qué es el HOLD?</h3>
+    <p>Imagina que metes algo en el microondas pero lo pausas. El microondas recuerda el tiempo que quedaba. El HOLD en KROMA funciona igual.</p>
+  </div>
+
+  <div class="hold-compare">
+    <div class="hold-card playing">
+      <div class="hold-icon">▶️</div>
+      <div class="hold-title">Proceso ACTIVO</div>
+      <div class="hold-desc">Estás trabajando en ese bloque ahora mismo. La app espera que anotes lo que haces.</div>
+    </div>
+    <div class="hold-card paused">
+      <div class="hold-icon">⏸️</div>
+      <div class="hold-title">Proceso en HOLD</div>
+      <div class="hold-desc">El queso está reposando (cuajado, desuerado, etc.). Tú puedes hacer otras cosas. La app te avisa cuando termina.</div>
+    </div>
+  </div>
+
+  <div class="card card-rose" style="margin-top:20px;">
+    <h3>⏸️ Cómo poner un bloque en HOLD</h3>
+    <div class="big-steps">
+      <div class="big-step">
+        <div class="step-num-big rose">1</div>
+        <div class="step-content">
+          <div class="step-title">Llena los datos del bloque actual</div>
+          <p>Anota todo lo que corresponde a esa etapa (temperatura, pH, insumos, etc.).</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big rose">2</div>
+        <div class="step-content">
+          <div class="step-title">Activa "Poner en HOLD"</div>
+          <p>Al final del bloque verás una opción para poner en espera. Toca el interruptor o botón de HOLD.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big rose">3</div>
+        <div class="step-content">
+          <div class="step-title">Indica cuántas horas dura la espera</div>
+          <p>Escribe cuántas horas o minutos debe reposar el queso. Por ejemplo: <strong>24 horas</strong> para el cuajado.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big rose">4</div>
+        <div class="step-content">
+          <div class="step-title">Toca "Guardar y pausar"</div>
+          <p>La producción queda en HOLD. Aparecerá en tu lista con la etiqueta amarilla <strong>"En Hold"</strong>. Puedes cerrar la app y el celular recuerda.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card card-amber" style="margin-top:16px;">
+    <h3>▶️ Cómo reanudar un HOLD</h3>
+    <div class="big-steps">
+      <div class="big-step">
+        <div class="step-num-big amber">1</div>
+        <div class="step-content">
+          <div class="step-title">Abre la app y ve a "Producción"</div>
+          <p>Verás la producción con la etiqueta amarilla <strong>"En Hold"</strong>.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big amber">2</div>
+        <div class="step-content">
+          <div class="step-title">Toca "Reanudar"</div>
+          <p>Botón verde que aparece en la tarjeta del proceso.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big amber">3</div>
+        <div class="step-content">
+          <div class="step-title">Continúa con el siguiente bloque</div>
+          <p>KROMA te lleva al punto exacto donde pausaste. Solo completa los datos del siguiente paso.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SECCIÓN 8: COMPLETAR PRODUCCIÓN ──────────────────── -->
+  <div id="sec-completar" class="section-header">
+    <div class="section-accent emerald"></div>
+    <div class="section-header-text">
+      <h2>8 · Completar la producción</h2>
+      <p>Cuando terminas el último bloque (Empaque), la producción se cierra automáticamente.</p>
+    </div>
+  </div>
+
+  <div class="card card-emerald">
+    <h3>✅ ¿Qué pasa cuando completas?</h3>
+    <div class="big-steps">
+      <div class="big-step">
+        <div class="step-num-big emerald">1</div>
+        <div class="step-content">
+          <div class="step-title">El sistema cierra la planilla</div>
+          <p>La producción pasa de <strong>"Activa"</strong> a <strong>"Completada"</strong> y queda guardada en el historial.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big emerald">2</div>
+        <div class="step-content">
+          <div class="step-title">El inventario se actualiza solo</div>
+          <p>KROMA descuenta automáticamente todos los insumos que usaste. Tú no tienes que hacer nada.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big emerald">3</div>
+        <div class="step-content">
+          <div class="step-title">Gerencia recibe el aviso</div>
+          <p>Tu supervisor y gerencia reciben una notificación de que la producción está terminada con todos los datos.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big emerald">4</div>
+        <div class="step-content">
+          <div class="step-title">Puedes ver el reporte del lote</div>
+          <p>Toca la producción completada para ver el reporte completo con todos los datos, tiempos e insumos usados.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SECCIÓN 9: NOTIFICACIONES ────────────────────────── -->
+  <div id="sec-notif" class="section-header">
+    <div class="section-accent amber"></div>
+    <div class="section-header-text">
+      <h2>9 · Las alertas de tu celular</h2>
+      <p>Cuando pones un bloque en HOLD, KROMA puede avisarte cuando está por terminar — incluso con el celular guardado en el bolsillo.</p>
+    </div>
+  </div>
+
+  <div class="card card-amber">
+    <h3>🔔 Cómo funciona la alerta</h3>
+    <p>Una hora antes de que termine el HOLD, tu celular vibra y suena con esta notificación:</p>
+
+    <div class="notif-preview">
+      <div class="notif-app-icon">🧀</div>
+      <div class="notif-text" style="flex:1;">
+        <div class="notif-title">⏰ Cuajado — finaliza en 1h</div>
+        <div class="notif-body">Lacteoca Chèvre Original · Lote LCO-2121</div>
+      </div>
+      <div class="notif-time">Ahora</div>
+    </div>
+
+    <div class="info-box info-tip" style="margin-bottom:0;">
+      <span class="icon">💡</span>
+      <div class="content">
+        <strong>La alerta funciona aunque la app esté cerrada</strong>
+        <p>No necesitas tener la app abierta. El sistema envía la alerta directamente a tu celular.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card card-navy">
+    <h3>⚙️ Cómo activar las alertas</h3>
+    <div class="big-steps">
+      <div class="big-step">
+        <div class="step-num-big navy">1</div>
+        <div class="step-content">
+          <div class="step-title">Permite las notificaciones la primera vez</div>
+          <p>Cuando veas el aviso amarillo en la app, toca <strong>"Activar"</strong>. Tu celular te preguntará si permite las notificaciones. Di que <strong>Sí</strong>.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big navy">2</div>
+        <div class="step-content">
+          <div class="step-title">Configura qué bloques te avisan</div>
+          <p>Toca el ícono 🔔 (campana) en la pantalla de Producción. Puedes elegir: <strong>Cuajado</strong>, <strong>Desuerado</strong> u otros bloques. También ajustas con cuánto tiempo antes quieres el aviso.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <table class="ref-table">
+    <tr>
+      <th>Bloque</th>
+      <th>Alerta por defecto</th>
+      <th>¿Para qué te avisa?</th>
+    </tr>
+    <tr>
+      <td>🥚 <strong>Cuajado</strong></td>
+      <td>🟢 Activada · 1 hora antes</td>
+      <td>Prepararte para revisar la cuajada</td>
+    </tr>
+    <tr>
+      <td>💧 <strong>Desuerado</strong></td>
+      <td>🟢 Activada · 1 hora antes</td>
+      <td>Prepararte para drenar el suero</td>
+    </tr>
+    <tr>
+      <td>🧩 <strong>Moldeado</strong></td>
+      <td>⚪ Desactivada</td>
+      <td>Puedes activarla si lo necesitas</td>
+    </tr>
+    <tr>
+      <td>🌿 <strong>Maduración</strong></td>
+      <td>⚪ Desactivada</td>
+      <td>Puedes activarla si lo necesitas</td>
+    </tr>
+  </table>
+
+  <!-- ─── SECCIÓN 10: REGLAS ────────────────────────────────── -->
+  <div id="sec-reglas" class="section-header">
+    <div class="section-accent navy"></div>
+    <div class="section-header-text">
+      <h2>10 · Reglas importantes</h2>
+      <p>Lo que siempre debes y nunca debes hacer en KROMA.</p>
+    </div>
+  </div>
+
+  <div class="do-dont">
+    <div class="do-box">
+      <h4>✅ SÍ debes hacer</h4>
+      <div class="do-item"><span class="check-icon">✅</span> Anotar los valores <strong>reales</strong> que mediste</div>
+      <div class="do-item"><span class="check-icon">✅</span> Registrar <strong>cada recepción</strong> de leche al recibirla</div>
+      <div class="do-item"><span class="check-icon">✅</span> Completar <strong>todos los bloques</strong> hasta el empaque</div>
+      <div class="do-item"><span class="check-icon">✅</span> Usar el HOLD cuando el proceso necesita esperar</div>
+      <div class="do-item"><span class="check-icon">✅</span> Avisar a tu supervisor si algo está raro</div>
+      <div class="do-item"><span class="check-icon">✅</span> Cerrar tu sesión cuando termines tu turno</div>
+    </div>
+    <div class="dont-box">
+      <h4>❌ NO debes hacer</h4>
+      <div class="dont-item"><span class="check-icon">❌</span> Inventar o estimar los parámetros de calidad</div>
+      <div class="dont-item"><span class="check-icon">❌</span> Dejar una producción activa sin terminar ni pausar</div>
+      <div class="dont-item"><span class="check-icon">❌</span> Compartir tu contraseña con otros</div>
+      <div class="dont-item"><span class="check-icon">❌</span> Tocar o modificar las Fichas de recetas</div>
+      <div class="dont-item"><span class="check-icon">❌</span> Borrar una producción sin avisar al supervisor</div>
+      <div class="dont-item"><span class="check-icon">❌</span> Saltarte bloques del proceso</div>
+    </div>
+  </div>
+
+  <div class="card card-amber" style="margin-top: 24px;">
+    <h3>🚨 Situaciones especiales — ¿qué hacer?</h3>
+    <table class="ref-table" style="margin: 10px 0 0; box-shadow: none;">
+      <tr>
+        <th>Situación</th>
+        <th>Qué debes hacer</th>
+      </tr>
+      <tr>
+        <td>⚡ Se fue la luz mientras trabajabas</td>
+        <td>Cuando regrese la luz, entra a la app. La producción sigue guardada donde la dejaste.</td>
+      </tr>
+      <tr>
+        <td>📵 Se fue el internet</td>
+        <td>Espera a que regrese la conexión. No cierres la app. Los datos no se pierden.</td>
+      </tr>
+      <tr>
+        <td>🔋 El celular se apagó</td>
+        <td>Cuando lo enciendas, entra a la app. La producción sigue en el sistema. Continúa desde donde estabas.</td>
+      </tr>
+      <tr>
+        <td>❓ Me equivoqué al escribir un número</td>
+        <td>Avisa a tu supervisor. Dependiendo del tipo de error, él puede corregirlo desde su perfil.</td>
+      </tr>
+      <tr>
+        <td>🔐 No puedo entrar a la app</td>
+        <td>Avisa a tu supervisor para que restablezca tu acceso.</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- RESUMEN VISUAL FINAL -->
+  <div class="section-header" style="margin-top: 56px;">
+    <div class="section-accent emerald"></div>
+    <div class="section-header-text">
+      <h2>📌 Resumen Rápido</h2>
+      <p>Todo en una sola hoja — guárdala o imprímela.</p>
+    </div>
+  </div>
+
+  <div class="card card-navy">
+    <h3>🗓️ ¿Qué hago cada día?</h3>
+    <div class="big-steps">
+      <div class="big-step">
+        <div class="step-num-big amber">1</div>
+        <div class="step-content">
+          <div class="step-title">Entro a la app y selecciono mi perfil</div>
+          <p>Inicio de turno.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big blue">2</div>
+        <div class="step-content">
+          <div class="step-title">Si llega leche, la registro en "Leche"</div>
+          <p>Con todos sus parámetros.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big amber">3</div>
+        <div class="step-content">
+          <div class="step-title">Arranco una nueva producción</div>
+          <p>Selecciono el producto y la leche a usar.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big violet">4</div>
+        <div class="step-content">
+          <div class="step-title">Voy completando bloque por bloque</div>
+          <p>Pasteurización, Cuajado, Desuerado, Moldeado, Salado, Empaque.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big rose">5</div>
+        <div class="step-content">
+          <div class="step-title">Si algo necesita esperar, uso el HOLD</div>
+          <p>El celular me avisará cuando sea el momento de volver.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big emerald">6</div>
+        <div class="step-content">
+          <div class="step-title">Al terminar el empaque, completo la producción</div>
+          <p>El sistema cierra todo y avisa a gerencia.</p>
+        </div>
+      </div>
+      <div class="big-step">
+        <div class="step-num-big navy">7</div>
+        <div class="step-content">
+          <div class="step-title">Cierro mi sesión al final del turno</div>
+          <p>Toco el ícono de salida en la esquina superior derecha.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="info-box info-ok" style="margin-top: 12px;">
+    <span class="icon">🌟</span>
+    <div class="content">
+      <strong>¡Bien hecho! Ya sabes usar KROMA</strong>
+      <p>Si tienes alguna duda durante el trabajo, avisa a tu supervisor. Él siempre puede revisar lo que registraste y ayudarte a corregirlo.</p>
+    </div>
+  </div>
+
+</div><!-- /page-wrap -->
+
+<!-- ══ FOOTER ═════════════════════════════════════════════════════ -->
+<div class="footer">
+  <p>🧀 <strong>KROMA</strong> · Sistema de Gestión de Producción Láctea</p>
+  <p style="margin-top:8px;">Lacteoca · <strong>Genius Keeper</strong> v2.0 · Módulo Operario</p>
+  <p style="margin-top:12px; font-size:12px; opacity:0.5;">Este manual es de uso interno. Para soporte, contacta a tu supervisor.</p>
+</div>
+
+</body>
+</html>
