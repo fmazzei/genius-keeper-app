@@ -5,13 +5,13 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
-import { scheduleHoldNotif, cancelHoldNotif } from '../../utils/kromaNotifScheduler';
+import { scheduleHoldNotif, cancelHoldNotif, getNotifConfig, saveNotifConfig, NOTIF_BLOCKS, getNotifPermission, requestNotifPermission } from '../../utils/kromaNotifScheduler';
 import {
     ChevronLeft, ChevronRight, Check, Plus, Play,
     Clock, AlertTriangle, Package, Droplets,
     Calendar, Lock, ChevronDown, ChevronUp,
     Factory, Pause, FlaskConical, X, Zap,
-    Share2, PenLine, Award, Trash2, RotateCcw,
+    Share2, PenLine, Award, Trash2, RotateCcw, Bell,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1860,6 +1860,103 @@ function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, on
     );
 }
 
+// ─── Notification Config Modal ────────────────────────────────────────────────
+
+function NotifConfigModal({ userId, onClose }) {
+    const [config, setConfig] = React.useState(() => getNotifConfig(userId));
+    const [permStatus, setPermStatus] = React.useState(getNotifPermission());
+
+    const toggle = (tipo) => setConfig(c => ({
+        ...c,
+        [tipo]: { ...c[tipo], enabled: !c[tipo]?.enabled },
+    }));
+
+    const setMinutos = (tipo, val) => setConfig(c => ({
+        ...c,
+        [tipo]: { ...c[tipo], minutoAntes: Math.max(5, Math.min(240, val)) },
+    }));
+
+    const handleSave = async () => {
+        if (permStatus === 'default') {
+            const granted = await requestNotifPermission();
+            setPermStatus(granted ? 'granted' : 'denied');
+            if (!granted) return;
+        }
+        saveNotifConfig(userId, config);
+        onClose();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                        <Bell size={16} className="text-amber-400" />
+                        <p className="text-white font-bold text-base">Alertas de Proceso</p>
+                    </div>
+                    <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white rounded-lg">
+                        <X size={16} />
+                    </button>
+                </div>
+
+                <div className="px-5 py-4 space-y-1">
+                    <p className="text-slate-400 text-xs mb-4">
+                        Recibe una alerta en el dispositivo antes de que finalice cada bloque.
+                        Requiere tener el navegador abierto.
+                    </p>
+
+                    {permStatus === 'denied' && (
+                        <div className="bg-red-900/30 border border-red-700/50 rounded-xl p-3 mb-3 text-xs text-red-300">
+                            Las notificaciones están bloqueadas en este dispositivo. Actívalas desde la configuración del navegador.
+                        </div>
+                    )}
+
+                    {NOTIF_BLOCKS.map(({ tipo, label }) => {
+                        const cfg = config[tipo] || { enabled: false, minutoAntes: 30 };
+                        return (
+                            <div key={tipo}
+                                className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${cfg.enabled ? 'border-amber-500/30 bg-amber-500/8' : 'border-slate-700/60 bg-slate-800/40'}`}>
+                                {/* Toggle */}
+                                <button
+                                    onClick={() => toggle(tipo)}
+                                    className={`w-10 h-6 rounded-full transition-colors shrink-0 relative ${cfg.enabled ? 'bg-amber-500' : 'bg-slate-600'}`}>
+                                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${cfg.enabled ? 'left-[18px]' : 'left-0.5'}`} />
+                                </button>
+                                <span className={`flex-1 text-sm font-medium ${cfg.enabled ? 'text-white' : 'text-slate-500'}`}>{label}</span>
+                                {/* Minutos antes */}
+                                {cfg.enabled && (
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                            onClick={() => setMinutos(tipo, cfg.minutoAntes - (cfg.minutoAntes > 60 ? 30 : 15))}
+                                            className="w-7 h-7 rounded-lg bg-slate-700 text-white hover:bg-slate-600 text-sm font-bold flex items-center justify-center">−</button>
+                                        <span className="text-white text-xs font-mono w-14 text-center">
+                                            {cfg.minutoAntes >= 60 ? `${cfg.minutoAntes / 60}h` : `${cfg.minutoAntes} min`} antes
+                                        </span>
+                                        <button
+                                            onClick={() => setMinutos(tipo, cfg.minutoAntes + (cfg.minutoAntes >= 60 ? 30 : 15))}
+                                            className="w-7 h-7 rounded-lg bg-slate-700 text-white hover:bg-slate-600 text-sm font-bold flex items-center justify-center">+</button>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <div className="px-5 pb-5 pt-2 flex gap-3">
+                    <button onClick={onClose}
+                        className="flex-1 border border-slate-600 text-slate-300 rounded-xl py-3 text-sm font-medium hover:text-white transition-colors">
+                        Cancelar
+                    </button>
+                    <button onClick={handleSave}
+                        className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl py-3 text-sm transition-colors">
+                        Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function DailyProductionPage() {
@@ -1902,6 +1999,9 @@ export default function DailyProductionPage() {
 
     // Hold option toggle per block
     const [holdOptions, setHoldOptions]   = useState({}); // { [idxStr]: bool }
+
+    // Notification config modal (operario only)
+    const [showNotifConfig, setShowNotifConfig] = useState(false);
 
     // In-session stock alerts from production decrement
     const [productionAlerts, setProductionAlerts] = useState([]);
@@ -2412,13 +2512,20 @@ export default function DailyProductionPage() {
                 setView('list');
             } else if (newEstado === 'en_hold') {
                 setLogs(prev => prev.map(l => l.id === activeLog.id ? { ...l, ...payload, holdHasta } : l));
-                scheduleHoldNotif({
-                    logId:          activeLog.id,
-                    lote:           activeLog.lote || activeLog.id.slice(0, 8).toUpperCase(),
-                    productoNombre: activeLog.productoNombre || 'Producción',
-                    holdHasta,
-                    holdBloque,
-                });
+                // Schedule alert only if this block type has alerts enabled for this user
+                const notifCfg = getNotifConfig(kromaUser?.id);
+                const bloqueKey = bloque.tipo; // e.g. 'cuajado', 'desuerado'
+                const blockCfg  = notifCfg[bloqueKey];
+                if (blockCfg?.enabled) {
+                    scheduleHoldNotif({
+                        logId:          activeLog.id,
+                        lote:           activeLog.lote || activeLog.id.slice(0, 8).toUpperCase(),
+                        productoNombre: activeLog.productoNombre || 'Producción',
+                        holdHasta,
+                        holdBloque,
+                        minutoAntes:    blockCfg.minutoAntes ?? 60,
+                    });
+                }
                 setView('list');
             } else {
                 setLogs(prev => prev.map(l => l.id === activeLog.id ? { ...l, ...payload } : l));
@@ -3113,6 +3220,12 @@ export default function DailyProductionPage() {
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
+            {showNotifConfig && (
+                <NotifConfigModal
+                    userId={kromaUser?.id}
+                    onClose={() => setShowNotifConfig(false)}
+                />
+            )}
             <div className="px-5 pt-5 pb-3 flex items-start justify-between shrink-0">
                 <div>
                     <h2 className="text-xl font-bold text-white mb-0.5">Producción Diaria</h2>
@@ -3120,10 +3233,20 @@ export default function DailyProductionPage() {
                         {logs.length === 0 ? 'Sin producciones activas' : `${logs.length} ${logs.length === 1 ? 'producción activa' : 'producciones activas'}`}
                     </p>
                 </div>
-                <button onClick={() => setView('select_ficha')}
-                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-bold px-4 py-2.5 rounded-xl">
-                    <Plus size={15} /> Nueva
-                </button>
+                <div className="flex items-center gap-2">
+                    {/* Bell config — solo para operario */}
+                    {kromaRole === 'kroma_operario' && (
+                        <button onClick={() => setShowNotifConfig(true)}
+                            className="p-2.5 text-slate-500 hover:text-amber-400 hover:bg-slate-800 rounded-xl transition-colors"
+                            title="Configurar alertas de proceso">
+                            <Bell size={18} />
+                        </button>
+                    )}
+                    <button onClick={() => setView('select_ficha')}
+                        className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-bold px-4 py-2.5 rounded-xl">
+                        <Plus size={15} /> Nueva
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 pb-8">

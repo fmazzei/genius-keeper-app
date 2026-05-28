@@ -138,10 +138,9 @@ function KromaInner({ onExitKroma }) {
     const [notifBanner, setNotifBanner] = useState(false); // show "enable notifications" banner
     const unreadCount = useUnreadCount(kromaUser);
 
-    // On login: load active holds, schedule notifications (if permission granted),
-    // or show banner if permission not yet requested.
+    // Alertas de hold: solo para el perfil operario (maestro quesero)
     useEffect(() => {
-        if (!kromaUser) return;
+        if (!kromaUser || kromaRole !== 'kroma_operario') return;
         const DISMISSED_KEY = 'kroma_notif_dismissed';
         let cancelled = false;
 
@@ -153,10 +152,8 @@ function KromaInner({ onExitKroma }) {
                 ));
                 if (cancelled) return;
                 const holdLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                checkHoldsOnLoad(holdLogs);
+                checkHoldsOnLoad(holdLogs, kromaUser.id);
 
-                // Show banner to enable notifications if there are active holds
-                // and permission hasn't been asked yet
                 if (holdLogs.length > 0 && getNotifPermission() === 'default' && !localStorage.getItem(DISMISSED_KEY)) {
                     setNotifBanner(true);
                 }

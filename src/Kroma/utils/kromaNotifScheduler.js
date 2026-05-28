@@ -1,10 +1,12 @@
-// Kroma hold-timer notification scheduler.
-// Schedules browser notifications when production hold timers expire.
-// Persists pending notifications in localStorage so overdue timers fire
-// on the next app open, even after a full page reload.
+// Kroma hold-timer notification scheduler — solo para operarios (maestro quesero).
+// Dispara alertas X minutos ANTES de que finalice el bloque programado.
+// Persiste en localStorage para recuperar alertas pendientes al reabrir la app.
 
-const STORAGE_KEY = 'kroma_hold_notifs';
+const PENDING_KEY = 'kroma_hold_notifs';
+const CONFIG_KEY  = 'kroma_notif_config';
 const activeTimers = new Map(); // logId -> timeoutId
+
+// ─── Permiso del navegador ────────────────────────────────────────────────────
 
 export function getNotifPermission() {
     return typeof Notification !== 'undefined' ? Notification.permission : 'denied';
@@ -18,14 +20,54 @@ export async function requestNotifPermission() {
     return result === 'granted';
 }
 
-function getPending() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
-    catch { return {}; }
+// ─── Configuración por usuario (localStorage) ─────────────────────────────────
+
+// Bloques que pueden tener alerta configurada
+export const NOTIF_BLOCKS = [
+    { tipo: 'cuajado',          label: 'Cuajado'           },
+    { tipo: 'desuerado',        label: 'Desuerado'         },
+    { tipo: 'reposo',           label: 'Reposo'            },
+    { tipo: 'maduracion',       label: 'Maduración/Curado' },
+    { tipo: 'moldeado',         label: 'Moldeado'          },
+    { tipo: 'prensado',         label: 'Prensado'          },
+    { tipo: 'inoculacion',      label: 'Inoculación'       },
+    { tipo: 'agitacion_simple', label: 'Agitación'         },
+];
+
+const DEFAULT_CONFIG = {
+    cuajado:    { enabled: true,  minutoAntes: 60 },
+    desuerado:  { enabled: true,  minutoAntes: 60 },
+    reposo:     { enabled: false, minutoAntes: 30 },
+    maduracion: { enabled: false, minutoAntes: 60 },
+    moldeado:   { enabled: false, minutoAntes: 30 },
+    prensado:   { enabled: false, minutoAntes: 30 },
+    inoculacion:{ enabled: false, minutoAntes: 30 },
+    agitacion_simple: { enabled: false, minutoAntes: 15 },
+};
+
+export function getNotifConfig(userId) {
+    try {
+        const raw = localStorage.getItem(`${CONFIG_KEY}_${userId}`);
+        if (!raw) return { ...DEFAULT_CONFIG };
+        return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    } catch { return { ...DEFAULT_CONFIG }; }
 }
 
-function savePending(map) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(map)); } catch {}
+export function saveNotifConfig(userId, config) {
+    try { localStorage.setItem(`${CONFIG_KEY}_${userId}`, JSON.stringify(config)); } catch {}
 }
+
+// ─── Pendientes persistidos ───────────────────────────────────────────────────
+
+function getPending() {
+    try { return JSON.parse(localStorage.getItem(PENDING_KEY) || '{}'); }
+    catch { return {}; }
+}
+function savePending(map) {
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify(map)); } catch {}
+}
+
+// ─── Disparo de notificación ──────────────────────────────────────────────────
 
 async function fireNotif(logId, title, body) {
     try {
@@ -35,7 +77,7 @@ async function fireNotif(logId, title, body) {
             icon: '/icon.svg',
             tag: `kroma-hold-${logId}`,
             requireInteraction: true,
-            vibrate: [200, 100, 200],
+            vibrate: [200, 100, 200, 100, 200],
         };
         if (reg) {
             await reg.showNotification(title, opts);
@@ -47,35 +89,42 @@ async function fireNotif(logId, title, body) {
     activeTimers.delete(logId);
 }
 
-export function scheduleHoldNotif({ logId, lote, productoNombre, holdHasta, holdBloque }) {
+// ─── API pública ──────────────────────────────────────────────────────────────
+
+/**
+ * Programa una alerta para `minutoAntes` minutos ANTES de que finalice el bloque.
+ * Si ya pasó ese umbral, dispara de inmediato.
+ */
+export function scheduleHoldNotif({ logId, lote, productoNombre, holdHasta, holdBloque, minutoAntes = 60 }) {
     if (getNotifPermission() !== 'granted') return;
 
-    const targetTime = holdHasta?.toDate ? holdHasta.toDate() : new Date(holdHasta);
-    const msUntil = targetTime.getTime() - Date.now();
+    const finTime   = holdHasta?.toDate ? holdHasta.toDate() : new Date(holdHasta);
+    const alertTime = new Date(finTime.getTime() - minutoAntes * 60_000);
+    const msUntil   = alertTime.getTime() - Date.now();
 
-    // Persist so we can fire on next app open if this session closes
+    // Persistir para recuperar al reabrir
     const pending = getPending();
-    pending[logId] = { logId, lote, productoNombre, holdHasta: targetTime.toISOString(), holdBloque };
+    pending[logId] = { logId, lote, productoNombre, holdHasta: finTime.toISOString(), holdBloque, minutoAntes };
     savePending(pending);
 
-    // Cancel any existing timer for this log
     if (activeTimers.has(logId)) { clearTimeout(activeTimers.get(logId)); activeTimers.delete(logId); }
 
-    const body = `${productoNombre}${lote ? ` · Lote ${lote}` : ''}`;
+    const body  = `${productoNombre}${lote ? ` · Lote ${lote}` : ''}`;
+    const title = minutoAntes > 0
+        ? `⏰ ${holdBloque} finaliza en ${minutoAntes >= 60 ? `${minutoAntes / 60}h` : `${minutoAntes} min`}`
+        : `⏰ ${holdBloque} listo`;
 
     if (msUntil <= 0) {
-        const minutesLate = Math.round(-msUntil / 60000);
-        const title = minutesLate > 60
-            ? `⏰ ${holdBloque || 'Proceso'} listo (hace ${Math.round(minutesLate / 60)}h)`
-            : `⏰ ${holdBloque || 'Proceso'} listo (hace ${minutesLate} min)`;
-        fireNotif(logId, title, body);
+        // Ya pasó el umbral — disparo inmediato con contexto de tiempo
+        const msTilEnd = finTime.getTime() - Date.now();
+        const overdueTitle = msTilEnd > 0
+            ? `⏰ ${holdBloque} — quedan ${Math.ceil(msTilEnd / 60_000)} min`
+            : `⏰ ${holdBloque} ya finalizó`;
+        fireNotif(logId, overdueTitle, body);
         return;
     }
 
-    const timerId = setTimeout(
-        () => fireNotif(logId, `⏰ ${holdBloque || 'Proceso'} listo`, body),
-        msUntil
-    );
+    const timerId = setTimeout(() => fireNotif(logId, title, body), msUntil);
     activeTimers.set(logId, timerId);
 }
 
@@ -84,34 +133,44 @@ export function cancelHoldNotif(logId) {
     const p = getPending(); delete p[logId]; savePending(p);
 }
 
-// Called from KromaShell when active logs are loaded.
-// Fires overdue notifications immediately and schedules future ones.
-export function checkHoldsOnLoad(logs) {
+/**
+ * Llamado desde KromaShell al iniciar sesión con los logs activos en hold.
+ * Solo aplica a perfil operario. Usa la config guardada del usuario.
+ */
+export function checkHoldsOnLoad(logs, userId) {
     const holdLogs = (logs || []).filter(l => l.estado === 'en_hold' && l.holdHasta);
 
-    // Cancel timers for logs no longer in hold
+    // Cancelar timers de logs que ya no están en hold
     for (const logId of activeTimers.keys()) {
         if (!holdLogs.find(l => l.id === logId)) cancelHoldNotif(logId);
     }
 
     if (getNotifPermission() !== 'granted') return;
 
-    // Schedule/fire from live Firestore data
-    holdLogs.forEach(log => scheduleHoldNotif({
-        logId: log.id,
-        lote: log.lote || log.id.slice(0, 8).toUpperCase(),
-        productoNombre: log.productoNombre || 'Producción',
-        holdHasta: log.holdHasta,
-        holdBloque: log.holdBloque || 'Bloque',
-    }));
+    const config = getNotifConfig(userId);
 
-    // Also recover any pending from localStorage not covered by live data
-    // (e.g. from a previous session before permissions were granted)
+    holdLogs.forEach(log => {
+        // Determinar el bloque tipo del hold para buscar config
+        const bloqueKey = Object.keys(config).find(k =>
+            (log.holdBloque || '').toLowerCase().includes(k) ||
+            k === (log.holdBloqueKey || '')
+        );
+        const blockCfg = bloqueKey ? config[bloqueKey] : null;
+        const minutoAntes = blockCfg?.minutoAntes ?? 60;
+
+        scheduleHoldNotif({
+            logId:          log.id,
+            lote:           log.lote || log.id.slice(0, 8).toUpperCase(),
+            productoNombre: log.productoNombre || 'Producción',
+            holdHasta:      log.holdHasta,
+            holdBloque:     log.holdBloque || 'Bloque',
+            minutoAntes,
+        });
+    });
+
+    // Limpiar pendientes localStorage que ya no tienen log activo
     const pending = getPending();
     Object.values(pending).forEach(item => {
-        if (!holdLogs.find(l => l.id === item.logId)) {
-            // Log no longer in hold — discard stale entry
-            cancelHoldNotif(item.logId);
-        }
+        if (!holdLogs.find(l => l.id === item.logId)) cancelHoldNotif(item.logId);
     });
 }
