@@ -11,10 +11,10 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_PARAM_CONFIG = [
-    { id: 'temperatura', label: 'Temperatura', unit: '°C',   step: 0.1,   decimals: 1, defaultValue: 12 },
-    { id: 'densidad',    label: 'Densidad',    unit: 'g/ml', step: 0.001, decimals: 3, defaultValue: 1.028 },
-    { id: 'pH',          label: 'pH',          unit: '',     step: 0.01,  decimals: 2, defaultValue: 6.70 },
-    { id: 'brix',        label: '°Brix',       unit: '°Bx',  step: 0.1,   decimals: 1, defaultValue: 11.5 },
+    { id: 'temperatura', label: 'Temperatura', unit: '°C',   step: 0.1,   decimals: 1, defaultValue: 12,    min: 0,     max: 45    },
+    { id: 'densidad',    label: 'Densidad',    unit: 'g/ml', step: 0.001, decimals: 3, defaultValue: 1.028, min: 1.010, max: 1.050, hint: 'Lactodensímetro: si marca 29 → ingresa 1.029' },
+    { id: 'pH',          label: 'pH',          unit: '',     step: 0.01,  decimals: 2, defaultValue: 6.70,  min: 5.50,  max: 8.00  },
+    { id: 'brix',        label: '°Brix',       unit: '°Bx',  step: 0.1,   decimals: 1, defaultValue: 11.5,  min: 5.0,   max: 20.0  },
 ];
 
 const LITER_STEPS    = [1, 5, 10, 50];
@@ -107,24 +107,33 @@ function SecLabel({ children }) {
 }
 
 function ParamStepper({ param, value, onChange }) {
-    const { step, decimals, label, unit } = param;
+    const { step, decimals, label, unit, min, max, hint } = param;
+    const decrement = () => {
+        const next = +(value - step).toFixed(decimals);
+        onChange(min !== undefined ? Math.max(min, next) : next);
+    };
+    const increment = () => {
+        const next = +(value + step).toFixed(decimals);
+        onChange(max !== undefined ? Math.min(max, next) : next);
+    };
     return (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
             <SecLabel>{label}{unit && ` (${unit})`}</SecLabel>
             <div className="flex items-center gap-3">
-                <button type="button" onClick={() => onChange(+(value - step).toFixed(decimals))}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">
+                <button type="button" onClick={decrement} disabled={min !== undefined && value <= min}
+                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold disabled:opacity-30 disabled:cursor-not-allowed">
                     −
                 </button>
                 <div className="flex-1 bg-slate-900 rounded-xl px-4 py-3.5 text-center">
                     <span className="text-white text-2xl font-mono font-bold">{value.toFixed(decimals)}</span>
                     {unit && <span className="text-slate-400 text-sm ml-2">{unit}</span>}
                 </div>
-                <button type="button" onClick={() => onChange(+(value + step).toFixed(decimals))}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">
+                <button type="button" onClick={increment} disabled={max !== undefined && value >= max}
+                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold disabled:opacity-30 disabled:cursor-not-allowed">
                     +
                 </button>
             </div>
+            {hint && <p className="text-slate-500 text-xs mt-2">{hint}</p>}
         </div>
     );
 }
