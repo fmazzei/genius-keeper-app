@@ -655,50 +655,45 @@ const GeneralSettings = () => {
     );
 };
 
+const DIRECTIVO_ROLES = [
+    { value: 'director',      label: 'Director',  color: 'bg-violet-100 text-violet-700', desc: 'Vista ejecutiva — solo lectura' },
+    { value: 'gerencia',      label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial' },
+    { value: 'sales_manager', label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial (alias)' },
+];
+
 const SalesManagerManagement = () => {
-    const [managers, setManagers] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const [managers, setManagers]         = useState([]);
+    const [loading, setLoading]           = useState(true);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [newUser, setNewUser] = useState({ name: '', email: '', password: '' });
-    const [isCreating, setIsCreating] = useState(false);
-    const [createError, setCreateError] = useState('');
+    const [newUser, setNewUser]           = useState({ name: '', email: '', password: '', role: 'gerencia' });
+    const [isCreating, setIsCreating]     = useState(false);
+    const [createError, setCreateError]   = useState('');
 
     useEffect(() => {
-        const q = query(collection(db, "users_metadata"), where("role", "==", "sales_manager"));
+        const q = query(collection(db, 'users_metadata'), where('role', 'in', ['director', 'gerencia', 'sales_manager']));
         const unsubscribe = onSnapshot(q,
             (snapshot) => {
-                const managersData = snapshot.docs.map(d => ({
-                    id: d.id,
-                    name: d.data().name || d.id,
-                    email: d.data().email || 'No disponible',
+                const data = snapshot.docs.map(d => ({
+                    id:     d.id,
+                    name:   d.data().name || d.id,
+                    email:  d.data().email || 'No disponible',
+                    role:   d.data().role,
                     active: d.data().active !== false,
                 }));
-                setManagers(managersData);
+                setManagers(data);
                 setLoading(false);
             },
-            (error) => {
-                console.error("Error al cargar gerentes:", error);
-                setLoading(false);
-            }
+            (error) => { console.error(error); setLoading(false); }
         );
         return () => unsubscribe();
     }, []);
 
-    const handleToggleActive = async (managerId, currentActive) => {
-        try {
-            await updateDoc(doc(db, "users_metadata", managerId), { active: !currentActive });
-        } catch (error) {
-            alert("No se pudo actualizar el estado.");
-        }
-    };
+    const handleToggleActive = (managerId, currentActive) =>
+        updateDoc(doc(db, 'users_metadata', managerId), { active: !currentActive }).catch(() => alert('No se pudo actualizar el estado.'));
 
-    const handleDelete = async (manager) => {
-        if (!window.confirm(`¿Seguro que quieres eliminar a "${manager.name}"? Perderá el acceso a la app de inmediato.`)) return;
-        try {
-            await deleteDoc(doc(db, "users_metadata", manager.id));
-        } catch (error) {
-            alert("No se pudo eliminar el usuario.");
-        }
+    const handleDelete = (manager) => {
+        if (!window.confirm(`¿Eliminar a "${manager.name}"? Perderá el acceso de inmediato.`)) return;
+        deleteDoc(doc(db, 'users_metadata', manager.id)).catch(() => alert('No se pudo eliminar el usuario.'));
     };
 
     const handleCreateUser = async (e) => {
@@ -708,36 +703,24 @@ const SalesManagerManagement = () => {
         try {
             const { initializeApp, deleteApp } = await import('firebase/app');
             const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
-            const firebaseConfig = {
-                apiKey: "AIzaSyBcTpXt3p5kjOCc6rK41Jv4vO8_ULJEfGw",
-                authDomain: "geniuskeeper-36553.firebaseapp.com",
-                projectId: "geniuskeeper-36553",
-                storageBucket: "geniuskeeper-36553.appspot.com",
-                messagingSenderId: "362565450545",
-                appId: "1:362565450545:web:27d9dea004e74966a70e10"
-            };
-            const tempApp = initializeApp(firebaseConfig, `create-user-${Date.now()}`);
+            const tempApp  = initializeApp(FIREBASE_CONFIG, `create-user-${Date.now()}`);
             const tempAuth = getAuth(tempApp);
             const { user } = await createUserWithEmailAndPassword(tempAuth, newUser.email.trim(), newUser.password);
-            await setDoc(doc(db, "users_metadata", user.uid), {
-                name: newUser.name.trim(),
-                email: newUser.email.trim(),
-                role: 'sales_manager',
-                active: true,
+            await setDoc(doc(db, 'users_metadata', user.uid), {
+                name:      newUser.name.trim(),
+                email:     newUser.email.trim(),
+                role:      newUser.role,
+                active:    true,
                 salesGoal: 0,
             });
             await tempAuth.signOut();
             await deleteApp(tempApp);
-            setNewUser({ name: '', email: '', password: '' });
+            setNewUser({ name: '', email: '', password: '', role: 'gerencia' });
             setIsAddModalOpen(false);
         } catch (error) {
-            if (error.code === 'auth/email-already-in-use') {
-                setCreateError('Ya existe un usuario con ese correo electrónico.');
-            } else if (error.code === 'auth/weak-password') {
-                setCreateError('La contraseña debe tener al menos 6 caracteres.');
-            } else {
-                setCreateError(`Error: ${error.message}`);
-            }
+            if (error.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo electrónico.');
+            else if (error.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            else setCreateError(`Error: ${error.message}`);
         } finally {
             setIsCreating(false);
         }
@@ -746,8 +729,10 @@ const SalesManagerManagement = () => {
     const closeModal = () => {
         setIsAddModalOpen(false);
         setCreateError('');
-        setNewUser({ name: '', email: '', password: '' });
+        setNewUser({ name: '', email: '', password: '', role: 'gerencia' });
     };
+
+    const roleInfo = (role) => DIRECTIVO_ROLES.find(r => r.value === role) || DIRECTIVO_ROLES[1];
 
     if (loading) return <LoadingSpinner />;
 
@@ -755,8 +740,8 @@ const SalesManagerManagement = () => {
         <div className="space-y-4">
             <div className="flex justify-between items-center">
                 <div>
-                    <h3 className="text-xl font-semibold text-slate-700">Acceso Gerencial</h3>
-                    <p className="text-sm text-slate-500 mt-1">Usuarios que ingresan con correo y contraseña.</p>
+                    <h3 className="text-xl font-semibold text-slate-700">Directivos</h3>
+                    <p className="text-sm text-slate-500 mt-1">Cuentas de Director y Gerencia con acceso al panel de gestión.</p>
                 </div>
                 <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm">
                     <UserPlus size={18} />
@@ -766,41 +751,61 @@ const SalesManagerManagement = () => {
 
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <ul className="divide-y divide-slate-200">
-                    {managers.map(manager => (
-                        <li key={manager.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                            <div className="flex items-center">
-                                <div className="w-10 h-10 rounded-full bg-pink-200 text-pink-700 flex items-center justify-center font-bold text-lg flex-shrink-0">
-                                    {manager.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="ml-4">
-                                    <p className="font-semibold text-slate-800">{manager.name}</p>
-                                    <p className="text-sm text-slate-500">{manager.email}</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border">
-                                    <div>
-                                        <p className="font-semibold text-slate-700 text-sm">Acceso</p>
-                                        <p className={`text-xs font-medium ${manager.active ? 'text-green-600' : 'text-red-500'}`}>
-                                            {manager.active ? 'Activo' : 'Suspendido'}
-                                        </p>
+                    {managers.map(manager => {
+                        const ri = roleInfo(manager.role);
+                        return (
+                            <li key={manager.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0 ${ri.color}`}>
+                                        {manager.name.charAt(0).toUpperCase()}
                                     </div>
-                                    <ToggleSwitch enabled={manager.active} setEnabled={() => handleToggleActive(manager.id, manager.active)} />
+                                    <div>
+                                        <p className="font-semibold text-slate-800">{manager.name}</p>
+                                        <p className="text-sm text-slate-500">{manager.email}</p>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ri.color}`}>{ri.label}</span>
+                                    </div>
                                 </div>
-                                <button onClick={() => handleDelete(manager)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Eliminar usuario">
-                                    <Trash2 size={18} />
-                                </button>
-                            </div>
-                        </li>
-                    ))}
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border">
+                                        <div>
+                                            <p className="font-semibold text-slate-700 text-sm">Acceso</p>
+                                            <p className={`text-xs font-medium ${manager.active ? 'text-green-600' : 'text-red-500'}`}>
+                                                {manager.active ? 'Activo' : 'Suspendido'}
+                                            </p>
+                                        </div>
+                                        <ToggleSwitch enabled={manager.active} setEnabled={() => handleToggleActive(manager.id, manager.active)} />
+                                    </div>
+                                    <button onClick={() => handleDelete(manager)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Eliminar usuario">
+                                        <Trash2 size={18} />
+                                    </button>
+                                </div>
+                            </li>
+                        );
+                    })}
                     {managers.length === 0 && (
-                        <p className="text-center text-slate-500 py-8">No hay usuarios gerenciales. Agrega uno con el botón de arriba.</p>
+                        <p className="text-center text-slate-500 py-8">No hay directivos registrados. Agrega uno con el botón de arriba.</p>
                     )}
                 </ul>
             </div>
 
-            <Modal isOpen={isAddModalOpen} onClose={closeModal} title="Agregar Nuevo Usuario Gerencial">
+            <Modal isOpen={isAddModalOpen} onClose={closeModal} title="Agregar Nuevo Directivo">
                 <form onSubmit={handleCreateUser} className="space-y-4 p-1">
+                    <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Rol</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {[{ value: 'gerencia', label: 'Gerencia', desc: 'Gestión comercial' }, { value: 'director', label: 'Director', desc: 'Solo lectura' }].map(opt => (
+                                <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => setNewUser(p => ({ ...p, role: opt.value }))}
+                                    className={`p-3 rounded-lg border text-left transition-all ${newUser.role === opt.value ? 'border-brand-blue bg-brand-blue/5' : 'border-slate-200 hover:border-slate-300'}`}
+                                >
+                                    <p className={`font-semibold text-sm ${newUser.role === opt.value ? 'text-brand-blue' : 'text-slate-700'}`}>{opt.label}</p>
+                                    <p className="text-xs text-slate-400 mt-0.5">{opt.desc}</p>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre completo</label>
                         <input type="text" value={newUser.name} onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="Ej: Carlos Pérez" required />
@@ -812,7 +817,7 @@ const SalesManagerManagement = () => {
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña inicial</label>
                         <input type="password" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="Mínimo 6 caracteres" required minLength={6} />
-                        <p className="text-xs text-slate-500 mt-1">El usuario puede cambiarla después desde su cuenta.</p>
+                        <p className="text-xs text-slate-500 mt-1">El usuario puede cambiarla desde su cuenta.</p>
                     </div>
                     {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-md font-medium">{createError}</p>}
                     <div className="flex gap-3 pt-2">
@@ -1574,75 +1579,239 @@ const ReportsAutoManagement = () => {
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
-// ─── Vendedores Management (stub — full implementation in next iteration) ─────
+// ─── Vendedores Management ────────────────────────────────────────────────────
+
+const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBcTpXt3p5kjOCc6rK41Jv4vO8_ULJEfGw",
+    authDomain: "geniuskeeper-36553.firebaseapp.com",
+    projectId: "geniuskeeper-36553",
+    storageBucket: "geniuskeeper-36553.appspot.com",
+    messagingSenderId: "362565450545",
+    appId: "1:362565450545:web:27d9dea004e74966a70e10",
+};
+
+const MES_ARRANQUE_OPTS = [
+    { value: 0, label: 'Sin arranque',  desc: 'Meta completa desde el primer mes' },
+    { value: 1, label: '1 mes',         desc: '50% la meta el primer mes' },
+    { value: 2, label: '2 meses',       desc: '50% mes 1, 75% mes 2' },
+];
 
 const VendedoresManagement = () => {
-    const [vendedores, setVendedores] = useState([]);
-    const [loading, setLoading]       = useState(true);
+    const [vendedores, setVendedores]         = useState([]);
+    const [reporters, setReporters]           = useState([]);
+    const [loading, setLoading]               = useState(true);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [editTarget, setEditTarget]         = useState(null);
+    const [isCreating, setIsCreating]         = useState(false);
+    const [createError, setCreateError]       = useState('');
+
+    const EMPTY_FORM = { name: '', email: '', password: '', reporterId: '', reporterName: '', metaMensual: '', mesArranque: 0 };
+    const [form, setForm] = useState(EMPTY_FORM);
 
     useEffect(() => {
-        const q = query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'));
-        const unsub = onSnapshot(q, snap => {
-            setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setLoading(false);
-        });
-        return unsub;
+        const q1 = query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'));
+        const q2 = query(collection(db, 'reporters'), orderBy('name'));
+        const u1 = onSnapshot(q1, snap => { setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
+        const u2 = onSnapshot(q2, snap => setReporters(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        return () => { u1(); u2(); };
     }, []);
 
+    const closeModal = () => {
+        setIsAddModalOpen(false);
+        setEditTarget(null);
+        setCreateError('');
+        setForm(EMPTY_FORM);
+    };
+
+    const handleReporterChange = (reporterId) => {
+        const r = reporters.find(r => r.id === reporterId);
+        setForm(p => ({ ...p, reporterId, reporterName: r?.name || '' }));
+    };
+
+    const handleCreate = async (e) => {
+        e.preventDefault();
+        setCreateError('');
+        setIsCreating(true);
+        try {
+            const { initializeApp, deleteApp } = await import('firebase/app');
+            const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
+            const tempApp  = initializeApp(FIREBASE_CONFIG, `create-vendedor-${Date.now()}`);
+            const tempAuth = getAuth(tempApp);
+            const { user } = await createUserWithEmailAndPassword(tempAuth, form.email.trim(), form.password);
+            await setDoc(doc(db, 'users_metadata', user.uid), {
+                name:         form.name.trim(),
+                email:        form.email.trim(),
+                role:         'vendedor',
+                active:       true,
+                reporterId:   form.reporterId,
+                reporterName: form.reporterName,
+                metaMensual:  Number(form.metaMensual) || 0,
+                mesArranque:  form.mesArranque,
+            });
+            await tempAuth.signOut();
+            await deleteApp(tempApp);
+            closeModal();
+        } catch (err) {
+            if (err.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo.');
+            else if (err.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            else setCreateError(`Error: ${err.message}`);
+        } finally {
+            setIsCreating(false);
+        }
+    };
+
+    const handleUpdate = async (e) => {
+        e.preventDefault();
+        setIsCreating(true);
+        try {
+            await updateDoc(doc(db, 'users_metadata', editTarget.id), {
+                name:         form.name.trim(),
+                reporterId:   form.reporterId,
+                reporterName: form.reporterName,
+                metaMensual:  Number(form.metaMensual) || 0,
+                mesArranque:  form.mesArranque,
+            });
+            closeModal();
+        } catch (err) {
+            setCreateError(`Error: ${err.message}`);
+        } finally {
+            setIsCreating(false);
+        }
+    };
+
+    const openEdit = (v) => {
+        setEditTarget(v);
+        setForm({
+            name:         v.name || '',
+            email:        v.email || '',
+            password:     '',
+            reporterId:   v.reporterId || '',
+            reporterName: v.reporterName || '',
+            metaMensual:  v.metaMensual ?? '',
+            mesArranque:  v.mesArranque ?? 0,
+        });
+        setIsAddModalOpen(true);
+    };
+
+    const handleToggleActive = (v) => updateDoc(doc(db, 'users_metadata', v.id), { active: !v.active }).catch(() => alert('No se pudo actualizar.'));
+    const handleDelete = (v) => {
+        if (!window.confirm(`¿Eliminar a "${v.name}"? Perderá el acceso de inmediato.`)) return;
+        deleteDoc(doc(db, 'users_metadata', v.id)).catch(() => alert('No se pudo eliminar.'));
+    };
+
+    if (loading) return <LoadingSpinner />;
+
+    const isEditing = !!editTarget;
+
     return (
-        <div className="max-w-3xl">
-            <div className="mb-6">
-                <h3 className="text-lg font-bold text-slate-800">Vendedores</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                    Gestiona las cuentas de vendedor, sus metas mensuales y la vinculación con la cartera de reporters.
-                </p>
-            </div>
-
-            {/* Coming soon notice */}
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6 flex items-start gap-4">
-                <TrendingUp size={22} className="text-brand-blue shrink-0 mt-0.5" />
+        <div className="max-w-3xl space-y-4">
+            <div className="flex items-start justify-between">
                 <div>
-                    <p className="font-semibold text-brand-blue text-sm">Módulo en construcción</p>
-                    <p className="text-slate-600 text-sm mt-1">
-                        La creación de cuentas de vendedor, asignación de reporters, metas y estructura de comisiones estará disponible en la próxima actualización.
-                    </p>
-                    <ul className="text-slate-500 text-xs mt-2 space-y-1 list-disc list-inside">
-                        <li>Crear cuenta de vendedor (email + contraseña)</li>
-                        <li>Vincular al reporter de su cartera</li>
-                        <li>Configurar meta mensual de unidades</li>
-                        <li>Definir período de arranque (meses 1-2)</li>
-                        <li>Asignar PDVs al vendedor</li>
-                    </ul>
+                    <h3 className="text-lg font-bold text-slate-800">Vendedores</h3>
+                    <p className="text-sm text-slate-500 mt-1">Cuentas de vendedor con metas, reporters y período de arranque.</p>
                 </div>
+                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm shrink-0">
+                    <UserPlus size={18} />
+                    <span className="hidden sm:inline">Agregar</span>
+                </button>
             </div>
 
-            {/* Existing vendedor accounts */}
-            {loading ? (
-                <LoadingSpinner />
-            ) : vendedores.length === 0 ? (
-                <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400">
-                    <Users size={36} className="mx-auto mb-3 opacity-40" />
+            {vendedores.length === 0 ? (
+                <div className="text-center py-14 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400">
+                    <TrendingUp size={36} className="mx-auto mb-3 opacity-30" />
                     <p className="font-semibold">Sin vendedores registrados</p>
-                    <p className="text-sm mt-1">Las cuentas creadas con rol <code className="bg-slate-100 px-1.5 py-0.5 rounded text-xs">vendedor</code> aparecerán aquí.</p>
+                    <p className="text-sm mt-1">Usa el botón <strong>Agregar</strong> para crear la primera cuenta.</p>
                 </div>
             ) : (
-                <div className="space-y-2">
-                    {vendedores.map(v => (
-                        <div key={v.id} className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-sm shrink-0">
-                                {(v.name || v.email || '?')[0].toUpperCase()}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="font-semibold text-slate-800 text-sm truncate">{v.name || v.email}</p>
-                                <p className="text-slate-400 text-xs">Meta: {v.metaMensual?.toLocaleString() || '—'} uds/mes · Reporter: {v.reporterName || 'No asignado'}</p>
-                            </div>
-                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${v.active !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                {v.active !== false ? 'Activo' : 'Inactivo'}
-                            </span>
-                        </div>
-                    ))}
+                <div className="bg-white rounded-xl shadow overflow-hidden">
+                    <ul className="divide-y divide-slate-100">
+                        {vendedores.map(v => (
+                            <li key={v.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-base shrink-0">
+                                        {(v.name || v.email || '?')[0].toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="font-semibold text-slate-800 truncate">{v.name || v.email}</p>
+                                        <p className="text-xs text-slate-400 truncate">
+                                            {v.email}
+                                            {v.reporterName && <> · <span className="text-slate-500">{v.reporterName}</span></>}
+                                            {v.metaMensual > 0 && <> · <span className="text-emerald-600 font-medium">{v.metaMensual.toLocaleString()} uds/mes</span></>}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${v.active !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                        {v.active !== false ? 'Activo' : 'Inactivo'}
+                                    </span>
+                                    <ToggleSwitch enabled={v.active !== false} setEnabled={() => handleToggleActive(v)} />
+                                    <button onClick={() => openEdit(v)} className="p-2 text-slate-400 hover:text-brand-blue hover:bg-blue-50 rounded-full transition-colors" title="Editar">
+                                        <Settings size={16} />
+                                    </button>
+                                    <button onClick={() => handleDelete(v)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Eliminar">
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
                 </div>
             )}
+
+            <Modal isOpen={isAddModalOpen} onClose={closeModal} title={isEditing ? `Editar — ${editTarget?.name}` : 'Nuevo Vendedor'}>
+                <form onSubmit={isEditing ? handleUpdate : handleCreate} className="space-y-4 p-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="sm:col-span-2">
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre completo</label>
+                            <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Ej: Pedro García" required />
+                        </div>
+                        {!isEditing && (
+                            <>
+                                <div className="sm:col-span-2">
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Correo electrónico</label>
+                                    <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="vendedor@lacteoca.com" required />
+                                </div>
+                                <div className="sm:col-span-2">
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña inicial</label>
+                                    <input type="password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Mínimo 6 caracteres" required minLength={6} />
+                                </div>
+                            </>
+                        )}
+                        <div className="sm:col-span-2">
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Reporter vinculado</label>
+                            <select value={form.reporterId} onChange={e => handleReporterChange(e.target.value)} className="w-full p-3 border border-slate-300 rounded-lg bg-white">
+                                <option value="">— Sin asignar —</option>
+                                {reporters.filter(r => r.active !== false).map(r => (
+                                    <option key={r.id} value={r.id}>{r.name}</option>
+                                ))}
+                            </select>
+                            <p className="text-xs text-slate-400 mt-1">Los despachos de este reporter se usarán para calcular la meta del vendedor.</p>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Meta mensual (unidades)</label>
+                            <input type="number" min="0" value={form.metaMensual} onChange={e => setForm(p => ({ ...p, metaMensual: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Ej: 5000" required />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Período de arranque</label>
+                            <select value={form.mesArranque} onChange={e => setForm(p => ({ ...p, mesArranque: Number(e.target.value) }))} className="w-full p-3 border border-slate-300 rounded-lg bg-white">
+                                {MES_ARRANQUE_OPTS.map(o => (
+                                    <option key={o.value} value={o.value}>{o.label} — {o.desc}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg font-medium">{createError}</p>}
+
+                    <div className="flex gap-3 pt-1">
+                        <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button>
+                        <button type="submit" disabled={isCreating} className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
+                            {isCreating ? <LoadingSpinner size="sm" /> : <UserPlus size={18} />}
+                            {isCreating ? (isEditing ? 'Guardando…' : 'Creando…') : (isEditing ? 'Guardar Cambios' : 'Crear Vendedor')}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
         </div>
     );
 };
