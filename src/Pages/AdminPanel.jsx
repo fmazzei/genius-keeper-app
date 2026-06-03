@@ -1574,41 +1574,367 @@ const ReportsAutoManagement = () => {
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
-const AdminPanel = ({ user, posList, reports, loading }) => {
-    const [activeTab, setActiveTab] = useState('settings');
-    const TabButton = ({ id, text, icon }) => ( <button onClick={() => setActiveTab(id)} className={`flex items-center px-3 sm:px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === id ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-200'}`}>{icon}<span className="ml-2 hidden sm:inline">{text}</span></button> );
-    
+// ─── Vendedores Management (stub — full implementation in next iteration) ─────
+
+const VendedoresManagement = () => {
+    const [vendedores, setVendedores] = useState([]);
+    const [loading, setLoading]       = useState(true);
+
+    useEffect(() => {
+        const q = query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'));
+        const unsub = onSnapshot(q, snap => {
+            setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setLoading(false);
+        });
+        return unsub;
+    }, []);
+
     return (
-        <div className="w-full bg-slate-50 p-3 sm:p-4 md:p-6">
-            <div className="max-w-7xl mx-auto">
-                <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-6">Panel de Administración</h2>
-                <div className="flex space-x-1 sm:space-x-2 border-b border-slate-200 mb-6 overflow-x-auto pb-2">
-                    <TabButton id="reports" text="Reportes" icon={<FileText size={18} />} />
-                    <TabButton id="pos" text="PDV" icon={<Store size={18} />} />
-                    <TabButton id="reporters" text="Reporters" icon={<ClipboardList size={18} />} />
-                    <TabButton id="depots" text="Depósitos" icon={<Warehouse size={18} />} />
-                    <TabButton id="users" text="Usuarios" icon={<Users size={18} />} />
-                    <TabButton id="sales_goals" text="Metas de Venta" icon={<Target size={18} />} />
-                    <TabButton id="modules" text="Módulos" icon={<LayoutGrid size={18} />} />
-                    <TabButton id="dashboard" text="Dashboard" icon={<BarChart2 size={18} />} />
-                    <TabButton id="emails" text="Correos" icon={<Mail size={18} />} />
-                    <TabButton id="auto_reports" text="Auto-Reportes" icon={<Calendar size={18} />} />
-                    <TabButton id="alerts" text="Alertas" icon={<Bell size={18} />} />
-                    <TabButton id="settings" text="Configuración" icon={<Settings size={18} />} />
+        <div className="max-w-3xl">
+            <div className="mb-6">
+                <h3 className="text-lg font-bold text-slate-800">Vendedores</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                    Gestiona las cuentas de vendedor, sus metas mensuales y la vinculación con la cartera de reporters.
+                </p>
+            </div>
+
+            {/* Coming soon notice */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-6 flex items-start gap-4">
+                <TrendingUp size={22} className="text-brand-blue shrink-0 mt-0.5" />
+                <div>
+                    <p className="font-semibold text-brand-blue text-sm">Módulo en construcción</p>
+                    <p className="text-slate-600 text-sm mt-1">
+                        La creación de cuentas de vendedor, asignación de reporters, metas y estructura de comisiones estará disponible en la próxima actualización.
+                    </p>
+                    <ul className="text-slate-500 text-xs mt-2 space-y-1 list-disc list-inside">
+                        <li>Crear cuenta de vendedor (email + contraseña)</li>
+                        <li>Vincular al reporter de su cartera</li>
+                        <li>Configurar meta mensual de unidades</li>
+                        <li>Definir período de arranque (meses 1-2)</li>
+                        <li>Asignar PDVs al vendedor</li>
+                    </ul>
                 </div>
-                <div className="animate-fade-in">
-                    {activeTab === 'reports' && <ReportManagement reports={reports} posList={posList} loading={loading} />}
-                    {activeTab === 'pos' && <PosManagement posList={posList} loading={loading} />}
-                    {activeTab === 'reporters' && <ReportersManagement />}
-                    {activeTab === 'depots' && <DepotManagement />}
-                    {activeTab === 'users' && <UserManagement />}
-                    {activeTab === 'sales_goals' && <SalesGoalsManagement />}
-                    {activeTab === 'modules' && <ModuleManagement />}
-                    {activeTab === 'dashboard' && <DashboardManagement />}
-                    {activeTab === 'emails' && <EmailManagement />}
-                    {activeTab === 'auto_reports' && <ReportsAutoManagement />}
-                    {activeTab === 'alerts' && <AlertsManagement />}
-                    {activeTab === 'settings' && <GeneralSettings />}
+            </div>
+
+            {/* Existing vendedor accounts */}
+            {loading ? (
+                <LoadingSpinner />
+            ) : vendedores.length === 0 ? (
+                <div className="text-center py-12 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400">
+                    <Users size={36} className="mx-auto mb-3 opacity-40" />
+                    <p className="font-semibold">Sin vendedores registrados</p>
+                    <p className="text-sm mt-1">Las cuentas creadas con rol <code className="bg-slate-100 px-1.5 py-0.5 rounded text-xs">vendedor</code> aparecerán aquí.</p>
+                </div>
+            ) : (
+                <div className="space-y-2">
+                    {vendedores.map(v => (
+                        <div key={v.id} className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-sm shrink-0">
+                                {(v.name || v.email || '?')[0].toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-slate-800 text-sm truncate">{v.name || v.email}</p>
+                                <p className="text-slate-400 text-xs">Meta: {v.metaMensual?.toLocaleString() || '—'} uds/mes · Reporter: {v.reporterName || 'No asignado'}</p>
+                            </div>
+                            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${v.active !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                {v.active !== false ? 'Activo' : 'Inactivo'}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ─── Notificaciones — merges Email + Auto-Reports ─────────────────────────────
+
+const NotificacionesSection = () => {
+    const [tab, setTab] = useState('correos');
+    return (
+        <div>
+            <div className="mb-5">
+                <h3 className="text-lg font-bold text-slate-800">Notificaciones</h3>
+                <p className="text-sm text-slate-500 mt-1">Destinatarios de correo, alertas automáticas y reportes programados.</p>
+            </div>
+            <div className="flex gap-2 border-b border-slate-200 mb-6">
+                {[
+                    { id: 'correos',       label: 'Correos' },
+                    { id: 'auto_reports',  label: 'Auto-Reportes' },
+                ].map(({ id, label }) => (
+                    <button
+                        key={id}
+                        onClick={() => setTab(id)}
+                        className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === id ? 'border-brand-blue text-brand-blue' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+            {tab === 'correos'      && <EmailManagement />}
+            {tab === 'auto_reports' && <ReportsAutoManagement />}
+        </div>
+    );
+};
+
+// ─── Integraciones — Zoho Books webhook config ────────────────────────────────
+
+const IntegracionesSection = () => {
+    const [zohoSales, setZohoSales]       = useState(false);
+    const [zohoComis, setZohoComis]       = useState(false);
+    const [loading, setLoading]           = useState(true);
+    const [saving, setSaving]             = useState(false);
+    const [saved, setSaved]               = useState(false);
+
+    useEffect(() => {
+        getDoc(doc(db, 'settings', 'appConfig')).then(snap => {
+            if (snap.exists()) {
+                const d = snap.data();
+                setZohoSales(d.zohoSalesWebhookActive === true);
+                setZohoComis(d.zohoCommissionsWebhookActive === true);
+            }
+            setLoading(false);
+        }).catch(() => setLoading(false));
+    }, []);
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            await setDoc(doc(db, 'settings', 'appConfig'), {
+                zohoSalesWebhookActive:       zohoSales,
+                zohoCommissionsWebhookActive: zohoComis,
+            }, { merge: true });
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2500);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const Row = ({ label, desc, enabled, setEnabled }) => (
+        <div className="flex items-center justify-between gap-4 py-4 border-b border-slate-100 last:border-0">
+            <div>
+                <p className="font-semibold text-slate-800 text-sm">{label}</p>
+                <p className="text-slate-400 text-xs mt-0.5">{desc}</p>
+            </div>
+            <ToggleSwitch enabled={enabled} setEnabled={setEnabled} />
+        </div>
+    );
+
+    return (
+        <div className="max-w-2xl">
+            <div className="mb-6">
+                <h3 className="text-lg font-bold text-slate-800">Integraciones</h3>
+                <p className="text-sm text-slate-500 mt-1">Conectores con sistemas externos. Los webhooks reciben datos de Zoho Books en tiempo real.</p>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <Link2 size={20} className="text-brand-blue" />
+                    </div>
+                    <div>
+                        <p className="font-bold text-slate-800">Zoho Books</p>
+                        <p className="text-xs text-slate-400">Facturación y pagos → GK en tiempo real</p>
+                    </div>
+                </div>
+
+                {loading ? <LoadingSpinner /> : (
+                    <>
+                        <Row
+                            label="Webhook de Ventas"
+                            desc="Recibe facturas nuevas de Zoho y las convierte en ventas pendientes."
+                            enabled={zohoSales}
+                            setEnabled={setZohoSales}
+                        />
+                        <Row
+                            label="Webhook de Comisiones / Pagos"
+                            desc="Procesa cobros registrados en Zoho y calcula comisiones por vendedor."
+                            enabled={zohoComis}
+                            setEnabled={setZohoComis}
+                        />
+                        <button
+                            onClick={save}
+                            disabled={saving}
+                            className="mt-4 flex items-center gap-2 bg-brand-blue text-white font-semibold text-sm px-4 py-2 rounded-lg hover:bg-blue-800 disabled:opacity-60 transition-colors"
+                        >
+                            <Save size={15} />
+                            {saving ? 'Guardando…' : saved ? '¡Guardado!' : 'Guardar cambios'}
+                        </button>
+                    </>
+                )}
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Próximas integraciones</p>
+                <ul className="text-slate-400 text-xs space-y-1.5">
+                    <li>· Zoho Books — <span className="text-slate-500">invoice.overdue</span> (facturas vencidas → alerta a vendedor)</li>
+                    <li>· Zoho Books — <span className="text-slate-500">invoice.created</span> (nueva factura → deuda pendiente del vendedor)</li>
+                    <li>· Zoho Books — <span className="text-slate-500">creditnote.applied</span> (devoluciones → ajuste de comisión)</li>
+                </ul>
+            </div>
+        </div>
+    );
+};
+
+// ─── Admin Panel Shell ─────────────────────────────────────────────────────────
+
+const AdminPanel = ({ user, posList, reports, loading }) => {
+    const [activeSection, setActiveSection] = useState('settings');
+    const [mobileOpen, setMobileOpen]       = useState(false);
+
+    // ── Navigation groups ──────────────────────────────────────────────────────
+    const GROUPS = [
+        {
+            id: 'personas', label: 'Personas', Icon: Users,
+            items: [
+                { id: 'vendedores',  label: 'Vendedores',  Icon: TrendingUp,    badge: 'Nuevo' },
+                { id: 'directivos',  label: 'Directivos',  Icon: Eye                          },
+                { id: 'campo',       label: 'Campo',        Icon: Users                        },
+                { id: 'reporters',   label: 'Reporters',    Icon: ClipboardList                },
+            ],
+        },
+        {
+            id: 'comercial', label: 'Comercial', Icon: Store,
+            items: [
+                { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
+                { id: 'sales_goals', label: 'Metas',            Icon: Target  },
+                { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
+            ],
+        },
+        {
+            id: 'sistema', label: 'Sistema', Icon: LayoutGrid,
+            items: [
+                { id: 'modules',        label: 'Módulos',        Icon: LayoutGrid },
+                { id: 'dashboard',      label: 'Dashboard',      Icon: BarChart2  },
+                { id: 'alerts',         label: 'Alertas',        Icon: Bell       },
+                { id: 'notificaciones', label: 'Notificaciones', Icon: Mail       },
+            ],
+        },
+        {
+            id: 'config', label: 'Configuración', Icon: Settings,
+            items: [
+                { id: 'settings',      label: 'General',        Icon: Settings },
+                { id: 'integraciones', label: 'Integraciones',  Icon: Link2, badge: 'Zoho' },
+            ],
+        },
+        {
+            id: 'datos', label: 'Datos', Icon: FileText,
+            items: [
+                { id: 'reports', label: 'Reportes de Visita', Icon: FileText },
+            ],
+        },
+    ];
+
+    const allItems   = GROUPS.flatMap(g => g.items);
+    const activeItem = allItems.find(i => i.id === activeSection) || allItems[0];
+    const activeGroup = GROUPS.find(g => g.items.some(i => i.id === activeSection));
+
+    const navigate = (id) => { setActiveSection(id); setMobileOpen(false); };
+
+    // ── Content renderer ───────────────────────────────────────────────────────
+    const renderContent = () => {
+        switch (activeSection) {
+            case 'vendedores':     return <VendedoresManagement />;
+            case 'directivos':     return <SalesManagerManagement />;
+            case 'campo':          return <UserManagement />;
+            case 'reporters':      return <ReportersManagement />;
+            case 'pos':            return <PosManagement posList={posList} loading={loading} />;
+            case 'sales_goals':    return <SalesGoalsManagement />;
+            case 'depots':         return <DepotManagement />;
+            case 'modules':        return <ModuleManagement />;
+            case 'dashboard':      return <DashboardManagement />;
+            case 'alerts':         return <AlertsManagement />;
+            case 'notificaciones': return <NotificacionesSection />;
+            case 'settings':       return <GeneralSettings />;
+            case 'integraciones':  return <IntegracionesSection />;
+            case 'reports':        return <ReportManagement reports={reports} posList={posList} loading={loading} />;
+            default:               return <GeneralSettings />;
+        }
+    };
+
+    // ── Sidebar ────────────────────────────────────────────────────────────────
+    const Sidebar = () => (
+        <nav className="w-56 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
+            <div className="px-4 py-4 border-b border-slate-100">
+                <p className="text-xs font-black uppercase tracking-widest text-brand-blue">Panel Admin</p>
+            </div>
+            <div className="flex-1 py-2">
+                {GROUPS.map(({ id: gid, label: glabel, items }) => (
+                    <div key={gid} className="mb-1">
+                        <p className="px-4 pt-3 pb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{glabel}</p>
+                        {items.map(({ id, label, Icon, badge }) => (
+                            <button
+                                key={id}
+                                onClick={() => navigate(id)}
+                                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm font-medium transition-colors text-left ${
+                                    activeSection === id
+                                        ? 'bg-brand-blue/8 text-brand-blue font-semibold border-r-2 border-brand-blue'
+                                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                                }`}
+                            >
+                                <Icon size={15} className="shrink-0" />
+                                <span className="flex-1 truncate">{label}</span>
+                                {badge && (
+                                    <span className="text-[9px] font-bold bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded-full shrink-0">
+                                        {badge}
+                                    </span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                ))}
+            </div>
+        </nav>
+    );
+
+    return (
+        <div className="flex h-full bg-slate-50 overflow-hidden">
+
+            {/* ── Desktop sidebar ── */}
+            <div className="hidden md:flex">
+                <Sidebar />
+            </div>
+
+            {/* ── Mobile sidebar overlay ── */}
+            {mobileOpen && (
+                <div className="fixed inset-0 z-40 flex md:hidden">
+                    <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
+                    <div className="relative z-50 w-56 bg-white h-full shadow-xl">
+                        <Sidebar />
+                    </div>
+                </div>
+            )}
+
+            {/* ── Main content ── */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+
+                {/* Mobile header bar */}
+                <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-slate-200 shrink-0">
+                    <button
+                        onClick={() => setMobileOpen(true)}
+                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600"
+                    >
+                        <LayoutGrid size={20} />
+                    </button>
+                    <div className="min-w-0">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 leading-none">{activeGroup?.label}</p>
+                        <p className="text-sm font-bold text-slate-800 truncate">{activeItem?.label}</p>
+                    </div>
+                </div>
+
+                {/* Desktop breadcrumb */}
+                <div className="hidden md:flex items-center gap-2 px-6 py-3 bg-white border-b border-slate-200 shrink-0">
+                    <span className="text-xs text-slate-400 font-semibold uppercase tracking-widest">{activeGroup?.label}</span>
+                    <span className="text-slate-300">›</span>
+                    <span className="text-sm font-bold text-slate-700">{activeItem?.label}</span>
+                </div>
+
+                {/* Section content */}
+                <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                    {renderContent()}
                 </div>
             </div>
         </div>
