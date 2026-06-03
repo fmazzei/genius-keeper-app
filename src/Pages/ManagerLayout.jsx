@@ -47,10 +47,15 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     }, [user?.uid]);
 
     useEffect(() => {
+        // El módulo-gate solo aplica al master. El director siempre ve tendencias.
         if (role === 'master') {
             if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
             if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('dashboard');
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
+        }
+        if (role === 'gerencia' || role === 'sales_manager') {
+            if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('ventas');
+            if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('ventas');
         }
     }, [modules, role, currentView]);
 
@@ -101,7 +106,19 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             </ul>
         );
 
-        const salesManagerNav = (
+        // Director: misma vista que master pero sin Admin ni Ventas operativas
+        const directorNav = (
+            <ul>
+                <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
+                <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />
+                <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
+                {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
+                {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
+            </ul>
+        );
+
+        // Gerencia: foco operativo en ventas y equipo
+        const gerenciaNav = (
             <ul>
                 <NavItem icon={<Target size={24} />} text="Ventas" active={currentView === 'ventas'} onClick={() => setCurrentView('ventas')} />
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
@@ -120,8 +137,8 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         const displayName = user.displayName || userMetadata.name || userMetadata.email || role;
         const rl = roleLabels[role] || { title: role, color: 'bg-slate-200 text-slate-700' };
         const userInfo = { initial: displayName[0]?.toUpperCase() || '?', name: displayName, ...rl };
-        
-        const nav = role === 'master' ? masterNav : salesManagerNav;
+
+        const nav = role === 'master' ? masterNav : role === 'director' ? directorNav : gerenciaNav;
         return (<div className="flex flex-col h-full bg-white"><div className={`flex items-center justify-between p-4 h-16 border-b ${!desktopSidebarOpen && 'md:justify-center'}`}><h1 className={`text-xl font-bold text-brand-blue whitespace-nowrap overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>Genius Keeper</h1><button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="p-2 rounded-lg hover:bg-slate-200 hidden md:block"><ChevronsRight className={`transition-transform duration-300 ${desktopSidebarOpen && 'rotate-180'}`} /></button></div><nav className="mt-4 px-2 flex-grow">{nav}</nav><div className="px-2 py-4 border-t"><div className="flex items-center p-3 my-2"><div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${userInfo.color}`}>{userInfo.initial}</div><div className={`ml-3 overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}><p className="font-semibold text-sm truncate">{userInfo.name}</p><p className="text-xs text-gray-500">{userInfo.title}</p></div></div><button onClick={onLogout} className="w-full"><li className="flex items-center p-3 my-1 rounded-lg cursor-pointer text-slate-600 hover:bg-slate-100"><LogOut size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Cerrar Sesión</span></li></button></div></div>);
     };
 
@@ -131,15 +148,36 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     
     const renderMainContent = () => {
         const commonProps = { reports, posList, loading: geniusLoading, onNavigate: setCurrentView };
-        
+        const isGerencia  = role === 'gerencia' || role === 'sales_manager';
+
         return (
             <>
-                <div className={currentView === 'ventas'    ? 'block h-full' : 'hidden'}><VentasView {...commonProps} allAlerts={[]} /></div>
-                <div className={currentView === 'dashboard' ? 'block h-full' : 'hidden'}><GerencialDashboard {...commonProps} role={role} /></div>
-                <div className={currentView === 'trends'    ? 'block h-full' : 'hidden'}><MarketTrendsView {...commonProps} /></div>
-                <div className={currentView === 'alerts'    ? 'block h-full' : 'hidden'}><AlertsCenterView onNavigate={setCurrentView} /></div>
-                <div className={currentView === 'inventory' ? 'block h-full' : 'hidden'}><InventoryPanel role={role} /></div>
-                <div className={currentView === 'settings'  ? 'block h-full' : 'hidden'}><AdminPanel user={user} {...commonProps} /></div>
+                {/* Ventas — solo roles operativos */}
+                {isGerencia && (
+                    <div className={currentView === 'ventas' ? 'block h-full' : 'hidden'}>
+                        <VentasView {...commonProps} allAlerts={[]} />
+                    </div>
+                )}
+
+                <div className={currentView === 'dashboard' ? 'block h-full' : 'hidden'}>
+                    <GerencialDashboard {...commonProps} role={role} readOnly={readOnly} />
+                </div>
+                <div className={currentView === 'trends' ? 'block h-full' : 'hidden'}>
+                    <MarketTrendsView {...commonProps} />
+                </div>
+                <div className={currentView === 'alerts' ? 'block h-full' : 'hidden'}>
+                    <AlertsCenterView onNavigate={setCurrentView} />
+                </div>
+                <div className={currentView === 'inventory' ? 'block h-full' : 'hidden'}>
+                    <InventoryPanel role={role} readOnly={readOnly} />
+                </div>
+
+                {/* Admin — solo master */}
+                {role === 'master' && (
+                    <div className={currentView === 'settings' ? 'block h-full' : 'hidden'}>
+                        <AdminPanel user={user} {...commonProps} />
+                    </div>
+                )}
 
                 <div className={currentView === 'planner' ? 'block h-full' : 'hidden'}>
                     {selectedWeekId ? (
@@ -174,11 +212,16 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             </aside>
             
             <div className="flex-1 flex flex-col overflow-hidden">
-                <header className="h-16 bg-white border-b flex items-center px-4 shadow-sm shrink-0">
-                    <button onClick={() => setMobileMenuOpen(true)} className="p-2 mr-2 rounded-full hover:bg-slate-100 md:hidden">
+                <header className="h-16 bg-white border-b flex items-center px-4 shadow-sm shrink-0 gap-3">
+                    <button onClick={() => setMobileMenuOpen(true)} className="p-2 mr-2 rounded-full hover:bg-slate-100 md:hidden shrink-0">
                         <Menu size={24} />
                     </button>
-                    <h2 className="text-xl md:text-2xl font-semibold text-slate-800 truncate">{getGreeting()}</h2>
+                    <h2 className="text-xl md:text-2xl font-semibold text-slate-800 truncate flex-1">{getGreeting()}</h2>
+                    {readOnly && (
+                        <span className="shrink-0 text-xs font-bold px-2.5 py-1 rounded-full bg-violet-100 text-violet-600 border border-violet-200">
+                            Solo lectura
+                        </span>
+                    )}
                 </header>
                 <div className="flex-1 p-4 md:p-6 overflow-y-auto bg-slate-50">
                     {renderMainContent()}
