@@ -10,6 +10,7 @@ import { useReportView } from '@/context/ReportViewContext.jsx';
 import { useInvite } from '@/context/InviteContext.tsx';
 import LoginScreen from '@/Pages/LoginScreen.jsx';
 import ManagerLayout from '@/Pages/ManagerLayout.jsx';
+import VendedorLayout from '@/Pages/VendedorLayout.jsx';
 import AppShell from '@/Pages/AppShell.jsx';
 import KromaShell from '@/Kroma/KromaShell.jsx';
 import SecurityLockScreen from '@/Components/SecurityLockScreen.tsx';
@@ -72,16 +73,29 @@ const AppLayout: React.FC = () => {
     
     // El modal de invitación ahora se renderiza aquí, asegurando que el usuario ya está autenticado.
     const renderAppContent = () => {
-        if (role === 'master' || role === 'sales_manager') {
+        if (role === 'master') {
             return <ManagerLayout user={user} role={role} onLogout={() => signOut(auth)} />;
+        }
+        if (role === 'director') {
+            return <ManagerLayout user={user} role={role} readOnly onLogout={() => signOut(auth)} />;
+        }
+        if (role === 'sales_manager' || role === 'gerencia') {
+            return <ManagerLayout user={user} role={role} onLogout={() => signOut(auth)} />;
+        }
+        if (role === 'vendedor') {
+            return <VendedorLayout user={user} onLogout={() => signOut(auth)} />;
         }
         if (role === 'produccion') {
             return <KromaShell onExitKroma={() => signOut(auth)} />;
         }
         if (role === 'merchandiser') {
-             return <AppShell user={user} role={role} onLogout={() => signOut(auth)} />;
+            return <AppShell user={user} role={role} onLogout={() => signOut(auth)} />;
         }
-        return <div>Error: Rol de usuario no reconocido o no tienes permisos.</div>;
+        return (
+            <div className="flex items-center justify-center h-screen bg-slate-950">
+                <p className="text-slate-400">Rol de usuario no reconocido. Contacta al administrador.</p>
+            </div>
+        );
     };
 
     if (isSecurityLocked && (role === 'merchandiser' || role === 'produccion')) {
