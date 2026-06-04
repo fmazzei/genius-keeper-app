@@ -244,10 +244,9 @@ function AlertasView({ stats }) {
 // ─── Bottom tab bar ────────────────────────────────────────────────────────────
 
 const TABS = [
-    { id: 'home',     label: 'Inicio',    Icon: Home      },
-    { id: 'ruta',     label: 'Mi Ruta',   Icon: MapPin    },
-    { id: 'despacho', label: 'Despacho',  Icon: Package   },
-    { id: 'alertas',  label: 'Alertas',   Icon: Bell      },
+    { id: 'home',     label: 'Inicio',    Icon: Home    },
+    { id: 'ruta',     label: 'Mi Ruta',   Icon: MapPin  },
+    { id: 'despacho', label: 'Despacho',  Icon: Package },
 ];
 
 // ─── Main Layout ──────────────────────────────────────────────────────────────
