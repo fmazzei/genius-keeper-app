@@ -5,17 +5,18 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
 import {
     collection, query, where, getDocs,
-    doc, getDoc, orderBy, limit,
+    doc, getDoc, addDoc, deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import {
-    Home, MapPin, Package, DollarSign, Bell,
+    Home, MapPin, Package, Bell,
     LogOut, TrendingUp, CheckCircle, AlertCircle,
-    Clock, ChevronRight, Loader, Target,
+    Clock, Loader, Target, Trash2,
 } from 'lucide-react';
 import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
 import TomarPedidoForm from '@/Pages/TomarPedidoForm.jsx';
+import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -79,7 +80,7 @@ function HomeView({ vendedor, stats, loading, onNavigate }) {
                 <p className="text-white font-black text-2xl leading-tight">{vendedor.nombre?.split(' ')[0] || 'Vendedor'}</p>
             </div>
 
-            {/* ── Commission Meter — el corazón del dashboard ── */}
+            {/* ── Commission Meter ── */}
             <div className={`bg-slate-900 border ${tier.border} rounded-2xl p-5`}>
                 <div className="flex items-center justify-between mb-1">
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Meta del Mes</p>
@@ -97,7 +98,6 @@ function HomeView({ vendedor, stats, loading, onNavigate }) {
                             <span className="text-slate-500 text-lg mb-1">/ {vendedor.metaMensual.toLocaleString()} uds</span>
                         </div>
 
-                        {/* Progress bar */}
                         <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden mb-2">
                             <div
                                 className={`h-3 rounded-full transition-all duration-700 ${pct >= TIERS.plus.min ? 'bg-emerald-400' : pct >= TIERS.optima.min ? 'bg-blue-400' : pct >= TIERS.basica.min ? 'bg-amber-400' : 'bg-slate-600'}`}
@@ -190,7 +190,7 @@ function HomeView({ vendedor, stats, loading, onNavigate }) {
                 </div>
             </div>
 
-            {/* ── Período de arranque (si aplica) ── */}
+            {/* ── Período de arranque ── */}
             {vendedor.mesArranque > 0 && (
                 <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
                     <p className="text-blue-400 text-xs font-semibold uppercase tracking-widest mb-1">Período de Arranque</p>
@@ -204,21 +204,16 @@ function HomeView({ vendedor, stats, loading, onNavigate }) {
     );
 }
 
-function AlertasView({ stats }) {
-    const items = [
-        ...(stats.facturasPorVencer > 0 ? [{
-            type: 'danger',
-            title: `${stats.facturasPorVencer} factura${stats.facturasPorVencer > 1 ? 's' : ''} por vencer`,
-            body: 'Cobra dentro de los próximos 3 días para mantener el bono de puntualidad.',
-        }] : []),
-        ...(!stats.activacionOk ? [{
-            type: 'warning',
-            title: 'Bono de Activación en riesgo',
-            body: `Cubre ${stats.puntosTotal - stats.puntosActivacion} puntos más con mín. 24 uds para ganarlo esta semana.`,
-        }] : []),
-    ];
+function AlertasView({ alertas, loadingAlertas, onDelete }) {
+    if (loadingAlertas) {
+        return (
+            <div className="flex-1 flex items-center justify-center">
+                <Loader size={24} className="animate-spin text-slate-500" />
+            </div>
+        );
+    }
 
-    if (items.length === 0) {
+    if (alertas.length === 0) {
         return (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
                 <CheckCircle size={56} className="text-emerald-400" />
@@ -231,12 +226,27 @@ function AlertasView({ stats }) {
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-3">
             <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest pt-2">Alertas Activas</p>
-            {items.map((item, i) => (
-                <div key={i} className={`rounded-xl p-4 border ${item.type === 'danger' ? 'bg-red-500/10 border-red-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}>
-                    <p className={`font-bold text-sm ${item.type === 'danger' ? 'text-red-300' : 'text-amber-300'}`}>{item.title}</p>
-                    <p className="text-slate-400 text-sm mt-1">{item.body}</p>
-                </div>
-            ))}
+            {alertas.map((alert) => {
+                const isDanger = alert.alertType === 'facturas_venciendo';
+                return (
+                    <div
+                        key={alert.id}
+                        className={`rounded-xl p-4 border flex items-start gap-3 ${isDanger ? 'bg-red-500/10 border-red-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}
+                    >
+                        <div className="flex-1 min-w-0">
+                            <p className={`font-bold text-sm ${isDanger ? 'text-red-300' : 'text-amber-300'}`}>{alert.title}</p>
+                            <p className="text-slate-400 text-sm mt-1">{alert.body}</p>
+                        </div>
+                        <button
+                            onClick={() => onDelete(alert.id)}
+                            className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-red-400 active:scale-90 transition-all"
+                            aria-label="Eliminar alerta"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                    </div>
+                );
+            })}
         </div>
     );
 }
@@ -253,21 +263,109 @@ const TABS = [
 
 const VendedorLayout = ({ user, onLogout }) => {
     const { role } = useAuth();
-    const [currentView, setCurrentView]   = useState('home');
-    const [selectedPos, setSelectedPos]   = useState(null);
-    const [subView, setSubView]           = useState(null); // 'pos_list' | 'pedido_form' | 'tomar_pedido'
-    const [vendedor, setVendedor]         = useState({ nombre: '', metaMensual: 2400, mesArranque: 0, reporterId: null });
-    const [stats, setStats]               = useState({
+    const [currentView, setCurrentView]       = useState('home');
+    const [selectedPos, setSelectedPos]       = useState(null);
+    const [subView, setSubView]               = useState(null);
+    const [vendedor, setVendedor]             = useState({ nombre: '', metaMensual: 2400, mesArranque: 0, reporterId: null });
+    const [stats, setStats]                   = useState({
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
         facturasPorVencer: 0,
     });
-    const [loading, setLoading]           = useState(true);
-    const [posList, setPosList]           = useState([]);
+    const [loading, setLoading]               = useState(true);
+    const [posList, setPosList]               = useState([]);
+    const [alertas, setAlertas]               = useState([]);
+    const [loadingAlertas, setLoadingAlertas] = useState(false);
+
+    // ── Load alerts (last 24 h) ──
+    const loadAlertas = async (uid) => {
+        if (!uid) return;
+        setLoadingAlertas(true);
+        try {
+            const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const snap = await getDocs(
+                query(
+                    collection(db, 'vendedor_alertas'),
+                    where('uid', '==', uid),
+                    where('createdAt', '>=', since24h),
+                )
+            );
+            const items = snap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .sort((a, b) => {
+                    const ta = a.createdAt?.toDate?.() || new Date(0);
+                    const tb = b.createdAt?.toDate?.() || new Date(0);
+                    return tb - ta;
+                });
+            setAlertas(items);
+        } catch (e) {
+            console.warn('loadAlertas error:', e);
+        } finally {
+            setLoadingAlertas(false);
+        }
+    };
+
+    // ── Write new alert docs only when conditions are new ──
+    const syncAlertas = async (uid, newStats) => {
+        if (!uid) return;
+        try {
+            const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            const existing = await getDocs(
+                query(
+                    collection(db, 'vendedor_alertas'),
+                    where('uid', '==', uid),
+                    where('createdAt', '>=', since24h),
+                )
+            );
+            const existingTypes = new Set(existing.docs.map(d => d.data().alertType));
+
+            const toCreate = [];
+
+            if (newStats.facturasPorVencer > 0 && !existingTypes.has('facturas_venciendo')) {
+                toCreate.push({
+                    uid,
+                    alertType: 'facturas_venciendo',
+                    title: `${newStats.facturasPorVencer} factura${newStats.facturasPorVencer > 1 ? 's' : ''} por vencer`,
+                    body: 'Cobra dentro de los próximos 3 días para mantener el bono de puntualidad.',
+                    createdAt: serverTimestamp(),
+                });
+            }
+
+            if (!newStats.activacionOk && newStats.puntosTotal > 0 && !existingTypes.has('activacion_riesgo')) {
+                const faltan = newStats.puntosTotal - newStats.puntosActivacion;
+                toCreate.push({
+                    uid,
+                    alertType: 'activacion_riesgo',
+                    title: 'Bono de Activación en riesgo',
+                    body: `Cubre ${faltan} punto${faltan !== 1 ? 's' : ''} más con mín. 24 uds para ganarlo esta semana.`,
+                    createdAt: serverTimestamp(),
+                });
+            }
+
+            if (toCreate.length > 0) {
+                await Promise.all(toCreate.map(a => addDoc(collection(db, 'vendedor_alertas'), a)));
+            }
+        } catch (e) {
+            console.warn('syncAlertas error:', e);
+        }
+    };
+
+    const deleteAlerta = async (alertId) => {
+        try {
+            await deleteDoc(doc(db, 'vendedor_alertas', alertId));
+            setAlertas(prev => prev.filter(a => a.id !== alertId));
+        } catch (e) {
+            console.warn('deleteAlerta error:', e);
+        }
+    };
 
     // ── Load vendedor data ──
     useEffect(() => {
         if (!user?.uid) return;
+
+        // Request FCM permission in background on login
+        requestNotificationPermission(user.uid).catch(() => {});
+
         const load = async () => {
             try {
                 // 1. user metadata → reporterId, metaMensual, nombre
@@ -324,15 +422,19 @@ const VendedorLayout = ({ user, onLogout }) => {
                 }).reduce((set, d) => { set.add(d.posId); return set; }, new Set()).size;
                 const activacionOk = puntosTotal > 0 && puntosActivacion / puntosTotal >= 0.80;
 
-                // 5. Facturas por vencer (próximos 3 días)
-                // Placeholder — full invoice tracking comes with webhook phase
+                // 5. Facturas por vencer (próximos 3 días) — full impl with webhook phase
                 const facturasPorVencer = 0;
 
-                setStats({ unidadesDelMes, comisionSemana, despachoHoy, activacionOk, puntosActivacion, puntosTotal, facturasPorVencer });
+                const newStats = { unidadesDelMes, comisionSemana, despachoHoy, activacionOk, puntosActivacion, puntosTotal, facturasPorVencer };
+                setStats(newStats);
 
                 // 6. PDV list for route/dispatch
                 const allPos = posSnap.docs.map(d => ({ id: d.data().posId, name: d.data().posName, chain: d.data().chain || '' }));
                 setPosList(allPos);
+
+                // 7. Sync alert conditions to Firestore then load them
+                await syncAlertas(user.uid, newStats);
+                await loadAlertas(user.uid);
 
             } catch (e) {
                 console.warn('VendedorLayout load error:', e);
@@ -352,7 +454,6 @@ const VendedorLayout = ({ user, onLogout }) => {
 
     // ── Resolve main content ──
     const renderContent = () => {
-        // Despacho sub-flow
         if (currentView === 'despacho') {
             if (subView === 'pos_list') {
                 return (
@@ -395,7 +496,13 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         if (currentView === 'alertas') {
-            return <AlertasView stats={stats} />;
+            return (
+                <AlertasView
+                    alertas={alertas}
+                    loadingAlertas={loadingAlertas}
+                    onDelete={deleteAlerta}
+                />
+            );
         }
 
         return (
@@ -408,7 +515,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         );
     };
 
-    const alertCount = stats.facturasPorVencer + (!stats.activacionOk && !loading ? 1 : 0);
+    const alertCount = alertas.length;
 
     return (
         <div className="flex flex-col h-screen bg-slate-950 text-white overflow-hidden">
@@ -453,19 +560,13 @@ const VendedorLayout = ({ user, onLogout }) => {
                 <nav className="h-16 bg-slate-900 border-t border-slate-800 flex items-center shrink-0">
                     {TABS.map(({ id, label, Icon }) => {
                         const active = currentView === id;
-                        const isAlert = id === 'alertas' && alertCount > 0;
                         return (
                             <button
                                 key={id}
                                 onClick={() => navigate(id)}
                                 className={`flex-1 flex flex-col items-center justify-center gap-1 h-full transition-colors ${active ? 'text-[#FFD600]' : 'text-slate-500 hover:text-slate-300'}`}
                             >
-                                <div className="relative">
-                                    <Icon size={22} />
-                                    {isAlert && (
-                                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-red-500 rounded-full" />
-                                    )}
-                                </div>
+                                <Icon size={22} />
                                 <span className="text-[10px] font-medium">{label}</span>
                             </button>
                         );
