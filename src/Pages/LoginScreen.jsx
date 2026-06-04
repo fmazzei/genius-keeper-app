@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 const ROLE_DOORS = [
-    { id: 'vendedor',  label: 'Vendedor',  Icon: TrendingUp, accent: 'text-emerald-400', bg: 'bg-emerald-500/20', desc: 'Portal de ventas y comisiones' },
+    { id: 'vendedor',  label: 'Ventas',    Icon: TrendingUp, accent: 'text-emerald-400', bg: 'bg-emerald-500/20', desc: 'Portal de ventas y comisiones' },
     { id: 'gerencia',  label: 'Gerencia',  Icon: BarChart2,  accent: 'text-blue-400',    bg: 'bg-blue-500/20',    desc: 'Gestión comercial'           },
     { id: 'director',  label: 'Dirección', Icon: Eye,        accent: 'text-violet-400',  bg: 'bg-violet-500/20',  desc: 'Vista ejecutiva'             },
     { id: 'master',    label: 'Máster',    Icon: Shield,     accent: 'text-amber-400',   bg: 'bg-amber-500/20',   desc: 'Administración total'        },
@@ -75,7 +75,7 @@ const LoginScreen = () => {
                 </div>
                 <div className="text-left flex-1 min-w-0">
                     <p className="text-slate-800 font-black text-xl leading-tight">Equipo de Campo</p>
-                    <p className="text-slate-500 text-sm mt-0.5">Mercaderismo &amp; Despachos</p>
+                    <p className="text-slate-500 text-sm mt-0.5">Merchandise &amp; Despachos</p>
                 </div>
                 <ChevronRight size={22} className="text-slate-300 shrink-0" />
             </button>
