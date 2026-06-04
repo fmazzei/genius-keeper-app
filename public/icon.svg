@@ -1,19 +1,14 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" rx="104" fill="#0f172a"/>
-
-  <!-- G: open arc (large CCW) + inner notch + crossbar -->
-  <path d="M 265,173 A 102,102 0 1,0 265,340 H 206 V 256 H 260"
-        stroke="white" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-
-  <!-- K: vertical bar -->
-  <line x1="325" y1="173" x2="325" y2="340"
-        stroke="white" stroke-width="36" stroke-linecap="round"/>
-
-  <!-- K: upper arm -->
-  <line x1="325" y1="256" x2="409" y2="173"
-        stroke="white" stroke-width="36" stroke-linecap="round"/>
-
-  <!-- K: lower arm -->
-  <line x1="325" y1="256" x2="409" y2="340"
-        stroke="white" stroke-width="36" stroke-linecap="round"/>
+  <defs>
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 800;
+        src: url("/usr/local/share/fonts/Inter-ExtraBold.ttf") format("truetype");
+      }
+    </style>
+  </defs>
+  <rect width="512" height="512" rx="104" fill="#0D2B4C"/>
+  <text x="256" y="350" font-family="Inter, sans-serif" font-weight="800" font-size="260"
+        fill="white" text-anchor="middle" letter-spacing="-10">GK</text>
 </svg>
