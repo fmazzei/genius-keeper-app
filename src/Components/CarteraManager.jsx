@@ -3,8 +3,8 @@
 
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import {
-    collection, query, where, getDocs, addDoc, updateDoc, deleteDoc,
-    doc, onSnapshot, serverTimestamp, orderBy,
+    collection, query, where, getDocs, addDoc, updateDoc,
+    doc, onSnapshot, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import {
@@ -20,26 +20,41 @@ const StatusPill = ({ estado }) => {
     return <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">Rechazado</span>;
 };
 
-// ─── Assign-existing-PDV mini-form ───────────────────────────────────────────
-function AssignPosForm({ vendedor, onAdded, onCancel }) {
-    const [search, setSearch]     = useState('');
-    const [results, setResults]   = useState([]);
-    const [loading, setLoading]   = useState(false);
-    const [saving, setSaving]     = useState(null);
+// ─── Assign-existing-PDV browser (city filter + chain grouping) ──────────────
+function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
+    const [allPos, setAllPos]       = useState([]);
+    const [loading, setLoading]     = useState(true);
+    const [cityFilter, setCityFilter] = useState('');
+    const [search, setSearch]       = useState('');
+    const [saving, setSaving]       = useState(null);
 
-    const handleSearch = async () => {
-        if (!search.trim()) return;
-        setLoading(true);
-        try {
-            const snap = await getDocs(collection(db, 'pos'));
+    useEffect(() => {
+        getDocs(query(collection(db, 'pos'), where('active', '==', true)))
+            .then(snap => {
+                setAllPos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            })
+            .finally(() => setLoading(false));
+    }, []);
+
+    const cities = [...new Set(allPos.map(p => p.city || 'Sin ciudad').filter(Boolean))].sort();
+
+    const filtered = allPos.filter(p => {
+        if (assignedPosIds?.has(p.id)) return false;
+        if (cityFilter && (p.city || 'Sin ciudad') !== cityFilter) return false;
+        if (search.trim()) {
             const term = search.toLowerCase();
-            setResults(snap.docs
-                .map(d => ({ id: d.id, ...d.data() }))
-                .filter(p => p.name?.toLowerCase().includes(term) || p.address?.toLowerCase().includes(term))
-                .slice(0, 12)
-            );
-        } finally { setLoading(false); }
-    };
+            return p.name?.toLowerCase().includes(term) || p.zone?.toLowerCase().includes(term);
+        }
+        return !!cityFilter;
+    });
+
+    // Group by chain
+    const grouped = filtered.reduce((acc, pos) => {
+        const chain = pos.chain || 'Individuales';
+        if (!acc[chain]) acc[chain] = [];
+        acc[chain].push(pos);
+        return acc;
+    }, {});
 
     const assign = async (pos) => {
         setSaving(pos.id);
@@ -65,46 +80,85 @@ function AssignPosForm({ vendedor, onAdded, onCancel }) {
     };
 
     return (
-        <div className="space-y-3 p-4">
-            <p className="text-sm font-semibold text-slate-700">Buscar PDV existente para asignar</p>
-            <div className="flex gap-2">
-                <input
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                    placeholder="Nombre o dirección…"
-                    className="flex-1 min-w-0 p-2.5 border border-slate-300 rounded-lg text-sm"
-                />
-                <button
-                    onClick={handleSearch}
-                    disabled={loading}
-                    className="px-3 bg-brand-blue text-white rounded-lg text-sm font-semibold shrink-0"
-                >
-                    {loading ? <Loader size={15} className="animate-spin" /> : <Search size={15} />}
-                </button>
+        <div className="space-y-3 p-4 border border-slate-200 rounded-xl bg-slate-50">
+            <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-700">Asignar PDV existente</p>
+                <button onClick={onCancel} className="text-xs text-slate-400 hover:text-slate-600">Cancelar</button>
             </div>
-            {results.length > 0 && (
-                <ul className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-60 overflow-y-auto">
-                    {results.map(pos => (
-                        <li key={pos.id} className="flex items-center gap-3 px-3 py-2.5">
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-slate-800 truncate">{pos.name}</p>
-                                <p className="text-xs text-slate-400 truncate">{pos.address}</p>
-                            </div>
+
+            {/* City filter pills */}
+            {loading ? (
+                <div className="flex justify-center py-4"><Loader size={18} className="animate-spin text-slate-400" /></div>
+            ) : (
+                <>
+                    <div className="flex flex-wrap gap-1.5">
+                        {cities.map(c => (
                             <button
-                                onClick={() => assign(pos)}
-                                disabled={saving === pos.id}
-                                className="shrink-0 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold disabled:opacity-50"
+                                key={c}
+                                onClick={() => { setCityFilter(cityFilter === c ? '' : c); setSearch(''); }}
+                                className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                                    cityFilter === c
+                                        ? 'bg-brand-blue text-white border-brand-blue'
+                                        : 'bg-white text-slate-600 border-slate-300 hover:border-brand-blue'
+                                }`}
                             >
-                                {saving === pos.id ? <Loader size={12} className="animate-spin" /> : 'Asignar'}
+                                {c}
                             </button>
-                        </li>
+                        ))}
+                    </div>
+
+                    {/* Search within selected city */}
+                    {cityFilter && (
+                        <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            <input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                placeholder="Buscar por nombre o zona…"
+                                className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                            />
+                        </div>
+                    )}
+
+                    {!cityFilter && (
+                        <p className="text-xs text-slate-400 text-center py-2">Selecciona una ciudad para ver los PDV disponibles</p>
+                    )}
+
+                    {/* Grouped results */}
+                    {cityFilter && Object.keys(grouped).length === 0 && (
+                        <p className="text-xs text-slate-400 text-center py-3">
+                            {search ? 'Sin resultados para esa búsqueda.' : 'Todos los PDV de esta ciudad ya están asignados.'}
+                        </p>
+                    )}
+
+                    {Object.entries(grouped).map(([chain, posList]) => (
+                        <div key={chain}>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5 px-1">{chain}</p>
+                            <ul className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
+                                {posList.map(pos => (
+                                    <li key={pos.id} className="flex items-center gap-3 px-3 py-2.5">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-semibold text-slate-800 truncate">{pos.name}</p>
+                                            {(pos.zone || pos.address) && (
+                                                <p className="text-xs text-slate-400 truncate">
+                                                    {[pos.zone, pos.address].filter(Boolean).join(' — ')}
+                                                </p>
+                                            )}
+                                        </div>
+                                        <button
+                                            onClick={() => assign(pos)}
+                                            disabled={!!saving}
+                                            className="shrink-0 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold disabled:opacity-50"
+                                        >
+                                            {saving === pos.id ? <Loader size={12} className="animate-spin" /> : 'Asignar'}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
                     ))}
-                </ul>
+                </>
             )}
-            <div className="flex justify-end">
-                <button onClick={onCancel} className="text-sm text-slate-500 hover:text-slate-700">Cancelar</button>
-            </div>
         </div>
     );
 }
@@ -253,6 +307,7 @@ const CarteraManager = ({ vendedor }) => {
                 {showAssign && (
                     <AssignPosForm
                         vendedor={vendedor}
+                        assignedPosIds={new Set(clients.map(c => c.posId).filter(Boolean))}
                         onAdded={() => setShowAssign(false)}
                         onCancel={() => setShowAssign(false)}
                     />

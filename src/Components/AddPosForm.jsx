@@ -1,7 +1,7 @@
 // RUTA: src/Components/AddPosForm.jsx
 
 import React, { useState } from 'react';
-import { collection, writeBatch, serverTimestamp, doc } from 'firebase/firestore';
+import { collection, writeBatch, serverTimestamp, doc, addDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { functions, db } from '../Firebase/config.js';
 import { MapPin, AlertTriangle, Check, Edit3, PlusCircle, Trash2, Building, Store } from 'lucide-react';
@@ -61,8 +61,9 @@ const VerificationModal = ({ merchandiserCoords, geniusCoords, distance, onConfi
 const AddPosForm = ({ onClose }) => {
     const [posType, setPosType] = useState('individual');
     const [chainName, setChainName] = useState('');
+    const [chainCity, setChainCity] = useState('');
     const [branches, setBranches] = useState([{ name: '', zone: '', address: '' }]);
-    const [formData, setFormData] = useState({ name: '', zone: '', address: '' });
+    const [formData, setFormData] = useState({ name: '', city: '', zone: '', address: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [status, setStatus] = useState({ error: '', message: '' });
     const [merchandiserLocation, setMerchandiserLocation] = useState(null);
@@ -94,8 +95,8 @@ const AddPosForm = ({ onClose }) => {
     
     const handleChainSubmit = async (e) => {
         e.preventDefault();
-        if (!chainName.trim() || branches.some(b => !b.name.trim() || !b.zone.trim())) {
-            setStatus({ error: 'El nombre de la cadena y el nombre y zona de cada sucursal son obligatorios.', message: '' });
+        if (!chainName.trim() || !chainCity.trim() || branches.some(b => !b.name.trim() || !b.zone.trim())) {
+            setStatus({ error: 'El nombre de la cadena, la ciudad y el nombre y zona de cada sucursal son obligatorios.', message: '' });
             return;
         }
         setIsSubmitting(true);
@@ -104,10 +105,11 @@ const AddPosForm = ({ onClose }) => {
         const batch = writeBatch(db);
 
         branches.forEach(branch => {
-            const newPosRef = doc(collection(db, 'pos')); 
+            const newPosRef = doc(collection(db, 'pos'));
             const newPosData = {
                 name: `${chainName} - ${branch.name}`,
                 chain: chainName,
+                city: chainCity.trim(),
                 zone: branch.zone,
                 address: branch.address,
                 coordinates: null,
@@ -155,16 +157,17 @@ const AddPosForm = ({ onClose }) => {
         setStatus({ message: 'Guardando PDV...', error: '' });
         setIsSubmitting(true);
         try {
-            await addDoc(collection(db, 'pos'), { 
-                name: formData.name, 
-                chain: 'Automercados Individuales', 
+            await addDoc(collection(db, 'pos'), {
+                name: formData.name,
+                chain: 'Automercados Individuales',
+                city: formData.city,
                 zone: formData.zone,
                 address: formData.address,
                 coordinates: coordinatesToSave,
                 gpsStatus: 'verified',
                 visitInterval: 7,
-                active: true, 
-                createdAt: serverTimestamp(), 
+                active: true,
+                createdAt: serverTimestamp(),
             });
             onClose();
         } catch (err) {
@@ -181,7 +184,7 @@ const AddPosForm = ({ onClose }) => {
         setIsSubmitting(true);
         setStatus({ error: '', message: 'Verificando dirección con Genius...' });
 
-        if (!formData.name || !formData.zone || !formData.address) {
+        if (!formData.name || !formData.city || !formData.zone || !formData.address) {
             setStatus({ error: 'Todos los campos son obligatorios.', message: '' });
             setIsSubmitting(false);
             return;
@@ -194,7 +197,7 @@ const AddPosForm = ({ onClose }) => {
 
         try {
             const geocodeAddressByGenius = httpsCallable(functions, 'geocodeAddress');
-            const result = await geocodeAddressByGenius({ address: `${formData.name}, ${formData.address}, ${formData.zone}, Caracas, Venezuela` });
+            const result = await geocodeAddressByGenius({ address: `${formData.name}, ${formData.address}, ${formData.zone}, ${formData.city}, Venezuela` });
             const foundCoords = result.data;
             const DISTANCE_THRESHOLD = 200;
 
@@ -237,6 +240,7 @@ const AddPosForm = ({ onClose }) => {
                     <p className="text-sm text-center text-slate-600 -mt-2 mb-4">Usa esta opción para un automercado o abasto que no pertenece a una cadena.</p>
                     <div className="space-y-3 pt-2">
                         <input type="text" name="name" value={formData.name} onChange={handleChange} placeholder="Nombre del Establecimiento" className="w-full px-3 py-2 border border-slate-300 rounded-md" required />
+                        <input type="text" name="city" value={formData.city} onChange={handleChange} placeholder="Ciudad (Ej: Caracas, Barinas)" className="w-full px-3 py-2 border border-slate-300 rounded-md" required />
                         <input type="text" name="zone" value={formData.zone} onChange={handleChange} placeholder="Zona o Urbanización" className="w-full px-3 py-2 border border-slate-300 rounded-md" required />
                         <textarea name="address" value={formData.address} onChange={handleChange} placeholder="Dirección Completa (Calle, Av, Referencia)" rows="3" className="w-full px-3 py-2 border border-slate-300 rounded-md" required />
                     </div>
@@ -256,6 +260,7 @@ const AddPosForm = ({ onClose }) => {
                 <form onSubmit={handleChainSubmit} className="space-y-4">
                      <p className="text-sm text-center text-slate-600 -mt-2 mb-4">Usa esta opción para cadenas como Excelsior Gama, Central Madeirense, etc.</p>
                     <input type="text" value={chainName} onChange={(e) => setChainName(e.target.value)} placeholder="Nombre de la Cadena" className="w-full px-3 py-2 border border-slate-300 rounded-md" required />
+                    <input type="text" value={chainCity} onChange={(e) => setChainCity(e.target.value)} placeholder="Ciudad (Ej: Caracas, Barinas)" className="w-full px-3 py-2 border border-slate-300 rounded-md" required />
                     <h3 className="font-semibold text-slate-800 pt-2">Sucursales</h3>
                     <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
                         {branches.map((branch, index) => (
