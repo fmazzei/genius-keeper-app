@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, updateDoc, doc, query, where } from 'firebase/firestore';
 import { KromaProvider, useKroma } from './KromaContext';
 import KromaUserSelect from './KromaUserSelect';
+import { getNotifPermission, requestNotifPermission, checkHoldsOnLoad, cancelHoldNotif } from './utils/kromaNotifScheduler';
+import { registerKromaFCMToken, cancelFirestoreScheduledNotif } from './utils/kromaFCM';
 
 // Admin pages
 import {
     AdminHome, WarehousesPage, SuppliersPage, MaterialsMasterPage,
     ProductCatalogPage, ProductionHistoryPage, KromaUsersPage, ControlSistemaPage,
 } from './pages/AdminPages';
+import KromaNotificationsPage from './pages/admin/KromaNotificationsPage';
 
 // Manager pages
 import { ManagerHome, FinancialBoard, ProductionKPIsPage, QualityBoard } from './pages/ManagerPages';
@@ -25,7 +28,7 @@ import {
     LayoutDashboard, Warehouse, Truck, Package, ClipboardList, Users, Tag,
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
-    LogOut, Menu, X, ChevronRight, BookOpen, Shield, Bell,
+    LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell,
 } from 'lucide-react';
 
 // ─── Module defaults per role ─────────────────────────────────────────────────
@@ -55,7 +58,7 @@ const ALL_NAV_ITEMS = [
     { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,         modulo: 'catalogos',            section: 'Administración' },
     { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,       modulo: 'catalogos',            section: 'Administración' },
     { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,         modulo: 'usuarios',             section: 'Administración' },
-    { id: 'control',       label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema',       section: 'Administración' },
+    { id: 'control',       label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema',       section: 'Administración', delegation: ['csGestionarUsuarios', 'csConfigPermisos'] },
     // — Gerencial —
     { id: 'financial',     label: 'Financiero',          Icon: DollarSign,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
     { id: 'kpis',          label: 'KPIs Producción',     Icon: TrendingUp,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
@@ -83,8 +86,8 @@ const ROLE_COLORS = {
 function renderPage(view, role, kromaUser, onNavigate) {
     if (view === 'home') {
         if (role === 'kroma_operario') return <OperatorHome onNavigate={onNavigate} />;
-        if (role === 'kroma_gerencial' || role === 'master') return <ManagerHome />;
-        return <AdminHome />;
+        if (role === 'kroma_gerencial' || role === 'master') return <ManagerHome onNavigate={onNavigate} />;
+        return <AdminHome onNavigate={onNavigate} />;
     }
     switch (view) {
         case 'production':    return <DailyProductionPage />;
@@ -99,6 +102,7 @@ function renderPage(view, role, kromaUser, onNavigate) {
         case 'materials':     return <MaterialsMasterPage />;
         case 'users':         return <KromaUsersPage />;
         case 'control':       return <ControlSistemaPage kromaUser={kromaUser} />;
+        case 'notifications': return <KromaNotificationsPage />;
         case 'financial':     return <FinancialBoard />;
         case 'kpis':          return <ProductionKPIsPage />;
         case 'quality':       return <QualityBoard />;
@@ -128,10 +132,70 @@ function useUnreadCount(kromaUser) {
 }
 
 function KromaInner({ onExitKroma }) {
-    const { kromaUser, kromaRole, clearUser } = useKroma();
+    const { kromaUser, kromaRole, clearUser, canDo } = useKroma();
     const [currentView, setCurrentView] = useState('home');
+    const [prevView,    setPrevView]    = useState(null); // set when navigating from home tiles/shortcuts
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [notifBanner, setNotifBanner] = useState(false); // show "enable notifications" banner
     const unreadCount = useUnreadCount(kromaUser);
+
+    // Alertas de hold: solo para el perfil operario (maestro quesero)
+    useEffect(() => {
+        if (!kromaUser || kromaRole !== 'kroma_operario') return;
+        const DISMISSED_KEY = 'kroma_notif_dismissed';
+        let cancelled = false;
+
+        const run = async () => {
+            try {
+                const snap = await getDocs(query(
+                    collection(db, 'kroma_production_logs'),
+                    where('estado', '==', 'en_hold')
+                ));
+                if (cancelled) return;
+
+                const now = Date.now();
+                // exclude soft-deleted logs
+                const allHolds = snap.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(l => l.active !== false);
+
+                // Separate expired holds from active ones
+                const expired = allHolds.filter(l => {
+                    if (!l.holdHasta) return false;
+                    const fin = l.holdHasta?.toDate ? l.holdHasta.toDate() : new Date(l.holdHasta);
+                    return fin.getTime() < now;
+                });
+                const activeHolds = allHolds.filter(l => !expired.find(e => e.id === l.id));
+
+                // Clean up expired holds: null out holdHasta in Firestore so they never trigger again,
+                // cancel local timers, and deactivate the FCM scheduled notif doc.
+                if (expired.length > 0) {
+                    expired.forEach(l => cancelHoldNotif(l.id));
+                    Promise.all([
+                        ...expired.map(l =>
+                            updateDoc(doc(db, 'kroma_production_logs', l.id), {
+                                holdHasta: null,
+                                holdExpired: true,
+                            })
+                        ),
+                        ...expired.map(l => cancelFirestoreScheduledNotif(db, l.id)),
+                    ]).catch(() => {});
+                }
+
+                checkHoldsOnLoad(activeHolds, kromaUser.id);
+
+                const perm = getNotifPermission();
+                if (perm === 'granted') {
+                    // Registro silencioso del token FCM (para notificaciones con app cerrada)
+                    registerKromaFCMToken(db, kromaUser.id).catch(() => {});
+                } else if (activeHolds.length > 0 && perm === 'default' && !localStorage.getItem(DISMISSED_KEY)) {
+                    setNotifBanner(true);
+                }
+            } catch {}
+        };
+        run();
+        return () => { cancelled = true; };
+    }, [kromaUser?.id]);
 
     if (!kromaUser) {
         return <KromaUserSelect onExitKroma={onExitKroma} />;
@@ -144,23 +208,43 @@ function KromaInner({ onExitKroma }) {
         : { ...DEFAULT_MODULES[kromaRole], ...(kromaUser.modulos || {}) };
 
     const visibleNavItems = kromaRole === 'master'
-        ? ALL_NAV_ITEMS
-        : ALL_NAV_ITEMS.filter(item => !item.modulo || effective[item.modulo] !== false);
+        ? ALL_NAV_ITEMS.filter(item => item.id !== 'notifications')
+        : ALL_NAV_ITEMS.filter(item => {
+            if (item.id === 'notifications') return false; // bell in header is sufficient
+            if (!item.modulo) return true;
+            // Special case: show 'control' if any delegation action is granted
+            if (item.delegation?.some(a => canDo(a))) return true;
+            return effective[item.modulo] !== false;
+          });
 
     // If the user is on a view that was just disabled, fall back to home
-    const activeView = visibleNavItems.some(n => n.id === currentView) ? currentView : 'home';
+    const activeView = visibleNavItems.some(n => n.id === currentView) || currentView === 'notifications'
+        ? currentView
+        : 'home';
     const activeNavLabel = visibleNavItems.find(n => n.id === activeView)?.label || 'Inicio';
 
-    const onNavigate = (view) => setCurrentView(view);
+    // onNavigate = called from home tiles/shortcuts → track return path
+    const onNavigate = (view) => {
+        setPrevView('home');
+        setCurrentView(view);
+    };
 
+    // handleNav = called from sidebar → clear back-path
     const handleNav = (id) => {
+        setPrevView(null);
         setCurrentView(id);
         setSidebarOpen(false);
+    };
+
+    const goBack = () => {
+        setCurrentView(prevView || 'home');
+        setPrevView(null);
     };
 
     const handleSwitchUser = () => {
         clearUser();
         setCurrentView('home');
+        setPrevView(null);
     };
 
     const initials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -170,13 +254,27 @@ function KromaInner({ onExitKroma }) {
 
             {/* ── Top Header ── */}
             <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center px-4 shrink-0 z-20">
-                {/* Mobile hamburger */}
-                <button
-                    className="md:hidden mr-3 text-slate-400 hover:text-white p-1 rounded"
-                    onClick={() => setSidebarOpen(s => !s)}
-                >
-                    {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-                </button>
+                {/* Mobile hamburger (hidden when back button is shown) */}
+                {!prevView && (
+                    <button
+                        className="md:hidden mr-3 text-slate-400 hover:text-white p-1 rounded"
+                        onClick={() => setSidebarOpen(s => !s)}
+                    >
+                        {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+                    </button>
+                )}
+
+                {/* Back button — shown when navigated from home tiles/shortcuts */}
+                {prevView && (
+                    <button
+                        onClick={goBack}
+                        className="flex items-center gap-1 text-slate-400 hover:text-white mr-3 p-1 rounded transition-colors"
+                        title="Volver al inicio"
+                    >
+                        <ChevronLeft size={20} />
+                        <span className="text-sm font-medium hidden sm:block">Inicio</span>
+                    </button>
+                )}
 
                 {/* Logo */}
                 <div className="flex items-center gap-2 mr-auto">
@@ -204,21 +302,19 @@ function KromaInner({ onExitKroma }) {
                     </span>
                 </button>
 
-                {/* Notification bell */}
-                {(kromaRole === 'kroma_admin' || kromaRole === 'master') && (
-                    <button
-                        onClick={() => setCurrentView('control')}
-                        className="relative text-slate-500 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors mr-1"
-                        title="Notificaciones"
-                    >
-                        <Bell size={18} />
-                        {unreadCount > 0 && (
-                            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-white font-bold text-[9px]">
-                                {unreadCount > 9 ? '9+' : unreadCount}
-                            </span>
-                        )}
-                    </button>
-                )}
+                {/* Notification bell — visible to all users */}
+                <button
+                    onClick={() => setCurrentView('notifications')}
+                    className="relative text-slate-500 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors mr-1"
+                    title="Notificaciones"
+                >
+                    <Bell size={18} />
+                    {unreadCount > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-white font-bold text-[9px]">
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                    )}
+                </button>
 
                 {/* Logout */}
                 <button
@@ -229,6 +325,36 @@ function KromaInner({ onExitKroma }) {
                     <LogOut size={18} />
                 </button>
             </header>
+
+            {/* ── Push notification permission banner ── */}
+            {notifBanner && (
+                <div className="bg-amber-900/40 border-b border-amber-700/50 px-4 py-2.5 flex items-center gap-3 shrink-0 z-10">
+                    <Bell size={15} className="text-amber-400 shrink-0" />
+                    <p className="text-amber-200 text-xs flex-1">Hay producciones en hold. Activa las notificaciones para saber cuándo están listas.</p>
+                    <button
+                        onClick={async () => {
+                            const granted = await requestNotifPermission();
+                            setNotifBanner(false);
+                            localStorage.setItem('kroma_notif_dismissed', '1');
+                            if (granted) {
+                                // Registrar token FCM para notificaciones con app cerrada
+                                registerKromaFCMToken(db, kromaUser?.id).catch(() => {});
+                                // checkHoldsOnLoad ya se ejecutó en el useEffect de login;
+                                // no repetir aquí para no disparar notificaciones duplicadas
+                            }
+                        }}
+                        className="text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white px-3 py-1 rounded-lg transition-colors shrink-0"
+                    >
+                        Activar
+                    </button>
+                    <button
+                        onClick={() => { setNotifBanner(false); localStorage.setItem('kroma_notif_dismissed', '1'); }}
+                        className="text-amber-400 hover:text-white p-1 rounded shrink-0"
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
 
             <div className="flex flex-1 overflow-hidden">
 

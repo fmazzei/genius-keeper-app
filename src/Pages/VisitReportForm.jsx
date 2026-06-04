@@ -221,7 +221,6 @@ const Step2_Sales = ({ report, setReport, isReadOnly }) => (
     <FormSection title="PVP y Reposición" icon={<DollarSign className="text-brand-blue mr-3"/>}>
         <div className="space-y-4">
             <FormInput label="Precio de Venta al Público (PVP)" type="number" value={report.price} onChange={e => setReport(prev => ({...prev, price: e.target.value}))} placeholder="Ej: 10.25" disabled={isReadOnly} />
-            <FormInput label="Orden de Compra (OC) - Unidades Repuestas" type="number" value={report.orderQuantity} onChange={e => setReport(prev => ({...prev, orderQuantity: e.target.value}))} placeholder="Ej: 12 (opcional)" disabled={isReadOnly} />
         </div>
     </FormSection>
 );

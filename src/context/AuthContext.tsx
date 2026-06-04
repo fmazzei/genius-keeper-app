@@ -49,9 +49,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setRole(data.role);
             setIsAccountSuspended(data.active === false);
           } else {
-            // Cuentas compartidas de campo: auto-crear perfil si no existe
+            // Cuentas con perfil auto-recreable si el doc fue eliminado
             const sharedAccounts: Record<string, string> = {
-              'anaquel@lacteoca.com': 'merchandiser',
+              'lacteoca@lacteoca.com':   'master',
+              'anaquel@lacteoca.com':    'merchandiser',
               'produccion@lacteoca.com': 'produccion',
             };
             const email = currentUser.email || '';

@@ -3,6 +3,9 @@ import {
     Droplets, Package, FlaskConical, Factory, Construction,
     Warehouse, ClipboardList, BookOpen, Tag, Truck, ChevronRight,
 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { db } from '@/Firebase/config.js';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useKroma } from '../KromaContext';
 import ProcessBuilderPageImpl from './operator/ProcessBuilderPage';
 import RecipeBuilderPageImpl from './operator/RecipeBuilderPage';
@@ -37,13 +40,49 @@ const COLOR_MAP = {
 
 export function OperatorHome({ onNavigate }) {
     const { kromaUser } = useKroma();
-    const shortcuts = (kromaUser?.shortcuts || [])
-        .map(id => SHORTCUT_DEFS[id])
-        .filter(Boolean);
+    const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
+    const [stats, setStats] = useState({ litrosTanque: null, litrosEnProceso: null, insumos: null, recetas: null });
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const [milkSnap, matSnap, fichasSnap] = await Promise.all([
+                    getDocs(query(collection(db, 'kroma_milk_reception'), where('active', '!=', false))),
+                    getDocs(query(collection(db, 'kroma_inventory_materials'), where('active', '!=', false))),
+                    getDocs(query(collection(db, 'kroma_fichas'), where('active', '!=', false))),
+                ]);
+                const milkDocs = milkSnap.docs.map(d => d.data());
+                const litrosTanque = milkDocs
+                    .filter(r => r.enrutamiento === 'tanque' && r.status !== 'en_proceso' && r.status !== 'inactivo')
+                    .reduce((s, r) => s + (r.litros || 0), 0);
+                // "en proceso" = already linked to a production log (status en_proceso)
+                //              + direct milk (enrutamiento produccion) pending use
+                const litrosEnProceso = milkDocs
+                    .filter(r =>
+                        r.status === 'en_proceso' ||
+                        (r.enrutamiento === 'produccion' && r.status !== 'inactivo' && r.status !== 'completada')
+                    )
+                    .reduce((s, r) => s + (r.litros || 0), 0);
+                const recetas = fichasSnap.size;
+                setStats({ litrosTanque, litrosEnProceso, insumos: matSnap.size, recetas });
+            } catch {}
+        };
+        load();
+    }, []);
+
+    const STAT_TILES = [
+        {
+            label: 'Leche en Tanque',
+            value: stats.litrosTanque === null ? null : `${stats.litrosTanque} L`,
+            sub:   stats.litrosEnProceso > 0 ? `${stats.litrosEnProceso} L en producción` : null,
+            color: 'blue', Icon: Droplets, view: 'milk',
+        },
+        { label: 'Insumos Activos', value: stats.insumos,  color: 'emerald', Icon: Package,      view: 'materials_inv' },
+        { label: 'Fichas Creadas',  value: stats.recetas,  color: 'violet',  Icon: FlaskConical,  view: 'fichas'        },
+    ];
 
     return (
         <div className="p-6 md:p-8">
-            {/* Greeting */}
             <h2 className="text-2xl font-bold text-white mb-1">
                 Hola, {kromaUser?.name?.split(' ')[0] || 'Operario'}
             </h2>
@@ -57,15 +96,8 @@ export function OperatorHome({ onNavigate }) {
                         {shortcuts.map(({ label, desc, Icon, color, view }) => {
                             const c = COLOR_MAP[color] || COLOR_MAP.slate;
                             return (
-                                <button
-                                    key={view}
-                                    onClick={() => onNavigate?.(view)}
-                                    className={`
-                                        flex flex-col items-start gap-3 p-4 rounded-xl border text-left transition-all
-                                        bg-slate-900 ${c.border} ${c.hover}
-                                        active:scale-95
-                                    `}
-                                >
+                                <button key={view} onClick={() => onNavigate?.(view)}
+                                    className={`flex flex-col items-start gap-3 p-4 rounded-xl border text-left transition-all bg-slate-900 ${c.border} ${c.hover} active:scale-95`}>
                                     <div className={`w-10 h-10 rounded-xl ${c.bg} flex items-center justify-center shrink-0`}>
                                         <Icon size={20} className={c.icon} />
                                     </div>
@@ -80,21 +112,26 @@ export function OperatorHome({ onNavigate }) {
                 </section>
             )}
 
-            {/* Stats */}
+            {/* Stats — connected and interactive */}
             <section>
                 <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Resumen</p>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    {[
-                        { label: 'Leche en Tanque', value: '— L', color: 'blue',    Icon: Droplets   },
-                        { label: 'Insumos Activos',  value: '—',   color: 'emerald', Icon: Package    },
-                        { label: 'Recetas Creadas',  value: '—',   color: 'violet',  Icon: FlaskConical },
-                    ].map(({ label, value, color, Icon }) => (
-                        <div key={label} className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-                            <Icon size={20} className={`text-${color}-400 mb-3`} />
-                            <p className="text-2xl font-bold text-white">{value}</p>
-                            <p className="text-slate-400 text-sm mt-1">{label}</p>
-                        </div>
-                    ))}
+                    {STAT_TILES.map(({ label, value, sub, color, Icon, view }) => {
+                        const c = COLOR_MAP[color] || COLOR_MAP.slate;
+                        return (
+                            <button key={label} onClick={() => onNavigate?.(view)}
+                                className={`bg-slate-900 border ${c.border} ${c.hover} rounded-xl p-5 text-left transition-all active:scale-95`}>
+                                <div className={`w-9 h-9 rounded-xl ${c.bg} flex items-center justify-center mb-3`}>
+                                    <Icon size={18} className={c.icon} />
+                                </div>
+                                <p className="text-2xl font-bold text-white font-mono">
+                                    {value === null ? <span className="text-slate-600 text-base">—</span> : value}
+                                </p>
+                                <p className="text-slate-400 text-sm mt-1">{label}</p>
+                                {sub && <p className="text-slate-500 text-xs mt-0.5">{sub}</p>}
+                            </button>
+                        );
+                    })}
                 </div>
             </section>
         </div>

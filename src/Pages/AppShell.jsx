@@ -7,10 +7,14 @@ import { useMerchandiserData } from '@/hooks/useMerchandiserData.js';
 import { useOfflineSync } from '@/hooks/useOfflineSync.js';
 import { useDelegatedTasks } from '@/hooks/useDelegatedTasks.jsx';
 import { useReporter } from '@/context/ReporterContext.jsx';
-import { LogOut, ChevronsRight, FileText, Truck, Map, ShoppingCart, Menu, ClipboardList, AlertTriangle, UserCheck, Users } from 'lucide-react';
+import { LogOut, ChevronsRight, ChevronLeft, FileText, Truck, Map, ShoppingCart, Menu, ClipboardList, AlertTriangle, UserCheck, Users, Bell } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import MerchandiserHub from '@/Pages/MerchandiserHub.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
+import TomarPedidoForm from '@/Pages/TomarPedidoForm.jsx';
+import ReportesHistorial from '@/Pages/ReportesHistorial.jsx';
+import PedidosHistorial from '@/Pages/PedidosHistorial.jsx';
+import NotificacionesMerchandiser from '@/Pages/NotificacionesMerchandiser.jsx';
 import LogisticsPanel from '@/Pages/LogisticsPanel.jsx';
 import PosList from '@/Pages/PosList.jsx';
 import VisitReportForm from '@/Pages/VisitReportForm.jsx';
@@ -18,7 +22,6 @@ import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import TaskList from '@/Components/TaskList.jsx';
 import Modal from '@/Components/Modal.jsx';
 import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx';
-// Estas rutas relativas son correctas porque están dentro del mismo directorio /Pages
 import Planner from './Planner/Planner.jsx';
 
 const ReporterSelectionScreen = ({ onSelect }) => {
@@ -189,12 +192,17 @@ const AppShell = ({ user, role, onLogout }) => {
 
     const getGreeting = () => {
         const viewTitles = {
-            hub: `Centro de Operaciones`,
+            hub: 'Centro de Operaciones',
             planner: 'Centro de Planificación',
             logistics: 'Panel de Logística',
             report: 'Seleccionar Punto de Venta',
-            tasks: 'Mis Tareas Pendientes',
-            pedidos: 'Registrar Pedido',
+            tasks: 'Mis Tareas',
+            pedidos: 'Despacho — Seleccionar PDV',
+            pedido_form: `Despacho: ${selectedPos?.name || ''}`,
+            tomar_pedido: 'Tomar Pedido',
+            reportes_historial: 'Mis Reportes',
+            pedidos_historial: 'Pedidos Tomados',
+            notificaciones: 'Notificaciones',
             visit_report: `Reporte: ${selectedPos?.name || ''}`,
         };
         return viewTitles[currentView] || 'Genius Keeper';
@@ -207,9 +215,19 @@ const AppShell = ({ user, role, onLogout }) => {
             <div className={`flex items-center justify-between p-4 h-16 border-b ${!desktopSidebarOpen && 'md:justify-center'}`}><h1 className={`text-xl font-bold text-brand-blue whitespace-nowrap overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>Genius Keeper</h1><button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="p-2 rounded-lg hover:bg-slate-200 hidden md:block"><ChevronsRight className={`transition-transform duration-300 ${desktopSidebarOpen && 'rotate-180'}`} /></button></div>
             <nav className="mt-4 px-2 flex-grow">
                 <ul>
-                    <li onClick={() => { setCurrentView('tasks'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer relative ${currentView === 'tasks' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><ClipboardList size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Tareas</span>{pendingTasksCount > 0 && (<span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{pendingTasksCount}</span>)}</li>
-                    <li onClick={() => { setCurrentView('report'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView.includes('report') ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><FileText size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Reporte</span></li>
-                    <li onClick={() => { setCurrentView('pedidos'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'pedidos' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><ShoppingCart size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Pedidos</span></li>
+                    <li onClick={() => { setCurrentView('reportes_historial'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'reportes_historial' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        <FileText size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Reportes</span>
+                    </li>
+                    <li onClick={() => { setCurrentView('pedidos_historial'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'pedidos_historial' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        <ClipboardList size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Pedidos</span>
+                    </li>
+                    <li onClick={() => { setCurrentView('notificaciones'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'notificaciones' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        <Bell size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Notificaciones</span>
+                    </li>
+                    <li onClick={() => { setCurrentView('tasks'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer relative ${currentView === 'tasks' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
+                        <ShoppingCart size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Tareas</span>
+                        {pendingTasksCount > 0 && (<span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{pendingTasksCount}</span>)}
+                    </li>
                     {modules.plannerMerchandiser && <li onClick={() => { setCurrentView('planner'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'planner' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Map size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Planificador</span></li>}
                     {modules.logisticsMerchandiser && <li onClick={() => { setCurrentView('logistics'); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer ${currentView === 'logistics' ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Truck size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Logística</span></li>}
                 </ul>
@@ -250,11 +268,24 @@ const AppShell = ({ user, role, onLogout }) => {
                             selectedReporter={selectedReporter}
                         />;
 
-            case 'pedidos': return <PedidoForm posList={masterStopList} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
+            case 'pedidos': return <PosList posList={masterStopList} title="Selecciona el PDV del despacho" onSelectPos={(pos) => { setSelectedPos(pos); setCurrentView('pedido_form'); }} onBack={() => setCurrentView('hub')} />;
+            case 'pedido_form': return <PedidoForm pos={selectedPos} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
+            case 'tomar_pedido': return <TomarPedidoForm posList={masterStopList} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
+            case 'reportes_historial': return <ReportesHistorial selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
+            case 'pedidos_historial': return <PedidosHistorial selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
+            case 'notificaciones': return <NotificacionesMerchandiser user={user} onBack={() => setCurrentView('hub')} />;
             case 'logistics': return <LogisticsPanel />;
             case 'report': return <PosList posList={masterStopList} onSelectPos={navigateToReport} />;
-            case 'tasks': 
-                return ( <div className="p-4 md:p-8"><h2 className="text-3xl font-bold text-slate-800 mb-6">Mis Tareas Pendientes</h2><TaskList tasks={tasks} onCompleteTask={completeTask} loading={tasksLoading} onResolveDelegation={handleResolveDelegation}/></div> );
+            case 'tasks':
+                return (
+                    <div className="p-4 md:p-8 max-w-2xl mx-auto w-full">
+                        <button onClick={() => setCurrentView('hub')} className="flex items-center gap-1 text-slate-500 hover:text-brand-blue mb-5 font-medium">
+                            <ChevronLeft size={20} /> Inicio
+                        </button>
+                        <h2 className="text-3xl font-bold text-slate-800 mb-6">Mis Tareas Pendientes</h2>
+                        <TaskList tasks={tasks} onCompleteTask={completeTask} loading={tasksLoading} onResolveDelegation={handleResolveDelegation} />
+                    </div>
+                );
             case 'visit_report': 
                 return <VisitReportForm pos={selectedPos} user={user} selectedReporter={selectedReporter} backToList={() => setCurrentView('hub')} />;
             default: return <MerchandiserHub onNavigate={setCurrentView} selectedReporter={selectedReporter} />;

@@ -456,6 +456,28 @@ exports.onDespachoUpdated = functions.firestore
         return null;
     });
 
+// =========================================================================================
+// TRIGGER: Nueva alerta de vendedor → push notification
+// =========================================================================================
+exports.onVendedorAlertaCreated = functions.firestore
+    .document("vendedor_alertas/{docId}")
+    .onCreate(async (snap) => {
+        const data = snap.data();
+        const { uid, title, body } = data;
+        if (!uid || !title) return null;
+
+        try {
+            await sendNotificationToUser(
+                uid,
+                { title, body: body || '' },
+                { tipo: 'vendedor_alerta', link: '/alertas' }
+            );
+        } catch (err) {
+            functions.logger.error("Error enviando push de alerta de vendedor:", err);
+        }
+        return null;
+    });
+
 exports.onTransferReceived = functions.firestore
     .document("transfers/{transferId}")
     .onUpdate(async (change) => {

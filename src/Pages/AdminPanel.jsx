@@ -5,6 +5,7 @@ import { db, functions } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw } from 'lucide-react';
+import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
 import { WIDGET_REGISTRY, WIDGET_CATEGORIES } from '../config/widgetRegistry.js';
@@ -594,8 +595,6 @@ const GeneralSettings = () => {
     const [settings, setSettings] = useState({
         newReportNotifications: false,
         gpsRequired: true,
-        zohoSalesWebhookActive: false,
-        zohoCommissionsWebhookActive: false
     });
     const [loading, setLoading] = useState(true);
 
@@ -642,11 +641,6 @@ const GeneralSettings = () => {
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Bell/> Notificar al Master sobre nuevos reportes</label><p className="text-sm text-slate-500 mt-1">Si está activo, se enviará una notificación push cada vez que un vendedor envíe un reporte.</p></div><ToggleSwitch enabled={settings.newReportNotifications} setEnabled={(value) => handleSettingChange('notifications', 'newReportNotifications', value)} /></div>
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Lock/> Requerir GPS para enviar reporte</label><p className="text-sm text-slate-500 mt-1">Si está activo, el merchandiser no podrá enviar un reporte si está fuera del rango del PDV.</p></div><ToggleSwitch enabled={settings.gpsRequired} setEnabled={(value) => handleSettingChange('appConfig', 'gpsRequired', value)} /></div>
             </div>
-            <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
-                <h3 className="text-xl font-semibold text-slate-700 flex items-center gap-2"><Link2/> Integraciones con Zoho Books</h3>
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800">Webhook: Sincronizar Ventas e Inventario</label><p className="text-sm text-slate-500 mt-1">Recibe nuevas facturas de Zoho para crear ventas pendientes y alertar sobre stock.</p></div><ToggleSwitch enabled={settings.zohoSalesWebhookActive} setEnabled={(value) => handleSettingChange('appConfig', 'zohoSalesWebhookActive', value)} /></div>
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800">Webhook: Sincronizar Comisiones</label><p className="text-sm text-slate-500 mt-1">Recibe pagos de Zoho para registrar comisiones (requiere el webhook de 'Pagos' en Zoho).</p></div><ToggleSwitch enabled={settings.zohoCommissionsWebhookActive} setEnabled={(value) => handleSettingChange('appConfig', 'zohoCommissionsWebhookActive', value)} /></div>
-            </div>
              <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
                  <h3 className="text-xl font-semibold text-slate-700">Herramientas de Desarrollo</h3>
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800">Activar Modo Simulación de Datos</label><p className="text-sm text-slate-500 mt-1">Usa datos de prueba generados automáticamente en toda la app. (Solo afecta tu sesión).</p></div><ToggleSwitch enabled={isSimulationMode} setEnabled={handleSimulationToggle} /></div>
@@ -669,7 +663,7 @@ const UserCleanup = () => {
         setLoading(true);
         try {
             const snap = await getDocs(collection(db, 'users_metadata'));
-            setUsers(snap.docs.filter(d => d.data().email !== MASTER_EMAIL).map(d => ({ id: d.id, ...d.data() })));
+            setUsers(snap.docs.filter(d => d.data().email !== MASTER_EMAIL && d.data().role !== 'master').map(d => ({ id: d.id, ...d.data() })));
             setLoaded(true);
         } finally { setLoading(false); }
     };
@@ -768,8 +762,25 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
             setNewUser({ name: '', email: '', username: '', password: '' });
             setIsModalOpen(false);
         } catch (err) {
-            if (err.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo.');
-            else if (err.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            if (err.code === 'auth/email-already-in-use') {
+                // Auth account exists (Firestore doc was deleted). Try to sign in to recover the UID.
+                try {
+                    const { initializeApp, deleteApp } = await import('firebase/app');
+                    const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
+                    const username = newUser.username.trim().toLowerCase().replace(/\s+/g, '_');
+                    const tempApp2  = initializeApp(FIREBASE_CONFIG, `recover-user-${Date.now()}`);
+                    const tempAuth2 = getAuth(tempApp2);
+                    const { user } = await signInWithEmailAndPassword(tempAuth2, newUser.email.trim(), newUser.password);
+                    await setDoc(doc(db, 'users_metadata', user.uid), { name: newUser.name.trim(), email: newUser.email.trim(), username, role: createRole, active: true, salesGoal: 0 });
+                    await tempAuth2.signOut();
+                    await deleteApp(tempApp2);
+                    setNewUser({ name: '', email: '', username: '', password: '' });
+                    setIsModalOpen(false);
+                } catch (recoverErr) {
+                    setCreateError(`La cuenta de Auth ya existe con otra contraseña. Ve a Firebase Console → Authentication, elimina "${newUser.email.trim()}" e inténtalo de nuevo.`);
+                }
+            }
+            else if (err.code === 'auth/weak-password') setCreateError('La contraseña debe tener al menos 6 caracteres.');
             else setCreateError(`Error: ${err.message}`);
         } finally { setIsCreating(false); }
     };
@@ -917,13 +928,19 @@ const ModuleManagement = () => {
             ],
         },
         {
-            groupLabel: 'Master',
+            groupLabel: 'Master / Dirección / Gerencia',
             items: [
                 {
                     key: 'marketTrends',
                     label: 'Análisis de Tendencias',
                     description: 'Vista de tendencias de mercado y análisis competitivo.',
                     icon: <TrendingUp size={20} className="text-purple-600 flex-shrink-0" />,
+                },
+                {
+                    key: 'rendimientoComercial',
+                    label: 'Rendimiento Comercial',
+                    description: 'KPIs por vendedor: meta del mes, nivel, comisiones y ranking del equipo.',
+                    icon: <Users size={20} className="text-emerald-600 flex-shrink-0" />,
                 },
             ],
         },
@@ -1623,13 +1640,16 @@ const MES_ARRANQUE_OPTS = [
 ];
 
 const VendedoresManagement = () => {
-    const [vendedores, setVendedores]         = useState([]);
-    const [reporters, setReporters]           = useState([]);
+    const commissionRef                           = React.useRef(null);
+    const [commSaving, setCommSaving]             = useState(false);
+    const [vendedores, setVendedores]             = useState([]);
+    const [reporters, setReporters]               = useState([]);
     const [loading, setLoading]               = useState(true);
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [editTarget, setEditTarget]         = useState(null);
-    const [isCreating, setIsCreating]         = useState(false);
-    const [createError, setCreateError]       = useState('');
+    const [isAddModalOpen, setIsAddModalOpen]         = useState(false);
+    const [editTarget, setEditTarget]                 = useState(null);
+    const [isCreating, setIsCreating]                 = useState(false);
+    const [createError, setCreateError]               = useState('');
+    const [commissionTarget, setCommissionTarget]     = useState(null);
 
     const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '', metaMensual: '', mesArranque: 0 };
     const [form, setForm] = useState(EMPTY_FORM);
@@ -1683,8 +1703,28 @@ const VendedoresManagement = () => {
             await deleteApp(tempApp);
             closeModal();
         } catch (err) {
-            if (err.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo.');
-            else if (err.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            if (err.code === 'auth/email-already-in-use') {
+                try {
+                    const { initializeApp, deleteApp } = await import('firebase/app');
+                    const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
+                    const username = form.username.trim().toLowerCase().replace(/\s+/g, '_');
+                    const tempApp2  = initializeApp(FIREBASE_CONFIG, `recover-vendedor-${Date.now()}`);
+                    const tempAuth2 = getAuth(tempApp2);
+                    const { user } = await signInWithEmailAndPassword(tempAuth2, form.email.trim(), form.password);
+                    await setDoc(doc(db, 'users_metadata', user.uid), {
+                        name: form.name.trim(), email: form.email.trim(), username,
+                        role: 'vendedor', active: true,
+                        reporterId: form.reporterId, reporterName: form.reporterName,
+                        metaMensual: Number(form.metaMensual) || 0, mesArranque: form.mesArranque,
+                    });
+                    await tempAuth2.signOut();
+                    await deleteApp(tempApp2);
+                    closeModal();
+                } catch (recoverErr) {
+                    setCreateError(`La cuenta de Auth ya existe con otra contraseña. Ve a Firebase Console → Authentication, elimina "${form.email.trim()}" e inténtalo de nuevo.`);
+                }
+            }
+            else if (err.code === 'auth/weak-password') setCreateError('La contraseña debe tener al menos 6 caracteres.');
             else setCreateError(`Error: ${err.message}`);
         } finally {
             setIsCreating(false);
@@ -1776,6 +1816,9 @@ const VendedoresManagement = () => {
                                         {v.active !== false ? 'Activo' : 'Inactivo'}
                                     </span>
                                     <ToggleSwitch enabled={v.active !== false} setEnabled={() => handleToggleActive(v)} />
+                                    <button onClick={() => setCommissionTarget(v)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors" title="Estructura de comisiones">
+                                        <DollarSign size={16} />
+                                    </button>
                                     <button onClick={() => openEdit(v)} className="p-2 text-slate-400 hover:text-brand-blue hover:bg-blue-50 rounded-full transition-colors" title="Editar">
                                         <Settings size={16} />
                                     </button>
@@ -1850,6 +1893,45 @@ const VendedoresManagement = () => {
                         </button>
                     </div>
                 </form>
+            </Modal>
+
+            {/* Commission Constructor modal */}
+            <Modal
+                isOpen={!!commissionTarget}
+                onClose={() => setCommissionTarget(null)}
+                title={commissionTarget ? `Comisiones — ${commissionTarget.name}` : ''}
+                footer={
+                    <div className="flex gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setCommissionTarget(null)}
+                            className="flex-1 py-2.5 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50 transition-colors text-sm"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                setCommSaving(true);
+                                await commissionRef.current?.save();
+                                setCommSaving(false);
+                            }}
+                            disabled={commSaving}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50 hover:bg-opacity-90 transition-colors text-sm"
+                        >
+                            {commSaving ? <LoadingSpinner size="sm" /> : null}
+                            {commSaving ? 'Guardando…' : 'Guardar'}
+                        </button>
+                    </div>
+                }
+            >
+                {commissionTarget && (
+                    <CommissionConstructor
+                        ref={commissionRef}
+                        vendedor={commissionTarget}
+                        onClose={() => setCommissionTarget(null)}
+                    />
+                )}
             </Modal>
         </div>
     );

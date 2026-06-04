@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useKroma } from '@/Kroma/KromaContext';
 import { db } from '@/Firebase/config.js';
 import {
     collection, getDocs, addDoc, updateDoc, doc, deleteDoc,
@@ -9,7 +10,7 @@ import {
     CheckCircle, AlertTriangle, Package, Factory, Warehouse,
     ClipboardList, Tag, BookOpen, Droplets, BarChart3, Truck,
     ToggleLeft, ToggleRight, Mail, Briefcase, ChevronDown, X,
-    Check, Clock, KeyRound, Eye, EyeOff, Wrench, ClipboardCheck,
+    Check, Clock, KeyRound, Eye, EyeOff, Wrench, ClipboardCheck, PackagePlus,
 } from 'lucide-react';
 
 // ─── PIN hash helper ──────────────────────────────────────────────────────────
@@ -73,6 +74,31 @@ const NOTIF_EVENTS = [
     { id: 'produccionCompletada', label: 'Producción completada',  desc: 'Al cerrar una planilla de producción' },
     { id: 'stockBajo',            label: 'Stock bajo de insumos',  desc: 'Cuando un material supera el umbral de alerta' },
     { id: 'lotesPendientes',      label: 'Lotes sin envasar',      desc: 'Recordatorio de PT pendiente de empacar' },
+];
+
+// Granular action permissions — keyed under permisos.acciones
+const ACTIONS = [
+    {
+        id:    'csGestionarUsuarios',
+        label: 'Control Sistema: Gestionar Usuarios',
+        desc:  'Crear, editar y desactivar usuarios Kroma',
+        Icon:  Users,
+        color: 'text-violet-400',
+    },
+    {
+        id:    'csConfigPermisos',
+        label: 'Control Sistema: Configurar Permisos',
+        desc:  'Modificar módulos visibles y permisos de acción por usuario',
+        Icon:  Shield,
+        color: 'text-emerald-400',
+    },
+    {
+        id:    'cargarInventarioPT',
+        label: 'Cargar inventario en almacenes PT',
+        desc:  'Puede añadir partidas manualmente en almacenes de Producto Terminado',
+        Icon:  PackagePlus,
+        color: 'text-emerald-400',
+    },
 ];
 
 const NOTIF_ICON = {
@@ -380,7 +406,7 @@ function PermisosTab() {
     const [users,    setUsers]    = useState([]);
     const [selected, setSelected] = useState(null);
     const [modulos,  setModulos]  = useState({});
-    const [permisos, setPermisos] = useState({ editar: {}, eliminar: {} });
+    const [permisos, setPermisos] = useState({ editar: {}, eliminar: {}, acciones: {} });
     const [notifCfg, setNotifCfg] = useState({});
     const [shortcuts, setShortcuts] = useState([]);
     const [loading,  setLoading]  = useState(true);
@@ -401,7 +427,7 @@ function PermisosTab() {
         setSelected(u);
         const def = { ...(DEFAULT_MODULES[u.role] || {}) };
         setModulos({ ...def, ...(u.modulos || {}) });
-        setPermisos({ editar: u.permisos?.editar || {}, eliminar: u.permisos?.eliminar || {} });
+        setPermisos({ editar: u.permisos?.editar || {}, eliminar: u.permisos?.eliminar || {}, acciones: u.permisos?.acciones || {} });
         const defN = {};
         NOTIF_EVENTS.forEach(n => { defN[n.id] = true; });
         setNotifCfg({ ...defN, ...(u.notificaciones || {}) });
@@ -519,6 +545,33 @@ function PermisosTab() {
                             </>
                         )}
                     </div>
+
+                    {/* ── Acciones Específicas ── */}
+                    {selected?.role !== 'master' && (
+                        <div>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Acciones Específicas</p>
+                            <p className="text-slate-600 text-xs mb-3">Capacidades puntuales que el Master puede otorgar individualmente.</p>
+                            <div className="space-y-2">
+                                {ACTIONS.map(a => {
+                                    const AIcon = a.Icon;
+                                    const enabled = !!(permisos.acciones?.[a.id]);
+                                    return (
+                                        <div key={a.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${enabled ? 'bg-slate-800 border-slate-700' : 'bg-slate-800/50 border-slate-700/50'}`}>
+                                            <AIcon size={16} className={enabled ? `${a.color} shrink-0` : 'text-slate-600 shrink-0'} />
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`text-sm font-medium ${enabled ? 'text-slate-200' : 'text-slate-500'}`}>{a.label}</p>
+                                                <p className="text-slate-600 text-xs">{a.desc}</p>
+                                            </div>
+                                            <Toggle
+                                                checked={enabled}
+                                                onChange={v => setPermisos(p => ({ ...p, acciones: { ...p.acciones, [a.id]: v } }))}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {/* ── Shortcuts ── */}
                     <div>
@@ -817,19 +870,29 @@ function MantenimientoTab() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TABS_BASE = [
-    { id: 'usuarios',       label: 'Usuarios',         Icon: Users },
-    { id: 'permisos',       label: 'Permisos',         Icon: Shield },
-    { id: 'notificaciones', label: 'Notificaciones',   Icon: Bell },
-];
-const TAB_MANTENIMIENTO = { id: 'mantenimiento', label: 'Mantenimiento', Icon: Wrench };
+const TAB_USUARIOS      = { id: 'usuarios',     label: 'Usuarios',     Icon: Users  };
+const TAB_PERMISOS      = { id: 'permisos',     label: 'Permisos',     Icon: Shield };
+const TAB_MANTENIMIENTO = { id: 'mantenimiento',label: 'Mantenimiento',Icon: Wrench };
 
 export default function ControlSistemaPage({ kromaUser }) {
-    const [tab, setTab] = useState('usuarios');
+    const { canDo } = useKroma();
+    const [tab, setTab] = useState(null); // initialized after tabs computed
     const uid  = kromaUser?.id   || '__none__';
     const role = kromaUser?.role || '';
 
-    const tabs = [...TABS_BASE, TAB_MANTENIMIENTO];
+    const isMaster = role === 'master';
+    const canManageUsers    = isMaster || canDo('csGestionarUsuarios');
+    const canConfigPermisos = isMaster || canDo('csConfigPermisos');
+
+    const tabs = [
+        ...(canManageUsers    ? [TAB_USUARIOS]      : []),
+        ...(canConfigPermisos ? [TAB_PERMISOS]       : []),
+        ...(isMaster          ? [TAB_MANTENIMIENTO]  : []),
+    ];
+
+    // Set first visible tab on mount / whenever tabs change
+    const firstTabId = tabs[0]?.id || null;
+    const activeTab  = tab && tabs.some(t => t.id === tab) ? tab : firstTabId;
 
     return (
         <div className="p-4 md:p-6 max-w-2xl">
@@ -840,29 +903,39 @@ export default function ControlSistemaPage({ kromaUser }) {
                 </div>
                 <div>
                     <h2 className="text-xl font-bold text-white">Control del Sistema</h2>
-                    <p className="text-slate-400 text-sm">Usuarios · Permisos · Notificaciones</p>
+                    <p className="text-slate-400 text-sm">Usuarios · Permisos · Configuración</p>
                 </div>
             </div>
 
+            {/* No access state */}
+            {tabs.length === 0 && (
+                <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 text-center">
+                    <Shield size={32} className="text-slate-600 mx-auto mb-3" />
+                    <p className="text-slate-400 text-sm">No tienes funciones asignadas en Control del Sistema.</p>
+                    <p className="text-slate-600 text-xs mt-1">Solicita permisos al Master.</p>
+                </div>
+            )}
+
             {/* Tab bar */}
-            <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-xl p-1 mb-6">
-                {tabs.map(({ id, label, Icon }) => (
-                    <button
-                        key={id}
-                        onClick={() => setTab(id)}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-colors ${tab === id ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
-                    >
-                        <Icon size={14} />
-                        <span className="hidden sm:inline">{label}</span>
-                    </button>
-                ))}
-            </div>
+            {tabs.length > 1 && (
+                <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-xl p-1 mb-6">
+                    {tabs.map(({ id, label, Icon }) => (
+                        <button
+                            key={id}
+                            onClick={() => setTab(id)}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-colors ${activeTab === id ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-300'}`}
+                        >
+                            <Icon size={14} />
+                            <span className="hidden sm:inline">{label}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* Tab content */}
-            {tab === 'usuarios'       && <UsuariosTab />}
-            {tab === 'permisos'       && <PermisosTab />}
-            {tab === 'notificaciones' && <NotificacionesTab kromaUserId={uid} kromaUserRole={role} />}
-            {tab === 'mantenimiento'  && <MantenimientoTab />}
+            {activeTab === 'usuarios'      && <UsuariosTab />}
+            {activeTab === 'permisos'      && <PermisosTab />}
+            {activeTab === 'mantenimiento' && <MantenimientoTab />}
         </div>
     );
 }

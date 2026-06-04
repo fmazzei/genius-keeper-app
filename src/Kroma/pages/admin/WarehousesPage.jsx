@@ -7,8 +7,9 @@ import {
     Warehouse, Package, Archive, Truck, Droplets, Plus, ChevronLeft,
     ArrowRight, Clock, Check, ChevronDown, ChevronUp, AlertTriangle, X,
     Edit2, Send, ThumbsUp, ThumbsDown, MoreVertical, ClipboardCheck, Loader, Trash2,
+    PackageOpen, Scale, Calendar, Hash,
 } from 'lucide-react';
-import { useKroma } from '@/Kroma/KromaContext';
+import { useKroma } from '@/Kroma/KromaContext.jsx';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -56,6 +57,238 @@ function SecLabel({ children }) {
         <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">
             {children}
         </p>
+    );
+}
+
+// ─── Add Inventory Modal ──────────────────────────────────────────────────────
+
+function pesoToKg(pesoNeto, unidad) {
+    if (!pesoNeto) return 0;
+    if (unidad === 'g' || unidad === 'ml') return pesoNeto / 1000;
+    if (unidad === 'kg' || unidad === 'l') return pesoNeto;
+    return 0;
+}
+
+function AddInventoryModal({ warehouse, onClose, onSave, saving }) {
+    const [products, setProducts]         = useState([]);
+    const [loadingProds, setLoadingProds] = useState(true);
+
+    // Form state
+    const [tipo, setTipo]                 = useState('empacado'); // 'empacado' | 'sin_envasar'
+    const [productoId, setProductoId]     = useState('');
+    const [presentacionId, setPresentId]  = useState(''); // SKU id
+    const [fechaVencimiento, setFechaVenc] = useState('');
+    const [cantidad, setCantidad]         = useState('');
+    const [lote, setLote]                 = useState('');
+
+    useEffect(() => {
+        getDocs(query(collection(db, 'kroma_products'), where('active', '==', true)))
+            .then(snap => setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+            .catch(() => {})
+            .finally(() => setLoadingProds(false));
+    }, []);
+
+    const selectedProduct = products.find(p => p.id === productoId);
+    const presentaciones  = selectedProduct?.presentaciones || [];
+    const selectedSku     = presentaciones.find(s => s.id === presentacionId);
+
+    const isEmpacado    = tipo === 'empacado';
+    const cantidadNum   = parseFloat(cantidad) || 0;
+
+    const canSave = productoId
+        && fechaVencimiento
+        && cantidadNum > 0
+        && (!isEmpacado || presentacionId || presentaciones.length === 0);
+
+    function handleSave() {
+        if (!canSave || saving) return;
+        const productoNombre = selectedProduct?.nombre || '';
+        const presentacion   = selectedSku?.nombre || (isEmpacado ? '' : '');
+        const pesoPorUnidad  = selectedSku ? pesoToKg(selectedSku.pesoNeto, selectedSku.unidad) : 0;
+
+        onSave({
+            tipo: isEmpacado ? 'empacado' : 'sin_envasar',
+            productoId,
+            productoNombre,
+            presentacion,
+            pesoPorUnidad,
+            unidades:         isEmpacado ? Math.round(cantidadNum) : 0,
+            kgTotales:        isEmpacado ? pesoPorUnidad * Math.round(cantidadNum) : cantidadNum,
+            fechaVencimiento,
+            lote:             lote.trim(),
+            warehouseId:      warehouse.id,
+        });
+    }
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="bg-slate-900 border border-slate-700 rounded-t-2xl md:rounded-2xl w-full max-w-md p-5 space-y-5 max-h-[90dvh] overflow-y-auto">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                    <div>
+                        <p className="text-white font-bold text-base">Cargar Inventario</p>
+                        <p className="text-slate-500 text-xs mt-0.5">{warehouse.nombre}</p>
+                    </div>
+                    <button onClick={onClose} className="text-slate-500 hover:text-white p-1"><X size={16} /></button>
+                </div>
+
+                {/* Tipo toggle */}
+                <div>
+                    <SecLabel>Tipo de producto</SecLabel>
+                    <div className="grid grid-cols-2 gap-2">
+                        {[
+                            { id: 'empacado',    label: 'Empacado',    icon: <Package size={14} /> },
+                            { id: 'sin_envasar', label: 'Sin envasar', icon: <Scale size={14} /> },
+                        ].map(opt => (
+                            <button key={opt.id} type="button" onClick={() => { setTipo(opt.id); setPresentId(''); setCantidad(''); }}
+                                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-semibold transition-colors ${
+                                    tipo === opt.id
+                                        ? 'border-emerald-600/60 bg-emerald-900/30 text-emerald-300'
+                                        : 'border-slate-700 bg-slate-800/60 text-slate-400'
+                                }`}>
+                                {opt.icon}
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Product selector */}
+                <div>
+                    <SecLabel>Producto <span className="text-rose-400">*</span></SecLabel>
+                    {loadingProds ? (
+                        <div className="flex items-center gap-2 py-3 text-slate-500 text-sm">
+                            <Loader size={14} className="animate-spin" /> Cargando productos…
+                        </div>
+                    ) : (
+                        <select
+                            value={productoId}
+                            onChange={e => { setProductoId(e.target.value); setPresentId(''); }}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 appearance-none"
+                        >
+                            <option value="">— Seleccionar producto —</option>
+                            {products.map(p => (
+                                <option key={p.id} value={p.id}>{p.nombre}</option>
+                            ))}
+                        </select>
+                    )}
+                </div>
+
+                {/* Presentación / gramaje (empacado only) */}
+                {isEmpacado && selectedProduct && (
+                    <div>
+                        <SecLabel>Gramaje / Presentación <span className="text-rose-400">*</span></SecLabel>
+                        {presentaciones.length === 0 ? (
+                            <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl px-3 py-2.5">
+                                <p className="text-amber-300 text-xs">Este producto no tiene presentaciones configuradas. Agrégalas en el Catálogo de Productos.</p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-wrap gap-2">
+                                {presentaciones.map(sku => (
+                                    <button key={sku.id} type="button"
+                                        onClick={() => setPresentId(sku.id)}
+                                        className={`px-3 py-2 rounded-xl border text-sm font-semibold transition-colors ${
+                                            presentacionId === sku.id
+                                                ? 'border-emerald-600/60 bg-emerald-900/30 text-emerald-300'
+                                                : 'border-slate-700 bg-slate-800 text-slate-400 hover:border-slate-500'
+                                        }`}>
+                                        {sku.nombre}
+                                        {sku.pesoNeto > 0 && (
+                                            <span className="text-xs opacity-60 ml-1">({sku.pesoNeto}{sku.unidad})</span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Fecha de vencimiento */}
+                <div>
+                    <SecLabel><span className="flex items-center gap-1.5"><Calendar size={11} />Fecha de vencimiento <span className="text-rose-400">*</span></span></SecLabel>
+                    <input
+                        type="date"
+                        value={fechaVencimiento}
+                        onChange={e => setFechaVenc(e.target.value)}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
+                    />
+                </div>
+
+                {/* Cantidad */}
+                <div>
+                    <SecLabel>
+                        {isEmpacado ? 'Cantidad (unidades)' : 'Kilogramos totales'} <span className="text-rose-400">*</span>
+                    </SecLabel>
+                    <div className="flex items-center gap-3">
+                        <button type="button"
+                            onClick={() => setCantidad(v => String(Math.max(0, (parseFloat(v) || 0) - (isEmpacado ? 1 : 0.5))))}
+                            className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 text-white text-xl font-bold hover:border-slate-500 transition-colors flex items-center justify-center shrink-0">
+                            −
+                        </button>
+                        <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step={isEmpacado ? '1' : '0.001'}
+                            value={cantidad}
+                            onChange={e => setCantidad(e.target.value)}
+                            placeholder="0"
+                            className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white font-bold font-mono text-2xl text-center focus:outline-none focus:border-emerald-500"
+                        />
+                        <button type="button"
+                            onClick={() => setCantidad(v => String((parseFloat(v) || 0) + (isEmpacado ? 1 : 0.5)))}
+                            className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 text-white text-xl font-bold hover:border-slate-500 transition-colors flex items-center justify-center shrink-0">
+                            +
+                        </button>
+                    </div>
+                    {isEmpacado && selectedSku && cantidadNum > 0 && (
+                        <p className="text-slate-500 text-xs text-center mt-1.5">
+                            = {(pesoToKg(selectedSku.pesoNeto, selectedSku.unidad) * cantidadNum).toFixed(3)} kg totales
+                        </p>
+                    )}
+                </div>
+
+                {/* Lote (opcional) */}
+                <div>
+                    <SecLabel><span className="flex items-center gap-1.5"><Hash size={11} />Número de lote (opcional)</span></SecLabel>
+                    <input
+                        type="text"
+                        value={lote}
+                        onChange={e => setLote(e.target.value)}
+                        placeholder="Ej: L-2026-051"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-emerald-500 font-mono"
+                    />
+                </div>
+
+                {/* Summary preview */}
+                {canSave && (
+                    <div className="bg-emerald-900/10 border border-emerald-700/30 rounded-xl px-4 py-3 space-y-1">
+                        <p className="text-emerald-300 text-xs font-semibold">Resumen de entrada</p>
+                        <p className="text-white text-sm font-semibold">{selectedProduct?.nombre}</p>
+                        {isEmpacado && selectedSku && (
+                            <p className="text-slate-400 text-xs">{selectedSku.nombre} · {Math.round(cantidadNum)} unidades</p>
+                        )}
+                        {!isEmpacado && (
+                            <p className="text-slate-400 text-xs">{cantidadNum} kg sin envasar</p>
+                        )}
+                        <p className="text-slate-500 text-xs">Vence: {fechaVencimiento}</p>
+                    </div>
+                )}
+
+                <div className="flex gap-3 pt-1">
+                    <button onClick={onClose}
+                        className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
+                        Cancelar
+                    </button>
+                    <button onClick={handleSave} disabled={!canSave || saving}
+                        className="flex-1 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+                        {saving ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
+                        {saving ? 'Guardando…' : 'Cargar inventario'}
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 }
 
@@ -536,7 +769,7 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
 
 // ─── Warehouse Detail View ────────────────────────────────────────────────────
 
-function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaUser, kromaRole, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated }) {
+function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaUser, kromaRole, canDo, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
     const [showMov, setShowMov] = useState(false);
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const isMaster = kromaRole === 'master';
@@ -550,6 +783,8 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
 
     const canEditPT = kromaRole === 'master' || kromaRole === 'kroma_admin' || kromaRole === 'kroma_operario' || kromaRole === 'kroma_gerencial';
     const isAdminOrMaster = kromaRole === 'master' || kromaRole === 'kroma_admin';
+    const isPT = warehouse.tipo === 'PT' || warehouse.tipo === 'mixto';
+    const canCargar = canDo ? canDo('cargarInventarioPT') : false;
 
     return (
         <div className="min-h-full">
@@ -562,6 +797,12 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
                     <p className="text-white font-bold text-sm truncate">{warehouse.nombre}</p>
                     <span className={`text-xs font-semibold ${m.color}`}>{m.label}</span>
                 </div>
+                {isPT && canCargar && (
+                    <button onClick={onAddItem}
+                        className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0">
+                        <Plus size={13} /> Cargar
+                    </button>
+                )}
                 <div className="text-right">
                     <p className="text-emerald-400 font-bold font-mono">{empacados.length + sinEnv.length}</p>
                     <p className="text-slate-600 text-xs">partidas</p>
@@ -885,7 +1126,7 @@ function WarehouseCard({ wh, count, warn, canEdit, canDelete, onOpen, onEdit, on
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WarehousesPage() {
-    const { kromaUser, kromaRole, canEdit, canDelete } = useKroma();
+    const { kromaUser, kromaRole, canEdit, canDelete, canDo } = useKroma();
 
     const [warehouses,   setWarehouses]   = useState([]);
     const [inventoryPT,  setInventoryPT]  = useState([]);
@@ -902,6 +1143,7 @@ export default function WarehousesPage() {
     const [editItemWId,  setEditItemWId]  = useState(null);
     const [saving,       setSaving]       = useState(false);
     const [successMsg,   setSuccessMsg]   = useState('');
+    const [showAddInv,   setShowAddInv]   = useState(false);
 
     useEffect(() => { loadData(); }, []);
 
@@ -1106,6 +1348,50 @@ export default function WarehousesPage() {
         } catch (e) { alert(e.message); }
     }
 
+    async function addInventoryItem(data) {
+        setSaving(true);
+        try {
+            const wh = warehouses.find(w => w.id === data.warehouseId);
+            const ref = await addDoc(collection(db, 'kroma_inventory_pt'), {
+                ...data,
+                active: true,
+                creadoPorId:     kromaUser?.id || null,
+                creadoPorNombre: kromaUser?.name || null,
+                createdAt: serverTimestamp(),
+            });
+            const newItem = { id: ref.id, ...data };
+            setInventoryPT(prev => [...prev, newItem]);
+
+            // Record movement
+            const movRef = await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                tipo:           'entrada',
+                origenId:       null,
+                origenNombre:   'Entrada manual',
+                destinoId:      data.warehouseId,
+                destinoNombre:  wh?.nombre || '',
+                productoNombre: data.productoNombre,
+                presentacion:   data.presentacion || '',
+                lote:           data.lote || '',
+                cantidad:       data.tipo === 'empacado' ? data.unidades : data.kgTotales,
+                unidad:         data.tipo === 'empacado' ? 'unidades' : 'kg',
+                creadoPorNombre: kromaUser?.name || null,
+                createdAt:      serverTimestamp(),
+            });
+            setMovements(prev => [{
+                id: movRef.id, tipo: 'entrada', origenNombre: 'Entrada manual',
+                destinoId: data.warehouseId, destinoNombre: wh?.nombre || '',
+                productoNombre: data.productoNombre, cantidad: data.tipo === 'empacado' ? data.unidades : data.kgTotales,
+                unidad: data.tipo === 'empacado' ? 'unidades' : 'kg', lote: data.lote,
+                createdAt: { toMillis: () => Date.now(), toDate: () => new Date() },
+            }, ...prev]);
+
+            setShowAddInv(false);
+            setSuccessMsg(`${data.productoNombre} cargado en ${wh?.nombre}`);
+            setTimeout(() => setSuccessMsg(''), 3000);
+        } catch (e) { alert(e.message); }
+        finally { setSaving(false); }
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     function countItems(wId) {
@@ -1149,12 +1435,22 @@ export default function WarehousesPage() {
                     warehouses={warehouses}
                     kromaUser={kromaUser}
                     kromaRole={kromaRole}
+                    canDo={canDo}
                     onBack={() => setView('list')}
                     onTransfer={(item, warehouseId) => { setTransferItem(item); setTransferWId(warehouseId); }}
                     onEditItem={(item, warehouseId) => { setEditItem(item); setEditItemWId(warehouseId); }}
                     onDeleteItem={handleDeleteInventoryItem}
                     onInventoryUpdated={handleInventoryUpdated}
+                    onAddItem={() => setShowAddInv(true)}
                 />
+                {showAddInv && (
+                    <AddInventoryModal
+                        warehouse={whData}
+                        saving={saving}
+                        onClose={() => setShowAddInv(false)}
+                        onSave={addInventoryItem}
+                    />
+                )}
                 {transferItem && (
                     <TransferModal
                         item={transferItem}
