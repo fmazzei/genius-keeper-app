@@ -1640,8 +1640,10 @@ const MES_ARRANQUE_OPTS = [
 ];
 
 const VendedoresManagement = () => {
-    const [vendedores, setVendedores]         = useState([]);
-    const [reporters, setReporters]           = useState([]);
+    const commissionRef                           = React.useRef(null);
+    const [commSaving, setCommSaving]             = useState(false);
+    const [vendedores, setVendedores]             = useState([]);
+    const [reporters, setReporters]               = useState([]);
     const [loading, setLoading]               = useState(true);
     const [isAddModalOpen, setIsAddModalOpen]         = useState(false);
     const [editTarget, setEditTarget]                 = useState(null);
@@ -1898,9 +1900,34 @@ const VendedoresManagement = () => {
                 isOpen={!!commissionTarget}
                 onClose={() => setCommissionTarget(null)}
                 title={commissionTarget ? `Comisiones — ${commissionTarget.name}` : ''}
+                footer={
+                    <div className="flex gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setCommissionTarget(null)}
+                            className="flex-1 py-2.5 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50 transition-colors text-sm"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                setCommSaving(true);
+                                await commissionRef.current?.save();
+                                setCommSaving(false);
+                            }}
+                            disabled={commSaving}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50 hover:bg-opacity-90 transition-colors text-sm"
+                        >
+                            {commSaving ? <LoadingSpinner size="sm" /> : null}
+                            {commSaving ? 'Guardando…' : 'Guardar'}
+                        </button>
+                    </div>
+                }
             >
                 {commissionTarget && (
                     <CommissionConstructor
+                        ref={commissionRef}
                         vendedor={commissionTarget}
                         onClose={() => setCommissionTarget(null)}
                     />

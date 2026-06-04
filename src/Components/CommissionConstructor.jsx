@@ -1,9 +1,9 @@
 // RUTA: src/Components/CommissionConstructor.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
-import { Save, Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, AlertCircle } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 
 export const DEFAULT_COMMISSION_CONFIG = {
@@ -46,8 +46,10 @@ const NumberField = ({ label, value, onChange, min = 0, step = 1, suffix = '', h
 );
 
 // ─── Main component ───────────────────────────────────────────────────────────
+// forwardRef exposes { save, saving } so the parent can drive the footer buttons
+// outside the scroll area (via Modal's footer prop).
 
-const CommissionConstructor = ({ vendedor, onClose }) => {
+const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
     const [config, setConfig] = useState(DEFAULT_COMMISSION_CONFIG);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving]   = useState(false);
@@ -77,14 +79,15 @@ const CommissionConstructor = ({ vendedor, onClose }) => {
             onClose();
         } catch (e) {
             setError('No se pudo guardar: ' + e.message);
-        } finally {
             setSaving(false);
         }
     };
 
+    // Expose save and saving state to parent (for pinned footer buttons)
+    useImperativeHandle(ref, () => ({ save: handleSave, saving }), [saving, config]);
+
     const updateTier = (i, field, value) => {
-        const updated = config.tiers.map((t, j) => j === i ? { ...t, [field]: value } : t);
-        setConfig(p => ({ ...p, tiers: updated }));
+        setConfig(p => ({ ...p, tiers: p.tiers.map((t, j) => j === i ? { ...t, [field]: value } : t) }));
     };
 
     const addTier = () => setConfig(p => ({
@@ -94,9 +97,8 @@ const CommissionConstructor = ({ vendedor, onClose }) => {
 
     const removeTier = (i) => setConfig(p => ({ ...p, tiers: p.tiers.filter((_, j) => j !== i) }));
 
-    const updateArranque = (i, field, value) => {
-        const updated = config.arranque.map((a, j) => j === i ? { ...a, [field]: value } : a);
-        setConfig(p => ({ ...p, arranque: updated }));
+    const updateArranque = (i, meta) => {
+        setConfig(p => ({ ...p, arranque: p.arranque.map((a, j) => j === i ? { ...a, meta } : a) }));
     };
 
     const addArranque = () => setConfig(p => ({
@@ -106,7 +108,6 @@ const CommissionConstructor = ({ vendedor, onClose }) => {
 
     const removeArranque = (i) => setConfig(p => ({ ...p, arranque: p.arranque.filter((_, j) => j !== i) }));
 
-    // ── Projection ────────────────────────────────────────────────────────────
     const project = (rate) => {
         const commission = simAmount * (rate / 100);
         const bonuses    = simAmount * ((config.bonusPuntualidad + config.bonusActivacion) / 100);
@@ -116,7 +117,7 @@ const CommissionConstructor = ({ vendedor, onClose }) => {
     };
 
     if (loading) return (
-        <div className="flex items-center justify-center py-12">
+        <div className="flex items-center justify-center py-16">
             <LoadingSpinner />
         </div>
     );
@@ -124,7 +125,8 @@ const CommissionConstructor = ({ vendedor, onClose }) => {
     const lowestTierMinPct = config.tiers.length > 0 ? Math.min(...config.tiers.map(t => t.minPct)) : 90;
 
     return (
-        <div className="space-y-6 max-h-[78vh] overflow-y-auto px-0.5 pb-2">
+        // No scroll container here — Modal owns the scroll via overflow-y-auto flex-1
+        <div className="p-4 space-y-6">
 
             {error && (
                 <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
@@ -156,28 +158,24 @@ const CommissionConstructor = ({ vendedor, onClose }) => {
             <section>
                 <div className="flex items-center justify-between mb-3">
                     <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Estructura de Comisión</p>
-                    <button
-                        type="button"
-                        onClick={addTier}
-                        className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800"
-                    >
+                    <button type="button" onClick={addTier} className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800">
                         <Plus size={13} /> Nivel
                     </button>
                 </div>
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                    <div className="grid grid-cols-[1fr_110px_110px_32px] text-[10px] font-bold text-slate-400 uppercase bg-slate-50 px-3 py-2 border-b border-slate-200 gap-2">
+                    <div className="grid grid-cols-[1fr_100px_100px_28px] text-[10px] font-bold text-slate-400 uppercase bg-slate-50 px-3 py-2 border-b border-slate-200 gap-2">
                         <span>Nivel</span>
                         <span className="text-center">Cumpl. mín.</span>
                         <span className="text-center">Comisión</span>
                         <span />
                     </div>
                     {config.tiers.map((tier, i) => (
-                        <div key={i} className="grid grid-cols-[1fr_110px_110px_32px] items-center px-3 py-2.5 border-b border-slate-100 last:border-b-0 gap-2">
+                        <div key={i} className="grid grid-cols-[1fr_100px_100px_28px] items-center px-3 py-2.5 border-b border-slate-100 last:border-b-0 gap-2">
                             <input
                                 type="text"
                                 value={tier.label}
                                 onChange={e => updateTier(i, 'label', e.target.value)}
-                                className="text-sm font-semibold text-slate-800 border border-transparent hover:border-slate-300 focus:border-blue-400 focus:outline-none rounded px-1 py-1 w-full bg-transparent"
+                                className="text-sm font-semibold text-slate-800 border border-transparent hover:border-slate-300 focus:border-blue-400 focus:outline-none rounded px-1.5 py-1 w-full bg-transparent"
                             />
                             <div className="flex items-center gap-1">
                                 <input
@@ -203,49 +201,22 @@ const CommissionConstructor = ({ vendedor, onClose }) => {
                                 disabled={config.tiers.length <= 1}
                                 className="p-1 text-slate-300 hover:text-red-500 disabled:opacity-20 transition-colors"
                             >
-                                <Trash2 size={14} />
+                                <Trash2 size={13} />
                             </button>
                         </div>
                     ))}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">Evalúa de arriba a abajo — ordénalos de mayor a menor cumplimiento.</p>
+                <p className="text-[11px] text-slate-400 mt-1.5">Evalúa de arriba a abajo — ordénalos de mayor a menor.</p>
             </section>
 
             {/* ── 3. Bonos ── */}
             <section>
                 <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 mb-3">Bonos</p>
                 <div className="grid grid-cols-2 gap-3">
-                    <NumberField
-                        label="Bono Puntualidad (%)"
-                        value={config.bonusPuntualidad}
-                        step={0.5}
-                        suffix="%"
-                        onChange={v => setConfig(p => ({ ...p, bonusPuntualidad: v }))}
-                    />
-                    <NumberField
-                        label="Bono Activación (%)"
-                        value={config.bonusActivacion}
-                        step={0.5}
-                        suffix="%"
-                        onChange={v => setConfig(p => ({ ...p, bonusActivacion: v }))}
-                    />
-                    <NumberField
-                        label="Umbral activación (% cartera)"
-                        value={config.activacionThreshold}
-                        step={5}
-                        max={100}
-                        suffix="%"
-                        hint="% de PDVs a cubrir para ganar el bono"
-                        onChange={v => setConfig(p => ({ ...p, activacionThreshold: v }))}
-                    />
-                    <NumberField
-                        label="Mín. unidades por punto"
-                        value={config.activacionMinUnits}
-                        step={1}
-                        suffix="uds"
-                        hint="Mínimo de unidades por PDV para que cuente"
-                        onChange={v => setConfig(p => ({ ...p, activacionMinUnits: v }))}
-                    />
+                    <NumberField label="Bono Puntualidad (%)" value={config.bonusPuntualidad} step={0.5} suffix="%" onChange={v => setConfig(p => ({ ...p, bonusPuntualidad: v }))} />
+                    <NumberField label="Bono Activación (%)" value={config.bonusActivacion} step={0.5} suffix="%" onChange={v => setConfig(p => ({ ...p, bonusActivacion: v }))} />
+                    <NumberField label="Umbral activación (% cartera)" value={config.activacionThreshold} step={5} suffix="%" hint={`% PDVs a cubrir para ganar el bono`} onChange={v => setConfig(p => ({ ...p, activacionThreshold: v }))} />
+                    <NumberField label="Mín. unidades por punto" value={config.activacionMinUnits} step={1} suffix="uds" onChange={v => setConfig(p => ({ ...p, activacionMinUnits: v }))} />
                 </div>
             </section>
 
@@ -253,35 +224,26 @@ const CommissionConstructor = ({ vendedor, onClose }) => {
             <section>
                 <div className="flex items-center justify-between mb-3">
                     <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Período de Arranque</p>
-                    <button
-                        type="button"
-                        onClick={addArranque}
-                        className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800"
-                    >
+                    <button type="button" onClick={addArranque} className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800">
                         <Plus size={13} /> Mes
                     </button>
                 </div>
                 {config.arranque.length === 0 ? (
-                    <p className="text-sm text-slate-400 italic py-2">Sin período de arranque — meta plena desde el inicio.</p>
+                    <p className="text-sm text-slate-400 italic py-1">Sin período de arranque — meta plena desde el inicio.</p>
                 ) : (
                     <div className="space-y-2">
                         {config.arranque.map((item, i) => (
                             <div key={i} className="flex items-center gap-2">
                                 <span className="text-sm font-semibold text-slate-600 w-12 shrink-0">Mes {i + 1}</span>
                                 <input
-                                    type="number"
-                                    min="0"
+                                    type="number" min="0"
                                     value={item.meta}
-                                    onChange={e => updateArranque(i, 'meta', Number(e.target.value) || 0)}
+                                    onChange={e => updateArranque(i, Number(e.target.value) || 0)}
                                     className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm"
                                     placeholder="Unidades meta"
                                 />
                                 <span className="text-sm text-slate-500 shrink-0">uds</span>
-                                <button
-                                    type="button"
-                                    onClick={() => removeArranque(i)}
-                                    className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
-                                >
+                                <button type="button" onClick={() => removeArranque(i)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors">
                                     <Trash2 size={14} />
                                 </button>
                             </div>
@@ -298,99 +260,70 @@ const CommissionConstructor = ({ vendedor, onClose }) => {
                     value={config.facturaMaxDias}
                     step={5}
                     suffix="días"
-                    hint="Las facturas más antiguas no computan hasta cobrarse. No es penalización."
+                    hint="Las facturas más antiguas no computan hasta cobrarse."
                     onChange={v => setConfig(p => ({ ...p, facturaMaxDias: v }))}
                 />
             </section>
 
-            {/* ── 6. Proyección de Ingresos ── */}
+            {/* ── 6. Simulador de Ingresos ── */}
             <section className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                 <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500 mb-3">Simulador de Ingresos</p>
-                <div className="flex items-center gap-3 mb-4">
-                    <span className="text-sm font-semibold text-slate-700 shrink-0">Monto cobrado estimado:</span>
-                    <div className="flex items-center gap-1 flex-1">
-                        <span className="text-slate-500 text-sm">$</span>
-                        <input
-                            type="number"
-                            min="0"
-                            step="1000"
-                            value={simAmount}
-                            onChange={e => setSimAmount(Number(e.target.value) || 0)}
-                            className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm font-mono text-right"
-                        />
-                        <span className="text-slate-500 text-xs shrink-0">USD/mes</span>
-                    </div>
+                <div className="flex items-center gap-2 mb-4">
+                    <span className="text-sm font-semibold text-slate-700 shrink-0">Monto cobrado:</span>
+                    <span className="text-slate-500 text-sm">$</span>
+                    <input
+                        type="number" min="0" step="1000"
+                        value={simAmount}
+                        onChange={e => setSimAmount(Number(e.target.value) || 0)}
+                        className="flex-1 min-w-0 p-2.5 border border-slate-300 rounded-lg text-sm font-mono text-right"
+                    />
+                    <span className="text-slate-500 text-xs shrink-0">USD/mes</span>
                 </div>
 
                 <div className="space-y-2">
                     {[...config.tiers]
-                        .sort((a, b) => a.minPct - b.minPct)
-                        .reverse()
+                        .sort((a, b) => b.minPct - a.minPct)
                         .map((tier, i) => {
                             const proj = project(tier.rate);
                             return (
-                                <div key={i} className="bg-white rounded-xl p-3 border border-slate-200 shadow-sm">
-                                    <div className="flex items-center justify-between mb-1.5">
+                                <div key={i} className="bg-white rounded-xl p-3 border border-slate-200">
+                                    <div className="flex items-center justify-between mb-1">
                                         <div>
                                             <span className="font-bold text-slate-800 text-sm">{tier.label}</span>
-                                            <span className="text-xs text-slate-400 ml-1.5">({tier.minPct}%+ de meta)</span>
+                                            <span className="text-xs text-slate-400 ml-1.5">({tier.minPct}%+)</span>
                                         </div>
                                         <span className="font-black text-emerald-700 text-lg">${proj.total.toFixed(0)}</span>
                                     </div>
                                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
-                                        <span>Fijo <span className="font-semibold text-slate-600">${proj.fijo}</span></span>
-                                        <span>Viáticos <span className="font-semibold text-slate-600">${proj.viaticos}</span></span>
-                                        <span>Comisión <span className="font-semibold text-slate-600">${proj.commission.toFixed(0)}</span></span>
-                                        <span>Bonos <span className="font-semibold text-slate-600">${proj.bonuses.toFixed(0)}</span></span>
+                                        <span>Fijo <b className="text-slate-600">${proj.fijo}</b></span>
+                                        <span>Viáticos <b className="text-slate-600">${proj.viaticos}</b></span>
+                                        <span>Comisión <b className="text-slate-600">${proj.commission.toFixed(0)}</b></span>
+                                        <span>Bonos <b className="text-slate-600">${proj.bonuses.toFixed(0)}</b></span>
                                     </div>
                                 </div>
                             );
                         })}
 
-                    {/* Baja (below all tiers) */}
                     <div className="bg-slate-100 rounded-xl p-3 border border-slate-200">
-                        <div className="flex items-center justify-between mb-1.5">
-                            <div>
-                                <span className="font-bold text-slate-500 text-sm">Baja</span>
-                                <span className="text-xs text-slate-400 ml-1.5">(&lt;{lowestTierMinPct}% de meta)</span>
-                            </div>
-                            <span className="font-black text-slate-500 text-lg">
-                                ${(config.salarioFijo + config.viaticosSemanales * 4).toFixed(0)}
-                            </span>
+                        <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-slate-500 text-sm">Baja <span className="font-normal text-xs">(&lt;{lowestTierMinPct}%)</span></span>
+                            <span className="font-black text-slate-500 text-lg">${(config.salarioFijo + config.viaticosSemanales * 4).toFixed(0)}</span>
                         </div>
                         <div className="flex flex-wrap gap-x-3 text-xs text-slate-400">
-                            <span>Fijo <span className="font-semibold">${config.salarioFijo}</span></span>
-                            <span>Viáticos <span className="font-semibold">${config.viaticosSemanales * 4}</span></span>
+                            <span>Fijo <b>${config.salarioFijo}</b></span>
+                            <span>Viáticos <b>${config.viaticosSemanales * 4}</b></span>
                             <span className="italic">Sin comisión por meta</span>
                         </div>
                     </div>
                 </div>
                 <p className="text-[11px] text-slate-400 mt-2.5">
-                    * Con ambos bonos activos (puntualidad + activación). Las tasas aplican sobre el monto efectivamente cobrado.
+                    * Ambos bonos activos. Tasas sobre monto cobrado efectivamente.
                 </p>
             </section>
 
-            {/* ── Footer ── */}
-            <div className="flex gap-3 pt-2 border-t border-slate-200 sticky bottom-0 bg-white pb-1">
-                <button
-                    type="button"
-                    onClick={onClose}
-                    className="flex-1 py-3 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                    Cancelar
-                </button>
-                <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50 hover:bg-opacity-90 transition-colors"
-                >
-                    {saving ? <LoadingSpinner size="sm" /> : <Save size={18} />}
-                    {saving ? 'Guardando…' : 'Guardar'}
-                </button>
-            </div>
         </div>
     );
-};
+});
 
+CommissionConstructor.displayName = 'CommissionConstructor';
 export default CommissionConstructor;
