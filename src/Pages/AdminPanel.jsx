@@ -5,6 +5,7 @@ import { db, functions } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw } from 'lucide-react';
+import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
 import { WIDGET_REGISTRY, WIDGET_CATEGORIES } from '../config/widgetRegistry.js';
@@ -1642,10 +1643,11 @@ const VendedoresManagement = () => {
     const [vendedores, setVendedores]         = useState([]);
     const [reporters, setReporters]           = useState([]);
     const [loading, setLoading]               = useState(true);
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [editTarget, setEditTarget]         = useState(null);
-    const [isCreating, setIsCreating]         = useState(false);
-    const [createError, setCreateError]       = useState('');
+    const [isAddModalOpen, setIsAddModalOpen]         = useState(false);
+    const [editTarget, setEditTarget]                 = useState(null);
+    const [isCreating, setIsCreating]                 = useState(false);
+    const [createError, setCreateError]               = useState('');
+    const [commissionTarget, setCommissionTarget]     = useState(null);
 
     const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '', metaMensual: '', mesArranque: 0 };
     const [form, setForm] = useState(EMPTY_FORM);
@@ -1812,6 +1814,9 @@ const VendedoresManagement = () => {
                                         {v.active !== false ? 'Activo' : 'Inactivo'}
                                     </span>
                                     <ToggleSwitch enabled={v.active !== false} setEnabled={() => handleToggleActive(v)} />
+                                    <button onClick={() => setCommissionTarget(v)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors" title="Estructura de comisiones">
+                                        <DollarSign size={16} />
+                                    </button>
                                     <button onClick={() => openEdit(v)} className="p-2 text-slate-400 hover:text-brand-blue hover:bg-blue-50 rounded-full transition-colors" title="Editar">
                                         <Settings size={16} />
                                     </button>
@@ -1886,6 +1891,20 @@ const VendedoresManagement = () => {
                         </button>
                     </div>
                 </form>
+            </Modal>
+
+            {/* Commission Constructor modal */}
+            <Modal
+                isOpen={!!commissionTarget}
+                onClose={() => setCommissionTarget(null)}
+                title={commissionTarget ? `Comisiones — ${commissionTarget.name}` : ''}
+            >
+                {commissionTarget && (
+                    <CommissionConstructor
+                        vendedor={commissionTarget}
+                        onClose={() => setCommissionTarget(null)}
+                    />
+                )}
             </Modal>
         </div>
     );

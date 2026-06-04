@@ -17,21 +17,35 @@ import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
 import TomarPedidoForm from '@/Pages/TomarPedidoForm.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
+import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Tier style palette (by tier index, 0 = highest) ─────────────────────────
 
-const TIERS = {
-    plus:   { label: 'Plus',   min: 1.20, rate: 0.045, color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40' },
-    optima: { label: 'Óptima', min: 1.00, rate: 0.040, color: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/40'    },
-    basica: { label: 'Básica', min: 0.90, rate: 0.035, color: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/40'   },
-    baja:   { label: 'Baja',   min: 0,    rate: 0,     color: 'text-slate-400',   bg: 'bg-slate-500/20',   border: 'border-slate-500/40'   },
-};
+const TIER_STYLES = [
+    { color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40' },
+    { color: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/40'    },
+    { color: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/40'   },
+    { color: 'text-violet-400',  bg: 'bg-violet-500/20',  border: 'border-violet-500/40'  },
+];
+const BAJA_STYLE = { color: 'text-slate-400', bg: 'bg-slate-500/20', border: 'border-slate-500/40' };
 
-function getTier(pct) {
-    if (pct >= TIERS.plus.min)   return TIERS.plus;
-    if (pct >= TIERS.optima.min) return TIERS.optima;
-    if (pct >= TIERS.basica.min) return TIERS.basica;
-    return TIERS.baja;
+function buildTiers(config) {
+    const tiers = [...(config.tiers || DEFAULT_COMMISSION_CONFIG.tiers)]
+        .sort((a, b) => b.minPct - a.minPct)
+        .map((t, i) => ({
+            label:  t.label,
+            min:    t.minPct / 100,
+            rate:   t.rate   / 100,
+            ...( TIER_STYLES[i] || TIER_STYLES[TIER_STYLES.length - 1] ),
+        }));
+    return tiers;
+}
+
+function getTierFromConfig(pct, tiers) {
+    for (const t of tiers) {
+        if (pct >= t.min) return t;
+    }
+    return { label: 'Baja', min: 0, rate: 0, ...BAJA_STYLE };
 }
 
 function startOfMonth() {
@@ -58,18 +72,21 @@ function StatChip({ label, value, color = 'text-white', sub }) {
     );
 }
 
-function HomeView({ vendedor, stats, loading, onNavigate }) {
+function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
     const pct     = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
-    const tier    = getTier(pct);
+    const tier    = getTierFromConfig(pct, tiers);
     const barPct  = Math.min(pct, 1.25);
 
     const unidadesParaSiguiente = () => {
-        if (pct >= TIERS.plus.min)   return null;
-        if (pct >= TIERS.optima.min) return Math.ceil((TIERS.plus.min   - pct) * vendedor.metaMensual);
-        if (pct >= TIERS.basica.min) return Math.ceil((TIERS.optima.min - pct) * vendedor.metaMensual);
-        return Math.ceil((TIERS.basica.min - pct) * vendedor.metaMensual);
+        for (let i = tiers.length - 1; i >= 0; i--) {
+            if (pct < tiers[i].min) {
+                return Math.ceil((tiers[i].min - pct) * vendedor.metaMensual);
+            }
+        }
+        return null;
     };
     const faltan = unidadesParaSiguiente();
+    const ingresoBase = commConfig.salarioFijo + commConfig.viaticosSemanales * 4;
 
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
@@ -100,7 +117,7 @@ function HomeView({ vendedor, stats, loading, onNavigate }) {
 
                         <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden mb-2">
                             <div
-                                className={`h-3 rounded-full transition-all duration-700 ${pct >= TIERS.plus.min ? 'bg-emerald-400' : pct >= TIERS.optima.min ? 'bg-blue-400' : pct >= TIERS.basica.min ? 'bg-amber-400' : 'bg-slate-600'}`}
+                                className={`h-3 rounded-full transition-all duration-700 ${tier.color.replace('text-', 'bg-').replace('-400', '-400')}`}
                                 style={{ width: `${(barPct * 100).toFixed(1)}%` }}
                             />
                         </div>
@@ -118,21 +135,26 @@ function HomeView({ vendedor, stats, loading, onNavigate }) {
             </div>
 
             {/* ── Resumen financiero ── */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
                 <StatChip
                     label="Comisión semana"
                     value={loading ? '—' : `$${stats.comisionSemana.toFixed(0)}`}
                     color={tier.color}
                 />
                 <StatChip
-                    label="Despachos hoy"
-                    value={loading ? '—' : stats.despachoHoy}
-                />
-                <StatChip
                     label="Tasa comisión"
                     value={tier.rate > 0 ? `${(tier.rate * 100).toFixed(1)}%` : '—'}
                     color={tier.color}
                     sub="sobre cobrado"
+                />
+                <StatChip
+                    label="Ingreso base/mes"
+                    value={`$${ingresoBase}`}
+                    sub="fijo + viáticos"
+                />
+                <StatChip
+                    label="Despachos hoy"
+                    value={loading ? '—' : stats.despachoHoy}
                 />
             </div>
 
@@ -150,7 +172,7 @@ function HomeView({ vendedor, stats, loading, onNavigate }) {
                         <p className="text-slate-400 text-xs">
                             {stats.activacionOk
                                 ? '¡Activación lograda esta semana!'
-                                : `Cubre ${stats.puntosActivacion}/${stats.puntosTotal} puntos con mín. 24 uds para ganarlo`
+                                : `Cubre ${stats.puntosActivacion}/${stats.puntosTotal} puntos con mín. ${commConfig.activacionMinUnits} uds para ganarlo`
                             }
                         </p>
                     </div>
@@ -267,6 +289,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [selectedPos, setSelectedPos]       = useState(null);
     const [subView, setSubView]               = useState(null);
     const [vendedor, setVendedor]             = useState({ nombre: '', metaMensual: 2400, mesArranque: 0, reporterId: null });
+    const [commConfig, setCommConfig]         = useState(DEFAULT_COMMISSION_CONFIG);
     const [stats, setStats]                   = useState({
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
@@ -375,6 +398,10 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const metaMensual = meta.metaMensual  || 2400;
                 const mesArranque = meta.mesArranque  || 0;
                 const nombre      = meta.name || user.displayName || user.email;
+                const cfg = meta.commissionConfig
+                    ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
+                    : DEFAULT_COMMISSION_CONFIG;
+                setCommConfig(cfg);
                 setVendedor({ nombre, metaMensual, mesArranque, reporterId });
 
                 if (!reporterId) { setLoading(false); return; }
@@ -408,7 +435,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const pagosSem       = pagosSnap.docs.map(d => d.data());
                 const montoSem       = pagosSem.reduce((s, p) => s + (p.montoUSD || 0), 0);
                 const pct            = metaMensual > 0 ? unidadesDelMes / metaMensual : 0;
-                const tier           = getTier(pct);
+                const effectiveTiers = buildTiers(cfg);
+                const tier           = getTierFromConfig(pct, effectiveTiers);
                 const comisionSemana = montoSem * tier.rate;
 
                 // 4. PDVs de la cartera (para activación)
@@ -418,9 +446,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const puntosTotal = posSnap.size;
                 const puntosActivacion = despachos.filter(d => {
                     const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
-                    return t >= inicioSem && (d.cantidad || 0) >= 24;
+                    return t >= inicioSem && (d.cantidad || 0) >= cfg.activacionMinUnits;
                 }).reduce((set, d) => { set.add(d.posId); return set; }, new Set()).size;
-                const activacionOk = puntosTotal > 0 && puntosActivacion / puntosTotal >= 0.80;
+                const activacionOk = puntosTotal > 0 && puntosActivacion / puntosTotal >= (cfg.activacionThreshold / 100);
 
                 // 5. Facturas por vencer (próximos 3 días) — full impl with webhook phase
                 const facturasPorVencer = 0;
@@ -505,12 +533,15 @@ const VendedorLayout = ({ user, onLogout }) => {
             );
         }
 
+        const tiers = buildTiers(commConfig);
         return (
             <HomeView
                 vendedor={vendedor}
                 stats={stats}
                 loading={loading}
                 onNavigate={navigate}
+                tiers={tiers}
+                commConfig={commConfig}
             />
         );
     };
