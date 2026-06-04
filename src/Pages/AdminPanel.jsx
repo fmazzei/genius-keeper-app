@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db, functions } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
 import { WIDGET_REGISTRY, WIDGET_CATEGORIES } from '../config/widgetRegistry.js';
@@ -655,99 +655,57 @@ const GeneralSettings = () => {
     );
 };
 
-const SalesManagerManagement = () => {
-    const [managers, setManagers] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [newUser, setNewUser] = useState({ name: '', email: '', password: '' });
+// ─── Generic user-role management (Director / Gerencia) ──────────────────────
+
+const ROLE_META = {
+    director:      { label: 'Director',  color: 'bg-violet-100 text-violet-700', desc: 'Vista ejecutiva — solo lectura' },
+    gerencia:      { label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
+    sales_manager: { label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
+};
+
+const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc, badgeColor = 'bg-slate-100 text-slate-700' }) => {
+    const [users, setUsers]           = useState([]);
+    const [loading, setLoading]       = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [newUser, setNewUser]       = useState({ name: '', email: '', password: '' });
     const [isCreating, setIsCreating] = useState(false);
     const [createError, setCreateError] = useState('');
 
     useEffect(() => {
-        const q = query(collection(db, "users_metadata"), where("role", "==", "sales_manager"));
-        const unsubscribe = onSnapshot(q,
-            (snapshot) => {
-                const managersData = snapshot.docs.map(d => ({
-                    id: d.id,
-                    name: d.data().name || d.id,
-                    email: d.data().email || 'No disponible',
-                    active: d.data().active !== false,
-                }));
-                setManagers(managersData);
-                setLoading(false);
-            },
-            (error) => {
-                console.error("Error al cargar gerentes:", error);
-                setLoading(false);
-            }
+        const q = query(collection(db, 'users_metadata'), where('role', 'in', targetRoles));
+        const unsub = onSnapshot(q,
+            snap => { setUsers(snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id, email: d.data().email || '—', role: d.data().role, active: d.data().active !== false }))); setLoading(false); },
+            err  => { console.error(err); setLoading(false); }
         );
-        return () => unsubscribe();
+        return unsub;
     }, []);
 
-    const handleToggleActive = async (managerId, currentActive) => {
-        try {
-            await updateDoc(doc(db, "users_metadata", managerId), { active: !currentActive });
-        } catch (error) {
-            alert("No se pudo actualizar el estado.");
-        }
-    };
+    const toggleActive = (uid, cur) => updateDoc(doc(db, 'users_metadata', uid), { active: !cur }).catch(() => alert('No se pudo actualizar.'));
+    const deleteUser   = (u) => { if (!window.confirm(`¿Eliminar a "${u.name}"?`)) return; deleteDoc(doc(db, 'users_metadata', u.id)).catch(() => alert('No se pudo eliminar.')); };
 
-    const handleDelete = async (manager) => {
-        if (!window.confirm(`¿Seguro que quieres eliminar a "${manager.name}"? Perderá el acceso a la app de inmediato.`)) return;
-        try {
-            await deleteDoc(doc(db, "users_metadata", manager.id));
-        } catch (error) {
-            alert("No se pudo eliminar el usuario.");
-        }
-    };
-
-    const handleCreateUser = async (e) => {
+    const handleCreate = async (e) => {
         e.preventDefault();
         setCreateError('');
         setIsCreating(true);
         try {
             const { initializeApp, deleteApp } = await import('firebase/app');
             const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
-            const firebaseConfig = {
-                apiKey: "AIzaSyBcTpXt3p5kjOCc6rK41Jv4vO8_ULJEfGw",
-                authDomain: "geniuskeeper-36553.firebaseapp.com",
-                projectId: "geniuskeeper-36553",
-                storageBucket: "geniuskeeper-36553.appspot.com",
-                messagingSenderId: "362565450545",
-                appId: "1:362565450545:web:27d9dea004e74966a70e10"
-            };
-            const tempApp = initializeApp(firebaseConfig, `create-user-${Date.now()}`);
+            const tempApp  = initializeApp(FIREBASE_CONFIG, `create-user-${Date.now()}`);
             const tempAuth = getAuth(tempApp);
             const { user } = await createUserWithEmailAndPassword(tempAuth, newUser.email.trim(), newUser.password);
-            await setDoc(doc(db, "users_metadata", user.uid), {
-                name: newUser.name.trim(),
-                email: newUser.email.trim(),
-                role: 'sales_manager',
-                active: true,
-                salesGoal: 0,
-            });
+            await setDoc(doc(db, 'users_metadata', user.uid), { name: newUser.name.trim(), email: newUser.email.trim(), role: createRole, active: true, salesGoal: 0 });
             await tempAuth.signOut();
             await deleteApp(tempApp);
             setNewUser({ name: '', email: '', password: '' });
-            setIsAddModalOpen(false);
-        } catch (error) {
-            if (error.code === 'auth/email-already-in-use') {
-                setCreateError('Ya existe un usuario con ese correo electrónico.');
-            } else if (error.code === 'auth/weak-password') {
-                setCreateError('La contraseña debe tener al menos 6 caracteres.');
-            } else {
-                setCreateError(`Error: ${error.message}`);
-            }
-        } finally {
-            setIsCreating(false);
-        }
+            setIsModalOpen(false);
+        } catch (err) {
+            if (err.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo.');
+            else if (err.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            else setCreateError(`Error: ${err.message}`);
+        } finally { setIsCreating(false); }
     };
 
-    const closeModal = () => {
-        setIsAddModalOpen(false);
-        setCreateError('');
-        setNewUser({ name: '', email: '', password: '' });
-    };
+    const closeModal = () => { setIsModalOpen(false); setCreateError(''); setNewUser({ name: '', email: '', password: '' }); };
 
     if (loading) return <LoadingSpinner />;
 
@@ -755,71 +713,67 @@ const SalesManagerManagement = () => {
         <div className="space-y-4">
             <div className="flex justify-between items-center">
                 <div>
-                    <h3 className="text-xl font-semibold text-slate-700">Acceso Gerencial</h3>
-                    <p className="text-sm text-slate-500 mt-1">Usuarios que ingresan con correo y contraseña.</p>
+                    <h3 className="text-xl font-semibold text-slate-700">{sectionLabel}</h3>
+                    <p className="text-sm text-slate-500 mt-1">{sectionDesc}</p>
                 </div>
-                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm">
-                    <UserPlus size={18} />
-                    <span className="hidden sm:inline">Agregar</span>
+                <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm">
+                    <UserPlus size={18} /><span className="hidden sm:inline">Agregar</span>
                 </button>
             </div>
 
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <ul className="divide-y divide-slate-200">
-                    {managers.map(manager => (
-                        <li key={manager.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                            <div className="flex items-center">
-                                <div className="w-10 h-10 rounded-full bg-pink-200 text-pink-700 flex items-center justify-center font-bold text-lg flex-shrink-0">
-                                    {manager.name.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="ml-4">
-                                    <p className="font-semibold text-slate-800">{manager.name}</p>
-                                    <p className="text-sm text-slate-500">{manager.email}</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border">
-                                    <div>
-                                        <p className="font-semibold text-slate-700 text-sm">Acceso</p>
-                                        <p className={`text-xs font-medium ${manager.active ? 'text-green-600' : 'text-red-500'}`}>
-                                            {manager.active ? 'Activo' : 'Suspendido'}
-                                        </p>
+                    {users.map(u => {
+                        const rm = ROLE_META[u.role] || { label: u.role, color: 'bg-slate-100 text-slate-700' };
+                        return (
+                            <li key={u.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${rm.color}`}>
+                                        {u.name.charAt(0).toUpperCase()}
                                     </div>
-                                    <ToggleSwitch enabled={manager.active} setEnabled={() => handleToggleActive(manager.id, manager.active)} />
+                                    <div>
+                                        <p className="font-semibold text-slate-800">{u.name}</p>
+                                        <p className="text-sm text-slate-500">{u.email}</p>
+                                    </div>
                                 </div>
-                                <button onClick={() => handleDelete(manager)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Eliminar usuario">
-                                    <Trash2 size={18} />
-                                </button>
-                            </div>
-                        </li>
-                    ))}
-                    {managers.length === 0 && (
-                        <p className="text-center text-slate-500 py-8">No hay usuarios gerenciales. Agrega uno con el botón de arriba.</p>
-                    )}
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border">
+                                        <div>
+                                            <p className="font-semibold text-slate-700 text-sm">Acceso</p>
+                                            <p className={`text-xs font-medium ${u.active ? 'text-green-600' : 'text-red-500'}`}>{u.active ? 'Activo' : 'Suspendido'}</p>
+                                        </div>
+                                        <ToggleSwitch enabled={u.active} setEnabled={() => toggleActive(u.id, u.active)} />
+                                    </div>
+                                    <button onClick={() => deleteUser(u)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={18} /></button>
+                                </div>
+                            </li>
+                        );
+                    })}
+                    {users.length === 0 && <p className="text-center text-slate-500 py-8">No hay usuarios registrados. Agrega uno con el botón de arriba.</p>}
                 </ul>
             </div>
 
-            <Modal isOpen={isAddModalOpen} onClose={closeModal} title="Agregar Nuevo Usuario Gerencial">
-                <form onSubmit={handleCreateUser} className="space-y-4 p-1">
+            <Modal isOpen={isModalOpen} onClose={closeModal} title={`Agregar ${sectionLabel}`}>
+                <form onSubmit={handleCreate} className="space-y-4 p-1">
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre completo</label>
-                        <input type="text" value={newUser.name} onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="Ej: Carlos Pérez" required />
+                        <input type="text" value={newUser.name} onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Ej: Carlos Pérez" required />
                     </div>
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Correo electrónico</label>
-                        <input type="email" value={newUser.email} onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="correo@lacteoca.com" required />
+                        <input type="email" value={newUser.email} onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="correo@lacteoca.com" required />
                     </div>
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña inicial</label>
-                        <input type="password" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="Mínimo 6 caracteres" required minLength={6} />
-                        <p className="text-xs text-slate-500 mt-1">El usuario puede cambiarla después desde su cuenta.</p>
+                        <input type="password" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Mínimo 6 caracteres" required minLength={6} />
+                        <p className="text-xs text-slate-500 mt-1">El usuario puede cambiarla desde su cuenta.</p>
                     </div>
-                    {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-md font-medium">{createError}</p>}
+                    {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg font-medium">{createError}</p>}
                     <div className="flex gap-3 pt-2">
                         <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button>
                         <button type="submit" disabled={isCreating} className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
                             {isCreating ? <LoadingSpinner size="sm" /> : <UserPlus size={18} />}
-                            {isCreating ? 'Creando...' : 'Crear Usuario'}
+                            {isCreating ? 'Creando…' : 'Crear Cuenta'}
                         </button>
                     </div>
                 </form>
@@ -1574,41 +1528,587 @@ const ReportsAutoManagement = () => {
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
-const AdminPanel = ({ user, posList, reports, loading }) => {
-    const [activeTab, setActiveTab] = useState('settings');
-    const TabButton = ({ id, text, icon }) => ( <button onClick={() => setActiveTab(id)} className={`flex items-center px-3 sm:px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === id ? 'bg-brand-blue text-white' : 'text-slate-600 hover:bg-slate-200'}`}>{icon}<span className="ml-2 hidden sm:inline">{text}</span></button> );
-    
+// ─── Vendedores Management ────────────────────────────────────────────────────
+
+const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBcTpXt3p5kjOCc6rK41Jv4vO8_ULJEfGw",
+    authDomain: "geniuskeeper-36553.firebaseapp.com",
+    projectId: "geniuskeeper-36553",
+    storageBucket: "geniuskeeper-36553.appspot.com",
+    messagingSenderId: "362565450545",
+    appId: "1:362565450545:web:27d9dea004e74966a70e10",
+};
+
+const MES_ARRANQUE_OPTS = [
+    { value: 0, label: 'Sin arranque',  desc: 'Meta completa desde el primer mes' },
+    { value: 1, label: '1 mes',         desc: '50% la meta el primer mes' },
+    { value: 2, label: '2 meses',       desc: '50% mes 1, 75% mes 2' },
+];
+
+const VendedoresManagement = () => {
+    const [vendedores, setVendedores]         = useState([]);
+    const [reporters, setReporters]           = useState([]);
+    const [loading, setLoading]               = useState(true);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [editTarget, setEditTarget]         = useState(null);
+    const [isCreating, setIsCreating]         = useState(false);
+    const [createError, setCreateError]       = useState('');
+
+    const EMPTY_FORM = { name: '', email: '', password: '', reporterId: '', reporterName: '', metaMensual: '', mesArranque: 0 };
+    const [form, setForm] = useState(EMPTY_FORM);
+
+    useEffect(() => {
+        const q1 = query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'));
+        const q2 = query(collection(db, 'reporters'), orderBy('name'));
+        const u1 = onSnapshot(q1, snap => { setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
+        const u2 = onSnapshot(q2, snap => setReporters(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+        return () => { u1(); u2(); };
+    }, []);
+
+    const closeModal = () => {
+        setIsAddModalOpen(false);
+        setEditTarget(null);
+        setCreateError('');
+        setForm(EMPTY_FORM);
+    };
+
+    const handleReporterChange = (reporterId) => {
+        const r = reporters.find(r => r.id === reporterId);
+        setForm(p => ({ ...p, reporterId, reporterName: r?.name || '' }));
+    };
+
+    const handleCreate = async (e) => {
+        e.preventDefault();
+        setCreateError('');
+        setIsCreating(true);
+        try {
+            const { initializeApp, deleteApp } = await import('firebase/app');
+            const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
+            const tempApp  = initializeApp(FIREBASE_CONFIG, `create-vendedor-${Date.now()}`);
+            const tempAuth = getAuth(tempApp);
+            const { user } = await createUserWithEmailAndPassword(tempAuth, form.email.trim(), form.password);
+            await setDoc(doc(db, 'users_metadata', user.uid), {
+                name:         form.name.trim(),
+                email:        form.email.trim(),
+                role:         'vendedor',
+                active:       true,
+                reporterId:   form.reporterId,
+                reporterName: form.reporterName,
+                metaMensual:  Number(form.metaMensual) || 0,
+                mesArranque:  form.mesArranque,
+            });
+            await tempAuth.signOut();
+            await deleteApp(tempApp);
+            closeModal();
+        } catch (err) {
+            if (err.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo.');
+            else if (err.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            else setCreateError(`Error: ${err.message}`);
+        } finally {
+            setIsCreating(false);
+        }
+    };
+
+    const handleUpdate = async (e) => {
+        e.preventDefault();
+        setIsCreating(true);
+        try {
+            await updateDoc(doc(db, 'users_metadata', editTarget.id), {
+                name:         form.name.trim(),
+                reporterId:   form.reporterId,
+                reporterName: form.reporterName,
+                metaMensual:  Number(form.metaMensual) || 0,
+                mesArranque:  form.mesArranque,
+            });
+            closeModal();
+        } catch (err) {
+            setCreateError(`Error: ${err.message}`);
+        } finally {
+            setIsCreating(false);
+        }
+    };
+
+    const openEdit = (v) => {
+        setEditTarget(v);
+        setForm({
+            name:         v.name || '',
+            email:        v.email || '',
+            password:     '',
+            reporterId:   v.reporterId || '',
+            reporterName: v.reporterName || '',
+            metaMensual:  v.metaMensual ?? '',
+            mesArranque:  v.mesArranque ?? 0,
+        });
+        setIsAddModalOpen(true);
+    };
+
+    const handleToggleActive = (v) => updateDoc(doc(db, 'users_metadata', v.id), { active: !v.active }).catch(() => alert('No se pudo actualizar.'));
+    const handleDelete = (v) => {
+        if (!window.confirm(`¿Eliminar a "${v.name}"? Perderá el acceso de inmediato.`)) return;
+        deleteDoc(doc(db, 'users_metadata', v.id)).catch(() => alert('No se pudo eliminar.'));
+    };
+
+    if (loading) return <LoadingSpinner />;
+
+    const isEditing = !!editTarget;
+
     return (
-        <div className="w-full bg-slate-50 p-3 sm:p-4 md:p-6">
-            <div className="max-w-7xl mx-auto">
-                <h2 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-6">Panel de Administración</h2>
-                <div className="flex space-x-1 sm:space-x-2 border-b border-slate-200 mb-6 overflow-x-auto pb-2">
-                    <TabButton id="reports" text="Reportes" icon={<FileText size={18} />} />
-                    <TabButton id="pos" text="PDV" icon={<Store size={18} />} />
-                    <TabButton id="reporters" text="Reporters" icon={<ClipboardList size={18} />} />
-                    <TabButton id="depots" text="Depósitos" icon={<Warehouse size={18} />} />
-                    <TabButton id="users" text="Usuarios" icon={<Users size={18} />} />
-                    <TabButton id="sales_goals" text="Metas de Venta" icon={<Target size={18} />} />
-                    <TabButton id="modules" text="Módulos" icon={<LayoutGrid size={18} />} />
-                    <TabButton id="dashboard" text="Dashboard" icon={<BarChart2 size={18} />} />
-                    <TabButton id="emails" text="Correos" icon={<Mail size={18} />} />
-                    <TabButton id="auto_reports" text="Auto-Reportes" icon={<Calendar size={18} />} />
-                    <TabButton id="alerts" text="Alertas" icon={<Bell size={18} />} />
-                    <TabButton id="settings" text="Configuración" icon={<Settings size={18} />} />
+        <div className="max-w-3xl space-y-4">
+            <div className="flex items-start justify-between">
+                <div>
+                    <h3 className="text-lg font-bold text-slate-800">Vendedores</h3>
+                    <p className="text-sm text-slate-500 mt-1">Cuentas de vendedor con metas, reporters y período de arranque.</p>
                 </div>
-                <div className="animate-fade-in">
-                    {activeTab === 'reports' && <ReportManagement reports={reports} posList={posList} loading={loading} />}
-                    {activeTab === 'pos' && <PosManagement posList={posList} loading={loading} />}
-                    {activeTab === 'reporters' && <ReportersManagement />}
-                    {activeTab === 'depots' && <DepotManagement />}
-                    {activeTab === 'users' && <UserManagement />}
-                    {activeTab === 'sales_goals' && <SalesGoalsManagement />}
-                    {activeTab === 'modules' && <ModuleManagement />}
-                    {activeTab === 'dashboard' && <DashboardManagement />}
-                    {activeTab === 'emails' && <EmailManagement />}
-                    {activeTab === 'auto_reports' && <ReportsAutoManagement />}
-                    {activeTab === 'alerts' && <AlertsManagement />}
-                    {activeTab === 'settings' && <GeneralSettings />}
+                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm shrink-0">
+                    <UserPlus size={18} />
+                    <span className="hidden sm:inline">Agregar</span>
+                </button>
+            </div>
+
+            {vendedores.length === 0 ? (
+                <div className="text-center py-14 bg-white rounded-xl border border-dashed border-slate-300 text-slate-400">
+                    <TrendingUp size={36} className="mx-auto mb-3 opacity-30" />
+                    <p className="font-semibold">Sin vendedores registrados</p>
+                    <p className="text-sm mt-1">Usa el botón <strong>Agregar</strong> para crear la primera cuenta.</p>
+                </div>
+            ) : (
+                <div className="bg-white rounded-xl shadow overflow-hidden">
+                    <ul className="divide-y divide-slate-100">
+                        {vendedores.map(v => (
+                            <li key={v.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-base shrink-0">
+                                        {(v.name || v.email || '?')[0].toUpperCase()}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="font-semibold text-slate-800 truncate">{v.name || v.email}</p>
+                                        <p className="text-xs text-slate-400 truncate">
+                                            {v.email}
+                                            {v.reporterName && <> · <span className="text-slate-500">{v.reporterName}</span></>}
+                                            {v.metaMensual > 0 && <> · <span className="text-emerald-600 font-medium">{v.metaMensual.toLocaleString()} uds/mes</span></>}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${v.active !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                                        {v.active !== false ? 'Activo' : 'Inactivo'}
+                                    </span>
+                                    <ToggleSwitch enabled={v.active !== false} setEnabled={() => handleToggleActive(v)} />
+                                    <button onClick={() => openEdit(v)} className="p-2 text-slate-400 hover:text-brand-blue hover:bg-blue-50 rounded-full transition-colors" title="Editar">
+                                        <Settings size={16} />
+                                    </button>
+                                    <button onClick={() => handleDelete(v)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Eliminar">
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
+
+            <Modal isOpen={isAddModalOpen} onClose={closeModal} title={isEditing ? `Editar — ${editTarget?.name}` : 'Nuevo Vendedor'}>
+                <form onSubmit={isEditing ? handleUpdate : handleCreate} className="space-y-4 p-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="sm:col-span-2">
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre completo</label>
+                            <input type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Ej: Pedro García" required />
+                        </div>
+                        {!isEditing && (
+                            <>
+                                <div className="sm:col-span-2">
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Correo electrónico</label>
+                                    <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="vendedor@lacteoca.com" required />
+                                </div>
+                                <div className="sm:col-span-2">
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña inicial</label>
+                                    <input type="password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Mínimo 6 caracteres" required minLength={6} />
+                                </div>
+                            </>
+                        )}
+                        <div className="sm:col-span-2">
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Reporter vinculado</label>
+                            <select value={form.reporterId} onChange={e => handleReporterChange(e.target.value)} className="w-full p-3 border border-slate-300 rounded-lg bg-white">
+                                <option value="">— Sin asignar —</option>
+                                {reporters.filter(r => r.active !== false).map(r => (
+                                    <option key={r.id} value={r.id}>{r.name}</option>
+                                ))}
+                            </select>
+                            <p className="text-xs text-slate-400 mt-1">Los despachos de este reporter se usarán para calcular la meta del vendedor.</p>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Meta mensual (unidades)</label>
+                            <input type="number" min="0" value={form.metaMensual} onChange={e => setForm(p => ({ ...p, metaMensual: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Ej: 5000" required />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Período de arranque</label>
+                            <select value={form.mesArranque} onChange={e => setForm(p => ({ ...p, mesArranque: Number(e.target.value) }))} className="w-full p-3 border border-slate-300 rounded-lg bg-white">
+                                {MES_ARRANQUE_OPTS.map(o => (
+                                    <option key={o.value} value={o.value}>{o.label} — {o.desc}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg font-medium">{createError}</p>}
+
+                    <div className="flex gap-3 pt-1">
+                        <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button>
+                        <button type="submit" disabled={isCreating} className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
+                            {isCreating ? <LoadingSpinner size="sm" /> : <UserPlus size={18} />}
+                            {isCreating ? (isEditing ? 'Guardando…' : 'Creando…') : (isEditing ? 'Guardar Cambios' : 'Crear Vendedor')}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
+        </div>
+    );
+};
+
+
+const NotificacionesSection = () => {
+    const [tab, setTab] = useState('correos');
+    return (
+        <div>
+            <div className="mb-5">
+                <h3 className="text-lg font-bold text-slate-800">Notificaciones</h3>
+                <p className="text-sm text-slate-500 mt-1">Destinatarios de correo, alertas automáticas y reportes programados.</p>
+            </div>
+            <div className="flex gap-2 border-b border-slate-200 mb-6">
+                {[
+                    { id: 'correos',       label: 'Correos' },
+                    { id: 'auto_reports',  label: 'Auto-Reportes' },
+                ].map(({ id, label }) => (
+                    <button
+                        key={id}
+                        onClick={() => setTab(id)}
+                        className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === id ? 'border-brand-blue text-brand-blue' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+            {tab === 'correos'      && <EmailManagement />}
+            {tab === 'auto_reports' && <ReportsAutoManagement />}
+        </div>
+    );
+};
+
+// ─── Integraciones — Zoho Books webhook config ────────────────────────────────
+
+const IntegracionesSection = () => {
+    const [zohoSales, setZohoSales]       = useState(false);
+    const [zohoComis, setZohoComis]       = useState(false);
+    const [loading, setLoading]           = useState(true);
+    const [saving, setSaving]             = useState(false);
+    const [saved, setSaved]               = useState(false);
+
+    useEffect(() => {
+        getDoc(doc(db, 'settings', 'appConfig')).then(snap => {
+            if (snap.exists()) {
+                const d = snap.data();
+                setZohoSales(d.zohoSalesWebhookActive === true);
+                setZohoComis(d.zohoCommissionsWebhookActive === true);
+            }
+            setLoading(false);
+        }).catch(() => setLoading(false));
+    }, []);
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            await setDoc(doc(db, 'settings', 'appConfig'), {
+                zohoSalesWebhookActive:       zohoSales,
+                zohoCommissionsWebhookActive: zohoComis,
+            }, { merge: true });
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2500);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const Row = ({ label, desc, enabled, setEnabled }) => (
+        <div className="flex items-center justify-between gap-4 py-4 border-b border-slate-100 last:border-0">
+            <div>
+                <p className="font-semibold text-slate-800 text-sm">{label}</p>
+                <p className="text-slate-400 text-xs mt-0.5">{desc}</p>
+            </div>
+            <ToggleSwitch enabled={enabled} setEnabled={setEnabled} />
+        </div>
+    );
+
+    return (
+        <div className="max-w-2xl">
+            <div className="mb-6">
+                <h3 className="text-lg font-bold text-slate-800">Integraciones</h3>
+                <p className="text-sm text-slate-500 mt-1">Conectores con sistemas externos. Los webhooks reciben datos de Zoho Books en tiempo real.</p>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <Link2 size={20} className="text-brand-blue" />
+                    </div>
+                    <div>
+                        <p className="font-bold text-slate-800">Zoho Books</p>
+                        <p className="text-xs text-slate-400">Facturación y pagos → GK en tiempo real</p>
+                    </div>
+                </div>
+
+                {loading ? <LoadingSpinner /> : (
+                    <>
+                        <Row
+                            label="Webhook de Ventas"
+                            desc="Recibe facturas nuevas de Zoho y las convierte en ventas pendientes."
+                            enabled={zohoSales}
+                            setEnabled={setZohoSales}
+                        />
+                        <Row
+                            label="Webhook de Comisiones / Pagos"
+                            desc="Procesa cobros registrados en Zoho y calcula comisiones por vendedor."
+                            enabled={zohoComis}
+                            setEnabled={setZohoComis}
+                        />
+                        <button
+                            onClick={save}
+                            disabled={saving}
+                            className="mt-4 flex items-center gap-2 bg-brand-blue text-white font-semibold text-sm px-4 py-2 rounded-lg hover:bg-blue-800 disabled:opacity-60 transition-colors"
+                        >
+                            <Save size={15} />
+                            {saving ? 'Guardando…' : saved ? '¡Guardado!' : 'Guardar cambios'}
+                        </button>
+                    </>
+                )}
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Próximas integraciones</p>
+                <ul className="text-slate-400 text-xs space-y-1.5">
+                    <li>· Zoho Books — <span className="text-slate-500">invoice.overdue</span> (facturas vencidas → alerta a vendedor)</li>
+                    <li>· Zoho Books — <span className="text-slate-500">invoice.created</span> (nueva factura → deuda pendiente del vendedor)</li>
+                    <li>· Zoho Books — <span className="text-slate-500">creditnote.applied</span> (devoluciones → ajuste de comisión)</li>
+                </ul>
+            </div>
+        </div>
+    );
+};
+
+// ─── Admin Panel Shell ─────────────────────────────────────────────────────────
+
+const AdminPanel = ({ user, posList, reports, loading }) => {
+    const [activeSection, setActiveSection]   = useState(null);    // null = mostrar lista en móvil
+    const [mobileView,    setMobileView]      = useState('list'); // 'list' | 'content'
+
+    // ── Navigation groups ──────────────────────────────────────────────────────
+    const GROUPS = [
+        {
+            id: 'personas', label: 'Personas', Icon: Users,
+            items: [
+                { id: 'director_mgmt',label: 'Dirección',         Icon: Eye                          },
+                { id: 'gerencia_mgmt',label: 'Gerencia',          Icon: BarChart2                    },
+                { id: 'vendedores',   label: 'Vendedores',        Icon: TrendingUp,   badge: 'Nuevo' },
+                { id: 'campo',        label: 'Personal de Campo', Icon: Users                        },
+            ],
+        },
+        {
+            id: 'comercial', label: 'Comercial', Icon: Store,
+            items: [
+                { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
+                { id: 'sales_goals', label: 'Metas',            Icon: Target  },
+                { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
+            ],
+        },
+        {
+            id: 'sistema', label: 'Sistema', Icon: LayoutGrid,
+            items: [
+                { id: 'modules',        label: 'Módulos',        Icon: LayoutGrid },
+                { id: 'dashboard',      label: 'Dashboard',      Icon: BarChart2  },
+                { id: 'alerts',         label: 'Alertas',        Icon: Bell       },
+                { id: 'notificaciones', label: 'Notificaciones', Icon: Mail       },
+            ],
+        },
+        {
+            id: 'config', label: 'Configuración', Icon: Settings,
+            items: [
+                { id: 'settings',      label: 'General',        Icon: Settings },
+                { id: 'integraciones', label: 'Integraciones',  Icon: Link2, badge: 'Zoho' },
+            ],
+        },
+        {
+            id: 'datos', label: 'Datos', Icon: FileText,
+            items: [
+                { id: 'reports', label: 'Reportes de Visita', Icon: FileText },
+            ],
+        },
+    ];
+
+    const allItems    = GROUPS.flatMap(g => g.items);
+    const activeItem  = allItems.find(i => i.id === activeSection);
+    const activeGroup = GROUPS.find(g => g.items.some(i => i.id === activeSection));
+
+    const navigate = (id) => {
+        setActiveSection(id);
+        setMobileView('content');
+    };
+
+    const goBackToList = () => {
+        setMobileView('list');
+    };
+
+    // ── Content renderer ───────────────────────────────────────────────────────
+    const renderContent = () => {
+        switch (activeSection) {
+            case 'vendedores':    return <VendedoresManagement />;
+            case 'gerencia_mgmt': return (
+                <UserRoleManagement
+                    targetRoles={['gerencia', 'sales_manager']}
+                    createRole="gerencia"
+                    sectionLabel="Gerencia"
+                    sectionDesc="Usuarios con acceso al panel de gestión comercial, metas y ventas."
+                />
+            );
+            case 'director_mgmt': return (
+                <UserRoleManagement
+                    targetRoles={['director']}
+                    createRole="director"
+                    sectionLabel="Dirección"
+                    sectionDesc="Usuarios con vista ejecutiva completa — solo lectura, sin administración."
+                />
+            );
+            case 'campo':         return <ReportersManagement />;
+            case 'pos':            return <PosManagement posList={posList} loading={loading} />;
+            case 'sales_goals':    return <SalesGoalsManagement />;
+            case 'depots':         return <DepotManagement />;
+            case 'modules':        return <ModuleManagement />;
+            case 'dashboard':      return <DashboardManagement />;
+            case 'alerts':         return <AlertsManagement />;
+            case 'notificaciones': return <NotificacionesSection />;
+            case 'settings':       return <GeneralSettings />;
+            case 'integraciones':  return <IntegracionesSection />;
+            case 'reports':        return <ReportManagement reports={reports} posList={posList} loading={loading} />;
+            default:               return (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
+                    <Settings size={40} className="opacity-20" />
+                    <p className="text-sm">Selecciona una sección del menú</p>
+                </div>
+            );
+        }
+    };
+
+    // ── Sidebar (desktop) ──────────────────────────────────────────────────────
+    const SidebarNav = () => (
+        <nav className="w-56 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
+            <div className="px-4 py-4 border-b border-slate-100">
+                <p className="text-xs font-black uppercase tracking-widest text-brand-blue">Panel Admin</p>
+            </div>
+            <div className="flex-1 py-2">
+                {GROUPS.map(({ id: gid, label: glabel, items }) => (
+                    <div key={gid} className="mb-1">
+                        <p className="px-4 pt-3 pb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{glabel}</p>
+                        {items.map(({ id, label, Icon, badge }) => (
+                            <button
+                                key={id}
+                                onClick={() => navigate(id)}
+                                className={`w-full flex items-center gap-2.5 px-4 py-2 text-sm font-medium transition-colors text-left ${
+                                    activeSection === id
+                                        ? 'bg-brand-blue/8 text-brand-blue font-semibold border-r-2 border-brand-blue'
+                                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                                }`}
+                            >
+                                <Icon size={15} className="shrink-0" />
+                                <span className="flex-1 truncate">{label}</span>
+                                {badge && (
+                                    <span className="text-[9px] font-bold bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded-full shrink-0">
+                                        {badge}
+                                    </span>
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                ))}
+            </div>
+        </nav>
+    );
+
+    // ── Mobile section list ────────────────────────────────────────────────────
+    const MobileSectionList = () => (
+        <div className="flex-1 overflow-y-auto">
+            {GROUPS.map(({ id: gid, label: glabel, items }) => (
+                <div key={gid}>
+                    <p className="px-4 pt-5 pb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">{glabel}</p>
+                    <div className="bg-white border-y border-slate-200 divide-y divide-slate-100">
+                        {items.map(({ id, label, Icon, badge }) => (
+                            <button
+                                key={id}
+                                onClick={() => navigate(id)}
+                                className="w-full flex items-center gap-4 px-4 py-3.5 text-left active:bg-slate-50"
+                            >
+                                <div className="w-9 h-9 rounded-xl bg-brand-blue/10 flex items-center justify-center shrink-0">
+                                    <Icon size={18} className="text-brand-blue" />
+                                </div>
+                                <span className="flex-1 font-medium text-slate-800 text-[15px]">{label}</span>
+                                {badge && (
+                                    <span className="text-[9px] font-bold bg-brand-blue text-white px-1.5 py-0.5 rounded-full shrink-0">
+                                        {badge}
+                                    </span>
+                                )}
+                                <ChevronRight size={16} className="text-slate-300 shrink-0" />
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ))}
+            <div className="h-6" />
+        </div>
+    );
+
+    return (
+        <div className="flex h-full bg-slate-50 overflow-hidden">
+
+            {/* ── Desktop sidebar ── */}
+            <div className="hidden md:flex">
+                <SidebarNav />
+            </div>
+
+            {/* ── Main content ── */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+
+                {/* ── MOBILE: list view ── */}
+                <div className={`md:hidden flex flex-col h-full ${mobileView === 'list' ? '' : 'hidden'}`}>
+                    <MobileSectionList />
+                </div>
+
+                {/* ── MOBILE: content view ── */}
+                <div className={`md:hidden flex flex-col h-full ${mobileView === 'content' ? '' : 'hidden'}`}>
+                    {/* Back button */}
+                    <button
+                        onClick={goBackToList}
+                        className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200 text-brand-blue font-semibold text-sm shrink-0"
+                    >
+                        <ChevronRight size={16} className="rotate-180" />
+                        <span>Administración</span>
+                        {activeItem && <span className="text-slate-400 font-normal">· {activeItem.label}</span>}
+                    </button>
+                    <div className="flex-1 overflow-y-auto p-4">
+                        {renderContent()}
+                    </div>
+                </div>
+
+                {/* ── DESKTOP: breadcrumb + content ── */}
+                <div className="hidden md:flex md:flex-col h-full overflow-hidden">
+                    <div className="flex items-center gap-2 px-6 py-3 bg-white border-b border-slate-200 shrink-0">
+                        <span className="text-xs text-slate-400 font-semibold uppercase tracking-widest">{activeGroup?.label || 'Admin'}</span>
+                        {activeItem && <>
+                            <span className="text-slate-300">›</span>
+                            <span className="text-sm font-bold text-slate-700">{activeItem.label}</span>
+                        </>}
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                        {renderContent()}
+                    </div>
                 </div>
             </div>
         </div>
