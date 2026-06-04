@@ -21,11 +21,11 @@ const Modal = ({ isOpen, onClose, title, children, footer = null, size = 'lg', c
         : `w-full ${sizeClasses[size]} max-h-[90vh] rounded-lg`;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 p-0 md:p-4">
-            <div className={`bg-white shadow-xl flex flex-col transition-all duration-300 ${containerClasses} animate-fade-in-up`}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-0 md:p-4 overflow-hidden">
+            <div className={`bg-white shadow-xl flex flex-col transition-all duration-300 ${containerClasses} overflow-hidden animate-fade-in-up`}>
 
                 {/* Header — never scrolls */}
-                <div className="flex justify-between items-center p-4 border-b border-slate-200 shrink-0">
+                <div className="flex justify-between items-center px-4 py-3.5 border-b border-slate-200 shrink-0">
                     <h3 className="text-lg font-bold text-slate-800 truncate pr-4">{title}</h3>
                     <div className="flex items-center gap-2 shrink-0">
                         {canExpand && (
@@ -39,8 +39,8 @@ const Modal = ({ isOpen, onClose, title, children, footer = null, size = 'lg', c
                     </div>
                 </div>
 
-                {/* Scrollable body */}
-                <div className="overflow-y-auto flex-1 min-h-0">
+                {/* Scrollable body — x hidden kills the sideways wobble on iOS */}
+                <div className="overflow-y-auto overflow-x-hidden overscroll-contain flex-1 min-h-0 w-full">
                     {children}
                 </div>
 

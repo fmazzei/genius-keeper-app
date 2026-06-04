@@ -25,32 +25,41 @@ export const DEFAULT_COMMISSION_CONFIG = {
     facturaMaxDias: 60,
 };
 
-// ─── NumberField ──────────────────────────────────────────────────────────────
+// ─── Inline number row (label + small input, no grid) ─────────────────────────
 
-const NumberField = ({ label, value, onChange, min = 0, step = 1, suffix = '', hint }) => (
-    <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">{label}</label>
-        <div className="flex items-center gap-2">
+const InlineRow = ({ label, hint, value, onChange, step = 1, min = 0, suffix }) => (
+    <div className="flex items-center gap-3 py-3 border-b border-slate-100 last:border-b-0">
+        <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-700 leading-snug">{label}</p>
+            {hint && <p className="text-xs text-slate-400 mt-0.5 leading-tight">{hint}</p>}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
             <input
                 type="number"
                 min={min}
                 step={step}
                 value={value}
                 onChange={e => onChange(Number(e.target.value) || 0)}
-                className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm"
+                className="w-20 text-center p-2 border border-slate-200 rounded-lg text-sm font-mono bg-white"
             />
-            {suffix && <span className="text-sm text-slate-500 shrink-0">{suffix}</span>}
+            {suffix && <span className="text-sm text-slate-400 w-6 shrink-0">{suffix}</span>}
         </div>
-        {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
+    </div>
+);
+
+// ─── Section header ───────────────────────────────────────────────────────────
+
+const SectionHeader = ({ label, action }) => (
+    <div className="flex items-center justify-between mb-3">
+        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{label}</p>
+        {action}
     </div>
 );
 
 // ─── Main component ───────────────────────────────────────────────────────────
-// forwardRef exposes { save, saving } so the parent can drive the footer buttons
-// outside the scroll area (via Modal's footer prop).
 
 const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
-    const [config, setConfig] = useState(DEFAULT_COMMISSION_CONFIG);
+    const [config, setConfig]   = useState(DEFAULT_COMMISSION_CONFIG);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving]   = useState(false);
     const [error, setError]     = useState('');
@@ -83,30 +92,25 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
         }
     };
 
-    // Expose save and saving state to parent (for pinned footer buttons)
     useImperativeHandle(ref, () => ({ save: handleSave, saving }), [saving, config]);
 
-    const updateTier = (i, field, value) => {
+    const updateTier = (i, field, value) =>
         setConfig(p => ({ ...p, tiers: p.tiers.map((t, j) => j === i ? { ...t, [field]: value } : t) }));
-    };
 
-    const addTier = () => setConfig(p => ({
-        ...p,
-        tiers: [...p.tiers, { label: 'Nuevo', minPct: 0, rate: 0 }],
-    }));
+    const addTier = () =>
+        setConfig(p => ({ ...p, tiers: [...p.tiers, { label: 'Nuevo', minPct: 0, rate: 0 }] }));
 
-    const removeTier = (i) => setConfig(p => ({ ...p, tiers: p.tiers.filter((_, j) => j !== i) }));
+    const removeTier = (i) =>
+        setConfig(p => ({ ...p, tiers: p.tiers.filter((_, j) => j !== i) }));
 
-    const updateArranque = (i, meta) => {
+    const updateArranque = (i, meta) =>
         setConfig(p => ({ ...p, arranque: p.arranque.map((a, j) => j === i ? { ...a, meta } : a) }));
-    };
 
-    const addArranque = () => setConfig(p => ({
-        ...p,
-        arranque: [...p.arranque, { mes: p.arranque.length + 1, meta: 0 }],
-    }));
+    const addArranque = () =>
+        setConfig(p => ({ ...p, arranque: [...p.arranque, { mes: p.arranque.length + 1, meta: 0 }] }));
 
-    const removeArranque = (i) => setConfig(p => ({ ...p, arranque: p.arranque.filter((_, j) => j !== i) }));
+    const removeArranque = (i) =>
+        setConfig(p => ({ ...p, arranque: p.arranque.filter((_, j) => j !== i) }));
 
     const project = (rate) => {
         const commission = simAmount * (rate / 100);
@@ -122,205 +126,251 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
         </div>
     );
 
-    const lowestTierMinPct = config.tiers.length > 0 ? Math.min(...config.tiers.map(t => t.minPct)) : 90;
+    const lowestMinPct = config.tiers.length > 0 ? Math.min(...config.tiers.map(t => t.minPct)) : 90;
 
     return (
-        // No scroll container here — Modal owns the scroll via overflow-y-auto flex-1
-        <div className="p-4 space-y-6">
+        <div className="w-full overflow-x-hidden">
+            <div className="px-4 pt-4 pb-6 space-y-6">
 
-            {error && (
-                <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
-                    <AlertCircle size={16} className="shrink-0" />
-                    {error}
-                </div>
-            )}
-
-            {/* ── 1. Ingresos Base ── */}
-            <section>
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 mb-3">Ingresos Base</p>
-                <div className="grid grid-cols-2 gap-3">
-                    <NumberField
-                        label="Fijo mensual (USD)"
-                        value={config.salarioFijo}
-                        step={10}
-                        onChange={v => setConfig(p => ({ ...p, salarioFijo: v }))}
-                    />
-                    <NumberField
-                        label="Viáticos/semana (USD)"
-                        value={config.viaticosSemanales}
-                        step={5}
-                        onChange={v => setConfig(p => ({ ...p, viaticosSemanales: v }))}
-                    />
-                </div>
-            </section>
-
-            {/* ── 2. Estructura de Comisión ── */}
-            <section>
-                <div className="flex items-center justify-between mb-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Estructura de Comisión</p>
-                    <button type="button" onClick={addTier} className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800">
-                        <Plus size={13} /> Nivel
-                    </button>
-                </div>
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                    <div className="grid grid-cols-[1fr_100px_100px_28px] text-[10px] font-bold text-slate-400 uppercase bg-slate-50 px-3 py-2 border-b border-slate-200 gap-2">
-                        <span>Nivel</span>
-                        <span className="text-center">Cumpl. mín.</span>
-                        <span className="text-center">Comisión</span>
-                        <span />
+                {error && (
+                    <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">
+                        <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                        <span>{error}</span>
                     </div>
-                    {config.tiers.map((tier, i) => (
-                        <div key={i} className="grid grid-cols-[1fr_100px_100px_28px] items-center px-3 py-2.5 border-b border-slate-100 last:border-b-0 gap-2">
-                            <input
-                                type="text"
-                                value={tier.label}
-                                onChange={e => updateTier(i, 'label', e.target.value)}
-                                className="text-sm font-semibold text-slate-800 border border-transparent hover:border-slate-300 focus:border-blue-400 focus:outline-none rounded px-1.5 py-1 w-full bg-transparent"
-                            />
-                            <div className="flex items-center gap-1">
-                                <input
-                                    type="number" min="0" step="5"
-                                    value={tier.minPct}
-                                    onChange={e => updateTier(i, 'minPct', Number(e.target.value) || 0)}
-                                    className="w-full text-center p-1.5 border border-slate-200 rounded-lg text-sm"
-                                />
-                                <span className="text-slate-400 text-xs shrink-0">%</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                                <input
-                                    type="number" min="0" step="0.5"
-                                    value={tier.rate}
-                                    onChange={e => updateTier(i, 'rate', Number(e.target.value) || 0)}
-                                    className="w-full text-center p-1.5 border border-slate-200 rounded-lg text-sm"
-                                />
-                                <span className="text-slate-400 text-xs shrink-0">%</span>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => removeTier(i)}
-                                disabled={config.tiers.length <= 1}
-                                className="p-1 text-slate-300 hover:text-red-500 disabled:opacity-20 transition-colors"
-                            >
-                                <Trash2 size={13} />
+                )}
+
+                {/* ── 1. Ingresos Base ── */}
+                <section>
+                    <SectionHeader label="Ingresos Base" />
+                    <div className="bg-white border border-slate-200 rounded-xl px-4 divide-y divide-slate-100">
+                        <InlineRow
+                            label="Fijo mensual"
+                            suffix="USD"
+                            value={config.salarioFijo}
+                            step={10}
+                            onChange={v => setConfig(p => ({ ...p, salarioFijo: v }))}
+                        />
+                        <InlineRow
+                            label="Viáticos por semana"
+                            suffix="USD"
+                            value={config.viaticosSemanales}
+                            step={5}
+                            onChange={v => setConfig(p => ({ ...p, viaticosSemanales: v }))}
+                        />
+                    </div>
+                </section>
+
+                {/* ── 2. Estructura de Comisión — card per tier ── */}
+                <section>
+                    <SectionHeader
+                        label="Estructura de Comisión"
+                        action={
+                            <button type="button" onClick={addTier} className="flex items-center gap-1 text-xs font-semibold text-blue-600 active:opacity-60">
+                                <Plus size={13} /> Nivel
                             </button>
-                        </div>
-                    ))}
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">Evalúa de arriba a abajo — ordénalos de mayor a menor.</p>
-            </section>
-
-            {/* ── 3. Bonos ── */}
-            <section>
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 mb-3">Bonos</p>
-                <div className="grid grid-cols-2 gap-3">
-                    <NumberField label="Bono Puntualidad (%)" value={config.bonusPuntualidad} step={0.5} suffix="%" onChange={v => setConfig(p => ({ ...p, bonusPuntualidad: v }))} />
-                    <NumberField label="Bono Activación (%)" value={config.bonusActivacion} step={0.5} suffix="%" onChange={v => setConfig(p => ({ ...p, bonusActivacion: v }))} />
-                    <NumberField label="Umbral activación (% cartera)" value={config.activacionThreshold} step={5} suffix="%" hint={`% PDVs a cubrir para ganar el bono`} onChange={v => setConfig(p => ({ ...p, activacionThreshold: v }))} />
-                    <NumberField label="Mín. unidades por punto" value={config.activacionMinUnits} step={1} suffix="uds" onChange={v => setConfig(p => ({ ...p, activacionMinUnits: v }))} />
-                </div>
-            </section>
-
-            {/* ── 4. Período de Arranque ── */}
-            <section>
-                <div className="flex items-center justify-between mb-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Período de Arranque</p>
-                    <button type="button" onClick={addArranque} className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800">
-                        <Plus size={13} /> Mes
-                    </button>
-                </div>
-                {config.arranque.length === 0 ? (
-                    <p className="text-sm text-slate-400 italic py-1">Sin período de arranque — meta plena desde el inicio.</p>
-                ) : (
+                        }
+                    />
                     <div className="space-y-2">
-                        {config.arranque.map((item, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                                <span className="text-sm font-semibold text-slate-600 w-12 shrink-0">Mes {i + 1}</span>
-                                <input
-                                    type="number" min="0"
-                                    value={item.meta}
-                                    onChange={e => updateArranque(i, Number(e.target.value) || 0)}
-                                    className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm"
-                                    placeholder="Unidades meta"
-                                />
-                                <span className="text-sm text-slate-500 shrink-0">uds</span>
-                                <button type="button" onClick={() => removeArranque(i)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors">
-                                    <Trash2 size={14} />
-                                </button>
+                        {config.tiers.map((tier, i) => (
+                            <div key={i} className="bg-white border border-slate-200 rounded-xl p-4">
+                                {/* Tier name row */}
+                                <div className="flex items-center justify-between mb-3">
+                                    <input
+                                        type="text"
+                                        value={tier.label}
+                                        onChange={e => updateTier(i, 'label', e.target.value)}
+                                        className="text-base font-bold text-slate-800 border border-transparent focus:border-blue-400 focus:outline-none rounded-lg px-2 py-1 bg-slate-50 flex-1 min-w-0 mr-2"
+                                        placeholder="Nombre del nivel"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => removeTier(i)}
+                                        disabled={config.tiers.length <= 1}
+                                        className="p-1.5 text-slate-300 hover:text-red-500 disabled:opacity-20 transition-colors shrink-0"
+                                    >
+                                        <Trash2 size={15} />
+                                    </button>
+                                </div>
+                                {/* Inputs row */}
+                                <div className="flex gap-3">
+                                    <div className="flex-1">
+                                        <p className="text-xs text-slate-400 mb-1">Cumplimiento mínimo</p>
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="number" min="0" step="5"
+                                                value={tier.minPct}
+                                                onChange={e => updateTier(i, 'minPct', Number(e.target.value) || 0)}
+                                                className="w-full text-center p-2.5 border border-slate-200 rounded-xl text-sm font-mono"
+                                            />
+                                            <span className="text-slate-400 text-sm shrink-0">%</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-xs text-slate-400 mb-1">Comisión sobre cobrado</p>
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="number" min="0" step="0.5"
+                                                value={tier.rate}
+                                                onChange={e => updateTier(i, 'rate', Number(e.target.value) || 0)}
+                                                className="w-full text-center p-2.5 border border-slate-200 rounded-xl text-sm font-mono"
+                                            />
+                                            <span className="text-slate-400 text-sm shrink-0">%</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         ))}
                     </div>
-                )}
-            </section>
+                    <p className="text-xs text-slate-400 mt-1.5 px-1">Los niveles se evalúan de arriba a abajo — de mayor a menor.</p>
+                </section>
 
-            {/* ── 5. Política de Cobro ── */}
-            <section>
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 mb-3">Política de Cobro</p>
-                <NumberField
-                    label="Días máx. sin cobrar para generar comisión"
-                    value={config.facturaMaxDias}
-                    step={5}
-                    suffix="días"
-                    hint="Las facturas más antiguas no computan hasta cobrarse."
-                    onChange={v => setConfig(p => ({ ...p, facturaMaxDias: v }))}
-                />
-            </section>
-
-            {/* ── 6. Simulador de Ingresos ── */}
-            <section className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500 mb-3">Simulador de Ingresos</p>
-                <div className="flex items-center gap-2 mb-4">
-                    <span className="text-sm font-semibold text-slate-700 shrink-0">Monto cobrado:</span>
-                    <span className="text-slate-500 text-sm">$</span>
-                    <input
-                        type="number" min="0" step="1000"
-                        value={simAmount}
-                        onChange={e => setSimAmount(Number(e.target.value) || 0)}
-                        className="flex-1 min-w-0 p-2.5 border border-slate-300 rounded-lg text-sm font-mono text-right"
-                    />
-                    <span className="text-slate-500 text-xs shrink-0">USD/mes</span>
-                </div>
-
-                <div className="space-y-2">
-                    {[...config.tiers]
-                        .sort((a, b) => b.minPct - a.minPct)
-                        .map((tier, i) => {
-                            const proj = project(tier.rate);
-                            return (
-                                <div key={i} className="bg-white rounded-xl p-3 border border-slate-200">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <div>
-                                            <span className="font-bold text-slate-800 text-sm">{tier.label}</span>
-                                            <span className="text-xs text-slate-400 ml-1.5">({tier.minPct}%+)</span>
-                                        </div>
-                                        <span className="font-black text-emerald-700 text-lg">${proj.total.toFixed(0)}</span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
-                                        <span>Fijo <b className="text-slate-600">${proj.fijo}</b></span>
-                                        <span>Viáticos <b className="text-slate-600">${proj.viaticos}</b></span>
-                                        <span>Comisión <b className="text-slate-600">${proj.commission.toFixed(0)}</b></span>
-                                        <span>Bonos <b className="text-slate-600">${proj.bonuses.toFixed(0)}</b></span>
-                                    </div>
-                                </div>
-                            );
-                        })}
-
-                    <div className="bg-slate-100 rounded-xl p-3 border border-slate-200">
-                        <div className="flex items-center justify-between mb-1">
-                            <span className="font-bold text-slate-500 text-sm">Baja <span className="font-normal text-xs">(&lt;{lowestTierMinPct}%)</span></span>
-                            <span className="font-black text-slate-500 text-lg">${(config.salarioFijo + config.viaticosSemanales * 4).toFixed(0)}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-x-3 text-xs text-slate-400">
-                            <span>Fijo <b>${config.salarioFijo}</b></span>
-                            <span>Viáticos <b>${config.viaticosSemanales * 4}</b></span>
-                            <span className="italic">Sin comisión por meta</span>
-                        </div>
+                {/* ── 3. Bonos — inline rows, no cramped grid ── */}
+                <section>
+                    <SectionHeader label="Bonos" />
+                    <div className="bg-white border border-slate-200 rounded-xl px-4">
+                        <InlineRow
+                            label="Bono Puntualidad"
+                            suffix="%"
+                            value={config.bonusPuntualidad}
+                            step={0.5}
+                            onChange={v => setConfig(p => ({ ...p, bonusPuntualidad: v }))}
+                        />
+                        <InlineRow
+                            label="Bono Activación"
+                            suffix="%"
+                            value={config.bonusActivacion}
+                            step={0.5}
+                            onChange={v => setConfig(p => ({ ...p, bonusActivacion: v }))}
+                        />
+                        <InlineRow
+                            label="Umbral de activación"
+                            hint="% de la cartera de PDVs que debe cubrirse"
+                            suffix="%"
+                            value={config.activacionThreshold}
+                            step={5}
+                            onChange={v => setConfig(p => ({ ...p, activacionThreshold: v }))}
+                        />
+                        <InlineRow
+                            label="Mín. unidades por PDV"
+                            hint="Unidades mínimas por punto para que cuente"
+                            suffix="uds"
+                            value={config.activacionMinUnits}
+                            step={1}
+                            onChange={v => setConfig(p => ({ ...p, activacionMinUnits: v }))}
+                        />
                     </div>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-2.5">
-                    * Ambos bonos activos. Tasas sobre monto cobrado efectivamente.
-                </p>
-            </section>
+                </section>
 
+                {/* ── 4. Período de Arranque ── */}
+                <section>
+                    <SectionHeader
+                        label="Período de Arranque"
+                        action={
+                            <button type="button" onClick={addArranque} className="flex items-center gap-1 text-xs font-semibold text-blue-600 active:opacity-60">
+                                <Plus size={13} /> Mes
+                            </button>
+                        }
+                    />
+                    {config.arranque.length === 0 ? (
+                        <p className="text-sm text-slate-400 italic py-2 px-1">Sin período de arranque — meta plena desde el inicio.</p>
+                    ) : (
+                        <div className="bg-white border border-slate-200 rounded-xl px-4">
+                            {config.arranque.map((item, i) => (
+                                <div key={i} className="flex items-center gap-3 py-3 border-b border-slate-100 last:border-b-0">
+                                    <p className="text-sm font-semibold text-slate-600 w-12 shrink-0">Mes {i + 1}</p>
+                                    <input
+                                        type="number" min="0"
+                                        value={item.meta}
+                                        onChange={e => updateArranque(i, Number(e.target.value) || 0)}
+                                        className="flex-1 min-w-0 p-2 border border-slate-200 rounded-xl text-sm font-mono text-center"
+                                    />
+                                    <span className="text-sm text-slate-400 shrink-0">uds</span>
+                                    <button type="button" onClick={() => removeArranque(i)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0">
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </section>
+
+                {/* ── 5. Política de Cobro ── */}
+                <section>
+                    <SectionHeader label="Política de Cobro" />
+                    <div className="bg-white border border-slate-200 rounded-xl px-4">
+                        <InlineRow
+                            label="Días máx. sin cobrar"
+                            hint="Facturas más antiguas no computan hasta cobrarse"
+                            suffix="días"
+                            value={config.facturaMaxDias}
+                            step={5}
+                            onChange={v => setConfig(p => ({ ...p, facturaMaxDias: v }))}
+                        />
+                    </div>
+                </section>
+
+                {/* ── 6. Simulador de Ingresos ── */}
+                <section>
+                    <SectionHeader label="Simulador de Ingresos" />
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                        {/* Amount input */}
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-slate-600 shrink-0">Monto cobrado:</span>
+                            <div className="flex items-center gap-1 flex-1 min-w-0">
+                                <span className="text-slate-400 shrink-0">$</span>
+                                <input
+                                    type="number" min="0" step="1000"
+                                    value={simAmount}
+                                    onChange={e => setSimAmount(Number(e.target.value) || 0)}
+                                    className="flex-1 min-w-0 p-2.5 border border-slate-200 rounded-xl text-sm font-mono text-right bg-white"
+                                />
+                                <span className="text-xs text-slate-400 shrink-0">USD</span>
+                            </div>
+                        </div>
+
+                        {/* Tier projections */}
+                        <div className="space-y-2">
+                            {[...config.tiers]
+                                .sort((a, b) => b.minPct - a.minPct)
+                                .map((tier, i) => {
+                                    const p = project(tier.rate);
+                                    return (
+                                        <div key={i} className="bg-white rounded-xl p-3.5 border border-slate-200">
+                                            <div className="flex items-baseline justify-between mb-1.5">
+                                                <span className="font-bold text-slate-800">{tier.label}</span>
+                                                <span className="font-black text-emerald-700 text-xl">${p.total.toFixed(0)}</span>
+                                            </div>
+                                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
+                                                <span>Fijo <b className="text-slate-600 font-semibold">${p.fijo}</b></span>
+                                                <span>Viáticos <b className="text-slate-600 font-semibold">${p.viaticos}</b></span>
+                                                <span>Comisión <b className="text-slate-600 font-semibold">${p.commission.toFixed(0)}</b></span>
+                                                <span>Bonos <b className="text-slate-600 font-semibold">${p.bonuses.toFixed(0)}</b></span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                            {/* Below all tiers */}
+                            <div className="bg-slate-100 rounded-xl p-3.5 border border-slate-200">
+                                <div className="flex items-baseline justify-between mb-1.5">
+                                    <span className="font-bold text-slate-400">Baja <span className="text-xs font-normal">(&lt;{lowestMinPct}%)</span></span>
+                                    <span className="font-black text-slate-400 text-xl">${(config.salarioFijo + config.viaticosSemanales * 4).toFixed(0)}</span>
+                                </div>
+                                <div className="flex flex-wrap gap-x-3 text-xs text-slate-400">
+                                    <span>Fijo <b className="font-semibold">${config.salarioFijo}</b></span>
+                                    <span>Viáticos <b className="font-semibold">${config.viaticosSemanales * 4}</b></span>
+                                    <span className="italic">Sin comisión por meta</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <p className="text-[11px] text-slate-400">
+                            * Con ambos bonos activos. Tasas sobre el monto efectivamente cobrado.
+                        </p>
+                    </div>
+                </section>
+
+            </div>
         </div>
     );
 });
