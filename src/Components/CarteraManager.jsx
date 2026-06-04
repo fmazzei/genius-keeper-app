@@ -20,26 +20,24 @@ const StatusPill = ({ estado }) => {
     return <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">Rechazado</span>;
 };
 
-// ─── Assign-existing-PDV browser (city filter + chain grouping) ──────────────
+// ─── Assign-existing-PDV browser (city filter + chain grouping + multi-select) ─
 function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
-    const [allPos, setAllPos]       = useState([]);
-    const [loading, setLoading]     = useState(true);
-    const [cityFilter, setCityFilter] = useState('');
-    const [search, setSearch]       = useState('');
-    const [saving, setSaving]       = useState(null);
+    const [allPos, setAllPos]           = useState([]);
+    const [loading, setLoading]         = useState(true);
+    const [cityFilter, setCityFilter]   = useState('');
+    const [search, setSearch]           = useState('');
+    const [selected, setSelected]       = useState(new Set());
+    const [batchSaving, setBatchSaving] = useState(false);
 
     useEffect(() => {
         getDocs(query(collection(db, 'pos'), where('active', '==', true)))
-            .then(snap => {
-                setAllPos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-            })
+            .then(snap => setAllPos(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
             .finally(() => setLoading(false));
     }, []);
 
-    const cities = [...new Set(allPos.map(p => p.city || 'Sin ciudad').filter(Boolean))].sort();
+    const cities = [...new Set(allPos.map(p => p.city || 'Sin ciudad'))].sort();
 
     const filtered = allPos.filter(p => {
-        if (assignedPosIds?.has(p.id)) return false;
         if (cityFilter && (p.city || 'Sin ciudad') !== cityFilter) return false;
         if (search.trim()) {
             const term = search.toLowerCase();
@@ -48,7 +46,6 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
         return !!cityFilter;
     });
 
-    // Group by chain
     const grouped = filtered.reduce((acc, pos) => {
         const chain = pos.chain || 'Individuales';
         if (!acc[chain]) acc[chain] = [];
@@ -56,108 +53,184 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
         return acc;
     }, {});
 
-    const assign = async (pos) => {
-        setSaving(pos.id);
+    const togglePos = (posId) => {
+        if (assignedPosIds?.has(posId)) return;
+        setSelected(prev => {
+            const next = new Set(prev);
+            next.has(posId) ? next.delete(posId) : next.add(posId);
+            return next;
+        });
+    };
+
+    const toggleChain = (posList) => {
+        const eligible = posList.filter(p => !assignedPosIds?.has(p.id));
+        const allSel = eligible.length > 0 && eligible.every(p => selected.has(p.id));
+        setSelected(prev => {
+            const next = new Set(prev);
+            eligible.forEach(p => allSel ? next.delete(p.id) : next.add(p.id));
+            return next;
+        });
+    };
+
+    const batchAssign = async () => {
+        setBatchSaving(true);
         try {
-            await addDoc(collection(db, 'vendor_clients'), {
-                vendedorId:   vendedor.id,
-                vendedorName: vendedor.name,
-                posId:        pos.id,
-                clientName:   pos.name,
-                address:      pos.address || '',
-                city:         pos.city    || '',
-                zone:         pos.zone    || '',
-                phone:        pos.phone   || '',
-                contactName:  '',
-                estado:       'activo',
-                addedBy:      'admin',
-                requestedAt:  serverTimestamp(),
-                approvedAt:   serverTimestamp(),
-                active:       true,
-            });
+            const posMap = Object.fromEntries(allPos.map(p => [p.id, p]));
+            await Promise.all([...selected].map(posId => {
+                const pos = posMap[posId];
+                return addDoc(collection(db, 'vendor_clients'), {
+                    vendedorId:   vendedor.id,
+                    vendedorName: vendedor.name,
+                    posId:        pos.id,
+                    clientName:   pos.name,
+                    address:      pos.address || '',
+                    city:         pos.city    || '',
+                    zone:         pos.zone    || '',
+                    phone:        pos.phone   || '',
+                    contactName:  '',
+                    estado:       'activo',
+                    addedBy:      'admin',
+                    requestedAt:  serverTimestamp(),
+                    approvedAt:   serverTimestamp(),
+                    active:       true,
+                });
+            }));
             onAdded();
-        } finally { setSaving(null); }
+        } finally { setBatchSaving(false); }
     };
 
     return (
-        <div className="space-y-3 p-4 border border-slate-200 rounded-xl bg-slate-50">
-            <div className="flex items-center justify-between">
+        <div className="border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
                 <p className="text-sm font-semibold text-slate-700">Asignar PDV existente</p>
                 <button onClick={onCancel} className="text-xs text-slate-400 hover:text-slate-600">Cancelar</button>
             </div>
 
-            {/* City filter pills */}
-            {loading ? (
-                <div className="flex justify-center py-4"><Loader size={18} className="animate-spin text-slate-400" /></div>
-            ) : (
-                <>
-                    <div className="flex flex-wrap gap-1.5">
-                        {cities.map(c => (
-                            <button
-                                key={c}
-                                onClick={() => { setCityFilter(cityFilter === c ? '' : c); setSearch(''); }}
-                                className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
-                                    cityFilter === c
-                                        ? 'bg-brand-blue text-white border-brand-blue'
-                                        : 'bg-white text-slate-600 border-slate-300 hover:border-brand-blue'
-                                }`}
-                            >
-                                {c}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Search within selected city */}
-                    {cityFilter && (
-                        <div className="relative">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                            <input
-                                value={search}
-                                onChange={e => setSearch(e.target.value)}
-                                placeholder="Buscar por nombre o zona…"
-                                className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-                            />
+            <div className="p-4 space-y-3">
+                {loading ? (
+                    <div className="flex justify-center py-4"><Loader size={18} className="animate-spin text-slate-400" /></div>
+                ) : (
+                    <>
+                        {/* City filter pills */}
+                        <div className="flex flex-wrap gap-1.5">
+                            {cities.map(c => (
+                                <button
+                                    key={c}
+                                    onClick={() => { setCityFilter(cityFilter === c ? '' : c); setSearch(''); }}
+                                    className={`px-3 py-1 rounded-full text-xs font-semibold border transition-colors ${
+                                        cityFilter === c
+                                            ? 'bg-brand-blue text-white border-brand-blue'
+                                            : 'bg-white text-slate-600 border-slate-300 hover:border-brand-blue'
+                                    }`}
+                                >
+                                    {c}
+                                </button>
+                            ))}
                         </div>
-                    )}
 
-                    {!cityFilter && (
-                        <p className="text-xs text-slate-400 text-center py-2">Selecciona una ciudad para ver los PDV disponibles</p>
-                    )}
+                        {cityFilter && (
+                            <div className="relative">
+                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                <input
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                    placeholder="Buscar por nombre o zona…"
+                                    className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                                />
+                            </div>
+                        )}
 
-                    {/* Grouped results */}
-                    {cityFilter && Object.keys(grouped).length === 0 && (
-                        <p className="text-xs text-slate-400 text-center py-3">
-                            {search ? 'Sin resultados para esa búsqueda.' : 'Todos los PDV de esta ciudad ya están asignados.'}
-                        </p>
-                    )}
+                        {!cityFilter && (
+                            <p className="text-xs text-slate-400 text-center py-2">Selecciona una ciudad para ver los PDV disponibles</p>
+                        )}
 
-                    {Object.entries(grouped).map(([chain, posList]) => (
-                        <div key={chain}>
-                            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1.5 px-1">{chain}</p>
-                            <ul className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
-                                {posList.map(pos => (
-                                    <li key={pos.id} className="flex items-center gap-3 px-3 py-2.5">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-semibold text-slate-800 truncate">{pos.name}</p>
-                                            {(pos.zone || pos.address) && (
-                                                <p className="text-xs text-slate-400 truncate">
-                                                    {[pos.zone, pos.address].filter(Boolean).join(' — ')}
-                                                </p>
-                                            )}
-                                        </div>
-                                        <button
-                                            onClick={() => assign(pos)}
-                                            disabled={!!saving}
-                                            className="shrink-0 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold disabled:opacity-50"
-                                        >
-                                            {saving === pos.id ? <Loader size={12} className="animate-spin" /> : 'Asignar'}
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    ))}
-                </>
+                        {cityFilter && filtered.length === 0 && (
+                            <p className="text-xs text-slate-400 text-center py-3">
+                                {search ? 'Sin resultados para esa búsqueda.' : 'No hay PDV registrados en esta ciudad.'}
+                            </p>
+                        )}
+
+                        {Object.entries(grouped).map(([chain, posList]) => {
+                            const eligible = posList.filter(p => !assignedPosIds?.has(p.id));
+                            const allChainSel = eligible.length > 0 && eligible.every(p => selected.has(p.id));
+                            return (
+                                <div key={chain}>
+                                    <div className="flex items-center justify-between mb-1.5 px-1">
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">{chain}</p>
+                                        {eligible.length > 0 && (
+                                            <button
+                                                onClick={() => toggleChain(posList)}
+                                                className="text-xs font-semibold text-brand-blue hover:underline"
+                                            >
+                                                {allChainSel ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                                            </button>
+                                        )}
+                                    </div>
+                                    <ul className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
+                                        {posList.map(pos => {
+                                            const isAssigned = assignedPosIds?.has(pos.id);
+                                            const isSelected = selected.has(pos.id);
+                                            return (
+                                                <li
+                                                    key={pos.id}
+                                                    onClick={() => togglePos(pos.id)}
+                                                    className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${
+                                                        isAssigned
+                                                            ? 'opacity-50 cursor-default bg-slate-50'
+                                                            : isSelected
+                                                                ? 'bg-emerald-50 cursor-pointer'
+                                                                : 'hover:bg-slate-50 cursor-pointer'
+                                                    }`}
+                                                >
+                                                    <div className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                                                        isAssigned
+                                                            ? 'bg-slate-300 border-slate-300'
+                                                            : isSelected
+                                                                ? 'bg-emerald-600 border-emerald-600'
+                                                                : 'border-slate-300 bg-white'
+                                                    }`}>
+                                                        {(isAssigned || isSelected) && <Check size={11} className="text-white" />}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className={`text-sm font-semibold truncate ${isAssigned ? 'text-slate-400' : 'text-slate-800'}`}>
+                                                            {pos.name}
+                                                        </p>
+                                                        {(pos.zone || pos.address) && (
+                                                            <p className="text-xs text-slate-400 truncate">
+                                                                {[pos.zone, pos.address].filter(Boolean).join(' — ')}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    {isAssigned && (
+                                                        <span className="shrink-0 text-xs text-slate-400 font-medium">Asignado</span>
+                                                    )}
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
+                            );
+                        })}
+                    </>
+                )}
+            </div>
+
+            {/* Sticky batch-assign footer */}
+            {selected.size > 0 && (
+                <div className="px-4 py-3 bg-white border-t border-slate-200">
+                    <button
+                        onClick={batchAssign}
+                        disabled={batchSaving}
+                        className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 text-white rounded-xl text-sm font-bold disabled:opacity-50"
+                    >
+                        {batchSaving
+                            ? <Loader size={16} className="animate-spin" />
+                            : <Check size={16} />}
+                        {batchSaving
+                            ? 'Asignando…'
+                            : `Asignar ${selected.size} PDV${selected.size > 1 ? 's' : ''} seleccionado${selected.size > 1 ? 's' : ''}`}
+                    </button>
+                </div>
             )}
         </div>
     );
