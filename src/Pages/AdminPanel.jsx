@@ -594,8 +594,6 @@ const GeneralSettings = () => {
     const [settings, setSettings] = useState({
         newReportNotifications: false,
         gpsRequired: true,
-        zohoSalesWebhookActive: false,
-        zohoCommissionsWebhookActive: false
     });
     const [loading, setLoading] = useState(true);
 
@@ -641,11 +639,6 @@ const GeneralSettings = () => {
                 <h3 className="text-xl font-semibold text-slate-700">Parámetros de la Aplicación</h3>
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Bell/> Notificar al Master sobre nuevos reportes</label><p className="text-sm text-slate-500 mt-1">Si está activo, se enviará una notificación push cada vez que un vendedor envíe un reporte.</p></div><ToggleSwitch enabled={settings.newReportNotifications} setEnabled={(value) => handleSettingChange('notifications', 'newReportNotifications', value)} /></div>
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Lock/> Requerir GPS para enviar reporte</label><p className="text-sm text-slate-500 mt-1">Si está activo, el merchandiser no podrá enviar un reporte si está fuera del rango del PDV.</p></div><ToggleSwitch enabled={settings.gpsRequired} setEnabled={(value) => handleSettingChange('appConfig', 'gpsRequired', value)} /></div>
-            </div>
-            <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
-                <h3 className="text-xl font-semibold text-slate-700 flex items-center gap-2"><Link2/> Integraciones con Zoho Books</h3>
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800">Webhook: Sincronizar Ventas e Inventario</label><p className="text-sm text-slate-500 mt-1">Recibe nuevas facturas de Zoho para crear ventas pendientes y alertar sobre stock.</p></div><ToggleSwitch enabled={settings.zohoSalesWebhookActive} setEnabled={(value) => handleSettingChange('appConfig', 'zohoSalesWebhookActive', value)} /></div>
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800">Webhook: Sincronizar Comisiones</label><p className="text-sm text-slate-500 mt-1">Recibe pagos de Zoho para registrar comisiones (requiere el webhook de 'Pagos' en Zoho).</p></div><ToggleSwitch enabled={settings.zohoCommissionsWebhookActive} setEnabled={(value) => handleSettingChange('appConfig', 'zohoCommissionsWebhookActive', value)} /></div>
             </div>
              <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
                  <h3 className="text-xl font-semibold text-slate-700">Herramientas de Desarrollo</h3>
