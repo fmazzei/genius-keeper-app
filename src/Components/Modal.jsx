@@ -22,7 +22,7 @@ const Modal = ({ isOpen, onClose, title, children, footer = null, size = 'lg', c
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-0 md:p-4 overflow-hidden">
-            <div className={`bg-white shadow-xl flex flex-col transition-all duration-300 ${containerClasses} overflow-hidden animate-fade-in-up`}>
+            <div className={`bg-white shadow-xl flex flex-col transition-[max-width,max-height,border-radius] duration-300 ${containerClasses} overflow-hidden`}>
 
                 {/* Header — never scrolls */}
                 <div className="flex justify-between items-center px-4 py-3.5 border-b border-slate-200 shrink-0">
@@ -39,8 +39,8 @@ const Modal = ({ isOpen, onClose, title, children, footer = null, size = 'lg', c
                     </div>
                 </div>
 
-                {/* Scrollable body — x hidden kills the sideways wobble on iOS */}
-                <div className="overflow-y-auto overflow-x-hidden overscroll-contain flex-1 min-h-0 w-full">
+                {/* Scrollable body — touch-pan-y + overflow-x-hidden lock iOS to vertical scroll only */}
+                <div className="overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y flex-1 min-h-0 w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
                     {children}
                 </div>
 

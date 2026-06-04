@@ -395,14 +395,14 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const metaSnap = await getDoc(doc(db, 'users_metadata', user.uid));
                 const meta     = metaSnap.exists() ? metaSnap.data() : {};
                 const reporterId  = meta.reporterId  || null;
-                const metaMensual = meta.metaMensual  || 2400;
-                const mesArranque = meta.mesArranque  || 0;
                 const nombre      = meta.name || user.displayName || user.email;
                 const cfg = meta.commissionConfig
                     ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
                     : DEFAULT_COMMISSION_CONFIG;
+                // metaMensual lives at top-level AND is mirrored inside commissionConfig
+                const metaMensual = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
                 setCommConfig(cfg);
-                setVendedor({ nombre, metaMensual, mesArranque, reporterId });
+                setVendedor({ nombre, metaMensual, reporterId });
 
                 if (!reporterId) { setLoading(false); return; }
 

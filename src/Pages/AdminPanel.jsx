@@ -1633,11 +1633,6 @@ const FIREBASE_CONFIG = {
     appId: "1:362565450545:web:27d9dea004e74966a70e10",
 };
 
-const MES_ARRANQUE_OPTS = [
-    { value: 0, label: 'Sin arranque',  desc: 'Meta completa desde el primer mes' },
-    { value: 1, label: '1 mes',         desc: '50% la meta el primer mes' },
-    { value: 2, label: '2 meses',       desc: '50% mes 1, 75% mes 2' },
-];
 
 const VendedoresManagement = () => {
     const commissionRef                           = React.useRef(null);
@@ -1651,7 +1646,7 @@ const VendedoresManagement = () => {
     const [createError, setCreateError]               = useState('');
     const [commissionTarget, setCommissionTarget]     = useState(null);
 
-    const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '', metaMensual: '', mesArranque: 0 };
+    const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '' };
     const [form, setForm] = useState(EMPTY_FORM);
 
     useEffect(() => {
@@ -1696,8 +1691,6 @@ const VendedoresManagement = () => {
                 active:       true,
                 reporterId:   form.reporterId,
                 reporterName: form.reporterName,
-                metaMensual:  Number(form.metaMensual) || 0,
-                mesArranque:  form.mesArranque,
             });
             await tempAuth.signOut();
             await deleteApp(tempApp);
@@ -1715,7 +1708,6 @@ const VendedoresManagement = () => {
                         name: form.name.trim(), email: form.email.trim(), username,
                         role: 'vendedor', active: true,
                         reporterId: form.reporterId, reporterName: form.reporterName,
-                        metaMensual: Number(form.metaMensual) || 0, mesArranque: form.mesArranque,
                     });
                     await tempAuth2.signOut();
                     await deleteApp(tempApp2);
@@ -1739,8 +1731,6 @@ const VendedoresManagement = () => {
                 name:         form.name.trim(),
                 reporterId:   form.reporterId,
                 reporterName: form.reporterName,
-                metaMensual:  Number(form.metaMensual) || 0,
-                mesArranque:  form.mesArranque,
             });
             closeModal();
         } catch (err) {
@@ -1758,8 +1748,6 @@ const VendedoresManagement = () => {
             password:     '',
             reporterId:   v.reporterId || '',
             reporterName: v.reporterName || '',
-            metaMensual:  v.metaMensual ?? '',
-            mesArranque:  v.mesArranque ?? 0,
         });
         setIsAddModalOpen(true);
     };
@@ -1779,7 +1767,7 @@ const VendedoresManagement = () => {
             <div className="flex items-start justify-between">
                 <div>
                     <h3 className="text-lg font-bold text-slate-800">Vendedores</h3>
-                    <p className="text-sm text-slate-500 mt-1">Cuentas de vendedor con metas, reporters y período de arranque.</p>
+                    <p className="text-sm text-slate-500 mt-1">Cuentas de vendedor. Metas y comisiones se configuran con el ícono $.</p>
                 </div>
                 <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm shrink-0">
                     <UserPlus size={18} />
@@ -1816,7 +1804,7 @@ const VendedoresManagement = () => {
                                         {v.active !== false ? 'Activo' : 'Inactivo'}
                                     </span>
                                     <ToggleSwitch enabled={v.active !== false} setEnabled={() => handleToggleActive(v)} />
-                                    <button onClick={() => setCommissionTarget(v)} className="p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-full transition-colors" title="Estructura de comisiones">
+                                    <button onClick={() => setCommissionTarget(v)} className="p-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-full transition-colors" title="Estructura de comisiones">
                                         <DollarSign size={16} />
                                     </button>
                                     <button onClick={() => openEdit(v)} className="p-2 text-slate-400 hover:text-brand-blue hover:bg-blue-50 rounded-full transition-colors" title="Editar">
@@ -1869,17 +1857,10 @@ const VendedoresManagement = () => {
                             </select>
                             <p className="text-xs text-slate-400 mt-1">Los despachos de este reporter se usarán para calcular la meta del vendedor.</p>
                         </div>
-                        <div>
-                            <label className="block text-sm font-semibold text-slate-700 mb-1">Meta mensual (unidades)</label>
-                            <input type="number" min="0" value={form.metaMensual} onChange={e => setForm(p => ({ ...p, metaMensual: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Ej: 5000" required />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-semibold text-slate-700 mb-1">Período de arranque</label>
-                            <select value={form.mesArranque} onChange={e => setForm(p => ({ ...p, mesArranque: Number(e.target.value) }))} className="w-full p-3 border border-slate-300 rounded-lg bg-white">
-                                {MES_ARRANQUE_OPTS.map(o => (
-                                    <option key={o.value} value={o.value}>{o.label} — {o.desc}</option>
-                                ))}
-                            </select>
+                        <div className="sm:col-span-2">
+                            <p className="text-xs text-slate-400 bg-slate-50 rounded-lg p-3">
+                                La meta mensual y el período de arranque se configuran en el constructor de comisiones (ícono <span className="font-bold text-emerald-700">$</span>).
+                            </p>
                         </div>
                     </div>
 

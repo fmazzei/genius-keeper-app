@@ -7,33 +7,30 @@ import { Plus, Trash2, AlertCircle } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 
 export const DEFAULT_COMMISSION_CONFIG = {
-    salarioFijo: 300,
-    viaticosSemanales: 25,
+    metaMensual:        2400,
+    salarioFijo:        300,
+    viaticosSemanales:  25,
     tiers: [
         { label: 'Plus',   minPct: 120, rate: 4.5 },
         { label: 'Óptima', minPct: 100, rate: 4.0 },
         { label: 'Básica', minPct: 90,  rate: 3.5 },
     ],
-    bonusPuntualidad: 1.0,
-    bonusActivacion: 1.0,
+    bonusPuntualidad:    1.0,
+    bonusActivacion:     1.0,
     activacionThreshold: 80,
-    activacionMinUnits: 24,
-    arranque: [
-        { mes: 1, meta: 1429 },
-        { mes: 2, meta: 1786 },
-    ],
-    facturaMaxDias: 60,
+    activacionMinUnits:  24,
+    arranque:            [],
+    facturaMaxDias:      60,
 };
 
-// ─── Inline number row (label + small input, no grid) ─────────────────────────
-
+// ─── Inline number row ────────────────────────────────────────────────────────
 const InlineRow = ({ label, hint, value, onChange, step = 1, min = 0, suffix }) => (
     <div className="flex items-center gap-3 py-3 border-b border-slate-100 last:border-b-0">
         <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-slate-700 leading-snug">{label}</p>
             {hint && <p className="text-xs text-slate-400 mt-0.5 leading-tight">{hint}</p>}
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
             <input
                 type="number"
                 min={min}
@@ -42,13 +39,12 @@ const InlineRow = ({ label, hint, value, onChange, step = 1, min = 0, suffix }) 
                 onChange={e => onChange(Number(e.target.value) || 0)}
                 className="w-20 text-center p-2 border border-slate-200 rounded-lg text-sm font-mono bg-white"
             />
-            {suffix && <span className="text-sm text-slate-400 w-6 shrink-0">{suffix}</span>}
+            {suffix && <span className="text-sm text-slate-400 shrink-0">{suffix}</span>}
         </div>
     </div>
 );
 
 // ─── Section header ───────────────────────────────────────────────────────────
-
 const SectionHeader = ({ label, action }) => (
     <div className="flex items-center justify-between mb-3">
         <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{label}</p>
@@ -57,20 +53,26 @@ const SectionHeader = ({ label, action }) => (
 );
 
 // ─── Main component ───────────────────────────────────────────────────────────
-
 const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
-    const [config, setConfig]   = useState(DEFAULT_COMMISSION_CONFIG);
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving]   = useState(false);
-    const [error, setError]     = useState('');
+    const [config, setConfig]       = useState(DEFAULT_COMMISSION_CONFIG);
+    const [loading, setLoading]     = useState(true);
+    const [saving, setSaving]       = useState(false);
+    const [error, setError]         = useState('');
     const [simAmount, setSimAmount] = useState(10000);
 
     useEffect(() => {
         (async () => {
             try {
                 const snap = await getDoc(doc(db, 'users_metadata', vendedor.id));
-                if (snap.exists() && snap.data().commissionConfig) {
-                    setConfig({ ...DEFAULT_COMMISSION_CONFIG, ...snap.data().commissionConfig });
+                if (snap.exists()) {
+                    const userData = snap.data();
+                    // metaMensual lives at the top level; merge into config
+                    const topMeta = userData.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+                    setConfig({
+                        ...DEFAULT_COMMISSION_CONFIG,
+                        metaMensual: topMeta,
+                        ...(userData.commissionConfig || {}),
+                    });
                 }
             } catch (e) {
                 console.warn('CommissionConstructor load error:', e);
@@ -84,7 +86,10 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
         setSaving(true);
         setError('');
         try {
-            await updateDoc(doc(db, 'users_metadata', vendedor.id), { commissionConfig: config });
+            await updateDoc(doc(db, 'users_metadata', vendedor.id), {
+                commissionConfig: config,
+                metaMensual: config.metaMensual,   // keep top-level field in sync
+            });
             onClose();
         } catch (e) {
             setError('No se pudo guardar: ' + e.message);
@@ -94,21 +99,16 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
 
     useImperativeHandle(ref, () => ({ save: handleSave, saving }), [saving, config]);
 
-    const updateTier = (i, field, value) =>
-        setConfig(p => ({ ...p, tiers: p.tiers.map((t, j) => j === i ? { ...t, [field]: value } : t) }));
-
-    const addTier = () =>
+    const updateTier    = (i, field, val) =>
+        setConfig(p => ({ ...p, tiers: p.tiers.map((t, j) => j === i ? { ...t, [field]: val } : t) }));
+    const addTier       = () =>
         setConfig(p => ({ ...p, tiers: [...p.tiers, { label: 'Nuevo', minPct: 0, rate: 0 }] }));
-
-    const removeTier = (i) =>
+    const removeTier    = (i) =>
         setConfig(p => ({ ...p, tiers: p.tiers.filter((_, j) => j !== i) }));
-
     const updateArranque = (i, meta) =>
         setConfig(p => ({ ...p, arranque: p.arranque.map((a, j) => j === i ? { ...a, meta } : a) }));
-
-    const addArranque = () =>
+    const addArranque   = () =>
         setConfig(p => ({ ...p, arranque: [...p.arranque, { mes: p.arranque.length + 1, meta: 0 }] }));
-
     const removeArranque = (i) =>
         setConfig(p => ({ ...p, arranque: p.arranque.filter((_, j) => j !== i) }));
 
@@ -121,15 +121,13 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
     };
 
     if (loading) return (
-        <div className="flex items-center justify-center py-16">
-            <LoadingSpinner />
-        </div>
+        <div className="flex items-center justify-center py-16"><LoadingSpinner /></div>
     );
 
     const lowestMinPct = config.tiers.length > 0 ? Math.min(...config.tiers.map(t => t.minPct)) : 90;
 
     return (
-        <div className="w-full overflow-x-hidden">
+        <div className="w-full" style={{ overflowX: 'hidden', touchAction: 'pan-y' }}>
             <div className="px-4 pt-4 pb-6 space-y-6">
 
                 {error && (
@@ -139,12 +137,27 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 )}
 
-                {/* ── 1. Ingresos Base ── */}
+                {/* ── 1. Metas ── */}
+                <section>
+                    <SectionHeader label="Meta Mensual" />
+                    <div className="bg-white border border-slate-200 rounded-xl px-4">
+                        <InlineRow
+                            label="Meta mensual"
+                            hint="Unidades a despachar por mes para cumplimiento 100%"
+                            suffix="uds"
+                            value={config.metaMensual}
+                            step={50}
+                            onChange={v => setConfig(p => ({ ...p, metaMensual: v }))}
+                        />
+                    </div>
+                </section>
+
+                {/* ── 2. Ingresos Base ── */}
                 <section>
                     <SectionHeader label="Ingresos Base" />
-                    <div className="bg-white border border-slate-200 rounded-xl px-4 divide-y divide-slate-100">
+                    <div className="bg-white border border-slate-200 rounded-xl px-4">
                         <InlineRow
-                            label="Fijo mensual"
+                            label="Salario fijo mensual"
                             suffix="USD"
                             value={config.salarioFijo}
                             step={10}
@@ -160,7 +173,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 </section>
 
-                {/* ── 2. Estructura de Comisión — card per tier ── */}
+                {/* ── 3. Estructura de Comisión ── */}
                 <section>
                     <SectionHeader
                         label="Estructura de Comisión"
@@ -173,13 +186,12 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     <div className="space-y-2">
                         {config.tiers.map((tier, i) => (
                             <div key={i} className="bg-white border border-slate-200 rounded-xl p-4">
-                                {/* Tier name row */}
-                                <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-2 mb-3">
                                     <input
                                         type="text"
                                         value={tier.label}
                                         onChange={e => updateTier(i, 'label', e.target.value)}
-                                        className="text-base font-bold text-slate-800 border border-transparent focus:border-blue-400 focus:outline-none rounded-lg px-2 py-1 bg-slate-50 flex-1 min-w-0 mr-2"
+                                        className="flex-1 min-w-0 text-base font-bold text-slate-800 border border-transparent focus:border-blue-400 focus:outline-none rounded-lg px-2 py-1 bg-slate-50"
                                         placeholder="Nombre del nivel"
                                     />
                                     <button
@@ -191,28 +203,27 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                         <Trash2 size={15} />
                                     </button>
                                 </div>
-                                {/* Inputs row */}
                                 <div className="flex gap-3">
-                                    <div className="flex-1">
-                                        <p className="text-xs text-slate-400 mb-1">Cumplimiento mínimo</p>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs text-slate-400 mb-1">Cumplimiento mín.</p>
                                         <div className="flex items-center gap-1">
                                             <input
                                                 type="number" min="0" step="5"
                                                 value={tier.minPct}
                                                 onChange={e => updateTier(i, 'minPct', Number(e.target.value) || 0)}
-                                                className="w-full text-center p-2.5 border border-slate-200 rounded-xl text-sm font-mono"
+                                                className="min-w-0 w-full text-center p-2 border border-slate-200 rounded-xl text-sm font-mono"
                                             />
                                             <span className="text-slate-400 text-sm shrink-0">%</span>
                                         </div>
                                     </div>
-                                    <div className="flex-1">
-                                        <p className="text-xs text-slate-400 mb-1">Comisión sobre cobrado</p>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs text-slate-400 mb-1">Comisión</p>
                                         <div className="flex items-center gap-1">
                                             <input
                                                 type="number" min="0" step="0.5"
                                                 value={tier.rate}
                                                 onChange={e => updateTier(i, 'rate', Number(e.target.value) || 0)}
-                                                className="w-full text-center p-2.5 border border-slate-200 rounded-xl text-sm font-mono"
+                                                className="min-w-0 w-full text-center p-2 border border-slate-200 rounded-xl text-sm font-mono"
                                             />
                                             <span className="text-slate-400 text-sm shrink-0">%</span>
                                         </div>
@@ -221,10 +232,10 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             </div>
                         ))}
                     </div>
-                    <p className="text-xs text-slate-400 mt-1.5 px-1">Los niveles se evalúan de arriba a abajo — de mayor a menor.</p>
+                    <p className="text-xs text-slate-400 mt-1.5 px-1">Evalúa de arriba a abajo — ordénalos de mayor a menor.</p>
                 </section>
 
-                {/* ── 3. Bonos — inline rows, no cramped grid ── */}
+                {/* ── 4. Bonos ── */}
                 <section>
                     <SectionHeader label="Bonos" />
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
@@ -244,7 +255,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                         />
                         <InlineRow
                             label="Umbral de activación"
-                            hint="% de la cartera de PDVs que debe cubrirse"
+                            hint="% de PDVs de la cartera que debe cubrirse"
                             suffix="%"
                             value={config.activacionThreshold}
                             step={5}
@@ -261,7 +272,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 </section>
 
-                {/* ── 4. Período de Arranque ── */}
+                {/* ── 5. Período de Arranque ── */}
                 <section>
                     <SectionHeader
                         label="Período de Arranque"
@@ -294,7 +305,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     )}
                 </section>
 
-                {/* ── 5. Política de Cobro ── */}
+                {/* ── 6. Política de Cobro ── */}
                 <section>
                     <SectionHeader label="Política de Cobro" />
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
@@ -309,15 +320,14 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 </section>
 
-                {/* ── 6. Simulador de Ingresos ── */}
+                {/* ── 7. Simulador de Ingresos ── */}
                 <section>
                     <SectionHeader label="Simulador de Ingresos" />
                     <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                        {/* Amount input */}
                         <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-slate-600 shrink-0">Monto cobrado:</span>
-                            <div className="flex items-center gap-1 flex-1 min-w-0">
-                                <span className="text-slate-400 shrink-0">$</span>
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                <span className="text-slate-400 shrink-0 text-sm">$</span>
                                 <input
                                     type="number" min="0" step="1000"
                                     value={simAmount}
@@ -328,7 +338,6 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             </div>
                         </div>
 
-                        {/* Tier projections */}
                         <div className="space-y-2">
                             {[...config.tiers]
                                 .sort((a, b) => b.minPct - a.minPct)
@@ -350,7 +359,6 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                     );
                                 })}
 
-                            {/* Below all tiers */}
                             <div className="bg-slate-100 rounded-xl p-3.5 border border-slate-200">
                                 <div className="flex items-baseline justify-between mb-1.5">
                                     <span className="font-bold text-slate-400">Baja <span className="text-xs font-normal">(&lt;{lowestMinPct}%)</span></span>
