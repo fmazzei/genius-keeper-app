@@ -1765,7 +1765,35 @@ const VendedoresManagement = () => {
     );
 };
 
-// ─── Notificaciones — merges Email + Auto-Reports ─────────────────────────────
+// ─── Personal de Campo — Reporters + Equipo (merged with tabs) ───────────────
+
+const PersonalDeCampo = () => {
+    const [tab, setTab] = useState('reporters');
+    return (
+        <div>
+            <div className="mb-4">
+                <h3 className="text-xl font-semibold text-slate-700">Personal de Campo</h3>
+                <p className="text-sm text-slate-500 mt-1">Reporters de ruta y usuarios del equipo de campo (mercaderismo).</p>
+            </div>
+            <div className="flex gap-1 border-b border-slate-200 mb-6">
+                {[
+                    { id: 'reporters', label: 'Reporters' },
+                    { id: 'equipo',    label: 'Equipo de App' },
+                ].map(({ id, label }) => (
+                    <button
+                        key={id}
+                        onClick={() => setTab(id)}
+                        className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === id ? 'border-brand-blue text-brand-blue' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+            {tab === 'reporters' && <ReportersManagement />}
+            {tab === 'equipo'    && <UserManagement />}
+        </div>
+    );
+};
 
 const NotificacionesSection = () => {
     const [tab, setTab] = useState('correos');
@@ -1908,11 +1936,10 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
         {
             id: 'personas', label: 'Personas', Icon: Users,
             items: [
-                { id: 'vendedores',   label: 'Vendedores',       Icon: TrendingUp,    badge: 'Nuevo' },
-                { id: 'gerencia_mgmt',label: 'Gerencia',          Icon: BarChart2                    },
                 { id: 'director_mgmt',label: 'Dirección',         Icon: Eye                          },
-                { id: 'campo',        label: 'Equipo de Campo',   Icon: Users                        },
-                { id: 'reporters',    label: 'Reporters',         Icon: ClipboardList                },
+                { id: 'gerencia_mgmt',label: 'Gerencia',          Icon: BarChart2                    },
+                { id: 'vendedores',   label: 'Vendedores',        Icon: TrendingUp,   badge: 'Nuevo' },
+                { id: 'campo',        label: 'Personal de Campo', Icon: Users                        },
             ],
         },
         {
@@ -1980,8 +2007,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     sectionDesc="Usuarios con vista ejecutiva completa — solo lectura, sin administración."
                 />
             );
-            case 'campo':         return <UserManagement />;
-            case 'reporters':      return <ReportersManagement />;
+            case 'campo':         return <PersonalDeCampo />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
             case 'depots':         return <DepotManagement />;
