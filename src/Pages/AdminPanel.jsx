@@ -1816,7 +1816,7 @@ const VendedoresManagement = () => {
                                         {v.active !== false ? 'Activo' : 'Inactivo'}
                                     </span>
                                     <ToggleSwitch enabled={v.active !== false} setEnabled={() => handleToggleActive(v)} />
-                                    <button onClick={() => setCommissionTarget(v)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors" title="Estructura de comisiones">
+                                    <button onClick={() => setCommissionTarget(v)} className="p-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-full transition-colors" title="Estructura de comisiones">
                                         <DollarSign size={16} />
                                     </button>
                                     <button onClick={() => openEdit(v)} className="p-2 text-slate-400 hover:text-brand-blue hover:bg-blue-50 rounded-full transition-colors" title="Editar">
