@@ -92,8 +92,14 @@ const AppLayout: React.FC = () => {
             return <AppShell user={user} role={role} onLogout={() => signOut(auth)} />;
         }
         return (
-            <div className="flex items-center justify-center h-screen bg-slate-950">
-                <p className="text-slate-400">Rol de usuario no reconocido. Contacta al administrador.</p>
+            <div className="flex flex-col items-center justify-center h-screen bg-slate-950 gap-5 p-6">
+                <p className="text-slate-400 text-center">Rol de usuario no reconocido. Contacta al administrador.</p>
+                <button
+                    onClick={() => signOut(auth)}
+                    className="flex items-center gap-2 bg-slate-800 text-slate-300 font-semibold py-2.5 px-5 rounded-lg hover:bg-slate-700 transition-colors"
+                >
+                    <LogOut size={16} /> Cerrar Sesión
+                </button>
             </div>
         );
     };
