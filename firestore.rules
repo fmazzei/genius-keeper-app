@@ -36,8 +36,8 @@ service cloud.firestore {
     }
 
     match /users_metadata/{userId} {
-      allow get: if (isAuthenticated() && (request.auth.uid == userId || isAdmin())) || !isAuthenticated();
-      allow list: if isAdmin();
+      allow get: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || isMaster());
+      allow list: if isAdmin() || isMaster();
       allow write: if request.auth.uid == userId || isMaster();
       match /authenticators/{authenticatorId} {
         allow read, write: if request.auth.uid == userId;
@@ -126,6 +126,34 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (isAdmin() || isMerchandiser());
       allow write: if false;
     }
+
+    match /vendor_clients/{docId} {
+      // Vendor reads their own portfolio; admin manages all
+      allow read: if isAuthenticated() && (
+        isAdmin() ||
+        isMaster() ||
+        resource.data.vendedorId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && (
+        isAdmin() ||
+        isMaster() ||
+        request.resource.data.vendedorId == request.auth.uid
+      );
+      allow update: if isAuthenticated() && (isAdmin() || isMaster());
+      allow delete: if false;
+    }
+
+    match /vendedor_alertas/{docId} {
+      allow read: if isAuthenticated() && (
+        isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid
+      );
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && (
+        isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid
+      );
+    }
+
+
 
     match /delegation_requests/{requestId} {
       allow read, write: if isAuthenticated() && (isAdmin() || isMerchandiser());
