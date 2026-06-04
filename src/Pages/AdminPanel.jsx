@@ -927,13 +927,19 @@ const ModuleManagement = () => {
             ],
         },
         {
-            groupLabel: 'Master',
+            groupLabel: 'Master / Dirección / Gerencia',
             items: [
                 {
                     key: 'marketTrends',
                     label: 'Análisis de Tendencias',
                     description: 'Vista de tendencias de mercado y análisis competitivo.',
                     icon: <TrendingUp size={20} className="text-purple-600 flex-shrink-0" />,
+                },
+                {
+                    key: 'rendimientoComercial',
+                    label: 'Rendimiento Comercial',
+                    description: 'KPIs por vendedor: meta del mes, nivel, comisiones y ranking del equipo.',
+                    icon: <Users size={20} className="text-emerald-600 flex-shrink-0" />,
                 },
             ],
         },
