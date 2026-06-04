@@ -768,8 +768,25 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
             setNewUser({ name: '', email: '', username: '', password: '' });
             setIsModalOpen(false);
         } catch (err) {
-            if (err.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo.');
-            else if (err.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            if (err.code === 'auth/email-already-in-use') {
+                // Auth account exists (Firestore doc was deleted). Try to sign in to recover the UID.
+                try {
+                    const { initializeApp, deleteApp } = await import('firebase/app');
+                    const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
+                    const username = newUser.username.trim().toLowerCase().replace(/\s+/g, '_');
+                    const tempApp2  = initializeApp(FIREBASE_CONFIG, `recover-user-${Date.now()}`);
+                    const tempAuth2 = getAuth(tempApp2);
+                    const { user } = await signInWithEmailAndPassword(tempAuth2, newUser.email.trim(), newUser.password);
+                    await setDoc(doc(db, 'users_metadata', user.uid), { name: newUser.name.trim(), email: newUser.email.trim(), username, role: createRole, active: true, salesGoal: 0 });
+                    await tempAuth2.signOut();
+                    await deleteApp(tempApp2);
+                    setNewUser({ name: '', email: '', username: '', password: '' });
+                    setIsModalOpen(false);
+                } catch (recoverErr) {
+                    setCreateError(`La cuenta de Auth ya existe con otra contraseña. Ve a Firebase Console → Authentication, elimina "${newUser.email.trim()}" e inténtalo de nuevo.`);
+                }
+            }
+            else if (err.code === 'auth/weak-password') setCreateError('La contraseña debe tener al menos 6 caracteres.');
             else setCreateError(`Error: ${err.message}`);
         } finally { setIsCreating(false); }
     };
@@ -1683,8 +1700,28 @@ const VendedoresManagement = () => {
             await deleteApp(tempApp);
             closeModal();
         } catch (err) {
-            if (err.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo.');
-            else if (err.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            if (err.code === 'auth/email-already-in-use') {
+                try {
+                    const { initializeApp, deleteApp } = await import('firebase/app');
+                    const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
+                    const username = form.username.trim().toLowerCase().replace(/\s+/g, '_');
+                    const tempApp2  = initializeApp(FIREBASE_CONFIG, `recover-vendedor-${Date.now()}`);
+                    const tempAuth2 = getAuth(tempApp2);
+                    const { user } = await signInWithEmailAndPassword(tempAuth2, form.email.trim(), form.password);
+                    await setDoc(doc(db, 'users_metadata', user.uid), {
+                        name: form.name.trim(), email: form.email.trim(), username,
+                        role: 'vendedor', active: true,
+                        reporterId: form.reporterId, reporterName: form.reporterName,
+                        metaMensual: Number(form.metaMensual) || 0, mesArranque: form.mesArranque,
+                    });
+                    await tempAuth2.signOut();
+                    await deleteApp(tempApp2);
+                    closeModal();
+                } catch (recoverErr) {
+                    setCreateError(`La cuenta de Auth ya existe con otra contraseña. Ve a Firebase Console → Authentication, elimina "${form.email.trim()}" e inténtalo de nuevo.`);
+                }
+            }
+            else if (err.code === 'auth/weak-password') setCreateError('La contraseña debe tener al menos 6 caracteres.');
             else setCreateError(`Error: ${err.message}`);
         } finally {
             setIsCreating(false);
