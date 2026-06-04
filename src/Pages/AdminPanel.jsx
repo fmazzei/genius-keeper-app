@@ -669,7 +669,7 @@ const UserCleanup = () => {
         setLoading(true);
         try {
             const snap = await getDocs(collection(db, 'users_metadata'));
-            setUsers(snap.docs.filter(d => d.data().email !== MASTER_EMAIL).map(d => ({ id: d.id, ...d.data() })));
+            setUsers(snap.docs.filter(d => d.data().email !== MASTER_EMAIL && d.data().role !== 'master').map(d => ({ id: d.id, ...d.data() })));
             setLoaded(true);
         } finally { setLoading(false); }
     };
