@@ -655,48 +655,35 @@ const GeneralSettings = () => {
     );
 };
 
-const DIRECTIVO_ROLES = [
-    { value: 'director',      label: 'Director',  color: 'bg-violet-100 text-violet-700', desc: 'Vista ejecutiva — solo lectura' },
-    { value: 'gerencia',      label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial' },
-    { value: 'sales_manager', label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial (alias)' },
-];
+// ─── Generic user-role management (Director / Gerencia) ──────────────────────
 
-const SalesManagerManagement = () => {
-    const [managers, setManagers]         = useState([]);
-    const [loading, setLoading]           = useState(true);
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [newUser, setNewUser]           = useState({ name: '', email: '', password: '', role: 'gerencia' });
-    const [isCreating, setIsCreating]     = useState(false);
-    const [createError, setCreateError]   = useState('');
+const ROLE_META = {
+    director:      { label: 'Director',  color: 'bg-violet-100 text-violet-700', desc: 'Vista ejecutiva — solo lectura' },
+    gerencia:      { label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
+    sales_manager: { label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
+};
+
+const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc, badgeColor = 'bg-slate-100 text-slate-700' }) => {
+    const [users, setUsers]           = useState([]);
+    const [loading, setLoading]       = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [newUser, setNewUser]       = useState({ name: '', email: '', password: '' });
+    const [isCreating, setIsCreating] = useState(false);
+    const [createError, setCreateError] = useState('');
 
     useEffect(() => {
-        const q = query(collection(db, 'users_metadata'), where('role', 'in', ['director', 'gerencia', 'sales_manager']));
-        const unsubscribe = onSnapshot(q,
-            (snapshot) => {
-                const data = snapshot.docs.map(d => ({
-                    id:     d.id,
-                    name:   d.data().name || d.id,
-                    email:  d.data().email || 'No disponible',
-                    role:   d.data().role,
-                    active: d.data().active !== false,
-                }));
-                setManagers(data);
-                setLoading(false);
-            },
-            (error) => { console.error(error); setLoading(false); }
+        const q = query(collection(db, 'users_metadata'), where('role', 'in', targetRoles));
+        const unsub = onSnapshot(q,
+            snap => { setUsers(snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id, email: d.data().email || '—', role: d.data().role, active: d.data().active !== false }))); setLoading(false); },
+            err  => { console.error(err); setLoading(false); }
         );
-        return () => unsubscribe();
+        return unsub;
     }, []);
 
-    const handleToggleActive = (managerId, currentActive) =>
-        updateDoc(doc(db, 'users_metadata', managerId), { active: !currentActive }).catch(() => alert('No se pudo actualizar el estado.'));
+    const toggleActive = (uid, cur) => updateDoc(doc(db, 'users_metadata', uid), { active: !cur }).catch(() => alert('No se pudo actualizar.'));
+    const deleteUser   = (u) => { if (!window.confirm(`¿Eliminar a "${u.name}"?`)) return; deleteDoc(doc(db, 'users_metadata', u.id)).catch(() => alert('No se pudo eliminar.')); };
 
-    const handleDelete = (manager) => {
-        if (!window.confirm(`¿Eliminar a "${manager.name}"? Perderá el acceso de inmediato.`)) return;
-        deleteDoc(doc(db, 'users_metadata', manager.id)).catch(() => alert('No se pudo eliminar el usuario.'));
-    };
-
-    const handleCreateUser = async (e) => {
+    const handleCreate = async (e) => {
         e.preventDefault();
         setCreateError('');
         setIsCreating(true);
@@ -706,33 +693,19 @@ const SalesManagerManagement = () => {
             const tempApp  = initializeApp(FIREBASE_CONFIG, `create-user-${Date.now()}`);
             const tempAuth = getAuth(tempApp);
             const { user } = await createUserWithEmailAndPassword(tempAuth, newUser.email.trim(), newUser.password);
-            await setDoc(doc(db, 'users_metadata', user.uid), {
-                name:      newUser.name.trim(),
-                email:     newUser.email.trim(),
-                role:      newUser.role,
-                active:    true,
-                salesGoal: 0,
-            });
+            await setDoc(doc(db, 'users_metadata', user.uid), { name: newUser.name.trim(), email: newUser.email.trim(), role: createRole, active: true, salesGoal: 0 });
             await tempAuth.signOut();
             await deleteApp(tempApp);
-            setNewUser({ name: '', email: '', password: '', role: 'gerencia' });
-            setIsAddModalOpen(false);
-        } catch (error) {
-            if (error.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo electrónico.');
-            else if (error.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
-            else setCreateError(`Error: ${error.message}`);
-        } finally {
-            setIsCreating(false);
-        }
+            setNewUser({ name: '', email: '', password: '' });
+            setIsModalOpen(false);
+        } catch (err) {
+            if (err.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo.');
+            else if (err.code === 'auth/weak-password')   setCreateError('La contraseña debe tener al menos 6 caracteres.');
+            else setCreateError(`Error: ${err.message}`);
+        } finally { setIsCreating(false); }
     };
 
-    const closeModal = () => {
-        setIsAddModalOpen(false);
-        setCreateError('');
-        setNewUser({ name: '', email: '', password: '', role: 'gerencia' });
-    };
-
-    const roleInfo = (role) => DIRECTIVO_ROLES.find(r => r.value === role) || DIRECTIVO_ROLES[1];
+    const closeModal = () => { setIsModalOpen(false); setCreateError(''); setNewUser({ name: '', email: '', password: '' }); };
 
     if (loading) return <LoadingSpinner />;
 
@@ -740,91 +713,67 @@ const SalesManagerManagement = () => {
         <div className="space-y-4">
             <div className="flex justify-between items-center">
                 <div>
-                    <h3 className="text-xl font-semibold text-slate-700">Directivos</h3>
-                    <p className="text-sm text-slate-500 mt-1">Cuentas de Director y Gerencia con acceso al panel de gestión.</p>
+                    <h3 className="text-xl font-semibold text-slate-700">{sectionLabel}</h3>
+                    <p className="text-sm text-slate-500 mt-1">{sectionDesc}</p>
                 </div>
-                <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm">
-                    <UserPlus size={18} />
-                    <span className="hidden sm:inline">Agregar</span>
+                <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm">
+                    <UserPlus size={18} /><span className="hidden sm:inline">Agregar</span>
                 </button>
             </div>
 
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <ul className="divide-y divide-slate-200">
-                    {managers.map(manager => {
-                        const ri = roleInfo(manager.role);
+                    {users.map(u => {
+                        const rm = ROLE_META[u.role] || { label: u.role, color: 'bg-slate-100 text-slate-700' };
                         return (
-                            <li key={manager.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                            <li key={u.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                                 <div className="flex items-center gap-3">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0 ${ri.color}`}>
-                                        {manager.name.charAt(0).toUpperCase()}
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg shrink-0 ${rm.color}`}>
+                                        {u.name.charAt(0).toUpperCase()}
                                     </div>
                                     <div>
-                                        <p className="font-semibold text-slate-800">{manager.name}</p>
-                                        <p className="text-sm text-slate-500">{manager.email}</p>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ri.color}`}>{ri.label}</span>
+                                        <p className="font-semibold text-slate-800">{u.name}</p>
+                                        <p className="text-sm text-slate-500">{u.email}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
                                     <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border">
                                         <div>
                                             <p className="font-semibold text-slate-700 text-sm">Acceso</p>
-                                            <p className={`text-xs font-medium ${manager.active ? 'text-green-600' : 'text-red-500'}`}>
-                                                {manager.active ? 'Activo' : 'Suspendido'}
-                                            </p>
+                                            <p className={`text-xs font-medium ${u.active ? 'text-green-600' : 'text-red-500'}`}>{u.active ? 'Activo' : 'Suspendido'}</p>
                                         </div>
-                                        <ToggleSwitch enabled={manager.active} setEnabled={() => handleToggleActive(manager.id, manager.active)} />
+                                        <ToggleSwitch enabled={u.active} setEnabled={() => toggleActive(u.id, u.active)} />
                                     </div>
-                                    <button onClick={() => handleDelete(manager)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Eliminar usuario">
-                                        <Trash2 size={18} />
-                                    </button>
+                                    <button onClick={() => deleteUser(u)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={18} /></button>
                                 </div>
                             </li>
                         );
                     })}
-                    {managers.length === 0 && (
-                        <p className="text-center text-slate-500 py-8">No hay directivos registrados. Agrega uno con el botón de arriba.</p>
-                    )}
+                    {users.length === 0 && <p className="text-center text-slate-500 py-8">No hay usuarios registrados. Agrega uno con el botón de arriba.</p>}
                 </ul>
             </div>
 
-            <Modal isOpen={isAddModalOpen} onClose={closeModal} title="Agregar Nuevo Directivo">
-                <form onSubmit={handleCreateUser} className="space-y-4 p-1">
-                    <div>
-                        <label className="block text-sm font-semibold text-slate-700 mb-1">Rol</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {[{ value: 'gerencia', label: 'Gerencia', desc: 'Gestión comercial' }, { value: 'director', label: 'Director', desc: 'Solo lectura' }].map(opt => (
-                                <button
-                                    key={opt.value}
-                                    type="button"
-                                    onClick={() => setNewUser(p => ({ ...p, role: opt.value }))}
-                                    className={`p-3 rounded-lg border text-left transition-all ${newUser.role === opt.value ? 'border-brand-blue bg-brand-blue/5' : 'border-slate-200 hover:border-slate-300'}`}
-                                >
-                                    <p className={`font-semibold text-sm ${newUser.role === opt.value ? 'text-brand-blue' : 'text-slate-700'}`}>{opt.label}</p>
-                                    <p className="text-xs text-slate-400 mt-0.5">{opt.desc}</p>
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+            <Modal isOpen={isModalOpen} onClose={closeModal} title={`Agregar ${sectionLabel}`}>
+                <form onSubmit={handleCreate} className="space-y-4 p-1">
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre completo</label>
-                        <input type="text" value={newUser.name} onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="Ej: Carlos Pérez" required />
+                        <input type="text" value={newUser.name} onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Ej: Carlos Pérez" required />
                     </div>
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Correo electrónico</label>
-                        <input type="email" value={newUser.email} onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="correo@lacteoca.com" required />
+                        <input type="email" value={newUser.email} onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="correo@lacteoca.com" required />
                     </div>
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Contraseña inicial</label>
-                        <input type="password" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-md" placeholder="Mínimo 6 caracteres" required minLength={6} />
+                        <input type="password" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Mínimo 6 caracteres" required minLength={6} />
                         <p className="text-xs text-slate-500 mt-1">El usuario puede cambiarla desde su cuenta.</p>
                     </div>
-                    {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-md font-medium">{createError}</p>}
+                    {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg font-medium">{createError}</p>}
                     <div className="flex gap-3 pt-2">
                         <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button>
                         <button type="submit" disabled={isCreating} className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
                             {isCreating ? <LoadingSpinner size="sm" /> : <UserPlus size={18} />}
-                            {isCreating ? 'Creando...' : 'Crear Usuario'}
+                            {isCreating ? 'Creando…' : 'Crear Cuenta'}
                         </button>
                     </div>
                 </form>
@@ -1959,10 +1908,11 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
         {
             id: 'personas', label: 'Personas', Icon: Users,
             items: [
-                { id: 'vendedores',  label: 'Vendedores',  Icon: TrendingUp,    badge: 'Nuevo' },
-                { id: 'directivos',  label: 'Directivos',  Icon: Eye                          },
-                { id: 'campo',       label: 'Campo',        Icon: Users                        },
-                { id: 'reporters',   label: 'Reporters',    Icon: ClipboardList                },
+                { id: 'vendedores',   label: 'Vendedores',       Icon: TrendingUp,    badge: 'Nuevo' },
+                { id: 'gerencia_mgmt',label: 'Gerencia',          Icon: BarChart2                    },
+                { id: 'director_mgmt',label: 'Dirección',         Icon: Eye                          },
+                { id: 'campo',        label: 'Equipo de Campo',   Icon: Users                        },
+                { id: 'reporters',    label: 'Reporters',         Icon: ClipboardList                },
             ],
         },
         {
@@ -2013,9 +1963,24 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
     // ── Content renderer ───────────────────────────────────────────────────────
     const renderContent = () => {
         switch (activeSection) {
-            case 'vendedores':     return <VendedoresManagement />;
-            case 'directivos':     return <SalesManagerManagement />;
-            case 'campo':          return <UserManagement />;
+            case 'vendedores':    return <VendedoresManagement />;
+            case 'gerencia_mgmt': return (
+                <UserRoleManagement
+                    targetRoles={['gerencia', 'sales_manager']}
+                    createRole="gerencia"
+                    sectionLabel="Gerencia"
+                    sectionDesc="Usuarios con acceso al panel de gestión comercial, metas y ventas."
+                />
+            );
+            case 'director_mgmt': return (
+                <UserRoleManagement
+                    targetRoles={['director']}
+                    createRole="director"
+                    sectionLabel="Dirección"
+                    sectionDesc="Usuarios con vista ejecutiva completa — solo lectura, sin administración."
+                />
+            );
+            case 'campo':         return <UserManagement />;
             case 'reporters':      return <ReportersManagement />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
