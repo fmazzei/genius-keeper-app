@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db, functions } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
 import { WIDGET_REGISTRY, WIDGET_CATEGORIES } from '../config/widgetRegistry.js';
@@ -1951,8 +1951,8 @@ const IntegracionesSection = () => {
 // ─── Admin Panel Shell ─────────────────────────────────────────────────────────
 
 const AdminPanel = ({ user, posList, reports, loading }) => {
-    const [activeSection, setActiveSection] = useState('settings');
-    const [mobileOpen, setMobileOpen]       = useState(false);
+    const [activeSection, setActiveSection]   = useState(null);    // null = mostrar lista en móvil
+    const [mobileView,    setMobileView]      = useState('list'); // 'list' | 'content'
 
     // ── Navigation groups ──────────────────────────────────────────────────────
     const GROUPS = [
@@ -1997,11 +1997,18 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
         },
     ];
 
-    const allItems   = GROUPS.flatMap(g => g.items);
-    const activeItem = allItems.find(i => i.id === activeSection) || allItems[0];
+    const allItems    = GROUPS.flatMap(g => g.items);
+    const activeItem  = allItems.find(i => i.id === activeSection);
     const activeGroup = GROUPS.find(g => g.items.some(i => i.id === activeSection));
 
-    const navigate = (id) => { setActiveSection(id); setMobileOpen(false); };
+    const navigate = (id) => {
+        setActiveSection(id);
+        setMobileView('content');
+    };
+
+    const goBackToList = () => {
+        setMobileView('list');
+    };
 
     // ── Content renderer ───────────────────────────────────────────────────────
     const renderContent = () => {
@@ -2020,12 +2027,17 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'settings':       return <GeneralSettings />;
             case 'integraciones':  return <IntegracionesSection />;
             case 'reports':        return <ReportManagement reports={reports} posList={posList} loading={loading} />;
-            default:               return <GeneralSettings />;
+            default:               return (
+                <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
+                    <Settings size={40} className="opacity-20" />
+                    <p className="text-sm">Selecciona una sección del menú</p>
+                </div>
+            );
         }
     };
 
-    // ── Sidebar ────────────────────────────────────────────────────────────────
-    const Sidebar = () => (
+    // ── Sidebar (desktop) ──────────────────────────────────────────────────────
+    const SidebarNav = () => (
         <nav className="w-56 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
             <div className="px-4 py-4 border-b border-slate-100">
                 <p className="text-xs font-black uppercase tracking-widest text-brand-blue">Panel Admin</p>
@@ -2059,51 +2071,82 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
         </nav>
     );
 
+    // ── Mobile section list ────────────────────────────────────────────────────
+    const MobileSectionList = () => (
+        <div className="flex-1 overflow-y-auto">
+            {GROUPS.map(({ id: gid, label: glabel, items }) => (
+                <div key={gid}>
+                    <p className="px-4 pt-5 pb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">{glabel}</p>
+                    <div className="bg-white border-y border-slate-200 divide-y divide-slate-100">
+                        {items.map(({ id, label, Icon, badge }) => (
+                            <button
+                                key={id}
+                                onClick={() => navigate(id)}
+                                className="w-full flex items-center gap-4 px-4 py-3.5 text-left active:bg-slate-50"
+                            >
+                                <div className="w-9 h-9 rounded-xl bg-brand-blue/10 flex items-center justify-center shrink-0">
+                                    <Icon size={18} className="text-brand-blue" />
+                                </div>
+                                <span className="flex-1 font-medium text-slate-800 text-[15px]">{label}</span>
+                                {badge && (
+                                    <span className="text-[9px] font-bold bg-brand-blue text-white px-1.5 py-0.5 rounded-full shrink-0">
+                                        {badge}
+                                    </span>
+                                )}
+                                <ChevronRight size={16} className="text-slate-300 shrink-0" />
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            ))}
+            <div className="h-6" />
+        </div>
+    );
+
     return (
         <div className="flex h-full bg-slate-50 overflow-hidden">
 
             {/* ── Desktop sidebar ── */}
             <div className="hidden md:flex">
-                <Sidebar />
+                <SidebarNav />
             </div>
-
-            {/* ── Mobile sidebar overlay ── */}
-            {mobileOpen && (
-                <div className="fixed inset-0 z-40 flex md:hidden">
-                    <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-                    <div className="relative z-50 w-56 bg-white h-full shadow-xl">
-                        <Sidebar />
-                    </div>
-                </div>
-            )}
 
             {/* ── Main content ── */}
             <div className="flex-1 flex flex-col overflow-hidden">
 
-                {/* Mobile header bar */}
-                <div className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-slate-200 shrink-0">
+                {/* ── MOBILE: list view ── */}
+                <div className={`md:hidden flex flex-col h-full ${mobileView === 'list' ? '' : 'hidden'}`}>
+                    <MobileSectionList />
+                </div>
+
+                {/* ── MOBILE: content view ── */}
+                <div className={`md:hidden flex flex-col h-full ${mobileView === 'content' ? '' : 'hidden'}`}>
+                    {/* Back button */}
                     <button
-                        onClick={() => setMobileOpen(true)}
-                        className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600"
+                        onClick={goBackToList}
+                        className="flex items-center gap-2 px-4 py-3 bg-white border-b border-slate-200 text-brand-blue font-semibold text-sm shrink-0"
                     >
-                        <LayoutGrid size={20} />
+                        <ChevronRight size={16} className="rotate-180" />
+                        <span>Administración</span>
+                        {activeItem && <span className="text-slate-400 font-normal">· {activeItem.label}</span>}
                     </button>
-                    <div className="min-w-0">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 leading-none">{activeGroup?.label}</p>
-                        <p className="text-sm font-bold text-slate-800 truncate">{activeItem?.label}</p>
+                    <div className="flex-1 overflow-y-auto p-4">
+                        {renderContent()}
                     </div>
                 </div>
 
-                {/* Desktop breadcrumb */}
-                <div className="hidden md:flex items-center gap-2 px-6 py-3 bg-white border-b border-slate-200 shrink-0">
-                    <span className="text-xs text-slate-400 font-semibold uppercase tracking-widest">{activeGroup?.label}</span>
-                    <span className="text-slate-300">›</span>
-                    <span className="text-sm font-bold text-slate-700">{activeItem?.label}</span>
-                </div>
-
-                {/* Section content */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                    {renderContent()}
+                {/* ── DESKTOP: breadcrumb + content ── */}
+                <div className="hidden md:flex md:flex-col h-full overflow-hidden">
+                    <div className="flex items-center gap-2 px-6 py-3 bg-white border-b border-slate-200 shrink-0">
+                        <span className="text-xs text-slate-400 font-semibold uppercase tracking-widest">{activeGroup?.label || 'Admin'}</span>
+                        {activeItem && <>
+                            <span className="text-slate-300">›</span>
+                            <span className="text-sm font-bold text-slate-700">{activeItem.label}</span>
+                        </>}
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                        {renderContent()}
+                    </div>
                 </div>
             </div>
         </div>

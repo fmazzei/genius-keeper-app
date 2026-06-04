@@ -213,14 +213,19 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             
             <div className="flex-1 flex flex-col overflow-hidden">
                 <header className="h-16 bg-white border-b flex items-center px-4 shadow-sm shrink-0 gap-3">
-                    <button onClick={() => setMobileMenuOpen(true)} className="p-2 mr-2 rounded-full hover:bg-slate-100 md:hidden shrink-0">
+                    <button onClick={() => setMobileMenuOpen(true)} className="p-2 rounded-full hover:bg-slate-100 md:hidden shrink-0">
                         <Menu size={24} />
                     </button>
-                    <h2 className="text-xl md:text-2xl font-semibold text-slate-800 truncate flex-1">{getGreeting()}</h2>
-                    {readOnly && (
-                        <span className="shrink-0 text-xs font-bold px-2.5 py-1 rounded-full bg-violet-100 text-violet-600 border border-violet-200">
-                            Solo lectura
-                        </span>
+                    <h2 className="text-lg md:text-2xl font-semibold text-slate-800 truncate flex-1">{getGreeting()}</h2>
+                    {/* Role chip — always visible, especially useful on mobile */}
+                    {role === 'master' && (
+                        <span className="shrink-0 hidden sm:inline text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">Máster</span>
+                    )}
+                    {role === 'director' && (
+                        <span className="shrink-0 text-xs font-bold px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 border border-violet-200">Dirección · Solo lectura</span>
+                    )}
+                    {(role === 'gerencia' || role === 'sales_manager') && (
+                        <span className="shrink-0 hidden sm:inline text-xs font-bold px-2.5 py-1 rounded-full bg-pink-100 text-pink-700 border border-pink-200">Gerencia</span>
                     )}
                 </header>
                 <div className="flex-1 p-4 md:p-6 overflow-y-auto bg-slate-50">
