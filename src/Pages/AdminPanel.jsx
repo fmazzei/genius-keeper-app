@@ -4,8 +4,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db, functions } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
+import CarteraManager from '../Components/CarteraManager.jsx';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
 import { WIDGET_REGISTRY, WIDGET_CATEGORIES } from '../config/widgetRegistry.js';
@@ -1635,16 +1636,18 @@ const FIREBASE_CONFIG = {
 
 
 const VendedoresManagement = () => {
-    const commissionRef                           = React.useRef(null);
-    const [commSaving, setCommSaving]             = useState(false);
-    const [vendedores, setVendedores]             = useState([]);
-    const [reporters, setReporters]               = useState([]);
-    const [loading, setLoading]               = useState(true);
+    const commissionRef                               = React.useRef(null);
+    const [commSaving, setCommSaving]                 = useState(false);
+    const [vendedores, setVendedores]                 = useState([]);
+    const [reporters, setReporters]                   = useState([]);
+    const [loading, setLoading]                       = useState(true);
     const [isAddModalOpen, setIsAddModalOpen]         = useState(false);
     const [editTarget, setEditTarget]                 = useState(null);
     const [isCreating, setIsCreating]                 = useState(false);
     const [createError, setCreateError]               = useState('');
     const [commissionTarget, setCommissionTarget]     = useState(null);
+    const [carteraTarget, setCarteraTarget]           = useState(null);
+    const [pendingCounts, setPendingCounts]           = useState({});
 
     const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '' };
     const [form, setForm] = useState(EMPTY_FORM);
@@ -1655,6 +1658,24 @@ const VendedoresManagement = () => {
         const u1 = onSnapshot(q1, snap => { setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
         const u2 = onSnapshot(q2, snap => setReporters(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
         return () => { u1(); u2(); };
+    }, []);
+
+    // Live badge: count pending cartera requests per vendor
+    useEffect(() => {
+        const q = query(
+            collection(db, 'vendor_clients'),
+            where('estado', '==', 'pendiente'),
+            where('active', '==', true),
+        );
+        const unsub = onSnapshot(q, snap => {
+            const counts = {};
+            snap.docs.forEach(d => {
+                const vid = d.data().vendedorId;
+                counts[vid] = (counts[vid] || 0) + 1;
+            });
+            setPendingCounts(counts);
+        });
+        return unsub;
     }, []);
 
     const closeModal = () => {
@@ -1804,6 +1825,14 @@ const VendedoresManagement = () => {
                                         {v.active !== false ? 'Activo' : 'Inactivo'}
                                     </span>
                                     <ToggleSwitch enabled={v.active !== false} setEnabled={() => handleToggleActive(v)} />
+                                    <button onClick={() => setCarteraTarget(v)} className="relative p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-full transition-colors" title="Cartera de clientes">
+                                        <Briefcase size={16} />
+                                        {(pendingCounts[v.id] || 0) > 0 && (
+                                            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-amber-500 text-white text-[9px] font-black rounded-full flex items-center justify-center">
+                                                {pendingCounts[v.id]}
+                                            </span>
+                                        )}
+                                    </button>
                                     <button onClick={() => setCommissionTarget(v)} className="p-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-full transition-colors" title="Estructura de comisiones">
                                         <DollarSign size={16} />
                                     </button>
@@ -1913,6 +1942,16 @@ const VendedoresManagement = () => {
                         onClose={() => setCommissionTarget(null)}
                     />
                 )}
+            </Modal>
+
+            {/* Cartera modal */}
+            <Modal
+                isOpen={!!carteraTarget}
+                onClose={() => setCarteraTarget(null)}
+                title={carteraTarget ? `Cartera — ${carteraTarget.name}` : ''}
+                size="xl"
+            >
+                {carteraTarget && <CarteraManager vendedor={carteraTarget} />}
             </Modal>
         </div>
     );

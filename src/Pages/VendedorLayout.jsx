@@ -11,11 +11,12 @@ import { useAuth } from '@/context/AuthContext';
 import {
     Home, MapPin, Package, Bell,
     LogOut, TrendingUp, CheckCircle, AlertCircle,
-    Clock, Loader, Target, Trash2,
+    Clock, Loader, Target, Trash2, Briefcase,
 } from 'lucide-react';
 import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
 import TomarPedidoForm from '@/Pages/TomarPedidoForm.jsx';
+import VendedorCartera from '@/Pages/VendedorCartera.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 
@@ -276,9 +277,9 @@ function AlertasView({ alertas, loadingAlertas, onDelete }) {
 // ─── Bottom tab bar ────────────────────────────────────────────────────────────
 
 const TABS = [
-    { id: 'home',     label: 'Inicio',    Icon: Home    },
-    { id: 'ruta',     label: 'Mi Ruta',   Icon: MapPin  },
-    { id: 'despacho', label: 'Despacho',  Icon: Package },
+    { id: 'home',     label: 'Inicio',   Icon: Home     },
+    { id: 'cartera',  label: 'Cartera',  Icon: Briefcase },
+    { id: 'despacho', label: 'Despacho', Icon: Package  },
 ];
 
 // ─── Main Layout ──────────────────────────────────────────────────────────────
@@ -288,7 +289,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [currentView, setCurrentView]       = useState('home');
     const [selectedPos, setSelectedPos]       = useState(null);
     const [subView, setSubView]               = useState(null);
-    const [vendedor, setVendedor]             = useState({ nombre: '', metaMensual: 2400, mesArranque: 0, reporterId: null });
+    const [vendedor, setVendedor]             = useState({ uid: null, nombre: '', metaMensual: 2400, reporterId: null });
     const [commConfig, setCommConfig]         = useState(DEFAULT_COMMISSION_CONFIG);
     const [stats, setStats]                   = useState({
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
@@ -402,7 +403,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 // metaMensual lives at top-level AND is mirrored inside commissionConfig
                 const metaMensual = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
                 setCommConfig(cfg);
-                setVendedor({ nombre, metaMensual, reporterId });
+                setVendedor({ uid: user.uid, nombre, metaMensual, reporterId });
 
                 if (!reporterId) { setLoading(false); return; }
 
@@ -439,25 +440,41 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const tier           = getTierFromConfig(pct, effectiveTiers);
                 const comisionSemana = montoSem * tier.rate;
 
-                // 4. PDVs de la cartera (para activación)
-                const posSnap = await getDocs(
-                    query(collection(db, 'pdv_assignments'), where('reporterId', '==', reporterId))
+                // 4. Cartera propia del vendedor (para activación y lista de despacho)
+                const carteraSnap = await getDocs(
+                    query(
+                        collection(db, 'vendor_clients'),
+                        where('vendedorId', '==', user.uid),
+                        where('estado', '==', 'activo'),
+                        where('active', '==', true),
+                    )
                 );
-                const puntosTotal = posSnap.size;
-                const puntosActivacion = despachos.filter(d => {
-                    const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
-                    return t >= inicioSem && (d.cantidad || 0) >= cfg.activacionMinUnits;
-                }).reduce((set, d) => { set.add(d.posId); return set; }, new Set()).size;
+                const cartera = carteraSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const puntosTotal = cartera.length;
+
+                // Despachos de esta semana con mínimo de unidades, cruzados contra cartera
+                const carteraPosIds = new Set(cartera.map(c => c.posId).filter(Boolean));
+                const puntosActivacion = despachos
+                    .filter(d => {
+                        const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
+                        return t >= inicioSem && (d.cantidad || 0) >= cfg.activacionMinUnits && carteraPosIds.has(d.posId);
+                    })
+                    .reduce((set, d) => { set.add(d.posId); return set; }, new Set()).size;
+
                 const activacionOk = puntosTotal > 0 && puntosActivacion / puntosTotal >= (cfg.activacionThreshold / 100);
 
-                // 5. Facturas por vencer (próximos 3 días) — full impl with webhook phase
+                // 5. Facturas por vencer (próximos 3 días)
                 const facturasPorVencer = 0;
 
                 const newStats = { unidadesDelMes, comisionSemana, despachoHoy, activacionOk, puntosActivacion, puntosTotal, facturasPorVencer };
                 setStats(newStats);
 
-                // 6. PDV list for route/dispatch
-                const allPos = posSnap.docs.map(d => ({ id: d.data().posId, name: d.data().posName, chain: d.data().chain || '' }));
+                // 6. PDV list for dispatch (from cartera)
+                const allPos = cartera.map(c => ({
+                    id:    c.posId || c.id,
+                    name:  c.clientName,
+                    chain: c.zone || '',
+                }));
                 setPosList(allPos);
 
                 // 7. Sync alert conditions to Firestore then load them
@@ -513,14 +530,8 @@ const VendedorLayout = ({ user, onLogout }) => {
             }
         }
 
-        if (currentView === 'ruta') {
-            return (
-                <div className="flex-1 flex flex-col items-center justify-center p-8 gap-4">
-                    <MapPin size={48} className="text-slate-600" />
-                    <p className="text-white font-bold text-lg">Planificador de Ruta</p>
-                    <p className="text-slate-400 text-sm text-center">El módulo de ruta estará disponible próximamente.</p>
-                </div>
-            );
+        if (currentView === 'cartera') {
+            return <VendedorCartera vendedor={vendedor} />;
         }
 
         if (currentView === 'alertas') {

@@ -478,6 +478,40 @@ exports.onVendedorAlertaCreated = functions.firestore
         return null;
     });
 
+// TRIGGER: Vendor requests a new client → push notification to master
+// =========================================================================================
+exports.onVendorClientRequested = functions.firestore
+    .document("vendor_clients/{docId}")
+    .onCreate(async (snap) => {
+        const data = snap.data();
+        if (data.estado !== 'pendiente' || data.addedBy !== 'vendedor') return null;
+
+        try {
+            // Find all master users to notify
+            const mastersSnap = await admin.firestore()
+                .collection("users_metadata")
+                .where("role", "==", "master")
+                .get();
+
+            const vendedorName = data.vendedorName || 'Un vendedor';
+            const clientName   = data.clientName   || 'nuevo cliente';
+
+            await Promise.all(mastersSnap.docs.map(masterDoc =>
+                sendNotificationToUser(
+                    masterDoc.id,
+                    {
+                        title: `Nueva solicitud de cliente`,
+                        body:  `${vendedorName} quiere agregar "${clientName}" a su cartera.`,
+                    },
+                    { tipo: 'cartera_pendiente', link: '/admin' }
+                )
+            ));
+        } catch (err) {
+            functions.logger.error("Error enviando notificación de solicitud de cartera:", err);
+        }
+        return null;
+    });
+
 exports.onTransferReceived = functions.firestore
     .document("transfers/{transferId}")
     .onUpdate(async (change) => {
