@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db, functions } from '../Firebase/config.js';
-import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, updateDoc, orderBy, where } from 'firebase/firestore';
+import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw } from 'lucide-react';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
@@ -651,6 +651,71 @@ const GeneralSettings = () => {
                  <h3 className="text-xl font-semibold text-slate-700">Herramientas de Desarrollo</h3>
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800">Activar Modo Simulación de Datos</label><p className="text-sm text-slate-500 mt-1">Usa datos de prueba generados automáticamente en toda la app. (Solo afecta tu sesión).</p></div><ToggleSwitch enabled={isSimulationMode} setEnabled={handleSimulationToggle} /></div>
             </div>
+            <UserCleanup />
+        </div>
+    );
+};
+
+const UserCleanup = () => {
+    const [users, setUsers]       = useState([]);
+    const [loaded, setLoaded]     = useState(false);
+    const [loading, setLoading]   = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [done, setDone]         = useState(false);
+
+    const MASTER_EMAIL = 'lacteoca@lacteoca.com';
+
+    const handleLoad = async () => {
+        setLoading(true);
+        try {
+            const snap = await getDocs(collection(db, 'users_metadata'));
+            setUsers(snap.docs.filter(d => d.data().email !== MASTER_EMAIL).map(d => ({ id: d.id, ...d.data() })));
+            setLoaded(true);
+        } finally { setLoading(false); }
+    };
+
+    const handleClean = async () => {
+        if (!window.confirm(`¿Eliminar ${users.length} usuario(s) de Firestore? Esta acción no se puede deshacer.`)) return;
+        setDeleting(true);
+        try {
+            const batch = writeBatch(db);
+            users.forEach(u => batch.delete(doc(db, 'users_metadata', u.id)));
+            await batch.commit();
+            setUsers([]);
+            setDone(true);
+        } finally { setDeleting(false); }
+    };
+
+    return (
+        <div className="bg-white p-4 sm:p-6 rounded-lg shadow border-l-4 border-red-400 space-y-4">
+            <div>
+                <h3 className="text-xl font-semibold text-slate-700 flex items-center gap-2"><Trash2 size={20} className="text-red-500" /> Limpieza de Usuarios</h3>
+                <p className="text-sm text-slate-500 mt-1">Elimina todos los registros de <code className="bg-slate-100 px-1 rounded">users_metadata</code> excepto la cuenta maestra <strong>{MASTER_EMAIL}</strong>. Útil para empezar desde cero.</p>
+            </div>
+            {done && <p className="text-green-600 text-sm font-medium bg-green-50 p-3 rounded-lg">✓ Usuarios eliminados. Recuerda borrar también las cuentas desde Firebase Console → Authentication.</p>}
+            {!done && !loaded && (
+                <button onClick={handleLoad} disabled={loading} className="flex items-center gap-2 bg-red-50 text-red-700 border border-red-200 font-semibold py-2 px-4 rounded-lg hover:bg-red-100 disabled:opacity-50">
+                    {loading ? <LoadingSpinner size="sm" /> : <Users size={16} />}
+                    {loading ? 'Cargando…' : 'Ver usuarios a eliminar'}
+                </button>
+            )}
+            {loaded && users.length === 0 && !done && <p className="text-slate-500 text-sm">No hay usuarios para eliminar (solo existe la cuenta maestra).</p>}
+            {loaded && users.length > 0 && (
+                <div className="space-y-3">
+                    <ul className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden text-sm">
+                        {users.map(u => (
+                            <li key={u.id} className="flex items-center justify-between px-4 py-2.5 bg-slate-50">
+                                <span className="font-medium text-slate-700">{u.name || u.id}</span>
+                                <span className="text-slate-400">{u.email || '—'}</span>
+                            </li>
+                        ))}
+                    </ul>
+                    <button onClick={handleClean} disabled={deleting} className="flex items-center gap-2 bg-red-600 text-white font-bold py-2.5 px-5 rounded-lg hover:bg-red-700 disabled:opacity-50">
+                        {deleting ? <LoadingSpinner size="sm" /> : <Trash2 size={16} />}
+                        {deleting ? 'Eliminando…' : `Eliminar ${users.length} usuario(s)`}
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
@@ -667,14 +732,14 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
     const [users, setUsers]           = useState([]);
     const [loading, setLoading]       = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [newUser, setNewUser]       = useState({ name: '', email: '', password: '' });
+    const [newUser, setNewUser]       = useState({ name: '', email: '', username: '', password: '' });
     const [isCreating, setIsCreating] = useState(false);
     const [createError, setCreateError] = useState('');
 
     useEffect(() => {
         const q = query(collection(db, 'users_metadata'), where('role', 'in', targetRoles));
         const unsub = onSnapshot(q,
-            snap => { setUsers(snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id, email: d.data().email || '—', role: d.data().role, active: d.data().active !== false }))); setLoading(false); },
+            snap => { setUsers(snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id, email: d.data().email || '—', username: d.data().username || '', role: d.data().role, active: d.data().active !== false }))); setLoading(false); },
             err  => { console.error(err); setLoading(false); }
         );
         return unsub;
@@ -688,15 +753,19 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
         setCreateError('');
         setIsCreating(true);
         try {
+            const username = newUser.username.trim().toLowerCase().replace(/\s+/g, '_');
+            if (!username) { setCreateError('El nombre de usuario es obligatorio.'); setIsCreating(false); return; }
+            const usernameSnap = await getDocs(query(collection(db, 'users_metadata'), where('username', '==', username)));
+            if (!usernameSnap.empty) { setCreateError('Ese nombre de usuario ya está en uso.'); setIsCreating(false); return; }
             const { initializeApp, deleteApp } = await import('firebase/app');
             const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
             const tempApp  = initializeApp(FIREBASE_CONFIG, `create-user-${Date.now()}`);
             const tempAuth = getAuth(tempApp);
             const { user } = await createUserWithEmailAndPassword(tempAuth, newUser.email.trim(), newUser.password);
-            await setDoc(doc(db, 'users_metadata', user.uid), { name: newUser.name.trim(), email: newUser.email.trim(), role: createRole, active: true, salesGoal: 0 });
+            await setDoc(doc(db, 'users_metadata', user.uid), { name: newUser.name.trim(), email: newUser.email.trim(), username, role: createRole, active: true, salesGoal: 0 });
             await tempAuth.signOut();
             await deleteApp(tempApp);
-            setNewUser({ name: '', email: '', password: '' });
+            setNewUser({ name: '', email: '', username: '', password: '' });
             setIsModalOpen(false);
         } catch (err) {
             if (err.code === 'auth/email-already-in-use') setCreateError('Ya existe un usuario con ese correo.');
@@ -705,7 +774,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
         } finally { setIsCreating(false); }
     };
 
-    const closeModal = () => { setIsModalOpen(false); setCreateError(''); setNewUser({ name: '', email: '', password: '' }); };
+    const closeModal = () => { setIsModalOpen(false); setCreateError(''); setNewUser({ name: '', email: '', username: '', password: '' }); };
 
     if (loading) return <LoadingSpinner />;
 
@@ -733,7 +802,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                                     </div>
                                     <div>
                                         <p className="font-semibold text-slate-800">{u.name}</p>
-                                        <p className="text-sm text-slate-500">{u.email}</p>
+                                        <p className="text-sm text-slate-500">{u.username ? `@${u.username}` : u.email}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
@@ -758,6 +827,14 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre completo</label>
                         <input type="text" value={newUser.name} onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Ej: Carlos Pérez" required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre de usuario</label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">@</span>
+                            <input type="text" value={newUser.username} onChange={e => setNewUser(p => ({ ...p, username: e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '') }))} className="w-full p-3 pl-7 border border-slate-300 rounded-lg" placeholder="carlos.perez" required autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">Solo letras minúsculas, números, puntos y guiones bajos.</p>
                     </div>
                     <div>
                         <label className="block text-sm font-semibold text-slate-700 mb-1">Correo electrónico</label>
@@ -1554,7 +1631,7 @@ const VendedoresManagement = () => {
     const [isCreating, setIsCreating]         = useState(false);
     const [createError, setCreateError]       = useState('');
 
-    const EMPTY_FORM = { name: '', email: '', password: '', reporterId: '', reporterName: '', metaMensual: '', mesArranque: 0 };
+    const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '', metaMensual: '', mesArranque: 0 };
     const [form, setForm] = useState(EMPTY_FORM);
 
     useEffect(() => {
@@ -1582,6 +1659,10 @@ const VendedoresManagement = () => {
         setCreateError('');
         setIsCreating(true);
         try {
+            const username = form.username.trim().toLowerCase().replace(/\s+/g, '_');
+            if (!username) { setCreateError('El nombre de usuario es obligatorio.'); setIsCreating(false); return; }
+            const usernameSnap = await getDocs(query(collection(db, 'users_metadata'), where('username', '==', username)));
+            if (!usernameSnap.empty) { setCreateError('Ese nombre de usuario ya está en uso.'); setIsCreating(false); return; }
             const { initializeApp, deleteApp } = await import('firebase/app');
             const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
             const tempApp  = initializeApp(FIREBASE_CONFIG, `create-vendedor-${Date.now()}`);
@@ -1590,6 +1671,7 @@ const VendedoresManagement = () => {
             await setDoc(doc(db, 'users_metadata', user.uid), {
                 name:         form.name.trim(),
                 email:        form.email.trim(),
+                username,
                 role:         'vendedor',
                 active:       true,
                 reporterId:   form.reporterId,
@@ -1683,7 +1765,7 @@ const VendedoresManagement = () => {
                                     <div className="min-w-0">
                                         <p className="font-semibold text-slate-800 truncate">{v.name || v.email}</p>
                                         <p className="text-xs text-slate-400 truncate">
-                                            {v.email}
+                                            {v.username ? <span className="text-slate-500 font-medium">@{v.username}</span> : v.email}
                                             {v.reporterName && <> · <span className="text-slate-500">{v.reporterName}</span></>}
                                             {v.metaMensual > 0 && <> · <span className="text-emerald-600 font-medium">{v.metaMensual.toLocaleString()} uds/mes</span></>}
                                         </p>
@@ -1716,6 +1798,14 @@ const VendedoresManagement = () => {
                         </div>
                         {!isEditing && (
                             <>
+                                <div className="sm:col-span-2">
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre de usuario</label>
+                                    <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">@</span>
+                                        <input type="text" value={form.username} onChange={e => setForm(p => ({ ...p, username: e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, '') }))} className="w-full p-3 pl-7 border border-slate-300 rounded-lg" placeholder="pedro.garcia" required autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-1">Solo letras minúsculas, números, puntos y guiones bajos.</p>
+                                </div>
                                 <div className="sm:col-span-2">
                                     <label className="block text-sm font-semibold text-slate-700 mb-1">Correo electrónico</label>
                                     <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="vendedor@lacteoca.com" required />
