@@ -1,8 +1,8 @@
 // RUTA: src/Pages/AdminPanel.jsx
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { db, functions } from '../Firebase/config.js';
-import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where } from 'firebase/firestore';
+import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
@@ -339,6 +339,151 @@ const UserManagement = () => {
     );
 };
 
+// ─── Reasignar Cadena ─────────────────────────────────────────────────────────
+const ReasignarCadenaModal = ({ pos, onClose, onSaved }) => {
+    const isIndividual = !pos.chain || pos.chain === 'Automercados Individuales';
+    const [chainName, setChainName]     = useState(isIndividual ? '' : pos.chain);
+    const [posName,   setPosName]       = useState(pos.name);
+    const [tipoDespacho, setTipoDespacho] = useState(pos.tipoDespacho || 'directo');
+    const [suggestions, setSuggestions] = useState([]);
+    const [showSug, setShowSug]         = useState(false);
+    const [isSaving, setIsSaving]       = useState(false);
+    const [error, setError]             = useState('');
+    const sugRef = useRef(null);
+    const inputRef = useRef(null);
+
+    useEffect(() => {
+        const text = chainName.trim();
+        if (text.length < 2) { setSuggestions([]); setShowSug(false); return; }
+        const t = setTimeout(async () => {
+            const q = query(collection(db, 'pos'), where('chain', '>=', text), where('chain', '<=', text + ''), limit(10));
+            const snap = await getDocs(q);
+            const names = [...new Set(snap.docs.map(d => d.data().chain).filter(c => c && c !== 'Automercados Individuales'))];
+            setSuggestions(names);
+            setShowSug(names.length > 0);
+        }, 300);
+        return () => clearTimeout(t);
+    }, [chainName]);
+
+    useEffect(() => {
+        const h = (e) => {
+            if (sugRef.current && !sugRef.current.contains(e.target) &&
+                inputRef.current  && !inputRef.current.contains(e.target)) {
+                setShowSug(false);
+            }
+        };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+    }, []);
+
+    const extractBranch = (fullName, chain) => {
+        let b = fullName;
+        if (b.toLowerCase().startsWith(chain.toLowerCase())) b = b.slice(chain.length).trim();
+        b = b.replace(/^[\s\-–—(]+/, '').replace(/\)+$/, '').trim();
+        return b || fullName;
+    };
+
+    const handleSelectChain = (name) => {
+        setChainName(name);
+        const branch = extractBranch(posName, name);
+        setPosName(`${name} - ${branch}`);
+        setSuggestions([]);
+        setShowSug(false);
+        setTipoDespacho('centralizado');
+    };
+
+    const handleSave = async () => {
+        if (!chainName.trim() || !posName.trim()) { setError('Cadena y nombre son obligatorios.'); return; }
+        setIsSaving(true);
+        setError('');
+        try {
+            await updateDoc(doc(db, 'pos', pos.id), {
+                chain:        chainName.trim(),
+                name:         posName.trim(),
+                tipoDespacho,
+            });
+            onSaved({ ...pos, chain: chainName.trim(), name: posName.trim(), tipoDespacho });
+            onClose();
+        } catch {
+            setError('No se pudo guardar. Intenta de nuevo.');
+            setIsSaving(false);
+        }
+    };
+
+    return (
+        <Modal isOpen={true} onClose={onClose} title="Reasignar Cadena">
+            <div className="p-4 space-y-4">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600">
+                    PDV actual: <strong className="text-slate-800">{pos.name}</strong>
+                    <span className="ml-2 px-2 py-0.5 bg-slate-200 rounded-full text-xs">{pos.chain || 'Individual'}</span>
+                </div>
+
+                {/* Cadena */}
+                <div>
+                    <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Nueva cadena</label>
+                    <div className="relative">
+                        <div ref={inputRef}>
+                            <input type="text" value={chainName} onChange={e => { setChainName(e.target.value); setShowSug(false); }}
+                                onFocus={() => suggestions.length > 0 && setShowSug(true)}
+                                placeholder="Escribe el nombre de la cadena…"
+                                className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                        </div>
+                        {showSug && (
+                            <div ref={sugRef} className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+                                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-3 pt-2 pb-1">Cadenas existentes</p>
+                                {suggestions.map((name, i) => (
+                                    <button key={i} type="button" onClick={() => handleSelectChain(name)}
+                                        className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-blue-50 text-left border-t border-slate-100 text-sm font-semibold text-slate-800">
+                                        <Link2 size={13} className="text-blue-500 shrink-0" /> {name}
+                                    </button>
+                                ))}
+                                <button type="button" onClick={() => { setChainName(chainName); setTipoDespacho('centralizado'); setShowSug(false); }}
+                                    className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-emerald-50 text-left border-t border-slate-200 text-sm text-emerald-700 font-semibold">
+                                    <PlusCircle size={13} className="shrink-0" /> Crear cadena "{chainName}"
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Nombre */}
+                <div>
+                    <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Nombre del PDV</label>
+                    <input type="text" value={posName} onChange={e => setPosName(e.target.value)}
+                        className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                </div>
+
+                {/* Tipo despacho */}
+                <div className="flex items-center justify-between p-3 border border-slate-200 rounded-xl">
+                    <span className="text-sm font-medium text-slate-700">Tipo de despacho</span>
+                    <div className="flex gap-2">
+                        {['directo', 'centralizado'].map(t => (
+                            <button key={t} type="button" onClick={() => setTipoDespacho(t)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tipoDespacho === t ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                {t === 'directo' ? 'Directo' : 'Centralizado'}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {error && <p className="text-red-600 text-xs bg-red-50 border border-red-200 rounded-xl p-3">{error}</p>}
+
+                <div className="flex justify-end gap-3 pt-1">
+                    <button type="button" onClick={onClose}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-semibold text-sm hover:bg-slate-200">
+                        Cancelar
+                    </button>
+                    <button type="button" onClick={handleSave} disabled={isSaving}
+                        className="flex items-center gap-2 px-5 py-2 bg-brand-blue text-white rounded-xl font-semibold text-sm disabled:opacity-50">
+                        {isSaving ? <LoadingSpinner size="sm" /> : <Save size={14} />}
+                        {isSaving ? 'Guardando…' : 'Reasignar'}
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 const PosManagement = ({ posList = [], loading }) => {
     const [editablePos, setEditablePos] = useState([]);
     const [openCategories, setOpenCategories] = useState({});
@@ -346,6 +491,7 @@ const PosManagement = ({ posList = [], loading }) => {
     const [changesMade, setChangesMade] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [massUpdateValues, setMassUpdateValues] = useState({});
+    const [posToReasignar, setPosToReasignar] = useState(null);
 
     useEffect(() => {
         if (posList.length > 0) {
@@ -425,6 +571,10 @@ const PosManagement = ({ posList = [], loading }) => {
         setOpenCategories(prev => ({ ...prev, [category]: !prev[category] }));
     }, []);
 
+    const handleReasignarSaved = useCallback((updatedPos) => {
+        setEditablePos(prev => prev.map(p => p.id === updatedPos.id ? { ...p, ...updatedPos } : p));
+    }, []);
+
     if (loading && posList.length === 0) return <LoadingSpinner />;
     
     return (
@@ -444,13 +594,20 @@ const PosManagement = ({ posList = [], loading }) => {
                         {openCategories[chain] && (
                             <div className="bg-white">
                                 <div className="p-4 bg-slate-100 flex flex-col sm:flex-row items-center gap-2"><label className="text-sm font-semibold text-slate-600 flex-grow">Aplicar a todos en "{chain}":</label><div className="flex gap-2 w-full sm:w-auto"><input type="number" placeholder="Días" value={massUpdateValues[chain] || ''} onChange={e => setMassUpdateValues(prev => ({ ...prev, [chain]: e.target.value }))} className="w-full sm:w-24 text-center p-2 border border-slate-300 rounded-md" /><button onClick={() => handleMassUpdate(chain)} className="bg-slate-600 text-white font-semibold px-4 py-2 rounded-md text-sm">Aplicar</button></div></div>
-                                <ul className="divide-y divide-slate-200">{groupedPos[chain].sort((a,b) => a.name.localeCompare(b.name)).map(pos => (<li key={pos.id} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-3"><div className="w-full text-center sm:text-left"><p className="font-semibold text-slate-900">{pos.name}</p><p className={`text-sm ${pos.visitInterval > 0 ? 'text-slate-500' : 'text-red-600 font-semibold'}`}>{pos.visitInterval > 0 ? 'Activo' : 'INACTIVO'}</p></div><div className="flex items-center gap-2 flex-shrink-0"><input type="number" value={pos.visitInterval} onChange={(e) => handleIntervalChange(pos.id, e.target.value)} className="w-20 text-center p-2 border border-slate-300 rounded-md" min="0" /><label className="text-sm text-slate-600">días</label></div></li>))}</ul>
+                                <ul className="divide-y divide-slate-200">{groupedPos[chain].sort((a,b) => a.name.localeCompare(b.name)).map(pos => (<li key={pos.id} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-3"><div className="w-full text-center sm:text-left"><p className="font-semibold text-slate-900">{pos.name}</p><p className={`text-sm ${pos.visitInterval > 0 ? 'text-slate-500' : 'text-red-600 font-semibold'}`}>{pos.visitInterval > 0 ? 'Activo' : 'INACTIVO'}</p></div><div className="flex items-center gap-2 flex-shrink-0"><button type="button" onClick={() => setPosToReasignar(pos)} title="Reasignar cadena" className="p-1.5 text-slate-400 hover:text-brand-blue rounded-lg hover:bg-blue-50 transition-colors"><Link2 size={16} /></button><input type="number" value={pos.visitInterval} onChange={(e) => handleIntervalChange(pos.id, e.target.value)} className="w-20 text-center p-2 border border-slate-300 rounded-md" min="0" /><label className="text-sm text-slate-600">días</label></div></li>))}</ul>
                             </div>
                         )}
                     </div>
                 ))}
             </div>
             <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Agregar Nuevo Punto de Venta"><AddPosForm onClose={() => setIsAddModalOpen(false)} /></Modal>
+            {posToReasignar && (
+                <ReasignarCadenaModal
+                    pos={posToReasignar}
+                    onClose={() => setPosToReasignar(null)}
+                    onSaved={handleReasignarSaved}
+                />
+            )}
         </div>
     );
 };
