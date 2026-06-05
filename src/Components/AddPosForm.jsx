@@ -161,7 +161,8 @@ const IndividualForm = ({ onClose }) => {
             onClose();
         } catch (err) {
             console.error(err);
-            setError('No se pudo guardar el punto de venta.');
+            const code = err?.code || err?.message || 'unknown';
+            setError(`Error al guardar: ${code}`);
         } finally {
             setIsSubmitting(false);
         }
@@ -370,7 +371,8 @@ const ChainForm = ({ onClose }) => {
             onClose();
         } catch (err) {
             console.error(err);
-            setError('No se pudo guardar la cadena.');
+            const code = err?.code || err?.message || 'unknown';
+            setError(`Error al guardar: ${code}`);
         } finally {
             setIsSubmitting(false);
         }
