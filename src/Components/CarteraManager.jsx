@@ -1,7 +1,7 @@
 // RUTA: src/Components/CarteraManager.jsx
 // Admin-side: view/assign/approve vendor client portfolio
 
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     collection, query, where, getDocs, addDoc, updateDoc,
     doc, onSnapshot, serverTimestamp,
@@ -9,7 +9,7 @@ import {
 import { db } from '@/Firebase/config.js';
 import {
     Plus, Trash2, Check, X, Search, MapPin, Phone, User,
-    AlertCircle, Loader, Building2, Clock,
+    AlertCircle, Loader, Building2, Clock, Store,
 } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 
@@ -20,14 +20,17 @@ const StatusPill = ({ estado }) => {
     return <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-600">Rechazado</span>;
 };
 
-// ─── Assign-existing-PDV browser (city filter + chain grouping + multi-select) ─
+// ─── Assign-existing-PDV browser ─────────────────────────────────────────────
+// Centralizado chains show as ONE row (select the whole chain).
+// Directo PDVs show individually, grouped by chain label.
 function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
-    const [allPos, setAllPos]           = useState([]);
-    const [loading, setLoading]         = useState(true);
-    const [cityFilter, setCityFilter]   = useState('');
-    const [search, setSearch]           = useState('');
-    const [selected, setSelected]       = useState(new Set());
-    const [batchSaving, setBatchSaving] = useState(false);
+    const [allPos, setAllPos]                 = useState([]);
+    const [loading, setLoading]               = useState(true);
+    const [cityFilter, setCityFilter]         = useState('');
+    const [search, setSearch]                 = useState('');
+    const [selectedDirecto, setSelectedDirecto] = useState(new Set()); // posIds
+    const [selectedChains, setSelectedChains] = useState(new Set());   // chain names
+    const [batchSaving, setBatchSaving]       = useState(false);
 
     useEffect(() => {
         getDocs(query(collection(db, 'pos'), where('active', '==', true)))
@@ -35,37 +38,71 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
             .finally(() => setLoading(false));
     }, []);
 
-    const cities = [...new Set(allPos.map(p => p.city || 'Sin ciudad'))].sort();
+    const cities = useMemo(
+        () => [...new Set(allPos.map(p => p.city || 'Sin ciudad'))].sort(),
+        [allPos],
+    );
 
-    const filtered = allPos.filter(p => {
-        if (cityFilter && (p.city || 'Sin ciudad') !== cityFilter) return false;
-        if (search.trim()) {
-            const term = search.toLowerCase();
-            return p.name?.toLowerCase().includes(term) || p.zone?.toLowerCase().includes(term);
-        }
-        return !!cityFilter;
-    });
+    const filtered = useMemo(() => {
+        if (!cityFilter) return [];
+        return allPos.filter(p => {
+            if ((p.city || 'Sin ciudad') !== cityFilter) return false;
+            if (search.trim()) {
+                const term = search.toLowerCase();
+                return p.name?.toLowerCase().includes(term) || p.zone?.toLowerCase().includes(term);
+            }
+            return true;
+        });
+    }, [allPos, cityFilter, search]);
 
-    const grouped = filtered.reduce((acc, pos) => {
-        const chain = pos.chain || 'Individuales';
-        if (!acc[chain]) acc[chain] = [];
-        acc[chain].push(pos);
-        return acc;
-    }, {});
+    // Split filtered pos into centralizado chains and directo individuals
+    const { centralizadoByChain, directoGrouped } = useMemo(() => {
+        const centralizadoByChain = {};
+        const directoList = [];
+        filtered.forEach(pos => {
+            const isCentralizado =
+                pos.tipoDespacho === 'centralizado' ||
+                (!pos.tipoDespacho && pos.chain && pos.chain !== 'Automercados Individuales');
+            if (isCentralizado) {
+                const key = pos.chain || 'Sin cadena';
+                if (!centralizadoByChain[key]) centralizadoByChain[key] = [];
+                centralizadoByChain[key].push(pos);
+            } else {
+                directoList.push(pos);
+            }
+        });
+        const directoGrouped = directoList.reduce((acc, pos) => {
+            const key = pos.chain || 'Individuales';
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(pos);
+            return acc;
+        }, {});
+        return { centralizadoByChain, directoGrouped };
+    }, [filtered]);
 
-    const togglePos = (posId) => {
+    const toggleDirecto = (posId) => {
         if (assignedPosIds?.has(posId)) return;
-        setSelected(prev => {
+        setSelectedDirecto(prev => {
             const next = new Set(prev);
             next.has(posId) ? next.delete(posId) : next.add(posId);
             return next;
         });
     };
 
-    const toggleChain = (posList) => {
+    const toggleChainSel = (chainName) => {
+        const branches = centralizadoByChain[chainName] || [];
+        if (branches.every(p => assignedPosIds?.has(p.id))) return;
+        setSelectedChains(prev => {
+            const next = new Set(prev);
+            next.has(chainName) ? next.delete(chainName) : next.add(chainName);
+            return next;
+        });
+    };
+
+    const toggleDirectoChain = (posList) => {
         const eligible = posList.filter(p => !assignedPosIds?.has(p.id));
-        const allSel = eligible.length > 0 && eligible.every(p => selected.has(p.id));
-        setSelected(prev => {
+        const allSel = eligible.length > 0 && eligible.every(p => selectedDirecto.has(p.id));
+        setSelectedDirecto(prev => {
             const next = new Set(prev);
             eligible.forEach(p => allSel ? next.delete(p.id) : next.add(p.id));
             return next;
@@ -76,13 +113,45 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
         setBatchSaving(true);
         try {
             const posMap = Object.fromEntries(allPos.map(p => [p.id, p]));
-            await Promise.all([...selected].map(posId => {
+            const writes = [];
+
+            // One vendor_clients per centralizado chain
+            for (const chainName of selectedChains) {
+                const branches = centralizadoByChain[chainName] || [];
+                const head = branches.find(p => p.isChainHead) || branches[0];
+                if (!head) continue;
+                writes.push(addDoc(collection(db, 'vendor_clients'), {
+                    vendedorId:   vendedor.id,
+                    vendedorName: vendedor.name,
+                    posId:        head.id,
+                    clientName:   chainName,
+                    chain:        chainName,
+                    tipoDespacho: 'centralizado',
+                    branchCount:  branches.length,
+                    address:      head.address || '',
+                    city:         head.city    || '',
+                    zone:         '',
+                    phone:        '',
+                    contactName:  '',
+                    estado:       'activo',
+                    addedBy:      'admin',
+                    requestedAt:  serverTimestamp(),
+                    approvedAt:   serverTimestamp(),
+                    active:       true,
+                }));
+            }
+
+            // One vendor_clients per directo PDV
+            for (const posId of selectedDirecto) {
                 const pos = posMap[posId];
-                return addDoc(collection(db, 'vendor_clients'), {
+                if (!pos) continue;
+                writes.push(addDoc(collection(db, 'vendor_clients'), {
                     vendedorId:   vendedor.id,
                     vendedorName: vendedor.name,
                     posId:        pos.id,
                     clientName:   pos.name,
+                    chain:        pos.chain || '',
+                    tipoDespacho: 'directo',
                     address:      pos.address || '',
                     city:         pos.city    || '',
                     zone:         pos.zone    || '',
@@ -93,11 +162,17 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                     requestedAt:  serverTimestamp(),
                     approvedAt:   serverTimestamp(),
                     active:       true,
-                });
-            }));
+                }));
+            }
+
+            await Promise.all(writes);
             onAdded();
         } finally { setBatchSaving(false); }
     };
+
+    const totalSelected = selectedChains.size + selectedDirecto.size;
+    const hasCentralizado = Object.keys(centralizadoByChain).length > 0;
+    const hasDirecto = Object.keys(directoGrouped).length > 0;
 
     return (
         <div className="border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
@@ -141,7 +216,7 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                         )}
 
                         {!cityFilter && (
-                            <p className="text-xs text-slate-400 text-center py-2">Selecciona una ciudad para ver los PDV disponibles</p>
+                            <p className="text-xs text-slate-400 text-center py-2">Selecciona una ciudad para ver los clientes disponibles</p>
                         )}
 
                         {cityFilter && filtered.length === 0 && (
@@ -150,73 +225,134 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                             </p>
                         )}
 
-                        {Object.entries(grouped).map(([chain, posList]) => {
-                            const eligible = posList.filter(p => !assignedPosIds?.has(p.id));
-                            const allChainSel = eligible.length > 0 && eligible.every(p => selected.has(p.id));
-                            return (
-                                <div key={chain}>
-                                    <div className="flex items-center justify-between mb-1.5 px-1">
-                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">{chain}</p>
-                                        {eligible.length > 0 && (
-                                            <button
-                                                onClick={() => toggleChain(posList)}
-                                                className="text-xs font-semibold text-brand-blue hover:underline"
-                                            >
-                                                {allChainSel ? 'Deseleccionar todos' : 'Seleccionar todos'}
-                                            </button>
-                                        )}
-                                    </div>
-                                    <ul className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
-                                        {posList.map(pos => {
-                                            const isAssigned = assignedPosIds?.has(pos.id);
-                                            const isSelected = selected.has(pos.id);
-                                            return (
-                                                <li
-                                                    key={pos.id}
-                                                    onClick={() => togglePos(pos.id)}
-                                                    className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${
-                                                        isAssigned
-                                                            ? 'opacity-50 cursor-default bg-slate-50'
-                                                            : isSelected
-                                                                ? 'bg-emerald-50 cursor-pointer'
-                                                                : 'hover:bg-slate-50 cursor-pointer'
-                                                    }`}
-                                                >
-                                                    <div className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-                                                        isAssigned
-                                                            ? 'bg-slate-300 border-slate-300'
-                                                            : isSelected
-                                                                ? 'bg-emerald-600 border-emerald-600'
-                                                                : 'border-slate-300 bg-white'
-                                                    }`}>
-                                                        {(isAssigned || isSelected) && <Check size={11} className="text-white" />}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className={`text-sm font-semibold truncate ${isAssigned ? 'text-slate-400' : 'text-slate-800'}`}>
-                                                            {pos.name}
-                                                        </p>
-                                                        {(pos.zone || pos.address) && (
-                                                            <p className="text-xs text-slate-400 truncate">
-                                                                {[pos.zone, pos.address].filter(Boolean).join(' — ')}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    {isAssigned && (
-                                                        <span className="shrink-0 text-xs text-slate-400 font-medium">Asignado</span>
-                                                    )}
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
+                        {/* ── Centralizado chains (one row per chain) ── */}
+                        {hasCentralizado && (
+                            <div>
+                                <div className="flex items-center gap-1.5 mb-1.5 px-1">
+                                    <Building2 size={12} className="text-slate-400" />
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Cadenas — Despacho Centralizado</p>
                                 </div>
-                            );
-                        })}
+                                <ul className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
+                                    {Object.entries(centralizadoByChain).map(([chain, branches]) => {
+                                        const isAssigned = branches.some(p => assignedPosIds?.has(p.id));
+                                        const isSelected = selectedChains.has(chain);
+                                        return (
+                                            <li
+                                                key={chain}
+                                                onClick={() => !isAssigned && toggleChainSel(chain)}
+                                                className={`flex items-center gap-3 px-3 py-3 transition-colors ${
+                                                    isAssigned
+                                                        ? 'opacity-50 cursor-default bg-slate-50'
+                                                        : isSelected
+                                                            ? 'bg-emerald-50 cursor-pointer'
+                                                            : 'hover:bg-slate-50 cursor-pointer'
+                                                }`}
+                                            >
+                                                <div className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                                                    isAssigned
+                                                        ? 'bg-slate-300 border-slate-300'
+                                                        : isSelected
+                                                            ? 'bg-emerald-600 border-emerald-600'
+                                                            : 'border-slate-300 bg-white'
+                                                }`}>
+                                                    {(isAssigned || isSelected) && <Check size={11} className="text-white" />}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={`text-sm font-bold truncate ${isAssigned ? 'text-slate-400' : 'text-slate-800'}`}>
+                                                        {chain}
+                                                    </p>
+                                                    <p className="text-xs text-slate-400">
+                                                        {branches.length} sucursal{branches.length !== 1 ? 'es' : ''} · {branches[0]?.city || ''}
+                                                    </p>
+                                                </div>
+                                                {isAssigned && (
+                                                    <span className="shrink-0 text-xs text-slate-400 font-medium">Asignado</span>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </div>
+                        )}
+
+                        {/* ── Directo PDVs (individual checkboxes, grouped by chain label) ── */}
+                        {hasDirecto && (
+                            <div>
+                                {hasCentralizado && (
+                                    <div className="flex items-center gap-1.5 mb-1.5 px-1 mt-1">
+                                        <Store size={12} className="text-slate-400" />
+                                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">PDV Directos</p>
+                                    </div>
+                                )}
+                                {Object.entries(directoGrouped).map(([chain, posList]) => {
+                                    const eligible = posList.filter(p => !assignedPosIds?.has(p.id));
+                                    const allChainSel = eligible.length > 0 && eligible.every(p => selectedDirecto.has(p.id));
+                                    return (
+                                        <div key={chain} className="mb-2">
+                                            <div className="flex items-center justify-between mb-1.5 px-1">
+                                                <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">{chain}</p>
+                                                {eligible.length > 1 && (
+                                                    <button
+                                                        onClick={() => toggleDirectoChain(posList)}
+                                                        className="text-xs font-semibold text-brand-blue hover:underline"
+                                                    >
+                                                        {allChainSel ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <ul className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
+                                                {posList.map(pos => {
+                                                    const isAssigned = assignedPosIds?.has(pos.id);
+                                                    const isSelected = selectedDirecto.has(pos.id);
+                                                    return (
+                                                        <li
+                                                            key={pos.id}
+                                                            onClick={() => toggleDirecto(pos.id)}
+                                                            className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${
+                                                                isAssigned
+                                                                    ? 'opacity-50 cursor-default bg-slate-50'
+                                                                    : isSelected
+                                                                        ? 'bg-emerald-50 cursor-pointer'
+                                                                        : 'hover:bg-slate-50 cursor-pointer'
+                                                            }`}
+                                                        >
+                                                            <div className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+                                                                isAssigned
+                                                                    ? 'bg-slate-300 border-slate-300'
+                                                                    : isSelected
+                                                                        ? 'bg-emerald-600 border-emerald-600'
+                                                                        : 'border-slate-300 bg-white'
+                                                            }`}>
+                                                                {(isAssigned || isSelected) && <Check size={11} className="text-white" />}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className={`text-sm font-semibold truncate ${isAssigned ? 'text-slate-400' : 'text-slate-800'}`}>
+                                                                    {pos.name}
+                                                                </p>
+                                                                {(pos.zone || pos.address) && (
+                                                                    <p className="text-xs text-slate-400 truncate">
+                                                                        {[pos.zone, pos.address].filter(Boolean).join(' — ')}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                            {isAssigned && (
+                                                                <span className="shrink-0 text-xs text-slate-400 font-medium">Asignado</span>
+                                                            )}
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </>
                 )}
             </div>
 
-            {/* Sticky batch-assign footer */}
-            {selected.size > 0 && (
+            {/* Sticky footer */}
+            {totalSelected > 0 && (
                 <div className="px-4 py-3 bg-white border-t border-slate-200">
                     <button
                         onClick={batchAssign}
@@ -228,7 +364,7 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                             : <Check size={16} />}
                         {batchSaving
                             ? 'Asignando…'
-                            : `Asignar ${selected.size} PDV${selected.size > 1 ? 's' : ''} seleccionado${selected.size > 1 ? 's' : ''}`}
+                            : `Asignar ${totalSelected} cliente${totalSelected > 1 ? 's' : ''}`}
                     </button>
                 </div>
             )}
@@ -263,13 +399,13 @@ function RejectForm({ onConfirm, onCancel }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 const CarteraManager = ({ vendedor }) => {
-    const [clients, setClients]       = useState([]);
-    const [loading, setLoading]       = useState(true);
-    const [tab, setTab]               = useState('activos');     // 'activos' | 'pendientes' | 'rechazados'
-    const [showAssign, setShowAssign] = useState(false);
+    const [clients, setClients]         = useState([]);
+    const [loading, setLoading]         = useState(true);
+    const [tab, setTab]                 = useState('activos');
+    const [showAssign, setShowAssign]   = useState(false);
     const [rejectingId, setRejectingId] = useState(null);
-    const [actioning, setActioning]   = useState(null);
-    const [error, setError]           = useState('');
+    const [actioning, setActioning]     = useState(null);
+    const [error, setError]             = useState('');
 
     useEffect(() => {
         if (!vendedor?.id) return;
@@ -327,6 +463,12 @@ const CarteraManager = ({ vendedor }) => {
 
     const pendingCount = filtered.pendientes.length;
 
+    // posIds already assigned (to disable duplicates in AssignPosForm)
+    const assignedPosIds = useMemo(
+        () => new Set(clients.map(c => c.posId).filter(Boolean)),
+        [clients],
+    );
+
     if (loading) return (
         <div className="flex items-center justify-center py-16"><LoadingSpinner /></div>
     );
@@ -367,7 +509,6 @@ const CarteraManager = ({ vendedor }) => {
 
             <div className="px-4 py-4 space-y-3">
 
-                {/* ── Assign button (only in activos tab) ── */}
                 {tab === 'activos' && !showAssign && (
                     <button
                         onClick={() => setShowAssign(true)}
@@ -380,13 +521,12 @@ const CarteraManager = ({ vendedor }) => {
                 {showAssign && (
                     <AssignPosForm
                         vendedor={vendedor}
-                        assignedPosIds={new Set(clients.map(c => c.posId).filter(Boolean))}
+                        assignedPosIds={assignedPosIds}
                         onAdded={() => setShowAssign(false)}
                         onCancel={() => setShowAssign(false)}
                     />
                 )}
 
-                {/* ── Client list ── */}
                 {filtered[tab].length === 0 ? (
                     <div className="text-center py-10 text-slate-400">
                         <Building2 size={32} className="mx-auto mb-2 opacity-40" />
@@ -402,6 +542,9 @@ const CarteraManager = ({ vendedor }) => {
                             <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1 min-w-0">
                                     <p className="font-bold text-slate-800 text-sm leading-tight truncate">{client.clientName}</p>
+                                    {client.tipoDespacho === 'centralizado' && client.branchCount > 1 && (
+                                        <p className="text-xs text-blue-600 font-medium mt-0.5">{client.branchCount} sucursales · Centralizado</p>
+                                    )}
                                     {client.address && (
                                         <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                                             <MapPin size={11} className="shrink-0" />
@@ -441,7 +584,6 @@ const CarteraManager = ({ vendedor }) => {
                                 </div>
                             </div>
 
-                            {/* Pending approval actions */}
                             {tab === 'pendientes' && (
                                 <div className="pt-1">
                                     {client.addedBy === 'vendedor' && (

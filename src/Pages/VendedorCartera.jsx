@@ -1,14 +1,14 @@
 // RUTA: src/Pages/VendedorCartera.jsx
 // Vendor-side portfolio view + new client request form
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     collection, query, where, onSnapshot, addDoc, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import {
     Building2, MapPin, Phone, User, Plus, Clock, Check,
-    X, AlertCircle, ChevronLeft, Loader,
+    X, AlertCircle, ChevronLeft, Loader, Store,
 } from 'lucide-react';
 
 // ─── Status pill (dark theme) ─────────────────────────────────────────────────
@@ -29,7 +29,7 @@ const EMPTY_FORM = {
 
 // ─── Add client form ──────────────────────────────────────────────────────────
 function AddClientForm({ vendedor, onSaved, onCancel }) {
-    const [form, setForm]   = useState(EMPTY_FORM);
+    const [form, setForm]     = useState(EMPTY_FORM);
     const [saving, setSaving] = useState(false);
     const [error, setError]   = useState('');
 
@@ -133,12 +133,67 @@ function AddClientForm({ vendedor, onSaved, onCancel }) {
     );
 }
 
+// ─── Group clients for display ────────────────────────────────────────────────
+// Rules:
+// - Explicit tipoDespacho:'centralizado' with chain field → one chain card
+// - Legacy: multiple entries sharing same "ChainName - " prefix → one chain card
+// - Single entry or tipoDespacho:'directo' → individual card
+function groupClients(clients) {
+    const chainMap = {};   // chainName → members[]
+    const individual = [];
+
+    clients.forEach(c => {
+        if (c.tipoDespacho === 'centralizado' && c.chain) {
+            if (!chainMap[c.chain]) chainMap[c.chain] = [];
+            chainMap[c.chain].push(c);
+            return;
+        }
+        // Legacy detection: "ChainName - BranchName" pattern
+        const dashIdx = c.clientName?.indexOf(' - ');
+        if (dashIdx > 0 && !c.tipoDespacho) {
+            const prefix = c.clientName.substring(0, dashIdx);
+            const legacyKey = `__${prefix}`;
+            if (!chainMap[legacyKey]) chainMap[legacyKey] = [];
+            chainMap[legacyKey].push(c);
+        } else {
+            individual.push(c);
+        }
+    });
+
+    const result = [];
+
+    Object.entries(chainMap).forEach(([key, members]) => {
+        const isLegacy = key.startsWith('__');
+        if (isLegacy && members.length === 1) {
+            // Single match for the pattern → treat as individual
+            individual.push(members[0]);
+            return;
+        }
+        const chainName = isLegacy ? key.slice(2) : key;
+        const dominantEstado =
+            members.some(m => m.estado === 'activo')    ? 'activo'    :
+            members.some(m => m.estado === 'pendiente') ? 'pendiente' : 'rechazado';
+        result.push({
+            _type:     'chain',
+            _key:      chainName,
+            chainName,
+            members,
+            estado:    dominantEstado,
+            city:      members[0]?.city || '',
+            branchCount: members[0]?.branchCount || members.length,
+        });
+    });
+
+    individual.forEach(c => result.push({ _type: 'individual', _key: c.id, ...c }));
+    return result;
+}
+
 // ─── Main cartera view ────────────────────────────────────────────────────────
 function VendedorCartera({ vendedor }) {
-    const [clients, setClients]     = useState([]);
-    const [loading, setLoading]     = useState(true);
-    const [showForm, setShowForm]   = useState(false);
-    const [filter, setFilter]       = useState('todos'); // 'todos' | 'activos' | 'pendientes'
+    const [clients, setClients]   = useState([]);
+    const [loading, setLoading]   = useState(true);
+    const [showForm, setShowForm] = useState(false);
+    const [filter, setFilter]     = useState('todos');
 
     useEffect(() => {
         if (!vendedor?.uid) return;
@@ -171,6 +226,8 @@ function VendedorCartera({ vendedor }) {
                   : filter === 'pendientes' ? pendientes
                   : clients.filter(c => c.estado !== 'rechazado');
 
+    const displayItems = useMemo(() => groupClients(visible), [visible]);
+
     if (loading) return (
         <div className="flex-1 flex items-center justify-center">
             <Loader size={24} className="animate-spin text-slate-500" />
@@ -202,9 +259,9 @@ function VendedorCartera({ vendedor }) {
             {/* ── Filter pills ── */}
             <div className="flex gap-2">
                 {[
-                    { id: 'todos',     label: 'Todos' },
-                    { id: 'activos',   label: `Activos (${activos.length})` },
-                    { id: 'pendientes',label: `Pendientes (${pendientes.length})` },
+                    { id: 'todos',      label: 'Todos' },
+                    { id: 'activos',    label: `Activos (${activos.length})` },
+                    { id: 'pendientes', label: `Pendientes (${pendientes.length})` },
                 ].map(f => (
                     <button
                         key={f.id}
@@ -221,7 +278,7 @@ function VendedorCartera({ vendedor }) {
             </div>
 
             {/* ── Client list ── */}
-            {visible.length === 0 ? (
+            {displayItems.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-3">
                     <Building2 size={40} className="text-slate-600" />
                     <p className="text-slate-400 text-sm text-center">
@@ -231,47 +288,77 @@ function VendedorCartera({ vendedor }) {
                     </p>
                 </div>
             ) : (
-                visible.map(client => (
-                    <div key={client.id} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
-                        <div className="flex items-start justify-between gap-2 mb-1">
-                            <p className="font-bold text-white text-sm leading-tight flex-1 min-w-0 truncate">
-                                {client.clientName}
+                displayItems.map(item => (
+                    item._type === 'chain' ? (
+                        /* ── Chain card ── */
+                        <div key={item._key} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <Building2 size={14} className="text-slate-500 shrink-0" />
+                                    <p className="font-bold text-white text-sm leading-tight truncate">
+                                        {item.chainName}
+                                    </p>
+                                </div>
+                                <StatusPill estado={item.estado} />
+                            </div>
+                            <p className="text-xs text-slate-500 mt-1 pl-5">
+                                {item.branchCount} sucursal{item.branchCount !== 1 ? 'es' : ''}
+                                {item.city ? ` · ${item.city}` : ''}
                             </p>
-                            <StatusPill estado={client.estado} />
+                            <p className="text-[10px] text-blue-500/80 mt-0.5 pl-5">Despacho centralizado</p>
+                            {item.estado === 'pendiente' && (
+                                <p className="text-xs text-amber-400 flex items-center gap-1 mt-2 pt-2 border-t border-slate-700">
+                                    <Clock size={11} className="shrink-0" />
+                                    Esperando aprobación del máster
+                                </p>
+                            )}
                         </div>
-                        {client.address && (
-                            <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-1">
-                                <MapPin size={11} className="shrink-0 text-slate-500" />
-                                <span>{client.address}</span>
-                            </p>
-                        )}
-                        {(client.city || client.zone) && (
-                            <p className="text-xs text-slate-500 mt-0.5 pl-4">
-                                {[client.city, client.zone].filter(Boolean).join(' — ')}
-                            </p>
-                        )}
-                        {client.phone && (
-                            <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-1">
-                                <Phone size={11} className="shrink-0 text-slate-500" />{client.phone}
-                            </p>
-                        )}
-                        {client.contactName && (
-                            <p className="text-xs text-slate-400 flex items-center gap-1.5">
-                                <User size={11} className="shrink-0 text-slate-500" />{client.contactName}
-                            </p>
-                        )}
-                        {client.estado === 'pendiente' && (
-                            <p className="text-xs text-amber-400 flex items-center gap-1 mt-2 pt-2 border-t border-slate-700">
-                                <Clock size={11} className="shrink-0" />
-                                Esperando aprobación del máster
-                            </p>
-                        )}
-                        {client.estado === 'rechazado' && client.rejectionReason && (
-                            <p className="text-xs text-red-400 mt-2 pt-2 border-t border-slate-700 italic">
-                                Rechazado: "{client.rejectionReason}"
-                            </p>
-                        )}
-                    </div>
+                    ) : (
+                        /* ── Individual card ── */
+                        <div key={item._key} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
+                            <div className="flex items-start justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <Store size={14} className="text-slate-500 shrink-0" />
+                                    <p className="font-bold text-white text-sm leading-tight flex-1 min-w-0 truncate">
+                                        {item.clientName}
+                                    </p>
+                                </div>
+                                <StatusPill estado={item.estado} />
+                            </div>
+                            {item.address && (
+                                <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-1 pl-5">
+                                    <MapPin size={11} className="shrink-0 text-slate-500" />
+                                    <span>{item.address}</span>
+                                </p>
+                            )}
+                            {(item.city || item.zone) && (
+                                <p className="text-xs text-slate-500 mt-0.5 pl-5">
+                                    {[item.city, item.zone].filter(Boolean).join(' — ')}
+                                </p>
+                            )}
+                            {item.phone && (
+                                <p className="text-xs text-slate-400 flex items-center gap-1.5 mt-1 pl-5">
+                                    <Phone size={11} className="shrink-0 text-slate-500" />{item.phone}
+                                </p>
+                            )}
+                            {item.contactName && (
+                                <p className="text-xs text-slate-400 flex items-center gap-1.5 pl-5">
+                                    <User size={11} className="shrink-0 text-slate-500" />{item.contactName}
+                                </p>
+                            )}
+                            {item.estado === 'pendiente' && (
+                                <p className="text-xs text-amber-400 flex items-center gap-1 mt-2 pt-2 border-t border-slate-700">
+                                    <Clock size={11} className="shrink-0" />
+                                    Esperando aprobación del máster
+                                </p>
+                            )}
+                            {item.estado === 'rechazado' && item.rejectionReason && (
+                                <p className="text-xs text-red-400 mt-2 pt-2 border-t border-slate-700 italic pl-5">
+                                    Rechazado: "{item.rejectionReason}"
+                                </p>
+                            )}
+                        </div>
+                    )
                 ))
             )}
         </div>
