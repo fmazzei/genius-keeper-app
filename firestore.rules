@@ -90,7 +90,7 @@ service cloud.firestore {
     match /pos/{posId} {
       allow get, list: if isAuthenticated();
       allow update: if isAuthenticated();
-      allow create: if isMaster() || isAdmin();
+      allow create: if isMaster() || isAdmin() || isMerchandiser();
       allow delete: if isMaster();
     }
 
