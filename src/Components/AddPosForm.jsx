@@ -73,6 +73,8 @@ const IndividualForm = ({ onClose }) => {
     const [place, setPlace]     = useState(null);
     const [reversing, setReversing] = useState(false);
 
+    const [chainWarning, setChainWarning] = useState('');
+
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError]               = useState('');
 
@@ -110,6 +112,28 @@ const IndividualForm = ({ onClose }) => {
         return () => document.removeEventListener('mousedown', h);
     }, []);
 
+    // Detect if typed name matches an existing chain
+    useEffect(() => {
+        const text = name.trim();
+        if (text.length < 2) { setChainWarning(''); return; }
+        const t = setTimeout(async () => {
+            try {
+                const q = query(
+                    collection(db, 'pos'),
+                    where('chain', '>=', text),
+                    where('chain', '<=', text + ''),
+                    limit(5)
+                );
+                const snap = await getDocs(q);
+                const found = snap.docs
+                    .map(d => d.data().chain)
+                    .filter(c => c && c !== 'Automercados Individuales');
+                setChainWarning(found.length > 0 ? found[0] : '');
+            } catch { setChainWarning(''); }
+        }, 400);
+        return () => clearTimeout(t);
+    }, [name]);
+
     // Select from dropdown
     const handleSelect = (r) => {
         setPlace({
@@ -138,6 +162,10 @@ const IndividualForm = ({ onClose }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        if (chainWarning) {
+            setError(`"${chainWarning}" es una cadena existente. Agrégalo en la sección "Cadena".`);
+            return;
+        }
         if (!name.trim() || !city.trim()) {
             setError('Nombre y ciudad son obligatorios.');
             return;
@@ -183,9 +211,17 @@ const IndividualForm = ({ onClose }) => {
                 <input
                     type="text" value={name} onChange={e => setName(e.target.value)}
                     placeholder="Nombre del establecimiento *"
-                    className="w-full px-3 py-3 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className={`w-full px-3 py-3 border rounded-xl text-base focus:outline-none focus:ring-2 ${chainWarning ? 'border-amber-400 focus:ring-amber-400' : 'border-slate-300 focus:ring-blue-400'}`}
                     required
                 />
+                {chainWarning && (
+                    <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                        <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                        <p className="text-xs text-amber-800 leading-snug">
+                            <strong>"{chainWarning}"</strong> ya existe como cadena. Para agregar una sucursal usa la sección <strong>Cadena</strong>.
+                        </p>
+                    </div>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                     <input
                         type="text" value={city} onChange={e => setCity(e.target.value)}
@@ -312,7 +348,7 @@ const IndividualForm = ({ onClose }) => {
                     className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-semibold text-sm hover:bg-slate-200 transition-colors">
                     Cancelar
                 </button>
-                <button type="submit" disabled={isSubmitting}
+                <button type="submit" disabled={isSubmitting || !!chainWarning}
                     className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-semibold text-sm disabled:opacity-50 hover:bg-blue-700 transition-colors">
                     {isSubmitting && <LoadingSpinner size="sm" />}
                     {isSubmitting
