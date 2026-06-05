@@ -469,13 +469,42 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const newStats = { unidadesDelMes, comisionSemana, despachoHoy, activacionOk, puntosActivacion, puntosTotal, facturasPorVencer };
                 setStats(newStats);
 
-                // 6. PDV list for dispatch (from cartera)
-                const allPos = cartera.map(c => ({
-                    id:    c.posId || c.id,
-                    name:  c.clientName,
-                    chain: c.zone || '',
-                }));
-                setPosList(allPos);
+                // 6. PDV list for dispatch — fetch pos docs to resolve tipoDespacho/isChainHead,
+                //    then collapse centralizado chains to a single entry per chain.
+                const posDocsMap = {};
+                if (carteraPosIds.size > 0) {
+                    const snaps = await Promise.all(
+                        [...carteraPosIds].map(id => getDoc(doc(db, 'pos', id)))
+                    );
+                    snaps.forEach(snap => { if (snap.exists()) posDocsMap[snap.id] = snap.data(); });
+                }
+
+                const centralizadoByChain = {};
+                const vendorPosList = [];
+                cartera.forEach(c => {
+                    if (!c.posId) return;
+                    const posData  = posDocsMap[c.posId] || {};
+                    const chain    = posData.chain || '';
+                    const isCentralizado =
+                        posData.tipoDespacho === 'centralizado' ||
+                        (!posData.tipoDespacho && chain && chain !== 'Automercados Individuales');
+                    if (!isCentralizado) {
+                        vendorPosList.push({ id: c.posId, name: c.clientName, chain });
+                    } else {
+                        if (!centralizadoByChain[chain]) centralizadoByChain[chain] = [];
+                        centralizadoByChain[chain].push({
+                            id: c.posId,
+                            name: c.clientName,
+                            chain,
+                            isChainHead: posData.isChainHead === true,
+                        });
+                    }
+                });
+                Object.entries(centralizadoByChain).forEach(([chain, members]) => {
+                    const head = members.find(p => p.isChainHead) ?? members[0];
+                    if (head) vendorPosList.push({ id: head.id, name: chain, chain });
+                });
+                setPosList(vendorPosList);
 
                 // 7. Sync alert conditions to Firestore then load them
                 await syncAlertas(user.uid, newStats);

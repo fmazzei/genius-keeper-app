@@ -104,7 +104,7 @@ const AddPosForm = ({ onClose }) => {
 
         const batch = writeBatch(db);
 
-        branches.forEach(branch => {
+        branches.forEach((branch, index) => {
             const newPosRef = doc(collection(db, 'pos'));
             const newPosData = {
                 name: `${chainName} - ${branch.name}`,
@@ -116,6 +116,8 @@ const AddPosForm = ({ onClose }) => {
                 gpsStatus: 'pending',
                 visitInterval: 7,
                 active: true,
+                tipoDespacho: 'centralizado',
+                isChainHead: index === 0,
                 createdAt: serverTimestamp(),
             };
             batch.set(newPosRef, newPosData);
@@ -167,6 +169,7 @@ const AddPosForm = ({ onClose }) => {
                 gpsStatus: 'verified',
                 visitInterval: 7,
                 active: true,
+                tipoDespacho: 'directo',
                 createdAt: serverTimestamp(),
             });
             onClose();
