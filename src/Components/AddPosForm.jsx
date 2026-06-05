@@ -324,12 +324,206 @@ const IndividualForm = ({ onClose }) => {
     );
 };
 
+// ─── Branch card with per-branch map ─────────────────────────────────────────
+
+const BranchCard = ({ branch, index, chainCity, onFieldChange, onLocationChange, onRemove, canRemove }) => {
+    const [mapOpen, setMapOpen]           = useState(false);
+    const [searchQ, setSearchQ]           = useState('');
+    const [results, setResults]           = useState([]);
+    const [searching, setSearching]       = useState(false);
+    const [showDropdown, setShowDropdown] = useState(false);
+    const [place, setPlace]               = useState(null);
+    const [reversing, setReversing]       = useState(false);
+
+    const searchRef   = useRef(null);
+    const dropdownRef = useRef(null);
+
+    const searchHint = [branch.name, chainCity].filter(Boolean).join(', ');
+
+    useEffect(() => {
+        if (searchQ.trim().length < 3) { setResults([]); setShowDropdown(false); return; }
+        const t = setTimeout(async () => {
+            setSearching(true);
+            try {
+                const q = chainCity.trim() ? `${searchQ} ${chainCity}` : searchQ;
+                const data = await nominatimSearch(q);
+                setResults(data);
+                setShowDropdown(data.length > 0);
+            } catch { setResults([]); }
+            finally { setSearching(false); }
+        }, 400);
+        return () => clearTimeout(t);
+    }, [searchQ, chainCity]);
+
+    useEffect(() => {
+        const h = (e) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target) &&
+                searchRef.current  && !searchRef.current.contains(e.target)) {
+                setShowDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+    }, []);
+
+    const handleSelect = (r) => {
+        const p = { lat: parseFloat(r.lat), lng: parseFloat(r.lon), address: r.display_name, fromSearch: true };
+        setPlace(p);
+        setSearchQ(r.display_name.split(',')[0]);
+        setShowDropdown(false);
+        setResults([]);
+        onLocationChange(index, p);
+    };
+
+    const handleMapTap = useCallback(async (lat, lng) => {
+        const p = { lat, lng, address: '', fromSearch: false };
+        setPlace(p);
+        setReversing(true);
+        try {
+            const address = await reverseGeocode(lat, lng);
+            const updated = { lat, lng, address, fromSearch: false };
+            setPlace(updated);
+            onLocationChange(index, updated);
+        } catch { onLocationChange(index, p); }
+        finally { setReversing(false); }
+    }, [index, onLocationChange]);
+
+    const clearPlace = () => {
+        setPlace(null); setSearchQ(''); setResults([]);
+        onLocationChange(index, null);
+    };
+
+    return (
+        <div className="p-3 border border-slate-200 rounded-xl bg-slate-50 space-y-2">
+            {/* Name */}
+            <div className="relative">
+                <input type="text" value={branch.name}
+                    onChange={e => onFieldChange(index, 'name', e.target.value)}
+                    placeholder="Nombre de la sucursal *"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base pr-9 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    required />
+                {canRemove && (
+                    <button type="button" onClick={() => onRemove(index)}
+                        className="absolute top-1/2 right-2.5 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500 rounded-full transition-colors">
+                        <Trash2 size={15} />
+                    </button>
+                )}
+            </div>
+
+            {/* Zone */}
+            <input type="text" value={branch.zone}
+                onChange={e => onFieldChange(index, 'zone', e.target.value)}
+                placeholder="Zona *"
+                className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                required />
+
+            {/* Map toggle */}
+            <button type="button" onClick={() => setMapOpen(o => !o)}
+                className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-colors border ${
+                    place
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                }`}>
+                <MapPin size={14} />
+                {place ? 'Ubicación marcada — editar' : 'Marcar en mapa'}
+            </button>
+
+            {/* Collapsible map */}
+            {mapOpen && (
+                <div className="space-y-2">
+                    {/* Search */}
+                    <div className="relative">
+                        <div ref={searchRef} className="relative">
+                            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            <input type="text" value={searchQ}
+                                onChange={e => { setSearchQ(e.target.value); setPlace(null); }}
+                                onFocus={() => results.length > 0 && setShowDropdown(true)}
+                                placeholder={searchHint ? `Buscar "${searchHint}"…` : 'Buscar sucursal…'}
+                                className="w-full pl-10 pr-10 py-2.5 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            />
+                            {searching
+                                ? <Loader2 size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 animate-spin" />
+                                : searchQ
+                                ? <button type="button" onClick={clearPlace}
+                                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                    <X size={16} />
+                                  </button>
+                                : null
+                            }
+                        </div>
+                        {showDropdown && results.length > 0 && (
+                            <div ref={dropdownRef}
+                                className="absolute z-[9999] w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
+                                {results.map((r, i) => {
+                                    const parts = r.display_name.split(',');
+                                    return (
+                                        <button key={i} type="button" onClick={() => handleSelect(r)}
+                                            className="w-full flex items-start gap-3 px-4 py-3 hover:bg-blue-50 active:bg-blue-100 text-left border-b border-slate-100 last:border-0 transition-colors">
+                                            <MapPin size={15} className="text-blue-500 shrink-0 mt-0.5" />
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-semibold text-slate-800 truncate">{parts[0]}</p>
+                                                <p className="text-xs text-slate-400 truncate">{parts.slice(1, 4).join(',').trim()}</p>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Map */}
+                    <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-md">
+                        <div style={{ height: 240 }}>
+                            <MapContainer
+                                center={VENEZUELA_CENTER} zoom={6}
+                                style={{ height: '100%', width: '100%' }}
+                                zoomControl={true} attributionControl={false} scrollWheelZoom={true}
+                            >
+                                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                                <MapTapHandler onTap={handleMapTap} />
+                                {place && (
+                                    <>
+                                        <Marker position={[place.lat, place.lng]} icon={PIN_ICON} />
+                                        {place.fromSearch && <FlyTo lat={place.lat} lng={place.lng} />}
+                                    </>
+                                )}
+                            </MapContainer>
+                        </div>
+                        {place ? (
+                            <div className="flex items-start gap-2.5 px-3 py-2.5 bg-emerald-50 border-t border-emerald-100">
+                                {reversing
+                                    ? <Loader2 size={14} className="text-emerald-500 shrink-0 mt-0.5 animate-spin" />
+                                    : <CheckCircle size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+                                }
+                                <p className="text-xs text-emerald-800 leading-snug line-clamp-2 flex-1">
+                                    {reversing ? 'Obteniendo dirección…' : place.address || 'Ubicación marcada en el mapa'}
+                                </p>
+                                <button type="button" onClick={clearPlace}
+                                    className="text-emerald-500 hover:text-emerald-700 shrink-0">
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 border-t border-slate-100">
+                                <MapPin size={13} className="text-slate-400" />
+                                <p className="text-xs text-slate-400">
+                                    Busca arriba o <strong>toca el mapa</strong> para marcar la ubicación
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ─── Chain form ───────────────────────────────────────────────────────────────
 
 const ChainForm = ({ onClose }) => {
     const [chainName, setChainName] = useState('');
     const [chainCity, setChainCity] = useState('');
-    const [branches, setBranches]   = useState([{ name: '', zone: '', address: '' }]);
+    const [branches, setBranches]   = useState([{ name: '', zone: '', address: '', coordinates: null, gpsStatus: 'pending' }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
 
@@ -379,11 +573,20 @@ const ChainForm = ({ onClose }) => {
         setChainSuggestions([]);
     };
 
-    const handleBranchChange = (index, e) => {
-        const { name, value } = e.target;
-        setBranches(prev => prev.map((b, i) => i === index ? { ...b, [name]: value } : b));
+    const handleFieldChange = (index, field, value) => {
+        setBranches(prev => prev.map((b, i) => i === index ? { ...b, [field]: value } : b));
     };
-    const addBranch    = () => setBranches(p => [...p, { name: '', zone: '', address: '' }]);
+
+    const handleLocationChange = useCallback((index, place) => {
+        setBranches(prev => prev.map((b, i) => i === index ? {
+            ...b,
+            address:     place?.address || b.address,
+            coordinates: place ? { lat: place.lat, lng: place.lng } : null,
+            gpsStatus:   place ? 'confirmed' : 'pending',
+        } : b));
+    }, []);
+
+    const addBranch    = () => setBranches(p => [...p, { name: '', zone: '', address: '', coordinates: null, gpsStatus: 'pending' }]);
     const removeBranch = (i) => setBranches(p => p.filter((_, idx) => idx !== i));
 
     const handleSubmit = async (e) => {
@@ -402,9 +605,9 @@ const ChainForm = ({ onClose }) => {
                 chain:        chainName.trim(),
                 city:         chainCity.trim(),
                 zone:         branch.zone,
-                address:      branch.address,
-                coordinates:  null,
-                gpsStatus:    'pending',
+                address:       branch.address,
+                coordinates:   branch.coordinates,
+                gpsStatus:     branch.gpsStatus,
                 visitInterval: 7,
                 active:       true,
                 tipoDespacho: 'centralizado',
@@ -466,32 +669,18 @@ const ChainForm = ({ onClose }) => {
                 required />
 
             <h3 className="font-semibold text-slate-800 pt-1">Sucursales</h3>
-            <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+            <div className="space-y-3">
                 {branches.map((branch, index) => (
-                    <div key={index} className="p-3 border border-slate-200 rounded-xl bg-slate-50 space-y-2">
-                        <div className="relative">
-                            <input type="text" name="name" value={branch.name}
-                                onChange={e => handleBranchChange(index, e)}
-                                placeholder="Nombre de la sucursal *"
-                                className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base pr-9 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                required />
-                            {branches.length > 1 && (
-                                <button type="button" onClick={() => removeBranch(index)}
-                                    className="absolute top-1/2 right-2.5 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500 rounded-full transition-colors">
-                                    <Trash2 size={15} />
-                                </button>
-                            )}
-                        </div>
-                        <input type="text" name="zone" value={branch.zone}
-                            onChange={e => handleBranchChange(index, e)}
-                            placeholder="Zona *"
-                            className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
-                            required />
-                        <textarea name="address" value={branch.address}
-                            onChange={e => handleBranchChange(index, e)}
-                            placeholder="Dirección (opcional)" rows={2}
-                            className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base resize-none focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                    </div>
+                    <BranchCard
+                        key={index}
+                        branch={branch}
+                        index={index}
+                        chainCity={chainCity}
+                        onFieldChange={handleFieldChange}
+                        onLocationChange={handleLocationChange}
+                        onRemove={removeBranch}
+                        canRemove={branches.length > 1}
+                    />
                 ))}
             </div>
             <button type="button" onClick={addBranch}
