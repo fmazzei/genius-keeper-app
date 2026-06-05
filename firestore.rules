@@ -87,7 +87,8 @@ service cloud.firestore {
     match /pos/{posId} {
       allow get, list: if isAuthenticated();
       allow update: if isAuthenticated();
-      allow create, delete: if isMaster();
+      allow create: if isMaster() || isAdmin();
+      allow delete: if isMaster();
     }
 
     match /depots/{depotId} {
