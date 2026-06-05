@@ -93,6 +93,7 @@ service cloud.firestore {
       allow update: if isAuthenticated() && (
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['coordinates', 'gpsStatus'])
         || isMaster()
+        || (isAdmin() && resource.data.gpsStatus != 'verified')
         || resource.data.gpsStatus == 'pending'
         || resource.data.gpsStatus == 'provisional'
       );
