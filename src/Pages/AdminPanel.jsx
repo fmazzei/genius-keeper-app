@@ -426,7 +426,7 @@ const ReasignarCadenaModal = ({ pos, onClose, onSaved }) => {
                             <input type="text" value={chainName} onChange={e => { setChainName(e.target.value); setShowSug(false); }}
                                 onFocus={() => suggestions.length > 0 && setShowSug(true)}
                                 placeholder="Escribe el nombre de la cadena…"
-                                className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                                className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-brand-blue" />
                         </div>
                         {showSug && (
                             <div ref={sugRef} className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
@@ -437,10 +437,6 @@ const ReasignarCadenaModal = ({ pos, onClose, onSaved }) => {
                                         <Link2 size={13} className="text-blue-500 shrink-0" /> {name}
                                     </button>
                                 ))}
-                                <button type="button" onClick={() => { setChainName(chainName); setTipoDespacho('centralizado'); setShowSug(false); }}
-                                    className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-emerald-50 text-left border-t border-slate-200 text-sm text-emerald-700 font-semibold">
-                                    <PlusCircle size={13} className="shrink-0" /> Crear cadena "{chainName}"
-                                </button>
                             </div>
                         )}
                     </div>
@@ -450,7 +446,7 @@ const ReasignarCadenaModal = ({ pos, onClose, onSaved }) => {
                 <div>
                     <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">Nombre del PDV</label>
                     <input type="text" value={posName} onChange={e => setPosName(e.target.value)}
-                        className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                        className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-brand-blue" />
                 </div>
 
                 {/* Tipo despacho */}
