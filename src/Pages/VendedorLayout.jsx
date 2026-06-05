@@ -200,21 +200,16 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
                 </div>
             </div>
 
-            {/* ── Acciones rápidas ── */}
+            {/* ── Acción principal ── */}
             <div className="space-y-2">
                 <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Acciones</p>
-                <div className="grid grid-cols-2 gap-3">
-                    <button onClick={() => onNavigate('despacho')}
-                        className="bg-emerald-600 hover:bg-emerald-500 active:scale-[0.97] text-white font-bold py-4 rounded-xl flex flex-col items-center gap-2 transition-all">
-                        <Package size={22} />
-                        <span className="text-sm">Registrar Despacho</span>
-                    </button>
-                    <button onClick={() => onNavigate('pedido')}
-                        className="bg-slate-800 border border-slate-700 hover:bg-slate-700 active:scale-[0.97] text-white font-bold py-4 rounded-xl flex flex-col items-center gap-2 transition-all">
-                        <Target size={22} />
-                        <span className="text-sm">Tomar Pedido</span>
-                    </button>
-                </div>
+                <button
+                    onClick={() => onNavigate('pedido')}
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.97] text-white font-black py-7 rounded-2xl flex flex-col items-center gap-2.5 transition-all shadow-lg shadow-emerald-900/40"
+                >
+                    <ClipboardList size={30} />
+                    <span className="text-xl">Nuevo Pedido</span>
+                </button>
             </div>
 
             {/* ── Período de arranque ── */}
