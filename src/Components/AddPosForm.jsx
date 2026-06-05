@@ -85,20 +85,20 @@ const IndividualForm = ({ onClose, isLoaded }) => {
                 <input
                     type="text" value={name} onChange={e => setName(e.target.value)}
                     placeholder="Nombre del establecimiento *"
-                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
                     required
                 />
                 <div className="grid grid-cols-2 gap-2">
                     <input
                         type="text" value={city} onChange={e => setCity(e.target.value)}
                         placeholder="Ciudad *"
-                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
                         required
                     />
                     <input
                         type="text" value={zone} onChange={e => setZone(e.target.value)}
                         placeholder="Zona / Urb. (opcional)"
-                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
                     />
                 </div>
             </div>
@@ -127,7 +127,7 @@ const IndividualForm = ({ onClose, isLoaded }) => {
                             <input
                                 type="text"
                                 placeholder={searchPlaceholder}
-                                className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
                             />
                         </div>
                     </Autocomplete>
@@ -241,10 +241,10 @@ const ChainForm = ({ onClose }) => {
             </p>
             <input type="text" value={chainName} onChange={e => setChainName(e.target.value)}
                 placeholder="Nombre de la Cadena *"
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm" required />
+                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-base" required />
             <input type="text" value={chainCity} onChange={e => setChainCity(e.target.value)}
                 placeholder="Ciudad (Ej: Caracas) *"
-                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm" required />
+                className="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-base" required />
 
             <h3 className="font-semibold text-slate-800 pt-1">Sucursales</h3>
             <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
@@ -254,7 +254,7 @@ const ChainForm = ({ onClose }) => {
                             <input type="text" name="name" value={branch.name}
                                 onChange={e => handleBranchChange(index, e)}
                                 placeholder="Nombre de la sucursal (Ej: La Castellana) *"
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm pr-8" required />
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-base pr-8" required />
                             {branches.length > 1 && (
                                 <button type="button" onClick={() => removeBranch(index)}
                                     className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500 rounded-full">
@@ -265,11 +265,11 @@ const ChainForm = ({ onClose }) => {
                         <input type="text" name="zone" value={branch.zone}
                             onChange={e => handleBranchChange(index, e)}
                             placeholder="Zona *"
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" required />
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-base" required />
                         <textarea name="address" value={branch.address}
                             onChange={e => handleBranchChange(index, e)}
                             placeholder="Dirección (opcional)" rows={2}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm resize-none" />
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-base resize-none" />
                     </div>
                 ))}
             </div>
