@@ -1,0 +1,34 @@
+name: Deploy Firestore Rules (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Rama desde la cual desplegar las reglas'
+        required: false
+        default: 'claude/modular-app-architecture-R1XHo'
+
+jobs:
+  deploy_rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || 'claude/modular-app-architecture-R1XHo' }}
+
+      - name: Escribir credenciales
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: printf '%s' "$SA_JSON" > /tmp/firebase-sa.json
+
+      - name: Instalar Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Deploy Firestore Rules
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
+        run: firebase deploy --only firestore:rules --project geniuskeeper-36553 --non-interactive
+
+      - name: Limpiar credenciales
+        if: always()
+        run: rm -f /tmp/firebase-sa.json
