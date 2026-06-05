@@ -15,6 +15,9 @@ export interface ModulesConfig {
   inventoryManager: boolean;
   plannerMerchandiser: boolean;
   logisticsMerchandiser: boolean;
+  pedidosVendedor: boolean;
+  facturasVendedor: boolean;
+  zohoIntegracion: boolean;
 }
 
 interface AppConfigContextType {
@@ -32,6 +35,9 @@ const defaultModules: ModulesConfig = {
   inventoryManager: true,
   plannerMerchandiser: true,
   logisticsMerchandiser: true,
+  pedidosVendedor: true,
+  facturasVendedor: true,
+  zohoIntegracion: false,
 };
 
 const AppConfigContext = createContext<AppConfigContextType | undefined>(undefined);

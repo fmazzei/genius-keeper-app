@@ -12,13 +12,17 @@ import {
     Home, MapPin, Package, Bell,
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
+    ClipboardList, Receipt,
 } from 'lucide-react';
 import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
 import TomarPedidoForm from '@/Pages/TomarPedidoForm.jsx';
 import VendedorCartera from '@/Pages/VendedorCartera.jsx';
+import MisPedidosView from '@/Pages/MisPedidosView.jsx';
+import MisFacturasView from '@/Pages/MisFacturasView.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
+import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
 // ─── Tier style palette (by tier index, 0 = highest) ─────────────────────────
 
@@ -274,32 +278,26 @@ function AlertasView({ alertas, loadingAlertas, onDelete }) {
     );
 }
 
-// ─── Bottom tab bar ────────────────────────────────────────────────────────────
-
-const TABS = [
-    { id: 'home',     label: 'Inicio',   Icon: Home     },
-    { id: 'cartera',  label: 'Cartera',  Icon: Briefcase },
-    { id: 'despacho', label: 'Despacho', Icon: Package  },
-];
-
 // ─── Main Layout ──────────────────────────────────────────────────────────────
 
 const VendedorLayout = ({ user, onLogout }) => {
     const { role } = useAuth();
-    const [currentView, setCurrentView]       = useState('home');
-    const [selectedPos, setSelectedPos]       = useState(null);
-    const [subView, setSubView]               = useState(null);
-    const [vendedor, setVendedor]             = useState({ uid: null, nombre: '', metaMensual: 2400, reporterId: null });
-    const [commConfig, setCommConfig]         = useState(DEFAULT_COMMISSION_CONFIG);
-    const [stats, setStats]                   = useState({
+    const { modules } = useAppConfig();
+    const [currentView, setCurrentView]               = useState('home');
+    const [selectedPos, setSelectedPos]               = useState(null);
+    const [subView, setSubView]                       = useState(null);
+    const [vendedor, setVendedor]                     = useState({ uid: null, nombre: '', metaMensual: 2400, reporterId: null });
+    const [commConfig, setCommConfig]                 = useState(DEFAULT_COMMISSION_CONFIG);
+    const [stats, setStats]                           = useState({
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
         facturasPorVencer: 0,
     });
-    const [loading, setLoading]               = useState(true);
-    const [posList, setPosList]               = useState([]);
-    const [alertas, setAlertas]               = useState([]);
-    const [loadingAlertas, setLoadingAlertas] = useState(false);
+    const [loading, setLoading]                       = useState(true);
+    const [posList, setPosList]                       = useState([]);
+    const [alertas, setAlertas]                       = useState([]);
+    const [loadingAlertas, setLoadingAlertas]         = useState(false);
+    const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
 
     // ── Load alerts (last 24 h) ──
     const loadAlertas = async (uid) => {
@@ -510,6 +508,21 @@ const VendedorLayout = ({ user, onLogout }) => {
                 await syncAlertas(user.uid, newStats);
                 await loadAlertas(user.uid);
 
+                // 8. Pending pedidos count for tab badge
+                try {
+                    const pedidosSnap = await getDocs(
+                        query(
+                            collection(db, 'pedidos_mercaderista'),
+                            where('vendedorId', '==', user.uid),
+                        )
+                    );
+                    const pendingCount = pedidosSnap.docs.filter(d => {
+                        const s = d.data().estado;
+                        return s === 'pendiente' || s === 'hold';
+                    }).length;
+                    setPedidosPendientesCount(pendingCount);
+                } catch { /* non-critical */ }
+
             } catch (e) {
                 console.warn('VendedorLayout load error:', e);
             } finally {
@@ -525,6 +538,13 @@ const VendedorLayout = ({ user, onLogout }) => {
         setCurrentView(view);
         setSubView(null);
     };
+
+    const tabs = [
+        { id: 'home',    label: 'Inicio',   Icon: Home      },
+        { id: 'cartera', label: 'Cartera',  Icon: Briefcase },
+        ...(modules.pedidosVendedor  !== false ? [{ id: 'pedidos',  label: 'Pedidos',  Icon: ClipboardList, badgeCount: pedidosPendientesCount }] : []),
+        ...(modules.facturasVendedor !== false ? [{ id: 'facturas', label: 'Facturas', Icon: Receipt       }] : []),
+    ];
 
     // ── Resolve main content ──
     const renderContent = () => {
@@ -561,6 +581,14 @@ const VendedorLayout = ({ user, onLogout }) => {
 
         if (currentView === 'cartera') {
             return <VendedorCartera vendedor={vendedor} />;
+        }
+
+        if (currentView === 'pedidos') {
+            return <MisPedidosView vendedorId={user.uid} vendedorName={vendedor.nombre} />;
+        }
+
+        if (currentView === 'facturas') {
+            return <MisFacturasView vendedorId={user.uid} />;
         }
 
         if (currentView === 'alertas') {
@@ -629,15 +657,22 @@ const VendedorLayout = ({ user, onLogout }) => {
             {/* ── Bottom Tab Bar ── */}
             {!subView && (
                 <nav className="h-16 bg-slate-900 border-t border-slate-800 flex items-center shrink-0">
-                    {TABS.map(({ id, label, Icon }) => {
+                    {tabs.map(({ id, label, Icon, badgeCount }) => {
                         const active = currentView === id;
                         return (
                             <button
                                 key={id}
                                 onClick={() => navigate(id)}
-                                className={`flex-1 flex flex-col items-center justify-center gap-1 h-full transition-colors ${active ? 'text-[#FFD600]' : 'text-slate-500 hover:text-slate-300'}`}
+                                className={`flex-1 relative flex flex-col items-center justify-center gap-1 h-full transition-colors ${active ? 'text-[#FFD600]' : 'text-slate-500 hover:text-slate-300'}`}
                             >
-                                <Icon size={22} />
+                                <div className="relative">
+                                    <Icon size={22} />
+                                    {badgeCount > 0 && (
+                                        <span className="absolute -top-1.5 -right-2 w-4 h-4 bg-amber-500 text-white text-[9px] flex items-center justify-center rounded-full font-bold">
+                                            {badgeCount > 9 ? '9+' : badgeCount}
+                                        </span>
+                                    )}
+                                </div>
                                 <span className="text-[10px] font-medium">{label}</span>
                             </button>
                         );

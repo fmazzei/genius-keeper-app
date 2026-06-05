@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { db, functions } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import CarteraManager from '../Components/CarteraManager.jsx';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
@@ -942,6 +942,29 @@ const ModuleManagement = () => {
                     label: 'Rendimiento Comercial',
                     description: 'KPIs por vendedor: meta del mes, nivel, comisiones y ranking del equipo.',
                     icon: <Users size={20} className="text-emerald-600 flex-shrink-0" />,
+                },
+            ],
+        },
+        {
+            groupLabel: 'Vendedor',
+            items: [
+                {
+                    key: 'pedidosVendedor',
+                    label: 'Mis Pedidos',
+                    description: 'Tab de pedidos del mercaderista en el perfil del vendedor. Permite confirmar, dejar en hold o rechazar.',
+                    icon: <ClipboardList size={20} className="text-emerald-500 flex-shrink-0" />,
+                },
+                {
+                    key: 'facturasVendedor',
+                    label: 'Mis Facturas',
+                    description: 'Tab de facturas de Zoho Books asignadas al vendedor.',
+                    icon: <Receipt size={20} className="text-blue-500 flex-shrink-0" />,
+                },
+                {
+                    key: 'zohoIntegracion',
+                    label: 'Integración Zoho Books',
+                    description: 'Habilita los webhooks de Zoho Books para facturas y pagos. Configurar en Configuración → Integraciones.',
+                    icon: <Link2 size={20} className="text-violet-500 flex-shrink-0" />,
                 },
             ],
         },
