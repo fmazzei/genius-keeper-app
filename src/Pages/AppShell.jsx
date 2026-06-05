@@ -22,6 +22,7 @@ import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import TaskList from '@/Components/TaskList.jsx';
 import Modal from '@/Components/Modal.jsx';
 import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx';
+import ProvisionalGpsModal from '@/Components/ProvisionalGpsModal.jsx';
 import Planner from './Planner/Planner.jsx';
 
 const ReporterSelectionScreen = ({ onSelect }) => {
@@ -82,6 +83,7 @@ const AppShell = ({ user, role, onLogout }) => {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [appConfig, setAppConfig] = useState({ gpsRequired: true, gpsRange: 500 });
     const [posToUpdateGps, setPosToUpdateGps] = useState(null);
+    const [posToConfirmProvisional, setPosToConfirmProvisional] = useState(null);
     const [isOutOfRangeModalOpen, setIsOutOfRangeModalOpen] = useState(false);
     const [posForRangeCheck, setPosForRangeCheck] = useState(null);
     const [currentDistance, setCurrentDistance] = useState(0);
@@ -147,6 +149,10 @@ const AppShell = ({ user, role, onLogout }) => {
         }
         if (!pos.coordinates || typeof pos.coordinates.lat !== 'number' || typeof pos.coordinates.lng !== 'number') {
             setPosToUpdateGps(pos);
+            return;
+        }
+        if (pos.gpsStatus === 'provisional') {
+            setPosToConfirmProvisional(pos);
             return;
         }
         setIsVerifyingLocation(true);
@@ -311,6 +317,13 @@ const AppShell = ({ user, role, onLogout }) => {
                 </main>
             </div>
             {posToUpdateGps && <UpdatePosGpsModal pos={posToUpdateGps} onClose={() => setPosToUpdateGps(null)} onConfirm={handleGpsUpdateConfirm} />}
+            {posToConfirmProvisional && (
+                <ProvisionalGpsModal
+                    pos={posToConfirmProvisional}
+                    onClose={() => setPosToConfirmProvisional(null)}
+                    onConfirm={(posWithGps) => { setPosToConfirmProvisional(null); setSelectedPos(posWithGps); setCurrentView('visit_report'); }}
+                />
+            )}
             <Modal isOpen={isOutOfRangeModalOpen} onClose={() => setIsOutOfRangeModalOpen(false)}>
                 <div className="p-6 text-center">
                     <AlertTriangle size={48} className="mx-auto text-yellow-500 mb-4" />

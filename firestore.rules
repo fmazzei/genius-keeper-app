@@ -89,8 +89,13 @@ service cloud.firestore {
 
     match /pos/{posId} {
       allow get, list: if isAuthenticated();
-      allow update: if isAuthenticated();
       allow create: if isMaster() || isAdmin() || isMerchandiser();
+      allow update: if isAuthenticated() && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['coordinates', 'gpsStatus'])
+        || isMaster()
+        || resource.data.gpsStatus == 'pending'
+        || resource.data.gpsStatus == 'provisional'
+      );
       allow delete: if isMaster();
     }
 

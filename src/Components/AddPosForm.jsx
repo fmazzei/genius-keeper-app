@@ -180,7 +180,7 @@ const IndividualForm = ({ onClose }) => {
                 zone:         zone.trim(),
                 address:      place?.address || '',
                 coordinates:  place ? { lat: place.lat, lng: place.lng } : null,
-                gpsStatus:    place ? 'confirmed' : 'pending',
+                gpsStatus:    place ? 'provisional' : 'pending',
                 visitInterval: 7,
                 active:       true,
                 tipoDespacho: 'directo',
@@ -618,7 +618,7 @@ const ChainForm = ({ onClose }) => {
             ...b,
             address:     place?.address || b.address,
             coordinates: place ? { lat: place.lat, lng: place.lng } : null,
-            gpsStatus:   place ? 'confirmed' : 'pending',
+            gpsStatus:   place ? 'provisional' : 'pending',
         } : b));
     }, []);
 
