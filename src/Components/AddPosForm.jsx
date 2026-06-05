@@ -1,7 +1,7 @@
 // RUTA: src/Components/AddPosForm.jsx
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { collection, writeBatch, serverTimestamp, doc, addDoc } from 'firebase/firestore';
+import { collection, writeBatch, serverTimestamp, doc, addDoc, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '../Firebase/config.js';
 import {
     MapPin, AlertTriangle, PlusCircle, Trash2, Building, Store,
@@ -333,6 +333,52 @@ const ChainForm = ({ onClose }) => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
 
+    // Chain autocomplete
+    const [chainSuggestions, setChainSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions]   = useState(false);
+    const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+    const chainInputRef = useRef(null);
+    const suggestionsRef = useRef(null);
+
+    useEffect(() => {
+        const text = chainName.trim();
+        if (text.length < 2) { setChainSuggestions([]); setShowSuggestions(false); return; }
+        const t = setTimeout(async () => {
+            setLoadingSuggestions(true);
+            try {
+                const q = query(
+                    collection(db, 'pos'),
+                    where('chain', '>=', text),
+                    where('chain', '<=', text + ''),
+                    limit(20)
+                );
+                const snap = await getDocs(q);
+                const names = [...new Set(snap.docs.map(d => d.data().chain).filter(Boolean))];
+                setChainSuggestions(names);
+                setShowSuggestions(names.length > 0);
+            } catch { /* ignore */ }
+            finally { setLoadingSuggestions(false); }
+        }, 300);
+        return () => clearTimeout(t);
+    }, [chainName]);
+
+    useEffect(() => {
+        const h = (e) => {
+            if (suggestionsRef.current && !suggestionsRef.current.contains(e.target) &&
+                chainInputRef.current  && !chainInputRef.current.contains(e.target)) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+    }, []);
+
+    const handleSelectChain = (name) => {
+        setChainName(name);
+        setShowSuggestions(false);
+        setChainSuggestions([]);
+    };
+
     const handleBranchChange = (index, e) => {
         const { name, value } = e.target;
         setBranches(prev => prev.map((b, i) => i === index ? { ...b, [name]: value } : b));
@@ -383,10 +429,37 @@ const ChainForm = ({ onClose }) => {
             <p className="text-sm text-center text-slate-500 -mt-2">
                 Cadenas como Excelsior Gama, Central Madeirense, etc.
             </p>
-            <input type="text" value={chainName} onChange={e => setChainName(e.target.value)}
-                placeholder="Nombre de la Cadena *"
-                className="w-full px-3 py-3 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
-                required />
+            <div className="relative">
+                <div ref={chainInputRef} className="relative">
+                    <input
+                        type="text"
+                        value={chainName}
+                        onChange={e => { setChainName(e.target.value); setShowSuggestions(false); }}
+                        onFocus={() => chainSuggestions.length > 0 && setShowSuggestions(true)}
+                        placeholder="Nombre de la Cadena *"
+                        className="w-full px-3 py-3 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400 pr-8"
+                        required
+                    />
+                    {loadingSuggestions && (
+                        <Loader2 size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 animate-spin" />
+                    )}
+                </div>
+                {showSuggestions && chainSuggestions.length > 0 && (
+                    <div ref={suggestionsRef}
+                        className="absolute z-[9999] w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-3 pt-2 pb-1">
+                            Cadenas existentes
+                        </p>
+                        {chainSuggestions.map((name, i) => (
+                            <button key={i} type="button" onClick={() => handleSelectChain(name)}
+                                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 active:bg-blue-100 text-left border-t border-slate-100 transition-colors">
+                                <Building size={14} className="text-blue-500 shrink-0" />
+                                <span className="text-sm font-semibold text-slate-800">{name}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
             <input type="text" value={chainCity} onChange={e => setChainCity(e.target.value)}
                 placeholder="Ciudad (Ej: Caracas) *"
                 className="w-full px-3 py-3 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
