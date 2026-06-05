@@ -8,19 +8,24 @@ import {
     Search, CheckCircle, X, Loader2,
 } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner.jsx';
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-// Fix Leaflet marker icons in Vite/webpack environments
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-    iconUrl:       'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-    shadowUrl:     'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+// ── SVG pin icon — never fails to load (no external images) ──────────────────
+const PIN_ICON = L.divIcon({
+    html: `<svg width="28" height="36" viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">
+        <path d="M14 0C6.268 0 0 6.268 0 14c0 9.333 14 22 14 22s14-12.667 14-22C28 6.268 21.732 0 14 0z" fill="#2563eb"/>
+        <circle cx="14" cy="14" r="5.5" fill="white"/>
+    </svg>`,
+    iconSize:   [28, 36],
+    iconAnchor: [14, 36],
+    className:  '',
 });
 
-// Animate map to new coordinates when selectedPlace changes
+const VENEZUELA_CENTER = [8.0, -66.0];
+
+// ── Fly to coords when selecting from search ──────────────────────────────────
 function FlyTo({ lat, lng }) {
     const map = useMap();
     useEffect(() => {
@@ -29,12 +34,26 @@ function FlyTo({ lat, lng }) {
     return null;
 }
 
-// Nominatim geocoding search (OpenStreetMap, free, no API key)
-async function searchNominatim(query) {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=ve&limit=6&addressdetails=1`;
+// ── Tap on map to place pin ───────────────────────────────────────────────────
+function MapTapHandler({ onTap }) {
+    useMapEvents({ click: (e) => onTap(e.latlng.lat, e.latlng.lng) });
+    return null;
+}
+
+// ── Nominatim search ──────────────────────────────────────────────────────────
+async function nominatimSearch(q) {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&countrycodes=ve&limit=6&addressdetails=1`;
     const res = await fetch(url, { headers: { 'Accept-Language': 'es' } });
-    if (!res.ok) throw new Error('Nominatim error');
+    if (!res.ok) throw new Error('search error');
     return res.json();
+}
+
+async function reverseGeocode(lat, lng) {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+    const res = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+    if (!res.ok) return '';
+    const d = await res.json();
+    return d.display_name || '';
 }
 
 // ─── Individual PDV form ──────────────────────────────────────────────────────
@@ -44,30 +63,30 @@ const IndividualForm = ({ onClose }) => {
     const [city, setCity] = useState('');
     const [zone, setZone] = useState('');
 
-    // Search state
+    // Search
     const [query, setQuery]         = useState('');
     const [results, setResults]     = useState([]);
     const [searching, setSearching] = useState(false);
     const [showDropdown, setShowDropdown] = useState(false);
 
-    // Selected location state
-    const [selectedPlace, setSelectedPlace] = useState(null); // { lat, lng, address }
+    // Selected location: { lat, lng, address, fromSearch }
+    const [place, setPlace]     = useState(null);
+    const [reversing, setReversing] = useState(false);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError]               = useState('');
 
-    const searchRef = useRef(null);
+    const searchRef   = useRef(null);
     const dropdownRef = useRef(null);
 
-    // Debounced Nominatim search
+    // Debounced search
     useEffect(() => {
         if (query.trim().length < 3) { setResults([]); setShowDropdown(false); return; }
-        const timer = setTimeout(async () => {
+        const t = setTimeout(async () => {
             setSearching(true);
             try {
-                // Enrich query with city if provided
                 const q = city.trim() ? `${query} ${city}` : query;
-                const data = await searchNominatim(q);
+                const data = await nominatimSearch(q);
                 setResults(data);
                 setShowDropdown(data.length > 0);
             } catch {
@@ -76,38 +95,46 @@ const IndividualForm = ({ onClose }) => {
                 setSearching(false);
             }
         }, 400);
-        return () => clearTimeout(timer);
+        return () => clearTimeout(t);
     }, [query, city]);
 
     // Close dropdown on outside click
     useEffect(() => {
-        const handleClick = (e) => {
+        const h = (e) => {
             if (dropdownRef.current && !dropdownRef.current.contains(e.target) &&
-                searchRef.current && !searchRef.current.contains(e.target)) {
+                searchRef.current  && !searchRef.current.contains(e.target)) {
                 setShowDropdown(false);
             }
         };
-        document.addEventListener('mousedown', handleClick);
-        return () => document.removeEventListener('mousedown', handleClick);
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
     }, []);
 
-    const handleSelect = (result) => {
-        setSelectedPlace({
-            lat:     parseFloat(result.lat),
-            lng:     parseFloat(result.lon),
-            address: result.display_name,
+    // Select from dropdown
+    const handleSelect = (r) => {
+        setPlace({
+            lat:        parseFloat(r.lat),
+            lng:        parseFloat(r.lon),
+            address:    r.display_name,
+            fromSearch: true,
         });
-        setQuery(result.display_name.split(',')[0]); // show short name in input
+        setQuery(r.display_name.split(',')[0]);
         setShowDropdown(false);
         setResults([]);
-        setError('');
     };
 
-    const clearPlace = () => {
-        setSelectedPlace(null);
-        setQuery('');
-        setResults([]);
-    };
+    // Tap on map → place pin + reverse geocode
+    const handleMapTap = useCallback(async (lat, lng) => {
+        setPlace({ lat, lng, address: '', fromSearch: false });
+        setReversing(true);
+        try {
+            const address = await reverseGeocode(lat, lng);
+            setPlace({ lat, lng, address, fromSearch: false });
+        } catch { /* keep pin without address */ }
+        finally { setReversing(false); }
+    }, []);
+
+    const clearPlace = () => { setPlace(null); setQuery(''); setResults([]); };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -119,17 +146,17 @@ const IndividualForm = ({ onClose }) => {
         setError('');
         try {
             await addDoc(collection(db, 'pos'), {
-                name:        name.trim(),
-                chain:       'Automercados Individuales',
-                city:        city.trim(),
-                zone:        zone.trim(),
-                address:     selectedPlace?.address || '',
-                coordinates: selectedPlace ? { lat: selectedPlace.lat, lng: selectedPlace.lng } : null,
-                gpsStatus:   selectedPlace ? 'confirmed' : 'pending',
+                name:         name.trim(),
+                chain:        'Automercados Individuales',
+                city:         city.trim(),
+                zone:         zone.trim(),
+                address:      place?.address || '',
+                coordinates:  place ? { lat: place.lat, lng: place.lng } : null,
+                gpsStatus:    place ? 'confirmed' : 'pending',
                 visitInterval: 7,
-                active:      true,
+                active:       true,
                 tipoDespacho: 'directo',
-                createdAt:   serverTimestamp(),
+                createdAt:    serverTimestamp(),
             });
             onClose();
         } catch (err) {
@@ -140,7 +167,7 @@ const IndividualForm = ({ onClose }) => {
         }
     };
 
-    const placeholder = name || city
+    const searchPlaceholder = name || city
         ? `Buscar "${[name, city].filter(Boolean).join(', ')}"…`
         : 'Buscar establecimiento…';
 
@@ -173,54 +200,47 @@ const IndividualForm = ({ onClose }) => {
                 </div>
             </div>
 
-            {/* Map search */}
+            {/* Search box */}
             <div>
                 <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">
                     Ubicar en el mapa
                 </p>
 
-                {/* Search input + dropdown */}
                 <div className="relative">
                     <div ref={searchRef} className="relative">
                         <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                         <input
                             type="text"
                             value={query}
-                            onChange={e => { setQuery(e.target.value); setSelectedPlace(null); }}
+                            onChange={e => { setQuery(e.target.value); setPlace(null); }}
                             onFocus={() => results.length > 0 && setShowDropdown(true)}
-                            placeholder={placeholder}
+                            placeholder={searchPlaceholder}
                             className="w-full pl-10 pr-10 py-3 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
                         />
-                        {searching && (
-                            <Loader2 size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 animate-spin" />
-                        )}
-                        {query && !searching && (
-                            <button type="button" onClick={clearPlace}
+                        {searching
+                            ? <Loader2 size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 animate-spin" />
+                            : query
+                            ? <button type="button" onClick={clearPlace}
                                 className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                                 <X size={16} />
-                            </button>
-                        )}
+                              </button>
+                            : null
+                        }
                     </div>
 
                     {/* Results dropdown */}
                     {showDropdown && results.length > 0 && (
                         <div ref={dropdownRef}
-                            className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+                            className="absolute z-[9999] w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
                             {results.map((r, i) => {
                                 const parts = r.display_name.split(',');
-                                const mainName = parts[0];
-                                const subName  = parts.slice(1, 4).join(',').trim();
                                 return (
-                                    <button
-                                        key={i}
-                                        type="button"
-                                        onClick={() => handleSelect(r)}
-                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-blue-50 active:bg-blue-100 text-left border-b border-slate-100 last:border-0 transition-colors"
-                                    >
-                                        <MapPin size={16} className="text-blue-500 shrink-0 mt-0.5" />
+                                    <button key={i} type="button" onClick={() => handleSelect(r)}
+                                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-blue-50 active:bg-blue-100 text-left border-b border-slate-100 last:border-0 transition-colors">
+                                        <MapPin size={15} className="text-blue-500 shrink-0 mt-0.5" />
                                         <div className="min-w-0">
-                                            <p className="text-sm font-semibold text-slate-800 truncate">{mainName}</p>
-                                            <p className="text-xs text-slate-400 truncate">{subName}</p>
+                                            <p className="text-sm font-semibold text-slate-800 truncate">{parts[0]}</p>
+                                            <p className="text-xs text-slate-400 truncate">{parts.slice(1, 4).join(',').trim()}</p>
                                         </div>
                                     </button>
                                 );
@@ -229,38 +249,55 @@ const IndividualForm = ({ onClose }) => {
                     )}
                 </div>
 
-                {/* Map preview — large, WhatsApp-style */}
-                {selectedPlace ? (
-                    <div className="mt-3 rounded-2xl overflow-hidden border border-emerald-200 shadow-md">
-                        <div style={{ height: 280 }}>
-                            <MapContainer
-                                center={[selectedPlace.lat, selectedPlace.lng]}
-                                zoom={17}
-                                style={{ height: '100%', width: '100%' }}
-                                zoomControl={true}
-                                attributionControl={false}
-                                scrollWheelZoom={false}
-                            >
-                                <TileLayer
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                />
-                                <Marker position={[selectedPlace.lat, selectedPlace.lng]} />
-                                <FlyTo lat={selectedPlace.lat} lng={selectedPlace.lng} />
-                            </MapContainer>
-                        </div>
+                {/* Always-visible map */}
+                <div className="mt-3 rounded-2xl overflow-hidden border border-slate-200 shadow-md">
+                    <div style={{ height: 270 }}>
+                        <MapContainer
+                            center={VENEZUELA_CENTER}
+                            zoom={6}
+                            style={{ height: '100%', width: '100%' }}
+                            zoomControl={true}
+                            attributionControl={false}
+                            scrollWheelZoom={true}
+                        >
+                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                            <MapTapHandler onTap={handleMapTap} />
+                            {place && (
+                                <>
+                                    <Marker position={[place.lat, place.lng]} icon={PIN_ICON} />
+                                    {place.fromSearch && <FlyTo lat={place.lat} lng={place.lng} />}
+                                </>
+                            )}
+                        </MapContainer>
+                    </div>
+
+                    {/* Status bar below map */}
+                    {place ? (
                         <div className="flex items-start gap-2.5 px-3 py-2.5 bg-emerald-50 border-t border-emerald-100">
-                            <CheckCircle size={15} className="text-emerald-600 shrink-0 mt-0.5" />
-                            <p className="text-xs text-emerald-800 leading-snug line-clamp-2">
-                                {selectedPlace.address}
+                            {reversing
+                                ? <Loader2 size={14} className="text-emerald-500 shrink-0 mt-0.5 animate-spin" />
+                                : <CheckCircle size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+                            }
+                            <p className="text-xs text-emerald-800 leading-snug line-clamp-2 flex-1">
+                                {reversing
+                                    ? 'Obteniendo dirección…'
+                                    : place.address || 'Ubicación marcada en el mapa'
+                                }
+                            </p>
+                            <button type="button" onClick={clearPlace}
+                                className="text-emerald-500 hover:text-emerald-700 shrink-0">
+                                <X size={14} />
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 border-t border-slate-100">
+                            <MapPin size={13} className="text-slate-400" />
+                            <p className="text-xs text-slate-400">
+                                Busca arriba o <strong>toca el mapa</strong> para marcar la ubicación
                             </p>
                         </div>
-                    </div>
-                ) : (
-                    <p className="text-xs text-slate-400 mt-2.5 text-center leading-relaxed">
-                        Escribe el nombre del local para ver sugerencias y ubicarlo en el mapa.{' '}
-                        Puedes guardar sin mapa — el mercaderista confirmará el GPS en su primera visita.
-                    </p>
-                )}
+                    )}
+                </div>
             </div>
 
             {error && (
@@ -279,7 +316,7 @@ const IndividualForm = ({ onClose }) => {
                     {isSubmitting && <LoadingSpinner size="sm" />}
                     {isSubmitting
                         ? 'Guardando…'
-                        : selectedPlace ? 'Confirmar y Guardar' : 'Guardar sin ubicación'}
+                        : place ? 'Confirmar y Guardar' : 'Guardar sin ubicación'}
                 </button>
             </div>
         </form>
@@ -299,7 +336,6 @@ const ChainForm = ({ onClose }) => {
         const { name, value } = e.target;
         setBranches(prev => prev.map((b, i) => i === index ? { ...b, [name]: value } : b));
     };
-
     const addBranch    = () => setBranches(p => [...p, { name: '', zone: '', address: '' }]);
     const removeBranch = (i) => setBranches(p => p.filter((_, idx) => idx !== i));
 
@@ -413,7 +449,6 @@ const ChainForm = ({ onClose }) => {
 
 const AddPosForm = ({ onClose }) => {
     const [posType, setPosType] = useState('individual');
-
     return (
         <div className="p-4">
             <div className="grid grid-cols-2 gap-2 mb-6">
