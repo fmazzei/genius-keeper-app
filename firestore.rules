@@ -7,7 +7,10 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users_metadata/$(uid)).data.role;
     }
     function isAdmin() {
-      return isMaster() || getRole(request.auth.uid) == 'sales_manager';
+      return isMaster()
+        || getRole(request.auth.uid) == 'sales_manager'
+        || getRole(request.auth.uid) == 'gerencia'
+        || getRole(request.auth.uid) == 'director';
     }
     function isMaster() {
       return request.auth.token.email == 'lacteoca@lacteoca.com';
