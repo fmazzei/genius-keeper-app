@@ -258,7 +258,7 @@ const Step3_Execution = ({ report, setReport, isReadOnly }) => {
     );
 };
 
-const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, competitorAcknowledged, onConfirmNoChanges, onCompetitorChanged, daysSince }) => {
+const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince }) => {
     const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null });
     const [isEntrantModalOpen, setIsEntrantModalOpen] = useState(false);
 
@@ -267,17 +267,11 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, competitor
         if (comp.product && comp.price) {
             setReport(prev => ({ ...prev, competition: [...prev.competition, comp] }));
             setComp({ product: '', price: '', hasPop: null, hasTasting: null });
-            onCompetitorChanged?.();
         } else {
             alert("Por favor, selecciona un producto y añade su precio.");
         }
     };
-    const handleRemoveCompetitor = (index) => {
-        if (!isReadOnly) {
-            setReport(prev => ({ ...prev, competition: prev.competition.filter((_, i) => i !== index) }));
-            onCompetitorChanged?.();
-        }
-    };
+    const handleRemoveCompetitor = (index) => { if (!isReadOnly) setReport(prev => ({ ...prev, competition: prev.competition.filter((_, i) => i !== index) })); };
     const handleRemoveEntrant = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, newEntrants: prev.newEntrants.filter((_, i) => i !== index) })); };
     const handleSaveNewEntrant = (entrantData) => { if(!isReadOnly) { setReport(prev => ({ ...prev, newEntrants: [...prev.newEntrants, entrantData] })); setIsEntrantModalOpen(false); }};
 
@@ -287,37 +281,23 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, competitor
         <>
             <FormSection title="Inteligencia Competitiva" icon={<Shield className="text-brand-blue mr-3"/>}>
                 <div className="space-y-6">
-                    {/* ── Banner de estado ─────────────────────────────── */}
+                    {/* ── Banner informativo (preloaded) ───────────────── */}
                     {!isReadOnly && competitorMode === 'preloaded' && (
-                        <div className={`p-3 rounded-xl border ${competitorAcknowledged ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
-                            {competitorAcknowledged ? (
-                                <div className="flex items-center gap-2">
-                                    <CheckCircle size={16} className="text-emerald-600 shrink-0" />
-                                    <p className="text-sm text-emerald-800 font-semibold">Datos de competencia confirmados</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-2.5">
-                                    <div className="flex items-start gap-2">
-                                        <AlertCircle size={15} className="text-amber-500 shrink-0 mt-0.5" />
-                                        <p className="text-sm text-amber-800">
-                                            Datos del último reporte ({dayLabel}). ¿Siguen siendo correctos?
-                                        </p>
-                                    </div>
-                                    <button type="button" onClick={onConfirmNoChanges}
-                                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-100 text-emerald-800 font-semibold rounded-xl border border-emerald-300 text-sm hover:bg-emerald-200 transition-colors">
-                                        <Check size={16} /> Sin cambios — Confirmar datos
-                                    </button>
-                                </div>
-                            )}
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-2">
+                            <CheckCircle size={15} className="text-blue-500 shrink-0 mt-0.5" />
+                            <p className="text-sm text-blue-800">
+                                Datos del último reporte ({dayLabel}) precargados. Puedes modificarlos si hay cambios.
+                            </p>
                         </div>
                     )}
+                    {/* ── Banner obligatorio (required) ────────────────── */}
                     {!isReadOnly && competitorMode === 'required' && (
                         <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
                             <AlertTriangle size={15} className="text-red-500 shrink-0 mt-0.5" />
                             <p className="text-sm text-red-800">
                                 {daysSince === null
-                                    ? 'Primera visita a este PDV. Por favor registra los competidores presentes.'
-                                    : `Han pasado ${daysSince} días desde el último reporte. Añade al menos un competidor para continuar.`}
+                                    ? 'Primera visita a este PDV. Registra los competidores presentes para continuar.'
+                                    : `Han pasado ${daysSince} días desde el último reporte. Actualiza los datos para continuar.`}
                             </p>
                         </div>
                     )}
@@ -393,8 +373,6 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
     const [report, setReport] = useState({ reporterName: '', price: '', orderQuantity: '', stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
     const [reportDate, setReportDate] = useState(new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }));
     const [isStepValid, setIsStepValid] = useState(false);
-    const [competitorAcknowledged, setCompetitorAcknowledged] = useState(false);
-
     // Determine competitor reporting mode for this PDV
     const { competitorMode, daysSince } = useMemo(() => {
         if (isReadOnly || !pos?.lastCompetitorReport) return { competitorMode: 'required', daysSince: null };
@@ -454,16 +432,12 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             case 2: isValid = report.price !== ''; break;
             case 3: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
             case 4:
-                if (competitorMode === 'preloaded') {
-                    isValid = competitorAcknowledged;
-                } else {
-                    isValid = report.competition.length > 0;
-                }
+                isValid = competitorMode === 'preloaded' || report.competition.length > 0;
                 break;
             default: isValid = false;
         }
         setIsStepValid(isValid);
-    }, [currentStep, report, isReadOnly, competitorMode, competitorAcknowledged]);
+    }, [currentStep, report, isReadOnly, competitorMode]);
 
     const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, TOTAL_STEPS));
     const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 1));
@@ -544,9 +518,6 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             case 4: return <Step4_Intel
                 {...stepProps}
                 competitorMode={competitorMode}
-                competitorAcknowledged={competitorAcknowledged}
-                onConfirmNoChanges={() => setCompetitorAcknowledged(true)}
-                onCompetitorChanged={() => setCompetitorAcknowledged(true)}
                 daysSince={daysSince}
             />;
             default: return <div>Paso no encontrado</div>;
