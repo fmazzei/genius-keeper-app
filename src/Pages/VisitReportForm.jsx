@@ -1,6 +1,6 @@
 // RUTA: src/Pages/VisitReportForm.jsx
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { addDoc, collection, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { db } from '@/Firebase/config.js';
@@ -366,7 +366,7 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince 
 
 const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly = false, initialData = null }) => {
     const { competitorFrequencyDays } = useAppConfig();
-
+    const formOpenTime = useRef(new Date().toISOString());
     const [currentStep, setCurrentStep] = useState(1);
     const [submissionState, setSubmissionState] = useState('form');
     const [isOfflineSave, setIsOfflineSave] = useState(false);
@@ -474,6 +474,8 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             posZone: pos.zone || 'N/A',
             coordinates: pos.coordinates || null,
             inventoryLevel: inventoryLevel,
+            startTime: formOpenTime.current,
+            endTime: new Date().toISOString(),
         };
         
         if (navigator.onLine) {

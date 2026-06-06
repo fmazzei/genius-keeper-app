@@ -55,9 +55,15 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('dashboard');
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
         }
+        if (role === 'director') {
+            if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
+            if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('dashboard');
+            if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
+        }
         if (role === 'gerencia' || role === 'sales_manager') {
             if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('ventas');
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('ventas');
+            if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('ventas');
         }
     }, [modules, role, currentView]);
 
@@ -117,7 +123,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
                 <NavItem icon={<Target size={24} />} text="Ventas" active={currentView === 'ventas'} onClick={() => setCurrentView('ventas')} />
                 {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Rendimiento" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
-                <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />
+                {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}

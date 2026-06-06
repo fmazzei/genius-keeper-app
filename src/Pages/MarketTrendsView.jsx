@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ResponsiveContainer, ComposedChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, Line, Cell } from 'recharts';
-import { HelpCircle, Sparkles, Loader, AlertTriangle, ThumbsUp, ShoppingCart } from 'lucide-react';
+import { HelpCircle, Loader, AlertTriangle, ThumbsUp, ShoppingCart } from 'lucide-react';
 
 const groupByWeek = (data) => {
     if (!data || data.length === 0) return [];
@@ -87,9 +87,6 @@ const MarketTrendsView = ({ reports, posList }) => {
     const [storeFilter, setStoreFilter] = useState('all');
     const [dateRangeFilter, setDateRangeFilter] = useState(90);
     const [competitorFilter, setCompetitorFilter] = useState('');
-    const [aiReport, setAiReport] = useState('');
-    const [isGenerating, setIsGenerating] = useState(false);
-    
     const filterOptions = useMemo(() => {
         if (!posList || posList.length === 0) return { chains: ['all'], storesByChain: { 'all': ['all'] }, competitors: [''] };
         const chains = new Set(['all']);
@@ -156,16 +153,6 @@ const MarketTrendsView = ({ reports, posList }) => {
         return { chartData: weeklyData, summary: { avgRotation, ourPromoWeeks, compPromoWeeks } };
     }, [reports, posList, chainFilter, storeFilter, dateRangeFilter, competitorFilter]);
 
-    const handleGenerateAnalysis = () => {
-        setIsGenerating(true);
-        setAiReport('');
-        setTimeout(() => {
-            let insights = "<h4>Análisis de Genius IA</h4><p>Análisis detallado de tendencias y correlaciones para la selección actual...</p>";
-            setAiReport(insights);
-            setIsGenerating(false);
-        }, 1500);
-    };
-
     if (!competitorFilter && filterOptions.competitors.length > 0) {
         return <div className="text-center p-10"><Loader className="animate-spin mx-auto" /></div>;
     }
@@ -175,13 +162,6 @@ const MarketTrendsView = ({ reports, posList }) => {
             <div className="max-w-7xl mx-auto space-y-6">
                 <div><h2 className="text-3xl font-bold mb-2">Análisis de Tendencias</h2><p className="text-slate-500">Explora la correlación entre las promociones, el precio de la competencia y tu rotación.</p></div>
                 
-                <div className="bg-white p-6 rounded-lg shadow-sm border">
-                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Sparkles className="text-brand-yellow" />Reporte Genius IA</h3>
-                    {isGenerating ? (<div className="flex items-center justify-center p-6 h-24 text-slate-400"><Loader className="animate-spin mr-3" /> Generando reporte...</div>) 
-                    : aiReport ? (<div className="text-sm text-slate-700 prose prose-sm max-w-none h-24 overflow-y-auto" dangerouslySetInnerHTML={{ __html: aiReport }} />) 
-                    : (<div className="text-center flex flex-col justify-center h-24"><p className="text-slate-500 mb-4">Presiona para que la IA analice la selección actual.</p><button onClick={handleGenerateAnalysis} className="bg-brand-blue text-white font-bold py-2 px-5 rounded-lg self-center">Generar Análisis</button></div>)}
-                </div>
-
                 <div className="bg-white p-6 rounded-lg shadow-sm border">
                     <h3 className="font-bold text-md mb-2">Filtros de Análisis</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

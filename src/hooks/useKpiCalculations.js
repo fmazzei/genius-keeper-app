@@ -1,5 +1,10 @@
 import { useMemo } from 'react';
 
+// Penalización competitiva: 10 pts por cada nuevo entrante detectado, 5 pts por evento promo de competencia.
+// El pilar empieza en 100 (sin amenazas) y se reduce por presión competitiva real.
+const calcCompetitionScore = (newEntrants, promoEvents) =>
+    Math.max(0, 100 - newEntrants * 10 - promoEvents * 5);
+
 // Función de ayuda para calcular promedios de forma segura, evitando divisiones por cero.
 const safeAvg = (sum, count) => (count > 0 ? sum / count : 0);
 
@@ -122,17 +127,20 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all') => {
             const storeVisits = storeReports.length;
             const storeStockouts = storeReports.filter(r => r.stockout === true).length;
             const storeOptimalPos = storeReports.filter(r => r.shelfLocation === 'ojos' || r.shelfLocation === 'manos').length;
-            
+            const storeNewEntrants = storeReports.flatMap(r => r.newEntrants || []).length;
+            const storePromoActivity = storeReports.flatMap(r => r.competition || []).filter(c => c.hasPop || c.hasTasting).length;
+
             const health = (1 - safeAvg(storeStockouts, storeVisits)) * 100;
             const operations = safeAvg(storeOptimalPos, storeVisits) * 100;
-            const competition = 75;
-            
+            const competition = calcCompetitionScore(storeNewEntrants, storePromoActivity);
+
             const score = (health * 0.4) + (operations * 0.4) + (competition * 0.2);
-            return { name: storeName, score, health, operations };
+            return { name: storeName, score, health, operations, competition };
         });
 
         const globalHealth = safeAvg(storeScores.reduce((sum, s) => sum + s.health, 0), storeScores.length);
         const globalOps = safeAvg(storeScores.reduce((sum, s) => sum + s.operations, 0), storeScores.length);
+        const globalCompetition = calcCompetitionScore(newEntrantsCount, promoActivityCount);
         const globalGeniusScore = safeAvg(storeScores.reduce((sum, s) => sum + s.score, 0), storeScores.length);
         
         const complianceReports = reports.filter(r => r.visitDate && r.plannedVisitDate);
@@ -152,7 +160,7 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all') => {
             newEntrantsCount,
             promoActivityCount,
             visitCompliance,
-            geniusIndex: { score: globalGeniusScore, pillars: { health: globalHealth, operations: globalOps, competition: 75 } },
+            geniusIndex: { score: globalGeniusScore, pillars: { health: globalHealth, operations: globalOps, competition: globalCompetition } },
             storeScores,
             reports
         };

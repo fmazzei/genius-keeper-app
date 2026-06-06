@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useKpiCalculations } from '@/hooks/useKpiCalculations';
 import { useDashboardConfig } from '@/hooks/useDashboardConfig';
-import { LayoutGrid, Settings, ChevronRight } from 'lucide-react';
+import { LayoutGrid, Settings, ChevronRight, Info, X } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import Modal from '@/Components/Modal';
 import { WIDGET_MAP, WIDGET_CATEGORIES } from '@/config/widgetRegistry';
@@ -56,15 +56,46 @@ const SENTIMENT = {
 
 // ── Genius Index hero card ─────────────────────────────────────────────────────
 const GeniusHero = ({ def, data, onOpen }) => {
+    const [showFormula, setShowFormula] = React.useState(false);
     const score = parseFloat(data.value) || 0;
     const color = score >= 80 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
     const label = score >= 80 ? 'Presencia Fuerte' : score >= 50 ? 'En Desarrollo' : 'Requiere Atención';
     const r = 40, circ = 2 * Math.PI * r;
 
     return (
+        <div className="col-span-full relative">
+        {/* Formula tooltip */}
+        {showFormula && (
+            <div className="absolute top-14 right-4 z-10 bg-white rounded-xl shadow-xl border border-slate-200 p-4 w-72 text-slate-700 text-sm">
+                <div className="flex items-center justify-between mb-3">
+                    <p className="font-bold text-slate-800">Cómo se calcula</p>
+                    <button onClick={() => setShowFormula(false)} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
+                </div>
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-500 inline-block"/> Salud del producto</span>
+                        <span className="font-bold text-emerald-700">40%</span>
+                    </div>
+                    <p className="text-xs text-slate-500 pl-5 -mt-1">Sin quiebres + posición óptima en anaquel</p>
+                    <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-amber-500 inline-block"/> Eficiencia operativa</span>
+                        <span className="font-bold text-amber-700">40%</span>
+                    </div>
+                    <p className="text-xs text-slate-500 pl-5 -mt-1">Posición ojos/manos por PDV</p>
+                    <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-rose-500 inline-block"/> Presión competitiva</span>
+                        <span className="font-bold text-rose-700">20%</span>
+                    </div>
+                    <p className="text-xs text-slate-500 pl-5 -mt-1">100 pts base − 10 pts/entrante − 5 pts/promo rival</p>
+                </div>
+                <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400 text-center">
+                    Escala 0–100 · Bueno ≥ 80 · En desarrollo ≥ 50
+                </div>
+            </div>
+        )}
         <div
             onClick={onOpen}
-            className="col-span-full cursor-pointer rounded-2xl overflow-hidden bg-gradient-to-br from-[#0D2B4C] via-[#112f58] to-[#1a4480] p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 shadow-xl hover:shadow-2xl transition-shadow duration-300 group"
+            className="cursor-pointer rounded-2xl overflow-hidden bg-gradient-to-br from-[#0D2B4C] via-[#112f58] to-[#1a4480] p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 shadow-xl hover:shadow-2xl transition-shadow duration-300 group"
         >
             {/* Gauge */}
             <div className="relative shrink-0">
@@ -96,10 +127,20 @@ const GeniusHero = ({ def, data, onOpen }) => {
                 </div>
             </div>
 
-            {/* CTA */}
-            <div className="shrink-0 flex items-center gap-2 text-sm font-semibold text-white/60 bg-white/10 px-4 py-2.5 rounded-xl group-hover:bg-white/20 transition-colors">
-                Ver diagnóstico <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+            {/* CTA + info */}
+            <div className="shrink-0 flex items-center gap-3">
+                <button
+                    onClick={e => { e.stopPropagation(); setShowFormula(v => !v); }}
+                    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/50 hover:text-white/80 transition-colors"
+                    title="Ver cómo se calcula el Índice Genius"
+                >
+                    <Info size={18} />
+                </button>
+                <div className="flex items-center gap-2 text-sm font-semibold text-white/60 bg-white/10 px-4 py-2.5 rounded-xl group-hover:bg-white/20 transition-colors">
+                    Ver diagnóstico <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                </div>
             </div>
+        </div>
         </div>
     );
 };
