@@ -57,7 +57,7 @@ service cloud.firestore {
 
     match /visit_reports/{reportId} {
       allow get: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow list: if isAdmin();
+      allow list: if isAdmin() || getRole(request.auth.uid) == 'vendedor';
       allow create: if (isMerchandiser() || isAdmin()) && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isMaster();
     }
