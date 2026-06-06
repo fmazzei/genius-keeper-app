@@ -63,85 +63,89 @@ const GeniusHero = ({ def, data, onOpen }) => {
     const label = score >= 80 ? 'Presencia Fuerte' : score >= 50 ? 'En Desarrollo' : 'Requiere Atención';
     const r = 40, circ = 2 * Math.PI * r;
 
+    const FORMULA = [
+        { dot: 'bg-blue-400',   label: 'Ejecución en Campo',      pct: '50%', detail: 'Posición óptima (50%) + POP (30%) + Sin quiebres (20%)' },
+        { dot: 'bg-violet-400', label: 'Cobertura de Rutas',      pct: '30%', detail: 'Cumplimiento de visitas (60%) + Pedidos generados (40%)' },
+        { dot: 'bg-amber-400',  label: 'Inteligencia de Reporte', pct: '20%', detail: 'Completitud del reporte (50%) + Datos de competencia (50%)' },
+    ];
+
     return (
         <div className="col-span-full relative">
-        {/* Formula tooltip */}
-        {showFormula && (
-            <div className="absolute top-14 right-4 z-10 bg-white rounded-xl shadow-xl border border-slate-200 p-4 w-72 text-slate-700 text-sm">
-                <div className="flex items-center justify-between mb-3">
-                    <p className="font-bold text-slate-800">Cómo se calcula</p>
-                    <button onClick={() => setShowFormula(false)} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
+            <div
+                onClick={onOpen}
+                className="cursor-pointer rounded-2xl overflow-hidden bg-gradient-to-br from-[#0D2B4C] via-[#112f58] to-[#1a4480] p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 shadow-xl hover:shadow-2xl transition-shadow duration-300 group"
+            >
+                {/* Gauge */}
+                <div className="relative shrink-0">
+                    <svg width="130" height="130" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
+                        <circle
+                            cx="50" cy="50" r={r} fill="none"
+                            stroke={color} strokeWidth="10"
+                            strokeDasharray={`${circ * Math.min(score, 100) / 100} ${circ}`}
+                            strokeLinecap="round"
+                            transform="rotate(-90 50 50)"
+                            style={{ transition: 'stroke-dasharray 1s ease' }}
+                        />
+                        <text x="50" y="44" textAnchor="middle" fill="white"      fontSize="24" fontWeight="900">{Math.round(score)}</text>
+                        <text x="50" y="60" textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize="10">/ 100</text>
+                    </svg>
                 </div>
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-500 inline-block"/> Salud del producto</span>
-                        <span className="font-bold text-emerald-700">40%</span>
-                    </div>
-                    <p className="text-xs text-slate-500 pl-5 -mt-1">Sin quiebres + posición óptima en anaquel</p>
-                    <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-amber-500 inline-block"/> Eficiencia operativa</span>
-                        <span className="font-bold text-amber-700">40%</span>
-                    </div>
-                    <p className="text-xs text-slate-500 pl-5 -mt-1">Posición ojos/manos por PDV</p>
-                    <div className="flex items-center justify-between">
-                        <span className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-rose-500 inline-block"/> Presión competitiva</span>
-                        <span className="font-bold text-rose-700">20%</span>
-                    </div>
-                    <p className="text-xs text-slate-500 pl-5 -mt-1">100 pts base − 10 pts/entrante − 5 pts/promo rival</p>
-                </div>
-                <div className="mt-3 pt-3 border-t border-slate-100 text-xs text-slate-400 text-center">
-                    Escala 0–100 · Bueno ≥ 80 · En desarrollo ≥ 50
-                </div>
-            </div>
-        )}
-        <div
-            onClick={onOpen}
-            className="cursor-pointer rounded-2xl overflow-hidden bg-gradient-to-br from-[#0D2B4C] via-[#112f58] to-[#1a4480] p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6 shadow-xl hover:shadow-2xl transition-shadow duration-300 group"
-        >
-            {/* Gauge */}
-            <div className="relative shrink-0">
-                <svg width="130" height="130" viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
-                    <circle
-                        cx="50" cy="50" r={r} fill="none"
-                        stroke={color} strokeWidth="10"
-                        strokeDasharray={`${circ * Math.min(score, 100) / 100} ${circ}`}
-                        strokeLinecap="round"
-                        transform="rotate(-90 50 50)"
-                        style={{ transition: 'stroke-dasharray 1s ease' }}
-                    />
-                    <text x="50" y="44" textAnchor="middle" fill="white"      fontSize="24" fontWeight="900">{Math.round(score)}</text>
-                    <text x="50" y="60" textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize="10">/ 100</text>
-                </svg>
-            </div>
 
-            {/* Text */}
-            <div className="flex-1 text-center sm:text-left">
-                <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-1">Índice Genius</p>
-                <h3 className="text-2xl sm:text-3xl font-black text-white mb-2">{label}</h3>
-                <p className="text-white/50 text-sm leading-relaxed max-w-md">{def.description}</p>
-                <div className="mt-4 flex items-center gap-3 justify-center sm:justify-start">
-                    <div className="h-2 w-40 bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${score}%`, background: color }} />
+                {/* Text */}
+                <div className="flex-1 text-center sm:text-left">
+                    <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-1">Índice Genius</p>
+                    <h3 className="text-2xl sm:text-3xl font-black text-white mb-2">{label}</h3>
+                    <p className="text-white/50 text-sm leading-relaxed max-w-md">{def.description}</p>
+                    <div className="mt-4 flex items-center gap-3 justify-center sm:justify-start">
+                        <div className="h-2 w-40 bg-white/10 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${score}%`, background: color }} />
+                        </div>
+                        <span className="text-white/50 text-xs font-semibold">{Math.round(score)}%</span>
                     </div>
-                    <span className="text-white/50 text-xs font-semibold">{Math.round(score)}%</span>
+                </div>
+
+                {/* CTA + info button */}
+                <div className="shrink-0 flex items-center gap-2">
+                    <button
+                        onClick={e => { e.stopPropagation(); setShowFormula(v => !v); }}
+                        className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-white/60"
+                        title="Ver fórmula"
+                    >
+                        <Info size={18} />
+                    </button>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-white/60 bg-white/10 px-4 py-2.5 rounded-xl group-hover:bg-white/20 transition-colors">
+                        Ver diagnóstico <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                    </div>
                 </div>
             </div>
 
-            {/* CTA + info */}
-            <div className="shrink-0 flex items-center gap-3">
-                <button
-                    onClick={e => { e.stopPropagation(); setShowFormula(v => !v); }}
-                    className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/50 hover:text-white/80 transition-colors"
-                    title="Ver cómo se calcula el Índice Genius"
-                >
-                    <Info size={18} />
-                </button>
-                <div className="flex items-center gap-2 text-sm font-semibold text-white/60 bg-white/10 px-4 py-2.5 rounded-xl group-hover:bg-white/20 transition-colors">
-                    Ver diagnóstico <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+            {/* Tooltip de fórmula */}
+            {showFormula && (
+                <div className="absolute top-2 right-2 z-20 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 p-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <p className="font-bold text-slate-800 text-sm">Cómo se calcula</p>
+                        <button onClick={() => setShowFormula(false)} className="text-slate-400 hover:text-slate-600">
+                            <X size={16} />
+                        </button>
+                    </div>
+                    <div className="space-y-3">
+                        {FORMULA.map(f => (
+                            <div key={f.label} className="flex items-start gap-2">
+                                <span className={`w-2.5 h-2.5 rounded-full ${f.dot} mt-1 shrink-0`} />
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-800">{f.label} <span className="text-slate-400 font-normal">· {f.pct}</span></p>
+                                    <p className="text-xs text-slate-500">{f.detail}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100">
+                        Escala 0–100 · Fuerte ≥ 80 · En desarrollo ≥ 50 · Atención &lt; 50
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">La presión competitiva es contexto externo y no afecta el score.</p>
                 </div>
-            </div>
-        </div>
+            )}
         </div>
     );
 };
