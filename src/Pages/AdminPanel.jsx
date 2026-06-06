@@ -2183,12 +2183,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                 { id: 'integraciones', label: 'Integraciones',  Icon: Link2, badge: 'Zoho' },
             ],
         },
-        {
-            id: 'datos', label: 'Datos', Icon: FileText,
-            items: [
-                { id: 'reports', label: 'Reportes de Visita', Icon: FileText },
-            ],
-        },
     ];
 
     const allItems    = GROUPS.flatMap(g => g.items);
@@ -2234,7 +2228,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'notificaciones': return <NotificacionesSection />;
             case 'settings':       return <GeneralSettings />;
             case 'integraciones':  return <IntegracionesSection />;
-            case 'reports':        return <ReportManagement reports={reports} posList={posList} loading={loading} />;
             default:               return (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
                     <Settings size={40} className="opacity-20" />
