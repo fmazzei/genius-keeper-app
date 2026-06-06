@@ -28,24 +28,33 @@ const PositioningModalContent = ({ reports }) => {
             'Nevera Charcutería': 'Charcutería' 
         };
         
-        const validReports = (reports || []).filter(r => r.shelfLocation && r.adjacentCategory && r.orderQuantity);
+        // Solo requiere shelfLocation; adjacentCategory y orderQuantity son opcionales
+        const validReports = (reports || []).filter(r => r.shelfLocation);
         if (validReports.length === 0) return { hasData: false };
+        // Para el heatmap se necesitan ambas dimensiones
+        const matrixReports = validReports.filter(r => r.adjacentCategory);
 
         const planogramCount = {};
         const locationCount = {};
         let maxRotation = 0;
         const reportsByPosition = {};
 
+        // Conteo de ubicaciones sobre todos los reportes válidos
         validReports.forEach(report => {
+            const shelfKey = SHELF_LOCATIONS_MAP[report.shelfLocation];
+            if (shelfKey) locationCount[shelfKey] = (locationCount[shelfKey] || 0) + 1;
+        });
+
+        // Heatmap solo con reportes que tienen ambas dimensiones
+        matrixReports.forEach(report => {
             const shelfKey = SHELF_LOCATIONS_MAP[report.shelfLocation];
             const categoryKey = ADJACENT_CATEGORIES_MAP[report.adjacentCategory];
 
-            if (shelfKey) locationCount[shelfKey] = (locationCount[shelfKey] || 0) + 1;
             if (categoryKey) planogramCount[categoryKey] = (planogramCount[categoryKey] || 0) + 1;
-            
+
             if (shelfKey && categoryKey) {
                 const key = `${shelfKey}-${categoryKey}`;
-                if(!reportsByPosition[key]) reportsByPosition[key] = [];
+                if (!reportsByPosition[key]) reportsByPosition[key] = [];
                 reportsByPosition[key].push(Number(report.orderQuantity) || 0);
             }
         });
@@ -66,7 +75,9 @@ const PositioningModalContent = ({ reports }) => {
         });
 
         return {
-            hasData: true, matrix: avgMatrix, maxRotation, allCategories, allLocations,
+            hasData: true,
+            hasMatrix: matrixReports.length > 0,
+            matrix: avgMatrix, maxRotation, allCategories, allLocations,
             planogramData: Object.keys(planogramCount).map(name => ({ name, value: planogramCount[name] })),
             locationData: Object.keys(locationCount).map(name => ({ name, value: locationCount[name] }))
         };
@@ -99,35 +110,41 @@ const PositioningModalContent = ({ reports }) => {
                 </div>
             </div>
 
-            <div>
-                <h4 className="font-bold text-lg text-slate-800 mb-2 text-center">Heatmap de Rotación: La Ubicación Dorada 👑</h4>
-                <div className="overflow-x-auto">
-                    <table className="min-w-full border-collapse text-center">
-                        <thead>
-                            <tr>
-                                <th className="p-2 border bg-slate-100 text-sm font-semibold">Ubicación \ Categoría</th>
-                                {analysis.allCategories.map(cat => <th key={cat} className="p-2 border bg-slate-100 text-sm font-semibold">{cat}</th>)}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {analysis.allLocations.map(loc => (
-                                <tr key={loc}>
-                                    <td className="p-2 border font-semibold bg-slate-100 text-sm whitespace-nowrap">{loc}</td>
-                                    {analysis.allCategories.map(cat => {
-                                        const avgRotation = analysis.matrix[loc]?.[cat] ?? 0;
-                                        return (
-                                            <td key={cat} className="p-2 border" style={{ backgroundColor: getHeatmapColor(avgRotation, analysis.maxRotation) }}>
-                                                <span className="font-bold text-slate-800">{avgRotation.toFixed(1)}</span>
-                                                <span className="text-xs text-slate-500"> unid.</span>
-                                            </td>
-                                        );
-                                    })}
+            {analysis.hasMatrix ? (
+                <div>
+                    <h4 className="font-bold text-lg text-slate-800 mb-2 text-center">Heatmap de Rotación: La Ubicación Dorada 👑</h4>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full border-collapse text-center">
+                            <thead>
+                                <tr>
+                                    <th className="p-2 border bg-slate-100 text-sm font-semibold">Ubicación \ Categoría</th>
+                                    {analysis.allCategories.map(cat => <th key={cat} className="p-2 border bg-slate-100 text-sm font-semibold">{cat}</th>)}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {analysis.allLocations.map(loc => (
+                                    <tr key={loc}>
+                                        <td className="p-2 border font-semibold bg-slate-100 text-sm whitespace-nowrap">{loc}</td>
+                                        {analysis.allCategories.map(cat => {
+                                            const avgRotation = analysis.matrix[loc]?.[cat] ?? 0;
+                                            return (
+                                                <td key={cat} className="p-2 border" style={{ backgroundColor: getHeatmapColor(avgRotation, analysis.maxRotation) }}>
+                                                    <span className="font-bold text-slate-800">{avgRotation.toFixed(1)}</span>
+                                                    <span className="text-xs text-slate-500"> unid.</span>
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
+            ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                    El heatmap de rotación requiere que los reportes incluyan la <strong>categoría adyacente</strong>. Los reportes actuales sí tienen ubicación en anaquel y se muestran abajo.
+                </div>
+            )}
 
             <hr />
 
