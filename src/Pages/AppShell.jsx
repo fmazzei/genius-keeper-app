@@ -91,7 +91,8 @@ const AppShell = ({ user, role, onLogout }) => {
 
     const { masterStopList, loading: merchandiserLoading } = useMerchandiserData();
     const { tasks, loading: tasksLoading, completeTask } = useDelegatedTasks(selectedReporter?.id);
-    const { modules } = useAppConfig();
+    const { getModulesForRole } = useAppConfig();
+    const modules = getModulesForRole('merchandiser');
 
     useOfflineSync();
 

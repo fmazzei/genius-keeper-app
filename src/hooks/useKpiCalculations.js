@@ -22,7 +22,7 @@ const getFreshnessStatus = (expiryDateStr) => {
     return 'Óptimo';
 };
 
-export const useKpiCalculations = (allReports, posList, timeRange = 'all') => {
+export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourProductWeight_g = 250) => {
     return useMemo(() => {
         // --- FASE 1: FILTRADO DE REPORTES POR RANGO DE TIEMPO ---
         const filteredReports = allReports.filter(report => {
@@ -105,7 +105,7 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all') => {
         
         const validPriceReports = reports.filter(r => r.price && Array.isArray(r.competition) && r.competition.length > 0);
         const priceDifferences = validPriceReports.flatMap(r => {
-            const ourPricePer100g = (r.price / 250) * 100;
+            const ourPricePer100g = (r.price / ourProductWeight_g) * 100;
             return r.competition.map(c => {
                 if(!c.price || !c.weight_g) return 0;
                 const compPricePer100g = (c.price / c.weight_g) * 100;
@@ -164,5 +164,5 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all') => {
             storeScores,
             reports
         };
-    }, [allReports, posList, timeRange]);
+    }, [allReports, posList, timeRange, ourProductWeight_g]);
 };

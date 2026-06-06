@@ -278,7 +278,8 @@ function AlertasView({ alertas, loadingAlertas, onDelete }) {
 
 const VendedorLayout = ({ user, onLogout }) => {
     const { role } = useAuth();
-    const { modules } = useAppConfig();
+    const { getModulesForRole } = useAppConfig();
+    const modules = getModulesForRole('vendedor');
     const [currentView, setCurrentView]               = useState('home');
     const [selectedPos, setSelectedPos]               = useState(null);
     const [subView, setSubView]                       = useState(null);

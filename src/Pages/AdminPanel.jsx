@@ -610,6 +610,7 @@ const GeneralSettings = () => {
         newReportNotifications: false,
         gpsRequired: true,
         competitorFrequencyDays: 15,
+        ourProductWeight_g: 250,
     });
     const [loading, setLoading] = useState(true);
 
@@ -670,6 +671,24 @@ const GeneralSettings = () => {
                             className="w-20 text-center px-2 py-1.5 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-brand-blue"
                         />
                         <span className="text-sm text-slate-500 flex-shrink-0">días</span>
+                    </div>
+                 </div>
+                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
+                    <div className="w-full text-center sm:text-left">
+                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Package size={18}/> Gramaje de nuestro producto (g)</label>
+                        <p className="text-sm text-slate-500 mt-1">Peso en gramos de la presentación estándar de nuestro producto. Se usa para comparar el precio por 100 g frente a la competencia.</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0 mt-2 sm:mt-0">
+                        <input
+                            type="number"
+                            min="50"
+                            max="5000"
+                            step="10"
+                            value={settings.ourProductWeight_g ?? 250}
+                            onChange={e => handleSettingChange('appConfig', 'ourProductWeight_g', Math.max(50, parseInt(e.target.value, 10) || 250))}
+                            className="w-24 text-center px-2 py-1.5 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                        />
+                        <span className="text-sm text-slate-500 flex-shrink-0">g</span>
                     </div>
                  </div>
             </div>
@@ -902,109 +921,62 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
     );
 };
 
+const MODULE_ROLE_CONFIG = [
+    {
+        groupLabel: 'Módulos del Manager (Director / Gerencia)',
+        roles: ['director', 'gerencia', 'sales_manager'],
+        items: [
+            { key: 'marketTrends',         label: 'Análisis de Tendencias',  icon: 'TrendingUp'    },
+            { key: 'inventoryManager',     label: 'Inventario',              icon: 'Package'       },
+            { key: 'plannerManager',       label: 'Planificador',            icon: 'MapIcon'       },
+            { key: 'rendimientoComercial', label: 'Rendimiento Comercial',   icon: 'Users'         },
+        ],
+    },
+    {
+        groupLabel: 'Módulos del Merchandiser',
+        roles: ['merchandiser'],
+        items: [
+            { key: 'plannerMerchandiser',   label: 'Planificador', icon: 'MapIcon' },
+            { key: 'logisticsMerchandiser', label: 'Logística',    icon: 'Truck'   },
+        ],
+    },
+    {
+        groupLabel: 'Módulos del Vendedor',
+        roles: ['vendedor'],
+        items: [
+            { key: 'pedidosVendedor',  label: 'Mis Pedidos',  icon: 'ClipboardList' },
+            { key: 'facturasVendedor', label: 'Mis Facturas', icon: 'Receipt'       },
+        ],
+    },
+];
+
+const ROLE_LABELS = {
+    director:      'Dirección',
+    gerencia:      'Gerencia',
+    sales_manager: 'Sales Mgr',
+    merchandiser:  'Merchandiser',
+    vendedor:      'Vendedor',
+};
+
+const MODULE_ICONS = {
+    TrendingUp:    <TrendingUp size={20} className="text-purple-600 flex-shrink-0" />,
+    Package:       <Package size={20} className="text-orange-500 flex-shrink-0" />,
+    MapIcon:       <MapIcon size={20} className="text-blue-500 flex-shrink-0" />,
+    Users:         <Users size={20} className="text-emerald-600 flex-shrink-0" />,
+    Truck:         <Truck size={20} className="text-slate-600 flex-shrink-0" />,
+    ClipboardList: <ClipboardList size={20} className="text-emerald-500 flex-shrink-0" />,
+    Receipt:       <Receipt size={20} className="text-blue-500 flex-shrink-0" />,
+};
+
 const ModuleManagement = () => {
-    const { modules, updateModule, configLoading } = useAppConfig();
+    const { roleModules, updateRoleModule, configLoading } = useAppConfig();
     const [saving, setSaving] = useState(null);
 
-    const moduleGroups = [
-        {
-            groupLabel: 'Gerente de Ventas',
-            items: [
-                {
-                    key: 'salesFocus',
-                    label: 'Brújula de Ventas',
-                    description: 'Dashboard principal del Gerente de Ventas.',
-                    icon: <Sun size={20} className="text-yellow-500 flex-shrink-0" />,
-                },
-                {
-                    key: 'plannerManager',
-                    label: 'Planificador',
-                    description: 'Módulo de planificación y agenda de rutas.',
-                    icon: <MapIcon size={20} className="text-blue-500 flex-shrink-0" />,
-                },
-                {
-                    key: 'inventoryManager',
-                    label: 'Inventario',
-                    description: 'Vista de inventario y gestión de depósitos.',
-                    icon: <Warehouse size={20} className="text-orange-500 flex-shrink-0" />,
-                },
-                {
-                    key: 'commissions',
-                    label: 'Comisiones',
-                    description: 'Vista de comisiones generadas desde pagos de Zoho Books.',
-                    icon: <DollarSign size={20} className="text-green-600 flex-shrink-0" />,
-                },
-                {
-                    key: 'salesGoals',
-                    label: 'Metas de Venta',
-                    description: 'Panel de seguimiento y cumplimiento de metas mensuales.',
-                    icon: <Target size={20} className="text-blue-600 flex-shrink-0" />,
-                },
-            ],
-        },
-        {
-            groupLabel: 'Merchandiser',
-            items: [
-                {
-                    key: 'plannerMerchandiser',
-                    label: 'Planificador',
-                    description: 'Acceso al planificador de rutas y visitas del merchandiser.',
-                    icon: <MapIcon size={20} className="text-blue-500 flex-shrink-0" />,
-                },
-                {
-                    key: 'logisticsMerchandiser',
-                    label: 'Logística',
-                    description: 'Panel de logística y transferencias de inventario del merchandiser.',
-                    icon: <Truck size={20} className="text-slate-600 flex-shrink-0" />,
-                },
-            ],
-        },
-        {
-            groupLabel: 'Master / Dirección / Gerencia',
-            items: [
-                {
-                    key: 'marketTrends',
-                    label: 'Análisis de Tendencias',
-                    description: 'Vista de tendencias de mercado y análisis competitivo.',
-                    icon: <TrendingUp size={20} className="text-purple-600 flex-shrink-0" />,
-                },
-                {
-                    key: 'rendimientoComercial',
-                    label: 'Rendimiento Comercial',
-                    description: 'KPIs por vendedor: meta del mes, nivel, comisiones y ranking del equipo.',
-                    icon: <Users size={20} className="text-emerald-600 flex-shrink-0" />,
-                },
-            ],
-        },
-        {
-            groupLabel: 'Vendedor',
-            items: [
-                {
-                    key: 'pedidosVendedor',
-                    label: 'Mis Pedidos',
-                    description: 'Tab de pedidos del mercaderista en el perfil del vendedor. Permite confirmar, dejar en hold o rechazar.',
-                    icon: <ClipboardList size={20} className="text-emerald-500 flex-shrink-0" />,
-                },
-                {
-                    key: 'facturasVendedor',
-                    label: 'Mis Facturas',
-                    description: 'Tab de facturas de Zoho Books asignadas al vendedor.',
-                    icon: <Receipt size={20} className="text-blue-500 flex-shrink-0" />,
-                },
-                {
-                    key: 'zohoIntegracion',
-                    label: 'Integración Zoho Books',
-                    description: 'Habilita los webhooks de Zoho Books para facturas y pagos. Configurar en Configuración → Integraciones.',
-                    icon: <Link2 size={20} className="text-violet-500 flex-shrink-0" />,
-                },
-            ],
-        },
-    ];
-
-    const handleToggle = async (key, currentValue) => {
-        setSaving(key);
+    const handleToggle = async (role, key, currentValue) => {
+        const savingKey = `${role}-${key}`;
+        setSaving(savingKey);
         try {
-            await updateModule(key, !currentValue);
+            await updateRoleModule(role, key, !currentValue);
         } catch {
             alert('No se pudo actualizar el módulo.');
         } finally {
@@ -1019,29 +991,40 @@ const ModuleManagement = () => {
             <div>
                 <h3 className="text-xl font-semibold text-slate-700 mb-1">Módulos Activos</h3>
                 <p className="text-sm text-slate-500 mb-4">Activa o desactiva funcionalidades por rol. Los cambios aplican en tiempo real para todos los usuarios.</p>
-                <div className="space-y-4">
-                    {moduleGroups.map(({ groupLabel, items }) => (
+                <div className="space-y-6">
+                    {MODULE_ROLE_CONFIG.map(({ groupLabel, roles, items }) => (
                         <div key={groupLabel}>
                             <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2 px-1">{groupLabel}</p>
                             <div className="bg-white rounded-lg shadow divide-y divide-slate-200">
-                                {items.map(({ key, label, description, icon }) => (
-                                    <div key={key} className="flex flex-col sm:flex-row justify-between items-center gap-4 p-4 sm:p-5">
-                                        <div className="w-full text-center sm:text-left flex items-start gap-3">
-                                            <div className="mt-0.5">{icon}</div>
+                                {items.map(({ key, label, icon }) => (
+                                    <div key={key} className="flex flex-col sm:flex-row justify-between items-start gap-4 p-4 sm:p-5">
+                                        <div className="flex items-start gap-3 min-w-0">
+                                            <div className="mt-0.5">{MODULE_ICONS[icon]}</div>
                                             <div>
-                                                <label className="font-semibold text-slate-800">{label}</label>
-                                                <p className="text-sm text-slate-500 mt-0.5">{description}</p>
+                                                <span className="font-semibold text-slate-800">{label}</span>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-3 flex-shrink-0">
-                                            <span className={`text-sm font-semibold min-w-[64px] text-right ${modules[key] ? 'text-green-600' : 'text-slate-400'}`}>
-                                                {saving === key ? '...' : modules[key] ? 'Activo' : 'Inactivo'}
-                                            </span>
-                                            <ToggleSwitch
-                                                enabled={modules[key]}
-                                                setEnabled={() => !saving && handleToggle(key, modules[key])}
-                                                disabled={saving !== null}
-                                            />
+                                        <div className="flex flex-wrap items-center gap-3 flex-shrink-0">
+                                            {roles.map((role) => {
+                                                const savingKey = `${role}-${key}`;
+                                                const currentValue = roleModules[role]?.[key] ?? true;
+                                                return (
+                                                    <div key={role} className="flex flex-col items-center gap-1">
+                                                        <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{ROLE_LABELS[role]}</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            {saving === savingKey ? (
+                                                                <span className="text-xs text-slate-400 w-11 flex justify-center">...</span>
+                                                            ) : (
+                                                                <ToggleSwitch
+                                                                    enabled={currentValue}
+                                                                    setEnabled={() => saving === null && handleToggle(role, key, currentValue)}
+                                                                    disabled={saving !== null}
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 ))}

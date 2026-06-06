@@ -7,7 +7,8 @@ import { usePendingTransfer } from '../hooks/usePendingTransfer';
 
 const MerchandiserHub = ({ onNavigate, selectedReporter }) => {
     const { transfer: pendingTransfer, loading: transferLoading } = usePendingTransfer(selectedReporter.id);
-    const { modules } = useAppConfig();
+    const { getModulesForRole } = useAppConfig();
+    const modules = getModulesForRole('merchandiser');
 
     return (
         <div className="p-4 md:p-8 bg-slate-50 min-h-full">

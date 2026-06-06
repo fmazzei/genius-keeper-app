@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useKpiCalculations } from '@/hooks/useKpiCalculations';
 import { useDashboardConfig } from '@/hooks/useDashboardConfig';
+import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { LayoutGrid, Settings, ChevronRight, Info, X } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import Modal from '@/Components/Modal';
@@ -208,10 +209,11 @@ const MetricCard = ({ def, data, onOpen }) => {
 // ── Main dashboard ─────────────────────────────────────────────────────────────
 const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => {
     const { getEnabledWidgets, loading: configLoading } = useDashboardConfig();
+    const { ourProductWeight_g } = useAppConfig();
     const [timeRange, setTimeRange]   = useState('30d');
     const [activeModal, setActiveModal] = useState(null);
 
-    const kpis  = useKpiCalculations(reports, posList, timeRange);
+    const kpis  = useKpiCalculations(reports, posList, timeRange, ourProductWeight_g);
     const extra = useMemo(() => {
         const r = kpis.reports || [];
         const uniquePdvs = new Set(r.map(x => x.posId)).size;

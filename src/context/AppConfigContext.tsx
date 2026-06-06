@@ -18,13 +18,18 @@ export interface ModulesConfig {
   pedidosVendedor: boolean;
   facturasVendedor: boolean;
   zohoIntegracion: boolean;
+  rendimientoComercial: boolean;
 }
 
 interface AppConfigContextType {
   modules: ModulesConfig;
+  roleModules: { [role: string]: Partial<ModulesConfig> };
+  ourProductWeight_g: number;
   competitorFrequencyDays: number;
   configLoading: boolean;
   updateModule: (moduleName: keyof ModulesConfig, enabled: boolean) => Promise<void>;
+  updateRoleModule: (role: string, moduleName: keyof ModulesConfig, enabled: boolean) => Promise<void>;
+  getModulesForRole: (role: string) => ModulesConfig;
 }
 
 const defaultModules: ModulesConfig = {
@@ -39,6 +44,7 @@ const defaultModules: ModulesConfig = {
   pedidosVendedor: true,
   facturasVendedor: true,
   zohoIntegracion: false,
+  rendimientoComercial: true,
 };
 
 const AppConfigContext = createContext<AppConfigContextType | undefined>(undefined);
@@ -53,6 +59,8 @@ export const useAppConfig = (): AppConfigContextType => {
 
 export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [modules, setModules] = useState<ModulesConfig>(defaultModules);
+  const [roleModules, setRoleModules] = useState<{ [role: string]: Partial<ModulesConfig> }>({});
+  const [ourProductWeight_g, setOurProductWeight_g] = useState<number>(250);
   const [competitorFrequencyDays, setCompetitorFrequencyDays] = useState<number>(15);
   const [configLoading, setConfigLoading] = useState(true);
 
@@ -71,11 +79,18 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
           configRef,
           (snap) => {
             if (snap.exists()) {
-              if (snap.data().modules) {
-                setModules({ ...defaultModules, ...snap.data().modules });
+              const data = snap.data();
+              if (data.modules) {
+                setModules({ ...defaultModules, ...data.modules });
               }
-              if (typeof snap.data().competitorFrequencyDays === 'number') {
-                setCompetitorFrequencyDays(snap.data().competitorFrequencyDays);
+              if (typeof data.competitorFrequencyDays === 'number') {
+                setCompetitorFrequencyDays(data.competitorFrequencyDays);
+              }
+              if (data.roleModules && typeof data.roleModules === 'object') {
+                setRoleModules(data.roleModules);
+              }
+              if (typeof data.ourProductWeight_g === 'number') {
+                setOurProductWeight_g(data.ourProductWeight_g);
               }
             } else {
               setModules(defaultModules);
@@ -104,8 +119,17 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
     await setDoc(configRef, { modules: { [moduleName]: enabled } }, { merge: true });
   };
 
+  const updateRoleModule = async (role: string, moduleName: keyof ModulesConfig, enabled: boolean) => {
+    const configRef = doc(db, 'settings', 'appConfig');
+    await setDoc(configRef, { roleModules: { [role]: { [moduleName]: enabled } } }, { merge: true });
+  };
+
+  const getModulesForRole = (role: string): ModulesConfig => {
+    return { ...defaultModules, ...roleModules[role] };
+  };
+
   return (
-    <AppConfigContext.Provider value={{ modules, competitorFrequencyDays, configLoading, updateModule }}>
+    <AppConfigContext.Provider value={{ modules, roleModules, ourProductWeight_g, competitorFrequencyDays, configLoading, updateModule, updateRoleModule, getModulesForRole }}>
       {children}
     </AppConfigContext.Provider>
   );

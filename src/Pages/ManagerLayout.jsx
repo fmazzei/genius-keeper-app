@@ -7,7 +7,7 @@ import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/Firebase/config.js';
-import { LogOut, BarChart2, TrendingUp, Bell, Settings, Package, Sun, DollarSign, Target, Map as MapIcon, Menu, ChevronsRight, Users, ClipboardList } from 'lucide-react';
+import { LogOut, BarChart2, TrendingUp, Bell, Settings, Package, Sun, DollarSign, Target, Map as MapIcon, Menu, ChevronsRight, Users, ClipboardList, Download } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import GerencialDashboard from './GerencialDashboard.jsx';
@@ -18,6 +18,7 @@ import AdminPanel from './AdminPanel.jsx';
 import VentasView from './VentasView.jsx';
 import RendimientoComercialView from './RendimientoComercialView.jsx';
 import ReportesAnaquelView from './ReportesAnaquelView.jsx';
+import ExportesView from './ExportesView.jsx';
 
 // ✅ Se importan ambos componentes del planificador
 import MonthlyPlanner from './Planner/MonthlyPlanner.jsx';
@@ -26,7 +27,8 @@ import Planner from './Planner/Planner.jsx';
 const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     const { posList, reports, loading: geniusLoading } = useGeniusEngine(role);
     const { unreadCount } = useNotifications();
-    const { modules } = useAppConfig();
+    const { getModulesForRole } = useAppConfig();
+    const modules = getModulesForRole(role);
     
     // Este hook se mantiene por si es usado en alguna otra parte del layout.
     const { agenda: legacyAgenda, updateAgenda: updateLegacyAgenda, loading: agendaLoading } = useAgenda(user.uid); 
@@ -87,6 +89,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             ventas:           'Ventas',
             planner:          'Centro de Planificación',
             reportesAnaquel:  'Reportes de Anaquel',
+            exportes:         'Módulo de Exportes',
         };
         return viewTitles[currentView] || 'Genius Keeper';
     };
@@ -111,6 +114,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Rendimiento" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
                 {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
+                <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
@@ -125,6 +129,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Rendimiento" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
                 {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
+                <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
@@ -137,6 +142,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Rendimiento" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
+                <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
@@ -180,6 +186,11 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 {/* Reportes de Anaquel */}
                 <div className={currentView === 'reportesAnaquel' ? 'block h-full' : 'hidden'}>
                     <ReportesAnaquelView />
+                </div>
+
+                {/* Exportes */}
+                <div className={currentView === 'exportes' ? 'block h-full' : 'hidden'}>
+                    <ExportesView />
                 </div>
 
                 <div className={currentView === 'dashboard' ? 'block h-full' : 'hidden'}>
