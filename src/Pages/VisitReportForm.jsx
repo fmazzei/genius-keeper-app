@@ -1,7 +1,8 @@
 // RUTA: src/Pages/VisitReportForm.jsx
 
-import React, { useState, useEffect } from 'react';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo } from 'react';
+import { addDoc, collection, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
+import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { useSwipeable } from 'react-swipeable';
@@ -257,25 +258,71 @@ const Step3_Execution = ({ report, setReport, isReadOnly }) => {
     );
 };
 
-const Step4_Intel = ({ report, setReport, isReadOnly }) => {
+const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, competitorAcknowledged, onConfirmNoChanges, onCompetitorChanged, daysSince }) => {
     const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null });
     const [isEntrantModalOpen, setIsEntrantModalOpen] = useState(false);
+
     const handleAddCompetitor = () => {
         if (isReadOnly) return;
         if (comp.product && comp.price) {
             setReport(prev => ({ ...prev, competition: [...prev.competition, comp] }));
             setComp({ product: '', price: '', hasPop: null, hasTasting: null });
+            onCompetitorChanged?.();
         } else {
             alert("Por favor, selecciona un producto y añade su precio.");
         }
     };
-    const handleRemoveCompetitor = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, competition: prev.competition.filter((_, i) => i !== index) })); };
+    const handleRemoveCompetitor = (index) => {
+        if (!isReadOnly) {
+            setReport(prev => ({ ...prev, competition: prev.competition.filter((_, i) => i !== index) }));
+            onCompetitorChanged?.();
+        }
+    };
     const handleRemoveEntrant = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, newEntrants: prev.newEntrants.filter((_, i) => i !== index) })); };
     const handleSaveNewEntrant = (entrantData) => { if(!isReadOnly) { setReport(prev => ({ ...prev, newEntrants: [...prev.newEntrants, entrantData] })); setIsEntrantModalOpen(false); }};
+
+    const dayLabel = daysSince === null ? null : daysSince === 0 ? 'hoy' : `hace ${daysSince} día${daysSince !== 1 ? 's' : ''}`;
+
     return (
         <>
             <FormSection title="Inteligencia Competitiva" icon={<Shield className="text-brand-blue mr-3"/>}>
                 <div className="space-y-6">
+                    {/* ── Banner de estado ─────────────────────────────── */}
+                    {!isReadOnly && competitorMode === 'preloaded' && (
+                        <div className={`p-3 rounded-xl border ${competitorAcknowledged ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                            {competitorAcknowledged ? (
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+                                    <p className="text-sm text-emerald-800 font-semibold">Datos de competencia confirmados</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2.5">
+                                    <div className="flex items-start gap-2">
+                                        <AlertCircle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+                                        <p className="text-sm text-amber-800">
+                                            Datos del último reporte ({dayLabel}). ¿Siguen siendo correctos?
+                                        </p>
+                                    </div>
+                                    <button type="button" onClick={onConfirmNoChanges}
+                                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-100 text-emerald-800 font-semibold rounded-xl border border-emerald-300 text-sm hover:bg-emerald-200 transition-colors">
+                                        <Check size={16} /> Sin cambios — Confirmar datos
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    {!isReadOnly && competitorMode === 'required' && (
+                        <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2">
+                            <AlertTriangle size={15} className="text-red-500 shrink-0 mt-0.5" />
+                            <p className="text-sm text-red-800">
+                                {daysSince === null
+                                    ? 'Primera visita a este PDV. Por favor registra los competidores presentes.'
+                                    : `Han pasado ${daysSince} días desde el último reporte. Añade al menos un competidor para continuar.`}
+                            </p>
+                        </div>
+                    )}
+
+                    {/* ── Formulario de competidores ────────────────────── */}
                     <div>
                         <h4 className="font-semibold text-slate-700 mb-2">Seguimiento a Competidores</h4>
                         <div className="p-4 bg-slate-50 rounded-lg space-y-4 border">
@@ -313,6 +360,7 @@ const Step4_Intel = ({ report, setReport, isReadOnly }) => {
                             ))}
                         </div>
                     </div>
+
                     <div className="pt-6 border-t">
                         <h4 className="font-semibold text-slate-700 mb-2">Nuevos Entrantes Detectados</h4>
                         <div className="mt-2 space-y-2">
@@ -337,18 +385,40 @@ const Step4_Intel = ({ report, setReport, isReadOnly }) => {
 };
 
 const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly = false, initialData = null }) => {
+    const { competitorFrequencyDays } = useAppConfig();
+
     const [currentStep, setCurrentStep] = useState(1);
     const [submissionState, setSubmissionState] = useState('form');
     const [isOfflineSave, setIsOfflineSave] = useState(false);
     const [report, setReport] = useState({ reporterName: '', price: '', orderQuantity: '', stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
     const [reportDate, setReportDate] = useState(new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }));
     const [isStepValid, setIsStepValid] = useState(false);
+    const [competitorAcknowledged, setCompetitorAcknowledged] = useState(false);
+
+    // Determine competitor reporting mode for this PDV
+    const { competitorMode, daysSince } = useMemo(() => {
+        if (isReadOnly || !pos?.lastCompetitorReport) return { competitorMode: 'required', daysSince: null };
+        const lastTs = pos.lastCompetitorReport;
+        const lastDate = lastTs?.toDate ? lastTs.toDate() : new Date(lastTs);
+        const days = Math.floor((Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+        return {
+            competitorMode: days < (competitorFrequencyDays ?? 15) ? 'preloaded' : 'required',
+            daysSince: days,
+        };
+    }, [pos, competitorFrequencyDays, isReadOnly]);
 
     useEffect(() => {
         if (selectedReporter && !isReadOnly) {
             setReport(prev => ({ ...prev, reporterName: selectedReporter.name }));
         }
     }, [selectedReporter, isReadOnly]);
+
+    // Pre-fill competition data when within frequency window
+    useEffect(() => {
+        if (competitorMode === 'preloaded' && Array.isArray(pos?.lastCompetitorData) && pos.lastCompetitorData.length > 0 && !isReadOnly) {
+            setReport(prev => ({ ...prev, competition: pos.lastCompetitorData }));
+        }
+    }, [competitorMode, pos, isReadOnly]); // eslint-disable-line
 
     useEffect(() => {
         if (initialData) {
@@ -383,11 +453,17 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             case 1: isValid = report.batches.length > 0 || report.stockout; break;
             case 2: isValid = report.price !== ''; break;
             case 3: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
-            case 4: isValid = true; break;
+            case 4:
+                if (competitorMode === 'preloaded') {
+                    isValid = competitorAcknowledged;
+                } else {
+                    isValid = report.competition.length > 0;
+                }
+                break;
             default: isValid = false;
         }
         setIsStepValid(isValid);
-    }, [currentStep, report, isReadOnly]);
+    }, [currentStep, report, isReadOnly, competitorMode, competitorAcknowledged]);
 
     const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, TOTAL_STEPS));
     const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 1));
@@ -432,6 +508,13 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                     ...finalReportData,
                     createdAt: serverTimestamp(),
                 });
+                // Update POS with latest competitor snapshot to track frequency
+                if (pos?.id) {
+                    await updateDoc(doc(db, 'pos', pos.id), {
+                        lastCompetitorReport: serverTimestamp(),
+                        lastCompetitorData: finalReportData.competition,
+                    });
+                }
                 setIsOfflineSave(false);
                 setSubmissionState('success');
             } catch (err) {
@@ -458,7 +541,14 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             case 1: return <Step1_Inventory {...stepProps} />;
             case 2: return <Step2_Sales {...stepProps} />;
             case 3: return <Step3_Execution {...stepProps} />;
-            case 4: return <Step4_Intel {...stepProps} />;
+            case 4: return <Step4_Intel
+                {...stepProps}
+                competitorMode={competitorMode}
+                competitorAcknowledged={competitorAcknowledged}
+                onConfirmNoChanges={() => setCompetitorAcknowledged(true)}
+                onCompetitorChanged={() => setCompetitorAcknowledged(true)}
+                daysSince={daysSince}
+            />;
             default: return <div>Paso no encontrado</div>;
         }
     };

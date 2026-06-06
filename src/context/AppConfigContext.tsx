@@ -22,6 +22,7 @@ export interface ModulesConfig {
 
 interface AppConfigContextType {
   modules: ModulesConfig;
+  competitorFrequencyDays: number;
   configLoading: boolean;
   updateModule: (moduleName: keyof ModulesConfig, enabled: boolean) => Promise<void>;
 }
@@ -52,6 +53,7 @@ export const useAppConfig = (): AppConfigContextType => {
 
 export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [modules, setModules] = useState<ModulesConfig>(defaultModules);
+  const [competitorFrequencyDays, setCompetitorFrequencyDays] = useState<number>(15);
   const [configLoading, setConfigLoading] = useState(true);
 
   useEffect(() => {
@@ -68,8 +70,13 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
         snapshotUnsubscribe = onSnapshot(
           configRef,
           (snap) => {
-            if (snap.exists() && snap.data().modules) {
-              setModules({ ...defaultModules, ...snap.data().modules });
+            if (snap.exists()) {
+              if (snap.data().modules) {
+                setModules({ ...defaultModules, ...snap.data().modules });
+              }
+              if (typeof snap.data().competitorFrequencyDays === 'number') {
+                setCompetitorFrequencyDays(snap.data().competitorFrequencyDays);
+              }
             } else {
               setModules(defaultModules);
             }
@@ -98,7 +105,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   return (
-    <AppConfigContext.Provider value={{ modules, configLoading, updateModule }}>
+    <AppConfigContext.Provider value={{ modules, competitorFrequencyDays, configLoading, updateModule }}>
       {children}
     </AppConfigContext.Provider>
   );

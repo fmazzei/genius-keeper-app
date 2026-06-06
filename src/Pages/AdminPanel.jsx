@@ -609,6 +609,7 @@ const GeneralSettings = () => {
     const [settings, setSettings] = useState({
         newReportNotifications: false,
         gpsRequired: true,
+        competitorFrequencyDays: 15,
     });
     const [loading, setLoading] = useState(true);
 
@@ -654,6 +655,23 @@ const GeneralSettings = () => {
                 <h3 className="text-xl font-semibold text-slate-700">Parámetros de la Aplicación</h3>
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Bell/> Notificar al Master sobre nuevos reportes</label><p className="text-sm text-slate-500 mt-1">Si está activo, se enviará una notificación push cada vez que un vendedor envíe un reporte.</p></div><ToggleSwitch enabled={settings.newReportNotifications} setEnabled={(value) => handleSettingChange('notifications', 'newReportNotifications', value)} /></div>
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Lock/> Requerir GPS para enviar reporte</label><p className="text-sm text-slate-500 mt-1">Si está activo, el merchandiser no podrá enviar un reporte si está fuera del rango del PDV.</p></div><ToggleSwitch enabled={settings.gpsRequired} setEnabled={(value) => handleSettingChange('appConfig', 'gpsRequired', value)} /></div>
+                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
+                    <div className="w-full text-center sm:text-left">
+                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><BarChart2 size={18}/> Frecuencia de reporte de competencia</label>
+                        <p className="text-sm text-slate-500 mt-1">Si el último reporte de un PDV tiene menos días, los datos se pre-cargan y el mercaderista solo confirma. Si supera este umbral, el registro es obligatorio.</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0 mt-2 sm:mt-0">
+                        <input
+                            type="number"
+                            min="1"
+                            max="90"
+                            value={settings.competitorFrequencyDays ?? 15}
+                            onChange={e => handleSettingChange('appConfig', 'competitorFrequencyDays', Math.max(1, parseInt(e.target.value, 10) || 15))}
+                            className="w-20 text-center px-2 py-1.5 border border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                        />
+                        <span className="text-sm text-slate-500 flex-shrink-0">días</span>
+                    </div>
+                 </div>
             </div>
              <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
                  <h3 className="text-xl font-semibold text-slate-700">Herramientas de Desarrollo</h3>
