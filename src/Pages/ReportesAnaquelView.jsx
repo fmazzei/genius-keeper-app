@@ -3,10 +3,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
+import { useAuth } from '@/context/AuthContext';
+import EditReportForm from '@/Components/EditReportForm.jsx';
+import Modal from '@/Components/Modal.jsx';
 import {
     ClipboardList, ChevronDown, ChevronUp, Search,
     Calendar, User, AlertTriangle, Loader,
-    CheckCircle, XCircle, ThumbsUp, Info,
+    CheckCircle, XCircle, ThumbsUp, Info, Pencil,
 } from 'lucide-react';
 
 const PERIODS = [
@@ -35,7 +38,7 @@ function daysSinceTs(ts) {
 
 // ── Report Card ──────────────────────────────────────────────────────────────
 
-function ReportCard({ report }) {
+function ReportCard({ report, isMaster, onEdit }) {
     const [expanded, setExpanded] = useState(false);
 
     const stockout = report.stockout;
@@ -77,9 +80,20 @@ function ReportCard({ report }) {
                         <p className="font-bold text-slate-800 truncate text-base">{report.posName || 'PDV sin nombre'}</p>
                         <p className="text-xs text-slate-500 mt-0.5 truncate">{report.posZone || '—'}</p>
                     </div>
-                    <span className={`text-xs font-semibold px-2 py-1 rounded-full border shrink-0 ${stockoutColor}`}>
-                        {stockoutLabel}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {isMaster && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onEdit(report); }}
+                                className="text-slate-400 hover:text-brand-blue transition-colors"
+                                title="Editar reporte"
+                            >
+                                <Pencil size={15} />
+                            </button>
+                        )}
+                        <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${stockoutColor}`}>
+                            {stockoutLabel}
+                        </span>
+                    </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
@@ -95,10 +109,16 @@ function ReportCard({ report }) {
 
                 {/* Key metrics */}
                 <div className="flex items-center gap-5 mt-3 flex-wrap">
+                    {report.inventoryLevel !== undefined && report.inventoryLevel !== '' && (
+                        <div className="text-center">
+                            <p className="text-lg font-black text-brand-blue leading-none">{report.inventoryLevel}</p>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">En anaquel</p>
+                        </div>
+                    )}
                     {report.facing !== undefined && report.facing !== '' && (
                         <div className="text-center">
                             <p className="text-lg font-black text-slate-800 leading-none">{report.facing}</p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">Facing</p>
+                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">Caras vis.</p>
                         </div>
                     )}
                     {report.price !== undefined && report.price !== '' && (
@@ -166,12 +186,6 @@ function ReportCard({ report }) {
                             <div>
                                 <p className="text-[10px] text-slate-400 uppercase tracking-wide">Material POP</p>
                                 <p className={`font-semibold mt-0.5 ${popColor}`}>{popLabel}</p>
-                            </div>
-                        )}
-                        {report.inventoryLevel !== undefined && report.inventoryLevel !== '' && (
-                            <div>
-                                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Nivel inventario</p>
-                                <p className="font-semibold text-slate-800 mt-0.5">{report.inventoryLevel}</p>
                             </div>
                         )}
                     </div>
@@ -244,11 +258,13 @@ function ReportCard({ report }) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 const ReportesAnaquelView = () => {
+    const { role } = useAuth();
     const [activeTab, setActiveTab]         = useState('recientes');
     const [reports, setReports]             = useState([]);
     const [posList, setPosList]             = useState([]);
     const [loading, setLoading]             = useState(true);
     const [error, setError]                 = useState(null);
+    const [editingReport, setEditingReport] = useState(null);
 
     // Histórico filters
     const [periodDays, setPeriodDays]       = useState(30);
@@ -479,9 +495,33 @@ const ReportesAnaquelView = () => {
                         {displayReports.length} reporte{displayReports.length !== 1 ? 's' : ''}
                         {activeTab === 'recientes' ? ' · Últimos 7 días' : ` · Últimos ${periodDays} días`}
                     </p>
-                    {displayReports.map(r => <ReportCard key={r.id} report={r} />)}
+                    {displayReports.map(r => (
+                        <ReportCard
+                            key={r.id}
+                            report={r}
+                            isMaster={role === 'master'}
+                            onEdit={setEditingReport}
+                        />
+                    ))}
                 </div>
             )}
+
+            <Modal
+                isOpen={!!editingReport}
+                onClose={() => setEditingReport(null)}
+                title={`Editando: ${editingReport?.posName || ''}`}
+                size="lg"
+            >
+                {editingReport && (
+                    <div className="p-4">
+                        <EditReportForm
+                            report={editingReport}
+                            onSave={() => { setEditingReport(null); fetchReports(activeTab === 'recientes' ? 7 : periodDays); }}
+                            onClose={() => setEditingReport(null)}
+                        />
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 };

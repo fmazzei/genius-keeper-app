@@ -28,7 +28,14 @@ export const useNotifications = () => {
             const notifsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
             // Ordenamos para mostrar las más recientes primero
             notifsData.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
-            setNotifications(notifsData);
+            const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
+            const twelveHoursAgo = new Date(Date.now() - TWELVE_HOURS_MS);
+            const visible = notifsData.filter(n => {
+                if (n.read) return false;
+                const date = n.createdAt?.toDate ? n.createdAt.toDate() : null;
+                return date && date >= twelveHoursAgo;
+            });
+            setNotifications(visible);
             setLoading(false);
         }, (error) => {
             console.error("Error al cargar notificaciones:", error);
@@ -64,7 +71,7 @@ export const useNotifications = () => {
         }
     };
 
-    const unreadCount = notifications.filter(n => !n.read).length;
+    const unreadCount = notifications.length;
 
     const markAllAsRead = async () => {
         const unread = notifications.filter(n => !n.read);
