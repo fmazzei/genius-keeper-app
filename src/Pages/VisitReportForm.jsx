@@ -1,7 +1,7 @@
 // RUTA: src/Pages/VisitReportForm.jsx
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { addDoc, collection, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
+import { addDoc, collection, serverTimestamp, updateDoc, doc, getDocs, query, where } from 'firebase/firestore';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
@@ -52,7 +52,15 @@ const getUrgency = (days) => {
 const SHELF_LOCATIONS = [ { id: 'ojos', label: 'Nivel Ojos (Zona Caliente)' }, { id: 'manos', label: 'Nivel Manos (Zona Tibia)' }, { id: 'superior', label: 'Nivel Superior (Zona Fría)' }, { id: 'inferior', label: 'Nivel Inferior (Zona Fría)' } ];
 const ADJACENT_CATEGORIES = [ { id: 'Quesos crema', label: 'Quesos crema' }, { id: 'Quesos de Cabra', label: 'Quesos de Cabra' }, { id: 'Delicatessen', label: 'Delicatessen' }, { id: 'Nevera Charcutería', label: 'Nevera Charcutería' } ];
 const POP_STATUS_OPTIONS = [ { id: 'Exhibido correctamente', label: 'Exhibido OK', icon: <ThumbsUp/> }, { id: 'Dañado', label: 'Dañado', icon: <AlertCircle/> }, { id: 'Ausente', label: 'Ausente', icon: <X/> }, { id: 'Sin Campaña Activa', label: 'Sin Campaña', icon: <Info/> } ];
-const COMPETITOR_PRODUCTS = [ { id: 'Ananke Artesanal Natural 200g', text: 'Ananke Artesanal Natural 200g' }, { id: 'Ananke Natural Extra Cremoso 150g', text: 'Ananke Natural Extra Cremoso 150g' }, { id: 'Ananke Natural Extra Cremoso 225g', text: 'Ananke Natural Extra Cremoso 225g' }, { id: 'Cheva Capri 180g', text: 'Cheva Capri 180g' }, { id: 'Las Cumbres Natural 200g', text: 'Las Cumbres Natural 200g' }, { id: 'Capri Cream Natural 170g', text: 'Capri Cream Natural 170g' }, ];
+const useCompetitorProducts = () => {
+    const [products, setProducts] = useState([]);
+    useEffect(() => {
+        getDocs(query(collection(db, 'competitors'), where('active', '==', true)))
+            .then(snap => setProducts(snap.docs.map(d => ({ id: d.id, weight_g: d.data().weight_g, text: `${d.data().brand} ${d.data().name} ${d.data().weight_g}g` }))))
+            .catch(() => {});
+    }, []);
+    return products;
+};
 
 // --- Componentes UI Internos ---
 const ProgressBar = ({ currentStep, totalSteps }) => (
@@ -259,14 +267,20 @@ const Step3_Execution = ({ report, setReport, isReadOnly }) => {
 };
 
 const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince }) => {
-    const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null });
+    const competitorProducts = useCompetitorProducts();
+    const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
     const [isEntrantModalOpen, setIsEntrantModalOpen] = useState(false);
+
+    const handleProductSelect = (e) => {
+        const selected = competitorProducts.find(p => p.text === e.target.value);
+        setComp(prev => ({ ...prev, product: e.target.value, weight_g: selected?.weight_g || null }));
+    };
 
     const handleAddCompetitor = () => {
         if (isReadOnly) return;
         if (comp.product && comp.price) {
             setReport(prev => ({ ...prev, competition: [...prev.competition, comp] }));
-            setComp({ product: '', price: '', hasPop: null, hasTasting: null });
+            setComp({ product: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
         } else {
             alert("Por favor, selecciona un producto y añade su precio.");
         }
@@ -308,9 +322,9 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince 
                         <div className="p-4 bg-slate-50 rounded-lg space-y-4 border">
                             <div>
                                 <label className="text-sm font-medium text-slate-700">Seleccionar Competidor</label>
-                                <select value={comp.product} onChange={e => setComp({...comp, product: e.target.value})} className="w-full p-3 border rounded mt-1 bg-white disabled:bg-slate-100" disabled={isReadOnly}>
+                                <select value={comp.product} onChange={handleProductSelect} className="w-full p-3 border rounded mt-1 bg-white disabled:bg-slate-100" disabled={isReadOnly}>
                                     <option value="">-- Elige un producto --</option>
-                                    {COMPETITOR_PRODUCTS.map(p => <option key={p.id} value={p.text}>{p.text}</option>)}
+                                    {competitorProducts.map(p => <option key={p.id} value={p.text}>{p.text}</option>)}
                                 </select>
                             </div>
                             <FormInput label="Precio" type="number" value={comp.price} onChange={e => setComp({...comp, price: e.target.value})} placeholder="Ingresa el PVP" disabled={isReadOnly}/>
@@ -490,6 +504,24 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                         lastCompetitorReport: serverTimestamp(),
                         lastCompetitorData: finalReportData.competition,
                     });
+                }
+                // Notify admins when new entrants are detected
+                if (finalReportData.newEntrants?.length > 0) {
+                    const adminSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', 'in', ['master', 'sales_manager', 'director'])));
+                    const entrantNames = finalReportData.newEntrants.map(e => `${e.brand} ${e.presentation}`).join(', ');
+                    await Promise.all(adminSnap.docs.map(adminDoc =>
+                        addDoc(collection(db, 'notifications'), {
+                            userId: adminDoc.id,
+                            title: 'Nuevo Entrante Detectado',
+                            body: `${finalReportData.userName} reportó ${finalReportData.newEntrants.length} nuevo(s) entrante(s) en ${finalReportData.posName}: ${entrantNames}.`,
+                            type: 'new_entrant',
+                            posName: finalReportData.posName,
+                            reporterName: finalReportData.userName,
+                            newEntrants: finalReportData.newEntrants,
+                            read: false,
+                            createdAt: serverTimestamp(),
+                        })
+                    ));
                 }
                 setIsOfflineSave(false);
                 setSubmissionState('success');

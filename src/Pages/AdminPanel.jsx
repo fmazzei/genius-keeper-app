@@ -2040,6 +2040,140 @@ const NotificacionesSection = () => {
     );
 };
 
+// ─── Competitor Management ────────────────────────────────────────────────────
+
+const CompetitorManagement = () => {
+    const [competitors, setCompetitors] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [form, setForm] = useState({ name: '', brand: '', weight_g: '', category: 'direct' });
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        const q = query(collection(db, 'competitors'), orderBy('name'));
+        const unsub = onSnapshot(q, (snap) => {
+            setCompetitors(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setLoading(false);
+        });
+        return () => unsub();
+    }, []);
+
+    const handleAdd = async (e) => {
+        e.preventDefault();
+        setError('');
+        if (!form.name.trim() || !form.brand.trim() || !form.weight_g) {
+            setError('Nombre, marca y gramaje son obligatorios.');
+            return;
+        }
+        const weight = Number(form.weight_g);
+        if (isNaN(weight) || weight <= 0) {
+            setError('El gramaje debe ser un número positivo.');
+            return;
+        }
+        setIsSaving(true);
+        try {
+            await addDoc(collection(db, 'competitors'), {
+                name: form.name.trim(),
+                brand: form.brand.trim(),
+                weight_g: weight,
+                category: form.category,
+                active: true,
+                createdAt: new Date().toISOString(),
+            });
+            setForm({ name: '', brand: '', weight_g: '', category: 'direct' });
+        } catch (err) {
+            setError('No se pudo guardar. Intenta de nuevo.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleToggleActive = async (comp) => {
+        try {
+            await updateDoc(doc(db, 'competitors', comp.id), { active: !comp.active });
+        } catch {
+            alert('No se pudo actualizar el estado.');
+        }
+    };
+
+    const CATEGORY_LABELS = { direct: 'Directo', indirect: 'Indirecto' };
+
+    if (loading) return <LoadingSpinner />;
+
+    return (
+        <div className="space-y-6">
+            <div className="bg-white p-4 sm:p-6 rounded-lg shadow">
+                <h3 className="text-xl font-semibold text-slate-700 mb-1">Agregar Competidor</h3>
+                <p className="text-sm text-slate-500 mb-4">Define los productos competidores que el mercaderista podrá seleccionar al reportar inteligencia de campo.</p>
+                <form onSubmit={handleAdd} className="space-y-4">
+                    {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Marca</label>
+                            <input
+                                type="text" value={form.brand} onChange={e => setForm(p => ({ ...p, brand: e.target.value }))}
+                                placeholder="Ej: Ananke, Las Cumbres" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Nombre del Producto</label>
+                            <input
+                                type="text" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+                                placeholder="Ej: Artesanal Natural Extra Cremoso" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Gramaje (g)</label>
+                            <input
+                                type="number" value={form.weight_g} onChange={e => setForm(p => ({ ...p, weight_g: e.target.value }))}
+                                placeholder="Ej: 200" min="1" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Tipo de Competidor</label>
+                            <select value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue">
+                                <option value="direct">Directo</option>
+                                <option value="indirect">Indirecto</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" disabled={isSaving} className="w-full sm:w-auto flex items-center gap-2 px-5 py-2 bg-brand-blue text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50">
+                        <PlusCircle size={16} />
+                        {isSaving ? 'Guardando...' : 'Agregar Competidor'}
+                    </button>
+                </form>
+            </div>
+
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+                <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h3 className="font-semibold text-slate-700">Competidores Registrados ({competitors.length})</h3>
+                </div>
+                {competitors.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400">
+                        <ShoppingCart size={32} className="mx-auto mb-2 opacity-30" />
+                        <p className="text-sm">No hay competidores registrados aún.</p>
+                    </div>
+                ) : (
+                    <ul className="divide-y divide-slate-100">
+                        {competitors.map(comp => (
+                            <li key={comp.id} className={`flex items-center justify-between px-4 sm:px-6 py-3 gap-3 ${comp.active ? '' : 'opacity-50'}`}>
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-semibold text-slate-800 text-sm truncate">{comp.brand} — {comp.name}</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">{comp.weight_g}g · {CATEGORY_LABELS[comp.category] || comp.category}</p>
+                                </div>
+                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${comp.category === 'direct' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                    {CATEGORY_LABELS[comp.category] || comp.category}
+                                </span>
+                                <ToggleSwitch enabled={comp.active} setEnabled={() => handleToggleActive(comp)} />
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </div>
+    );
+};
+
 // ─── Integraciones — Zoho Books webhook config ────────────────────────────────
 
 const IntegracionesSection = () => {
@@ -2165,6 +2299,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
                 { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
+                { id: 'competitors', label: 'Competidores',     Icon: ShoppingCart },
             ],
         },
         {
@@ -2222,6 +2357,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
             case 'depots':         return <DepotManagement />;
+            case 'competitors':    return <CompetitorManagement />;
             case 'modules':        return <ModuleManagement />;
             case 'dashboard':      return <DashboardManagement />;
             case 'alerts':         return <AlertsManagement />;

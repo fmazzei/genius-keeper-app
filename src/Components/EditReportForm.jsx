@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { FormSection, ToggleButton, FormInput } from '@/Components/FormControls.jsx';
 import { DollarSign, BarChart2, Shield, Trash2, X, Search } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner.jsx';
@@ -8,12 +8,22 @@ import NewEntrantModal from './NewEntrantModal.jsx';
 
 const SHELF_LOCATIONS = ['ojos', 'manos', 'superior', 'inferior'];
 const POP_STATUS_OPTIONS = ['Exhibido correctamente', 'Dañado', 'Ausente', 'Sin Campaña Activa'];
-const COMPETITOR_PRODUCTS = [ { id: 'Ananke Artesanal Natural 200g', text: 'Ananke Artesanal Natural 200g' }, { id: 'Ananke Natural Extra Cremoso 150g', text: 'Ananke Natural Extra Cremoso 150g' }, { id: 'Ananke Natural Extra Cremoso 225g', text: 'Ananke Natural Extra Cremoso 225g' }, { id: 'Cheva Capri 180g', text: 'Cheva Capri 180g' }, { id: 'Las Cumbres Natural 200g', text: 'Las Cumbres Natural 200g' }, { id: 'Capri Cream Natural 170g', text: 'Capri Cream Natural 170g' }, ];
+
+const useCompetitorProducts = () => {
+    const [products, setProducts] = useState([]);
+    useEffect(() => {
+        getDocs(query(collection(db, 'competitors'), where('active', '==', true)))
+            .then(snap => setProducts(snap.docs.map(d => ({ id: d.id, weight_g: d.data().weight_g, text: `${d.data().brand} ${d.data().name} ${d.data().weight_g}g` }))))
+            .catch(() => {});
+    }, []);
+    return products;
+};
 
 const EditReportForm = ({ report, onSave, onClose }) => {
+    const competitorProducts = useCompetitorProducts();
     const [editedData, setEditedData] = useState(report);
     const [isProcessing, setIsProcessing] = useState(false);
-    const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null });
+    const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
     const [isEntrantModalOpen, setIsEntrantModalOpen] = useState(false);
 
     useEffect(() => { setEditedData(report); }, [report]);
@@ -21,10 +31,15 @@ const EditReportForm = ({ report, onSave, onClose }) => {
     const handleChange = (field, value) => setEditedData(prev => ({ ...prev, [field]: value }));
     const handleNumericChange = (field, value) => handleChange(field, value === '' ? 0 : Number(value));
 
+    const handleProductSelect = (e) => {
+        const selected = competitorProducts.find(p => p.text === e.target.value);
+        setComp(prev => ({ ...prev, product: e.target.value, weight_g: selected?.weight_g || null }));
+    };
+
     const handleAddCompetitor = () => {
         if (comp.product && comp.price) {
             handleChange('competition', [...(editedData.competition || []), comp]);
-            setComp({ product: '', price: '', hasPop: null, hasTasting: null });
+            setComp({ product: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
         }
     };
     const handleRemoveCompetitor = (index) => handleChange('competition', editedData.competition.filter((_, i) => i !== index));
@@ -116,9 +131,9 @@ const EditReportForm = ({ report, onSave, onClose }) => {
                     <FormSection title="Inteligencia Competitiva" icon={<Shield className="text-brand-blue mr-3"/>}>
                         <div className="p-3 bg-slate-50 rounded-lg border space-y-3">
                             <h4 className="font-semibold text-slate-700">Añadir Competidor</h4>
-                            <select value={comp.product} onChange={e => setComp({...comp, product: e.target.value})} className="w-full p-2 border rounded bg-white">
+                            <select value={comp.product} onChange={handleProductSelect} className="w-full p-2 border rounded bg-white">
                                 <option value="">-- Elige un producto --</option>
-                                {COMPETITOR_PRODUCTS.map(p => <option key={p.id} value={p.text}>{p.text}</option>)}
+                                {competitorProducts.map(p => <option key={p.id} value={p.text}>{p.text}</option>)}
                             </select>
                             <FormInput label="Precio" type="number" value={comp.price} onChange={e => setComp({...comp, price: e.target.value})} placeholder="PVP del competidor"/>
                             <button type="button" onClick={handleAddCompetitor} className="w-full bg-slate-200 font-semibold p-2 rounded-lg text-sm">Añadir Competidor</button>
