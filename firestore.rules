@@ -100,6 +100,12 @@ service cloud.firestore {
       allow delete: if isMaster();
     }
 
+    match /competitors/{competitorId} {
+      allow get, list: if isAuthenticated();
+      allow create, update: if isAdmin() || isMaster();
+      allow delete: if isMaster();
+    }
+
     match /depots/{depotId} {
       allow get, list: if isAuthenticated() && (isProduccion() || isAdmin() || isMerchandiser());
       allow write: if isProduccion() || isAdmin();

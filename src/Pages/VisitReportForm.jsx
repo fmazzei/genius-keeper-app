@@ -591,7 +591,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                                 <ChevronRight size={20} />
                             </button>
                         ) : (
-                            <button onClick={handleSubmit} disabled={submissionState === 'submitting'} className="flex items-center gap-2 bg-green-600 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-green-300">
+                            <button onClick={handleSubmit} disabled={!isStepValid || submissionState === 'submitting'} className="flex items-center gap-2 bg-green-600 text-white font-bold py-2 px-4 sm:py-3 sm:px-6 rounded-lg disabled:bg-green-300">
                                 <Send size={20} /> {submissionState === 'submitting' ? 'Enviando...' : 'Finalizar'}
                             </button>
                         )}
