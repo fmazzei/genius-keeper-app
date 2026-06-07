@@ -8,10 +8,10 @@ import { useCoverageGoal } from '../hooks/useCoverageGoal';
 import { useMerchandiserCoverage } from '../hooks/useMerchandiserCoverage';
 
 const CoverageGoalCard = ({ userId, posList }) => {
-    const { coverageGoal, loading: goalLoading } = useCoverageGoal(userId);
+    const { coverageGoal, enabled, loading: goalLoading } = useCoverageGoal(userId);
     const { activeCount, onTimeCount, percentage, loading: coverageLoading } = useMerchandiserCoverage(userId, posList);
 
-    if (goalLoading || coverageLoading || activeCount === 0) return null;
+    if (goalLoading || coverageLoading || activeCount === 0 || !enabled || coverageGoal <= 0) return null;
 
     const onTrack = percentage >= coverageGoal;
     const barColor = onTrack ? 'bg-emerald-500' : percentage >= coverageGoal * 0.75 ? 'bg-amber-400' : 'bg-red-400';

@@ -12,19 +12,23 @@ import { db } from '../Firebase/config';
  */
 export const useCoverageGoal = (userId) => {
     const [coverageGoal, setCoverageGoal] = useState(0);
+    const [enabled, setEnabled] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         if (!userId) {
             setLoading(false);
             setCoverageGoal(0);
+            setEnabled(false);
             return;
         }
 
         const goalRef = doc(db, 'users_metadata', userId);
         const unsubscribe = onSnapshot(goalRef, (snap) => {
-            const goal = snap.exists() ? Number(snap.data().coverageGoal) : 0;
+            const data = snap.exists() ? snap.data() : {};
+            const goal = Number(data.coverageGoal);
             setCoverageGoal(Number.isFinite(goal) ? goal : 0);
+            setEnabled(data.coverageGoalEnabled === true);
             setLoading(false);
         }, (error) => {
             console.error('Error fetching coverage goal for user ' + userId + ':', error);
@@ -34,5 +38,5 @@ export const useCoverageGoal = (userId) => {
         return () => unsubscribe();
     }, [userId]);
 
-    return { coverageGoal, loading };
+    return { coverageGoal, enabled, loading };
 };

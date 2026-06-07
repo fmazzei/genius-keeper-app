@@ -217,11 +217,16 @@ const CoverageGoalsManagement = () => {
     useEffect(() => {
         const q = query(collection(db, "users_metadata"), where("role", "==", "merchandiser"));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const usersWithGoals = snapshot.docs.map(doc => ({
-                id: doc.id,
-                name: doc.data().name || doc.id,
-                coverageGoal: doc.data().coverageGoal ?? 90
-            }));
+            const usersWithGoals = snapshot.docs.map(doc => {
+                const data = doc.data();
+                const name = (data.name && data.name.trim()) || data.email || doc.id;
+                return {
+                    id: doc.id,
+                    name,
+                    coverageGoal: data.coverageGoal ?? 90,
+                    coverageGoalEnabled: data.coverageGoalEnabled === true,
+                };
+            });
             setUsers(usersWithGoals);
             setLoading(false);
         });
@@ -234,12 +239,18 @@ const CoverageGoalsManagement = () => {
         ));
     };
 
+    const handleToggleEnabled = (userId) => {
+        setUsers(prev => prev.map(user =>
+            user.id === userId ? { ...user, coverageGoalEnabled: !user.coverageGoalEnabled } : user
+        ));
+    };
+
     const handleSaveChanges = async () => {
         setIsSaving(true);
         const batch = writeBatch(db);
         users.forEach(user => {
             const userRef = doc(db, "users_metadata", user.id);
-            batch.set(userRef, { coverageGoal: user.coverageGoal }, { merge: true });
+            batch.set(userRef, { coverageGoal: user.coverageGoal, coverageGoalEnabled: user.coverageGoalEnabled }, { merge: true });
         });
         try {
             await batch.commit();
@@ -260,24 +271,32 @@ const CoverageGoalsManagement = () => {
             <p className="text-sm text-slate-500 mb-4">
                 Define el porcentaje de PDV activos que cada mercaderista debe mantener visitados dentro de la frecuencia
                 asignada a cada punto de venta. No genera comisiones — es solo una meta de cobertura de visita,
-                y siempre se calcula contra el universo de PDV activos en cada momento.
+                y siempre se calcula contra el universo de PDV activos en cada momento. No todos los mercaderistas
+                tienen por qué tener una meta asignada: actívala solo para quienes corresponda.
             </p>
             <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-4">
                 {users.length > 0 ? users.map(user => (
                     <div key={user.id} className="flex flex-col sm:flex-row justify-between items-center gap-3 border-b pb-4 last:border-b-0 last:pb-0">
                          <div className="flex items-center">
                             <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 bg-emerald-600">
-                                {user.name.charAt(0)}
+                                {user.name.charAt(0).toUpperCase()}
                             </div>
                             <div className="ml-4">
                                 <p className="font-semibold text-slate-800">{user.name}</p>
-                                <p className="text-sm text-slate-500">Mercaderista</p>
+                                <p className="text-sm text-slate-500">{user.coverageGoalEnabled ? 'Meta activa' : 'Sin meta asignada'}</p>
                             </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                             <Target size={18} className="text-slate-500" />
-                             <input type="number" min="0" max="100" value={user.coverageGoal ?? ''} onChange={e => handleGoalChange(user.id, e.target.value)} className="w-24 text-center p-2 border border-slate-300 rounded-md" />
-                             <label className="text-sm text-slate-600">% de PDV activos</label>
+                        <div className="flex items-center gap-3">
+                            <ToggleSwitch enabled={user.coverageGoalEnabled} setEnabled={() => handleToggleEnabled(user.id)} />
+                            <Target size={18} className={user.coverageGoalEnabled ? 'text-slate-500' : 'text-slate-300'} />
+                            <input
+                                type="number" min="0" max="100"
+                                value={user.coverageGoal ?? ''}
+                                onChange={e => handleGoalChange(user.id, e.target.value)}
+                                disabled={!user.coverageGoalEnabled}
+                                className="w-24 text-center p-2 border border-slate-300 rounded-md disabled:bg-slate-100 disabled:text-slate-400"
+                            />
+                            <label className="text-sm text-slate-600">% de PDV activos</label>
                         </div>
                     </div>
                 )) : <p className="text-center text-slate-500 py-4">No hay usuarios con rol 'Mercaderista' para asignar metas.</p>}
