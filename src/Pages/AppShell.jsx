@@ -266,7 +266,7 @@ const AppShell = ({ user, role, onLogout }) => {
     
     const merchandiserContent = () => {
         switch(currentView) {
-            case 'hub': return <MerchandiserHub onNavigate={setCurrentView} selectedReporter={selectedReporter} />;
+            case 'hub': return <MerchandiserHub onNavigate={setCurrentView} selectedReporter={selectedReporter} user={user} posList={masterStopList} />;
             
             case 'planner':
                 return <Planner 
@@ -295,7 +295,7 @@ const AppShell = ({ user, role, onLogout }) => {
                 );
             case 'visit_report': 
                 return <VisitReportForm pos={selectedPos} user={user} selectedReporter={selectedReporter} backToList={() => setCurrentView('hub')} />;
-            default: return <MerchandiserHub onNavigate={setCurrentView} selectedReporter={selectedReporter} />;
+            default: return <MerchandiserHub onNavigate={setCurrentView} selectedReporter={selectedReporter} user={user} posList={masterStopList} />;
         }
     };
     

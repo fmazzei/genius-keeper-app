@@ -144,9 +144,24 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         });
         const priceIndexDifference = safeAvg(priceDifferences.reduce((a, b) => a + b, 0), priceDifferences.length);
 
-        const complianceReports = reports.filter(r => r.visitDate && r.plannedVisitDate);
-        const onTimeVisits      = complianceReports.filter(r => new Date(r.visitDate) <= new Date(r.plannedVisitDate)).length;
-        const visitCompliance   = safeAvg(onTimeVisits, complianceReports.length) * 100;
+        // Cumplimiento de visitas: se basa en la frecuencia asignada a cada PDV activo
+        // (campo `visitInterval`, en días), comparando la fecha de su última visita
+        // registrada contra esa frecuencia. No depende del planificador de rutas.
+        const now = new Date();
+        const activePdvsWithFrequency = (posList || []).filter(p => p.active && Number(p.visitInterval) > 0);
+        const lastVisitByPos = reports.reduce((acc, r) => {
+            if (!r.posId || !r.createdAt?.seconds) return acc;
+            const reportDate = new Date(r.createdAt.seconds * 1000);
+            if (!acc[r.posId] || reportDate > acc[r.posId]) acc[r.posId] = reportDate;
+            return acc;
+        }, {});
+        const onTimePdvs = activePdvsWithFrequency.filter(pdv => {
+            const lastVisit = lastVisitByPos[pdv.id];
+            if (!lastVisit) return false;
+            const daysSinceLastVisit = (now - lastVisit) / (1000 * 60 * 60 * 24);
+            return daysSinceLastVisit <= Number(pdv.visitInterval);
+        });
+        const visitCompliance = safeAvg(onTimePdvs.length, activePdvsWithFrequency.length) * 100;
 
         const reportsByStore = reports.reduce((acc, r) => {
             if (r.posName) { if (!acc[r.posName]) acc[r.posName] = []; acc[r.posName].push(r); }
@@ -168,7 +183,7 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         const globalCompetitorCompleteness = avg('competitorCompleteness');
         const globalExecution              = avg('execution');
 
-        const globalCoverage = complianceReports.length > 0
+        const globalCoverage = activePdvsWithFrequency.length > 0
             ? visitCompliance * 0.60 + globalOrderRate * 0.40
             : globalOrderRate;
 

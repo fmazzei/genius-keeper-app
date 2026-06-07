@@ -209,6 +209,90 @@ const SalesGoalsManagement = () => {
 };
 
 
+const CoverageGoalsManagement = () => {
+    const [users, setUsers] = useState([]);
+    const [isSaving, setIsSaving] = useState(false);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const q = query(collection(db, "users_metadata"), where("role", "==", "merchandiser"));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const usersWithGoals = snapshot.docs.map(doc => ({
+                id: doc.id,
+                name: doc.data().name || doc.id,
+                coverageGoal: doc.data().coverageGoal ?? 90
+            }));
+            setUsers(usersWithGoals);
+            setLoading(false);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const handleGoalChange = (userId, goal) => {
+        setUsers(prev => prev.map(user =>
+            user.id === userId ? { ...user, coverageGoal: Math.min(100, Math.max(0, Number(goal) || 0)) } : user
+        ));
+    };
+
+    const handleSaveChanges = async () => {
+        setIsSaving(true);
+        const batch = writeBatch(db);
+        users.forEach(user => {
+            const userRef = doc(db, "users_metadata", user.id);
+            batch.set(userRef, { coverageGoal: user.coverageGoal }, { merge: true });
+        });
+        try {
+            await batch.commit();
+            alert("Metas de cobertura actualizadas correctamente.");
+        } catch (error) {
+            console.error("Error al guardar metas de cobertura:", error);
+            alert("No se pudieron guardar las metas.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    if (loading) return <LoadingSpinner />;
+
+    return (
+        <div>
+            <h3 className="text-xl font-semibold text-slate-700 mb-2">Metas de Cobertura por Mercaderista</h3>
+            <p className="text-sm text-slate-500 mb-4">
+                Define el porcentaje de PDV activos que cada mercaderista debe mantener visitados dentro de la frecuencia
+                asignada a cada punto de venta. No genera comisiones — es solo una meta de cobertura de visita,
+                y siempre se calcula contra el universo de PDV activos en cada momento.
+            </p>
+            <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-4">
+                {users.length > 0 ? users.map(user => (
+                    <div key={user.id} className="flex flex-col sm:flex-row justify-between items-center gap-3 border-b pb-4 last:border-b-0 last:pb-0">
+                         <div className="flex items-center">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 bg-emerald-600">
+                                {user.name.charAt(0)}
+                            </div>
+                            <div className="ml-4">
+                                <p className="font-semibold text-slate-800">{user.name}</p>
+                                <p className="text-sm text-slate-500">Mercaderista</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                             <Target size={18} className="text-slate-500" />
+                             <input type="number" min="0" max="100" value={user.coverageGoal ?? ''} onChange={e => handleGoalChange(user.id, e.target.value)} className="w-24 text-center p-2 border border-slate-300 rounded-md" />
+                             <label className="text-sm text-slate-600">% de PDV activos</label>
+                        </div>
+                    </div>
+                )) : <p className="text-center text-slate-500 py-4">No hay usuarios con rol 'Mercaderista' para asignar metas.</p>}
+                <div className="flex justify-end pt-2">
+                     <button onClick={handleSaveChanges} disabled={isSaving || users.length === 0} className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
+                        {isSaving ? <LoadingSpinner size="sm" /> : <Save size={18} />}
+                        {isSaving ? 'Guardando...' : 'Guardar Metas'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 const UserManagement = () => {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -2281,6 +2365,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             items: [
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
+                { id: 'coverage_goals', label: 'Metas Mercaderista', Icon: Target },
                 { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
                 { id: 'competitors', label: 'Competidores',     Icon: ShoppingCart },
             ],
@@ -2339,6 +2424,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'campo':         return <ReportersManagement />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
+            case 'coverage_goals': return <CoverageGoalsManagement />;
             case 'depots':         return <DepotManagement />;
             case 'competitors':    return <CompetitorManagement />;
             case 'modules':        return <ModuleManagement />;

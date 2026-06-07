@@ -1,11 +1,43 @@
 // RUTA: src/Pages/MerchandiserHub.jsx
 
 import React from 'react';
-import { FileText, Map, Truck, ShoppingCart, AlertTriangle, ClipboardList } from 'lucide-react';
+import { FileText, Map, Truck, ShoppingCart, AlertTriangle, ClipboardList, Target } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { usePendingTransfer } from '../hooks/usePendingTransfer';
+import { useCoverageGoal } from '../hooks/useCoverageGoal';
+import { useMerchandiserCoverage } from '../hooks/useMerchandiserCoverage';
 
-const MerchandiserHub = ({ onNavigate, selectedReporter }) => {
+const CoverageGoalCard = ({ userId, posList }) => {
+    const { coverageGoal, loading: goalLoading } = useCoverageGoal(userId);
+    const { activeCount, onTimeCount, percentage, loading: coverageLoading } = useMerchandiserCoverage(userId, posList);
+
+    if (goalLoading || coverageLoading || activeCount === 0) return null;
+
+    const onTrack = percentage >= coverageGoal;
+    const barColor = onTrack ? 'bg-emerald-500' : percentage >= coverageGoal * 0.75 ? 'bg-amber-400' : 'bg-red-400';
+    const textColor = onTrack ? 'text-emerald-600' : percentage >= coverageGoal * 0.75 ? 'text-amber-500' : 'text-red-500';
+
+    return (
+        <div className="bg-white rounded-xl shadow-md p-5 mb-8 border border-slate-100">
+            <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-slate-800 font-bold">
+                    <Target size={18} className="text-emerald-600" />
+                    <span>Meta de Cobertura de Visitas</span>
+                </div>
+                <span className={`text-2xl font-black ${textColor}`}>{percentage.toFixed(0)}%</span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden mb-2">
+                <div className={`h-full rounded-full ${barColor} transition-all duration-700`} style={{ width: `${Math.min(100, percentage)}%` }} />
+            </div>
+            <p className="text-xs text-slate-500">
+                {onTimeCount} de {activeCount} PDV activos visitados dentro de su frecuencia asignada
+                {coverageGoal > 0 && <> · Meta: {coverageGoal}%</>}
+            </p>
+        </div>
+    );
+};
+
+const MerchandiserHub = ({ onNavigate, selectedReporter, user, posList }) => {
     const { transfer: pendingTransfer, loading: transferLoading } = usePendingTransfer(selectedReporter.id);
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole('merchandiser');
@@ -29,6 +61,9 @@ const MerchandiserHub = ({ onNavigate, selectedReporter }) => {
                         </div>
                     </div>
                 )}
+
+                {/* Meta de cobertura de visitas */}
+                {user?.uid && <CoverageGoalCard userId={user.uid} posList={posList} />}
 
                 <h2 className="text-3xl font-bold text-center text-slate-800 mb-2">Centro de Operaciones</h2>
                 <p className="text-center text-slate-500 mb-8">Selecciona tu tarea para hoy.</p>
