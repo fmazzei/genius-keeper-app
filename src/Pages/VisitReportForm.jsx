@@ -483,6 +483,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             notes: report.notes || '',
             userId: user.uid,
             userName: report.reporterName,
+            reporterId: selectedReporter?.id || null,
             posId: pos.id,
             posName: pos.name,
             posZone: pos.zone || 'N/A',

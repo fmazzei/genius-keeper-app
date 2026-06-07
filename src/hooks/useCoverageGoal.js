@@ -6,24 +6,26 @@ import { db } from '../Firebase/config';
 
 /**
  * Escucha en tiempo real la meta de cobertura de visitas (en %) de un
- * mercaderista, almacenada en `users_metadata/{userId}.coverageGoal`.
- * Es el equivalente de `useSalesGoal` pero para el rol mercaderista —
- * sin comisiones, solo un porcentaje objetivo de PDV activos a cubrir.
+ * reporter (personal de campo), almacenada en `reporters/{reporterId}`.
+ * Las cuentas de mercaderista en `users_metadata` suelen ser dispositivos
+ * compartidos — la meta se asigna a la persona real (el reporter), no a
+ * la cuenta de acceso. No todos los reporters tienen una meta asignada:
+ * `coverageGoalEnabled` indica si aplica.
  */
-export const useCoverageGoal = (userId) => {
+export const useCoverageGoal = (reporterId) => {
     const [coverageGoal, setCoverageGoal] = useState(0);
     const [enabled, setEnabled] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (!userId) {
+        if (!reporterId) {
             setLoading(false);
             setCoverageGoal(0);
             setEnabled(false);
             return;
         }
 
-        const goalRef = doc(db, 'users_metadata', userId);
+        const goalRef = doc(db, 'reporters', reporterId);
         const unsubscribe = onSnapshot(goalRef, (snap) => {
             const data = snap.exists() ? snap.data() : {};
             const goal = Number(data.coverageGoal);
@@ -31,12 +33,12 @@ export const useCoverageGoal = (userId) => {
             setEnabled(data.coverageGoalEnabled === true);
             setLoading(false);
         }, (error) => {
-            console.error('Error fetching coverage goal for user ' + userId + ':', error);
+            console.error('Error fetching coverage goal for reporter ' + reporterId + ':', error);
             setLoading(false);
         });
 
         return () => unsubscribe();
-    }, [userId]);
+    }, [reporterId]);
 
     return { coverageGoal, enabled, loading };
 };

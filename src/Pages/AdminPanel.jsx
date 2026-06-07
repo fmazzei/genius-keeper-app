@@ -27,6 +27,7 @@ const ReportersManagement = () => {
     const [loading, setLoading] = useState(true);
     const [newReporterName, setNewReporterName] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+    const [goalDrafts, setGoalDrafts] = useState({});
 
     useEffect(() => {
         const q = query(collection(db, "reporters"), orderBy("name"));
@@ -80,6 +81,31 @@ const ReportersManagement = () => {
         }
     };
 
+    const handleToggleCoverageGoal = async (reporter) => {
+        try {
+            await updateDoc(doc(db, "reporters", reporter.id), { coverageGoalEnabled: !reporter.coverageGoalEnabled });
+        } catch (error) {
+            console.error("Error al activar/desactivar la meta de cobertura:", error);
+            alert("No se pudo actualizar la meta de cobertura.");
+        }
+    };
+
+    const handleGoalBlur = async (reporter, rawValue) => {
+        const value = Math.min(100, Math.max(0, Number(rawValue) || 0));
+        setGoalDrafts(prev => {
+            const next = { ...prev };
+            delete next[reporter.id];
+            return next;
+        });
+        if (value === (reporter.coverageGoal ?? 0)) return;
+        try {
+            await updateDoc(doc(db, "reporters", reporter.id), { coverageGoal: value });
+        } catch (error) {
+            console.error("Error al guardar la meta de cobertura:", error);
+            alert("No se pudo guardar la meta de cobertura.");
+        }
+    };
+
     if (loading) return <LoadingSpinner />;
     
     return (
@@ -103,20 +129,42 @@ const ReportersManagement = () => {
             </div>
             <div>
                 <h3 className="text-xl font-semibold text-slate-700 mb-2">Reporters Existentes</h3>
+                <p className="text-sm text-slate-500 mb-2">
+                    Activa la meta de cobertura solo para quienes corresponda: define el % de PDV activos que ese
+                    reporter debe mantener visitados dentro de su frecuencia asignada. No genera comisiones — es
+                    solo una meta de cobertura, y siempre se calcula contra el universo de PDV activos en cada momento.
+                </p>
                  <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-3">
                     {reporters.map(reporter => (
-                        <div key={reporter.id} className="flex flex-col sm:flex-row justify-between items-center p-3 bg-slate-50 rounded-md border gap-3">
-                            <p className="font-semibold text-slate-800">{reporter.name}</p>
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center gap-2">
-                                    <label className={`text-sm font-semibold ${reporter.active ? 'text-green-600' : 'text-slate-500'}`}>
-                                        {reporter.active ? 'Activo' : 'Inactivo'}
-                                    </label>
-                                    <ToggleSwitch enabled={reporter.active} setEnabled={() => handleToggleActive(reporter)} />
+                        <div key={reporter.id} className="flex flex-col p-3 bg-slate-50 rounded-md border gap-3">
+                            <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+                                <p className="font-semibold text-slate-800">{reporter.name}</p>
+                                <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <label className={`text-sm font-semibold ${reporter.active ? 'text-green-600' : 'text-slate-500'}`}>
+                                            {reporter.active ? 'Activo' : 'Inactivo'}
+                                        </label>
+                                        <ToggleSwitch enabled={reporter.active} setEnabled={() => handleToggleActive(reporter)} />
+                                    </div>
+                                    <button onClick={() => handleDeleteReporter(reporter.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full">
+                                        <Trash2 size={18} />
+                                    </button>
                                 </div>
-                                <button onClick={() => handleDeleteReporter(reporter.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full">
-                                    <Trash2 size={18} />
-                                </button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-slate-200">
+                                <Target size={16} className={reporter.coverageGoalEnabled ? 'text-emerald-600' : 'text-slate-300'} />
+                                <span className="text-sm text-slate-600">Meta de cobertura de visitas</span>
+                                <ToggleSwitch enabled={!!reporter.coverageGoalEnabled} setEnabled={() => handleToggleCoverageGoal(reporter)} />
+                                <input
+                                    type="number" min="0" max="100"
+                                    value={goalDrafts[reporter.id] ?? reporter.coverageGoal ?? ''}
+                                    onChange={e => setGoalDrafts(prev => ({ ...prev, [reporter.id]: e.target.value }))}
+                                    onBlur={e => handleGoalBlur(reporter, e.target.value)}
+                                    disabled={!reporter.coverageGoalEnabled}
+                                    className="w-20 text-center p-1.5 border border-slate-300 rounded-md disabled:bg-slate-100 disabled:text-slate-400"
+                                />
+                                <span className="text-sm text-slate-500">% de PDV activos</span>
+                                {!reporter.coverageGoalEnabled && <span className="text-xs text-slate-400">· Sin meta asignada</span>}
                             </div>
                         </div>
                     ))}
@@ -197,109 +245,6 @@ const SalesGoalsManagement = () => {
                         </div>
                     </div>
                 )) : <p className="text-center text-slate-500 py-4">No hay usuarios con rol 'Sales Manager' para asignar metas.</p>}
-                <div className="flex justify-end pt-2">
-                     <button onClick={handleSaveChanges} disabled={isSaving || users.length === 0} className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
-                        {isSaving ? <LoadingSpinner size="sm" /> : <Save size={18} />}
-                        {isSaving ? 'Guardando...' : 'Guardar Metas'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-
-const CoverageGoalsManagement = () => {
-    const [users, setUsers] = useState([]);
-    const [isSaving, setIsSaving] = useState(false);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        const q = query(collection(db, "users_metadata"), where("role", "==", "merchandiser"));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const usersWithGoals = snapshot.docs.map(doc => {
-                const data = doc.data();
-                const name = (data.name && data.name.trim()) || data.email || doc.id;
-                return {
-                    id: doc.id,
-                    name,
-                    coverageGoal: data.coverageGoal ?? 90,
-                    coverageGoalEnabled: data.coverageGoalEnabled === true,
-                };
-            });
-            setUsers(usersWithGoals);
-            setLoading(false);
-        });
-        return () => unsubscribe();
-    }, []);
-
-    const handleGoalChange = (userId, goal) => {
-        setUsers(prev => prev.map(user =>
-            user.id === userId ? { ...user, coverageGoal: Math.min(100, Math.max(0, Number(goal) || 0)) } : user
-        ));
-    };
-
-    const handleToggleEnabled = (userId) => {
-        setUsers(prev => prev.map(user =>
-            user.id === userId ? { ...user, coverageGoalEnabled: !user.coverageGoalEnabled } : user
-        ));
-    };
-
-    const handleSaveChanges = async () => {
-        setIsSaving(true);
-        const batch = writeBatch(db);
-        users.forEach(user => {
-            const userRef = doc(db, "users_metadata", user.id);
-            batch.set(userRef, { coverageGoal: user.coverageGoal, coverageGoalEnabled: user.coverageGoalEnabled }, { merge: true });
-        });
-        try {
-            await batch.commit();
-            alert("Metas de cobertura actualizadas correctamente.");
-        } catch (error) {
-            console.error("Error al guardar metas de cobertura:", error);
-            alert("No se pudieron guardar las metas.");
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    if (loading) return <LoadingSpinner />;
-
-    return (
-        <div>
-            <h3 className="text-xl font-semibold text-slate-700 mb-2">Metas de Cobertura por Mercaderista</h3>
-            <p className="text-sm text-slate-500 mb-4">
-                Define el porcentaje de PDV activos que cada mercaderista debe mantener visitados dentro de la frecuencia
-                asignada a cada punto de venta. No genera comisiones — es solo una meta de cobertura de visita,
-                y siempre se calcula contra el universo de PDV activos en cada momento. No todos los mercaderistas
-                tienen por qué tener una meta asignada: actívala solo para quienes corresponda.
-            </p>
-            <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-4">
-                {users.length > 0 ? users.map(user => (
-                    <div key={user.id} className="flex flex-col sm:flex-row justify-between items-center gap-3 border-b pb-4 last:border-b-0 last:pb-0">
-                         <div className="flex items-center">
-                            <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 bg-emerald-600">
-                                {user.name.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="ml-4">
-                                <p className="font-semibold text-slate-800">{user.name}</p>
-                                <p className="text-sm text-slate-500">{user.coverageGoalEnabled ? 'Meta activa' : 'Sin meta asignada'}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <ToggleSwitch enabled={user.coverageGoalEnabled} setEnabled={() => handleToggleEnabled(user.id)} />
-                            <Target size={18} className={user.coverageGoalEnabled ? 'text-slate-500' : 'text-slate-300'} />
-                            <input
-                                type="number" min="0" max="100"
-                                value={user.coverageGoal ?? ''}
-                                onChange={e => handleGoalChange(user.id, e.target.value)}
-                                disabled={!user.coverageGoalEnabled}
-                                className="w-24 text-center p-2 border border-slate-300 rounded-md disabled:bg-slate-100 disabled:text-slate-400"
-                            />
-                            <label className="text-sm text-slate-600">% de PDV activos</label>
-                        </div>
-                    </div>
-                )) : <p className="text-center text-slate-500 py-4">No hay usuarios con rol 'Mercaderista' para asignar metas.</p>}
                 <div className="flex justify-end pt-2">
                      <button onClick={handleSaveChanges} disabled={isSaving || users.length === 0} className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
                         {isSaving ? <LoadingSpinner size="sm" /> : <Save size={18} />}
@@ -2384,7 +2329,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             items: [
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
-                { id: 'coverage_goals', label: 'Metas Mercaderista', Icon: Target },
                 { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
                 { id: 'competitors', label: 'Competidores',     Icon: ShoppingCart },
             ],
@@ -2443,7 +2387,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'campo':         return <ReportersManagement />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
-            case 'coverage_goals': return <CoverageGoalsManagement />;
             case 'depots':         return <DepotManagement />;
             case 'competitors':    return <CompetitorManagement />;
             case 'modules':        return <ModuleManagement />;

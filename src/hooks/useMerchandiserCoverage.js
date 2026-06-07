@@ -5,33 +5,39 @@ import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../Firebase/config';
 
 /**
- * Calcula la cobertura de visitas de un mercaderista contra el universo
- * de PDV activos (siempre tomados de `posList`, nunca de una lista fija):
- * un PDV está "al día" si su última visita registrada ocurrió dentro de
- * los días definidos en `visitInterval`. No depende del planificador de rutas.
+ * Calcula la cobertura de visitas de un reporter (personal de campo) contra
+ * el universo de PDV activos (siempre tomados de `posList`, nunca de una
+ * lista fija): un PDV está "al día" si su última visita registrada ocurrió
+ * dentro de los días definidos en `visitInterval`. No depende del planificador
+ * de rutas.
+ *
+ * Nota: las cuentas de mercaderista (`users_metadata`) suelen ser dispositivos
+ * compartidos entre varias personas, así que los reportes se filtran por el
+ * nombre del reporter seleccionado (`userName`, guardado en cada visita) y no
+ * por el `uid` de la cuenta de acceso.
  */
-export const useMerchandiserCoverage = (userId, posList) => {
+export const useMerchandiserCoverage = (reporterName, posList) => {
     const [reports, setReports] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (!userId) {
+        if (!reporterName) {
             setLoading(false);
             setReports([]);
             return;
         }
 
-        const q = query(collection(db, 'visit_reports'), where('userId', '==', userId));
+        const q = query(collection(db, 'visit_reports'), where('userName', '==', reporterName));
         const unsubscribe = onSnapshot(q, (snap) => {
             setReports(snap.docs.map(d => ({ id: d.id, ...d.data() })));
             setLoading(false);
         }, (error) => {
-            console.error('Error fetching visit reports for coverage of user ' + userId + ':', error);
+            console.error('Error fetching visit reports for coverage of reporter ' + reporterName + ':', error);
             setLoading(false);
         });
 
         return () => unsubscribe();
-    }, [userId]);
+    }, [reporterName]);
 
     const coverage = useMemo(() => {
         const activePdvs = (posList || []).filter(p => p.type === 'pos' && p.active && Number(p.visitInterval) > 0);

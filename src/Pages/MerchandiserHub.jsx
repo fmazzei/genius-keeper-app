@@ -7,9 +7,9 @@ import { usePendingTransfer } from '../hooks/usePendingTransfer';
 import { useCoverageGoal } from '../hooks/useCoverageGoal';
 import { useMerchandiserCoverage } from '../hooks/useMerchandiserCoverage';
 
-const CoverageGoalCard = ({ userId, posList }) => {
-    const { coverageGoal, enabled, loading: goalLoading } = useCoverageGoal(userId);
-    const { activeCount, onTimeCount, percentage, loading: coverageLoading } = useMerchandiserCoverage(userId, posList);
+const CoverageGoalCard = ({ reporter, posList }) => {
+    const { coverageGoal, enabled, loading: goalLoading } = useCoverageGoal(reporter?.id);
+    const { activeCount, onTimeCount, percentage, loading: coverageLoading } = useMerchandiserCoverage(reporter?.name, posList);
 
     if (goalLoading || coverageLoading || activeCount === 0 || !enabled || coverageGoal <= 0) return null;
 
@@ -37,7 +37,7 @@ const CoverageGoalCard = ({ userId, posList }) => {
     );
 };
 
-const MerchandiserHub = ({ onNavigate, selectedReporter, user, posList }) => {
+const MerchandiserHub = ({ onNavigate, selectedReporter, posList }) => {
     const { transfer: pendingTransfer, loading: transferLoading } = usePendingTransfer(selectedReporter.id);
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole('merchandiser');
@@ -63,7 +63,7 @@ const MerchandiserHub = ({ onNavigate, selectedReporter, user, posList }) => {
                 )}
 
                 {/* Meta de cobertura de visitas */}
-                {user?.uid && <CoverageGoalCard userId={user.uid} posList={posList} />}
+                {selectedReporter?.id && <CoverageGoalCard reporter={selectedReporter} posList={posList} />}
 
                 <h2 className="text-3xl font-bold text-center text-slate-800 mb-2">Centro de Operaciones</h2>
                 <p className="text-center text-slate-500 mb-8">Selecciona tu tarea para hoy.</p>
