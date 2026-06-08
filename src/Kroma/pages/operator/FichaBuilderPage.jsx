@@ -113,16 +113,19 @@ function buildEmptyDosis(tipo, params) {
     if (tipo === 'agregar_insumo') return { materialId: params?.materialId || '', materialNombre: params?.materialNombre || '', cantidad: 0, unidad: 'g' };
     if (tipo === 'inoculacion') {
         const l = { mesofilico: 'Cultivo Mesófilo', termofilico: 'Cultivo Termófilo', blend: 'Cultivo Blend T/M' };
-        return { materialNombre: l[params?.tipoCultivo] || 'Cultivo', cantidad: 0, unidad: 'g' };
+        return { materialId: params?.materialId || '', materialNombre: params?.materialNombre || l[params?.tipoCultivo] || 'Cultivo', cantidad: 0, unidad: 'g' };
     }
     if (tipo === 'cuajado') {
         const cuajoL = { microbiano: 'Cuajo Microbiano', vegetal: 'Cuajo Vegetal', animal: 'Cuajo Animal', genetico: 'Cuajo Genético' };
         const fermentoL = { mesofilico: 'Fermento Mesófilo', termofilico: 'Fermento Termófilo', blend: 'Fermento Blend T/M' };
         return {
-            calcio:     (params?.calcio ?? 'si') !== 'no'     ? { materialNombre: 'CaCl₂', cantidad: 0, unidad: 'g' } : null,
-            conservante:(params?.conservante ?? 'no') === 'si' ? { materialNombre: params?.conservanteNombre || 'Conservante', cantidad: 0, unidad: 'g' } : null,
-            cuajo:      { materialNombre: cuajoL[params?.cuajoTipo] || 'Cuajo', cantidad: 0, unidad: 'g' },
-            fermento:   (params?.fermento ?? 'si') !== 'no'   ? { materialNombre: fermentoL[params?.tipoFermento] || 'Fermento', cantidad: 0, unidad: 'g' } : null,
+            calcio:     (params?.calcio ?? 'si') !== 'no'
+                ? { materialId: params?.calcioMaterialId || '', materialNombre: params?.calcioMaterialNombre || 'CaCl₂', cantidad: 0, unidad: 'g' } : null,
+            conservante:(params?.conservante ?? 'no') === 'si'
+                ? { materialId: params?.conservanteMaterialId || '', materialNombre: params?.conservanteMaterialNombre || params?.conservanteNombre || 'Conservante', cantidad: 0, unidad: 'g' } : null,
+            cuajo:      { materialId: params?.cuajoMaterialId || '', materialNombre: params?.cuajoMaterialNombre || cuajoL[params?.cuajoTipo] || 'Cuajo', cantidad: 0, unidad: 'g' },
+            fermento:   (params?.fermento ?? 'si') !== 'no'
+                ? { materialId: params?.fermentoMaterialId || '', materialNombre: params?.fermentoMaterialNombre || fermentoL[params?.tipoFermento] || 'Fermento', cantidad: 0, unidad: 'g' } : null,
         };
     }
     return null;
@@ -327,8 +330,8 @@ function DosisSection({ tipo, params, dosis, setDosis }) {
         return (
             <div className="bg-teal-500/10 border border-teal-500/20 rounded-xl p-4 space-y-4">
                 {header}
-                <p className="text-slate-300 text-sm font-semibold">{dosis.materialNombre || 'Cultivo'}</p>
-                <PrecisionStepper value={dosis.cantidad ?? 0} onChange={v => setDosis(d => ({ ...d, cantidad: v }))} />
+                <p className="text-slate-300 text-sm font-semibold">{params.materialNombre || dosis.materialNombre || 'Cultivo'}</p>
+                <PrecisionStepper value={dosis.cantidad ?? 0} onChange={v => setDosis(d => ({ ...d, materialId: params.materialId || d.materialId, materialNombre: params.materialNombre || d.materialNombre, cantidad: v }))} />
                 <PillGroup options={DOSE_UNITS} value={dosis.unidad ?? 'g'} onChange={v => v && setDosis(d => ({ ...d, unidad: v }))} />
             </div>
         );
@@ -337,10 +340,14 @@ function DosisSection({ tipo, params, dosis, setDosis }) {
     if (tipo === 'cuajado') {
         const cuajoL = { microbiano: 'Cuajo Microbiano', vegetal: 'Cuajo Vegetal', animal: 'Cuajo Animal', genetico: 'Cuajo Genético' };
         const fermentoL = { mesofilico: 'Fermento Mesófilo', termofilico: 'Fermento Termófilo', blend: 'Fermento Blend T/M' };
-        const calcioItem = dosis.calcio ?? { materialNombre: 'CaCl₂', cantidad: 0, unidad: 'g' };
-        const conservanteItem = dosis.conservante ?? { materialNombre: params.conservanteNombre || 'Conservante', cantidad: 0, unidad: 'g' };
-        const cuajoItem = dosis.cuajo ?? { materialNombre: cuajoL[params.cuajoTipo] || 'Cuajo', cantidad: 0, unidad: 'g' };
-        const fermentoItem = dosis.fermento ?? { materialNombre: fermentoL[params.tipoFermento] || 'Fermento', cantidad: 0, unidad: 'g' };
+        const calcioLabel      = params.calcioMaterialNombre      || 'CaCl₂ (Cloruro de Calcio)';
+        const conservanteLabel = params.conservanteMaterialNombre || params.conservanteNombre || 'Conservante';
+        const cuajoLabel       = params.cuajoMaterialNombre       || cuajoL[params.cuajoTipo] || 'Cuajo';
+        const fermentoLabel    = params.fermentoMaterialNombre    || fermentoL[params.tipoFermento] || 'Fermento';
+        const calcioItem      = dosis.calcio      ?? { materialId: params.calcioMaterialId      || '', materialNombre: calcioLabel,      cantidad: 0, unidad: 'g' };
+        const conservanteItem = dosis.conservante ?? { materialId: params.conservanteMaterialId || '', materialNombre: conservanteLabel, cantidad: 0, unidad: 'g' };
+        const cuajoItem       = dosis.cuajo       ?? { materialId: params.cuajoMaterialId       || '', materialNombre: cuajoLabel,       cantidad: 0, unidad: 'g' };
+        const fermentoItem    = dosis.fermento    ?? { materialId: params.fermentoMaterialId    || '', materialNombre: fermentoLabel,    cantidad: 0, unidad: 'g' };
 
         const SubCard = ({ label, item, onQty, onUnit }) => (
             <div className="bg-slate-900/60 border border-teal-500/20 rounded-xl p-3 space-y-3">
@@ -366,29 +373,29 @@ function DosisSection({ tipo, params, dosis, setDosis }) {
                     );
                 }
                 return (
-                    <SubCard key="calcio" label="CaCl₂ (Cloruro de Calcio)" item={calcioItem}
-                        onQty={v => setDosis(d => ({ ...d, calcio: { ...calcioItem, materialNombre: 'CaCl₂', cantidad: v } }))}
+                    <SubCard key="calcio" label={calcioLabel} item={calcioItem}
+                        onQty={v => setDosis(d => ({ ...d, calcio: { ...calcioItem, materialId: params.calcioMaterialId || calcioItem.materialId, materialNombre: calcioLabel, cantidad: v } }))}
                         onUnit={v => setDosis(d => ({ ...d, calcio: { ...calcioItem, unidad: v } }))} />
                 );
             }
             if (key === 'conservante' && params.conservante === 'si') {
                 return (
-                    <SubCard key="conservante" label={params.conservanteNombre || 'Conservante'} item={conservanteItem}
-                        onQty={v => setDosis(d => ({ ...d, conservante: { ...conservanteItem, materialNombre: params.conservanteNombre || 'Conservante', cantidad: v } }))}
+                    <SubCard key="conservante" label={conservanteLabel} item={conservanteItem}
+                        onQty={v => setDosis(d => ({ ...d, conservante: { ...conservanteItem, materialId: params.conservanteMaterialId || conservanteItem.materialId, materialNombre: conservanteLabel, cantidad: v } }))}
                         onUnit={v => setDosis(d => ({ ...d, conservante: { ...conservanteItem, unidad: v } }))} />
                 );
             }
             if (key === 'cuajo') {
                 return (
-                    <SubCard key="cuajo" label={cuajoL[params.cuajoTipo] || 'Cuajo'} item={cuajoItem}
-                        onQty={v => setDosis(d => ({ ...d, cuajo: { ...cuajoItem, materialNombre: cuajoL[params.cuajoTipo] || 'Cuajo', cantidad: v } }))}
+                    <SubCard key="cuajo" label={cuajoLabel} item={cuajoItem}
+                        onQty={v => setDosis(d => ({ ...d, cuajo: { ...cuajoItem, materialId: params.cuajoMaterialId || cuajoItem.materialId, materialNombre: cuajoLabel, cantidad: v } }))}
                         onUnit={v => setDosis(d => ({ ...d, cuajo: { ...cuajoItem, unidad: v } }))} />
                 );
             }
             if (key === 'fermento' && (params.fermento ?? 'si') !== 'no') {
                 return (
-                    <SubCard key="fermento" label={fermentoL[params.tipoFermento] || 'Fermento'} item={fermentoItem}
-                        onQty={v => setDosis(d => ({ ...d, fermento: { ...fermentoItem, materialNombre: fermentoL[params.tipoFermento] || 'Fermento', cantidad: v } }))}
+                    <SubCard key="fermento" label={fermentoLabel} item={fermentoItem}
+                        onQty={v => setDosis(d => ({ ...d, fermento: { ...fermentoItem, materialId: params.fermentoMaterialId || fermentoItem.materialId, materialNombre: fermentoLabel, cantidad: v } }))}
                         onUnit={v => setDosis(d => ({ ...d, fermento: { ...fermentoItem, unidad: v } }))} />
                 );
             }
@@ -413,6 +420,32 @@ function ScrollHint({ visible }) {
             <span className="bg-slate-800/90 backdrop-blur-sm text-slate-400 text-xs px-4 py-1.5 rounded-full border border-slate-700 shadow">
                 ↓ Desliza para ver más
             </span>
+        </div>
+    );
+}
+
+// ─── Material picker ───────────────────────────────────────────────────────────
+// Links a process ingredient (cultivo, cuajo, calcio, conservante, fermento…) to
+// a specific Maestro de Materiales entry so costos y descuentos de inventario
+// sean exactos — sin esto Kroma solo guarda una etiqueta genérica y no puede
+// costear ni descontar stock para ese insumo.
+
+function MaterialPicker({ materials, materialsLoading, selectedId, onSelect, emptyMsg = 'Sin materiales en el Maestro todavía.' }) {
+    if (materialsLoading) {
+        return <div className="flex items-center gap-2 text-slate-500 text-sm py-3"><Loader size={14} className="animate-spin" /> Cargando materiales…</div>;
+    }
+    return (
+        <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-700 bg-slate-800 p-1.5 space-y-0.5">
+            {materials.length === 0 ? (
+                <p className="text-slate-500 text-sm text-center py-4">{emptyMsg}</p>
+            ) : materials.map(m => (
+                <button key={m.id} type="button"
+                    onClick={() => onSelect(m)}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${selectedId === m.id ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40' : 'text-slate-300 hover:bg-slate-700 border border-transparent'}`}>
+                    <span className="font-medium">{m.nombre}</span>
+                    {m.categoria && <span className="text-slate-500 text-xs ml-2 capitalize">{m.categoria}</span>}
+                </button>
+            ))}
         </div>
     );
 }
@@ -479,22 +512,8 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                 <div className="space-y-6">
                     <div>
                         <SecLabel>Insumo a Agregar</SecLabel>
-                        {materialsLoading ? (
-                            <div className="flex items-center gap-2 text-slate-500 text-sm py-3"><Loader size={14} className="animate-spin" /> Cargando materiales…</div>
-                        ) : (
-                            <div className="max-h-44 overflow-y-auto rounded-xl border border-slate-700 bg-slate-800 p-1.5 space-y-0.5">
-                                {materials.length === 0 ? (
-                                    <p className="text-slate-500 text-sm text-center py-4">Sin materiales en el Maestro todavía.</p>
-                                ) : materials.map(m => (
-                                    <button key={m.id} type="button"
-                                        onClick={() => setParams(p => ({ ...p, materialId: m.id, materialNombre: m.nombre }))}
-                                        className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${params.materialId === m.id ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40' : 'text-slate-300 hover:bg-slate-700 border border-transparent'}`}>
-                                        <span className="font-medium">{m.nombre}</span>
-                                        {m.categoria && <span className="text-slate-500 text-xs ml-2 capitalize">{m.categoria}</span>}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
+                        <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.materialId}
+                            onSelect={m => setParams(p => ({ ...p, materialId: m.id, materialNombre: m.nombre }))} />
                     </div>
                     <div>
                         <SecLabel>Método de aplicación</SecLabel>
@@ -540,6 +559,13 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                         <SecLabel>Tipo de Cultivo</SecLabel>
                         <PillGroup options={[{ id: 'mesofilico', label: 'Mesófilo' }, { id: 'termofilico', label: 'Termófilo' }, { id: 'blend', label: 'Blend Termo-Mesófilo' }]}
                             value={params.tipoCultivo} onChange={set('tipoCultivo')} />
+                    </div>
+                    <div>
+                        <SecLabel>Cultivo del Maestro de Materiales</SecLabel>
+                        <p className="text-slate-500 text-xs mb-2">Vincula la marca/presentación exacta (ej. Choozit Mesófilo) para que Kroma costee y descuente inventario con precisión.</p>
+                        <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.materialId}
+                            onSelect={m => setParams(p => ({ ...p, materialId: m.id, materialNombre: m.nombre }))}
+                            emptyMsg="Sin cultivos en el Maestro todavía." />
                     </div>
                     <SliderField label="Temperatura de inoculación" value={params.temperatura} min={18} max={45} unit="°C" onChange={set('temperatura')} />
                     <div>
@@ -608,6 +634,12 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                     </div>
                                     {(params.calcio ?? 'si') !== 'no' && <>
                                         <div>
+                                            <span className="block text-xs text-slate-500 mb-2">Material del Maestro (para costeo e inventario)</span>
+                                            <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.calcioMaterialId}
+                                                onSelect={m => setParams(p => ({ ...p, calcioMaterialId: m.id, calcioMaterialNombre: m.nombre }))}
+                                                emptyMsg="Sin sales/CaCl₂ en el Maestro todavía." />
+                                        </div>
+                                        <div>
                                             <span className="block text-xs text-slate-500 mb-2">Modo de adición</span>
                                             <PillGroup
                                                 options={[{ id: 'directo', label: 'Gramos directos' }, { id: 'dilucion', label: 'Solución diluida' }]}
@@ -654,8 +686,12 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                         <PillGroup options={[{ id: 'si', label: 'Sí' }, { id: 'no', label: 'No' }]} value={params.conservante ?? 'no'} onChange={set('conservante')} />
                                     </div>
                                     {params.conservante === 'si' && <>
-                                        <input type="text" value={params.conservanteNombre || ''} onChange={e => set('conservanteNombre')(e.target.value)}
-                                            placeholder="Ej. Natamicina" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors" />
+                                        <div>
+                                            <span className="block text-xs text-slate-500 mb-2">Material del Maestro (para costeo e inventario)</span>
+                                            <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.conservanteMaterialId}
+                                                onSelect={m => setParams(p => ({ ...p, conservanteMaterialId: m.id, conservanteMaterialNombre: m.nombre, conservanteNombre: m.nombre }))}
+                                                emptyMsg="Sin conservantes en el Maestro todavía." />
+                                        </div>
                                         <div>
                                             <span className="block text-xs text-slate-500 mb-2">Agitar</span>
                                             <TiempoRow value={params.conservanteAgitar ?? 5} unidad={params.conservanteAgitarUnidad ?? 'min'}
@@ -675,6 +711,12 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                     </div>
                                     <PillGroup options={[{ id: 'microbiano', label: 'Microbiano' }, { id: 'vegetal', label: 'Vegetal' }, { id: 'animal', label: 'Animal' }, { id: 'genetico', label: 'Genético' }]}
                                         value={params.cuajoTipo ?? 'microbiano'} onChange={set('cuajoTipo')} />
+                                    <div>
+                                        <span className="block text-xs text-slate-500 mb-2">Material del Maestro (para costeo e inventario)</span>
+                                        <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.cuajoMaterialId}
+                                            onSelect={m => setParams(p => ({ ...p, cuajoMaterialId: m.id, cuajoMaterialNombre: m.nombre }))}
+                                            emptyMsg="Sin coagulantes en el Maestro todavía." />
+                                    </div>
                                     <SliderField label="Temp. de la leche al agregar" value={params.cuajoTempAdiccion ?? 32} min={18} max={45} unit="°C" onChange={set('cuajoTempAdiccion')} />
                                     <div>
                                         <span className="block text-xs text-slate-500 mb-2">Agitar</span>
@@ -696,6 +738,12 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                     {(params.fermento ?? 'si') !== 'no' && <>
                                         <PillGroup options={[{ id: 'mesofilico', label: 'Mesófilo' }, { id: 'termofilico', label: 'Termófilo' }, { id: 'blend', label: 'Blend T/M' }]}
                                             value={params.tipoFermento ?? 'mesofilico'} onChange={set('tipoFermento')} />
+                                        <div>
+                                            <span className="block text-xs text-slate-500 mb-2">Material del Maestro (para costeo e inventario)</span>
+                                            <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.fermentoMaterialId}
+                                                onSelect={m => setParams(p => ({ ...p, fermentoMaterialId: m.id, fermentoMaterialNombre: m.nombre }))}
+                                                emptyMsg="Sin cultivos/fermentos en el Maestro todavía." />
+                                        </div>
                                         <SliderField label="Temp. de la leche al agregar" value={params.tempInoculacion ?? 22} min={18} max={45} unit="°C" onChange={set('tempInoculacion')} />
                                         <div>
                                             <span className="block text-xs text-slate-500 mb-2">Agitar</span>
