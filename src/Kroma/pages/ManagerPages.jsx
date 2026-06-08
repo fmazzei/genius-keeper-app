@@ -486,6 +486,25 @@ export function ManagerHome({ onNavigate }) {
                         const top10 = [...data.matInv]
                             .map(inv => ({ name: materialsById[inv.materialId]?.nombre || inv.materialNombre || '—', val: materialValue(inv, materialsById) }))
                             .filter(m => m.val > 0).sort((a, b) => b.val - a.val).slice(0, 10);
+                        // PT: prioritize frozen costoUnitarioUsd per item; fallback to
+                        // theoretical $/kg from the production log for older items.
+                        const packagingByKey = indexPackagingAssignments(data.materials);
+                        const costoPorLote = {};
+                        data.logs.forEach(log => { costoPorLote[log.id] = calcCostoTeoricoLote(log, materialsById, packagingByKey); });
+                        let capitalPT = 0; let kgValPT = 0;
+                        (data.ptItems || []).forEach(item => {
+                            const kg = item.totalKg ?? item.kgTotales ?? 0;
+                            if (!kg) return;
+                            if (item.costoUnitarioUsd != null) {
+                                capitalPT += item.tipo === 'empacado'
+                                    ? item.costoUnitarioUsd * (item.unidades || 0)
+                                    : item.costoUnitarioUsd * kg;
+                                kgValPT += kg; return;
+                            }
+                            const r = costoPorLote[item.logId];
+                            if (!r || r.costoPorKg == null) return;
+                            capitalPT += r.costoPorKg * kg; kgValPT += kg;
+                        });
                         return (
                             <KpiModal title="Capital en Inventario" onClose={close}>
                                 <div className="space-y-5">
@@ -495,8 +514,17 @@ export function ManagerHome({ onNavigate }) {
                                             <p className="text-slate-400 text-xs mt-1">Materiales (USD)</p>
                                         </div>
                                         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
-                                            <p className="text-slate-500 font-bold text-xl">—</p>
-                                            <p className="text-slate-500 text-xs mt-1">Prod. Term. (sin costeo)</p>
+                                            {kgValPT > 0 ? (
+                                                <>
+                                                    <p className="text-blue-400 font-black text-xl">${capitalPT.toFixed(0)}</p>
+                                                    <p className="text-slate-400 text-xs mt-1">Prod. Term. ({kgValPT.toFixed(1)} kg)</p>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <p className="text-slate-500 font-bold text-xl">—</p>
+                                                    <p className="text-slate-500 text-xs mt-1">Prod. Term. (sin costeo)</p>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                     {cats.length > 0 && (
