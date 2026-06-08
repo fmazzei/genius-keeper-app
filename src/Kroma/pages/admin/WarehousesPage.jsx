@@ -52,6 +52,12 @@ function fmtRelative(ts) {
     return fmtDateTime(ts);
 }
 
+function formatDocenas(docenas, sueltas) {
+    if (docenas === 0) return `${sueltas} suelta${sueltas !== 1 ? 's' : ''}`;
+    if (sueltas === 0) return `${docenas} docena${docenas !== 1 ? 's' : ''}`;
+    return `${docenas} doc + ${sueltas} suelta${sueltas !== 1 ? 's' : ''}`;
+}
+
 function SecLabel({ children }) {
     return (
         <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">
@@ -1001,7 +1007,7 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
 
 // ─── Warehouse Card with Popover ──────────────────────────────────────────────
 
-function WarehouseCard({ wh, count, warn, canEdit, canDelete, onOpen, onEdit, onDeactivate }) {
+function WarehouseCard({ wh, count, stock, warn, canEdit, canDelete, onOpen, onEdit, onDeactivate }) {
     const meta = TIPO_META[wh.tipo] || TIPO_META.mixto;
     const [popover, setPopover] = useState(false);
     const [confirmDeactivate, setConfirmDeactivate] = useState(false);
@@ -1043,10 +1049,24 @@ function WarehouseCard({ wh, count, warn, canEdit, canDelete, onOpen, onEdit, on
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${meta.bg} ${meta.color} ${meta.border}`}>
                         {meta.label}
                     </span>
-                    <span className="text-slate-400 text-xs font-mono">
-                        {count > 0 ? `${count} partida${count !== 1 ? 's' : ''}` : 'Vacío'}
-                    </span>
+                    {stock.totalUnidades === 0 && stock.totalKgSinEnvasar === 0 && (
+                        <span className="text-slate-400 text-xs font-mono">Vacío</span>
+                    )}
                 </div>
+                {(stock.totalUnidades > 0 || stock.totalKgSinEnvasar > 0) && (
+                    <div className="text-xs text-slate-400 space-y-0.5">
+                        {stock.totalUnidades > 0 && (
+                            <p>
+                                <span className="text-slate-200 font-semibold">{stock.totalUnidades.toLocaleString('es-VE')} ud</span>
+                                {' · '}
+                                {formatDocenas(stock.docenas, stock.sueltas)}
+                            </p>
+                        )}
+                        {stock.totalKgSinEnvasar > 0 && (
+                            <p><span className="text-slate-200 font-semibold">{stock.totalKgSinEnvasar.toLocaleString('es-VE')} kg</span> sin envasar</p>
+                        )}
+                    </div>
+                )}
             </button>
 
             {/* ⋯ menu button */}
@@ -1401,6 +1421,22 @@ export default function WarehousesPage() {
         )).length;
     }
 
+    function warehouseStock(wId) {
+        const items = inventoryPT.filter(i => i.warehouseId === wId);
+        const totalUnidades = items
+            .filter(i => i.tipo === 'empacado')
+            .reduce((sum, i) => sum + (i.unidades ?? 0), 0);
+        const totalKgSinEnvasar = items
+            .filter(i => i.tipo === 'sin_envasar')
+            .reduce((sum, i) => sum + (i.kgTotales ?? 0), 0);
+        return {
+            totalUnidades,
+            docenas: Math.floor(totalUnidades / 12),
+            sueltas: totalUnidades % 12,
+            totalKgSinEnvasar,
+        };
+    }
+
     function hasExpiringSoon(wId) {
         const limit = Date.now() + 30 * 86400000;
         return inventoryPT.some(i => i.warehouseId === wId && i.fechaVencimiento && new Date(i.fechaVencimiento).getTime() < limit);
@@ -1506,6 +1542,7 @@ export default function WarehousesPage() {
                         key={wh.id}
                         wh={wh}
                         count={countItems(wh.id)}
+                        stock={warehouseStock(wh.id)}
                         warn={hasExpiringSoon(wh.id)}
                         canEdit={canEdit('almacenes')}
                         canDelete={canDelete('almacenes')}
