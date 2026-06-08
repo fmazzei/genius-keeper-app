@@ -47,14 +47,7 @@ function getMermaL(log) {
     return 0;
 }
 function getTotalKg(log) {
-    const bloques = log.bloquesSnapshot || [];
-    const idx = bloques.findIndex(b => b.tipo === 'empaque');
-    if (idx >= 0) {
-        const items = (log.bloquesData || {})[String(idx)]?.registros?.items || [];
-        const t = items.reduce((s, it) => s + (it.unidades || 0) * (it.pesoKg || 0), 0);
-        if (t > 0) return t;
-    }
-    return null;
+    return log.totalKgProducido > 0 ? log.totalKgProducido : null;
 }
 function getRendimiento(log) {
     const l = getLitrosNetos(log);

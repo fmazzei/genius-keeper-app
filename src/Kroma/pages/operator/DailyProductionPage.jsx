@@ -381,6 +381,15 @@ function extractBlockIngredients(bloque, reg) {
     return out;
 }
 
+// Milk price snapshot — mirrors MilkInventoryPage.milkPriceFor: looks up the
+// kroma_materials doc with categoria 'leche' linked to this proveedor and
+// freezes its costoUSD (price per liter) at the moment of reception.
+function milkPriceFor(provId, materialsMap) {
+    const mat = Object.values(materialsMap || {}).find(m => m.categoria === 'leche' && m.proveedorId === provId);
+    const price = parseFloat(mat?.costoUSD);
+    return price > 0 ? price : null;
+}
+
 // Internal cost snapshot for ingredients consumed in a block — mirrors the
 // costoUsdLitro pattern on milk recepciones. Frozen at the moment of real
 // consumption so historical "Costo Real" can be compared against the
@@ -2220,6 +2229,7 @@ export default function DailyProductionPage() {
                 litros: quickMilk.litros,
                 parametros: { temperatura: quickMilk.temperatura, pH: quickMilk.pH },
                 enrutamiento: 'produccion',
+                costoUsdLitro: milkPriceFor(quickMilk.proveedorId, materialsMap),
                 operarioId: kromaUser?.id || '',
                 operarioNombre: kromaUser?.name || '',
                 status: 'pendiente',
