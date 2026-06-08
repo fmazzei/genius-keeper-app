@@ -4,7 +4,7 @@ import {
     collection, getDocs, addDoc, updateDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
 import {
-    Package, Plus, Search, X, Edit2, Trash2, Loader, Calculator,
+    Package, Plus, Search, X, Edit2, Trash2, Loader, Calculator, Link2,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -39,7 +39,19 @@ const EMPTY_FORM = {
     unidad: 'g',
     costoUSD: '',
     notas: '',
+    asignaciones: [],
 };
+
+// Cómo se consume un material de empaque al envasar un SKU:
+//  - 'unitario': X cantidad del material por cada unidad del producto (ej. 1 etiqueta/und)
+//  - 'grupal':   X cantidad del material rinde para un grupo de N unidades
+//                (ej. 1 bobina termoencogible envuelve paquetes de 12 unidades)
+function describeAsignacion(a) {
+    if (a.tipoConsumo === 'grupal') {
+        return `${a.cantidadPorGrupo} c/${a.unidadesPorGrupo} und`;
+    }
+    return `${a.cantidadPorUnidad} / und`;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -111,13 +123,156 @@ function CostCalculator({ form }) {
     );
 }
 
+// ─── Packaging assignments (empaques → producto/SKU) ─────────────────────────
+
+const EMPTY_ASIGNACION_DRAFT = {
+    productoId: '', presentacionId: '', tipoConsumo: 'unitario',
+    cantidadPorUnidad: '', unidadesPorGrupo: '', cantidadPorGrupo: '',
+};
+
+function PackagingAssignments({ asignaciones, products, onAdd, onRemove }) {
+    const [draft, setDraft] = useState(EMPTY_ASIGNACION_DRAFT);
+
+    const product = products.find(p => p.id === draft.productoId);
+    const presentaciones = product?.presentaciones || [];
+
+    const setDraftField = (key) => (e) => setDraft(d => ({ ...d, [key]: e.target.value }));
+
+    const handleProductoChange = (e) => setDraft(d => ({ ...d, productoId: e.target.value, presentacionId: '' }));
+
+    const handleAdd = () => {
+        const presentacion = presentaciones.find(p => p.id === draft.presentacionId);
+        if (!product || !presentacion) return;
+
+        let entry;
+        if (draft.tipoConsumo === 'grupal') {
+            const unidadesPorGrupo = parseInt(draft.unidadesPorGrupo, 10);
+            const cantidadPorGrupo = parseFloat(draft.cantidadPorGrupo);
+            if (!(unidadesPorGrupo > 1) || !(cantidadPorGrupo > 0)) return;
+            entry = {
+                productoId: product.id, productoNombre: product.nombre,
+                presentacionId: presentacion.id, presentacionNombre: presentacion.nombre,
+                tipoConsumo: 'grupal', unidadesPorGrupo, cantidadPorGrupo,
+            };
+        } else {
+            const cantidadPorUnidad = parseFloat(draft.cantidadPorUnidad);
+            if (!(cantidadPorUnidad > 0)) return;
+            entry = {
+                productoId: product.id, productoNombre: product.nombre,
+                presentacionId: presentacion.id, presentacionNombre: presentacion.nombre,
+                tipoConsumo: 'unitario', cantidadPorUnidad,
+            };
+        }
+        onAdd(entry);
+        setDraft(EMPTY_ASIGNACION_DRAFT);
+    };
+
+    const SelectCls = 'bg-slate-700 border border-slate-600 rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-emerald-500';
+    const InputCls  = 'w-24 bg-slate-700 border border-slate-600 rounded-lg px-2.5 py-1.5 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-emerald-500';
+
+    const canAdd = draft.tipoConsumo === 'grupal'
+        ? (parseInt(draft.unidadesPorGrupo, 10) > 1 && parseFloat(draft.cantidadPorGrupo) > 0)
+        : (parseFloat(draft.cantidadPorUnidad) > 0);
+
+    return (
+        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-1">
+                <Link2 size={14} className="text-sky-400" />
+                <span className="text-sky-400 text-xs font-semibold uppercase tracking-wider">Asignación a Productos</span>
+            </div>
+            <p className="text-slate-500 text-xs mb-3 leading-relaxed">
+                Indica para qué SKU se usa este empaque y cuánto se consume. Si el material envuelve o
+                contiene varias unidades a la vez (ej. una bobina termoencogible que arma paquetes de 12),
+                usa <strong className="text-slate-400">consumo grupal</strong>; si es uno por unidad
+                (envase, etiqueta, precinto), usa <strong className="text-slate-400">consumo unitario</strong>.
+            </p>
+
+            {(asignaciones || []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                    {asignaciones.map((a, i) => (
+                        <span key={`${a.productoId}-${a.presentacionId}-${i}`}
+                            className="flex items-center gap-1.5 text-xs pl-2 pr-1 py-1 bg-slate-800 text-slate-300 rounded-full border border-slate-600">
+                            {a.productoNombre} · {a.presentacionNombre} · {describeAsignacion(a)}
+                            <button type="button" onClick={() => onRemove(i)} className="text-slate-500 hover:text-red-400 p-0.5 rounded-full">
+                                <X size={11} />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+            )}
+
+            {products.length === 0 ? (
+                <p className="text-slate-600 text-xs italic">No hay productos activos en el catálogo.</p>
+            ) : (
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <select value={draft.productoId} onChange={handleProductoChange} className={`${SelectCls} max-w-[45%]`}>
+                            <option value="">Producto…</option>
+                            {products.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                        </select>
+                        <select value={draft.presentacionId} onChange={setDraftField('presentacionId')}
+                            disabled={!product || presentaciones.length === 0} className={`${SelectCls} max-w-[40%] disabled:opacity-50`}>
+                            <option value="">Presentación (SKU)…</option>
+                            {presentaciones.map(sk => (
+                                <option key={sk.id} value={sk.id}>{sk.nombre}{sk.pesoNeto ? ` (${sk.pesoNeto}${sk.unidad})` : ''}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
+                            <input type="radio" name="tipoConsumo" value="unitario"
+                                checked={draft.tipoConsumo === 'unitario'}
+                                onChange={() => setDraft(d => ({ ...d, tipoConsumo: 'unitario' }))} />
+                            Consumo unitario
+                        </label>
+                        <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
+                            <input type="radio" name="tipoConsumo" value="grupal"
+                                checked={draft.tipoConsumo === 'grupal'}
+                                onChange={() => setDraft(d => ({ ...d, tipoConsumo: 'grupal' }))} />
+                            Consumo grupal (envuelve/agrupa varias unidades)
+                        </label>
+                    </div>
+
+                    {draft.tipoConsumo === 'unitario' ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-slate-500 text-xs">Cantidad de material por unidad de producto:</span>
+                            <input type="number" value={draft.cantidadPorUnidad} onChange={setDraftField('cantidadPorUnidad')}
+                                placeholder="Ej. 1" min="0" step="any" className={InputCls} />
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-slate-500 text-xs">Cada</span>
+                            <input type="number" value={draft.unidadesPorGrupo} onChange={setDraftField('unidadesPorGrupo')}
+                                placeholder="Ej. 12" min="2" step="1" className="w-20 bg-slate-700 border border-slate-600 rounded-lg px-2.5 py-1.5 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-emerald-500" />
+                            <span className="text-slate-500 text-xs">unidades se consume(n)</span>
+                            <input type="number" value={draft.cantidadPorGrupo} onChange={setDraftField('cantidadPorGrupo')}
+                                placeholder="Ej. 1" min="0" step="any" className={InputCls} />
+                            <span className="text-slate-500 text-xs">de este material</span>
+                        </div>
+                    )}
+
+                    <button type="button" onClick={handleAdd} disabled={!product || !draft.presentacionId || !canAdd}
+                        className="text-xs text-emerald-400 hover:text-emerald-300 disabled:text-slate-600 font-semibold flex items-center gap-1 px-2 py-1.5">
+                        <Plus size={12} /> Vincular a este SKU
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── Material Form ────────────────────────────────────────────────────────────
 
-function MaterialForm({ initial, suppliers, onSave, onCancel, saving }) {
+function MaterialForm({ initial, suppliers, products, onSave, onCancel, saving }) {
     const [form, setForm] = useState(initial || EMPTY_FORM);
     const isMilk = form.categoria === 'leche';
+    const isPackaging = form.categoria === 'empaques';
 
     const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
+
+    const addAsignacion = (entry) => setForm(f => ({ ...f, asignaciones: [...(f.asignaciones || []), entry] }));
+    const removeAsignacion = (index) => setForm(f => ({ ...f, asignaciones: (f.asignaciones || []).filter((_, i) => i !== index) }));
 
     const setCategoria = (e) => {
         const categoria = e.target.value;
@@ -245,6 +400,18 @@ function MaterialForm({ initial, suppliers, onSave, onCancel, saving }) {
                 </div>
             </div>
 
+            {isPackaging && (
+                <div>
+                    <p className="text-slate-200 font-semibold text-sm border-b border-slate-700 pb-2 mb-4">Asignación a Productos / SKU</p>
+                    <PackagingAssignments
+                        asignaciones={form.asignaciones || []}
+                        products={products}
+                        onAdd={addAsignacion}
+                        onRemove={removeAsignacion}
+                    />
+                </div>
+            )}
+
             {/* Notes */}
             <div>
                 <label className={LabelCls}>Notas internas</label>
@@ -352,6 +519,24 @@ function MaterialCard({ material, supplierName, onEdit, onDelete }) {
                             </div>
                         ) : null
                     )}
+
+                    {/* Packaging assignments */}
+                    {material.categoria === 'empaques' && (material.asignaciones || []).length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-700">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                                <Link2 size={11} className="text-sky-400" />
+                                <span className="text-sky-400 text-xs font-medium">Asignado a</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                                {material.asignaciones.map((a, i) => (
+                                    <span key={`${a.productoId}-${a.presentacionId}-${i}`}
+                                        className="text-xs px-2 py-0.5 bg-sky-950/40 text-sky-300 rounded-full border border-sky-800/40">
+                                        {a.productoNombre} · {a.presentacionNombre} · {describeAsignacion(a)}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </>
             )}
         </div>
@@ -363,6 +548,7 @@ function MaterialCard({ material, supplierName, onEdit, onDelete }) {
 export default function MaterialsMasterPage() {
     const [materials, setMaterials] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
+    const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [filterCat, setFilterCat] = useState('');
@@ -374,9 +560,10 @@ export default function MaterialsMasterPage() {
 
     const loadAll = useCallback(async () => {
         try {
-            const [matsSnap, suppSnap] = await Promise.all([
+            const [matsSnap, suppSnap, prodSnap] = await Promise.all([
                 getDocs(collection(db, 'kroma_materials')),
                 getDocs(collection(db, 'kroma_suppliers')),
+                getDocs(collection(db, 'kroma_products')),
             ]);
             const mats = matsSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
@@ -386,8 +573,13 @@ export default function MaterialsMasterPage() {
                 .map(d => ({ id: d.id, ...d.data() }))
                 .filter(s => s.active !== false)
                 .sort((a, b) => a.nombreComercial.localeCompare(b.nombreComercial));
+            const prods = prodSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(p => p.active !== false && (p.presentaciones || []).length > 0)
+                .sort((a, b) => a.nombre.localeCompare(b.nombre));
             setMaterials(mats);
             setSuppliers(supps);
+            setProducts(prods);
         } catch (err) {
             console.error('Error loading materials:', err);
         } finally {
@@ -462,6 +654,7 @@ export default function MaterialsMasterPage() {
                     <MaterialForm
                         initial={mode === 'edit' ? editing : null}
                         suppliers={suppliers}
+                        products={products}
                         onSave={handleSave}
                         onCancel={cancelForm}
                         saving={saving}

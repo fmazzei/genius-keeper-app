@@ -56,9 +56,21 @@ Regla Firestore base: `isKromaAccess() = getRole(uid) == 'produccion' || isMaste
 ### kroma_materials
 ```
 nombre, categoria, proveedorId, presentacion, cantidadPresentacion,
-unidad (g/kg/ml/l/und), costoUSD, notas, active
+unidad (g/kg/ml/l/und), costoUSD, notas, active,
+asignaciones: [{                          ← solo materiales categoria 'empaques'
+  productoId, productoNombre, presentacionId, presentacionNombre,
+  tipoConsumo: 'unitario' | 'grupal',
+  cantidadPorUnidad,                       ← si 'unitario': cantidad de material por unidad de SKU
+  unidadesPorGrupo, cantidadPorGrupo,      ← si 'grupal': p.ej. 1 bobina envuelve paquetes de 12 und
+}]
 ```
 **Categorías válidas**: `leche | cultivos | coagulantes | sales | empaques | consumibles | detergentes | reactivos | otros`
+
+**Vinculación empaque ↔ producto**: la asignación se hace **desde el Maestro de Materiales**
+(material de empaque → "este empaque es para tal producto/SKU"), NO desde el Catálogo de Productos.
+El constructor de procesos/recetas define el flujo de producción; el maestro de materiales es donde
+vive el costeo y la trazabilidad de insumos — por eso la asignación de empaques a SKU vive allí,
+junto al resto del modelo de costos del material.
 
 ### kroma_recipes
 ```
