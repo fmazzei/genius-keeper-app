@@ -516,13 +516,17 @@ export function ManagerHome({ onNavigate }) {
                                             <p className="text-emerald-400 font-black text-xl">${totalMat.toFixed(0)}</p>
                                             <p className="text-slate-400 text-xs mt-1">Materiales (USD)</p>
                                         </div>
-                                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
+                                        <button
+                                            onClick={() => kgValPT > 0 && capitalPT > 0 ? setModal('pt_detail') : undefined}
+                                            className={`bg-slate-800 border rounded-xl p-4 text-center w-full transition-all ${kgValPT > 0 && capitalPT > 0 ? 'border-blue-500/30 hover:border-blue-500/60 hover:bg-slate-800/80 cursor-pointer active:scale-[.98]' : 'border-slate-700 cursor-default'}`}
+                                        >
                                             {kgValPT > 0 && capitalPT > 0 ? (
                                                 <>
                                                     <p className="text-blue-400 font-black text-xl">${capitalPT.toFixed(0)}</p>
                                                     <p className="text-slate-400 text-xs mt-1">
                                                         Prod. Term. · {kgValPT.toFixed(1)} kg{hayEstimado ? ' · ~estimado' : ''}
                                                     </p>
+                                                    <p className="text-blue-600 text-[10px] mt-1.5">Ver detalle →</p>
                                                 </>
                                             ) : (
                                                 <>
@@ -530,7 +534,7 @@ export function ManagerHome({ onNavigate }) {
                                                     <p className="text-slate-500 text-xs mt-1">Prod. Term. (sin costeo)</p>
                                                 </>
                                             )}
-                                        </div>
+                                        </button>
                                     </div>
                                     {cats.length > 0 && (
                                         <div>
@@ -819,6 +823,109 @@ export function ManagerHome({ onNavigate }) {
                         );
                     })()}
 
+                    {/* PT detail */}
+                    {modal === 'pt_detail' && data && (() => {
+                        const rows = buildPTInventoryDetails(data.ptItems, data.allLogs, data.materials);
+                        const totalValor = rows.reduce((s, r) => s + r.valor, 0);
+                        const totalKg    = rows.reduce((s, r) => s + r.kgItem, 0);
+                        return (
+                            <KpiModal title="Inventario Producto Terminado" onClose={close}>
+                                <div className="space-y-4">
+                                    {/* Totales */}
+                                    <div className="flex gap-4 pb-3 border-b border-slate-800">
+                                        <button onClick={() => setModal('capital')} className="text-slate-500 hover:text-white text-xs flex items-center gap-1 transition-colors">
+                                            ← Volver
+                                        </button>
+                                        <div className="ml-auto text-right">
+                                            <p className="text-blue-400 font-black text-2xl">${totalValor.toFixed(0)}</p>
+                                            <p className="text-slate-500 text-xs">{totalKg.toFixed(1)} kg · {rows.length} partida{rows.length !== 1 ? 's' : ''}</p>
+                                        </div>
+                                    </div>
+
+                                    {rows.length === 0 && <Empty msg="Sin ítems de PT con costo calculable" />}
+
+                                    {rows.map(row => {
+                                        const desgloseTotal = row.desglose?.total || 0;
+                                        const bars = row.desglose ? [
+                                            { label: 'Leche',    val: row.desglose.leche,   color: '#60a5fa' },
+                                            { label: 'Insumos',  val: row.desglose.insumos, color: '#34d399' },
+                                            { label: 'Empaque',  val: row.desglose.empaque, color: '#fbbf24' },
+                                        ].filter(b => b.val > 0) : [];
+
+                                        return (
+                                            <div key={row.id} className="bg-slate-800/70 border border-slate-700 rounded-xl p-4 space-y-3">
+                                                {/* Header */}
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div className="min-w-0">
+                                                        <p className="text-white font-semibold text-sm truncate">{row.productoNombre}</p>
+                                                        <p className="text-slate-500 text-xs font-mono">{row.lote}</p>
+                                                        <p className="text-slate-500 text-xs mt-0.5">
+                                                            {row.tipo === 'empacado'
+                                                                ? `${row.unidades} ud · ${row.kgItem.toFixed(3)} kg`
+                                                                : `${row.kgItem.toFixed(3)} kg sin envasar`}
+                                                            {row.estimado && <span className="text-amber-400 ml-1.5">~estimado</span>}
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-right shrink-0">
+                                                        <p className="text-blue-400 font-bold">${row.valor.toFixed(2)}</p>
+                                                        <p className="text-slate-500 text-xs">
+                                                            {row.tipo === 'empacado'
+                                                                ? `$${row.costoUnit.toFixed(3)}/ud`
+                                                                : `$${row.costoUnit.toFixed(3)}/kg`}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                {/* Desglose bars */}
+                                                {bars.length > 0 && (
+                                                    <div className="space-y-1.5">
+                                                        {bars.map(b => (
+                                                            <div key={b.label}>
+                                                                <div className="flex justify-between items-center mb-0.5">
+                                                                    <span className="text-slate-400 text-xs">{b.label}</span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-slate-500 text-xs">
+                                                                            {desgloseTotal > 0 ? `${((b.val / desgloseTotal) * 100).toFixed(0)}%` : ''}
+                                                                        </span>
+                                                                        <span className="text-white text-xs font-mono w-16 text-right">${b.val.toFixed(2)}</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                                                    <div className="h-full rounded-full transition-all"
+                                                                        style={{ width: `${desgloseTotal > 0 ? (b.val / desgloseTotal) * 100 : 0}%`, background: b.color }} />
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* Ingredient detail */}
+                                                {row.ingredientes.length > 0 && (
+                                                    <div className="pt-2 border-t border-slate-700/50">
+                                                        <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-widest mb-2">Insumos empleados</p>
+                                                        <div className="space-y-1">
+                                                            {row.ingredientes.map((ing, i) => (
+                                                                <div key={i} className="flex items-center gap-2">
+                                                                    <span className="text-slate-300 text-xs flex-1 truncate">{ing.nombre}</span>
+                                                                    <span className="text-slate-600 text-xs shrink-0 font-mono">
+                                                                        {ing.dosis}{ing.unidadDosis}/L
+                                                                    </span>
+                                                                    <span className="text-emerald-400 text-xs font-mono shrink-0 w-14 text-right">
+                                                                        ${ing.costoItem.toFixed(2)}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </KpiModal>
+                        );
+                    })()}
+
                     {/* Sin envasar */}
                     {modal === 'sin_envasar' && data && (() => {
                         const sinEnvLogs = data.logs
@@ -868,6 +975,138 @@ export function ManagerHome({ onNavigate }) {
             )}
         </Shell>
     );
+}
+
+// ─── PT inventory detail builder (for interactive modal) ─────────────────────
+// Computes full cost breakdown for ALL active PT items — both those that already
+// have costoUnitarioUsd and those that still need estimation. Returns one row per
+// item with leche/insumos/empaque desglose and per-ingredient detail, all scaled
+// to that item's proportional share of its production lot.
+function buildPTInventoryDetails(ptItems, logs, materials) {
+    const materialsById  = indexById(materials);
+    const packagingByKey = indexPackagingAssignments(materials);
+    const logById        = indexById(logs);
+
+    const kgByLogId = {};
+    (ptItems || []).forEach(item => {
+        if (item.active === false || !item.logId) return;
+        const k = item.totalKg ?? item.kgTotales ?? 0;
+        if (k > 0) kgByLogId[item.logId] = (kgByLogId[item.logId] || 0) + k;
+    });
+
+    const refLogByProd = {};
+    (logs || []).forEach(log => {
+        if (log.estado !== 'completada' || !log.productoId || !log.bloquesSnapshot?.length) return;
+        const existing = refLogByProd[log.productoId];
+        if (!existing) { refLogByProd[log.productoId] = log; return; }
+        const da = logDate(log), db = logDate(existing);
+        if (da && db && da > db) refLogByProd[log.productoId] = log;
+    });
+
+    const milkMats = materials.filter(m => m.categoria === 'leche' && m.active !== false);
+    const milkByProv = {};
+    milkMats.forEach(m => { const p = pricePerBaseUnit(m); if (p > 0 && m.proveedorId) milkByProv[m.proveedorId] = p; });
+    const fallbackMilkPrice = milkMats.map(m => pricePerBaseUnit(m)).find(p => p > 0) ?? 0;
+
+    const results = [];
+    (ptItems || []).forEach(item => {
+        if (item.active === false) return;
+        const kgItem = item.totalKg ?? item.kgTotales ?? 0;
+        const hasStoredCost = item.costoUnitarioUsd != null && item.costoUnitarioUsd > 0;
+
+        const directLog = logById[item.logId];
+        const refLog    = refLogByProd[item.productoId];
+        const log       = directLog ?? refLog;
+
+        if (!log && !hasStoredCost) return;
+
+        let totalKgProducido = 0, litrosNetos = 0;
+        let costoLeche = 0, costoInsumos = 0, costoEmpaque = 0;
+
+        if (log) {
+            totalKgProducido = directLog
+                ? ((directLog.totalKgProducido > 0)
+                    ? directLog.totalKgProducido
+                    : ((kgByLogId[item.logId] ?? 0) || kgItem))
+                : kgItem;
+            litrosNetos = (directLog ? getLitrosNetos(directLog) : 0)
+                || totalKgProducido * RENDIMIENTO_FALLBACK_L_PER_KG;
+
+            costoLeche = directLog
+                ? (directLog.recepciones || []).reduce((s, r) => {
+                    const p = parseFloat(r.costoUsdLitro);
+                    return p > 0 ? s + p * (r.litros || 0) : s;
+                  }, 0)
+                : 0;
+            if (costoLeche === 0) {
+                const provId    = directLog?.recepciones?.[0]?.proveedorId;
+                const milkPrice = (provId && milkByProv[provId]) ?? fallbackMilkPrice;
+                costoLeche = milkPrice * litrosNetos;
+            }
+            costoInsumos = costoPorLitroDesdeFicha(log.bloquesSnapshot, materialsById) * litrosNetos;
+            costoEmpaque = directLog
+                ? (directLog.productosFinales || []).reduce(
+                    (s, pf) => s + packagingCostForItem(log.productoId, pf, packagingByKey), 0)
+                : 0;
+        }
+
+        let costoUnit, valor;
+        if (hasStoredCost) {
+            costoUnit = item.costoUnitarioUsd;
+            valor     = item.tipo === 'empacado' ? costoUnit * (item.unidades || 0) : costoUnit * kgItem;
+        } else {
+            const costoTotal = costoLeche + costoInsumos + costoEmpaque;
+            const costoPorKg = totalKgProducido > 0 ? costoTotal / totalKgProducido : 0;
+            if (!(costoPorKg > 0)) return;
+            if (item.tipo === 'sin_envasar') {
+                costoUnit = costoPorKg;
+            } else {
+                const unds    = item.unidades || 1;
+                const packUnit = packagingCostForItem(log.productoId,
+                    { catalogId: item.catalogId, unidades: unds }, packagingByKey) / unds;
+                costoUnit = costoPorKg * (item.pesoPorUnidad || 0) + packUnit;
+            }
+            if (!(costoUnit > 0)) return;
+            valor = item.tipo === 'empacado' ? costoUnit * (item.unidades || 0) : costoUnit * kgItem;
+        }
+
+        // Scale desglose to this item's share of the lot
+        const proporcion = totalKgProducido > 0 ? Math.min(1, kgItem / totalKgProducido) : 1;
+        const desglose = (log && totalKgProducido > 0) ? {
+            leche:   +(costoLeche   * proporcion).toFixed(2),
+            insumos: +(costoInsumos * proporcion).toFixed(2),
+            empaque: +(costoEmpaque * proporcion).toFixed(2),
+            total:   +((costoLeche + costoInsumos + costoEmpaque) * proporcion).toFixed(2),
+        } : null;
+
+        // Per-ingredient detail scaled to this item
+        const ingredientes = log ? extractFichaDoseRefs(log.bloquesSnapshot).map(ref => {
+            const mat    = materialsById[ref.materialId];
+            const price  = mat ? pricePerBaseUnit(mat) : 0;
+            const factor = mat ? unitConversionFactor(ref.unidad, mat.unidad) : null;
+            if (!price || factor == null) return null;
+            const costoLote = price * ref.cantidad * factor * litrosNetos;
+            return {
+                nombre:      mat?.nombre || '—',
+                dosis:       ref.cantidad,
+                unidadDosis: ref.unidad,
+                costoItem:   +(costoLote * proporcion).toFixed(3),
+            };
+        }).filter(x => x && x.costoItem > 0) : [];
+
+        results.push({
+            id: item.id, tipo: item.tipo,
+            productoNombre: item.productoNombre || log?.productoNombre || '—',
+            lote:           item.lote || log?.lote || '—',
+            kgItem,
+            unidades: item.tipo === 'empacado' ? (item.unidades || 0) : null,
+            pesoPorUnidad:  item.pesoPorUnidad,
+            costoUnit, valor, estimado: !hasStoredCost,
+            desglose, ingredientes,
+        });
+    });
+
+    return results.sort((a, b) => b.valor - a.valor);
 }
 
 // ─── Retroactive PT cost estimator ───────────────────────────────────────────
