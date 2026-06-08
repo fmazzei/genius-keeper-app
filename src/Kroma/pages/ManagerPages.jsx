@@ -829,12 +829,13 @@ export function ManagerHome({ onNavigate }) {
                         const totalValor = rows.reduce((s, r) => s + r.valor, 0);
                         const totalKg    = rows.reduce((s, r) => s + r.kgItem, 0);
                         return (
-                            <KpiModal title="Inventario Producto Terminado" onClose={close}>
-                                <div className="space-y-4">
-                                    {/* Totales */}
-                                    <div className="flex gap-4 pb-3 border-b border-slate-800">
-                                        <button onClick={() => setModal('capital')} className="text-slate-500 hover:text-white text-xs flex items-center gap-1 transition-colors">
-                                            ← Volver
+                            <KpiModal title="Producto Terminado" onClose={close}>
+                                <div className="space-y-1">
+                                    {/* Header */}
+                                    <div className="flex items-center gap-3 pb-3 mb-1 border-b border-slate-800">
+                                        <button onClick={() => setModal('capital')}
+                                            className="text-slate-500 hover:text-slate-300 text-xs transition-colors shrink-0">
+                                            ← Capital
                                         </button>
                                         <div className="ml-auto text-right">
                                             <p className="text-blue-400 font-black text-2xl">${totalValor.toFixed(0)}</p>
@@ -842,85 +843,72 @@ export function ManagerHome({ onNavigate }) {
                                         </div>
                                     </div>
 
-                                    {rows.length === 0 && <Empty msg="Sin ítems de PT con costo calculable" />}
+                                    {rows.length === 0 && <Empty msg="Sin partidas con costo calculable" />}
 
-                                    {rows.map(row => {
-                                        const desgloseTotal = row.desglose?.total || 0;
-                                        const bars = row.desglose ? [
-                                            { label: 'Leche',    val: row.desglose.leche,   color: '#60a5fa' },
-                                            { label: 'Insumos',  val: row.desglose.insumos, color: '#34d399' },
-                                            { label: 'Empaque',  val: row.desglose.empaque, color: '#fbbf24' },
-                                        ].filter(b => b.val > 0) : [];
+                                    <div className="divide-y divide-slate-700/40">
+                                        {rows.map(row => {
+                                            // Desglose: only show when there are 2+ components with value
+                                            const desComponents = row.desglose ? [
+                                                { label: 'Leche',   val: row.desglose.leche,   color: 'text-blue-400'  },
+                                                { label: 'Insumos', val: row.desglose.insumos, color: 'text-emerald-400' },
+                                                { label: 'Empaque', val: row.desglose.empaque, color: 'text-amber-400'  },
+                                            ].filter(c => c.val > 0) : [];
+                                            const showDesglose = desComponents.length >= 2;
 
-                                        return (
-                                            <div key={row.id} className="bg-slate-800/70 border border-slate-700 rounded-xl p-4 space-y-3">
-                                                {/* Header */}
-                                                <div className="flex items-start justify-between gap-3">
-                                                    <div className="min-w-0">
-                                                        <p className="text-white font-semibold text-sm truncate">{row.productoNombre}</p>
-                                                        <p className="text-slate-500 text-xs font-mono">{row.lote}</p>
-                                                        <p className="text-slate-500 text-xs mt-0.5">
-                                                            {row.tipo === 'empacado'
-                                                                ? `${row.unidades} ud · ${row.kgItem.toFixed(3)} kg`
-                                                                : `${row.kgItem.toFixed(3)} kg sin envasar`}
-                                                            {row.estimado && <span className="text-amber-400 ml-1.5">~estimado</span>}
-                                                        </p>
-                                                    </div>
-                                                    <div className="text-right shrink-0">
-                                                        <p className="text-blue-400 font-bold">${row.valor.toFixed(2)}</p>
-                                                        <p className="text-slate-500 text-xs">
-                                                            {row.tipo === 'empacado'
-                                                                ? `$${row.costoUnit.toFixed(3)}/ud`
-                                                                : `$${row.costoUnit.toFixed(3)}/kg`}
-                                                        </p>
-                                                    </div>
-                                                </div>
-
-                                                {/* Desglose bars */}
-                                                {bars.length > 0 && (
-                                                    <div className="space-y-1.5">
-                                                        {bars.map(b => (
-                                                            <div key={b.label}>
-                                                                <div className="flex justify-between items-center mb-0.5">
-                                                                    <span className="text-slate-400 text-xs">{b.label}</span>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-slate-500 text-xs">
-                                                                            {desgloseTotal > 0 ? `${((b.val / desgloseTotal) * 100).toFixed(0)}%` : ''}
-                                                                        </span>
-                                                                        <span className="text-white text-xs font-mono w-16 text-right">${b.val.toFixed(2)}</span>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                                                                    <div className="h-full rounded-full transition-all"
-                                                                        style={{ width: `${desgloseTotal > 0 ? (b.val / desgloseTotal) * 100 : 0}%`, background: b.color }} />
-                                                                </div>
+                                            return (
+                                                <div key={row.id} className="py-3">
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-white text-sm font-semibold truncate leading-snug">{row.productoNombre}</p>
+                                                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                                <span className="text-slate-500 text-xs font-mono">{row.lote}</span>
+                                                                <span className="text-slate-600 text-xs">·</span>
+                                                                <span className="text-slate-500 text-xs">
+                                                                    {row.tipo === 'sin_envasar' ? 'Sin envasar' : 'Empacado'}
+                                                                </span>
+                                                                {row.estimado && (
+                                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                                                                        ~est.
+                                                                    </span>
+                                                                )}
                                                             </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-
-                                                {/* Ingredient detail */}
-                                                {row.ingredientes.length > 0 && (
-                                                    <div className="pt-2 border-t border-slate-700/50">
-                                                        <p className="text-slate-500 text-[10px] font-semibold uppercase tracking-widest mb-2">Insumos empleados</p>
-                                                        <div className="space-y-1">
-                                                            {row.ingredientes.map((ing, i) => (
-                                                                <div key={i} className="flex items-center gap-2">
-                                                                    <span className="text-slate-300 text-xs flex-1 truncate">{ing.nombre}</span>
-                                                                    <span className="text-slate-600 text-xs shrink-0 font-mono">
-                                                                        {ing.dosis}{ing.unidadDosis}/L
-                                                                    </span>
-                                                                    <span className="text-emerald-400 text-xs font-mono shrink-0 w-14 text-right">
-                                                                        ${ing.costoItem.toFixed(2)}
-                                                                    </span>
-                                                                </div>
-                                                            ))}
+                                                            <p className="text-slate-500 text-xs mt-0.5">
+                                                                {row.tipo === 'sin_envasar'
+                                                                    ? `${row.kgItem.toFixed(2)} kg`
+                                                                    : `${row.unidades} ud · ${row.kgItem.toFixed(2)} kg`}
+                                                            </p>
+                                                        </div>
+                                                        <div className="text-right shrink-0">
+                                                            <p className="text-white font-bold text-sm">${row.valor.toFixed(0)}</p>
+                                                            <p className="text-slate-500 text-xs">
+                                                                {row.tipo === 'sin_envasar'
+                                                                    ? `$${row.costoUnit.toFixed(2)}/kg`
+                                                                    : `$${row.costoUnit.toFixed(2)}/ud`}
+                                                            </p>
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                                                    {/* Compact desglose — only when meaningful (2+ components) */}
+                                                    {showDesglose && (
+                                                        <div className="flex items-center gap-3 mt-1.5">
+                                                            {desComponents.map(c => (
+                                                                <span key={c.label} className={`text-xs ${c.color}`}>
+                                                                    {c.label} <span className="font-mono">${c.val.toFixed(0)}</span>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Total footer */}
+                                    {rows.length > 0 && (
+                                        <div className="flex justify-between items-center pt-3 border-t border-slate-700 mt-2">
+                                            <p className="text-slate-400 text-sm font-semibold">Total inventario</p>
+                                            <p className="text-blue-400 font-black text-lg">${totalValor.toFixed(0)}</p>
+                                        </div>
+                                    )}
                                 </div>
                             </KpiModal>
                         );
@@ -1079,20 +1067,8 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
             total:   +((costoLeche + costoInsumos + costoEmpaque) * proporcion).toFixed(2),
         } : null;
 
-        // Per-ingredient detail scaled to this item
-        const ingredientes = log ? extractFichaDoseRefs(log.bloquesSnapshot).map(ref => {
-            const mat    = materialsById[ref.materialId];
-            const price  = mat ? pricePerBaseUnit(mat) : 0;
-            const factor = mat ? unitConversionFactor(ref.unidad, mat.unidad) : null;
-            if (!price || factor == null) return null;
-            const costoLote = price * ref.cantidad * factor * litrosNetos;
-            return {
-                nombre:      mat?.nombre || '—',
-                dosis:       ref.cantidad,
-                unidadDosis: ref.unidad,
-                costoItem:   +(costoLote * proporcion).toFixed(3),
-            };
-        }).filter(x => x && x.costoItem > 0) : [];
+        // Only include items that have a real positive value
+        if (!(valor > 0)) return;
 
         results.push({
             id: item.id, tipo: item.tipo,
@@ -1102,7 +1078,7 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
             unidades: item.tipo === 'empacado' ? (item.unidades || 0) : null,
             pesoPorUnidad:  item.pesoPorUnidad,
             costoUnit, valor, estimado: !hasStoredCost,
-            desglose, ingredientes,
+            desglose,
         });
     });
 
