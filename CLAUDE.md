@@ -92,6 +92,17 @@ estado, creadoPor, creadoPorNombre, active, createdAt
 
 ## Reglas de negocio críticas
 
+### Costos — visibilidad por rol (regla transversal)
+- **El maestro quesero / operario (rol `produccion`) NUNCA debe ver costos** — ni en el
+  Constructor de Recetas, ni en el Constructor de Procesos, ni en Recepción de Leche,
+  ni en la Planilla de Producción. Esos módulos son su herramienta operativa de trabajo,
+  desconectada deliberadamente de los costos reales del negocio.
+- Internamente Kroma sí **calcula y snapshotea** los costos (`costoUsdUnidad`,
+  `costoUsdLitro`, etc.) en cada transacción — esos datos alimentan el costeo financiero
+  de Administración y Gerencia (Módulos 1 y 2) — pero **jamás se renderizan en pantallas
+  de operario**. Si se agrega una funcionalidad nueva en Módulo 3 o 4, no debe incluir
+  badges, paneles ni textos con `$`/USD/"costo".
+
 ### Recetas
 - La dosis de cada ingrediente es **por litro de leche** (`LOTE_REF = 1`).
   Kroma multiplica por litros reales en producción.
@@ -191,7 +202,10 @@ Flujo 3 pasos: Producto → Proceso (vincular, opcional) → Ingredientes.
 - Ingredientes: solo categorías `cultivos`, `coagulantes`, `sales`, `otros`.
 - Dosis expresada por **1 litro de leche**.
 - PrecisionStepper con pasos `[0.001, 0.01, 0.1, 1]` para dosis pequeñas.
-- Costo teórico calculado en tiempo real.
+- `costoUsdUnidad` se snapshotea internamente en cada ingrediente (alimenta el costeo
+  financiero gerencial) **pero nunca se muestra en pantalla** — el maestro quesero /
+  operario no debe ver costos de insumos, recetas ni procesos. Esa información es
+  exclusiva de Administración y Gerencia (Módulos 1 y 2).
 
 ### 3.3 Constructor de Procesos
 

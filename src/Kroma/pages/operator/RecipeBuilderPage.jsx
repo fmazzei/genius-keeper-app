@@ -5,7 +5,7 @@ import { useKroma } from '../../KromaContext';
 import {
     FlaskConical, Plus, X, Loader, ChevronUp, ChevronDown,
     Edit2, Trash2, CheckCircle2, AlertTriangle, Workflow,
-    DollarSign, RefreshCw, Package, PlusCircle,
+    RefreshCw, Package, PlusCircle,
 } from 'lucide-react';
 import { PillGroup } from '../admin/ProductCatalogPage';
 
@@ -63,29 +63,6 @@ function fmt(n) {
     if (n >= 0.01)   return parseFloat(n.toFixed(4)).toString();
     if (n >= 0.0001) return parseFloat(n.toFixed(6)).toString();
     return n.toExponential(3);
-}
-
-// Convert dosis in fromUnit to material's native unit for cost calculation
-function calcIngredientCost(material, dosis, fromUnit) {
-    const cost = parseFloat(material.costoUSD);
-    const qty  = parseFloat(material.cantidadPresentacion);
-    if (!cost || !qty || cost <= 0 || qty <= 0) return null;
-
-    const pricePerMatUnit = cost / qty; // USD per material.unidad
-    const to = material.unidad;
-    const from = fromUnit;
-
-    let factor = null;
-    if (from === to)                          factor = 1;
-    else if (from === 'g'  && to === 'kg')    factor = 0.001;
-    else if (from === 'kg' && to === 'g')     factor = 1000;
-    else if (from === 'ml' && to === 'l')     factor = 0.001;
-    else if (from === 'l'  && to === 'ml')    factor = 1000;
-    else if (from === 'g'  && to === 'l')     factor = 0.001;   // density ≈1 shortcut
-    else if (from === 'ml' && to === 'g')     factor = 1;       // density ≈1 shortcut
-
-    if (factor === null) return null;
-    return pricePerMatUnit * dosis * factor; // USD for (dosis fromUnit)
 }
 
 // ─── Draft persistence ────────────────────────────────────────────────────────
@@ -377,19 +354,6 @@ export default function RecipeBuilderPage() {
         }
     };
 
-    // ── Cost calculations ─────────────────────────────────────────────────────
-    const totalCost = ingredientes.reduce((sum, ing) => {
-        const mat = materials.find(m => m.id === ing.materialId);
-        if (!mat) return sum;
-        const c = calcIngredientCost(mat, ing.dosis, ing.unidadDosis);
-        return c != null ? sum + c : sum;
-    }, 0);
-
-    const hasCostData = ingredientes.some(ing => {
-        const mat = materials.find(m => m.id === ing.materialId);
-        return mat && calcIngredientCost(mat, ing.dosis, ing.unidadDosis) != null;
-    });
-
     // ── Filtered materials for modal ──────────────────────────────────────────
     // Only recipe-relevant categories (no leche, empaques, consumibles, detergentes, reactivos)
     const recipeMats = materials.filter(m => RECIPE_CATEGORIES.has(m.categoria));
@@ -486,12 +450,6 @@ export default function RecipeBuilderPage() {
                 ) : (
                     <div className="space-y-4 max-w-2xl">
                         {recipes.map(rec => {
-                            const tCost = (rec.ingredientes || []).reduce((sum, ing) => {
-                                const mat = materials.find(m => m.id === ing.materialId);
-                                if (!mat) return sum;
-                                const c = calcIngredientCost(mat, ing.dosis, ing.unidadDosis);
-                                return c != null ? sum + c : sum;
-                            }, 0);
                             return (
                                 <div key={rec.id} className="bg-slate-800 border border-slate-700 rounded-xl p-4">
                                     <div className="flex items-start justify-between gap-2 mb-3">
@@ -512,11 +470,6 @@ export default function RecipeBuilderPage() {
                                                 }`}>
                                                     {rec.estado === 'activo' ? 'Activa' : 'Borrador'}
                                                 </span>
-                                                {tCost > 0 && (
-                                                    <p className="text-emerald-400 text-xs font-bold mt-1">
-                                                        ${fmt(tCost)} / L leche
-                                                    </p>
-                                                )}
                                             </div>
                                             <button
                                                 onClick={() => openEditRecipe(rec)}
@@ -603,7 +556,7 @@ export default function RecipeBuilderPage() {
                     <p className="text-slate-500 text-xs">
                         {editingRecipe ? 'Editando receta' : 'Nueva receta'}
                         {step === 3 && ingredientes.length > 0
-                            ? ` · ${ingredientes.length} ingrediente${ingredientes.length !== 1 ? 's' : ''}${hasCostData ? ` · $${fmt(totalCost)} / L leche` : ''}`
+                            ? ` · ${ingredientes.length} ingrediente${ingredientes.length !== 1 ? 's' : ''}`
                             : ''}
                     </p>
                 </div>
@@ -758,8 +711,6 @@ export default function RecipeBuilderPage() {
                         {ingredientes.length > 0 && (
                             <div className="space-y-2 mb-4">
                                 {ingredientes.map((ing, idx) => {
-                                    const mat = materials.find(m => m.id === ing.materialId);
-                                    const cost = mat ? calcIngredientCost(mat, ing.dosis, ing.unidadDosis) : null;
                                     return (
                                         <div key={ing.id} className={`bg-slate-800 border rounded-xl p-3.5 ${CAT_COLORS[ing.categoria] ? 'border-slate-700' : 'border-slate-700'}`}>
                                             <div className="flex items-center gap-3">
@@ -782,9 +733,6 @@ export default function RecipeBuilderPage() {
                                                         </span>
                                                         {ing.tipoDosis === 'por_envase' && (
                                                             <span className="text-teal-500 ml-1.5 text-xs">⊕ aspersión</span>
-                                                        )}
-                                                        {cost != null && (
-                                                            <span className="text-slate-500 ml-2">· ${fmt(cost)}</span>
                                                         )}
                                                     </p>
                                                 </div>
@@ -814,17 +762,6 @@ export default function RecipeBuilderPage() {
                                         </div>
                                     );
                                 })}
-                            </div>
-                        )}
-
-                        {/* Cost summary */}
-                        {hasCostData && (
-                            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3.5 mb-4 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <DollarSign size={15} className="text-emerald-400" />
-                                    <span className="text-emerald-300 text-sm font-semibold">Costo estimado por litro de leche</span>
-                                </div>
-                                <span className="text-white font-bold text-lg font-mono">${fmt(totalCost)}</span>
                             </div>
                         )}
 
@@ -984,20 +921,6 @@ export default function RecipeBuilderPage() {
                                         unit={ingUnidad}
                                         onChange={setIngDosis}
                                     />
-
-                                    {/* Cost preview */}
-                                    {(() => {
-                                        const c = calcIngredientCost(ingMaterial, ingDosis, ingUnidad);
-                                        const label = ingTipoDosis === 'por_envase' ? 'por envase' : 'por litro de leche';
-                                        return c != null && ingDosis > 0 ? (
-                                            <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 flex items-center justify-between">
-                                                <span className="text-slate-400 text-xs">Costo estimado {label}</span>
-                                                <span className="text-emerald-400 font-bold text-sm font-mono">${fmt(c)}</span>
-                                            </div>
-                                        ) : ingDosis > 0 ? (
-                                            <p className="text-slate-600 text-xs">Sin datos de precio para este insumo.</p>
-                                        ) : null;
-                                    })()}
                                 </>
                             )}
                         </div>

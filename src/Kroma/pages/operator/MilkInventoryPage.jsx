@@ -410,11 +410,6 @@ function ReceptionCard({ rec, paramConfig, isMaster, kromaRole, onEdit, onDelete
             <div className="flex items-center gap-1.5 mb-3">
                 <Droplets size={15} className="text-blue-400" />
                 <span className="text-blue-300 font-bold text-xl font-mono">{rec.litros} L</span>
-                {rec.costoUsdLitro > 0 && (
-                    <span className="text-slate-500 text-xs font-mono ml-1">
-                        · ${(rec.costoUsdLitro * (rec.litros || 0)).toFixed(2)} (${rec.costoUsdLitro.toFixed(3)}/L)
-                    </span>
-                )}
             </div>
 
             {/* Parameters */}
@@ -833,17 +828,6 @@ export default function MilkInventoryPage() {
                                         ))}
                                     </select>
                                 )}
-                                {proveedorId && (
-                                    milkPriceFor(proveedorId) != null ? (
-                                        <p className="text-slate-500 text-xs mt-2">
-                                            Precio cargado: <span className="text-blue-400 font-mono font-semibold">${milkPriceFor(proveedorId).toFixed(3)} / L</span>
-                                        </p>
-                                    ) : (
-                                        <p className="text-amber-500/80 text-xs mt-2">
-                                            Este proveedor no tiene precio por litro cargado en el Maestro de Materiales — la recepción se guardará sin costo asociado.
-                                        </p>
-                                    )
-                                )}
                             </div>
                             <LitrosStepper value={litros} onChange={setLitros} />
                             <div>
@@ -893,9 +877,6 @@ export default function MilkInventoryPage() {
                                 {[
                                     ['Proveedor', supplierName(suppliers.find(s => s.id === proveedorId))],
                                     ['Litros', `${litros} L`],
-                                    ['Costo MP', milkPriceFor(proveedorId) != null
-                                        ? `$${(milkPriceFor(proveedorId) * litros).toFixed(2)} (a $${milkPriceFor(proveedorId).toFixed(3)}/L)`
-                                        : 'Sin precio cargado'],
                                     ...paramConfig.map(p => [
                                         p.label,
                                         `${(params[p.id] ?? p.defaultValue).toFixed(p.decimals)}${p.unit ? ` ${p.unit}` : ''}`,
