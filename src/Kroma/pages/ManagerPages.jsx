@@ -203,9 +203,11 @@ function useKromaDashboard() {
                 getDocs(collection(db, 'kroma_suppliers')),
                 getDocs(collection(db, 'kroma_materials')),
             ]);
+            const allLogDocs = logsS.docs.map(d => ({ id: d.id, ...d.data() }));
             setState({
                 data: {
-                    logs:      logsS.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.estado === 'completada'),
+                    logs:    allLogDocs.filter(l => l.estado === 'completada'),
+                    allLogs: allLogDocs,  // unfiltered — used by backfill cost lookup
                     matInv:    matInvS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
                     ptItems:   ptS.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.active !== false),
                     milkRecs:  milkS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
@@ -502,8 +504,9 @@ export function ManagerHome({ onNavigate }) {
                                 kgValPT += kg;
                             }
                         });
-                        // For items still lacking costoUnitarioUsd, compute on-the-fly
-                        const pendingRows = computeBackfillCosts(data.ptItems, data.logs, data.materials);
+                        // For items still lacking costoUnitarioUsd, compute on-the-fly using allLogs
+                        // (unfiltered by estado so historical/partial logs are also found)
+                        const pendingRows = computeBackfillCosts(data.ptItems, data.allLogs, data.materials);
                         pendingRows.forEach(r => { capitalPT += r.valorTotal; kgValPT += r.kgItem; hayEstimado = true; });
                         return (
                             <KpiModal title="Capital en Inventario" onClose={close}>
@@ -876,10 +879,21 @@ export function ManagerHome({ onNavigate }) {
 //             thermostretchable, etc.) per SKU presentación.
 // Returns an array of { id, productoNombre, tipo, kgItem, costoUnitarioUsd,
 //   valorTotal, desglose } — no Firestore writes until the user confirms.
+// Standard Kroma yield used when the production log lacks litrosIngresados / merma data
+const RENDIMIENTO_FALLBACK_L_PER_KG = 6.2;
+
 function computeBackfillCosts(ptItems, logs, materials) {
     const materialsById   = indexById(materials);
     const packagingByKey  = indexPackagingAssignments(materials);
     const logById         = indexById(logs);
+
+    // Sum kg across all PT items per logId — fallback when log.totalKgProducido is 0/null
+    const kgByLogId = {};
+    (ptItems || []).forEach(item => {
+        if (item.active === false || !item.logId) return;
+        const k = item.totalKg ?? item.kgTotales ?? 0;
+        if (k > 0) kgByLogId[item.logId] = (kgByLogId[item.logId] || 0) + k;
+    });
 
     // Current milk price per liter by supplier
     const milkMats = materials.filter(m => m.categoria === 'leche' && m.active !== false);
@@ -892,9 +906,16 @@ function computeBackfillCosts(ptItems, logs, materials) {
         if (item.costoUnitarioUsd != null || item.active === false) return;
         const log = logById[item.logId];
         if (!log) return;
-        const litrosNetos      = getLitrosNetos(log);
-        const totalKgProducido = log.totalKgProducido ?? 0;
-        if (!litrosNetos || !totalKgProducido) return;
+
+        // totalKgProducido: use log field; if missing/zero derive from PT items for this lot
+        const totalKgProducido = (log.totalKgProducido > 0)
+            ? log.totalKgProducido
+            : (kgByLogId[item.logId] ?? 0);
+        if (!totalKgProducido) return;
+
+        // litrosNetos: use log field; if missing/zero estimate from kg × rendimiento Kroma
+        const litrosNetos = getLitrosNetos(log) || totalKgProducido * RENDIMIENTO_FALLBACK_L_PER_KG;
+        if (!litrosNetos) return;
 
         // Leche: use frozen price from reception if available; otherwise current catalog
         let costoLeche = (log.recepciones || []).reduce((sum, r) => {
@@ -969,7 +990,7 @@ export function FinancialBoard() {
 
     const c = useMemo(() => {
         if (!data) return null;
-        const { logs, matInv, materials, ptItems } = data;
+        const { logs, allLogs, matInv, materials, ptItems } = data;
         const materialsById = indexById(materials);
 
         const catMap = {};
@@ -1000,7 +1021,7 @@ export function FinancialBoard() {
                 kgValuados += kg;
             }
         });
-        computeBackfillCosts(ptItems, logs, materials).forEach(r => {
+        computeBackfillCosts(ptItems, allLogs, materials).forEach(r => {
             totalPT += r.valorTotal; kgValuados += r.kgItem; hayEstimadoPT = true;
         });
         const hayCosteoPT = kgValuados > 0;
@@ -1128,7 +1149,7 @@ export function FinancialBoard() {
                             : [];
                         if (pending.length === 0) return null;
                         const handlePreview = () => {
-                            const rows = computeBackfillCosts(data.ptItems, data.logs, data.materials);
+                            const rows = computeBackfillCosts(data.ptItems, data.allLogs, data.materials);
                             setBackfillRows(rows);
                             setBackfillError(null);
                             setBackfill(rows.length > 0 ? 'preview' : null);
