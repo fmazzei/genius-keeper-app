@@ -396,6 +396,79 @@ function snapshotIngredientCosts(ingredients, materialsMap) {
     });
 }
 
+// ─── Real cost snapshot for finished-goods inventory (Costo Real, vs. the
+// theoretical $/kg computed from the ficha in ManagerPages). Built from the
+// same frozen consumosCosteo + recepciones.costoUsdLitro + packaging
+// assignments — actual quantities consumed/produced, not reference doses —
+// so Kroma can compare "Costo Teórico vs Costo Real" with zero drift.
+// Internal only: never rendered to the operario.
+const UNIT_CONV_FACTORS = { g_kg: 0.001, kg_g: 1000, ml_l: 0.001, l_ml: 1000, g_l: 0.001, ml_g: 1 };
+function unitConvFactor(from, to) {
+    if (!from || !to || from === to) return 1;
+    return UNIT_CONV_FACTORS[`${from}_${to}`] ?? null;
+}
+function pricePerBaseUnit(mat) {
+    const cost = parseFloat(mat?.costoUSD);
+    const qty  = parseFloat(mat?.cantidadPresentacion);
+    if (!cost || !qty || cost <= 0 || qty <= 0) return 0;
+    return cost / qty;
+}
+function realCostoInsumos(bloquesData, materialsMap) {
+    let total = 0;
+    Object.values(bloquesData || {}).forEach(b => {
+        (b.consumosCosteo || []).forEach(c => {
+            if (!(c.costoUsdUnidad > 0) || !(c.amount > 0)) return;
+            const factor = unitConvFactor(c.unidad, c.unidadMaterial);
+            if (factor == null) return;
+            total += c.costoUsdUnidad * c.amount * factor;
+        });
+    });
+    return total;
+}
+function realCostoLeche(recepciones) {
+    return (recepciones || []).reduce((sum, r) => {
+        const price = parseFloat(r.costoUsdLitro);
+        return price > 0 ? sum + price * (r.litros || 0) : sum;
+    }, 0);
+}
+function packagingCostForPresentacion(productoId, presentacionId, unidades, materialsMap) {
+    let total = 0;
+    Object.values(materialsMap || {}).forEach(mat => {
+        (mat.asignaciones || []).forEach(a => {
+            if (a?.productoId !== productoId || a?.presentacionId !== presentacionId) return;
+            const price = pricePerBaseUnit(mat);
+            if (!price) return;
+            if (a.tipoConsumo === 'grupal') {
+                const porGrupo = a.unidadesPorGrupo || 0;
+                if (!porGrupo) return;
+                total += Math.ceil(unidades / porGrupo) * (a.cantidadPorGrupo || 0) * price;
+            } else {
+                total += unidades * (a.cantidadPorUnidad || 0) * price;
+            }
+        });
+    });
+    return total;
+}
+// $/kg of "queso crudo" (leche + insumos) — uniform across every SKU born
+// from this lot, frozen from the lot's actual consumption. Deliberately
+// excludes packaging: blending all SKUs' packaging into one $/kg would let a
+// glass-jar SKU's cost bleed into a plastic-bag SKU's units (a "desviación").
+// Packaging is priced per-SKU instead, at the moment it's actually consumed —
+// see costoEmpaqueUnitario — so every unit carries exactly its own cost.
+function calcCostoBasePorKg(log, bloquesData, totalKgProducido, materialsMap) {
+    const costoLeche   = realCostoLeche(log.recepciones);
+    const costoInsumos = realCostoInsumos(bloquesData, materialsMap);
+    const costoBase    = costoLeche + costoInsumos;
+    return totalKgProducido > 0 ? costoBase / totalKgProducido : null;
+}
+// Real packaging cost of a single unit of a given SKU/presentación, priced
+// against the Maestro de Materiales assignments in effect right now (the
+// moment those packaging materials are actually consumed).
+function costoEmpaqueUnitario(productoId, presentacionId, unidades, materialsMap) {
+    if (!(unidades > 0)) return 0;
+    return packagingCostForPresentacion(productoId, presentacionId, unidades, materialsMap) / unidades;
+}
+
 function tryBrowserNotification(title, body) {
     if (!('Notification' in window)) return;
     if (Notification.permission === 'granted') {
@@ -2343,10 +2416,24 @@ export default function DailyProductionPage() {
             createdAt:      serverTimestamp(),
         };
         const disposicion = empaqReg.disposicion ?? 'empacar_todo';
+        const presentacionesCreadas = (empaqReg.presentaciones || []).filter(pr => pr.unidades > 0);
+
+        // Costo Real snapshot: $/kg de queso crudo (leche + insumos realmente
+        // consumidos, congelado desde la producción) + costo de empaque propio
+        // de cada SKU (precio vigente del Maestro al momento de envasar). Así
+        // cada unidad de PT carga exactamente su costo — sin mezclas entre SKU
+        // ni desviaciones — alimentando "Costo Teórico vs Real" y margen bruto
+        // por SKU en Módulo 2.
+        const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap);
+        const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(4) } : {};
+
         const ops = [];
         if (disposicion !== 'guardar_todo') {
-            for (const pr of (empaqReg.presentaciones || [])) {
-                if (!(pr.unidades > 0)) continue;
+            for (const pr of presentacionesCreadas) {
+                const empaqueUnit = costoEmpaqueUnitario(log.productoId, pr.catalogId, pr.unidades, materialsMap);
+                const costoUnitarioUsd = costoBasePorKg > 0
+                    ? +(costoBasePorKg * (pr.pesoPorUnidad || 0) + empaqueUnit).toFixed(4)
+                    : null;
                 ops.push(addDoc(collection(db, 'kroma_inventory_pt'), {
                     ...base,
                     tipo:           'empacado',
@@ -2355,10 +2442,12 @@ export default function DailyProductionPage() {
                     unidades:       pr.unidades,
                     totalKg:        +((pr.pesoPorUnidad || 0) * pr.unidades).toFixed(3),
                     fechaVencimiento: empaqReg.fechaVencimiento || null,
+                    ...baseSnapshot,
+                    ...(costoUnitarioUsd != null && { costoUnitarioUsd }),
                 }));
             }
         }
-        const kgEmpacadosFinal = (empaqReg.presentaciones || [])
+        const kgEmpacadosFinal = presentacionesCreadas
             .reduce((s, pr) => s + (pr.pesoPorUnidad || 0) * (pr.unidades || 0), 0);
         const kgSinEnv = disposicion === 'guardar_todo'
             ? empaqReg.totalKgProducido
@@ -2370,6 +2459,8 @@ export default function DailyProductionPage() {
                 ...base,
                 tipo:     'sin_envasar',
                 kgTotales: kgSinEnv,
+                ...baseSnapshot,
+                ...(costoBasePorKg > 0 && { costoUnitarioUsd: +costoBasePorKg.toFixed(4) }),
             }));
         }
         await Promise.all(ops);
@@ -2386,14 +2477,28 @@ export default function DailyProductionPage() {
                 operarioId: kromaUser?.id || '', operarioNombre: kromaUser?.name || '',
                 active: true, createdAt: serverTimestamp(),
             };
+            // Mismo $/kg base congelado del lote (leche + insumos reales) +
+            // costo de empaque propio del SKU al precio vigente — el envasado
+            // tardío de un sobrante "sin envasar" carga exactamente el mismo
+            // costo real que si se hubiera envasado en el momento.
+            const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap);
+            const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(4) } : {};
             const ops = presentaciones
                 .filter(p => (p.unidades || 0) > 0)
-                .map(p => addDoc(collection(db, 'kroma_inventory_pt'), {
-                    ...base, tipo: 'empacado',
-                    presentacion: p.nombre, pesoPorUnidad: p.pesoPorUnidad,
-                    unidades: p.unidades,
-                    totalKg: +((p.pesoPorUnidad || 0) * p.unidades).toFixed(3),
-                }));
+                .map(p => {
+                    const empaqueUnit = costoEmpaqueUnitario(log.productoId, p.catalogId, p.unidades, materialsMap);
+                    const costoUnitarioUsd = costoBasePorKg > 0
+                        ? +(costoBasePorKg * (p.pesoPorUnidad || 0) + empaqueUnit).toFixed(4)
+                        : null;
+                    return addDoc(collection(db, 'kroma_inventory_pt'), {
+                        ...base, tipo: 'empacado',
+                        presentacion: p.nombre, pesoPorUnidad: p.pesoPorUnidad,
+                        unidades: p.unidades,
+                        totalKg: +((p.pesoPorUnidad || 0) * p.unidades).toFixed(3),
+                        ...baseSnapshot,
+                        ...(costoUnitarioUsd != null && { costoUnitarioUsd }),
+                    });
+                });
             await Promise.all(ops);
 
             const update = {

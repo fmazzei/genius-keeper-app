@@ -876,22 +876,30 @@ export function FinancialBoard() {
         // por lote y se valora el stock de PT vigente cruzando por logId.
         const packagingByKey = indexPackagingAssignments(materials);
         const costoPorLote = {};
-        let lotesConCosteo = 0;
-        logs.forEach(log => {
-            const r = calcCostoTeoricoLote(log, materialsById, packagingByKey);
-            costoPorLote[log.id] = r;
-            if (r.costoPorKg != null) lotesConCosteo++;
-        });
+        logs.forEach(log => { costoPorLote[log.id] = calcCostoTeoricoLote(log, materialsById, packagingByKey); });
+        // Cada item de PT puede traer su propio costoUnitarioUsd — congelado al
+        // momento de envasar a partir de consumos reales (leche + insumos +
+        // empaque del SKU), exacto y sin mezclas entre SKU. Se prioriza sobre
+        // el $/kg teórico del lote, que solo sirve de respaldo para PT
+        // generado antes de existir este snapshot.
         let totalPT = 0;
         let kgValuados = 0;
         (ptItems || []).forEach(item => {
-            const r = costoPorLote[item.logId];
             const kg = item.totalKg ?? item.kgTotales ?? 0;
-            if (!r || r.costoPorKg == null || !kg) return;
+            if (!kg) return;
+            if (item.costoUnitarioUsd != null) {
+                totalPT += item.tipo === 'empacado'
+                    ? item.costoUnitarioUsd * (item.unidades || 0)
+                    : item.costoUnitarioUsd * kg;
+                kgValuados += kg;
+                return;
+            }
+            const r = costoPorLote[item.logId];
+            if (!r || r.costoPorKg == null) return;
             totalPT += r.costoPorKg * kg;
             kgValuados += kg;
         });
-        const hayCosteoPT = lotesConCosteo > 0 && kgValuados > 0;
+        const hayCosteoPT = kgValuados > 0;
 
         const months = last6Months();
         const monthly = months.map(m => {
@@ -937,7 +945,7 @@ export function FinancialBoard() {
                             {c.hayCosteoPT ? (
                                 <>
                                     <p className="text-emerald-400 font-black text-3xl">${c.totalPT.toFixed(2)}</p>
-                                    <p className="text-slate-500 text-xs mt-1">Costo teórico × {c.kgValuados.toFixed(1)} kg en stock</p>
+                                    <p className="text-slate-500 text-xs mt-1">Costo real (o teórico de respaldo) × {c.kgValuados.toFixed(1)} kg en stock</p>
                                 </>
                             ) : (
                                 <>
