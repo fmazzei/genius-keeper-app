@@ -410,6 +410,11 @@ function ReceptionCard({ rec, paramConfig, isMaster, kromaRole, onEdit, onDelete
             <div className="flex items-center gap-1.5 mb-3">
                 <Droplets size={15} className="text-blue-400" />
                 <span className="text-blue-300 font-bold text-xl font-mono">{rec.litros} L</span>
+                {rec.costoUsdLitro > 0 && (
+                    <span className="text-slate-500 text-xs font-mono ml-1">
+                        · ${(rec.costoUsdLitro * (rec.litros || 0)).toFixed(2)} (${rec.costoUsdLitro.toFixed(3)}/L)
+                    </span>
+                )}
             </div>
 
             {/* Parameters */}
@@ -524,6 +529,7 @@ export default function MilkInventoryPage() {
 
     const [allReceptions, setAllReceptions] = useState([]);
     const [suppliers, setSuppliers]         = useState([]);
+    const [milkPrices, setMilkPrices]       = useState([]); // kroma_materials con categoria 'leche'
     const [paramConfig, setParamConfig]     = useState(DEFAULT_PARAM_CONFIG);
     const [loading, setLoading]             = useState(true);
     const [error, setError]                 = useState(null);
@@ -550,9 +556,10 @@ export default function MilkInventoryPage() {
     async function loadData() {
         setLoading(true); setError(null);
         try {
-            const [recSnap, suppSnap, cfgDoc] = await Promise.all([
+            const [recSnap, suppSnap, matSnap, cfgDoc] = await Promise.all([
                 getDocs(collection(db, 'kroma_milk_reception')),
                 getDocs(collection(db, 'kroma_suppliers')),
+                getDocs(collection(db, 'kroma_materials')),
                 getDoc(doc(db, 'kroma_config', CONFIG_DOC_ID)),
             ]);
 
@@ -575,8 +582,13 @@ export default function MilkInventoryPage() {
                 .filter(s => s.active !== false && s.tipos?.includes('leche'))
                 .sort((a, b) => supplierName(a).localeCompare(supplierName(b)));
 
+            const prices = matSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(m => m.active !== false && m.categoria === 'leche');
+
             setAllReceptions(recs);
             setSuppliers(supps);
+            setMilkPrices(prices);
         } catch (e) {
             setError(e.message);
         } finally {
@@ -596,6 +608,12 @@ export default function MilkInventoryPage() {
     const litrosEnTanque = recepcionesEnTanque.reduce((s, r) => s + (r.litros || 0), 0);
 
     const recepcionesEnProceso = allReceptions.filter(r => r.status === 'en_proceso');
+
+    function milkPriceFor(provId) {
+        const mat = milkPrices.find(m => m.proveedorId === provId);
+        const price = parseFloat(mat?.costoUSD);
+        return price > 0 ? price : null;
+    }
 
     const thirtyDaysAgo = Date.now() - 30 * 24 * 3600 * 1000;
     const recepciones30d = allReceptions.filter(r => {
@@ -688,24 +706,27 @@ export default function MilkInventoryPage() {
         if (saving) return;
         setSaving(true); setSaveError(null);
         try {
-            const prov      = suppliers.find(s => s.id === proveedorId);
-            const fechaDate = new Date(fecha);
+            const prov         = suppliers.find(s => s.id === proveedorId);
+            const fechaDate    = new Date(fecha);
+            const costoUsdLitro = milkPriceFor(proveedorId);
 
             if (editingRec) {
                 await updateDoc(doc(db, 'kroma_milk_reception', editingRec.id), {
                     proveedorId, proveedorNombre: supplierName(prov),
                     litros, fecha: fechaDate, parametros: { ...params }, enrutamiento,
+                    costoUsdLitro: costoUsdLitro ?? editingRec.costoUsdLitro ?? null,
                     updatedAt: serverTimestamp(), updatedBy: kromaUser?.id || '',
                 });
                 setAllReceptions(prev => prev.map(r =>
                     r.id === editingRec.id
-                        ? { ...r, proveedorId, proveedorNombre: supplierName(prov), litros, fecha: fechaDate, parametros: { ...params }, enrutamiento }
+                        ? { ...r, proveedorId, proveedorNombre: supplierName(prov), litros, fecha: fechaDate, parametros: { ...params }, enrutamiento, costoUsdLitro: costoUsdLitro ?? editingRec.costoUsdLitro ?? null }
                         : r
                 ));
             } else {
                 const data = {
                     proveedorId, proveedorNombre: supplierName(prov),
                     litros, fecha: fechaDate, parametros: { ...params }, enrutamiento,
+                    costoUsdLitro,
                     operarioId: kromaUser?.id || '', operarioNombre: kromaUser?.name || '',
                     status: 'pendiente', active: true, createdAt: serverTimestamp(),
                 };
@@ -812,6 +833,17 @@ export default function MilkInventoryPage() {
                                         ))}
                                     </select>
                                 )}
+                                {proveedorId && (
+                                    milkPriceFor(proveedorId) != null ? (
+                                        <p className="text-slate-500 text-xs mt-2">
+                                            Precio cargado: <span className="text-blue-400 font-mono font-semibold">${milkPriceFor(proveedorId).toFixed(3)} / L</span>
+                                        </p>
+                                    ) : (
+                                        <p className="text-amber-500/80 text-xs mt-2">
+                                            Este proveedor no tiene precio por litro cargado en el Maestro de Materiales — la recepción se guardará sin costo asociado.
+                                        </p>
+                                    )
+                                )}
                             </div>
                             <LitrosStepper value={litros} onChange={setLitros} />
                             <div>
@@ -861,6 +893,9 @@ export default function MilkInventoryPage() {
                                 {[
                                     ['Proveedor', supplierName(suppliers.find(s => s.id === proveedorId))],
                                     ['Litros', `${litros} L`],
+                                    ['Costo MP', milkPriceFor(proveedorId) != null
+                                        ? `$${(milkPriceFor(proveedorId) * litros).toFixed(2)} (a $${milkPriceFor(proveedorId).toFixed(3)}/L)`
+                                        : 'Sin precio cargado'],
                                     ...paramConfig.map(p => [
                                         p.label,
                                         `${(params[p.id] ?? p.defaultValue).toFixed(p.decimals)}${p.unit ? ` ${p.unit}` : ''}`,

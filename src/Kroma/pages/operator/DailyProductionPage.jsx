@@ -2162,6 +2162,7 @@ export default function DailyProductionPage() {
             litros:          r.litros || 0,
             rutaLeche:       r.enrutamiento || 'directo',
             recepcionId:     r.id,
+            costoUsdLitro:   r.costoUsdLitro ?? null,
             temperatura:     r.parametros?.temperatura,
             densidad:        r.parametros?.densidad,
             pH:              r.parametros?.pH,

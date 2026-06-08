@@ -115,8 +115,16 @@ function CostCalculator({ form }) {
 
 function MaterialForm({ initial, suppliers, onSave, onCancel, saving }) {
     const [form, setForm] = useState(initial || EMPTY_FORM);
+    const isMilk = form.categoria === 'leche';
 
     const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
+
+    const setCategoria = (e) => {
+        const categoria = e.target.value;
+        setForm(f => categoria === 'leche'
+            ? { ...f, categoria, presentacion: 'Litro recibido', cantidadPresentacion: '1', unidad: 'l' }
+            : { ...f, categoria });
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -148,13 +156,13 @@ function MaterialForm({ initial, suppliers, onSave, onCancel, saving }) {
                     </div>
                     <div>
                         <label className={LabelCls}>Categoría</label>
-                        <select value={form.categoria} onChange={set('categoria')} className={SelectCls}>
+                        <select value={form.categoria} onChange={setCategoria} className={SelectCls}>
                             <option value="">— Sin categoría —</option>
                             {CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}
                         </select>
                     </div>
                     <div>
-                        <label className={LabelCls}>Proveedor</label>
+                        <label className={LabelCls}>Proveedor{isMilk ? ' *' : ''}</label>
                         <select value={form.proveedorId} onChange={set('proveedorId')} className={SelectCls}>
                             <option value="">— Sin proveedor —</option>
                             {suppliers.map(s => <option key={s.id} value={s.id}>{s.nombreComercial}</option>)}
@@ -163,47 +171,59 @@ function MaterialForm({ initial, suppliers, onSave, onCancel, saving }) {
                 </div>
             </div>
 
-            {/* Presentation & unit */}
-            <div>
-                <p className="text-slate-200 font-semibold text-sm border-b border-slate-700 pb-2 mb-4">Presentación de Entrada</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                        <label className={LabelCls}>Descripción de la Presentación</label>
-                        <input
-                            type="text"
-                            value={form.presentacion}
-                            onChange={set('presentacion')}
-                            placeholder="Ej. Frasco 500 ml"
-                            className={InputCls}
-                        />
-                    </div>
-                    <div>
-                        <label className={LabelCls}>Cantidad por Presentación</label>
-                        <input
-                            type="number"
-                            value={form.cantidadPresentacion}
-                            onChange={set('cantidadPresentacion')}
-                            placeholder="500"
-                            min="0"
-                            step="any"
-                            className={InputCls}
-                        />
-                    </div>
-                    <div>
-                        <label className={LabelCls}>Unidad de Medida</label>
-                        <select value={form.unidad} onChange={set('unidad')} className={SelectCls}>
-                            {UNITS.map(u => <option key={u.id} value={u.id}>{u.label}</option>)}
-                        </select>
+            {isMilk ? (
+                <div className="bg-blue-950/30 border border-blue-800/40 rounded-xl p-4">
+                    <p className="text-blue-300 text-xs font-semibold uppercase tracking-wider mb-1">Materia Prima Principal</p>
+                    <p className="text-slate-400 text-xs leading-relaxed">
+                        La leche no se gestiona como un insumo de presentación fija: se recibe por litro y su precio
+                        puede variar según el proveedor. Registra aquí el <strong className="text-slate-300">precio por litro (USD)</strong> que
+                        cobra este proveedor — Kroma lo usará para calcular el costo de la materia prima en cada recepción y, de allí, el costeo
+                        teórico del producto terminado.
+                    </p>
+                </div>
+            ) : (
+                /* Presentation & unit */
+                <div>
+                    <p className="text-slate-200 font-semibold text-sm border-b border-slate-700 pb-2 mb-4">Presentación de Entrada</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <label className={LabelCls}>Descripción de la Presentación</label>
+                            <input
+                                type="text"
+                                value={form.presentacion}
+                                onChange={set('presentacion')}
+                                placeholder="Ej. Frasco 500 ml"
+                                className={InputCls}
+                            />
+                        </div>
+                        <div>
+                            <label className={LabelCls}>Cantidad por Presentación</label>
+                            <input
+                                type="number"
+                                value={form.cantidadPresentacion}
+                                onChange={set('cantidadPresentacion')}
+                                placeholder="500"
+                                min="0"
+                                step="any"
+                                className={InputCls}
+                            />
+                        </div>
+                        <div>
+                            <label className={LabelCls}>Unidad de Medida</label>
+                            <select value={form.unidad} onChange={set('unidad')} className={SelectCls}>
+                                {UNITS.map(u => <option key={u.id} value={u.id}>{u.label}</option>)}
+                            </select>
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             {/* Cost */}
             <div>
                 <p className="text-slate-200 font-semibold text-sm border-b border-slate-700 pb-2 mb-4">Costo</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label className={LabelCls}>Costo por Presentación (USD)</label>
+                        <label className={LabelCls}>{isMilk ? 'Precio por Litro (USD)' : 'Costo por Presentación (USD)'}</label>
                         <div className="relative">
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">$</span>
                             <input
@@ -217,9 +237,11 @@ function MaterialForm({ initial, suppliers, onSave, onCancel, saving }) {
                             />
                         </div>
                     </div>
-                    <div className="flex items-end">
-                        <CostCalculator form={form} />
-                    </div>
+                    {!isMilk && (
+                        <div className="flex items-end">
+                            <CostCalculator form={form} />
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -260,18 +282,19 @@ function MaterialForm({ initial, suppliers, onSave, onCancel, saving }) {
 // ─── Material Card ────────────────────────────────────────────────────────────
 
 function MaterialCard({ material, supplierName, onEdit, onDelete }) {
+    const isMilk = material.categoria === 'leche';
     const prices = useMemo(
         () => calcPrices(material.costoUSD, material.cantidadPresentacion, material.unidad),
         [material.costoUSD, material.cantidadPresentacion, material.unidad],
     );
 
     return (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-slate-600 transition-colors">
+        <div className={`bg-slate-800 border rounded-xl p-4 transition-colors ${isMilk ? 'border-blue-800/50 hover:border-blue-700' : 'border-slate-700 hover:border-slate-600'}`}>
             <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
                     <p className="text-white font-semibold text-sm leading-tight truncate">{material.nombre}</p>
                     {material.categoria && (
-                        <span className="text-xs text-slate-500 mt-0.5 block">{catLabel(material.categoria)}</span>
+                        <span className={`text-xs mt-0.5 block ${isMilk ? 'text-blue-400' : 'text-slate-500'}`}>{catLabel(material.categoria)}</span>
                     )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -284,39 +307,52 @@ function MaterialCard({ material, supplierName, onEdit, onDelete }) {
                 </div>
             </div>
 
-            {/* Presentation */}
-            {(material.presentacion || material.cantidadPresentacion) && (
-                <p className="text-slate-400 text-xs mt-2">
-                    {material.presentacion || ''}
-                    {material.presentacion && material.cantidadPresentacion ? ' · ' : ''}
-                    {material.cantidadPresentacion ? `${material.cantidadPresentacion} ${unitLabel(material.unidad)}` : ''}
-                </p>
-            )}
-
             {/* Supplier */}
             {supplierName && (
-                <p className="text-slate-500 text-xs mt-1">{supplierName}</p>
+                <p className="text-slate-500 text-xs mt-2">{supplierName}</p>
             )}
 
-            {/* Prices */}
-            {prices ? (
-                <div className="mt-3 pt-3 border-t border-slate-700 space-y-1">
-                    {prices.map(({ label, value }) => (
-                        <div key={label} className="flex items-center justify-between">
-                            <span className="text-slate-500 text-xs">{label}</span>
-                            <span className="text-emerald-400 font-bold text-xs font-mono">${fmt(value)}</span>
-                        </div>
-                    ))}
+            {isMilk ? (
+                <div className="mt-3 pt-3 border-t border-slate-700">
+                    <div className="flex items-center justify-between">
+                        <span className="text-slate-500 text-xs">Precio por litro</span>
+                        <span className="text-blue-400 font-bold text-sm font-mono">
+                            {material.costoUSD ? `$${parseFloat(material.costoUSD).toFixed(3)}` : '—'}
+                        </span>
+                    </div>
                 </div>
             ) : (
-                material.costoUSD ? (
-                    <div className="mt-3 pt-3 border-t border-slate-700">
-                        <div className="flex items-center justify-between">
-                            <span className="text-slate-500 text-xs">Costo presentación</span>
-                            <span className="text-emerald-400 font-bold text-xs font-mono">${parseFloat(material.costoUSD).toFixed(2)}</span>
+                <>
+                    {/* Presentation */}
+                    {(material.presentacion || material.cantidadPresentacion) && (
+                        <p className="text-slate-400 text-xs mt-2">
+                            {material.presentacion || ''}
+                            {material.presentacion && material.cantidadPresentacion ? ' · ' : ''}
+                            {material.cantidadPresentacion ? `${material.cantidadPresentacion} ${unitLabel(material.unidad)}` : ''}
+                        </p>
+                    )}
+
+                    {/* Prices */}
+                    {prices ? (
+                        <div className="mt-3 pt-3 border-t border-slate-700 space-y-1">
+                            {prices.map(({ label, value }) => (
+                                <div key={label} className="flex items-center justify-between">
+                                    <span className="text-slate-500 text-xs">{label}</span>
+                                    <span className="text-emerald-400 font-bold text-xs font-mono">${fmt(value)}</span>
+                                </div>
+                            ))}
                         </div>
-                    </div>
-                ) : null
+                    ) : (
+                        material.costoUSD ? (
+                            <div className="mt-3 pt-3 border-t border-slate-700">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-slate-500 text-xs">Costo presentación</span>
+                                    <span className="text-emerald-400 font-bold text-xs font-mono">${parseFloat(material.costoUSD).toFixed(2)}</span>
+                                </div>
+                            </div>
+                        ) : null
+                    )}
+                </>
             )}
         </div>
     );
@@ -407,6 +443,8 @@ export default function MaterialsMasterPage() {
         const matchCat = !filterCat || m.categoria === filterCat;
         return matchSearch && matchCat;
     });
+    const lecheMaterials  = filtered.filter(m => m.categoria === 'leche');
+    const insumoMaterials = filtered.filter(m => m.categoria !== 'leche');
 
     // ─── Form view ─────────────────────────────────────────────────────────────
     if (mode === 'create' || mode === 'edit') {
@@ -494,16 +532,44 @@ export default function MaterialsMasterPage() {
                     )}
                 </div>
             ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filtered.map(m => (
-                        <MaterialCard
-                            key={m.id}
-                            material={m}
-                            supplierName={supplierMap[m.proveedorId]}
-                            onEdit={(mat) => { setEditing(mat); setMode('edit'); }}
-                            onDelete={setDeleteTarget}
-                        />
-                    ))}
+                <div className="space-y-8">
+                    {lecheMaterials.length > 0 && (
+                        <div>
+                            <div className="mb-3">
+                                <h3 className="text-blue-300 font-semibold text-sm uppercase tracking-wider">Materia Prima — Leche</h3>
+                                <p className="text-slate-500 text-xs mt-0.5">Precio por litro según proveedor — se maneja distinto al resto de los insumos.</p>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {lecheMaterials.map(m => (
+                                    <MaterialCard
+                                        key={m.id}
+                                        material={m}
+                                        supplierName={supplierMap[m.proveedorId]}
+                                        onEdit={(mat) => { setEditing(mat); setMode('edit'); }}
+                                        onDelete={setDeleteTarget}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    {insumoMaterials.length > 0 && (
+                        <div>
+                            {lecheMaterials.length > 0 && (
+                                <h3 className="text-slate-400 font-semibold text-sm uppercase tracking-wider mb-3">Insumos y Empaques</h3>
+                            )}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {insumoMaterials.map(m => (
+                                    <MaterialCard
+                                        key={m.id}
+                                        material={m}
+                                        supplierName={supplierMap[m.proveedorId]}
+                                        onEdit={(mat) => { setEditing(mat); setMode('edit'); }}
+                                        onDelete={setDeleteTarget}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
