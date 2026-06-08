@@ -119,6 +119,86 @@ function ProductCard({ product, onEdit, onDelete }) {
     );
 }
 
+// ─── Packaging materials linker (reusable: add SKU + edit SKU) ──────────────
+
+function PackagingMaterialsLinker({ materiales, packagingMaterials, onAdd, onRemove }) {
+    const [draft, setDraft] = useState(EMPTY_NEW_PKG_MAT);
+
+    const handleAdd = () => {
+        const mat = packagingMaterials.find(m => m.id === draft.materialId);
+        const cantidad = parseFloat(draft.cantidadPorUnidad);
+        if (!mat || !(cantidad > 0)) return;
+        const pricePerUnit = (parseFloat(mat.costoUSD) > 0 && parseFloat(mat.cantidadPresentacion) > 0)
+            ? parseFloat(mat.costoUSD) / parseFloat(mat.cantidadPresentacion)
+            : null;
+        onAdd({
+            materialId: mat.id,
+            materialNombre: mat.nombre,
+            cantidadPorUnidad: cantidad,
+            unidad: mat.unidad,
+            costoUsdUnidad: pricePerUnit,
+        });
+        setDraft(EMPTY_NEW_PKG_MAT);
+    };
+
+    return (
+        <div>
+            <p className="text-slate-400 text-xs font-medium mb-2">
+                Materiales de empaque consumidos por unidad <span className="text-slate-600">(opcional — habilita el costeo de empaque)</span>
+            </p>
+
+            {(materiales || []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                    {materiales.map(pm => (
+                        <span key={pm.materialId} className="flex items-center gap-1.5 text-xs pl-2 pr-1 py-1 bg-slate-800 text-slate-300 rounded-full border border-slate-600">
+                            {pm.materialNombre} · {pm.cantidadPorUnidad} {pm.unidad}/und
+                            <button type="button" onClick={() => onRemove(pm.materialId)} className="text-slate-500 hover:text-red-400 p-0.5 rounded-full">
+                                <X size={11} />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+            )}
+
+            {packagingMaterials.length === 0 ? (
+                <p className="text-slate-600 text-xs italic">
+                    No hay materiales con categoría "Empaques" en el Maestro de Materiales.
+                </p>
+            ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                        value={draft.materialId}
+                        onChange={e => setDraft(s => ({ ...s, materialId: e.target.value }))}
+                        className="bg-slate-700 border border-slate-600 rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-emerald-500 max-w-[55%]"
+                    >
+                        <option value="">Seleccionar material…</option>
+                        {packagingMaterials.map(m => (
+                            <option key={m.id} value={m.id}>{m.nombre}</option>
+                        ))}
+                    </select>
+                    <input
+                        type="number"
+                        value={draft.cantidadPorUnidad}
+                        onChange={e => setDraft(s => ({ ...s, cantidadPorUnidad: e.target.value }))}
+                        placeholder="Cant./und"
+                        min="0"
+                        step="any"
+                        className="w-24 bg-slate-700 border border-slate-600 rounded-lg px-2.5 py-1.5 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                    <button
+                        type="button"
+                        onClick={handleAdd}
+                        disabled={!draft.materialId || !(parseFloat(draft.cantidadPorUnidad) > 0)}
+                        className="text-xs text-emerald-400 hover:text-emerald-300 disabled:text-slate-600 font-semibold flex items-center gap-1 px-2 py-1.5"
+                    >
+                        <Plus size={12} /> Vincular
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── Product Form ─────────────────────────────────────────────────────────────
 
 const EMPTY_NEW_SKU = { nombre: '', pesoNeto: '', unidad: 'g', materialesEmpaque: [] };
@@ -128,29 +208,7 @@ function ProductForm({ initial, packagingMaterials = [], onSave, onCancel, savin
     const [form, setForm] = useState(initial || EMPTY_FORM);
     const [addingSku, setAddingSku] = useState(false);
     const [newSku, setNewSku] = useState(EMPTY_NEW_SKU);
-    const [newPkgMat, setNewPkgMat] = useState(EMPTY_NEW_PKG_MAT);
-
-    const addPkgMatToSku = () => {
-        const mat = packagingMaterials.find(m => m.id === newPkgMat.materialId);
-        const cantidad = parseFloat(newPkgMat.cantidadPorUnidad);
-        if (!mat || !(cantidad > 0)) return;
-        const pricePerUnit = (parseFloat(mat.costoUSD) > 0 && parseFloat(mat.cantidadPresentacion) > 0)
-            ? parseFloat(mat.costoUSD) / parseFloat(mat.cantidadPresentacion)
-            : null;
-        const entry = {
-            materialId: mat.id,
-            materialNombre: mat.nombre,
-            cantidadPorUnidad: cantidad,
-            unidad: mat.unidad,
-            costoUsdUnidad: pricePerUnit,
-        };
-        setNewSku(s => ({ ...s, materialesEmpaque: [...(s.materialesEmpaque || []), entry] }));
-        setNewPkgMat(EMPTY_NEW_PKG_MAT);
-    };
-
-    const removePkgMatFromSku = (materialId) => setNewSku(s => ({
-        ...s, materialesEmpaque: (s.materialesEmpaque || []).filter(m => m.materialId !== materialId),
-    }));
+    const [editingSkuId, setEditingSkuId] = useState(null);
 
     const addSku = () => {
         if (!newSku.nombre.trim()) return;
@@ -163,11 +221,19 @@ function ProductForm({ initial, packagingMaterials = [], onSave, onCancel, savin
         };
         setForm(f => ({ ...f, presentaciones: [...(f.presentaciones || []), entry] }));
         setNewSku(EMPTY_NEW_SKU);
-        setNewPkgMat(EMPTY_NEW_PKG_MAT);
         setAddingSku(false);
     };
 
     const removeSku = (id) => setForm(f => ({ ...f, presentaciones: f.presentaciones.filter(p => p.id !== id) }));
+
+    const updateSkuMateriales = (skuId, updater) => setForm(f => ({
+        ...f,
+        presentaciones: f.presentaciones.map(p => p.id === skuId
+            ? { ...p, materialesEmpaque: updater(p.materialesEmpaque || []) }
+            : p),
+    }));
+    const addPkgMatToExistingSku = (skuId, entry) => updateSkuMateriales(skuId, list => [...list, entry]);
+    const removePkgMatFromExistingSku = (skuId, materialId) => updateSkuMateriales(skuId, list => list.filter(m => m.materialId !== materialId));
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -226,36 +292,62 @@ function ProductForm({ initial, packagingMaterials = [], onSave, onCancel, savin
                 {/* Existing SKUs */}
                 {(form.presentaciones || []).length > 0 && (
                     <div className="space-y-2 mb-3">
-                        {form.presentaciones.map(sku => (
-                            <div key={sku.id} className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-white text-sm font-medium">{sku.nombre}</span>
-                                        {sku.pesoNeto > 0 && (
-                                            <span className="text-xs px-2 py-0.5 bg-slate-600 text-slate-300 rounded-full">
-                                                {sku.pesoNeto} {sku.unidad}
-                                            </span>
-                                        )}
+                        {form.presentaciones.map(sku => {
+                            const isEditingMateriales = editingSkuId === sku.id;
+                            return (
+                                <div key={sku.id} className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-2">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-white text-sm font-medium">{sku.nombre}</span>
+                                            {sku.pesoNeto > 0 && (
+                                                <span className="text-xs px-2 py-0.5 bg-slate-600 text-slate-300 rounded-full">
+                                                    {sku.pesoNeto} {sku.unidad}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditingSkuId(isEditingMateriales ? null : sku.id)}
+                                                className={`text-xs font-semibold px-2 py-1 rounded-lg transition-colors ${
+                                                    isEditingMateriales ? 'bg-emerald-900/40 text-emerald-300' : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800'
+                                                }`}
+                                            >
+                                                {isEditingMateriales ? 'Listo' : 'Empaques'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeSku(sku.id)}
+                                                className="text-slate-500 hover:text-red-400 p-0.5 rounded transition-colors"
+                                            >
+                                                <X size={13} />
+                                            </button>
+                                        </div>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => removeSku(sku.id)}
-                                        className="text-slate-500 hover:text-red-400 p-0.5 rounded transition-colors"
-                                    >
-                                        <X size={13} />
-                                    </button>
+
+                                    {!isEditingMateriales && (sku.materialesEmpaque || []).length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            {sku.materialesEmpaque.map(pm => (
+                                                <span key={pm.materialId} className="text-xs px-2 py-0.5 bg-slate-800/80 text-slate-400 rounded-full border border-slate-600">
+                                                    {pm.materialNombre} · {pm.cantidadPorUnidad} {pm.unidad}/und
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {isEditingMateriales && (
+                                        <div className="mt-3 pt-3 border-t border-slate-600">
+                                            <PackagingMaterialsLinker
+                                                materiales={sku.materialesEmpaque || []}
+                                                packagingMaterials={packagingMaterials}
+                                                onAdd={(entry) => addPkgMatToExistingSku(sku.id, entry)}
+                                                onRemove={(materialId) => removePkgMatFromExistingSku(sku.id, materialId)}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
-                                {(sku.materialesEmpaque || []).length > 0 && (
-                                    <div className="flex flex-wrap gap-1.5 mt-2">
-                                        {sku.materialesEmpaque.map(pm => (
-                                            <span key={pm.materialId} className="text-xs px-2 py-0.5 bg-slate-800/80 text-slate-400 rounded-full border border-slate-600">
-                                                {pm.materialNombre} · {pm.cantidadPorUnidad} {pm.unidad}/und
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 )}
 
@@ -290,64 +382,18 @@ function ProductForm({ initial, packagingMaterials = [], onSave, onCancel, savin
 
                         {/* Packaging materials linked to this presentation */}
                         <div className="border-t border-slate-600 pt-3">
-                            <p className="text-slate-400 text-xs font-medium mb-2">
-                                Materiales de empaque consumidos por unidad <span className="text-slate-600">(opcional — habilita el costeo de empaque)</span>
-                            </p>
-
-                            {(newSku.materialesEmpaque || []).length > 0 && (
-                                <div className="flex flex-wrap gap-1.5 mb-2">
-                                    {newSku.materialesEmpaque.map(pm => (
-                                        <span key={pm.materialId} className="flex items-center gap-1.5 text-xs pl-2 pr-1 py-1 bg-slate-800 text-slate-300 rounded-full border border-slate-600">
-                                            {pm.materialNombre} · {pm.cantidadPorUnidad} {pm.unidad}/und
-                                            <button type="button" onClick={() => removePkgMatFromSku(pm.materialId)} className="text-slate-500 hover:text-red-400 p-0.5 rounded-full">
-                                                <X size={11} />
-                                            </button>
-                                        </span>
-                                    ))}
-                                </div>
-                            )}
-
-                            {packagingMaterials.length === 0 ? (
-                                <p className="text-slate-600 text-xs italic">
-                                    No hay materiales con categoría "Empaques" en el Maestro de Materiales.
-                                </p>
-                            ) : (
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <select
-                                        value={newPkgMat.materialId}
-                                        onChange={e => setNewPkgMat(s => ({ ...s, materialId: e.target.value }))}
-                                        className="bg-slate-700 border border-slate-600 rounded-lg px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-emerald-500 max-w-[55%]"
-                                    >
-                                        <option value="">Seleccionar material…</option>
-                                        {packagingMaterials.map(m => (
-                                            <option key={m.id} value={m.id}>{m.nombre}</option>
-                                        ))}
-                                    </select>
-                                    <input
-                                        type="number"
-                                        value={newPkgMat.cantidadPorUnidad}
-                                        onChange={e => setNewPkgMat(s => ({ ...s, cantidadPorUnidad: e.target.value }))}
-                                        placeholder="Cant./und"
-                                        min="0"
-                                        step="any"
-                                        className="w-24 bg-slate-700 border border-slate-600 rounded-lg px-2.5 py-1.5 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-emerald-500"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={addPkgMatToSku}
-                                        disabled={!newPkgMat.materialId || !(parseFloat(newPkgMat.cantidadPorUnidad) > 0)}
-                                        className="text-xs text-emerald-400 hover:text-emerald-300 disabled:text-slate-600 font-semibold flex items-center gap-1 px-2 py-1.5"
-                                    >
-                                        <Plus size={12} /> Vincular
-                                    </button>
-                                </div>
-                            )}
+                            <PackagingMaterialsLinker
+                                materiales={newSku.materialesEmpaque || []}
+                                packagingMaterials={packagingMaterials}
+                                onAdd={(entry) => setNewSku(s => ({ ...s, materialesEmpaque: [...(s.materialesEmpaque || []), entry] }))}
+                                onRemove={(materialId) => setNewSku(s => ({ ...s, materialesEmpaque: (s.materialesEmpaque || []).filter(m => m.materialId !== materialId) }))}
+                            />
                         </div>
 
                         <div className="flex gap-2">
                             <button
                                 type="button"
-                                onClick={() => { setAddingSku(false); setNewSku(EMPTY_NEW_SKU); setNewPkgMat(EMPTY_NEW_PKG_MAT); }}
+                                onClick={() => { setAddingSku(false); setNewSku(EMPTY_NEW_SKU); }}
                                 className="flex-1 border border-slate-600 text-slate-400 hover:text-white rounded-lg py-1.5 text-xs font-medium transition-colors"
                             >
                                 Cancelar
