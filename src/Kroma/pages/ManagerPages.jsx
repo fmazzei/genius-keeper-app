@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import {
     BarChart, Bar, LineChart, Line, AreaChart, Area,
     PieChart, Pie, Cell,
@@ -865,6 +865,91 @@ export function ManagerHome({ onNavigate }) {
     );
 }
 
+// ─── Retroactive PT cost estimator ───────────────────────────────────────────
+// Computes theoretical cost for PT items lacking costoUnitarioUsd using:
+//   Leche   — frozen costoUsdLitro from recepcion, or current kroma_materials
+//             price for that supplier (fallback to only available milk price).
+//   Insumos — theoretical doses from bloquesSnapshot × current material prices.
+//   Empaque — packagingByKey assignments from kroma_materials (labels, containers,
+//             thermostretchable, etc.) per SKU presentación.
+// Returns an array of { id, productoNombre, tipo, kgItem, costoUnitarioUsd,
+//   valorTotal, desglose } — no Firestore writes until the user confirms.
+function computeBackfillCosts(ptItems, logs, materials) {
+    const materialsById   = indexById(materials);
+    const packagingByKey  = indexPackagingAssignments(materials);
+    const logById         = indexById(logs);
+
+    // Current milk price per liter by supplier
+    const milkMats = materials.filter(m => m.categoria === 'leche' && m.active !== false);
+    const milkByProv = {};
+    milkMats.forEach(m => { const p = pricePerBaseUnit(m); if (p > 0 && m.proveedorId) milkByProv[m.proveedorId] = p; });
+    const fallbackMilkPrice = milkMats.map(m => pricePerBaseUnit(m)).find(p => p > 0) ?? 0;
+
+    const results = [];
+    (ptItems || []).forEach(item => {
+        if (item.costoUnitarioUsd != null || item.active === false) return;
+        const log = logById[item.logId];
+        if (!log) return;
+        const litrosNetos      = getLitrosNetos(log);
+        const totalKgProducido = log.totalKgProducido ?? 0;
+        if (!litrosNetos || !totalKgProducido) return;
+
+        // Leche: use frozen price from reception if available; otherwise current catalog
+        let costoLeche = (log.recepciones || []).reduce((sum, r) => {
+            const p = parseFloat(r.costoUsdLitro); return p > 0 ? sum + p * (r.litros || 0) : sum;
+        }, 0);
+        if (costoLeche === 0) {
+            const provId     = log.recepciones?.[0]?.proveedorId;
+            const milkPrice  = (provId && milkByProv[provId]) ?? fallbackMilkPrice;
+            costoLeche = milkPrice * litrosNetos;
+        }
+
+        // Insumos: theoretical doses from bloquesSnapshot × precio vigente
+        const costoInsumos = costoPorLitroDesdeFicha(log.bloquesSnapshot, materialsById) * litrosNetos;
+
+        // Empaque: assignments in kroma_materials for each packed presentation
+        const costoEmpaque = (log.productosFinales || []).reduce(
+            (sum, pf) => sum + packagingCostForItem(log.productoId, pf, packagingByKey), 0
+        );
+
+        const costoTotal   = costoLeche + costoInsumos + costoEmpaque;
+        const costoPorKg   = costoTotal / totalKgProducido;
+        if (!(costoPorKg > 0)) return;
+
+        let costoUnitarioUsd;
+        if (item.tipo === 'sin_envasar') {
+            costoUnitarioUsd = +costoPorKg.toFixed(4);
+        } else {
+            // For empacado items: $/kg × peso/unit + packaging specific to this SKU
+            const unidades  = item.unidades || 1;
+            const packUnit  = packagingCostForItem(log.productoId,
+                { catalogId: item.catalogId, unidades }, packagingByKey) / unidades;
+            costoUnitarioUsd = +(costoPorKg * (item.pesoPorUnidad || 0) + packUnit).toFixed(4);
+        }
+        if (!(costoUnitarioUsd > 0)) return;
+
+        const kgItem     = item.totalKg ?? item.kgTotales ?? 0;
+        const valorTotal = item.tipo === 'empacado'
+            ? costoUnitarioUsd * (item.unidades || 0)
+            : costoUnitarioUsd * kgItem;
+
+        results.push({
+            id: item.id, tipo: item.tipo,
+            productoNombre: item.productoNombre || log.productoNombre || '—',
+            lote: item.lote || log.lote || item.logId?.slice(-7) || '—',
+            kgItem, costoUnitarioUsd, valorTotal,
+            desglose: {
+                leche:    +costoLeche.toFixed(2),
+                insumos:  +costoInsumos.toFixed(2),
+                empaque:  +costoEmpaque.toFixed(2),
+                total:    +costoTotal.toFixed(2),
+                porKg:    +costoPorKg.toFixed(4),
+            },
+        });
+    });
+    return results;
+}
+
 // ─── 2. FinancialBoard ────────────────────────────────────────────────────────
 
 const CAT_LABELS = {
@@ -874,7 +959,11 @@ const CAT_LABELS = {
 };
 
 export function FinancialBoard() {
+    const { kromaRole } = useKroma();
     const { data, loading, error, reload } = useKromaDashboard();
+    const [backfill, setBackfill] = useState(null);   // null | 'preview' | 'saving' | 'done'
+    const [backfillRows, setBackfillRows]   = useState([]);
+    const [backfillError, setBackfillError] = useState(null);
 
     const c = useMemo(() => {
         if (!data) return null;
@@ -1035,6 +1124,107 @@ export function FinancialBoard() {
                                 </ResponsiveContainer>
                             )}
                     </ChartCard>
+
+                    {/* ── Backfill retroactivo (solo master) ─────────────────── */}
+                    {kromaRole === 'master' && (() => {
+                        const pending = data
+                            ? (data.ptItems || []).filter(p => p.costoUnitarioUsd == null && p.active !== false)
+                            : [];
+                        if (pending.length === 0) return null;
+                        const handlePreview = () => {
+                            const rows = computeBackfillCosts(data.ptItems, data.logs, data.materials);
+                            setBackfillRows(rows);
+                            setBackfillError(null);
+                            setBackfill(rows.length > 0 ? 'preview' : null);
+                        };
+                        const handleConfirm = async () => {
+                            setBackfill('saving');
+                            try {
+                                const batch = writeBatch(db);
+                                backfillRows.forEach(r => {
+                                    batch.update(doc(db, 'kroma_inventory_pt', r.id), {
+                                        costoUnitarioUsd: r.costoUnitarioUsd,
+                                        costoEstimado:    true,
+                                        costoEstimadoAt:  serverTimestamp(),
+                                    });
+                                });
+                                await batch.commit();
+                                setBackfill('done');
+                                reload();
+                            } catch (e) {
+                                setBackfillError(e.message);
+                                setBackfill('preview');
+                            }
+                        };
+                        return (
+                            <div className="bg-amber-950/40 border border-amber-500/30 rounded-xl p-4">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <p className="text-amber-300 font-semibold text-sm">
+                                            {pending.length} item{pending.length !== 1 ? 's' : ''} de PT sin costeo
+                                        </p>
+                                        <p className="text-amber-500/70 text-xs mt-0.5">
+                                            Calcular con precios vigentes: leche + insumos teóricos + empaque
+                                        </p>
+                                    </div>
+                                    {backfill === 'done' ? (
+                                        <span className="text-emerald-400 text-sm font-semibold flex items-center gap-1"><CheckCircle size={14} /> Aplicado</span>
+                                    ) : (
+                                        <button onClick={handlePreview} disabled={backfill === 'saving'}
+                                            className="shrink-0 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold px-3 py-2 rounded-lg transition-colors disabled:opacity-50">
+                                            Previsualizar
+                                        </button>
+                                    )}
+                                </div>
+
+                                {backfill === 'preview' && backfillRows.length > 0 && (
+                                    <div className="mt-4 space-y-3">
+                                        <div className="divide-y divide-slate-700/50">
+                                            {backfillRows.map(r => (
+                                                <div key={r.id} className="py-2.5">
+                                                    <div className="flex justify-between items-start">
+                                                        <div>
+                                                            <p className="text-white text-sm font-semibold">{r.productoNombre}</p>
+                                                            <p className="text-slate-500 text-xs font-mono">{r.lote}</p>
+                                                        </div>
+                                                        <div className="text-right shrink-0">
+                                                            <p className="text-emerald-400 font-bold text-sm">${r.valorTotal.toFixed(2)}</p>
+                                                            <p className="text-slate-500 text-xs">${r.costoUnitarioUsd.toFixed(3)}/kg · {r.kgItem.toFixed(2)} kg</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="mt-1 flex gap-3 text-xs text-slate-500">
+                                                        <span>Leche ${r.desglose.leche.toFixed(2)}</span>
+                                                        <span>·</span>
+                                                        <span>Insumos ${r.desglose.insumos.toFixed(2)}</span>
+                                                        <span>·</span>
+                                                        <span>Empaque ${r.desglose.empaque.toFixed(2)}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="flex items-center justify-between pt-1">
+                                            <p className="text-white font-bold text-sm">
+                                                Total estimado: ${backfillRows.reduce((s, r) => s + r.valorTotal, 0).toFixed(2)} USD
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setBackfill(null)}
+                                                    className="text-slate-400 text-xs px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-colors">
+                                                    Cancelar
+                                                </button>
+                                                <button onClick={handleConfirm}
+                                                    className="bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-bold px-4 py-1.5 rounded-lg transition-colors">
+                                                    Confirmar y aplicar
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {backfillError && (
+                                            <p className="text-rose-400 text-xs">{backfillError}</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
         </Shell>
