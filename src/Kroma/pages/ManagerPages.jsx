@@ -895,7 +895,18 @@ function computeBackfillCosts(ptItems, logs, materials) {
         if (k > 0) kgByLogId[item.logId] = (kgByLogId[item.logId] || 0) + k;
     });
 
-    // Current milk price per liter by supplier
+    // Most-recent completed log per product — used when item has no logId (manual loads)
+    // so we can still derive ingredient cost from the product's known process
+    const refLogByProd = {};
+    (logs || []).forEach(log => {
+        if (log.estado !== 'completada') return;
+        if (!log.productoId || !log.bloquesSnapshot?.length) return;
+        const existing = refLogByProd[log.productoId];
+        if (!existing) { refLogByProd[log.productoId] = log; return; }
+        const da = logDate(log), db = logDate(existing);
+        if (da && db && da > db) refLogByProd[log.productoId] = log;
+    });
+
     const milkMats = materials.filter(m => m.categoria === 'leche' && m.active !== false);
     const milkByProv = {};
     milkMats.forEach(m => { const p = pricePerBaseUnit(m); if (p > 0 && m.proveedorId) milkByProv[m.proveedorId] = p; });
@@ -904,54 +915,65 @@ function computeBackfillCosts(ptItems, logs, materials) {
     const results = [];
     (ptItems || []).forEach(item => {
         if (item.costoUnitarioUsd != null || item.active === false) return;
-        const log = logById[item.logId];
+
+        const kgItem = item.totalKg ?? item.kgTotales ?? 0;
+
+        // Try direct log match; fall back to product reference log for items without logId
+        const directLog = logById[item.logId];
+        const refLog    = refLogByProd[item.productoId];
+        const log       = directLog ?? refLog;
         if (!log) return;
 
-        // totalKgProducido: use log field; if missing/zero derive from PT items for this lot
-        const totalKgProducido = (log.totalKgProducido > 0)
-            ? log.totalKgProducido
-            : (kgByLogId[item.logId] ?? 0);
+        // totalKgProducido — derive from PT items when the log field is missing
+        const totalKgProducido = directLog
+            ? ((directLog.totalKgProducido > 0)
+                ? directLog.totalKgProducido
+                : ((kgByLogId[item.logId] ?? 0) || kgItem))
+            : kgItem;   // reference-log path: treat this item's kg as its own "lot"
         if (!totalKgProducido) return;
 
-        // litrosNetos: use log field; if missing/zero estimate from kg × rendimiento Kroma
-        const litrosNetos = getLitrosNetos(log) || totalKgProducido * RENDIMIENTO_FALLBACK_L_PER_KG;
+        // litrosNetos — estimate from rendimiento when log has no data
+        const litrosNetos = (directLog ? getLitrosNetos(directLog) : 0)
+            || totalKgProducido * RENDIMIENTO_FALLBACK_L_PER_KG;
         if (!litrosNetos) return;
 
-        // Leche: use frozen price from reception if available; otherwise current catalog
-        let costoLeche = (log.recepciones || []).reduce((sum, r) => {
-            const p = parseFloat(r.costoUsdLitro); return p > 0 ? sum + p * (r.litros || 0) : sum;
-        }, 0);
+        // Leche cost — frozen recepcion price when available, else current catalog
+        let costoLeche = directLog
+            ? (directLog.recepciones || []).reduce((sum, r) => {
+                const p = parseFloat(r.costoUsdLitro);
+                return p > 0 ? sum + p * (r.litros || 0) : sum;
+              }, 0)
+            : 0;
         if (costoLeche === 0) {
-            const provId     = log.recepciones?.[0]?.proveedorId;
-            const milkPrice  = (provId && milkByProv[provId]) ?? fallbackMilkPrice;
+            const provId    = directLog?.recepciones?.[0]?.proveedorId;
+            const milkPrice = (provId && milkByProv[provId]) ?? fallbackMilkPrice;
             costoLeche = milkPrice * litrosNetos;
         }
 
-        // Insumos: theoretical doses from bloquesSnapshot × precio vigente
+        // Insumos — theoretical from bloquesSnapshot (either direct or reference log)
         const costoInsumos = costoPorLitroDesdeFicha(log.bloquesSnapshot, materialsById) * litrosNetos;
 
-        // Empaque: assignments in kroma_materials for each packed presentation
-        const costoEmpaque = (log.productosFinales || []).reduce(
-            (sum, pf) => sum + packagingCostForItem(log.productoId, pf, packagingByKey), 0
-        );
+        // Lot-level empaque — only available when we have the direct production log
+        const costoEmpaque = directLog
+            ? (directLog.productosFinales || []).reduce(
+                (sum, pf) => sum + packagingCostForItem(log.productoId, pf, packagingByKey), 0)
+            : 0;
 
-        const costoTotal   = costoLeche + costoInsumos + costoEmpaque;
-        const costoPorKg   = costoTotal / totalKgProducido;
+        const costoTotal = costoLeche + costoInsumos + costoEmpaque;
+        const costoPorKg = costoTotal / totalKgProducido;
         if (!(costoPorKg > 0)) return;
 
         let costoUnitarioUsd;
         if (item.tipo === 'sin_envasar') {
             costoUnitarioUsd = +costoPorKg.toFixed(4);
         } else {
-            // For empacado items: $/kg × peso/unit + packaging specific to this SKU
-            const unidades  = item.unidades || 1;
-            const packUnit  = packagingCostForItem(log.productoId,
+            const unidades = item.unidades || 1;
+            const packUnit = packagingCostForItem(log.productoId,
                 { catalogId: item.catalogId, unidades }, packagingByKey) / unidades;
             costoUnitarioUsd = +(costoPorKg * (item.pesoPorUnidad || 0) + packUnit).toFixed(4);
         }
         if (!(costoUnitarioUsd > 0)) return;
 
-        const kgItem     = item.totalKg ?? item.kgTotales ?? 0;
         const valorTotal = item.tipo === 'empacado'
             ? costoUnitarioUsd * (item.unidades || 0)
             : costoUnitarioUsd * kgItem;
@@ -962,11 +984,11 @@ function computeBackfillCosts(ptItems, logs, materials) {
             lote: item.lote || log.lote || item.logId?.slice(-7) || '—',
             kgItem, costoUnitarioUsd, valorTotal,
             desglose: {
-                leche:    +costoLeche.toFixed(2),
-                insumos:  +costoInsumos.toFixed(2),
-                empaque:  +costoEmpaque.toFixed(2),
-                total:    +costoTotal.toFixed(2),
-                porKg:    +costoPorKg.toFixed(4),
+                leche:   +costoLeche.toFixed(2),
+                insumos: +costoInsumos.toFixed(2),
+                empaque: +costoEmpaque.toFixed(2),
+                total:   +costoTotal.toFixed(2),
+                porKg:   +costoPorKg.toFixed(4),
             },
         });
     });

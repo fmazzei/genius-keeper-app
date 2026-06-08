@@ -117,6 +117,7 @@ function AddInventoryModal({ warehouse, onClose, onSave, saving }) {
             productoId,
             productoNombre,
             presentacion,
+            catalogId:        presentacionId || null,
             pesoPorUnidad,
             unidades:         isEmpacado ? Math.round(cantidadNum) : 0,
             kgTotales:        isEmpacado ? pesoPorUnidad * Math.round(cantidadNum) : cantidadNum,
