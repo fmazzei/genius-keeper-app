@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
-    collection, getDocs, addDoc, updateDoc, doc,
+    collection, getDocs, getDoc, addDoc, updateDoc, doc,
     serverTimestamp, query, orderBy, limit, where,
 } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
@@ -460,6 +460,7 @@ export default function DespachoPage() {
     const { kromaUser } = useKroma();
     const [tab, setTab]             = useState('nuevo');
     const [inventory, setInventory] = useState([]);
+    const [warehouses, setWarehouses] = useState([]);
     const [loadingInv, setLoadingInv] = useState(true);
     const [historial, setHistorial] = useState([]);
     const [loadingHist, setLoadingHist] = useState(false);
@@ -471,7 +472,7 @@ export default function DespachoPage() {
     const [pickingInvFor,  setPickingInvFor]  = useState(null);
     const [pickingCityFor, setPickingCityFor] = useState(null);
 
-    // Load inventory
+    // Load inventory + warehouses
     useEffect(() => {
         const load = async () => {
             try {
@@ -479,8 +480,10 @@ export default function DespachoPage() {
                     getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
                     getDocs(collection(db, 'kroma_warehouses')),
                 ]);
+                const whList = whSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(w => w.active !== false);
                 const whMap = {};
-                whSnap.docs.forEach(d => { whMap[d.id] = d.data().nombre || ''; });
+                whList.forEach(w => { whMap[w.id] = w.nombre || ''; });
+                setWarehouses(whList);
                 const inv = invSnap.docs
                     .map(d => ({ id: d.id, ...d.data(), warehouseNombre: whMap[d.data().warehouseId] || '' }))
                     .filter(i => getMaxQty(i) > 0);
@@ -560,9 +563,76 @@ export default function DespachoPage() {
         finally { setSaving(false); }
     };
 
-    const markEntregado = async (id) => {
-        await updateDoc(doc(db, 'kroma_despachos', id), { estado: 'entregado' });
-        setHistorial(h => h.map(d => d.id === id ? { ...d, estado: 'entregado' } : d));
+    const markEntregado = async (despacho) => {
+        const id = despacho.id;
+        try {
+            // Find Caracas warehouse (already loaded)
+            const caracasWh = warehouses.find(w => w.nombre === 'Depósito Comercial Caracas');
+
+            for (const linea of (despacho.lineas || [])) {
+                const { inventoryId, cantidad, tipo, destino } = linea;
+                if (!inventoryId) continue;
+
+                const srcRef  = doc(db, 'kroma_inventory_pt', inventoryId);
+                const srcSnap = await getDoc(srcRef);
+                if (!srcSnap.exists()) continue;
+
+                const srcData   = srcSnap.data();
+                const isEmpacado = srcData.tipo === 'empacado';
+                const field     = isEmpacado ? 'unidades' : 'kgTotales';
+                const current   = srcData[field] || 0;
+                const deducir   = isEmpacado ? Math.round(cantidad) : (parseFloat(cantidad) || 0);
+                const remaining = Math.max(0, +(current - deducir).toFixed(3));
+
+                // Deduct (or soft-delete if depleted)
+                const srcPatch = remaining === 0
+                    ? { [field]: 0, active: false }
+                    : { [field]: remaining };
+                await updateDoc(srcRef, srcPatch);
+
+                // Transfer to Caracas warehouse if applicable
+                const isCaracasDest =
+                    destino?.ciudad === 'Caracas' ||
+                    destino?.estado === 'Distrito Capital' ||
+                    (destino?.tipo === 'otro' && /caracas/i.test(destino?.texto || ''));
+
+                if (isCaracasDest && caracasWh) {
+                    const { id: _id, warehouseNombre: _wn, ...itemBase } = srcData;
+                    await addDoc(collection(db, 'kroma_inventory_pt'), {
+                        ...itemBase,
+                        [field]:     deducir,
+                        warehouseId: caracasWh.id,
+                        active:      true,
+                        origenDespachoId: id,
+                        createdAt:   serverTimestamp(),
+                    });
+
+                    const srcWhNombre = warehouses.find(w => w.id === srcData.warehouseId)?.nombre || 'Planta';
+                    await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                        tipo:          'despacho_entregado',
+                        origenId:      srcData.warehouseId || null,
+                        origenNombre:  srcWhNombre,
+                        destinoId:     caracasWh.id,
+                        destinoNombre: caracasWh.nombre,
+                        productoNombre: linea.productoNombre,
+                        presentacion:   linea.presentacion || '',
+                        lote:           linea.lote || '',
+                        cantidad:       deducir,
+                        unidad:         isEmpacado ? 'unidades' : 'kg',
+                        despachoId:     id,
+                        createdAt:      serverTimestamp(),
+                    });
+                }
+            }
+
+            await updateDoc(doc(db, 'kroma_despachos', id), {
+                estado:       'entregado',
+                horasEntrega: serverTimestamp(),
+            });
+            setHistorial(h => h.map(d => d.id === id ? { ...d, estado: 'entregado' } : d));
+        } catch (err) {
+            console.error('markEntregado:', err);
+        }
     };
 
     const today = new Date().toLocaleDateString('es-VE', {
@@ -742,7 +812,7 @@ export default function DespachoPage() {
                         </div>
                     ) : (
                         historial.map(d => (
-                            <DespachoCard key={d.id} despacho={d} onMarkEntregado={() => markEntregado(d.id)} />
+                            <DespachoCard key={d.id} despacho={d} onMarkEntregado={() => markEntregado(d)} />
                         ))
                     )}
                 </div>

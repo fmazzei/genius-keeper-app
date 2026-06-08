@@ -788,7 +788,7 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
     const whMovs = movements.filter(m => m.origenId === warehouse.id || m.destinoId === warehouse.id).slice(0, 30);
     const m = TIPO_META[warehouse.tipo] || TIPO_META.mixto;
 
-    const canEditPT = kromaRole === 'master' || kromaRole === 'kroma_admin' || kromaRole === 'kroma_operario' || kromaRole === 'kroma_gerencial';
+    const canEditPT = kromaRole === 'master' || kromaRole === 'kroma_admin' || kromaRole === 'produccion' || kromaRole === 'kroma_gerencial';
     const isAdminOrMaster = kromaRole === 'master' || kromaRole === 'kroma_admin';
     const isPT = warehouse.tipo === 'PT' || warehouse.tipo === 'mixto';
     const canCargar = canDo ? canDo('cargarInventarioPT') : false;
