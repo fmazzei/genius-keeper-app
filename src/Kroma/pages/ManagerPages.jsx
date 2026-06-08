@@ -486,25 +486,25 @@ export function ManagerHome({ onNavigate }) {
                         const top10 = [...data.matInv]
                             .map(inv => ({ name: materialsById[inv.materialId]?.nombre || inv.materialNombre || '—', val: materialValue(inv, materialsById) }))
                             .filter(m => m.val > 0).sort((a, b) => b.val - a.val).slice(0, 10);
-                        // PT: prioritize frozen costoUnitarioUsd per item; fallback to
-                        // theoretical $/kg from the production log for older items.
-                        const packagingByKey = indexPackagingAssignments(data.materials);
-                        const costoPorLote = {};
-                        data.logs.forEach(log => { costoPorLote[log.id] = calcCostoTeoricoLote(log, materialsById, packagingByKey); });
-                        let capitalPT = 0; let kgValPT = 0;
+                        // PT: items with frozen costoUnitarioUsd use that directly;
+                        // remaining items are estimated via computeBackfillCosts so the
+                        // milk-price fallback (current kroma_materials) closes the gap for
+                        // historical lots that never had costoUsdLitro on their receipts.
+                        let capitalPT = 0; let kgValPT = 0; let hayEstimado = false;
                         (data.ptItems || []).forEach(item => {
+                            if (item.active === false) return;
                             const kg = item.totalKg ?? item.kgTotales ?? 0;
                             if (!kg) return;
-                            if (item.costoUnitarioUsd != null) {
+                            if (item.costoUnitarioUsd != null && item.costoUnitarioUsd > 0) {
                                 capitalPT += item.tipo === 'empacado'
                                     ? item.costoUnitarioUsd * (item.unidades || 0)
                                     : item.costoUnitarioUsd * kg;
-                                kgValPT += kg; return;
+                                kgValPT += kg;
                             }
-                            const r = costoPorLote[item.logId];
-                            if (!r || r.costoPorKg == null) return;
-                            capitalPT += r.costoPorKg * kg; kgValPT += kg;
                         });
+                        // For items still lacking costoUnitarioUsd, compute on-the-fly
+                        const pendingRows = computeBackfillCosts(data.ptItems, data.logs, data.materials);
+                        pendingRows.forEach(r => { capitalPT += r.valorTotal; kgValPT += r.kgItem; hayEstimado = true; });
                         return (
                             <KpiModal title="Capital en Inventario" onClose={close}>
                                 <div className="space-y-5">
@@ -514,10 +514,12 @@ export function ManagerHome({ onNavigate }) {
                                             <p className="text-slate-400 text-xs mt-1">Materiales (USD)</p>
                                         </div>
                                         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
-                                            {kgValPT > 0 ? (
+                                            {kgValPT > 0 && capitalPT > 0 ? (
                                                 <>
                                                     <p className="text-blue-400 font-black text-xl">${capitalPT.toFixed(0)}</p>
-                                                    <p className="text-slate-400 text-xs mt-1">Prod. Term. ({kgValPT.toFixed(1)} kg)</p>
+                                                    <p className="text-slate-400 text-xs mt-1">
+                                                        Prod. Term. · {kgValPT.toFixed(1)} kg{hayEstimado ? ' · ~estimado' : ''}
+                                                    </p>
                                                 </>
                                             ) : (
                                                 <>
@@ -984,30 +986,22 @@ export function FinancialBoard() {
         // la ficha por litro × litros netos × costo del material) + empaque
         // (asignaciones del maestro de materiales por SKU). Se deriva un $/kg
         // por lote y se valora el stock de PT vigente cruzando por logId.
-        const packagingByKey = indexPackagingAssignments(materials);
-        const costoPorLote = {};
-        logs.forEach(log => { costoPorLote[log.id] = calcCostoTeoricoLote(log, materialsById, packagingByKey); });
-        // Cada item de PT puede traer su propio costoUnitarioUsd — congelado al
-        // momento de envasar a partir de consumos reales (leche + insumos +
-        // empaque del SKU), exacto y sin mezclas entre SKU. Se prioriza sobre
-        // el $/kg teórico del lote, que solo sirve de respaldo para PT
-        // generado antes de existir este snapshot.
-        let totalPT = 0;
-        let kgValuados = 0;
+        // PT: items with frozen costoUnitarioUsd use that; for the rest use
+        // computeBackfillCosts (includes milk-price fallback for historical lots).
+        let totalPT = 0; let kgValuados = 0; let hayEstimadoPT = false;
         (ptItems || []).forEach(item => {
+            if (item.active === false) return;
             const kg = item.totalKg ?? item.kgTotales ?? 0;
             if (!kg) return;
-            if (item.costoUnitarioUsd != null) {
+            if (item.costoUnitarioUsd != null && item.costoUnitarioUsd > 0) {
                 totalPT += item.tipo === 'empacado'
                     ? item.costoUnitarioUsd * (item.unidades || 0)
                     : item.costoUnitarioUsd * kg;
                 kgValuados += kg;
-                return;
             }
-            const r = costoPorLote[item.logId];
-            if (!r || r.costoPorKg == null) return;
-            totalPT += r.costoPorKg * kg;
-            kgValuados += kg;
+        });
+        computeBackfillCosts(ptItems, logs, materials).forEach(r => {
+            totalPT += r.valorTotal; kgValuados += r.kgItem; hayEstimadoPT = true;
         });
         const hayCosteoPT = kgValuados > 0;
 
@@ -1032,7 +1026,7 @@ export function FinancialBoard() {
                 merma: getMermaL(log),
             }));
 
-        return { capitalCats, totalMat, monthly, lotesData, totalPT, kgValuados, hayCosteoPT };
+        return { capitalCats, totalMat, monthly, lotesData, totalPT, kgValuados, hayCosteoPT, hayEstimadoPT };
     }, [data]);
 
     return (
@@ -1055,7 +1049,9 @@ export function FinancialBoard() {
                             {c.hayCosteoPT ? (
                                 <>
                                     <p className="text-emerald-400 font-black text-3xl">${c.totalPT.toFixed(2)}</p>
-                                    <p className="text-slate-500 text-xs mt-1">Costo real (o teórico de respaldo) × {c.kgValuados.toFixed(1)} kg en stock</p>
+                                    <p className="text-slate-500 text-xs mt-1">
+                                        {c.kgValuados.toFixed(1)} kg en stock{c.hayEstimadoPT ? ' · ~estimado' : ''}
+                                    </p>
                                 </>
                             ) : (
                                 <>
