@@ -381,6 +381,21 @@ function extractBlockIngredients(bloque, reg) {
     return out;
 }
 
+// Internal cost snapshot for ingredients consumed in a block — mirrors the
+// costoUsdLitro pattern on milk recepciones. Frozen at the moment of real
+// consumption so historical "Costo Real" can be compared against the
+// theoretical recipe cost later, without retroactively shifting with future
+// material price changes. Never rendered to the operario.
+function snapshotIngredientCosts(ingredients, materialsMap) {
+    return ingredients.map(({ materialId, nombre, amount, unidad }) => {
+        const mat = materialsMap?.[materialId];
+        const costoUsdUnidad = mat?.costoUSD && mat?.cantidadPresentacion
+            ? parseFloat(mat.costoUSD) / parseFloat(mat.cantidadPresentacion)
+            : null;
+        return { materialId, nombre, amount, unidad, costoUsdUnidad, unidadMaterial: mat?.unidad || null };
+    });
+}
+
 function tryBrowserNotification(title, body) {
     if (!('Notification' in window)) return;
     if (Notification.permission === 'granted') {
@@ -2447,6 +2462,11 @@ export default function DailyProductionPage() {
             ? Math.round((new Date(iniciadoAt) - new Date(prevData.completadoAt)) / 60000) : null;
         const tiempoTeorico = getPlannedMinutes(bloque);
 
+        const usedIngredients = extractBlockIngredients(bloque, reg);
+        const consumosCosteo  = usedIngredients.length > 0
+            ? snapshotIngredientCosts(usedIngredients, materialsMap)
+            : [];
+
         const newData = {
             ...bloquesData,
             [idxStr]: {
@@ -2457,6 +2477,7 @@ export default function DailyProductionPage() {
                 tiempoRealMin: tiempoRealMin >= 0 ? tiempoRealMin : null,
                 tiempoEsperaRealMin,
                 registros:     reg,
+                consumosCosteo,
             },
         };
 
@@ -2566,7 +2587,6 @@ export default function DailyProductionPage() {
             }
 
             // Decrement inventory for any ingredients used in this block
-            const usedIngredients = extractBlockIngredients(bloque, reg);
             if (usedIngredients.length > 0) decrementInventory(usedIngredients);
 
             // Decrement aspersión conservante if configured and real amount entered

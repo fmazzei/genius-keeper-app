@@ -110,7 +110,7 @@ function fmt(n) {
 }
 
 function buildEmptyDosis(tipo, params) {
-    if (tipo === 'agregar_insumo') return { materialNombre: params?.materialNombre || '', cantidad: 0, unidad: 'g' };
+    if (tipo === 'agregar_insumo') return { materialId: params?.materialId || '', materialNombre: params?.materialNombre || '', cantidad: 0, unidad: 'g' };
     if (tipo === 'inoculacion') {
         const l = { mesofilico: 'Cultivo Mesófilo', termofilico: 'Cultivo Termófilo', blend: 'Cultivo Blend T/M' };
         return { materialNombre: l[params?.tipoCultivo] || 'Cultivo', cantidad: 0, unidad: 'g' };
@@ -317,7 +317,7 @@ function DosisSection({ tipo, params, dosis, setDosis }) {
             <div className="bg-teal-500/10 border border-teal-500/20 rounded-xl p-4 space-y-4">
                 {header}
                 {dosis.materialNombre && <p className="text-slate-300 text-sm font-semibold">{dosis.materialNombre}</p>}
-                <PrecisionStepper value={dosis.cantidad ?? 0} onChange={v => setDosis(d => ({ ...d, materialNombre: params.materialNombre || d.materialNombre, cantidad: v }))} />
+                <PrecisionStepper value={dosis.cantidad ?? 0} onChange={v => setDosis(d => ({ ...d, materialId: params.materialId || d.materialId, materialNombre: params.materialNombre || d.materialNombre, cantidad: v }))} />
                 <PillGroup options={DOSE_UNITS} value={dosis.unidad ?? 'g'} onChange={v => v && setDosis(d => ({ ...d, unidad: v }))} />
             </div>
         );

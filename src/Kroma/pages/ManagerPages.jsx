@@ -91,33 +91,50 @@ function materialValue(inv, materialsById) {
     const mat = materialsById[inv.materialId];
     return mat ? totalBaseQty(inv) * pricePerBaseUnit(mat) : 0;
 }
-function indexByField(arr, field) {
-    const map = {};
-    (arr || []).forEach(x => { if (x?.[field]) map[x[field]] = x; });
-    return map;
-}
-
 // ─── Theoretical lot/SKU costing (Producto Terminado capital) ────────────────
-// Recipe doses are expressed per liter of milk (loteReferencia: 1); ingredient
-// costs are snapshotted at recipe-build time as costoUsdUnidad (USD per
-// unidadMaterial). Converts dosis → unidadMaterial using the same g↔kg, ml↔l
-// and density≈1 shortcuts the recipe builder used before costs were hidden
-// from the operario.
-function ingredientCostPerLiter(ing) {
-    const price = parseFloat(ing?.costoUsdUnidad);
-    if (!price || price <= 0) return 0;
-    const from = ing.unidadDosis;
-    const to = ing.unidadMaterial;
-    let factor = null;
-    if (from === to)                       factor = 1;
-    else if (from === 'g'  && to === 'kg') factor = 0.001;
-    else if (from === 'kg' && to === 'g')  factor = 1000;
-    else if (from === 'ml' && to === 'l')  factor = 0.001;
-    else if (from === 'l'  && to === 'ml') factor = 1000;
-    else if (from === 'g'  && to === 'l')  factor = 0.001;
-    else if (from === 'ml' && to === 'g')  factor = 1;
-    if (factor === null) return 0;
-    return price * (parseFloat(ing.dosis) || 0) * factor;
+// Production fichas (kroma_fichas, the live architecture behind DailyProductionPage
+// — kroma_recipes/RecipeBuilderPage are legacy and unrouted) embed ingredient
+// dosing directly per block as `dosis` expressed per liter of milk. We read the
+// reference dose from bloquesSnapshot (frozen at lot creation) and price it
+// against the current Maestro de Materiales — same g↔kg, ml↔l and density≈1
+// conversion shortcuts used across the app for unit-aware costing.
+function unitConversionFactor(from, to) {
+    if (from === to)                      return 1;
+    if (from === 'g'  && to === 'kg')     return 0.001;
+    if (from === 'kg' && to === 'g')      return 1000;
+    if (from === 'ml' && to === 'l')      return 0.001;
+    if (from === 'l'  && to === 'ml')     return 1000;
+    if (from === 'g'  && to === 'l')      return 0.001;
+    if (from === 'ml' && to === 'g')      return 1;
+    return null;
+}
+function extractFichaDoseRefs(bloquesSnapshot) {
+    const out = [];
+    (bloquesSnapshot || []).forEach(bloque => {
+        const d = bloque?.dosis;
+        if (!d) return;
+        if (bloque.tipo === 'agregar_insumo' || bloque.tipo === 'inoculacion') {
+            if (d.materialId && (d.cantidad ?? 0) > 0)
+                out.push({ materialId: d.materialId, cantidad: d.cantidad, unidad: d.unidad || 'g' });
+        } else if (bloque.tipo === 'cuajado') {
+            ['calcio', 'conservante', 'cuajo', 'fermento'].forEach(key => {
+                const ref = d[key];
+                if (ref?.materialId && (ref.cantidad ?? 0) > 0)
+                    out.push({ materialId: ref.materialId, cantidad: ref.cantidad, unidad: ref.unidad || 'g' });
+            });
+        }
+    });
+    return out;
+}
+function costoPorLitroDesdeFicha(bloquesSnapshot, materialsById) {
+    return extractFichaDoseRefs(bloquesSnapshot).reduce((sum, { materialId, cantidad, unidad }) => {
+        const mat = materialsById[materialId];
+        const price = mat ? pricePerBaseUnit(mat) : 0;
+        if (!price) return sum;
+        const factor = unitConversionFactor(unidad, mat.unidad);
+        if (factor == null) return sum;
+        return sum + price * cantidad * factor;
+    }, 0);
 }
 function indexPackagingAssignments(materials) {
     const map = {};
@@ -145,9 +162,9 @@ function packagingCostForItem(productoId, item, packagingByKey) {
         return sum + unidades * (asignacion.cantidadPorUnidad || 0) * price;
     }, 0);
 }
-// Combines milk + recipe ingredients + packaging into a theoretical cost for
+// Combines milk + ficha ingredients + packaging into a theoretical cost for
 // a completed production lot, and derives a $/kg to value finished-goods stock.
-function calcCostoTeoricoLote(log, recipesByProduct, packagingByKey) {
+function calcCostoTeoricoLote(log, materialsById, packagingByKey) {
     const litrosNetos = getLitrosNetos(log);
     const totalKg = getTotalKg(log);
 
@@ -156,10 +173,7 @@ function calcCostoTeoricoLote(log, recipesByProduct, packagingByKey) {
         return price > 0 ? sum + price * (r.litros || 0) : sum;
     }, 0);
 
-    const recipe = recipesByProduct[log.productoId];
-    const costoPorLitroInsumos = recipe
-        ? (recipe.ingredientes || []).reduce((sum, ing) => sum + ingredientCostPerLiter(ing), 0)
-        : 0;
+    const costoPorLitroInsumos = costoPorLitroDesdeFicha(log.bloquesSnapshot, materialsById);
     const costoInsumos = costoPorLitroInsumos * litrosNetos;
 
     const costoEmpaque = (log.productosFinales || []).reduce(
@@ -188,14 +202,13 @@ function useKromaDashboard() {
     const load = useCallback(async () => {
         setState(s => ({ ...s, loading: true, error: null }));
         try {
-            const [logsS, matInvS, ptS, milkS, suppS, materialsS, recipesS] = await Promise.all([
+            const [logsS, matInvS, ptS, milkS, suppS, materialsS] = await Promise.all([
                 getDocs(collection(db, 'kroma_production_logs')),
                 getDocs(collection(db, 'kroma_inventory_materials')),
                 getDocs(collection(db, 'kroma_inventory_pt')),
                 getDocs(collection(db, 'kroma_milk_reception')),
                 getDocs(collection(db, 'kroma_suppliers')),
                 getDocs(collection(db, 'kroma_materials')),
-                getDocs(collection(db, 'kroma_recipes')),
             ]);
             setState({
                 data: {
@@ -205,7 +218,6 @@ function useKromaDashboard() {
                     milkRecs:  milkS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
                     suppliers: suppS.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => s.active !== false),
                     materials: materialsS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
-                    recipes:   recipesS.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => r.active !== false && r.estado === 'activo'),
                 },
                 loading: false, error: null,
             });
@@ -845,7 +857,7 @@ export function FinancialBoard() {
 
     const c = useMemo(() => {
         if (!data) return null;
-        const { logs, matInv, materials, ptItems, recipes } = data;
+        const { logs, matInv, materials, ptItems } = data;
         const materialsById = indexById(materials);
 
         const catMap = {};
@@ -858,16 +870,15 @@ export function FinancialBoard() {
         const capitalCats = Object.entries(catMap).map(([cat, val]) => ({ cat, val })).sort((a, b) => b.val - a.val);
         const totalMat  = capitalCats.reduce((s, c) => s + c.val, 0);
 
-        // Producto terminado: costo teórico por lote = leche + insumos (receta,
-        // dosis por litro × litros netos) + empaque (asignaciones del maestro de
-        // materiales por SKU). Se deriva un $/kg por lote y se valora el stock de
-        // PT vigente cruzando por logId.
-        const recipesByProduct = indexByField(recipes, 'productoId');
+        // Producto terminado: costo teórico por lote = leche + insumos (dosis de
+        // la ficha por litro × litros netos × costo del material) + empaque
+        // (asignaciones del maestro de materiales por SKU). Se deriva un $/kg
+        // por lote y se valora el stock de PT vigente cruzando por logId.
         const packagingByKey = indexPackagingAssignments(materials);
         const costoPorLote = {};
         let lotesConCosteo = 0;
         logs.forEach(log => {
-            const r = calcCostoTeoricoLote(log, recipesByProduct, packagingByKey);
+            const r = calcCostoTeoricoLote(log, materialsById, packagingByKey);
             costoPorLote[log.id] = r;
             if (r.costoPorKg != null) lotesConCosteo++;
         });
