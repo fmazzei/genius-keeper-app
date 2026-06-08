@@ -91,6 +91,85 @@ function materialValue(inv, materialsById) {
     const mat = materialsById[inv.materialId];
     return mat ? totalBaseQty(inv) * pricePerBaseUnit(mat) : 0;
 }
+function indexByField(arr, field) {
+    const map = {};
+    (arr || []).forEach(x => { if (x?.[field]) map[x[field]] = x; });
+    return map;
+}
+
+// ─── Theoretical lot/SKU costing (Producto Terminado capital) ────────────────
+// Recipe doses are expressed per liter of milk (loteReferencia: 1); ingredient
+// costs are snapshotted at recipe-build time as costoUsdUnidad (USD per
+// unidadMaterial). Converts dosis → unidadMaterial using the same g↔kg, ml↔l
+// and density≈1 shortcuts the recipe builder used before costs were hidden
+// from the operario.
+function ingredientCostPerLiter(ing) {
+    const price = parseFloat(ing?.costoUsdUnidad);
+    if (!price || price <= 0) return 0;
+    const from = ing.unidadDosis;
+    const to = ing.unidadMaterial;
+    let factor = null;
+    if (from === to)                       factor = 1;
+    else if (from === 'g'  && to === 'kg') factor = 0.001;
+    else if (from === 'kg' && to === 'g')  factor = 1000;
+    else if (from === 'ml' && to === 'l')  factor = 0.001;
+    else if (from === 'l'  && to === 'ml') factor = 1000;
+    else if (from === 'g'  && to === 'l')  factor = 0.001;
+    else if (from === 'ml' && to === 'g')  factor = 1;
+    if (factor === null) return 0;
+    return price * (parseFloat(ing.dosis) || 0) * factor;
+}
+function indexPackagingAssignments(materials) {
+    const map = {};
+    (materials || []).forEach(mat => {
+        (mat.asignaciones || []).forEach(a => {
+            if (!a?.productoId || !a?.presentacionId) return;
+            const key = `${a.productoId}__${a.presentacionId}`;
+            (map[key] || (map[key] = [])).push({ material: mat, asignacion: a });
+        });
+    });
+    return map;
+}
+function packagingCostForItem(productoId, item, packagingByKey) {
+    const assigns = packagingByKey[`${productoId}__${item.catalogId}`] || [];
+    const unidades = item.unidades || 0;
+    return assigns.reduce((sum, { material, asignacion }) => {
+        const price = pricePerBaseUnit(material);
+        if (!price) return sum;
+        if (asignacion.tipoConsumo === 'grupal') {
+            const porGrupo = asignacion.unidadesPorGrupo || 0;
+            if (!porGrupo) return sum;
+            const grupos = Math.ceil(unidades / porGrupo);
+            return sum + grupos * (asignacion.cantidadPorGrupo || 0) * price;
+        }
+        return sum + unidades * (asignacion.cantidadPorUnidad || 0) * price;
+    }, 0);
+}
+// Combines milk + recipe ingredients + packaging into a theoretical cost for
+// a completed production lot, and derives a $/kg to value finished-goods stock.
+function calcCostoTeoricoLote(log, recipesByProduct, packagingByKey) {
+    const litrosNetos = getLitrosNetos(log);
+    const totalKg = getTotalKg(log);
+
+    const costoLeche = (log.recepciones || []).reduce((sum, r) => {
+        const price = parseFloat(r.costoUsdLitro);
+        return price > 0 ? sum + price * (r.litros || 0) : sum;
+    }, 0);
+
+    const recipe = recipesByProduct[log.productoId];
+    const costoPorLitroInsumos = recipe
+        ? (recipe.ingredientes || []).reduce((sum, ing) => sum + ingredientCostPerLiter(ing), 0)
+        : 0;
+    const costoInsumos = costoPorLitroInsumos * litrosNetos;
+
+    const costoEmpaque = (log.productosFinales || []).reduce(
+        (sum, item) => sum + packagingCostForItem(log.productoId, item, packagingByKey), 0);
+
+    const costoTotal = costoLeche + costoInsumos + costoEmpaque;
+    const costoPorKg = totalKg > 0 ? costoTotal / totalKg : null;
+
+    return { costoLeche, costoInsumos, costoEmpaque, costoTotal, litrosNetos, totalKg, costoPorKg };
+}
 function monthKey(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
@@ -109,13 +188,14 @@ function useKromaDashboard() {
     const load = useCallback(async () => {
         setState(s => ({ ...s, loading: true, error: null }));
         try {
-            const [logsS, matInvS, ptS, milkS, suppS, materialsS] = await Promise.all([
+            const [logsS, matInvS, ptS, milkS, suppS, materialsS, recipesS] = await Promise.all([
                 getDocs(collection(db, 'kroma_production_logs')),
                 getDocs(collection(db, 'kroma_inventory_materials')),
                 getDocs(collection(db, 'kroma_inventory_pt')),
                 getDocs(collection(db, 'kroma_milk_reception')),
                 getDocs(collection(db, 'kroma_suppliers')),
                 getDocs(collection(db, 'kroma_materials')),
+                getDocs(collection(db, 'kroma_recipes')),
             ]);
             setState({
                 data: {
@@ -125,6 +205,7 @@ function useKromaDashboard() {
                     milkRecs:  milkS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
                     suppliers: suppS.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => s.active !== false),
                     materials: materialsS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
+                    recipes:   recipesS.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => r.active !== false && r.estado === 'activo'),
                 },
                 loading: false, error: null,
             });
@@ -764,7 +845,7 @@ export function FinancialBoard() {
 
     const c = useMemo(() => {
         if (!data) return null;
-        const { logs, matInv, materials } = data;
+        const { logs, matInv, materials, ptItems, recipes } = data;
         const materialsById = indexById(materials);
 
         const catMap = {};
@@ -776,9 +857,30 @@ export function FinancialBoard() {
         });
         const capitalCats = Object.entries(catMap).map(([cat, val]) => ({ cat, val })).sort((a, b) => b.val - a.val);
         const totalMat  = capitalCats.reduce((s, c) => s + c.val, 0);
-        // Producto terminado: aún no existe un modelo de costeo (las recetas y
-        // catálogo de productos no registran costo unitario), por lo que su
-        // capital se reporta como no disponible hasta construir esa pieza.
+
+        // Producto terminado: costo teórico por lote = leche + insumos (receta,
+        // dosis por litro × litros netos) + empaque (asignaciones del maestro de
+        // materiales por SKU). Se deriva un $/kg por lote y se valora el stock de
+        // PT vigente cruzando por logId.
+        const recipesByProduct = indexByField(recipes, 'productoId');
+        const packagingByKey = indexPackagingAssignments(materials);
+        const costoPorLote = {};
+        let lotesConCosteo = 0;
+        logs.forEach(log => {
+            const r = calcCostoTeoricoLote(log, recipesByProduct, packagingByKey);
+            costoPorLote[log.id] = r;
+            if (r.costoPorKg != null) lotesConCosteo++;
+        });
+        let totalPT = 0;
+        let kgValuados = 0;
+        (ptItems || []).forEach(item => {
+            const r = costoPorLote[item.logId];
+            const kg = item.totalKg ?? item.kgTotales ?? 0;
+            if (!r || r.costoPorKg == null || !kg) return;
+            totalPT += r.costoPorKg * kg;
+            kgValuados += kg;
+        });
+        const hayCosteoPT = lotesConCosteo > 0 && kgValuados > 0;
 
         const months = last6Months();
         const monthly = months.map(m => {
@@ -801,7 +903,7 @@ export function FinancialBoard() {
                 merma: getMermaL(log),
             }));
 
-        return { capitalCats, totalMat, monthly, lotesData };
+        return { capitalCats, totalMat, monthly, lotesData, totalPT, kgValuados, hayCosteoPT };
     }, [data]);
 
     return (
@@ -821,8 +923,17 @@ export function FinancialBoard() {
                         </div>
                         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
                             <p className="text-slate-400 text-xs mb-2">Producto Terminado</p>
-                            <p className="text-slate-500 font-bold text-2xl">—</p>
-                            <p className="text-slate-600 text-xs mt-1">Requiere modelo de costeo (recetas + costos de materiales)</p>
+                            {c.hayCosteoPT ? (
+                                <>
+                                    <p className="text-emerald-400 font-black text-3xl">${c.totalPT.toFixed(2)}</p>
+                                    <p className="text-slate-500 text-xs mt-1">Costo teórico × {c.kgValuados.toFixed(1)} kg en stock</p>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-slate-500 font-bold text-2xl">—</p>
+                                    <p className="text-slate-600 text-xs mt-1">Sin lotes con receta + empaque vinculados aún</p>
+                                </>
+                            )}
                         </div>
                         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
                             <p className="text-slate-400 text-xs mb-2">Categoría con mayor capital</p>
