@@ -24,7 +24,7 @@ const PIE_COLORS = [C.emerald, C.blue, C.amber, C.rose, C.violet, C.cyan];
 // ─── Data helpers ─────────────────────────────────────────────────────────────
 
 function logDate(log) {
-    const ts = log.completadoAt || log.creadoAt || log.createdAt;
+    const ts = log.fechaCierre || log.createdAt;
     if (!ts) return null;
     return ts?.toDate ? ts.toDate() : new Date(ts);
 }
@@ -65,6 +65,32 @@ function avg(arr) {
     const v = arr.filter(x => x != null && !isNaN(x));
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 }
+
+// Materials inventory is stored in operational quantities (stockCerrado = closed
+// packages, stockEnUso = base-unit amount of the open one); cost lives in the
+// kroma_materials master catalog as costoUSD per cantidadPresentacion.
+function isGranelInv(inv) {
+    return !inv || inv.presentacionTipo === 'granel' || !inv.cantidadPorUnidad || inv.cantidadPorUnidad <= 0;
+}
+function totalBaseQty(inv) {
+    if (isGranelInv(inv)) return inv?.stockEnUso ?? 0;
+    return ((inv.stockCerrado ?? 0) * (inv.cantidadPorUnidad || 0)) + (inv.stockEnUso ?? 0);
+}
+function pricePerBaseUnit(mat) {
+    const cost = parseFloat(mat?.costoUSD);
+    const qty  = parseFloat(mat?.cantidadPresentacion);
+    if (!cost || !qty || cost <= 0 || qty <= 0) return 0;
+    return cost / qty;
+}
+function indexById(arr) {
+    const byId = {};
+    (arr || []).forEach(x => { byId[x.id] = x; });
+    return byId;
+}
+function materialValue(inv, materialsById) {
+    const mat = materialsById[inv.materialId];
+    return mat ? totalBaseQty(inv) * pricePerBaseUnit(mat) : 0;
+}
 function monthKey(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
@@ -83,20 +109,22 @@ function useKromaDashboard() {
     const load = useCallback(async () => {
         setState(s => ({ ...s, loading: true, error: null }));
         try {
-            const [logsS, matInvS, ptS, milkS, suppS] = await Promise.all([
+            const [logsS, matInvS, ptS, milkS, suppS, materialsS] = await Promise.all([
                 getDocs(collection(db, 'kroma_production_logs')),
                 getDocs(collection(db, 'kroma_inventory_materials')),
                 getDocs(collection(db, 'kroma_inventory_pt')),
                 getDocs(collection(db, 'kroma_milk_reception')),
                 getDocs(collection(db, 'kroma_suppliers')),
+                getDocs(collection(db, 'kroma_materials')),
             ]);
             setState({
                 data: {
-                    logs:      logsS.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.completado),
+                    logs:      logsS.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.estado === 'completada'),
                     matInv:    matInvS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
                     ptItems:   ptS.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.active !== false),
                     milkRecs:  milkS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
                     suppliers: suppS.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => s.active !== false),
+                    materials: materialsS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
                 },
                 loading: false, error: null,
             });
@@ -230,7 +258,8 @@ export function ManagerHome({ onNavigate }) {
 
     const c = useMemo(() => {
         if (!data) return null;
-        const { logs, matInv } = data;
+        const { logs, matInv, materials } = data;
+        const materialsById = indexById(materials);
         const now = new Date();
         const thisKey = monthKey(now);
         const prevKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
@@ -245,7 +274,7 @@ export function ManagerHome({ onNavigate }) {
         const rendTrend = avgRend && pAvgRend ? ((avgRend - pAvgRend) / pAvgRend) * 100 : null;
         const totalMermaL = mLogs.reduce((s, l) => s + getMermaL(l), 0);
         const mermaP = totalLitros > 0 ? (totalMermaL / totalLitros) * 100 : null;
-        const capitalMat = matInv.reduce((s, m) => s + ((m.stockCerrado || 0) + (m.stockEnUso || 0)) * (m.costoUnitario || 0), 0);
+        const capitalMat = matInv.reduce((s, inv) => s + materialValue(inv, materialsById), 0);
         const sinEmpacar = logs.filter(l => !l.empaqueFinalizado && (l.disposicion === 'guardar_todo' || l.disposicion === 'mixto')).length;
         const recent = [...logs].sort((a, b) => { const da = logDate(a), db_ = logDate(b); return da && db_ ? db_ - da : 0; }).slice(0, 8);
 
@@ -358,37 +387,30 @@ export function ManagerHome({ onNavigate }) {
 
                     {/* Capital */}
                     {modal === 'capital' && data && (() => {
+                        const materialsById = indexById(data.materials);
                         const catMap = {};
-                        data.matInv.forEach(m => {
-                            const qty = (m.stockCerrado || 0) + (m.stockEnUso || 0);
-                            const val = qty * (m.costoUnitario || 0);
+                        data.matInv.forEach(inv => {
+                            const val = materialValue(inv, materialsById);
                             if (val <= 0) return;
-                            catMap[m.categoria || 'otros'] = (catMap[m.categoria || 'otros'] || 0) + val;
+                            const cat = materialsById[inv.materialId]?.categoria || inv.categoria || 'otros';
+                            catMap[cat] = (catMap[cat] || 0) + val;
                         });
                         const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
                         const totalMat = cats.reduce((s, [, v]) => s + v, 0);
-                        const capitalPT = data.ptItems.reduce((s, p) => {
-                            const qty = p.tipo === 'sin_envasar' ? (p.kgTotales || 0) : (p.unidades || 0);
-                            return s + qty * (p.costoUnitario || 0);
-                        }, 0);
                         const top10 = [...data.matInv]
-                            .map(m => ({ name: m.nombre || '—', val: ((m.stockCerrado || 0) + (m.stockEnUso || 0)) * (m.costoUnitario || 0) }))
+                            .map(inv => ({ name: materialsById[inv.materialId]?.nombre || inv.materialNombre || '—', val: materialValue(inv, materialsById) }))
                             .filter(m => m.val > 0).sort((a, b) => b.val - a.val).slice(0, 10);
                         return (
                             <KpiModal title="Capital en Inventario" onClose={close}>
                                 <div className="space-y-5">
-                                    <div className="grid grid-cols-3 gap-3">
+                                    <div className="grid grid-cols-2 gap-3">
                                         <div className="bg-slate-800 border border-emerald-500/30 rounded-xl p-4 text-center">
-                                            <p className="text-emerald-400 font-black text-xl">${(totalMat + capitalPT).toFixed(0)}</p>
-                                            <p className="text-slate-400 text-xs mt-1">Total USD</p>
+                                            <p className="text-emerald-400 font-black text-xl">${totalMat.toFixed(0)}</p>
+                                            <p className="text-slate-400 text-xs mt-1">Materiales (USD)</p>
                                         </div>
                                         <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
-                                            <p className="text-white font-bold text-xl">${totalMat.toFixed(0)}</p>
-                                            <p className="text-slate-400 text-xs mt-1">Materiales</p>
-                                        </div>
-                                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
-                                            <p className="text-white font-bold text-xl">${capitalPT.toFixed(0)}</p>
-                                            <p className="text-slate-400 text-xs mt-1">Prod. Term.</p>
+                                            <p className="text-slate-500 font-bold text-xl">—</p>
+                                            <p className="text-slate-500 text-xs mt-1">Prod. Term. (sin costeo)</p>
                                         </div>
                                     </div>
                                     {cats.length > 0 && (
@@ -742,20 +764,21 @@ export function FinancialBoard() {
 
     const c = useMemo(() => {
         if (!data) return null;
-        const { logs, matInv, ptItems } = data;
+        const { logs, matInv, materials } = data;
+        const materialsById = indexById(materials);
 
         const catMap = {};
-        matInv.forEach(m => {
-            const qty = (m.stockCerrado || 0) + (m.stockEnUso || 0);
-            const val = qty * (m.costoUnitario || 0);
+        matInv.forEach(inv => {
+            const val = materialValue(inv, materialsById);
             if (!val) return;
-            const cat = m.categoria || 'otros';
+            const cat = materialsById[inv.materialId]?.categoria || inv.categoria || 'otros';
             catMap[cat] = (catMap[cat] || 0) + val;
         });
         const capitalCats = Object.entries(catMap).map(([cat, val]) => ({ cat, val })).sort((a, b) => b.val - a.val);
         const totalMat  = capitalCats.reduce((s, c) => s + c.val, 0);
-        const capitalPT = ptItems.reduce((s, p) => s + (p.cantidad || p.unidades || 0) * (p.costoUnitario || 0), 0);
-        const totalCap  = totalMat + capitalPT;
+        // Producto terminado: aún no existe un modelo de costeo (las recetas y
+        // catálogo de productos no registran costo unitario), por lo que su
+        // capital se reporta como no disponible hasta construir esa pieza.
 
         const months = last6Months();
         const monthly = months.map(m => {
@@ -778,7 +801,7 @@ export function FinancialBoard() {
                 merma: getMermaL(log),
             }));
 
-        return { capitalCats, totalMat, capitalPT, totalCap, monthly, lotesData };
+        return { capitalCats, totalMat, monthly, lotesData };
     }, [data]);
 
     return (
@@ -792,25 +815,19 @@ export function FinancialBoard() {
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className="bg-slate-800 border border-emerald-500/40 rounded-xl p-5">
-                            <p className="text-slate-400 text-xs uppercase tracking-widest font-semibold mb-2">Capital Total</p>
-                            <p className="text-emerald-400 font-black text-3xl">${c.totalCap.toFixed(2)}</p>
-                            <p className="text-slate-500 text-xs mt-1">USD inmovilizado en planta</p>
-                        </div>
-                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
-                            <p className="text-slate-400 text-xs mb-2">Materiales e Insumos</p>
-                            <p className="text-white font-bold text-2xl">${c.totalMat.toFixed(2)}</p>
-                            <div className="h-1.5 bg-slate-700 rounded-full mt-2 overflow-hidden">
-                                <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${c.totalCap > 0 ? (c.totalMat / c.totalCap) * 100 : 0}%` }} />
-                            </div>
-                            <p className="text-slate-500 text-xs mt-1">{c.totalCap > 0 ? ((c.totalMat / c.totalCap) * 100).toFixed(0) : 0}% del total</p>
+                            <p className="text-slate-400 text-xs uppercase tracking-widest font-semibold mb-2">Capital en Materiales</p>
+                            <p className="text-emerald-400 font-black text-3xl">${c.totalMat.toFixed(2)}</p>
+                            <p className="text-slate-500 text-xs mt-1">USD inmovilizado en insumos de planta</p>
                         </div>
                         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
                             <p className="text-slate-400 text-xs mb-2">Producto Terminado</p>
-                            <p className="text-white font-bold text-2xl">${c.capitalPT.toFixed(2)}</p>
-                            <div className="h-1.5 bg-slate-700 rounded-full mt-2 overflow-hidden">
-                                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${c.totalCap > 0 ? (c.capitalPT / c.totalCap) * 100 : 0}%` }} />
-                            </div>
-                            <p className="text-slate-500 text-xs mt-1">{c.totalCap > 0 ? ((c.capitalPT / c.totalCap) * 100).toFixed(0) : 0}% del total</p>
+                            <p className="text-slate-500 font-bold text-2xl">—</p>
+                            <p className="text-slate-600 text-xs mt-1">Requiere modelo de costeo (recetas + costos de materiales)</p>
+                        </div>
+                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+                            <p className="text-slate-400 text-xs mb-2">Categoría con mayor capital</p>
+                            <p className="text-white font-bold text-2xl">{c.capitalCats[0] ? `$${c.capitalCats[0].val.toFixed(2)}` : '—'}</p>
+                            <p className="text-slate-500 text-xs mt-1">{c.capitalCats[0] ? (CAT_LABELS[c.capitalCats[0].cat] || c.capitalCats[0].cat) : 'Sin inventario valorado'}</p>
                         </div>
                     </div>
 

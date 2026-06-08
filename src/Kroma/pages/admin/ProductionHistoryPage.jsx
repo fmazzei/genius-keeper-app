@@ -20,7 +20,7 @@ function fmtTime(ts) {
     return d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
 }
 function logDate(log) {
-    const ts = log.completadoAt || log.creadoAt || log.createdAt;
+    const ts = log.fechaCierre || log.createdAt;
     if (!ts) return null;
     return ts?.toDate ? ts.toDate() : new Date(ts);
 }
@@ -181,8 +181,8 @@ function LogDetail({ log, onClose }) {
                 <div className="overflow-y-auto flex-1 px-5 pb-6">
                     <Sec title="Información General" />
                     <div className="bg-slate-800 rounded-xl p-4">
-                        <Row label="Fecha"            value={fmtDate(log.completadoAt || log.creadoAt)} />
-                        <Row label="Hora"             value={fmtTime(log.completadoAt || log.creadoAt)} />
+                        <Row label="Fecha"            value={fmtDate(log.fechaCierre || log.createdAt)} />
+                        <Row label="Hora"             value={fmtTime(log.fechaCierre || log.createdAt)} />
                         <Row label="Maestro Quesero"  value={log.firmas?.maestro || log.creadoPorNombre || '—'} />
                         <Row label="Almacén PT"       value={log.firmas?.almacen || '—'} />
                         <Row label="Proveedor leche"  value={log.proveedorNombre || '—'} />
@@ -297,7 +297,7 @@ export default function ProductionHistoryPage() {
             const snap = await getDocs(collection(db, 'kroma_production_logs'));
             setLogs(
                 snap.docs.map(d => ({ id: d.id, ...d.data() }))
-                    .filter(l => l.completado)
+                    .filter(l => l.estado === 'completada')
                     .sort((a, b) => {
                         const da = logDate(a), db_ = logDate(b);
                         return da && db_ ? db_ - da : 0;
@@ -444,7 +444,7 @@ export default function ProductionHistoryPage() {
                                     <span className="flex items-center gap-1">
                                         <Calendar size={10} />
                                         {d
-                                            ? `${d.getDate()} ${d.toLocaleDateString('es-VE', { month: 'short' })} · ${fmtTime(log.completadoAt || log.creadoAt)}`
+                                            ? `${d.getDate()} ${d.toLocaleDateString('es-VE', { month: 'short' })} · ${fmtTime(log.fechaCierre || log.createdAt)}`
                                             : '—'}
                                     </span>
                                     <span className="flex items-center gap-1">

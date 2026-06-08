@@ -133,6 +133,13 @@ function generateLote(productoNombre) {
     return `${initials}${date}-${time}`;
 }
 
+function rendimientoColorClass(r) {
+    if (!(r > 0)) return 'text-slate-500';
+    if (r <= 6)   return 'text-emerald-400';
+    if (r <= 6.5) return 'text-amber-400';
+    return 'text-rose-400';
+}
+
 function fmtDate(ts) {
     if (!ts) return '—';
     const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -2335,9 +2342,13 @@ export default function DailyProductionPage() {
                 }));
             }
         }
+        const kgEmpacadosFinal = (empaqReg.presentaciones || [])
+            .reduce((s, pr) => s + (pr.pesoPorUnidad || 0) * (pr.unidades || 0), 0);
         const kgSinEnv = disposicion === 'guardar_todo'
             ? empaqReg.totalKgProducido
-            : disposicion === 'mixto' ? (empaqReg.kgSinEnvasar ?? 0) : 0;
+            : disposicion === 'mixto'
+                ? (empaqReg.kgSinEnvasar ?? Math.max(0, +(empaqReg.totalKgProducido - kgEmpacadosFinal).toFixed(3)))
+                : 0;
         if (kgSinEnv > 0) {
             ops.push(addDoc(collection(db, 'kroma_inventory_pt'), {
                 ...base,
@@ -2462,16 +2473,25 @@ export default function DailyProductionPage() {
                 merma:          bloque.tipo === 'pasteurizacion' ? (reg.merma ?? 10) : (activeLog?.merma || 0),
                 ...(holdHasta  && { holdHasta, holdBloque }),
                 ...(!holdHasta && newEstado !== 'en_hold' && { holdHasta: null, holdBloque: null }),
-                ...(newEstado === 'completada' && {
-                    fechaCierre:      serverTimestamp(),
-                    totalKgProducido: reg.totalKgProducido ?? 0,
-                    productosFinales: reg.presentaciones || [],
-                    disposicion:      reg.disposicion ?? 'empacar_todo',
-                    fechaVencimiento: reg.fechaVencimiento ?? null,
-                    kgSinEnvasar:     reg.kgSinEnvasar ?? 0,
-                    rendimientoKg:    (reg.totalKgProducido ?? 0) > 0 && litrosNetos > 0
-                        ? +(litrosNetos / reg.totalKgProducido).toFixed(2) : 0,
-                }),
+                ...(newEstado === 'completada' && (() => {
+                    const totalKgProducido = reg.totalKgProducido ?? 0;
+                    const disposicion = reg.disposicion ?? 'empacar_todo';
+                    const kgEmpacados = (reg.presentaciones || [])
+                        .reduce((s, pr) => s + (pr.pesoPorUnidad || 0) * (pr.unidades || 0), 0);
+                    const kgSinEnvasar = disposicion === 'empacar_todo' ? 0
+                        : disposicion === 'guardar_todo' ? totalKgProducido
+                        : reg.kgSinEnvasar ?? Math.max(0, +(totalKgProducido - kgEmpacados).toFixed(3));
+                    return {
+                        fechaCierre:      serverTimestamp(),
+                        totalKgProducido,
+                        productosFinales: reg.presentaciones || [],
+                        disposicion,
+                        fechaVencimiento: reg.fechaVencimiento ?? null,
+                        kgSinEnvasar,
+                        rendimientoKg:    totalKgProducido > 0 && litrosNetos > 0
+                            ? +(litrosNetos / totalKgProducido).toFixed(2) : 0,
+                    };
+                })()),
             };
             await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), payload);
 
@@ -3306,7 +3326,7 @@ export default function DailyProductionPage() {
                                     const tsMs = log.fechaCierre?.toMillis?.() || log.createdAt?.toMillis?.() || 0;
                                     const dias = Math.max(0, Math.floor((Date.now() - tsMs) / 86400000));
                                     const esMixto = log.disposicion === 'mixto';
-                                    const kgPend = log.kgSinEnvasar ?? log.totalKgProducido ?? 0;
+                                    const kgPend = log.kgSinEnvasar || log.totalKgProducido || 0;
                                     return (
                                         <div key={log.id} className={`rounded-xl border overflow-hidden ${
                                             esMixto ? 'border-orange-700/50 bg-orange-900/10' : 'border-amber-700/50 bg-amber-900/10'
@@ -3338,7 +3358,7 @@ export default function DailyProductionPage() {
                                                     <span className={`font-mono font-bold ${esMixto ? 'text-orange-300' : 'text-amber-300'}`}>
                                                         {kgPend.toFixed(3)} kg sin envasar
                                                     </span>
-                                                    {log.rendimientoKg > 0 && <><span className="text-slate-700">·</span><span className="text-slate-500">{log.rendimientoKg.toFixed(2)} L/kg</span></>}
+                                                    {log.rendimientoKg > 0 && <><span className="text-slate-700">·</span><span className={`font-mono font-semibold ${rendimientoColorClass(log.rendimientoKg)}`}>{log.rendimientoKg.toFixed(2)} L/kg</span></>}
                                                 </div>
                                             </button>
                                             <div className="px-4 pb-3">
@@ -3432,7 +3452,8 @@ export default function DailyProductionPage() {
                                                         <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
                                                         {log.proveedorNombre && <><span>·</span><span className="truncate max-w-[100px]">{log.proveedorNombre}</span></>}
                                                         {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
-                                                        {log.rendimientoKg > 0 && <><span>·</span><span className="text-teal-600 font-mono">{log.rendimientoKg.toFixed(2)} L/kg</span></>}
+                                                        {log.kgSinEnvasar > 0 && <><span>·</span><span className="text-amber-600 font-mono">{log.kgSinEnvasar.toFixed(3)} kg sin envasar</span></>}
+                                                        {log.rendimientoKg > 0 && <><span>·</span><span className={`font-mono font-semibold ${rendimientoColorClass(log.rendimientoKg)}`}>{log.rendimientoKg.toFixed(2)} L/kg</span></>}
                                                     </div>
                                                 </button>
                                                 {isMaster && (
