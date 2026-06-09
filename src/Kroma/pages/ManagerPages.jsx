@@ -195,13 +195,14 @@ function useKromaDashboard() {
     const load = useCallback(async () => {
         setState(s => ({ ...s, loading: true, error: null }));
         try {
-            const [logsS, matInvS, ptS, milkS, suppS, materialsS] = await Promise.all([
+            const [logsS, matInvS, ptS, milkS, suppS, materialsS, prodsS] = await Promise.all([
                 getDocs(collection(db, 'kroma_production_logs')),
                 getDocs(collection(db, 'kroma_inventory_materials')),
                 getDocs(collection(db, 'kroma_inventory_pt')),
                 getDocs(collection(db, 'kroma_milk_reception')),
                 getDocs(collection(db, 'kroma_suppliers')),
                 getDocs(collection(db, 'kroma_materials')),
+                getDocs(collection(db, 'kroma_products')),
             ]);
             const allLogDocs = logsS.docs.map(d => ({ id: d.id, ...d.data() }));
             setState({
@@ -213,6 +214,7 @@ function useKromaDashboard() {
                     milkRecs:  milkS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
                     suppliers: suppS.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => s.active !== false),
                     materials: materialsS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
+                    ptCatalog: prodsS.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.active !== false),
                 },
                 loading: false, error: null,
             });
@@ -238,6 +240,31 @@ function KpiCard({ label, value, sub, Icon, color = 'emerald', onClick }) {
             <p className="text-white font-black text-2xl leading-none mb-1">{value}</p>
             <p className="text-slate-400 text-xs">{label}</p>
             {sub && <p className="text-slate-600 text-xs mt-0.5">{sub}</p>}
+            {onClick && <p className="text-slate-500 text-[10px] mt-auto pt-2">Ver detalle →</p>}
+        </Wrap>
+    );
+}
+
+function DualValueCard({ label, value1, label1, value2, label2, Icon, color = 'emerald', onClick }) {
+    const cls = { emerald: 'text-emerald-400', blue: 'text-blue-400', amber: 'text-amber-400', rose: 'text-rose-400', cyan: 'text-cyan-400', violet: 'text-violet-400', slate: 'text-slate-500' };
+    const Wrap = onClick ? 'button' : 'div';
+    return (
+        <Wrap
+            onClick={onClick}
+            className={`bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col text-left w-full transition-all ${onClick ? 'hover:border-emerald-500/40 hover:bg-slate-800/80 cursor-pointer active:scale-[.98]' : ''}`}
+        >
+            <Icon size={16} className={`${cls[color]} mb-2`} />
+            <div className="flex gap-4 mb-1">
+                <div className="min-w-0">
+                    <p className="text-white font-black text-lg leading-none truncate">{value1}</p>
+                    <p className="text-slate-600 text-[10px] mt-0.5">{label1}</p>
+                </div>
+                <div className="min-w-0">
+                    <p className={`font-black text-lg leading-none truncate ${cls[color]}`}>{value2}</p>
+                    <p className="text-slate-600 text-[10px] mt-0.5">{label2}</p>
+                </div>
+            </div>
+            <p className="text-slate-400 text-xs">{label}</p>
             {onClick && <p className="text-slate-500 text-[10px] mt-auto pt-2">Ver detalle →</p>}
         </Wrap>
     );
@@ -346,7 +373,8 @@ export function ManagerHome({ onNavigate }) {
 
     const c = useMemo(() => {
         if (!data) return null;
-        const { logs, matInv, materials } = data;
+        const { logs, matInv, materials, ptItems, ptCatalog, allLogs } = data;
+        const ptCatalogById = indexById(ptCatalog || []);
         const materialsById = indexById(materials);
         const now = new Date();
         const thisKey = monthKey(now);
@@ -376,7 +404,34 @@ export function ManagerHome({ onNavigate }) {
             ? mCostos.reduce((s, r) => s + r.costoPorKg * r.totalKg, 0) / costoXkgTotalKg
             : null;
 
-        return { mLogs, totalLitros, totalMermaL, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent, costoXkg, mCostos };
+        // PT capital (cost-based) — stored costoUnitarioUsd + backfill estimate
+        let capitalPT = 0;
+        (ptItems || []).forEach(item => {
+            if (item.active === false) return;
+            const kg = item.totalKg ?? item.kgTotales ?? 0;
+            if (!kg) return;
+            if (item.costoUnitarioUsd != null && item.costoUnitarioUsd > 0) {
+                capitalPT += item.tipo === 'empacado'
+                    ? item.costoUnitarioUsd * (item.unidades || 0)
+                    : item.costoUnitarioUsd * kg;
+            }
+        });
+        computeBackfillCosts(ptItems || [], allLogs || logs, materials).forEach(r => { capitalPT += r.valorTotal; });
+
+        // PT sale value — qty × precioVentaUSD from kroma_products catalog
+        const valorVentaPT = (ptItems || []).reduce((s, item) => {
+            if (item.active === false) return s;
+            const prod = ptCatalogById[item.productoId];
+            const precio = parseFloat(prod?.precioVentaUSD);
+            if (!(precio > 0)) return s;
+            const kg = item.tipo === 'sin_envasar'
+                ? (item.kgTotales || 0)
+                : (item.totalKg ?? (item.unidades || 0) * (item.pesoPorUnidad || 0));
+            return s + kg * precio;
+        }, 0);
+        const hayPrecioVenta = valorVentaPT > 0;
+
+        return { mLogs, totalLitros, totalMermaL, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent, costoXkg, mCostos, capitalPT, valorVentaPT, hayPrecioVenta };
     }, [data]);
 
     const close = () => setModal(null);
@@ -437,6 +492,15 @@ export function ManagerHome({ onNavigate }) {
                         <KpiCard label="Lotes sin envasar"     value={c.sinEmpacar} sub={c.sinEmpacar > 0 ? 'Requiere atención' : 'Al día'}
                             Icon={Package} color={c.sinEmpacar > 0 ? 'amber' : 'slate'}
                             onClick={() => setModal('sin_envasar')} />
+                        <DualValueCard
+                            label="Inventario PT"
+                            value1={c.capitalPT > 0 ? `$${c.capitalPT.toFixed(0)}` : '—'}
+                            label1="a costo"
+                            value2={c.hayPrecioVenta ? `$${c.valorVentaPT.toFixed(0)}` : '—'}
+                            label2="precio planta"
+                            Icon={Warehouse}
+                            color="blue"
+                        />
                     </div>
 
                     {/* Recent productions */}

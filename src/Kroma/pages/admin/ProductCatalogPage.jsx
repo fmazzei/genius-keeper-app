@@ -45,7 +45,7 @@ const MILK_STYLE = {
     oveja:  'bg-amber-500/20 text-amber-300 border-amber-500/30',
 };
 
-const EMPTY_FORM = { nombre: '', categoria: '', tipoLeche: '', presentaciones: [] };
+const EMPTY_FORM = { nombre: '', categoria: '', tipoLeche: '', precioVentaUSD: '', presentaciones: [] };
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 // ─── Reusable pill group ──────────────────────────────────────────────────────
@@ -115,6 +115,9 @@ function ProductCard({ product, onEdit, onDelete }) {
                     </div>
                 </div>
             )}
+            {(product.precioVentaUSD > 0) && (
+                <p className="text-emerald-400 text-xs font-semibold mt-2">${Number(product.precioVentaUSD).toFixed(2)} / kg</p>
+            )}
         </div>
     );
 }
@@ -178,6 +181,24 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
             <div>
                 <label className={fieldLabel}>Tipo de Leche *</label>
                 <PillGroup options={MILK_TYPES} value={form.tipoLeche} onChange={v => setForm(f => ({ ...f, tipoLeche: v }))} />
+            </div>
+
+            {/* Precio de planta */}
+            <div>
+                <label className={fieldLabel}>Precio de planta (USD / kg)</label>
+                <div className="flex items-center gap-2">
+                    <span className="text-slate-400 text-sm">$</span>
+                    <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.precioVentaUSD ?? ''}
+                        onChange={e => setForm(f => ({ ...f, precioVentaUSD: e.target.value }))}
+                        placeholder="0.00"
+                        className="w-32 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm"
+                    />
+                    <span className="text-slate-500 text-xs">USD por kg de producto terminado</span>
+                </div>
             </div>
 
             {/* Presentaciones */}
@@ -324,11 +345,13 @@ export default function ProductCatalogPage() {
 
     const handleSave = async (form) => {
         setSaving(true);
+        const precio = parseFloat(form.precioVentaUSD);
+        const cleanForm = { ...form, precioVentaUSD: precio > 0 ? precio : null };
         try {
             if (editing) {
-                await updateDoc(doc(db, 'kroma_products', editing.id), { ...form, updatedAt: serverTimestamp() });
+                await updateDoc(doc(db, 'kroma_products', editing.id), { ...cleanForm, updatedAt: serverTimestamp() });
             } else {
-                await addDoc(collection(db, 'kroma_products'), { ...form, active: true, createdAt: serverTimestamp() });
+                await addDoc(collection(db, 'kroma_products'), { ...cleanForm, active: true, createdAt: serverTimestamp() });
             }
             await load();
             setMode('list');
