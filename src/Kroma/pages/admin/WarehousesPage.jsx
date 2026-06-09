@@ -498,38 +498,192 @@ function NewWarehouseModal({ onClose, onSave, saving }) {
     );
 }
 
-// ─── Edit Inventory Item Modal ─────────────────────────────────────────────────
+// ─── Inventory Drum Picker ─────────────────────────────────────────────────────
 
-function EditInventoryItemModal({ item, warehouse, kromaUser, kromaRole, onClose, onSave, saving }) {
+function AdjustDrum({ value, max, onChange }) {
+    const ITEM_H = 60;
+    const HALF   = 2; // 2 items above + selected + 2 below = 5 visible
+
+    const dragRef     = useRef({ active: false, startY: 0, startPx: 0, lastY: 0, lastT: 0, vel: 0 });
+    const rafRef      = useRef(null);
+    const prevSnapRef = useRef(value);
+    const animTimer   = useRef(null);
+
+    const clampPx  = (p) => Math.max(0, Math.min(max * ITEM_H, p));
+    const valToPx  = (v) => (max - v) * ITEM_H;
+    const pxToVal  = (p) => Math.max(0, Math.min(max, max - Math.round(p / ITEM_H)));
+    const drumY    = (px) => HALF * ITEM_H - px;
+
+    const [px,      setPx]      = useState(valToPx(value));
+    const [animate, setAnimate] = useState(false);
+
+    const displayVal = pxToVal(px);
+
+    const vibrate = (v) => {
+        if (v !== prevSnapRef.current) {
+            navigator.vibrate?.([6]);
+            prevSnapRef.current = v;
+        }
+    };
+
+    const snapTo = (v, doAnim = true) => {
+        const t = valToPx(v);
+        if (animTimer.current) clearTimeout(animTimer.current);
+        setAnimate(doAnim);
+        setPx(t);
+        vibrate(v);
+        onChange(v);
+        if (doAnim) animTimer.current = setTimeout(() => setAnimate(false), 210);
+    };
+
+    const onTouchStart = (e) => {
+        e.preventDefault();
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        setAnimate(false);
+        const d = dragRef.current;
+        d.active  = true;
+        d.startY  = e.touches[0].clientY;
+        d.startPx = px;
+        d.lastY   = e.touches[0].clientY;
+        d.lastT   = performance.now();
+        d.vel     = 0;
+    };
+
+    const onTouchMove = (e) => {
+        if (!dragRef.current.active) return;
+        e.preventDefault();
+        const d   = dragRef.current;
+        const y   = e.touches[0].clientY;
+        const t   = performance.now();
+        const dt  = Math.max(1, t - d.lastT);
+        d.vel     = (d.lastY - y) / dt; // px/ms, positive = dragging up = value down
+        d.lastY   = y;
+        d.lastT   = t;
+        const newPx  = clampPx(d.startPx + (d.startY - y));
+        const newVal = pxToVal(newPx);
+        vibrate(newVal);
+        onChange(newVal);
+        setPx(newPx);
+    };
+
+    const onTouchEnd = () => {
+        if (!dragRef.current.active) return;
+        dragRef.current.active = false;
+        let v  = dragRef.current.vel * 16; // px/ms → px/frame at 60fps
+        let p  = px;
+        const step = () => {
+            v *= 0.80;
+            p  = clampPx(p + v);
+            if (Math.abs(v) < 0.5) { snapTo(pxToVal(p)); return; }
+            const lv = pxToVal(p);
+            vibrate(lv);
+            onChange(lv);
+            setPx(p);
+            rafRef.current = requestAnimationFrame(step);
+        };
+        rafRef.current = requestAnimationFrame(step);
+    };
+
+    const onWheel = (e) => {
+        e.preventDefault();
+        snapTo(Math.max(0, Math.min(max, displayVal + (e.deltaY > 0 ? -1 : 1))));
+    };
+
+    // Virtual rendering — only items near selected
+    const centerIdx = max - displayVal;
+    const fromIdx   = Math.max(0, centerIdx - (HALF + 3));
+    const toIdx     = Math.min(max, centerIdx + (HALF + 3));
+
+    return (
+        <div
+            className="relative overflow-hidden select-none touch-none"
+            style={{ height: `${(2 * HALF + 1) * ITEM_H}px` }}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onWheel={onWheel}
+        >
+            {/* Selection bar */}
+            <div
+                className="absolute inset-x-6 border-y border-emerald-600/60 pointer-events-none z-20"
+                style={{ top: `${HALF * ITEM_H}px`, height: `${ITEM_H}px` }}
+            />
+            {/* Top vignette */}
+            <div
+                className="absolute inset-x-0 top-0 pointer-events-none z-10"
+                style={{ height: `${HALF * ITEM_H + ITEM_H * 0.55}px`,
+                         background: 'linear-gradient(to bottom, #0f172a 30%, transparent 100%)' }}
+            />
+            {/* Bottom vignette */}
+            <div
+                className="absolute inset-x-0 bottom-0 pointer-events-none z-10"
+                style={{ height: `${HALF * ITEM_H + ITEM_H * 0.55}px`,
+                         background: 'linear-gradient(to top, #0f172a 30%, transparent 100%)' }}
+            />
+            {/* Drum */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: 0, left: 0, right: 0,
+                    height: `${(max + 1) * ITEM_H}px`,
+                    transform: `translateY(${drumY(px)}px)`,
+                    transition: animate ? 'transform 200ms cubic-bezier(.22,.88,.22,1)' : 'none',
+                    willChange: 'transform',
+                }}
+            >
+                {Array.from({ length: toIdx - fromIdx + 1 }, (_, k) => {
+                    const idx  = fromIdx + k;
+                    const v    = max - idx;
+                    const dist = Math.abs(v - displayVal);
+                    return (
+                        <div
+                            key={idx}
+                            style={{ position: 'absolute', top: `${idx * ITEM_H}px`, left: 0, right: 0, height: `${ITEM_H}px` }}
+                            className={`flex items-center justify-center font-mono font-black leading-none ${
+                                dist === 0 ? 'text-white'      :
+                                dist === 1 ? 'text-slate-400'  :
+                                dist === 2 ? 'text-slate-600'  :
+                                             'text-slate-800'
+                            }`}
+                            style2={{ fontSize: dist === 0 ? '3.2rem' : dist === 1 ? '2rem' : dist === 2 ? '1.5rem' : '1.1rem' }}
+                        >
+                            <span style={{ fontSize: dist === 0 ? '3.2rem' : dist === 1 ? '2rem' : dist === 2 ? '1.5rem' : '1.1rem' }}>
+                                {v}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+// ─── Adjust Inventory Modal ─────────────────────────────────────────────────────
+
+function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
     const isEmpacado = item.tipo === 'empacado';
-    const [qty, setQty]       = useState(isEmpacado ? (item.unidades ?? 0) : (item.kgTotales ?? 0));
-    const [vence, setVence]   = useState(item.fechaVencimiento || '');
+    const maxQty     = isEmpacado ? (item.unidades ?? 0) : (item.kgTotales ?? 0);
+    const unit       = isEmpacado ? 'ud' : 'kg';
+
+    const [value,  setValue]  = useState(maxQty);   // starts at base (no change)
     const [motivo, setMotivo] = useState('');
-    const [sent, setSent]     = useState(false);
+    const [vence,  setVence]  = useState(item.fechaVencimiento || '');
+    const [sent,   setSent]   = useState(false);
 
-    const canSubmit = motivo.trim().length > 0;
+    const isMaster    = kromaRole === 'master';
+    const delta       = maxQty - value;                               // units being removed
+    const venceChanged = vence !== (item.fechaVencimiento || '');
+    const hasChange   = delta > 0 || venceChanged;
+    const canSave     = motivo.trim().length > 0 && hasChange;
 
-    const handleSubmit = async () => {
-        if (!canSubmit) return;
+    const handleSave = async () => {
+        if (!canSave || saving) return;
         const field = isEmpacado ? 'unidades' : 'kgTotales';
-        const oldVal = isEmpacado ? (item.unidades ?? 0) : (item.kgTotales ?? 0);
-
-        // Build cambios object — only include actually changed fields
         const cambios = {};
-        if (qty !== oldVal) {
-            cambios[field] = { de: oldVal, a: qty };
-        }
-        if (vence !== (item.fechaVencimiento || '')) {
-            cambios['fechaVencimiento'] = { de: item.fechaVencimiento || '', a: vence };
-        }
-        if (Object.keys(cambios).length === 0) {
-            onClose();
-            return;
-        }
-
-        const isPrivileged = kromaRole === 'master' || kromaRole === 'kroma_admin';
-        await onSave({ item, cambios, motivo, isPrivileged });
-        if (!isPrivileged) setSent(true);
+        if (delta > 0)    cambios[field]            = { de: maxQty, a: value };
+        if (venceChanged) cambios['fechaVencimiento'] = { de: item.fechaVencimiento || '', a: vence };
+        await onSave({ item, cambios, motivo, isPrivileged: isMaster });
+        if (!isMaster) setSent(true);
     };
 
     if (sent) {
@@ -539,10 +693,8 @@ function EditInventoryItemModal({ item, warehouse, kromaUser, kromaRole, onClose
                     <div className="w-12 h-12 bg-emerald-900/30 border border-emerald-700/40 rounded-full flex items-center justify-center mx-auto">
                         <Send size={20} className="text-emerald-400" />
                     </div>
-                    <div>
-                        <p className="text-white font-bold text-base">Solicitud enviada</p>
-                        <p className="text-slate-400 text-sm mt-1">Queda pendiente de aprobación por el administrador.</p>
-                    </div>
+                    <p className="text-white font-bold text-base">Solicitud enviada</p>
+                    <p className="text-slate-400 text-sm -mt-2">Queda pendiente de aprobación del máster.</p>
                     <button onClick={onClose} className="w-full py-3 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold transition-colors">
                         Aceptar
                     </button>
@@ -553,70 +705,106 @@ function EditInventoryItemModal({ item, warehouse, kromaUser, kromaRole, onClose
 
     return (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="bg-slate-900 border border-slate-700 rounded-t-2xl md:rounded-2xl w-full max-w-md p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                    <p className="text-white font-bold text-base">Editar Partida</p>
-                    <button onClick={onClose} className="text-slate-500 hover:text-white p-1"><X size={16} /></button>
-                </div>
+            <div className="bg-slate-900 border border-slate-700 rounded-t-2xl md:rounded-2xl w-full max-w-md overflow-hidden">
 
-                {/* Item info */}
-                <div className="bg-slate-800 border border-slate-700 rounded-xl p-3">
-                    <p className="text-white text-sm font-semibold">{item.productoNombre}</p>
-                    {item.lote && <p className="text-slate-500 text-xs font-mono mt-0.5">Lote: {item.lote}</p>}
-                </div>
-
-                {/* Quantity */}
-                <div>
-                    <SecLabel>{isEmpacado ? 'Unidades' : 'Kg totales'}</SecLabel>
-                    <input
-                        type="number"
-                        inputMode="decimal"
-                        min="0"
-                        step={isEmpacado ? '1' : '0.001'}
-                        value={qty}
-                        onChange={e => setQty(isEmpacado ? parseInt(e.target.value) || 0 : parseFloat(e.target.value) || 0)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white font-mono text-lg text-center focus:outline-none focus:border-emerald-500"
-                    />
-                </div>
-
-                {/* Fecha vencimiento */}
-                <div>
-                    <SecLabel>Fecha de vencimiento</SecLabel>
-                    <input
-                        type="date"
-                        value={vence}
-                        onChange={e => setVence(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
-                    />
-                </div>
-
-                {/* Motivo */}
-                <div>
-                    <SecLabel>Motivo del cambio <span className="text-rose-400">*</span></SecLabel>
-                    <textarea
-                        value={motivo}
-                        onChange={e => setMotivo(e.target.value)}
-                        placeholder="Describe el motivo del ajuste…"
-                        rows={3}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-emerald-500 resize-none"
-                    />
-                </div>
-
-                {(kromaRole === 'kroma_operario' || kromaRole === 'kroma_gerencial') && (
-                    <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl px-3 py-2">
-                        <p className="text-amber-300 text-xs">Esta edición requerirá aprobación del administrador.</p>
+                {/* Header */}
+                <div className="flex items-start justify-between gap-2 px-5 pt-5 pb-3">
+                    <div className="min-w-0">
+                        <p className="text-white font-bold text-base">Ajuste de Inventario</p>
+                        <p className="text-slate-500 text-xs truncate mt-0.5">{item.productoNombre}</p>
+                        {item.lote && <p className="text-slate-700 text-[11px] font-mono">{item.lote}</p>}
                     </div>
-                )}
+                    <button onClick={onClose} className="text-slate-500 hover:text-white p-1 shrink-0"><X size={16} /></button>
+                </div>
 
-                <div className="flex gap-3 pt-1">
+                {/* Base label */}
+                <div className="flex items-center gap-3 px-5 pb-2">
+                    <span className="text-slate-600 text-xs uppercase tracking-widest font-semibold">Base</span>
+                    <span className="text-slate-300 font-mono font-bold">{maxQty} {unit}</span>
+                    <span className="text-slate-700 text-xs ml-auto">↕ desliza para ajustar</span>
+                </div>
+
+                {/* Drum or kg input */}
+                <div className="bg-black/30 border-y border-slate-800">
+                    {isEmpacado ? (
+                        <AdjustDrum value={value} max={maxQty} onChange={setValue} />
+                    ) : (
+                        <div className="py-5 px-6 flex flex-col items-center gap-3">
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onPointerDown={(e) => { e.preventDefault(); setValue(v => Math.max(0, +(v - 0.5).toFixed(3))); }}
+                                    className="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 text-white text-2xl font-bold hover:border-rose-500/50 hover:text-rose-300 active:scale-95 transition-all"
+                                >−</button>
+                                <input
+                                    type="number" inputMode="decimal" min="0" max={maxQty} step="0.001"
+                                    value={value}
+                                    onChange={e => setValue(Math.max(0, Math.min(maxQty, parseFloat(e.target.value) || 0)))}
+                                    className="w-36 bg-transparent border-0 text-white font-mono font-black text-5xl text-center focus:outline-none"
+                                />
+                                <button
+                                    onPointerDown={(e) => { e.preventDefault(); setValue(v => Math.min(maxQty, +(v + 0.5).toFixed(3))); }}
+                                    disabled={value >= maxQty}
+                                    className="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 text-white text-2xl font-bold hover:border-emerald-500/50 hover:text-emerald-300 active:scale-95 transition-all disabled:opacity-30"
+                                >+</button>
+                            </div>
+                            <p className="text-slate-600 text-xs">kg · máx {maxQty}</p>
+                        </div>
+                    )}
+                </div>
+
+                {/* Delta summary */}
+                <div className="flex items-center justify-center gap-3 px-5 py-3 border-b border-slate-800 min-h-[52px]">
+                    {delta === 0 && !venceChanged ? (
+                        <p className="text-slate-600 text-sm">Sin cambios</p>
+                    ) : delta === 0 ? (
+                        <p className="text-slate-400 text-sm">Solo fecha de vencimiento</p>
+                    ) : (
+                        <>
+                            <span className="text-rose-400 font-mono font-bold text-2xl">−{isEmpacado ? delta : delta.toFixed(3)}</span>
+                            <span className="text-slate-700 text-sm">{unit}</span>
+                            <span className="text-slate-700">→</span>
+                            <span className="text-emerald-400 font-mono font-bold text-2xl">{isEmpacado ? value : value.toFixed(3)}</span>
+                            <span className="text-slate-700 text-sm">{unit}</span>
+                        </>
+                    )}
+                </div>
+
+                <div className="px-5 pt-4 pb-2 space-y-3">
+                    {/* Fecha vencimiento */}
+                    <div>
+                        <SecLabel>Fecha de vencimiento</SecLabel>
+                        <input type="date" value={vence} onChange={e => setVence(e.target.value)}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500" />
+                    </div>
+
+                    {/* Motivo */}
+                    <div>
+                        <SecLabel>Motivo <span className="text-rose-400">*</span></SecLabel>
+                        <textarea
+                            value={motivo}
+                            onChange={e => setMotivo(e.target.value)}
+                            placeholder="Merma, devolución, venta directa, corrección…"
+                            rows={2}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-emerald-500 resize-none"
+                        />
+                    </div>
+
+                    {!isMaster && (
+                        <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl px-3 py-2">
+                            <p className="text-amber-300 text-xs">Solo el rol máster aplica ajustes directamente. Esta solicitud quedará pendiente de aprobación.</p>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex gap-3 px-5 pb-5 pt-2">
                     <button onClick={onClose}
                         className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
                         Cancelar
                     </button>
-                    <button onClick={handleSubmit} disabled={!canSubmit || saving}
-                        className="flex-1 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
-                        {saving ? <Loader size={14} className="animate-spin" /> : <Edit2 size={14} />}
-                        {saving ? 'Guardando…' : (kromaRole === 'master' || kromaRole === 'kroma_admin') ? 'Guardar' : 'Enviar solicitud'}
+                    <button onClick={handleSave} disabled={!canSave || saving}
+                        className="flex-1 py-3.5 rounded-xl bg-rose-700 hover:bg-rose-600 text-white text-sm font-bold disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+                        {saving ? <Loader size={14} className="animate-spin" /> : null}
+                        {saving ? 'Guardando…' : isMaster ? 'Aplicar ajuste' : 'Solicitar ajuste'}
                     </button>
                 </div>
             </div>
@@ -1499,10 +1687,8 @@ export default function WarehousesPage() {
                     />
                 )}
                 {editItem && (
-                    <EditInventoryItemModal
+                    <AdjustInventoryModal
                         item={editItem}
-                        warehouse={warehouses.find(w => w.id === editItemWId)}
-                        kromaUser={kromaUser}
                         kromaRole={kromaRole}
                         saving={saving}
                         onClose={() => { setEditItem(null); setEditItemWId(null); }}
