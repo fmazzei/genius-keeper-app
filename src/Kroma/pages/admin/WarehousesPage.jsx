@@ -66,6 +66,159 @@ function SecLabel({ children }) {
     );
 }
 
+// ─── Materials inventory helpers (read-only mirror of MaterialsInventoryPage) ───
+// kroma_inventory_materials is global (no warehouseId): the Bodega de Insumos is
+// the single physical home for all non-leche materials. We render it read-only here;
+// stock writes/discounts stay exclusively in MaterialsInventoryPage.
+
+const MAT_SECTION_GROUPS = [
+    { id: 'produccion', label: 'Producción', cats: ['cultivos', 'coagulantes', 'sales'] },
+    { id: 'empaque',    label: 'Empaque',    cats: ['empaques'] },
+    { id: 'higiene',    label: 'Higiene',    cats: ['detergentes', 'reactivos'] },
+    { id: 'general',    label: 'General',    cats: ['consumibles', 'otros'] },
+];
+
+const MAT_BAR_COLOR  = { ok: 'bg-emerald-500', low: 'bg-amber-400', critical: 'bg-red-500', empty: 'bg-slate-600', none: 'bg-slate-700' };
+const MAT_TEXT_COLOR = { ok: 'text-emerald-400', low: 'text-amber-400', critical: 'text-red-400', empty: 'text-slate-500', none: 'text-slate-600' };
+
+function matIsGranel(inv) {
+    return !inv || inv.presentacionTipo === 'granel' || !inv.cantidadPorUnidad || inv.cantidadPorUnidad <= 0;
+}
+
+function matTotalBase(inv) {
+    if (!inv) return 0;
+    if (matIsGranel(inv)) return inv.stockEnUso ?? 0;
+    return ((inv.stockCerrado ?? 0) * (inv.cantidadPorUnidad || 0)) + (inv.stockEnUso ?? 0);
+}
+
+function matTotalDisplay(inv) {
+    if (!inv) return 0;
+    if (matIsGranel(inv)) return inv.stockEnUso ?? 0;
+    const cpu = inv.cantidadPorUnidad || 1;
+    return (inv.stockCerrado ?? 0) + (inv.stockEnUso ?? 0) / cpu;
+}
+
+function matStockStatus(inv) {
+    if (!inv || (inv.stockCerrado == null && inv.stockEnUso == null)) return 'none';
+    const minimo = inv.stockMinimo ?? 0;
+    if (minimo <= 0) return matTotalBase(inv) > 0 ? 'ok' : 'empty';
+    const total = (matIsGranel(inv) || inv.stockMinimoEsBase) ? matTotalBase(inv) : matTotalDisplay(inv);
+    if (total <= 0) return 'empty';
+    const ratio = total / minimo;
+    if (ratio < 0.5) return 'critical';
+    if (ratio < 1)   return 'low';
+    return 'ok';
+}
+
+function matFmtBase(n, unit) {
+    if (n == null || n === 0) return `0 ${unit || ''}`;
+    n = +n;
+    if (unit === 'g'  && n >= 1000) return `${(n / 1000).toFixed(2)} kg`;
+    if (unit === 'ml' && n >= 1000) return `${(n / 1000).toFixed(2)} L`;
+    return `${n % 1 === 0 ? n : n.toFixed(2)} ${unit || ''}`;
+}
+
+function matFmtInv(inv) {
+    if (!inv) return '—';
+    const unit = inv.unidadBase || 'g';
+    if (matIsGranel(inv)) return matFmtBase(inv.stockEnUso ?? 0, unit);
+    const cerrado = inv.stockCerrado ?? 0;
+    const enUso   = inv.stockEnUso   ?? 0;
+    const pres    = inv.presentacionTipo || '';
+    if (enUso > 0) return `${cerrado} ${pres} + ${matFmtBase(enUso, unit)}`;
+    return `${cerrado} ${pres}`;
+}
+
+function matFmtMinLabel(inv) {
+    if (!inv || (inv.stockMinimo ?? 0) <= 0) return null;
+    if (matIsGranel(inv) || inv.stockMinimoEsBase)
+        return `mín ${matFmtBase(inv.stockMinimo, inv.unidadBase || 'g')}`;
+    return `mín ${inv.stockMinimo} ${inv.presentacionTipo || ''}`;
+}
+
+function matBarPct(inv) {
+    const minimo = inv?.stockMinimo ?? 0;
+    if (minimo <= 0) return matTotalBase(inv) > 0 ? 100 : 0;
+    const total = (matIsGranel(inv) || inv?.stockMinimoEsBase) ? matTotalBase(inv) : matTotalDisplay(inv);
+    return Math.min(100, Math.round((total / minimo) * 100));
+}
+
+// A "materiales" warehouse holds insumos — except the milk cooling tank (leche lives elsewhere).
+const isMilkTank   = (w) => /tanque|enfriamiento/i.test(w?.nombre || '');
+const isInsumosWh  = (w) => (w?.tipo === 'materiales' || w?.tipo === 'mixto') && !isMilkTank(w);
+
+const matActiveRows = (inventoryMat) =>
+    (inventoryMat || []).filter(i => i.active !== false && i.categoria !== 'leche');
+
+// ─── Materials Inventory Section (read-only) ──────────────────────────────────
+
+function MaterialsInventorySection({ inventoryMat }) {
+    const rows = matActiveRows(inventoryMat);
+
+    if (rows.length === 0) {
+        return (
+            <div className="text-center py-12">
+                <Archive size={32} className="text-slate-700 mx-auto mb-3" />
+                <p className="text-slate-500 text-sm">Sin insumos registrados</p>
+                <p className="text-slate-600 text-xs mt-1">El operario carga el inventario desde Inventario de Insumos.</p>
+            </div>
+        );
+    }
+
+    const lowCount = rows.filter(i => ['low', 'critical', 'empty'].includes(matStockStatus(i))).length;
+
+    return (
+        <div className="space-y-5">
+            {lowCount > 0 && (
+                <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl px-4 py-2.5 flex items-center gap-2">
+                    <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+                    <p className="text-amber-300 text-xs">
+                        {lowCount} insumo{lowCount !== 1 ? 's' : ''} en o por debajo del mínimo.
+                    </p>
+                </div>
+            )}
+
+            {MAT_SECTION_GROUPS.map(group => {
+                const groupRows = rows
+                    .filter(i => group.cats.includes(i.categoria || 'otros') ||
+                        (group.id === 'general' && !MAT_SECTION_GROUPS.some(g => g.cats.includes(i.categoria))))
+                    .sort((a, b) => (a.materialNombre || '').localeCompare(b.materialNombre || ''));
+                if (groupRows.length === 0) return null;
+
+                return (
+                    <div key={group.id}>
+                        <SecLabel>{group.label} ({groupRows.length})</SecLabel>
+                        <div className="space-y-2">
+                            {groupRows.map(inv => {
+                                const status = matStockStatus(inv);
+                                const minLbl = matFmtMinLabel(inv);
+                                const pct    = matBarPct(inv);
+                                return (
+                                    <div key={inv.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3.5">
+                                        <div className="flex items-start justify-between gap-2 mb-2">
+                                            <div className="min-w-0">
+                                                <p className="text-white text-sm font-semibold truncate">{inv.materialNombre}</p>
+                                                <p className="text-slate-600 text-xs capitalize">{inv.categoria || 'otros'}</p>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <p className={`font-bold font-mono text-sm ${MAT_TEXT_COLOR[status]}`}>{matFmtInv(inv)}</p>
+                                                {minLbl && <p className="text-slate-600 text-xs">{minLbl}</p>}
+                                            </div>
+                                        </div>
+                                        <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                                            <div className={`h-full rounded-full ${MAT_BAR_COLOR[status]} transition-all`} style={{ width: `${pct}%` }} />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
 // ─── Add Inventory Modal ──────────────────────────────────────────────────────
 
 function pesoToKg(pesoNeto, unidad) {
@@ -970,10 +1123,13 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
 
 // ─── Warehouse Detail View ────────────────────────────────────────────────────
 
-function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaUser, kromaRole, canDo, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
+function WarehouseDetail({ warehouse, inventoryPT, inventoryMat, movements, warehouses, kromaUser, kromaRole, canDo, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
     const [showMov, setShowMov] = useState(false);
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const isMaster = kromaRole === 'master';
+
+    const showMaterials = isInsumosWh(warehouse);
+    const matRows = showMaterials ? matActiveRows(inventoryMat) : [];
 
     const items     = inventoryPT.filter(i => (i.warehouseId || '__cava__') === (warehouse.id || '__cava__'));
     const empacados = items.filter(i => i.tipo === 'empacado' && (i.unidades ?? 0) > 0);
@@ -1005,8 +1161,8 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
                     </button>
                 )}
                 <div className="text-right">
-                    <p className="text-emerald-400 font-bold font-mono">{empacados.length + sinEnv.length}</p>
-                    <p className="text-slate-600 text-xs">partidas</p>
+                    <p className="text-emerald-400 font-bold font-mono">{showMaterials ? matRows.length : empacados.length + sinEnv.length}</p>
+                    <p className="text-slate-600 text-xs">{showMaterials ? 'insumos' : 'partidas'}</p>
                 </div>
             </div>
 
@@ -1021,6 +1177,9 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
                         onInventoryUpdated={onInventoryUpdated}
                     />
                 )}
+
+                {/* Materials inventory (insumos warehouse, read-only) */}
+                {showMaterials && <MaterialsInventorySection inventoryMat={inventoryMat} />}
 
                 {/* Empacado */}
                 {empacados.length > 0 && (
@@ -1150,7 +1309,7 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
                     </div>
                 )}
 
-                {items.length === 0 && (
+                {!showMaterials && items.length === 0 && (
                     <div className="text-center py-12">
                         <Package size={32} className="text-slate-700 mx-auto mb-3" />
                         <p className="text-slate-500 text-sm">Este almacén está vacío</p>
@@ -1202,8 +1361,9 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
 
 // ─── Warehouse Card with Popover ──────────────────────────────────────────────
 
-function WarehouseCard({ wh, count, stock, warn, canEdit, canDelete, onOpen, onEdit, onDeactivate }) {
+function WarehouseCard({ wh, count, stock, matCount, matLow, warn, canEdit, canDelete, onOpen, onEdit, onDeactivate }) {
     const meta = TIPO_META[wh.tipo] || TIPO_META.mixto;
+    const isMatWh = matCount != null;
     const [popover, setPopover] = useState(false);
     const [confirmDeactivate, setConfirmDeactivate] = useState(false);
     const popRef = useRef(null);
@@ -1244,23 +1404,38 @@ function WarehouseCard({ wh, count, stock, warn, canEdit, canDelete, onOpen, onE
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${meta.bg} ${meta.color} ${meta.border}`}>
                         {meta.label}
                     </span>
-                    {stock.totalUnidades === 0 && stock.totalKgSinEnvasar === 0 && (
-                        <span className="text-slate-400 text-xs font-mono">Vacío</span>
+                    {isMatWh ? (
+                        matCount === 0 && (
+                            <span className="text-slate-400 text-xs font-mono">Vacío</span>
+                        )
+                    ) : (
+                        stock.totalUnidades === 0 && stock.totalKgSinEnvasar === 0 && (
+                            <span className="text-slate-400 text-xs font-mono">Vacío</span>
+                        )
                     )}
                 </div>
-                {(stock.totalUnidades > 0 || stock.totalKgSinEnvasar > 0) && (
-                    <div className="text-xs text-slate-400 space-y-0.5">
-                        {stock.totalUnidades > 0 && (
-                            <p>
-                                <span className="text-slate-200 font-semibold">{stock.totalUnidades.toLocaleString('es-VE')} ud</span>
-                                {' · '}
-                                {formatDocenas(stock.docenas, stock.sueltas)}
-                            </p>
-                        )}
-                        {stock.totalKgSinEnvasar > 0 && (
-                            <p><span className="text-slate-200 font-semibold">{stock.totalKgSinEnvasar.toLocaleString('es-VE')} kg</span> sin envasar</p>
-                        )}
-                    </div>
+                {isMatWh ? (
+                    matCount > 0 && (
+                        <div className="text-xs text-slate-400">
+                            <span className="text-slate-200 font-semibold">{matCount} insumo{matCount !== 1 ? 's' : ''}</span>
+                            {matLow > 0 && <span className="text-amber-400"> · {matLow} bajo mínimo</span>}
+                        </div>
+                    )
+                ) : (
+                    (stock.totalUnidades > 0 || stock.totalKgSinEnvasar > 0) && (
+                        <div className="text-xs text-slate-400 space-y-0.5">
+                            {stock.totalUnidades > 0 && (
+                                <p>
+                                    <span className="text-slate-200 font-semibold">{stock.totalUnidades.toLocaleString('es-VE')} ud</span>
+                                    {' · '}
+                                    {formatDocenas(stock.docenas, stock.sueltas)}
+                                </p>
+                            )}
+                            {stock.totalKgSinEnvasar > 0 && (
+                                <p><span className="text-slate-200 font-semibold">{stock.totalKgSinEnvasar.toLocaleString('es-VE')} kg</span> sin envasar</p>
+                            )}
+                        </div>
+                    )
                 )}
             </button>
 
@@ -1311,6 +1486,11 @@ function WarehouseCard({ wh, count, stock, warn, canEdit, canDelete, onOpen, onE
                                             Este almacén tiene {count} partida{count !== 1 ? 's' : ''}. Transfiere el inventario antes de desactivar.
                                         </p>
                                     )}
+                                    {isMatWh && matCount > 0 && (
+                                        <p className="text-amber-400 text-xs">
+                                            Este almacén tiene {matCount} insumo{matCount !== 1 ? 's' : ''} registrado{matCount !== 1 ? 's' : ''}.
+                                        </p>
+                                    )}
                                     <div className="flex gap-2">
                                         <button
                                             type="button"
@@ -1321,7 +1501,7 @@ function WarehouseCard({ wh, count, stock, warn, canEdit, canDelete, onOpen, onE
                                         </button>
                                         <button
                                             type="button"
-                                            disabled={count > 0}
+                                            disabled={count > 0 || (isMatWh && matCount > 0)}
                                             onClick={e => { e.stopPropagation(); setPopover(false); onDeactivate(wh); }}
                                             className="flex-1 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                                         >
@@ -1345,6 +1525,7 @@ export default function WarehousesPage() {
 
     const [warehouses,   setWarehouses]   = useState([]);
     const [inventoryPT,  setInventoryPT]  = useState([]);
+    const [inventoryMat, setInventoryMat] = useState([]);
     const [movements,    setMovements]    = useState([]);
     const [loading,      setLoading]      = useState(true);
     const [error,        setError]        = useState(null);
@@ -1365,10 +1546,11 @@ export default function WarehousesPage() {
     async function loadData() {
         setLoading(true); setError(null);
         try {
-            const [whSnap, invSnap, movSnap] = await Promise.all([
+            const [whSnap, invSnap, movSnap, matSnap] = await Promise.all([
                 getDocs(query(collection(db, 'kroma_warehouses'), where('active', '==', true))),
                 getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_warehouse_movements')),
+                getDocs(collection(db, 'kroma_inventory_materials')),
             ]);
 
             let wh = whSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1390,8 +1572,11 @@ export default function WarehousesPage() {
             const cava = wh.find(w => w.nombre === 'Cava Cuarto Planta') || wh.find(w => w.tipo === 'PT') || wh[0];
             const resolvedInv = inv.map(i => i.warehouseId ? i : { ...i, warehouseId: cava?.id });
 
+            const mats = matSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
             setWarehouses(wh);
             setInventoryPT(resolvedInv);
+            setInventoryMat(mats);
             setMovements(movs);
         } catch (e) { setError(e.message); }
         finally { setLoading(false); }
@@ -1658,6 +1843,10 @@ export default function WarehousesPage() {
         };
     }
 
+    const activeMats = matActiveRows(inventoryMat);
+    function matCount()    { return activeMats.length; }
+    function matLowCount() { return activeMats.filter(i => ['low', 'critical', 'empty'].includes(matStockStatus(i))).length; }
+
     function hasExpiringSoon(wId) {
         const limit = Date.now() + 30 * 86400000;
         return inventoryPT.some(i => i.warehouseId === wId && i.fechaVencimiento && new Date(i.fechaVencimiento).getTime() < limit);
@@ -1688,6 +1877,7 @@ export default function WarehousesPage() {
                 <WarehouseDetail
                     warehouse={whData}
                     inventoryPT={inventoryPT}
+                    inventoryMat={inventoryMat}
                     movements={movements}
                     warehouses={warehouses}
                     kromaUser={kromaUser}
@@ -1762,6 +1952,8 @@ export default function WarehousesPage() {
                         wh={wh}
                         count={countItems(wh.id)}
                         stock={warehouseStock(wh.id)}
+                        matCount={isInsumosWh(wh) ? matCount() : null}
+                        matLow={isInsumosWh(wh) ? matLowCount() : 0}
                         warn={hasExpiringSoon(wh.id)}
                         canEdit={canEdit('almacenes')}
                         canDelete={canDelete('almacenes')}
