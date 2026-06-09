@@ -667,22 +667,17 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
 
     const [value,       setValue]       = useState(maxQty);
     const [motivo,      setMotivo]      = useState('');
-    const [vence,       setVence]       = useState(item.fechaVencimiento || '');
     const [fechaAjuste, setFechaAjuste] = useState(new Date().toISOString().split('T')[0]);
     const [sent,        setSent]        = useState(false);
 
-    const isMaster     = kromaRole === 'master';
-    const delta        = maxQty - value;
-    const venceChanged = vence !== (item.fechaVencimiento || '');
-    const hasChange    = delta > 0 || venceChanged;
-    const canSave      = motivo.trim().length > 0 && hasChange;
+    const isMaster = kromaRole === 'master';
+    const delta    = maxQty - value;        // always ≥ 0 (drum can't go above max)
+    const canSave  = motivo.trim().length > 0 && delta > 0;
 
     const handleSave = async () => {
         if (!canSave || saving) return;
-        const field = isEmpacado ? 'unidades' : 'kgTotales';
-        const cambios = {};
-        if (delta > 0)    cambios[field]            = { de: maxQty, a: value };
-        if (venceChanged) cambios['fechaVencimiento'] = { de: item.fechaVencimiento || '', a: vence };
+        const field   = isEmpacado ? 'unidades' : 'kgTotales';
+        const cambios = { [field]: { de: maxQty, a: value } };
         await onSave({ item, cambios, motivo, isPrivileged: isMaster, fechaAjuste });
         if (!isMaster) setSent(true);
     };
@@ -708,29 +703,29 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
             <div className="bg-slate-900 border border-slate-700 rounded-t-2xl md:rounded-2xl w-full max-w-md overflow-hidden">
 
-                {/* Header */}
-                <div className="flex items-start justify-between gap-2 px-5 pt-5 pb-3">
+                {/* ── Header ── */}
+                <div className="flex items-center justify-between px-5 pt-4 pb-2">
                     <div className="min-w-0">
-                        <p className="text-white font-bold text-base">Ajuste de Inventario</p>
-                        <p className="text-slate-500 text-xs truncate mt-0.5">{item.productoNombre}</p>
-                        {item.lote && <p className="text-slate-700 text-[11px] font-mono">{item.lote}</p>}
+                        <p className="text-white font-bold text-base leading-tight">Ajuste de Inventario</p>
+                        <p className="text-slate-400 text-sm truncate">{item.productoNombre}</p>
                     </div>
-                    <button onClick={onClose} className="text-slate-500 hover:text-white p-1 shrink-0"><X size={16} /></button>
+                    <button onClick={onClose} className="text-slate-500 hover:text-white p-1.5 shrink-0 -mr-1"><X size={18} /></button>
                 </div>
 
-                {/* Base label */}
-                <div className="flex items-center gap-3 px-5 pb-2">
-                    <span className="text-slate-600 text-xs uppercase tracking-widest font-semibold">Base</span>
-                    <span className="text-slate-300 font-mono font-bold">{maxQty} {unit}</span>
-                    <span className="text-slate-700 text-xs ml-auto">↕ desliza para ajustar</span>
+                {/* ── Base + hint row ── */}
+                <div className="flex items-center px-5 pb-2 gap-2">
+                    <span className="text-slate-600 text-[11px] uppercase tracking-widest font-semibold">BASE</span>
+                    <span className="text-slate-200 font-mono font-bold text-sm">{maxQty} {unit}</span>
+                    {item.lote && <span className="text-slate-700 font-mono text-[11px] ml-1">{item.lote}</span>}
+                    <span className="text-slate-700 text-[11px] ml-auto">↕ desliza</span>
                 </div>
 
-                {/* Drum or kg input */}
+                {/* ── Drum or ±buttons ── */}
                 <div className="bg-black/30 border-y border-slate-800">
                     {isEmpacado ? (
                         <AdjustDrum value={value} max={maxQty} onChange={setValue} />
                     ) : (
-                        <div className="py-5 px-6 flex flex-col items-center gap-3">
+                        <div className="py-6 px-6 flex flex-col items-center gap-3">
                             <div className="flex items-center gap-4">
                                 <button
                                     onPointerDown={(e) => { e.preventDefault(); setValue(v => Math.max(0, +(v - 0.5).toFixed(3))); }}
@@ -741,6 +736,7 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
                                     value={value}
                                     onChange={e => setValue(Math.max(0, Math.min(maxQty, parseFloat(e.target.value) || 0)))}
                                     className="w-36 bg-transparent border-0 text-white font-mono font-black text-5xl text-center focus:outline-none"
+                                    style={{ fontSize: '3rem' }}
                                 />
                                 <button
                                     onPointerDown={(e) => { e.preventDefault(); setValue(v => Math.min(maxQty, +(v + 0.5).toFixed(3))); }}
@@ -753,69 +749,66 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
                     )}
                 </div>
 
-                {/* Delta summary */}
-                <div className="flex items-center justify-center gap-3 px-5 py-3 border-b border-slate-800 min-h-[52px]">
-                    {delta === 0 && !venceChanged ? (
-                        <p className="text-slate-600 text-sm">Sin cambios</p>
-                    ) : delta === 0 ? (
-                        <p className="text-slate-400 text-sm">Solo fecha de vencimiento</p>
+                {/* ── Delta badge ── */}
+                <div className="flex items-center justify-center gap-2 px-5 py-3 min-h-[50px]">
+                    {delta === 0 ? (
+                        <p className="text-slate-600 text-sm">Sin cambios — mueve el selector</p>
                     ) : (
                         <>
                             <span className="text-rose-400 font-mono font-bold text-2xl">−{isEmpacado ? delta : delta.toFixed(3)}</span>
-                            <span className="text-slate-700 text-sm">{unit}</span>
-                            <span className="text-slate-700">→</span>
-                            <span className="text-emerald-400 font-mono font-bold text-2xl">{isEmpacado ? value : value.toFixed(3)}</span>
-                            <span className="text-slate-700 text-sm">{unit}</span>
+                            <span className="text-slate-600 text-sm">{unit}</span>
+                            <span className="text-slate-600 mx-1">→</span>
+                            <span className="text-slate-100 font-mono font-bold text-2xl">{isEmpacado ? value : value.toFixed(3)}</span>
+                            <span className="text-slate-600 text-sm">{unit}</span>
                         </>
                     )}
                 </div>
 
-                <div className="px-5 pt-4 pb-2 space-y-3">
-                    {/* Fecha del ajuste */}
-                    <div>
-                        <SecLabel>Fecha del ajuste <span className="text-rose-400">*</span></SecLabel>
-                        <input
-                            type="date"
-                            value={fechaAjuste}
-                            onChange={e => setFechaAjuste(e.target.value)}
-                            max={new Date().toISOString().split('T')[0]}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500"
-                        />
-                    </div>
-
-                    {/* Fecha vencimiento */}
-                    <div>
-                        <SecLabel>Fecha de vencimiento</SecLabel>
-                        <input type="date" value={vence} onChange={e => setVence(e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500" />
-                    </div>
-
-                    {/* Motivo */}
-                    <div>
-                        <SecLabel>Motivo <span className="text-rose-400">*</span></SecLabel>
-                        <textarea
-                            value={motivo}
-                            onChange={e => setMotivo(e.target.value)}
-                            placeholder="Merma, devolución, venta directa, corrección…"
-                            rows={2}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-emerald-500 resize-none"
-                        />
+                {/* ── Fields ── */}
+                <div className="px-5 pb-2 space-y-3 border-t border-slate-800 pt-3">
+                    {/* Fecha del ajuste + motivo in a compact layout */}
+                    <div className="flex gap-3 items-end">
+                        <div className="shrink-0">
+                            <SecLabel>Fecha del ajuste</SecLabel>
+                            <input
+                                type="date"
+                                value={fechaAjuste}
+                                onChange={e => setFechaAjuste(e.target.value)}
+                                max={new Date().toISOString().split('T')[0]}
+                                className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-emerald-500"
+                                style={{ colorScheme: 'dark', fontSize: '16px' }}
+                            />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <SecLabel>Motivo <span className="text-rose-400">*</span></SecLabel>
+                            <textarea
+                                value={motivo}
+                                onChange={e => setMotivo(e.target.value)}
+                                placeholder="Merma, venta, corrección…"
+                                rows={2}
+                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 resize-none leading-snug"
+                                style={{ fontSize: '16px' }}
+                            />
+                        </div>
                     </div>
 
                     {!isMaster && (
                         <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl px-3 py-2">
-                            <p className="text-amber-300 text-xs">Solo el rol máster aplica ajustes directamente. Esta solicitud quedará pendiente de aprobación.</p>
+                            <p className="text-amber-300 text-xs">Solo el máster aplica ajustes directamente. Esta solicitud quedará pendiente.</p>
                         </div>
                     )}
                 </div>
 
-                <div className="flex gap-3 px-5 pb-5 pt-2">
+                {/* ── Buttons ── */}
+                <div className="flex gap-3 px-5 pb-5 pt-3">
                     <button onClick={onClose}
-                        className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
+                        className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 font-semibold"
+                        style={{ fontSize: '16px' }}>
                         Cancelar
                     </button>
                     <button onClick={handleSave} disabled={!canSave || saving}
-                        className="flex-1 py-3.5 rounded-xl bg-rose-700 hover:bg-rose-600 text-white text-sm font-bold disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
+                        className="flex-1 py-3.5 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-bold disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
+                        style={{ fontSize: '16px' }}>
                         {saving ? <Loader size={14} className="animate-spin" /> : null}
                         {saving ? 'Guardando…' : isMaster ? 'Aplicar ajuste' : 'Solicitar ajuste'}
                     </button>
