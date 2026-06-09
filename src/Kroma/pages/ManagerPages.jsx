@@ -366,7 +366,17 @@ export function ManagerHome({ onNavigate }) {
         const sinEmpacar = logs.filter(l => !l.empaqueFinalizado && (l.disposicion === 'guardar_todo' || l.disposicion === 'mixto')).length;
         const recent = [...logs].sort((a, b) => { const da = logDate(a), db_ = logDate(b); return da && db_ ? db_ - da : 0; }).slice(0, 8);
 
-        return { mLogs, totalLitros, totalMermaL, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent };
+        // Costo por kg: weighted average across this month's lots with kg data
+        const packagingByKey = indexPackagingAssignments(materials);
+        const mCostos = mLogs
+            .map(log => calcCostoTeoricoLote(log, materialsById, packagingByKey))
+            .filter(r => r.costoPorKg > 0 && r.totalKg > 0);
+        const costoXkgTotalKg = mCostos.reduce((s, r) => s + r.totalKg, 0);
+        const costoXkg = costoXkgTotalKg > 0
+            ? mCostos.reduce((s, r) => s + r.costoPorKg * r.totalKg, 0) / costoXkgTotalKg
+            : null;
+
+        return { mLogs, totalLitros, totalMermaL, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent, costoXkg, mCostos };
     }, [data]);
 
     const close = () => setModal(null);
@@ -420,9 +430,10 @@ export function ManagerHome({ onNavigate }) {
                             sub={c.rendTrend != null ? `${c.rendTrend >= 0 ? '↑' : '↓'} ${Math.abs(c.rendTrend).toFixed(1)}% vs mes anterior` : undefined}
                             Icon={TrendingUp} color={c.rendTrend == null ? 'amber' : c.rendTrend >= 0 ? 'emerald' : 'amber'}
                             onClick={() => setModal('rendimiento')} />
-                        <KpiCard label="Merma pasteurizador"   value={c.mermaP != null ? `${c.mermaP.toFixed(1)}%` : '—'}
-                            Icon={TrendingDown} color={c.mermaP != null && c.mermaP > 8 ? 'rose' : 'amber'}
-                            onClick={() => setModal('merma')} />
+                        <KpiCard label="Costo / kg envasado"   value={c.costoXkg != null ? `$${c.costoXkg.toFixed(2)}` : '—'}
+                            sub={c.costoXkg != null ? 'Prom. ponderado este mes' : 'Sin lotes costeable este mes'}
+                            Icon={FlaskConical} color="violet"
+                            onClick={() => setModal('costo_kg')} />
                         <KpiCard label="Lotes sin envasar"     value={c.sinEmpacar} sub={c.sinEmpacar > 0 ? 'Requiere atención' : 'Al día'}
                             Icon={Package} color={c.sinEmpacar > 0 ? 'amber' : 'slate'}
                             onClick={() => setModal('sin_envasar')} />
@@ -748,75 +759,82 @@ export function ManagerHome({ onNavigate }) {
                         );
                     })()}
 
-                    {/* Merma */}
-                    {modal === 'merma' && data && (() => {
+                    {/* Costo por kg */}
+                    {modal === 'costo_kg' && data && (() => {
+                        const materialsById  = indexById(data.materials);
+                        const packagingByKey = indexPackagingAssignments(data.materials);
                         const months = last6Months();
                         const monthly = months.map(m => {
                             const ml = data.logs.filter(l => { const d = logDate(l); return d && monthKey(d) === m.key; });
-                            const merma = ml.reduce((s, l) => s + getMermaL(l), 0);
-                            const ing   = ml.reduce((s, l) => s + (l.litrosIngresados || 0), 0);
-                            return { mes: m.label, merma, pct: ing > 0 ? parseFloat(((merma / ing) * 100).toFixed(1)) : 0 };
+                            const costos = ml.map(l => calcCostoTeoricoLote(l, materialsById, packagingByKey)).filter(r => r.costoPorKg > 0 && r.totalKg > 0);
+                            const kg = costos.reduce((s, r) => s + r.totalKg, 0);
+                            return {
+                                mes: m.label,
+                                cxkg: kg > 0 ? costos.reduce((s, r) => s + r.costoPorKg * r.totalKg, 0) / kg : null,
+                                kg,
+                            };
                         });
-                        const worst5 = [...data.logs].filter(l => getMermaL(l) > 0)
-                            .sort((a, b) => getMermaL(b) - getMermaL(a)).slice(0, 5);
                         return (
-                            <KpiModal title="Merma en Pasteurizador" onClose={close}>
+                            <KpiModal title="Costo por Kg de PT" onClose={close}>
                                 <div className="space-y-5">
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                                            <p className="text-slate-400 text-xs mb-1">Merma total (mes actual)</p>
-                                            <p className="text-rose-400 font-black text-2xl">{c.totalMermaL} L</p>
+                                    {c.mCostos.length === 0 ? (
+                                        <div className="text-center py-8 space-y-2">
+                                            <FlaskConical size={28} className="text-slate-600 mx-auto" />
+                                            <p className="text-slate-400 text-sm">Sin lotes costeables este mes.</p>
+                                            <p className="text-slate-500 text-xs">Se requiere: kg registrados en empaque + costo de insumos en el Maestro de Materiales.</p>
                                         </div>
-                                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                                            <p className="text-slate-400 text-xs mb-1">% de litros ingresados</p>
-                                            <p className={`font-black text-2xl ${c.mermaP != null && c.mermaP > 8 ? 'text-rose-400' : 'text-amber-400'}`}>
-                                                {c.mermaP != null ? `${c.mermaP.toFixed(1)}%` : '—'}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    {monthly.every(m => !m.merma) ? <Empty msg="Sin datos de merma" /> : (
+                                    ) : (
                                         <>
-                                            <ResponsiveContainer width="100%" height={160}>
-                                                <BarChart data={monthly} barSize={24}>
-                                                    <XAxis dataKey="mes" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                                                    <Tooltip content={<Tip fmt={v => `${v} L`} />} />
-                                                    <Bar dataKey="merma" name="Merma" fill={C.rose} radius={[4, 4, 0, 0]} />
-                                                </BarChart>
-                                            </ResponsiveContainer>
-                                            <table className="w-full text-sm">
-                                                <thead>
-                                                    <tr className="border-b border-slate-700">
-                                                        <th className="text-left py-2 text-slate-500 text-xs font-semibold">Mes</th>
-                                                        <th className="text-right py-2 text-slate-500 text-xs font-semibold">Merma (L)</th>
-                                                        <th className="text-right py-2 text-slate-500 text-xs font-semibold">% ingresados</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-700/40">
-                                                    {monthly.map(m => (
-                                                        <tr key={m.mes}>
-                                                            <td className="py-2 text-slate-300">{m.mes}</td>
-                                                            <td className="text-right py-2 text-rose-400 font-mono">{m.merma} L</td>
-                                                            <td className={`text-right py-2 font-mono ${m.pct > 8 ? 'text-rose-400' : 'text-amber-400'}`}>{m.pct}%</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </>
-                                    )}
-                                    {worst5.length > 0 && (
-                                        <div>
-                                            <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Top 5 Mayor Merma</p>
-                                            <div className="space-y-2">
-                                                {worst5.map((log, i) => (
-                                                    <div key={log.id} className="flex items-center gap-2 text-sm">
-                                                        <span className="text-slate-600 text-xs w-4 shrink-0">{i + 1}</span>
-                                                        <span className="text-slate-300 flex-1 truncate">{log.productoNombre || '—'}</span>
-                                                        <span className="text-rose-400 font-bold">{getMermaL(log)} L</span>
-                                                    </div>
-                                                ))}
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <div className="bg-slate-800 border border-violet-500/30 rounded-xl p-4 text-center">
+                                                    <p className="text-violet-400 font-black text-xl">{c.costoXkg != null ? `$${c.costoXkg.toFixed(2)}` : '—'}</p>
+                                                    <p className="text-slate-400 text-xs mt-1">Prom. / kg</p>
+                                                </div>
+                                                <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
+                                                    <p className="text-white font-bold text-xl">{c.mCostos.reduce((s, r) => s + r.totalKg, 0).toFixed(1)} kg</p>
+                                                    <p className="text-slate-400 text-xs mt-1">Producidos</p>
+                                                </div>
+                                                <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-center">
+                                                    <p className="text-white font-bold text-xl">{c.mCostos.length}</p>
+                                                    <p className="text-slate-400 text-xs mt-1">Lotes</p>
+                                                </div>
                                             </div>
-                                        </div>
+                                            <div>
+                                                <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Por Lote (este mes)</p>
+                                                <div className="divide-y divide-slate-700/40">
+                                                    {c.mLogs.map(log => {
+                                                        const r = calcCostoTeoricoLote(log, materialsById, packagingByKey);
+                                                        if (!(r.costoPorKg > 0)) return null;
+                                                        return (
+                                                            <div key={log.id} className="py-2.5 flex items-center gap-3">
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="text-slate-300 text-sm truncate">{log.productoNombre || '—'}</p>
+                                                                    <p className="text-slate-600 text-xs font-mono">{(log.lote || log.id).slice(-10)}</p>
+                                                                </div>
+                                                                <div className="text-right text-xs">
+                                                                    <p className="text-violet-400 font-bold">${r.costoPorKg.toFixed(2)}/kg</p>
+                                                                    <p className="text-slate-500">{r.totalKg?.toFixed(1)} kg · ${r.costoTotal.toFixed(0)}</p>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }).filter(Boolean)}
+                                                </div>
+                                            </div>
+                                            {monthly.some(m => m.cxkg != null) && (
+                                                <div>
+                                                    <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Tendencia mensual</p>
+                                                    <ResponsiveContainer width="100%" height={150}>
+                                                        <LineChart data={monthly}>
+                                                            <XAxis dataKey="mes" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                                            <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                                                            <Tooltip content={<Tip fmt={v => `$${v.toFixed(2)}/kg`} />} />
+                                                            <Line type="monotone" dataKey="cxkg" name="$/kg" stroke={C.violet} strokeWidth={2} dot={{ fill: C.violet, r: 3 }} connectNulls />
+                                                        </LineChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            )}
+                                            <p className="text-slate-600 text-xs">Leche + insumos (dosis teórica × precio actual) + empaque. Requiere costo en Maestro de Materiales.</p>
+                                        </>
                                     )}
                                 </div>
                             </KpiModal>
