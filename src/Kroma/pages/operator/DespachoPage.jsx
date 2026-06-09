@@ -345,19 +345,27 @@ function CityPicker({ onSelect, onClose }) {
 
 // ─── Despacho history card ────────────────────────────────────────────────────
 
-function DespachoCard({ despacho, onMarkEntregado }) {
-    const [expanded, setExpanded]     = useState(false);
-    const [marking, setMarking]       = useState(false);
-    const [confirmOpen, setConfirmOpen] = useState(false);
+function DespachoCard({ despacho, onMarkEntregado, onApplyTransfer }) {
+    const [expanded, setExpanded]         = useState(false);
+    const [marking, setMarking]           = useState(false);
+    const [applying, setApplying]         = useState(false);
+    const [confirmOpen, setConfirmOpen]   = useState(false);
     const lineas   = despacho.lineas || [];
     const destinos = [...new Set(lineas.map(l => destinoDisplay(l.destino)).filter(Boolean))];
     const isTransito = despacho.estado === 'en_transito';
+    const needsTransfer = !isTransito && !despacho.transferApplied;
 
     const handleMark = async () => {
         setMarking(true);
         setConfirmOpen(false);
         await onMarkEntregado();
         setMarking(false);
+    };
+
+    const handleApplyTransfer = async () => {
+        setApplying(true);
+        await onApplyTransfer();
+        setApplying(false);
     };
 
     return (
@@ -404,6 +412,17 @@ function DespachoCard({ despacho, onMarkEntregado }) {
                     {despacho.notas && (
                         <p className="text-xs text-slate-500 italic border-t border-slate-700 pt-2">{despacho.notas}</p>
                     )}
+                    {needsTransfer && (
+                        <button
+                            onClick={handleApplyTransfer}
+                            disabled={applying}
+                            className="w-full mt-1 bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/30 text-sky-400 font-medium py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-60"
+                        >
+                            {applying ? <Loader size={14} className="animate-spin" /> : <Package size={14} />}
+                            {applying ? 'Registrando en almacén…' : 'Registrar en almacén'}
+                        </button>
+                    )}
+
                     {isTransito && (
                         <>
                             <button
@@ -626,12 +645,60 @@ export default function DespachoPage() {
             }
 
             await updateDoc(doc(db, 'kroma_despachos', id), {
-                estado:       'entregado',
-                horasEntrega: serverTimestamp(),
+                estado:          'entregado',
+                horasEntrega:    serverTimestamp(),
+                transferApplied: true,
             });
-            setHistorial(h => h.map(d => d.id === id ? { ...d, estado: 'entregado' } : d));
+            setHistorial(h => h.map(d => d.id === id ? { ...d, estado: 'entregado', transferApplied: true } : d));
         } catch (err) {
             console.error('markEntregado:', err);
+        }
+    };
+
+    // Retroactive transfer for despachos marked "entregado" before the inventory logic existed
+    const applyHistoricalTransfer = async (despacho) => {
+        const id = despacho.id;
+        try {
+            const caracasWh = warehouses.find(w => w.nombre === 'Depósito Comercial Caracas');
+            for (const linea of (despacho.lineas || [])) {
+                const { inventoryId, cantidad, destino } = linea;
+                if (!inventoryId) continue;
+                const srcRef  = doc(db, 'kroma_inventory_pt', inventoryId);
+                const srcSnap = await getDoc(srcRef);
+                if (!srcSnap.exists()) continue;
+                const srcData    = srcSnap.data();
+                const isEmpacado = srcData.tipo === 'empacado';
+                const field      = isEmpacado ? 'unidades' : 'kgTotales';
+                const current    = srcData[field] || 0;
+                const deducir    = isEmpacado ? Math.round(cantidad) : (parseFloat(cantidad) || 0);
+                const remaining  = Math.max(0, +(current - deducir).toFixed(3));
+                await updateDoc(srcRef, remaining === 0 ? { [field]: 0, active: false } : { [field]: remaining });
+                const isCaracasDest =
+                    destino?.ciudad === 'Caracas' ||
+                    destino?.estado === 'Distrito Capital' ||
+                    (destino?.tipo === 'otro' && /caracas/i.test(destino?.texto || ''));
+                if (isCaracasDest && caracasWh) {
+                    const { id: _id, warehouseNombre: _wn, ...itemBase } = srcData;
+                    await addDoc(collection(db, 'kroma_inventory_pt'), {
+                        ...itemBase,
+                        [field]: deducir, warehouseId: caracasWh.id,
+                        active: true, origenDespachoId: id, createdAt: serverTimestamp(),
+                    });
+                    await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                        tipo: 'despacho_entregado',
+                        origenId: srcData.warehouseId || null,
+                        origenNombre: warehouses.find(w => w.id === srcData.warehouseId)?.nombre || 'Planta',
+                        destinoId: caracasWh.id, destinoNombre: caracasWh.nombre,
+                        productoNombre: linea.productoNombre, presentacion: linea.presentacion || '',
+                        lote: linea.lote || '', cantidad: deducir,
+                        unidad: isEmpacado ? 'unidades' : 'kg', despachoId: id, createdAt: serverTimestamp(),
+                    });
+                }
+            }
+            await updateDoc(doc(db, 'kroma_despachos', id), { transferApplied: true });
+            setHistorial(h => h.map(d => d.id === id ? { ...d, transferApplied: true } : d));
+        } catch (err) {
+            console.error('applyHistoricalTransfer:', err);
         }
     };
 
@@ -812,7 +879,7 @@ export default function DespachoPage() {
                         </div>
                     ) : (
                         historial.map(d => (
-                            <DespachoCard key={d.id} despacho={d} onMarkEntregado={() => markEntregado(d)} />
+                            <DespachoCard key={d.id} despacho={d} onMarkEntregado={() => markEntregado(d)} onApplyTransfer={() => applyHistoricalTransfer(d)} />
                         ))
                     )}
                 </div>

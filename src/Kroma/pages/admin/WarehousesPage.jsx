@@ -665,16 +665,17 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
     const maxQty     = isEmpacado ? (item.unidades ?? 0) : (item.kgTotales ?? 0);
     const unit       = isEmpacado ? 'ud' : 'kg';
 
-    const [value,  setValue]  = useState(maxQty);   // starts at base (no change)
-    const [motivo, setMotivo] = useState('');
-    const [vence,  setVence]  = useState(item.fechaVencimiento || '');
-    const [sent,   setSent]   = useState(false);
+    const [value,       setValue]       = useState(maxQty);
+    const [motivo,      setMotivo]      = useState('');
+    const [vence,       setVence]       = useState(item.fechaVencimiento || '');
+    const [fechaAjuste, setFechaAjuste] = useState(new Date().toISOString().split('T')[0]);
+    const [sent,        setSent]        = useState(false);
 
-    const isMaster    = kromaRole === 'master';
-    const delta       = maxQty - value;                               // units being removed
+    const isMaster     = kromaRole === 'master';
+    const delta        = maxQty - value;
     const venceChanged = vence !== (item.fechaVencimiento || '');
-    const hasChange   = delta > 0 || venceChanged;
-    const canSave     = motivo.trim().length > 0 && hasChange;
+    const hasChange    = delta > 0 || venceChanged;
+    const canSave      = motivo.trim().length > 0 && hasChange;
 
     const handleSave = async () => {
         if (!canSave || saving) return;
@@ -682,7 +683,7 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
         const cambios = {};
         if (delta > 0)    cambios[field]            = { de: maxQty, a: value };
         if (venceChanged) cambios['fechaVencimiento'] = { de: item.fechaVencimiento || '', a: vence };
-        await onSave({ item, cambios, motivo, isPrivileged: isMaster });
+        await onSave({ item, cambios, motivo, isPrivileged: isMaster, fechaAjuste });
         if (!isMaster) setSent(true);
     };
 
@@ -770,6 +771,18 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
                 </div>
 
                 <div className="px-5 pt-4 pb-2 space-y-3">
+                    {/* Fecha del ajuste */}
+                    <div>
+                        <SecLabel>Fecha del ajuste <span className="text-rose-400">*</span></SecLabel>
+                        <input
+                            type="date"
+                            value={fechaAjuste}
+                            onChange={e => setFechaAjuste(e.target.value)}
+                            max={new Date().toISOString().split('T')[0]}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500"
+                        />
+                    </div>
+
                     {/* Fecha vencimiento */}
                     <div>
                         <SecLabel>Fecha de vencimiento</SecLabel>
@@ -1063,9 +1076,9 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
                                             <div className="flex items-center gap-1.5 shrink-0">
                                                 {canEditPT && (
                                                     <button onClick={() => onEditItem(item, warehouse.id)}
-                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-blue-500/50 hover:text-blue-300 transition-colors">
+                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-rose-500/50 hover:text-rose-300 transition-colors">
                                                         <Edit2 size={11} />
-                                                        Editar
+                                                        Ajustar
                                                     </button>
                                                 )}
                                                 {isMaster && (
@@ -1119,9 +1132,9 @@ function WarehouseDetail({ warehouse, inventoryPT, movements, warehouses, kromaU
                                             <div className="flex items-center gap-1.5 ml-auto shrink-0">
                                                 {canEditPT && (
                                                     <button onClick={() => onEditItem(item, warehouse.id)}
-                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-blue-500/50 hover:text-blue-300 transition-colors">
+                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-rose-500/50 hover:text-rose-300 transition-colors">
                                                         <Edit2 size={11} />
-                                                        Editar
+                                                        Ajustar
                                                     </button>
                                                 )}
                                                 {isMaster && (
@@ -1497,19 +1510,44 @@ export default function WarehousesPage() {
         finally { setSaving(false); }
     }
 
-    async function saveInventoryEdit({ item, cambios, motivo, isPrivileged }) {
+    async function saveInventoryEdit({ item, cambios, motivo, isPrivileged, fechaAjuste }) {
         setSaving(true);
         try {
             if (isPrivileged) {
-                // Apply directly
                 const updateData = {};
                 Object.entries(cambios).forEach(([field, change]) => {
                     updateData[field] = change.a;
                 });
                 await updateDoc(doc(db, 'kroma_inventory_pt', item.id), updateData);
+
+                // Log adjustment as a warehouse movement for full traceability
+                const whId = item.warehouseId || editItemWId;
+                const wh   = warehouses.find(w => w.id === whId);
+                const qtyChange = cambios['unidades'] || cambios['kgTotales'];
+                if (qtyChange) {
+                    const delta = qtyChange.de - qtyChange.a; // positive = units removed
+                    await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                        tipo:           'ajuste',
+                        origenId:       null,
+                        origenNombre:   'Ajuste manual',
+                        destinoId:      whId || null,
+                        destinoNombre:  wh?.nombre || '',
+                        productoNombre: item.productoNombre,
+                        lote:           item.lote || '',
+                        cantidad:       Math.abs(delta),
+                        delta:          -delta,
+                        unidad:         item.tipo === 'empacado' ? 'unidades' : 'kg',
+                        motivo,
+                        fechaAjuste:    fechaAjuste || null,
+                        creadoPorId:    kromaUser?.id || null,
+                        creadoPorNombre: kromaUser?.name || null,
+                        createdAt:      serverTimestamp(),
+                    });
+                }
+
                 setInventoryPT(prev => prev.map(i => i.id === item.id ? { ...i, ...updateData } : i));
                 setEditItem(null);
-                setSuccessMsg('Partida actualizada');
+                setSuccessMsg('Ajuste aplicado');
                 setTimeout(() => setSuccessMsg(''), 3000);
             } else {
                 // Create edit request + notification
@@ -1524,6 +1562,7 @@ export default function WarehousesPage() {
                     warehouseNombre: warehouse?.nombre || '',
                     cambios,
                     nota: motivo,
+                    fechaAjuste: fechaAjuste || null,
                     solicitadoPorId: kromaUser?.id || null,
                     solicitadoPorNombre: kromaUser?.name || null,
                     estado: 'pendiente',
@@ -1535,7 +1574,7 @@ export default function WarehousesPage() {
                 await addDoc(collection(db, 'kroma_notifications'), {
                     tipo: 'solicitud_edicion',
                     editRequestId: ref.id,
-                    mensaje: `${kromaUser?.name || 'Alguien'} solicita editar inventario: ${item.productoNombre} (Lote ${item.lote || '—'})`,
+                    mensaje: `${kromaUser?.name || 'Alguien'} solicita ajuste de inventario: ${item.productoNombre} (Lote ${item.lote || '—'})`,
                     destinatarios: ['kroma_admin', 'master'],
                     leidaPor: [],
                     createdAt: serverTimestamp(),
