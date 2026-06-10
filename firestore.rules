@@ -191,6 +191,14 @@ service cloud.firestore {
       allow update, delete: if isMaster();
     }
 
+    match /despachos/{despachoId} {
+      // Created by merchandisers (PedidoForm); read by admin dashboards and
+      // by vendedores for their own portfolio (query filters by reporterId).
+      allow create: if isMerchandiser() || isAdmin();
+      allow read:   if isAdmin() || isMerchandiser() || getRole(request.auth.uid) == 'vendedor';
+      allow update, delete: if isMaster();
+    }
+
     match /kroma_users/{userId} {
       allow read, write: if isKromaAccess();
     }
