@@ -155,16 +155,35 @@ function packagingCostForItem(productoId, item, packagingByKey) {
         return sum + unidades * (asignacion.cantidadPorUnidad || 0) * price;
     }, 0);
 }
+// Builds a milk-price lookup from the Maestro de Materiales (kroma_materials):
+// per-supplier price and a single fallback. Used to value milk when a receipt
+// never stored costoUsdLitro (same fallback strategy as computeBackfillCosts).
+function buildMilkPriceLookup(materials) {
+    const milkMats = (materials || []).filter(m => m.categoria === 'leche' && m.active !== false);
+    const milkByProv = {};
+    milkMats.forEach(m => { const p = pricePerBaseUnit(m); if (p > 0 && m.proveedorId) milkByProv[m.proveedorId] = p; });
+    const fallbackMilkPrice = milkMats.map(m => pricePerBaseUnit(m)).find(p => p > 0) ?? 0;
+    return { milkByProv, fallbackMilkPrice };
+}
+
 // Combines milk + ficha ingredients + packaging into a theoretical cost for
 // a completed production lot, and derives a $/kg to value finished-goods stock.
-function calcCostoTeoricoLote(log, materialsById, packagingByKey) {
-    const litrosNetos = getLitrosNetos(log);
+// milkLookup (optional) closes the gap for lots whose receipts never recorded
+// costoUsdLitro — milk is then priced from the current Maestro de Materiales.
+function calcCostoTeoricoLote(log, materialsById, packagingByKey, milkLookup = null) {
+    let litrosNetos = getLitrosNetos(log);
     const totalKg = getTotalKg(log);
 
-    const costoLeche = (log.recepciones || []).reduce((sum, r) => {
+    let costoLeche = (log.recepciones || []).reduce((sum, r) => {
         const price = parseFloat(r.costoUsdLitro);
         return price > 0 ? sum + price * (r.litros || 0) : sum;
     }, 0);
+    if (costoLeche === 0 && milkLookup) {
+        if (!litrosNetos && totalKg > 0) litrosNetos = totalKg * RENDIMIENTO_FALLBACK_L_PER_KG;
+        const provId    = log.recepciones?.[0]?.proveedorId;
+        const milkPrice = (provId && milkLookup.milkByProv[provId]) ?? milkLookup.fallbackMilkPrice;
+        costoLeche = milkPrice * litrosNetos;
+    }
 
     const costoPorLitroInsumos = costoPorLitroDesdeFicha(log.bloquesSnapshot, materialsById);
     const costoInsumos = costoPorLitroInsumos * litrosNetos;
@@ -254,14 +273,14 @@ function DualValueCard({ label, value1, label1, value2, label2, Icon, color = 'e
             className={`bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col text-left w-full transition-all ${onClick ? 'hover:border-emerald-500/40 hover:bg-slate-800/80 cursor-pointer active:scale-[.98]' : ''}`}
         >
             <Icon size={16} className={`${cls[color]} mb-2`} />
-            <div className="flex gap-4 mb-1">
-                <div className="min-w-0">
-                    <p className="text-white font-black text-lg leading-none truncate">{value1}</p>
-                    <p className="text-slate-600 text-[10px] mt-0.5">{label1}</p>
+            <div className="space-y-1.5 mb-1.5">
+                <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-white font-black text-base leading-none">{value1}</span>
+                    <span className="text-slate-500 text-[10px] shrink-0">{label1}</span>
                 </div>
-                <div className="min-w-0">
-                    <p className={`font-black text-lg leading-none truncate ${cls[color]}`}>{value2}</p>
-                    <p className="text-slate-600 text-[10px] mt-0.5">{label2}</p>
+                <div className="flex items-baseline justify-between gap-2">
+                    <span className={`font-black text-base leading-none ${cls[color]}`}>{value2}</span>
+                    <span className="text-slate-500 text-[10px] shrink-0">{label2}</span>
                 </div>
             </div>
             <p className="text-slate-400 text-xs">{label}</p>
@@ -396,8 +415,9 @@ export function ManagerHome({ onNavigate }) {
 
         // Costo por kg: weighted average across this month's lots with kg data
         const packagingByKey = indexPackagingAssignments(materials);
+        const milkLookup = buildMilkPriceLookup(materials);
         const mCostos = mLogs
-            .map(log => calcCostoTeoricoLote(log, materialsById, packagingByKey))
+            .map(log => calcCostoTeoricoLote(log, materialsById, packagingByKey, milkLookup))
             .filter(r => r.costoPorKg > 0 && r.totalKg > 0);
         const costoXkgTotalKg = mCostos.reduce((s, r) => s + r.totalKg, 0);
         const costoXkg = costoXkgTotalKg > 0
@@ -500,6 +520,7 @@ export function ManagerHome({ onNavigate }) {
                             label2="precio planta"
                             Icon={Warehouse}
                             color="blue"
+                            onClick={() => setModal('pt_detail')}
                         />
                     </div>
 
@@ -563,53 +584,12 @@ export function ManagerHome({ onNavigate }) {
                         const top10 = [...data.matInv]
                             .map(inv => ({ name: materialsById[inv.materialId]?.nombre || inv.materialNombre || '—', val: materialValue(inv, materialsById) }))
                             .filter(m => m.val > 0).sort((a, b) => b.val - a.val).slice(0, 10);
-                        // PT: items with frozen costoUnitarioUsd use that directly;
-                        // remaining items are estimated via computeBackfillCosts so the
-                        // milk-price fallback (current kroma_materials) closes the gap for
-                        // historical lots that never had costoUsdLitro on their receipts.
-                        let capitalPT = 0; let kgValPT = 0; let hayEstimado = false;
-                        (data.ptItems || []).forEach(item => {
-                            if (item.active === false) return;
-                            const kg = item.totalKg ?? item.kgTotales ?? 0;
-                            if (!kg) return;
-                            if (item.costoUnitarioUsd != null && item.costoUnitarioUsd > 0) {
-                                capitalPT += item.tipo === 'empacado'
-                                    ? item.costoUnitarioUsd * (item.unidades || 0)
-                                    : item.costoUnitarioUsd * kg;
-                                kgValPT += kg;
-                            }
-                        });
-                        // For items still lacking costoUnitarioUsd, compute on-the-fly using allLogs
-                        // (unfiltered by estado so historical/partial logs are also found)
-                        const pendingRows = computeBackfillCosts(data.ptItems, data.allLogs, data.materials);
-                        pendingRows.forEach(r => { capitalPT += r.valorTotal; kgValPT += r.kgItem; hayEstimado = true; });
                         return (
                             <KpiModal title="Capital en Inventario" onClose={close}>
                                 <div className="space-y-5">
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="bg-slate-800 border border-emerald-500/30 rounded-xl p-4 text-center">
-                                            <p className="text-emerald-400 font-black text-xl">${totalMat.toFixed(0)}</p>
-                                            <p className="text-slate-400 text-xs mt-1">Materiales (USD)</p>
-                                        </div>
-                                        <button
-                                            onClick={() => kgValPT > 0 && capitalPT > 0 ? setModal('pt_detail') : undefined}
-                                            className={`bg-slate-800 border rounded-xl p-4 text-center w-full transition-all ${kgValPT > 0 && capitalPT > 0 ? 'border-blue-500/30 hover:border-blue-500/60 hover:bg-slate-800/80 cursor-pointer active:scale-[.98]' : 'border-slate-700 cursor-default'}`}
-                                        >
-                                            {kgValPT > 0 && capitalPT > 0 ? (
-                                                <>
-                                                    <p className="text-blue-400 font-black text-xl">${capitalPT.toFixed(0)}</p>
-                                                    <p className="text-slate-400 text-xs mt-1">
-                                                        Prod. Term. · {kgValPT.toFixed(1)} kg{hayEstimado ? ' · ~estimado' : ''}
-                                                    </p>
-                                                    <p className="text-blue-600 text-[10px] mt-1.5">Ver detalle →</p>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <p className="text-slate-500 font-bold text-xl">—</p>
-                                                    <p className="text-slate-500 text-xs mt-1">Prod. Term. (sin costeo)</p>
-                                                </>
-                                            )}
-                                        </button>
+                                    <div className="bg-slate-800 border border-emerald-500/30 rounded-xl p-4 text-center">
+                                        <p className="text-emerald-400 font-black text-2xl">${totalMat.toFixed(0)}</p>
+                                        <p className="text-slate-400 text-xs mt-1">Materiales e insumos (USD)</p>
                                     </div>
                                     {cats.length > 0 && (
                                         <div>
@@ -827,10 +807,11 @@ export function ManagerHome({ onNavigate }) {
                     {modal === 'costo_kg' && data && (() => {
                         const materialsById  = indexById(data.materials);
                         const packagingByKey = indexPackagingAssignments(data.materials);
+                        const milkLookup     = buildMilkPriceLookup(data.materials);
                         const months = last6Months();
                         const monthly = months.map(m => {
                             const ml = data.logs.filter(l => { const d = logDate(l); return d && monthKey(d) === m.key; });
-                            const costos = ml.map(l => calcCostoTeoricoLote(l, materialsById, packagingByKey)).filter(r => r.costoPorKg > 0 && r.totalKg > 0);
+                            const costos = ml.map(l => calcCostoTeoricoLote(l, materialsById, packagingByKey, milkLookup)).filter(r => r.costoPorKg > 0 && r.totalKg > 0);
                             const kg = costos.reduce((s, r) => s + r.totalKg, 0);
                             return {
                                 mes: m.label,
@@ -867,7 +848,7 @@ export function ManagerHome({ onNavigate }) {
                                                 <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Por Lote (este mes)</p>
                                                 <div className="divide-y divide-slate-700/40">
                                                     {c.mLogs.map(log => {
-                                                        const r = calcCostoTeoricoLote(log, materialsById, packagingByKey);
+                                                        const r = calcCostoTeoricoLote(log, materialsById, packagingByKey, milkLookup);
                                                         if (!(r.costoPorKg > 0)) return null;
                                                         return (
                                                             <div key={log.id} className="py-2.5 flex items-center gap-3">
@@ -908,22 +889,29 @@ export function ManagerHome({ onNavigate }) {
                     {/* PT detail */}
                     {modal === 'pt_detail' && data && (() => {
                         const rows = buildPTInventoryDetails(data.ptItems, data.allLogs, data.materials);
+                        const ptCatalogById = indexById(data.ptCatalog || []);
+                        const precioDe = (row) => {
+                            const precio = parseFloat(ptCatalogById[row.productoId]?.precioVentaUSD);
+                            return precio > 0 ? precio * row.kgItem : 0;
+                        };
                         const totalValor = rows.reduce((s, r) => s + r.valor, 0);
+                        const totalVenta = rows.reduce((s, r) => s + precioDe(r), 0);
                         const totalKg    = rows.reduce((s, r) => s + r.kgItem, 0);
                         return (
-                            <KpiModal title="Producto Terminado" onClose={close}>
+                            <KpiModal title="Inventario de Producto Terminado" onClose={close}>
                                 <div className="space-y-1">
-                                    {/* Header */}
-                                    <div className="flex items-center gap-3 pb-3 mb-1 border-b border-slate-800">
-                                        <button onClick={() => setModal('capital')}
-                                            className="text-slate-500 hover:text-slate-300 text-xs transition-colors shrink-0">
-                                            ← Capital
-                                        </button>
-                                        <div className="ml-auto text-right">
-                                            <p className="text-blue-400 font-black text-2xl">${totalValor.toFixed(0)}</p>
-                                            <p className="text-slate-500 text-xs">{totalKg.toFixed(1)} kg · {rows.length} partida{rows.length !== 1 ? 's' : ''}</p>
+                                    {/* Header — dual valuation */}
+                                    <div className="grid grid-cols-2 gap-3 pb-3 mb-2 border-b border-slate-800">
+                                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 text-center">
+                                            <p className="text-white font-black text-2xl">${totalValor.toFixed(0)}</p>
+                                            <p className="text-slate-400 text-xs mt-0.5">Valoración a costo</p>
+                                        </div>
+                                        <div className="bg-slate-800 border border-blue-500/30 rounded-xl p-3 text-center">
+                                            <p className="text-blue-400 font-black text-2xl">{totalVenta > 0 ? `$${totalVenta.toFixed(0)}` : '—'}</p>
+                                            <p className="text-slate-400 text-xs mt-0.5">Precio de planta</p>
                                         </div>
                                     </div>
+                                    <p className="text-slate-500 text-xs mb-1">{totalKg.toFixed(1)} kg · {rows.length} partida{rows.length !== 1 ? 's' : ''}</p>
 
                                     {rows.length === 0 && <Empty msg="Sin partidas con costo calculable" />}
 
@@ -964,9 +952,12 @@ export function ManagerHome({ onNavigate }) {
                                                             <p className="text-white font-bold text-sm">${row.valor.toFixed(0)}</p>
                                                             <p className="text-slate-500 text-xs">
                                                                 {row.tipo === 'sin_envasar'
-                                                                    ? `$${row.costoUnit.toFixed(2)}/kg`
-                                                                    : `$${row.costoUnit.toFixed(2)}/ud`}
+                                                                    ? `$${row.costoUnit.toFixed(2)}/kg costo`
+                                                                    : `$${row.costoUnit.toFixed(2)}/ud costo`}
                                                             </p>
+                                                            {precioDe(row) > 0 && (
+                                                                <p className="text-blue-400 text-xs mt-0.5">${precioDe(row).toFixed(0)} planta</p>
+                                                            )}
                                                         </div>
                                                     </div>
                                                     {/* Compact desglose — only when meaningful (2+ components) */}
@@ -988,7 +979,10 @@ export function ManagerHome({ onNavigate }) {
                                     {rows.length > 0 && (
                                         <div className="flex justify-between items-center pt-3 border-t border-slate-700 mt-2">
                                             <p className="text-slate-400 text-sm font-semibold">Total inventario</p>
-                                            <p className="text-blue-400 font-black text-lg">${totalValor.toFixed(0)}</p>
+                                            <div className="flex items-baseline gap-4">
+                                                <span className="text-white font-black text-lg">${totalValor.toFixed(0)} <span className="text-slate-500 text-xs font-normal">costo</span></span>
+                                                {totalVenta > 0 && <span className="text-blue-400 font-black text-lg">${totalVenta.toFixed(0)} <span className="text-slate-500 text-xs font-normal">planta</span></span>}
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -1154,6 +1148,7 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
 
         results.push({
             id: item.id, tipo: item.tipo,
+            productoId:     item.productoId,
             productoNombre: item.productoNombre || log?.productoNombre || '—',
             lote:           item.lote || log?.lote || '—',
             kgItem,
