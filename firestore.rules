@@ -271,7 +271,11 @@ service cloud.firestore {
       allow read, write: if isKromaAccess();
     }
     match /kroma_despachos/{id} {
-      allow read, write: if isKromaAccess();
+      // Kroma crea y gestiona despachos. GK (vendedor/gerencia/master) puede
+      // leerlos y marcarlos como recibidos al ingresarlos al almacén comercial.
+      allow read:           if isKromaAccess() || isComercialAccess();
+      allow update:         if isKromaAccess() || isComercialAccess();
+      allow create, delete: if isKromaAccess();
     }
     match /kroma_edit_requests/{id} {
       allow read, write: if isKromaAccess();

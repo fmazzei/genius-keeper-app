@@ -15,6 +15,7 @@ import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 import EditPosModal from '../Components/EditPosModal.jsx';
 import EditReportForm from '../Components/EditReportForm.jsx';
+import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 
 const ToggleSwitch = ({ enabled, setEnabled, disabled = false }) => (
     <button onClick={() => !disabled && setEnabled(!enabled)} className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-200 focus:outline-none flex-shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${enabled ? 'bg-brand-blue' : 'bg-slate-300'}`}>
@@ -2330,6 +2331,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
                 { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
+                { id: 'almacen_comercial', label: 'Almacén Comercial', Icon: Truck },
                 { id: 'competitors', label: 'Competidores',     Icon: ShoppingCart },
             ],
         },
@@ -2388,6 +2390,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
             case 'depots':         return <DepotManagement />;
+            case 'almacen_comercial': return <AlmacenComercialPage />;
             case 'competitors':    return <CompetitorManagement />;
             case 'modules':        return <ModuleManagement />;
             case 'dashboard':      return <DashboardManagement />;

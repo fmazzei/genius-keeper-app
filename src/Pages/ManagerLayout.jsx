@@ -7,7 +7,7 @@ import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/Firebase/config.js';
-import { LogOut, BarChart2, TrendingUp, Bell, Settings, Package, Sun, DollarSign, Target, Map as MapIcon, Menu, ChevronsRight, Users, ClipboardList, Download } from 'lucide-react';
+import { LogOut, BarChart2, TrendingUp, Bell, Settings, Package, Sun, DollarSign, Target, Map as MapIcon, Menu, ChevronsRight, Users, ClipboardList, Download, Warehouse } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import GerencialDashboard from './GerencialDashboard.jsx';
@@ -19,6 +19,7 @@ import VentasView from './VentasView.jsx';
 import RendimientoComercialView from './RendimientoComercialView.jsx';
 import ReportesAnaquelView from './ReportesAnaquelView.jsx';
 import ExportesView from './ExportesView.jsx';
+import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 
 // ✅ Se importan ambos componentes del planificador
 import MonthlyPlanner from './Planner/MonthlyPlanner.jsx';
@@ -118,6 +119,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
+                {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
                 <NavItem icon={<Settings size={24} />} text="Administración" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
             </ul>
         );
@@ -146,6 +148,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
+                {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
             </ul>
         );
 
@@ -204,6 +207,11 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 </div>
                 <div className={currentView === 'inventory' ? 'block h-full' : 'hidden'}>
                     <InventoryPanel role={role} readOnly={readOnly} />
+                </div>
+
+                {/* Almacén Comercial — recepción de despachos Kroma + ajustes de inventario */}
+                <div className={currentView === 'almacenComercial' ? 'block h-full' : 'hidden'}>
+                    <AlmacenComercialPage />
                 </div>
 
                 {/* Admin — solo master */}

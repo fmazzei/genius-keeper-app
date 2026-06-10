@@ -12,7 +12,7 @@ import {
     Home, MapPin, Package, Bell,
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
-    ClipboardList, Receipt, Store,
+    ClipboardList, Receipt, Store, Warehouse,
 } from 'lucide-react';
 import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
@@ -21,6 +21,7 @@ import VendedorCartera from '@/Pages/VendedorCartera.jsx';
 import MisPedidosView from '@/Pages/MisPedidosView.jsx';
 import MisFacturasView from '@/Pages/MisFacturasView.jsx';
 import ReportesAnaquelView from '@/Pages/ReportesAnaquelView.jsx';
+import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
@@ -542,6 +543,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         ...(modules.pedidosVendedor  !== false ? [{ id: 'pedidos',  label: 'Pedidos',  Icon: ClipboardList, badgeCount: pedidosPendientesCount }] : []),
         ...(modules.facturasVendedor !== false ? [{ id: 'facturas', label: 'Facturas', Icon: Receipt       }] : []),
         { id: 'reportesAnaquel', label: 'Anaquel', Icon: Store },
+        ...(modules.almacenComercial !== false ? [{ id: 'almacen', label: 'Almacén', Icon: Warehouse }] : []),
     ];
 
     // ── Resolve main content ──
@@ -603,6 +605,14 @@ const VendedorLayout = ({ user, onLogout }) => {
             return (
                 <div className="flex-1 overflow-y-auto p-4 pb-24">
                     <ReportesAnaquelView />
+                </div>
+            );
+        }
+
+        if (currentView === 'almacen') {
+            return (
+                <div className="flex-1 overflow-y-auto pb-24">
+                    <AlmacenComercialPage />
                 </div>
             );
         }
