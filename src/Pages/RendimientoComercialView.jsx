@@ -47,19 +47,19 @@ const RendimientoComercialView = () => {
 
             // 2. This month's despachos
             const mos = startOfMonth();
-            const despSnap = await getDocs(query(collection(db, 'despachos'), where('date', '>=', mos)));
+            const despSnap = await getDocs(query(collection(db, 'despachos'), where('createdAt', '>=', mos)));
             const unitsByReporter = {};
             despSnap.docs.forEach(d => {
-                const { reporterId, quantity } = d.data();
-                if (reporterId) unitsByReporter[reporterId] = (unitsByReporter[reporterId] || 0) + (Number(quantity) || 0);
+                const { reporterId, cantidad } = d.data();
+                if (reporterId) unitsByReporter[reporterId] = (unitsByReporter[reporterId] || 0) + (Number(cantidad) || 0);
             });
 
             // 3. This month's pagos (weekly commissions source)
-            const pagosSnap = await getDocs(query(collection(db, 'pagos_registrados'), where('date', '>=', mos)));
+            const pagosSnap = await getDocs(query(collection(db, 'pagos_registrados'), where('createdAt', '>=', mos)));
             const pagosByReporter = {};
             pagosSnap.docs.forEach(d => {
-                const { reporterId, amountUSD } = d.data();
-                if (reporterId) pagosByReporter[reporterId] = (pagosByReporter[reporterId] || 0) + (Number(amountUSD) || 0);
+                const { reporterId, montoUSD } = d.data();
+                if (reporterId) pagosByReporter[reporterId] = (pagosByReporter[reporterId] || 0) + (Number(montoUSD) || 0);
             });
 
             const enriched = vends.map(v => {
