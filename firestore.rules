@@ -21,6 +21,12 @@ service cloud.firestore {
     function isMerchandiser() {
       return getRole(request.auth.uid) == 'merchandiser';
     }
+    function isVendedor() {
+      return getRole(request.auth.uid) == 'vendedor';
+    }
+    function isComercialAccess() {
+      return isAdmin() || isMaster() || isVendedor();
+    }
     function isProduccion() {
       return getRole(request.auth.uid) == 'produccion';
     }
@@ -192,11 +198,25 @@ service cloud.firestore {
     }
 
     match /despachos/{despachoId} {
-      // Created by merchandisers (PedidoForm); read by admin dashboards and
-      // by vendedores for their own portfolio (query filters by reporterId).
-      allow create: if isMerchandiser() || isAdmin();
-      allow read:   if isAdmin() || isMerchandiser() || getRole(request.auth.uid) == 'vendedor';
+      // Created by merchandisers/vendedores (PedidoForm); read by admin
+      // dashboards and by vendedores for their own portfolio (query filters
+      // by reporterId).
+      allow create: if isMerchandiser() || isAdmin() || isVendedor();
+      allow read:   if isAdmin() || isMerchandiser() || isVendedor();
       allow update, delete: if isMaster();
+    }
+
+    // ── Almacén Comercial (puente Kroma → GK) ──────────────────────────────
+    // Inventario de los depósitos comerciales (ej. "Depósito Comercial
+    // Caracas"). Kroma (isKromaAccess) tiene SOLO LECTURA — la edición y los
+    // ajustes de stock son exclusivos de GK (vendedor, gerencia, master).
+    match /almacenes_comerciales/{almacenId} {
+      allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess());
+      allow write: if isAuthenticated() && isComercialAccess();
+    }
+    match /inventario_comercial/{itemId} {
+      allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess());
+      allow write: if isAuthenticated() && isComercialAccess();
     }
 
     match /kroma_users/{userId} {
