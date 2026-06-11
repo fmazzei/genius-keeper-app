@@ -15,6 +15,35 @@ y convenciones de implementación. **Toda decisión de desarrollo debe estar ali
 
 ---
 
+## Pendientes — Comisiones GK y Webhooks Zoho Books
+
+Sección de seguimiento para terminar de conectar el módulo de comisiones del
+vendedor (GK) con Zoho Books. Mantener actualizada a medida que se resuelvan
+items.
+
+### Estado actual
+- `commissionConfig` por vendedor (tiers, bonos, período de arranque) — ✅ completo, vive en `users_metadata/{uid}.commissionConfig`, configurado desde `CommissionConstructor.jsx`.
+- Home del vendedor (`VendedorLayout.jsx`) — ✅ todas las tarjetas (comisión semana, tasa, despachos, bonos activación/puntualidad, período de arranque) están conectadas a `commissionConfig` real y se ocultan si su valor está en 0/sin configurar.
+- `facturas_vendedor` — ✅ regla de Firestore agregada; `facturasPorVencer` (Bono Puntualidad) consulta esta colección.
+- Cloud Function `sincronizarFacturaDesdeZoho` — ✅ implementada (recibe `invoice.created/overdue/paid`, hace upsert en `facturas_vendedor`, mapea por `zohoSalespersonName`).
+- Cloud Function `procesarComisionesDesdeZoho` (pagos) — ✅ implementada, escribe en `pagos_registrados`.
+- Secreto `X-Zoho-Secret` — ✅ migrado de `functions.config()` (deprecado) a Secret Manager vía `runWith({ secrets: ['ZOHO_SECRET'] })`.
+- CI (`.github/workflows/firebase-deploy.yml`) — ✅ agregado paso de `firebase deploy --only functions` (con `continue-on-error` hasta que el service account tenga permisos).
+
+### Pendiente (requiere acción manual / decisiones de negocio)
+1. **Crear el secreto en Firebase**: `firebase functions:secrets:set ZOHO_SECRET` (valor que Zoho enviará en el header `X-Zoho-Secret`). Sin esto, el deploy de functions fallará al referenciar el secreto.
+2. **Permisos del service account de CI**: verificar que `FIREBASE_SERVICE_ACCOUNT` tenga roles de Cloud Functions Admin / Cloud Build / Service Account User (o quitar `continue-on-error` una vez confirmado que el deploy de functions funciona).
+3. **Configurar en Zoho Books** (Configuración → Automatización → Webhooks):
+   - `invoice.created`, `invoice.overdue`, `invoice.paid` → URL de `sincronizarFacturaDesdeZoho` + header `X-Zoho-Secret`.
+   - Pago de factura → URL de `procesarComisionesDesdeZoho` + header `X-Zoho-Secret`.
+4. **Mapeo vendedor ↔ Zoho**: para cada vendedor, completar el campo "Nombre en Zoho (vendedor)" (`zohoSalespersonName`) en AdminPanel → Vendedores → Editar, igual al "Salesperson" configurado en Zoho Books. Sin esto, las facturas llegan sin `vendedorId` y no aparecen en la app del vendedor.
+5. **Activar toggles** en AdminPanel → Integraciones: "Webhook de Facturas" y "Webhook de Comisiones / Pagos" (`settings/appConfig.zohoSalesWebhookActive` / `zohoCommissionsWebhookActive`).
+6. **Revisar `procesarComisionesDesdeZoho`**: usa una tasa fija `COMMISSION_RATE = 0.065` (margen "precio planta") para calcular `calculatedCommission`, independiente de los `tiers` configurados por vendedor en `CommissionConstructor`. Definir si esto debe alinearse con `commissionConfig.tiers` (requeriría resolver `vendedorId` también en este webhook, igual que en `sincronizarFacturaDesdeZoho`) o si son conceptos de negocio distintos (margen de planta vs. comisión del vendedor) y deben mantenerse separados.
+7. **`pagos_registrados`** no tiene `vendedorId` — si se quiere una vista de comisiones por vendedor (no solo global en `CommissionsView.jsx`), hay que agregarlo al escribir el documento en `procesarComisionesDesdeZoho`.
+8. **Próxima integración no implementada**: `creditnote.applied` (devoluciones → ajuste de comisión).
+
+---
+
 ## Roles Firebase Auth
 
 | Rol | Descripción |

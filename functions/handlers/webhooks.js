@@ -3,6 +3,13 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 
+// Secreto compartido para validar los webhooks de Zoho Books, gestionado vía
+// Secret Manager (firebase functions:secrets:set ZOHO_SECRET). Reemplaza al
+// antiguo `functions.config().genius.zoho_secret`, que está deprecado.
+const ZOHO_SECRET_PARAM = "ZOHO_SECRET";
+const withZohoSecret = (handler) =>
+    functions.runWith({ secrets: [ZOHO_SECRET_PARAM] }).https.onRequest(handler);
+
 // --- Helper de Notificaciones ---
 const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
     if (!userId) return;
@@ -45,7 +52,7 @@ exports.createPendingSaleFromZoho = functions.https.onRequest(async (req, res) =
  * ✅ FUNCIÓN ACTUALIZADA: Webhook para recibir PAGOS de facturas desde Zoho.
  * Ahora calcula la comisión por unidad según la lógica de negocio.
  */
-exports.procesarComisionesDesdeZoho = functions.https.onRequest(async (req, res) => {
+exports.procesarComisionesDesdeZoho = withZohoSecret(async (req, res) => {
     try {
         const configRef = admin.firestore().doc('settings/appConfig');
         const configDoc = await configRef.get();
@@ -56,8 +63,7 @@ exports.procesarComisionesDesdeZoho = functions.https.onRequest(async (req, res)
             return;
         }
 
-        const ZOHO_SECRET = functions.config().genius.zoho_secret;
-        if (req.header('X-Zoho-Secret') !== ZOHO_SECRET) {
+        if (req.header('X-Zoho-Secret') !== process.env[ZOHO_SECRET_PARAM]) {
             res.status(401).send("Unauthorized");
             return;
         }
@@ -143,7 +149,7 @@ exports.procesarComisionesDesdeZoho = functions.https.onRequest(async (req, res)
  * guarda igual (para auditoría/admin) pero sin `vendedorId`, por lo que no
  * aparecerá en la app del vendedor hasta que se configure el mapeo.
  */
-exports.sincronizarFacturaDesdeZoho = functions.https.onRequest(async (req, res) => {
+exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
     try {
         const configRef = admin.firestore().doc('settings/appConfig');
         const configDoc = await configRef.get();
@@ -154,8 +160,7 @@ exports.sincronizarFacturaDesdeZoho = functions.https.onRequest(async (req, res)
             return;
         }
 
-        const ZOHO_SECRET = functions.config().genius.zoho_secret;
-        if (req.header('X-Zoho-Secret') !== ZOHO_SECRET) {
+        if (req.header('X-Zoho-Secret') !== process.env[ZOHO_SECRET_PARAM]) {
             res.status(401).send("Unauthorized");
             return;
         }
