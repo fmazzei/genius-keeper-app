@@ -32,7 +32,13 @@ items.
 
 ### Pendiente (requiere acción manual / decisiones de negocio)
 1. **Crear el secreto en Firebase**: `firebase functions:secrets:set ZOHO_SECRET` (valor que Zoho enviará en el header `X-Zoho-Secret`). Sin esto, el deploy de functions fallará al referenciar el secreto.
-2. **Permisos del service account de CI**: verificar que `FIREBASE_SERVICE_ACCOUNT` tenga roles de Cloud Functions Admin / Cloud Build / Service Account User (o quitar `continue-on-error` una vez confirmado que el deploy de functions funciona).
+2. **Permisos del service account de CI — BLOQUEANTE CONFIRMADO (2026-06-11)**: el deploy de Cloud Functions está fallando con
+   `Error: Permissions denied enabling secretmanager.googleapis.com` (run #27341760166, step "Deploy Cloud Functions").
+   El service account de `FIREBASE_SERVICE_ACCOUNT` no puede habilitar la API de Secret Manager en el proyecto `geniuskeeper-36553`.
+   **Acción requerida**: un usuario con rol de "Project Owner"/"Editor" en GCP debe:
+   - Habilitar manualmente `secretmanager.googleapis.com` en https://console.cloud.google.com/apis/library/secretmanager.googleapis.com?project=362565450545, **o**
+   - Otorgar al service account de CI el rol `roles/serviceusage.serviceUsageAdmin` (o `Editor`/`Owner`) para que pueda habilitar APIs por sí mismo.
+   Mientras esto no se resuelva, **ningún cambio en `functions/handlers/*.js` llega a producción** (incluye el trigger `onDespachoCreated` que crea la alerta `despacho_en_transito` para vendedores, agregado el 2026-06-11).
 3. **Configurar en Zoho Books** (Configuración → Automatización → Webhooks):
    - `invoice.created`, `invoice.overdue`, `invoice.paid` → URL de `sincronizarFacturaDesdeZoho` + header `X-Zoho-Secret`.
    - Pago de factura → URL de `procesarComisionesDesdeZoho` + header `X-Zoho-Secret`.
@@ -41,6 +47,7 @@ items.
 6. **Revisar `procesarComisionesDesdeZoho`**: usa una tasa fija `COMMISSION_RATE = 0.065` (margen "precio planta") para calcular `calculatedCommission`, independiente de los `tiers` configurados por vendedor en `CommissionConstructor`. Definir si esto debe alinearse con `commissionConfig.tiers` (requeriría resolver `vendedorId` también en este webhook, igual que en `sincronizarFacturaDesdeZoho`) o si son conceptos de negocio distintos (margen de planta vs. comisión del vendedor) y deben mantenerse separados.
 7. **`pagos_registrados`** no tiene `vendedorId` — si se quiere una vista de comisiones por vendedor (no solo global en `CommissionsView.jsx`), hay que agregarlo al escribir el documento en `procesarComisionesDesdeZoho`.
 8. **Próxima integración no implementada**: `creditnote.applied` (devoluciones → ajuste de comisión).
+
 
 ---
 
