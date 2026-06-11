@@ -5,7 +5,7 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
 import {
     collection, query, where, getDocs,
-    doc, getDoc, addDoc, deleteDoc, serverTimestamp,
+    doc, getDoc, addDoc, deleteDoc, serverTimestamp, onSnapshot,
 } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -607,21 +607,6 @@ const VendedorLayout = ({ user, onLogout }) => {
                 await syncAlertas(user.uid, newStats);
                 await loadAlertas(user.uid);
 
-                // 8. Pending pedidos count for tab badge
-                try {
-                    const pedidosSnap = await getDocs(
-                        query(
-                            collection(db, 'pedidos_mercaderista'),
-                            where('vendedorId', '==', user.uid),
-                        )
-                    );
-                    const pendingCount = pedidosSnap.docs.filter(d => {
-                        const s = d.data().estado;
-                        return s === 'pendiente' || s === 'hold';
-                    }).length;
-                    setPedidosPendientesCount(pendingCount);
-                } catch { /* non-critical */ }
-
             } catch (e) {
                 console.warn('VendedorLayout load error:', e);
                 setLoadError(e?.message || 'Error cargando datos del vendedor.');
@@ -630,6 +615,23 @@ const VendedorLayout = ({ user, onLogout }) => {
             }
         };
         load();
+    }, [user?.uid]);
+
+    // ── Live badge: pedidos verbales pendientes de confirmar/rechazar ──
+    useEffect(() => {
+        if (!user?.uid) return;
+        const unsub = onSnapshot(
+            query(collection(db, 'pedidos_mercaderista'), where('vendedorId', '==', user.uid)),
+            (snap) => {
+                const pendingCount = snap.docs.filter(d => {
+                    const s = d.data().estado;
+                    return s === 'pendiente' || s === 'hold';
+                }).length;
+                setPedidosPendientesCount(pendingCount);
+            },
+            (e) => console.warn('pedidos_mercaderista listener error:', e)
+        );
+        return () => unsub();
     }, [user?.uid]);
 
     const navigate = (view) => {
