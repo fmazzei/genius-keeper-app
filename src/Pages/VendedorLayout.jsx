@@ -461,40 +461,47 @@ const VendedorLayout = ({ user, onLogout }) => {
                 setCommConfig(cfg);
                 setVendedor({ uid: user.uid, nombre, metaMensual, reporterId, mesArranque });
 
-                if (!reporterId) { setLoading(false); return; }
-
                 const now       = new Date();
                 const hoy       = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 const inicioMes = startOfMonth();
                 const inicioSem = startOfWeek();
 
-                // 2. Despachos del mes
-                const despachosSnap = await getDocs(
-                    query(collection(db, 'despachos'),
-                        where('reporterId', '==', reporterId),
-                        where('createdAt', '>=', inicioMes),
-                    )
-                );
-                const despachos      = despachosSnap.docs.map(d => d.data());
+                // 2. Despachos del mes (requiere reporterId — vínculo con
+                //    el módulo de mercaderistas; no todos los vendedores lo
+                //    tienen configurado, pero su cartera/PDV/pedidos no
+                //    dependen de esto).
+                let despachos = [];
+                if (reporterId) {
+                    const despachosSnap = await getDocs(
+                        query(collection(db, 'despachos'),
+                            where('reporterId', '==', reporterId),
+                            where('createdAt', '>=', inicioMes),
+                        )
+                    );
+                    despachos = despachosSnap.docs.map(d => d.data());
+                }
                 const unidadesDelMes = despachos.reduce((s, d) => s + (d.cantidad || 0), 0);
                 const despachoHoy    = despachos.filter(d => {
                     const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
                     return t >= hoy;
                 }).reduce((s, d) => s + (d.cantidad || 0), 0);
 
-                // 3. Pagos de la semana (para comisión)
-                const pagosSnap = await getDocs(
-                    query(collection(db, 'pagos_registrados'),
-                        where('reporterId', '==', reporterId),
-                        where('createdAt', '>=', inicioSem),
-                    )
-                );
-                const pagosSem       = pagosSnap.docs.map(d => d.data());
-                const montoSem       = pagosSem.reduce((s, p) => s + (p.montoUSD || 0), 0);
-                const pct            = metaMensual > 0 ? unidadesDelMes / metaMensual : 0;
-                const effectiveTiers = buildTiers(cfg);
-                const tier           = getTierFromConfig(pct, effectiveTiers);
-                const comisionSemana = montoSem * tier.rate;
+                // 3. Pagos de la semana (para comisión) — también depende de reporterId
+                let comisionSemana = 0;
+                if (reporterId) {
+                    const pagosSnap = await getDocs(
+                        query(collection(db, 'pagos_registrados'),
+                            where('reporterId', '==', reporterId),
+                            where('createdAt', '>=', inicioSem),
+                        )
+                    );
+                    const pagosSem       = pagosSnap.docs.map(d => d.data());
+                    const montoSem       = pagosSem.reduce((s, p) => s + (p.montoUSD || 0), 0);
+                    const pct            = metaMensual > 0 ? unidadesDelMes / metaMensual : 0;
+                    const effectiveTiers = buildTiers(cfg);
+                    const tier           = getTierFromConfig(pct, effectiveTiers);
+                    comisionSemana       = montoSem * tier.rate;
+                }
 
                 // 4. Cartera propia del vendedor (para activación y lista de despacho)
                 const carteraSnap = await getDocs(
