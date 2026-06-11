@@ -93,6 +93,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /facturas_vendedor/{facturaId} {
+      // Sincronizadas desde Zoho (Administración → Integraciones). Cada
+      // vendedor ve solo sus propias facturas; admin/master gestionan todas.
+      allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
+      allow write: if isAdmin() || isMaster();
+    }
+
     match /pos/{posId} {
       allow get, list: if isAuthenticated();
       allow create: if isMaster() || isAdmin() || isMerchandiser();

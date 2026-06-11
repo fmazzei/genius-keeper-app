@@ -459,8 +459,23 @@ const VendedorLayout = ({ user, onLogout }) => {
 
                 const activacionOk = puntosTotal > 0 && puntosActivacion / puntosTotal >= (cfg.activacionThreshold / 100);
 
-                // 5. Facturas por vencer (próximos 3 días)
-                const facturasPorVencer = 0;
+                // 5. Facturas por vencer (próximos 3 días, no pagadas)
+                let facturasPorVencer = 0;
+                try {
+                    const facturasSnap = await getDocs(
+                        query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', user.uid))
+                    );
+                    const tresDias = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+                    facturasPorVencer = facturasSnap.docs
+                        .map(d => d.data())
+                        .filter(f => {
+                            if (f.estado === 'pagada') return false;
+                            const venc = f.vencimiento?.toDate?.() || (f.vencimiento ? new Date(f.vencimiento) : null);
+                            return venc && venc <= tresDias;
+                        }).length;
+                } catch (e) {
+                    console.warn('facturas_vendedor load error:', e);
+                }
 
                 const newStats = { unidadesDelMes, comisionSemana, despachoHoy, activacionOk, puntosActivacion, puntosTotal, facturasPorVencer };
                 setStats(newStats);
