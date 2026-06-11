@@ -341,21 +341,21 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [loadingAlertas, setLoadingAlertas]         = useState(false);
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
 
-    // ── Load alerts (last 24 h) ──
+    // ── Load alerts (last 24 h) ── filtrado de fecha en cliente (evita índice compuesto uid+createdAt)
     const loadAlertas = async (uid) => {
         if (!uid) return;
         setLoadingAlertas(true);
         try {
             const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
             const snap = await getDocs(
-                query(
-                    collection(db, 'vendedor_alertas'),
-                    where('uid', '==', uid),
-                    where('createdAt', '>=', since24h),
-                )
+                query(collection(db, 'vendedor_alertas'), where('uid', '==', uid))
             );
             const items = snap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
+                .filter(a => {
+                    const t = a.createdAt?.toDate?.() || new Date(0);
+                    return t >= since24h;
+                })
                 .sort((a, b) => {
                     const ta = a.createdAt?.toDate?.() || new Date(0);
                     const tb = b.createdAt?.toDate?.() || new Date(0);
@@ -375,13 +375,16 @@ const VendedorLayout = ({ user, onLogout }) => {
         try {
             const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
             const existing = await getDocs(
-                query(
-                    collection(db, 'vendedor_alertas'),
-                    where('uid', '==', uid),
-                    where('createdAt', '>=', since24h),
-                )
+                query(collection(db, 'vendedor_alertas'), where('uid', '==', uid))
             );
-            const existingTypes = new Set(existing.docs.map(d => d.data().alertType));
+            const existingTypes = new Set(
+                existing.docs
+                    .filter(d => {
+                        const t = d.data().createdAt?.toDate?.() || new Date(0);
+                        return t >= since24h;
+                    })
+                    .map(d => d.data().alertType)
+            );
 
             const toCreate = [];
 
@@ -470,16 +473,19 @@ const VendedorLayout = ({ user, onLogout }) => {
                 // 2. Despachos del mes (requiere reporterId — vínculo con
                 //    el módulo de mercaderistas; no todos los vendedores lo
                 //    tienen configurado, pero su cartera/PDV/pedidos no
-                //    dependen de esto).
+                //    dependen de esto). Filtrado de fecha en cliente (evita
+                //    índice compuesto reporterId+createdAt).
                 let despachos = [];
                 if (reporterId) {
                     const despachosSnap = await getDocs(
-                        query(collection(db, 'despachos'),
-                            where('reporterId', '==', reporterId),
-                            where('createdAt', '>=', inicioMes),
-                        )
+                        query(collection(db, 'despachos'), where('reporterId', '==', reporterId))
                     );
-                    despachos = despachosSnap.docs.map(d => d.data());
+                    despachos = despachosSnap.docs
+                        .map(d => d.data())
+                        .filter(d => {
+                            const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
+                            return t >= inicioMes;
+                        });
                 }
                 const unidadesDelMes = despachos.reduce((s, d) => s + (d.cantidad || 0), 0);
                 const despachoHoy    = despachos.filter(d => {
@@ -491,12 +497,14 @@ const VendedorLayout = ({ user, onLogout }) => {
                 let comisionSemana = 0;
                 if (reporterId) {
                     const pagosSnap = await getDocs(
-                        query(collection(db, 'pagos_registrados'),
-                            where('reporterId', '==', reporterId),
-                            where('createdAt', '>=', inicioSem),
-                        )
+                        query(collection(db, 'pagos_registrados'), where('reporterId', '==', reporterId))
                     );
-                    const pagosSem       = pagosSnap.docs.map(d => d.data());
+                    const pagosSem = pagosSnap.docs
+                        .map(d => d.data())
+                        .filter(p => {
+                            const t = p.createdAt?.toDate?.() || new Date(p.createdAt);
+                            return t >= inicioSem;
+                        });
                     const montoSem       = pagosSem.reduce((s, p) => s + (p.montoUSD || 0), 0);
                     const pct            = metaMensual > 0 ? unidadesDelMes / metaMensual : 0;
                     const effectiveTiers = buildTiers(cfg);

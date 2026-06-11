@@ -44,15 +44,17 @@ const MisPedidosView = ({ vendedorId, vendedorName }) => {
         setLoading(true);
         setError('');
         try {
+            // Filtrado de fecha en cliente (evita índice compuesto vendedorId+createdAt)
+            const inicioMes = startOfMonth();
             const snap = await getDocs(
-                query(
-                    collection(db, 'pedidos_mercaderista'),
-                    where('vendedorId', '==', vendedorId),
-                    where('createdAt', '>=', startOfMonth()),
-                )
+                query(collection(db, 'pedidos_mercaderista'), where('vendedorId', '==', vendedorId))
             );
             const items = snap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
+                .filter(p => {
+                    const t = p.createdAt?.toDate?.() || new Date(0);
+                    return t >= inicioMes;
+                })
                 .sort((a, b) => {
                     const ta = a.createdAt?.toDate?.() || new Date(0);
                     const tb = b.createdAt?.toDate?.() || new Date(0);

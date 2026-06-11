@@ -157,10 +157,13 @@ service cloud.firestore {
     }
 
     match /vendor_clients/{docId} {
-      // Vendor reads their own portfolio; admin manages all
+      // Vendor reads their own portfolio; admin manages all. Merchandisers
+      // also need read access to resolve which vendedor covers a PDV when
+      // taking a verbal pedido (TomarPedidoForm → findVendedorForPos).
       allow read: if isAuthenticated() && (
         isAdmin() ||
         isMaster() ||
+        isMerchandiser() ||
         resource.data.vendedorId == request.auth.uid
       );
       allow create: if isAuthenticated() && (
