@@ -129,3 +129,101 @@ exports.procesarComisionesDesdeZoho = functions.https.onRequest(async (req, res)
         res.status(500).send("Error interno del servidor.");
     }
 });
+
+/**
+ * Webhook para recibir eventos de FACTURAS de Zoho Books (invoice.created,
+ * invoice.overdue, invoice.paid, etc.) y mantener sincronizada la colección
+ * `facturas_vendedor` que alimenta "Mis Facturas" y el Bono Puntualidad del
+ * vendedor.
+ *
+ * Mapeo factura → vendedor: se busca en `users_metadata` (role == 'vendedor')
+ * un documento cuyo `zohoSalespersonName` (o, si no está configurado, `name`)
+ * coincida (sin distinguir mayúsculas/acentos de espacios) con el
+ * `salesperson_name` enviado por Zoho. Si no hay coincidencia, la factura se
+ * guarda igual (para auditoría/admin) pero sin `vendedorId`, por lo que no
+ * aparecerá en la app del vendedor hasta que se configure el mapeo.
+ */
+exports.sincronizarFacturaDesdeZoho = functions.https.onRequest(async (req, res) => {
+    try {
+        const configRef = admin.firestore().doc('settings/appConfig');
+        const configDoc = await configRef.get();
+
+        if (!configDoc.exists() || configDoc.data().zohoSalesWebhookActive !== true) {
+            functions.logger.log("Webhook de Facturas de Zoho está desactivado. Ignorando la solicitud.");
+            res.status(200).send("Webhook inactivo, solicitud ignorada.");
+            return;
+        }
+
+        const ZOHO_SECRET = functions.config().genius.zoho_secret;
+        if (req.header('X-Zoho-Secret') !== ZOHO_SECRET) {
+            res.status(401).send("Unauthorized");
+            return;
+        }
+
+        if (req.method !== 'POST') {
+            res.status(405).send('Method Not Allowed');
+            return;
+        }
+
+        const invoice = req.body?.invoice || req.body?.data || req.body;
+        if (!invoice || !invoice.invoice_number) {
+            functions.logger.error("Payload de factura de Zoho inválido:", req.body);
+            res.status(400).send("Payload de factura inválido.");
+            return;
+        }
+
+        // Resolver vendedorId por nombre de vendedor en Zoho
+        let vendedorId = null;
+        const salespersonName = (invoice.salesperson_name || '').trim().toLowerCase();
+        if (salespersonName) {
+            const vendedoresSnap = await admin.firestore()
+                .collection('users_metadata')
+                .where('role', '==', 'vendedor')
+                .get();
+            const match = vendedoresSnap.docs.find(d => {
+                const data = d.data();
+                const zohoName = (data.zohoSalespersonName || data.name || '').trim().toLowerCase();
+                return zohoName && zohoName === salespersonName;
+            });
+            if (match) vendedorId = match.id;
+            else functions.logger.warn(`No se encontró vendedor para salesperson_name "${invoice.salesperson_name}". Configura "Nombre en Zoho" en Administración.`);
+        }
+
+        const toDate = (value) => {
+            if (!value) return null;
+            const d = new Date(value);
+            return isNaN(d.getTime()) ? null : admin.firestore.Timestamp.fromDate(d);
+        };
+
+        const estado = invoice.status === 'paid' ? 'pagada'
+            : invoice.status === 'overdue' ? 'vencida'
+            : 'pendiente';
+
+        const facturaData = {
+            numero:       invoice.invoice_number,
+            clienteName:  invoice.customer_name || '',
+            monto:        Number(invoice.total) || 0,
+            fecha:        toDate(invoice.date),
+            vencimiento:  toDate(invoice.due_date),
+            estado,
+            vendedorId,
+            updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        const facturasRef = admin.firestore().collection('facturas_vendedor');
+        const existingSnap = await facturasRef.where('numero', '==', invoice.invoice_number).limit(1).get();
+
+        if (!existingSnap.empty) {
+            await existingSnap.docs[0].ref.update(facturaData);
+        } else {
+            await facturasRef.add({ ...facturaData, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+        }
+
+        functions.logger.log(`Factura Zoho #${invoice.invoice_number} sincronizada (vendedorId: ${vendedorId || 'sin asignar'}).`);
+        res.status(200).send("Factura sincronizada con éxito.");
+
+    } catch (error) {
+        functions.logger.error("Error procesando webhook de Zoho (Facturas):", error);
+        res.status(500).send("Error interno del servidor.");
+    }
+});

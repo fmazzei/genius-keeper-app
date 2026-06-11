@@ -1734,7 +1734,7 @@ const VendedoresManagement = () => {
     const [carteraTarget, setCarteraTarget]           = useState(null);
     const [pendingCounts, setPendingCounts]           = useState({});
 
-    const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '', fechaIngreso: '' };
+    const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '', fechaIngreso: '', zohoSalespersonName: '' };
     const [form, setForm] = useState(EMPTY_FORM);
 
     useEffect(() => {
@@ -1834,10 +1834,11 @@ const VendedoresManagement = () => {
         setIsCreating(true);
         try {
             await updateDoc(doc(db, 'users_metadata', editTarget.id), {
-                name:         form.name.trim(),
-                reporterId:   form.reporterId,
-                reporterName: form.reporterName,
-                fechaIngreso: form.fechaIngreso || null,
+                name:                form.name.trim(),
+                reporterId:          form.reporterId,
+                reporterName:        form.reporterName,
+                fechaIngreso:        form.fechaIngreso || null,
+                zohoSalespersonName: form.zohoSalespersonName.trim(),
             });
             closeModal();
         } catch (err) {
@@ -1850,12 +1851,13 @@ const VendedoresManagement = () => {
     const openEdit = (v) => {
         setEditTarget(v);
         setForm({
-            name:         v.name || '',
-            email:        v.email || '',
-            password:     '',
-            reporterId:   v.reporterId || '',
-            reporterName: v.reporterName || '',
-            fechaIngreso: v.fechaIngreso || '',
+            name:                v.name || '',
+            email:               v.email || '',
+            password:            '',
+            reporterId:          v.reporterId || '',
+            reporterName:        v.reporterName || '',
+            fechaIngreso:        v.fechaIngreso || '',
+            zohoSalespersonName: v.zohoSalespersonName || '',
         });
         setIsAddModalOpen(true);
     };
@@ -1967,6 +1969,11 @@ const VendedoresManagement = () => {
                             <label className="block text-sm font-semibold text-slate-700 mb-1">Fecha de ingreso</label>
                             <input type="date" value={form.fechaIngreso} onChange={e => setForm(p => ({ ...p, fechaIngreso: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" />
                             <p className="text-xs text-slate-400 mt-1">Se usa para calcular el período de arranque (metas reducidas) configurado en el constructor de comisiones.</p>
+                        </div>
+                        <div className="sm:col-span-2">
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Nombre en Zoho (vendedor)</label>
+                            <input type="text" value={form.zohoSalespersonName} onChange={e => setForm(p => ({ ...p, zohoSalespersonName: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" placeholder="Tal como aparece en Zoho Books como 'Salesperson'" />
+                            <p className="text-xs text-slate-400 mt-1">Necesario para que el webhook de facturas de Zoho asigne cada factura a este vendedor. Si se deja vacío, se usa el nombre completo.</p>
                         </div>
                         <div className="sm:col-span-2">
                             <label className="block text-sm font-semibold text-slate-700 mb-1">Reporter vinculado</label>
@@ -2279,8 +2286,8 @@ const IntegracionesSection = () => {
                 {loading ? <LoadingSpinner /> : (
                     <>
                         <Row
-                            label="Webhook de Ventas"
-                            desc="Recibe facturas nuevas de Zoho y las convierte en ventas pendientes."
+                            label="Webhook de Facturas"
+                            desc="Sincroniza facturas de Zoho (creadas, vencidas, pagadas) hacia Mis Facturas y el Bono Puntualidad de cada vendedor."
                             enabled={zohoSales}
                             setEnabled={setZohoSales}
                         />
@@ -2303,10 +2310,20 @@ const IntegracionesSection = () => {
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Endpoint del webhook de facturas</p>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                    Configura en Zoho Books (Configuración → Automatización → Webhooks) un webhook hacia
+                    la función <code className="bg-white px-1 py-0.5 rounded border border-slate-200">sincronizarFacturaDesdeZoho</code> para
+                    los eventos <span className="text-slate-700 font-medium">invoice.created</span>, <span className="text-slate-700 font-medium">invoice.overdue</span> y <span className="text-slate-700 font-medium">invoice.paid</span>,
+                    incluyendo el header <code className="bg-white px-1 py-0.5 rounded border border-slate-200">X-Zoho-Secret</code>.
+                    Para que cada factura se asigne al vendedor correcto, configura su <span className="text-slate-700 font-medium">"Nombre en Zoho"</span> en
+                    Vendedores → Editar.
+                </p>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-4">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Próximas integraciones</p>
                 <ul className="text-slate-400 text-xs space-y-1.5">
-                    <li>· Zoho Books — <span className="text-slate-500">invoice.overdue</span> (facturas vencidas → alerta a vendedor)</li>
-                    <li>· Zoho Books — <span className="text-slate-500">invoice.created</span> (nueva factura → deuda pendiente del vendedor)</li>
                     <li>· Zoho Books — <span className="text-slate-500">creditnote.applied</span> (devoluciones → ajuste de comisión)</li>
                 </ul>
             </div>
