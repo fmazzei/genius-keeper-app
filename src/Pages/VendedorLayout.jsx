@@ -12,7 +12,7 @@ import {
     Home, MapPin, Package, Bell,
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
-    ClipboardList, Receipt, Store, Warehouse,
+    ClipboardList, Receipt, Store, Warehouse, X,
 } from 'lucide-react';
 import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
@@ -80,6 +80,7 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
 }
 
 function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
+    const [showMetaModal, setShowMetaModal] = useState(false);
     const pct     = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
     const tier    = getTierFromConfig(pct, tiers);
     const barPct  = Math.min(pct, 1.25);
@@ -136,7 +137,11 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
             </div>
 
             {/* ── Commission Meter ── */}
-            <div className={`bg-slate-900 border ${tier.border} rounded-2xl p-5`}>
+            <button
+                type="button"
+                onClick={() => setShowMetaModal(true)}
+                className={`w-full text-left bg-slate-900 border ${tier.border} rounded-2xl p-5 active:scale-[0.99] transition-transform`}
+            >
                 <div className="flex items-center justify-between mb-1">
                     <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Meta del Mes</p>
                     <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tier.bg} ${tier.color}`}>
@@ -170,7 +175,19 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
                         </div>
                     </>
                 )}
-            </div>
+            </button>
+
+            {showMetaModal && (
+                <MetaDetailModal
+                    vendedor={vendedor}
+                    stats={stats}
+                    tiers={tiers}
+                    commConfig={commConfig}
+                    pct={pct}
+                    tier={tier}
+                    onClose={() => setShowMetaModal(false)}
+                />
+            )}
 
             {/* ── Resumen financiero ── */}
             {statCards.length > 0 && (
@@ -255,6 +272,124 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
                     </p>
                 </div>
             )}
+        </div>
+    );
+}
+
+// ─── Meta detail modal ──────────────────────────────────────────────────────
+function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClose }) {
+    const arranque = commConfig.arranque || [];
+
+    // Etapas: cada mes de arranque + la meta plena al final.
+    const etapas = [
+        ...arranque.map((a, i) => ({ label: `Mes ${i + 1}`, meta: a.meta, mes: i + 1 })),
+        { label: 'Meta plena', meta: commConfig.metaMensual, mes: arranque.length + 1 },
+    ];
+
+    return (
+        <div
+            className="fixed inset-0 bg-black/60 z-50 flex flex-col justify-end"
+            onClick={onClose}
+        >
+            <div
+                className="bg-slate-900 border-t border-slate-700 rounded-t-2xl p-5 max-h-[85vh] overflow-y-auto"
+                onClick={e => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-white font-bold text-lg">Tus Metas</h3>
+                    <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white" aria-label="Cerrar">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                {/* Meta actual */}
+                <div className={`bg-slate-800/60 border ${tier.border} rounded-xl p-4 mb-5`}>
+                    <div className="flex items-center justify-between mb-2">
+                        <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Meta actual</p>
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tier.bg} ${tier.color}`}>
+                            Nivel {tier.label}
+                        </span>
+                    </div>
+                    <div className="flex items-end gap-2 mb-2">
+                        <span className={`text-3xl font-black font-mono ${tier.color}`}>{stats.unidadesDelMes.toLocaleString()}</span>
+                        <span className="text-slate-500 text-base mb-0.5">/ {vendedor.metaMensual.toLocaleString()} uds</span>
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                        <div
+                            className={`h-2.5 rounded-full transition-all duration-700 ${tier.color.replace('text-', 'bg-')}`}
+                            style={{ width: `${(Math.min(pct, 1.25) * 100).toFixed(1)}%` }}
+                        />
+                    </div>
+                    <p className="text-slate-500 text-xs mt-1.5">{(pct * 100).toFixed(0)}% del objetivo</p>
+                </div>
+
+                {/* Niveles de comisión */}
+                <div className="mb-5">
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Niveles de Comisión</p>
+                    <div className="space-y-2">
+                        {tiers.map((t, i) => {
+                            const minUnits = Math.round(t.min * vendedor.metaMensual);
+                            const isActive = tier.label === t.label;
+                            return (
+                                <div
+                                    key={i}
+                                    className={`flex items-center justify-between rounded-xl p-3 border ${isActive ? `${t.bg} ${t.border}` : 'bg-slate-800/40 border-slate-800'}`}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-sm font-bold ${isActive ? t.color : 'text-slate-300'}`}>{t.label}</span>
+                                        {isActive && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white">ACTUAL</span>}
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`text-sm font-mono font-bold ${isActive ? t.color : 'text-slate-400'}`}>{t.rate > 0 ? `${(t.rate * 100).toFixed(1)}%` : '—'}</p>
+                                        <p className="text-slate-500 text-[10px]">desde {minUnits.toLocaleString()} uds</p>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Período de arranque */}
+                {arranque.length > 0 && (
+                    <div>
+                        <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Metas por Mes (Período de Arranque)</p>
+                        <div className="space-y-2">
+                            {etapas.map((e) => {
+                                const isCurrent = vendedor.mesArranque > 0
+                                    ? e.mes === vendedor.mesArranque
+                                    : e.mes === arranque.length + 1;
+                                const isPast = vendedor.mesArranque > 0 && e.mes < vendedor.mesArranque;
+                                const etapaPct = isCurrent
+                                    ? Math.min(pct, 1.25)
+                                    : (isPast ? 1 : 0);
+                                return (
+                                    <div
+                                        key={e.mes}
+                                        className={`rounded-xl p-3 border ${isCurrent ? `${tier.bg} ${tier.border}` : 'bg-slate-800/40 border-slate-800'}`}
+                                    >
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`text-sm font-semibold ${isCurrent ? 'text-white' : 'text-slate-400'}`}>{e.label}</span>
+                                                {isCurrent && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white">ACTUAL</span>}
+                                                {isPast && <CheckCircle size={12} className="text-emerald-400" />}
+                                            </div>
+                                            <span className={`text-sm font-mono font-bold ${isCurrent ? 'text-white' : 'text-slate-500'}`}>
+                                                {e.meta.toLocaleString()} uds
+                                            </span>
+                                        </div>
+                                        <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                                            <div
+                                                className={`h-2 rounded-full transition-all duration-700 ${isCurrent ? tier.color.replace('text-', 'bg-') : isPast ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                                                style={{ width: `${(etapaPct * 100).toFixed(1)}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
