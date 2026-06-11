@@ -19,7 +19,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import {
     Warehouse, Truck, Package, Plus, ChevronDown, ChevronRight,
-    Loader, CheckCircle, MapPin, RefreshCw,
+    Loader, CheckCircle, MapPin, RefreshCw, Download,
 } from 'lucide-react';
 import StockAdjustSheet from '@/Components/StockAdjustSheet.jsx';
 
@@ -50,7 +50,10 @@ const AlmacenComercialPage = () => {
     const [adjustItem, setAdjustItem]       = useState(null);
     const [newAlmacenName, setNewAlmacenName] = useState('');
     const [creatingAlmacen, setCreatingAlmacen] = useState(false);
+    const [showCreateAlmacen, setShowCreateAlmacen] = useState(false);
     const [expanded, setExpanded]           = useState({});
+    const [syncing, setSyncing]             = useState(false);
+    const [syncMessage, setSyncMessage]     = useState('');
 
     const userLabel = { id: user?.uid || '', nombre: user?.displayName || user?.email || '' };
 
@@ -91,6 +94,7 @@ const AlmacenComercialPage = () => {
                 createdAt: serverTimestamp(),
             });
             setNewAlmacenName('');
+            setShowCreateAlmacen(false);
             await load();
         } catch (e) {
             alert('No se pudo crear el almacén. ' + e.message);
@@ -160,6 +164,68 @@ const AlmacenComercialPage = () => {
         await load();
     };
 
+    // Importa stock de PT que ya existe físicamente en los depósitos comerciales
+    // de Kroma (kroma_inventory_pt) pero que nunca pasó por el flujo de
+    // Recepción de despachos (p.ej. existencias previas a este puente).
+    // Idempotente: no duplica lotes ya presentes en inventario_comercial.
+    const handleSyncFromKroma = async () => {
+        if (syncing) return;
+        setSyncing(true);
+        setSyncMessage('');
+        try {
+            const [whSnap, ptSnap] = await Promise.all([
+                getDocs(collection(db, 'kroma_warehouses')),
+                getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
+            ]);
+            const comercialWarehouses = whSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(w => /comercial/i.test(w.nombre || ''));
+
+            const ptItems = ptSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(i => i.tipo === 'empacado' && (i.unidades || 0) > 0
+                    && comercialWarehouses.some(w => w.id === i.warehouseId));
+
+            let imported = 0;
+            for (const item of ptItems) {
+                const wh = comercialWarehouses.find(w => w.id === item.warehouseId);
+                const almacen = almacenes.find(a => (a.nombre || '').trim().toLowerCase() === (wh?.nombre || '').trim().toLowerCase());
+                if (!almacen) continue;
+
+                const lote = item.lote || '';
+                const existing = inventario.find(i =>
+                    i.almacenId === almacen.id &&
+                    i.productoNombre === item.productoNombre &&
+                    (i.lote || '') === lote
+                );
+                if (existing) continue;
+
+                await addDoc(collection(db, 'inventario_comercial'), {
+                    almacenId:        almacen.id,
+                    almacenNombre:    almacen.nombre,
+                    productoNombre:   item.productoNombre,
+                    presentacion:     item.presentacion || '',
+                    tipo:             'empacado',
+                    unit:             'ud',
+                    lote,
+                    fechaVencimiento: item.fechaVencimiento || '',
+                    unidades:         item.unidades || 0,
+                    updatedAt:        serverTimestamp(),
+                });
+                imported++;
+            }
+            await load();
+            setSyncMessage(imported > 0
+                ? `${imported} lote(s) importado(s) desde Kroma.`
+                : 'No hay stock nuevo de Kroma para importar.');
+        } catch (e) {
+            setSyncMessage('No se pudo sincronizar con Kroma. ' + e.message);
+        } finally {
+            setSyncing(false);
+            setTimeout(() => setSyncMessage(''), 4000);
+        }
+    };
+
     const inventarioPorAlmacen = almacenes.map(a => ({
         almacen: a,
         items: inventario.filter(i => i.almacenId === a.id),
@@ -186,7 +252,30 @@ const AlmacenComercialPage = () => {
                 <button onClick={load} className="ml-auto text-slate-400 hover:text-brand-blue p-2">
                     <RefreshCw size={18} />
                 </button>
+                <button
+                    onClick={handleSyncFromKroma}
+                    disabled={syncing}
+                    title="Sincronizar stock existente desde Kroma"
+                    className="text-slate-400 hover:text-brand-blue p-2 disabled:opacity-50"
+                >
+                    {syncing ? <Loader size={18} className="animate-spin" /> : <Download size={18} />}
+                </button>
+                {tab === 'inventario' && (
+                    <button
+                        onClick={() => setShowCreateAlmacen(s => !s)}
+                        title="Nuevo almacén comercial"
+                        className={`p-2 rounded-lg transition-colors ${showCreateAlmacen ? 'bg-brand-blue text-white' : 'text-slate-400 hover:text-brand-blue'}`}
+                    >
+                        <Plus size={18} />
+                    </button>
+                )}
             </div>
+
+            {syncMessage && (
+                <p className="text-xs text-brand-blue font-medium bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-4">
+                    {syncMessage}
+                </p>
+            )}
 
             {error && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg font-medium mb-4">{error}</p>}
 
@@ -279,26 +368,29 @@ const AlmacenComercialPage = () => {
             {tab === 'inventario' && (
                 <div className="space-y-3">
                     {/* New almacén */}
-                    <div className="bg-white rounded-xl shadow border border-slate-100 p-4">
-                        <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Nuevo Almacén Comercial</p>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={newAlmacenName}
-                                onChange={e => setNewAlmacenName(e.target.value)}
-                                placeholder="Ej: Depósito Comercial Caracas"
-                                className="flex-1 p-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                            />
-                            <button
-                                onClick={handleCreateAlmacen}
-                                disabled={creatingAlmacen || !newAlmacenName.trim()}
-                                className="bg-brand-blue text-white font-bold px-4 py-2.5 rounded-xl text-sm flex items-center gap-1 disabled:opacity-50"
-                            >
-                                {creatingAlmacen ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
-                                Crear
-                            </button>
+                    {showCreateAlmacen && (
+                        <div className="bg-white rounded-xl shadow border border-slate-100 p-4">
+                            <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Nuevo Almacén Comercial</p>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={newAlmacenName}
+                                    onChange={e => setNewAlmacenName(e.target.value)}
+                                    placeholder="Ej: Depósito Comercial Caracas"
+                                    autoFocus
+                                    className="flex-1 min-w-0 p-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                                />
+                                <button
+                                    onClick={handleCreateAlmacen}
+                                    disabled={creatingAlmacen || !newAlmacenName.trim()}
+                                    className="bg-brand-blue text-white font-bold px-3 py-2.5 rounded-xl text-sm flex items-center gap-1 disabled:opacity-50 shrink-0"
+                                >
+                                    {creatingAlmacen ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
+                                    Crear
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {inventarioPorAlmacen.length === 0 && (
                         <p className="text-slate-400 text-sm text-center py-8">Aún no hay almacenes comerciales creados.</p>

@@ -69,9 +69,9 @@ function startOfWeek() {
 
 // ─── Sub-views ────────────────────────────────────────────────────────────────
 
-function StatChip({ label, value, color = 'text-white', sub }) {
+function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
     return (
-        <div className="bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-center">
+        <div className={`bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-center ${className}`}>
             <p className={`text-xl font-black font-mono ${color}`}>{value}</p>
             <p className="text-slate-400 text-xs mt-0.5 leading-tight">{label}</p>
             {sub && <p className="text-slate-500 text-[10px] mt-0.5">{sub}</p>}
@@ -94,6 +94,37 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
     };
     const faltan = unidadesParaSiguiente();
     const ingresoBase = commConfig.salarioFijo + commConfig.viaticosSemanales * 4;
+    const hasComision = (tiers || []).some(t => t.rate > 0);
+    const showActivacion   = commConfig.bonusActivacion > 0;
+    const showPuntualidad  = commConfig.bonusPuntualidad > 0;
+    const showBonosSection = showActivacion || showPuntualidad;
+
+    const statCards = [
+        hasComision && {
+            key: 'comisionSemana',
+            label: 'Comisión semana',
+            value: loading ? '—' : `$${stats.comisionSemana.toFixed(0)}`,
+            color: tier.color,
+        },
+        hasComision && {
+            key: 'tasaComision',
+            label: 'Tasa comisión',
+            value: tier.rate > 0 ? `${(tier.rate * 100).toFixed(1)}%` : '—',
+            color: tier.color,
+            sub: 'sobre cobrado',
+        },
+        ingresoBase > 0 && {
+            key: 'ingresoBase',
+            label: 'Ingreso base/mes',
+            value: `$${ingresoBase}`,
+            sub: 'fijo + viáticos',
+        },
+        {
+            key: 'despachosHoy',
+            label: 'Despachos hoy',
+            value: loading ? '—' : stats.despachoHoy,
+        },
+    ].filter(Boolean);
 
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
@@ -142,65 +173,63 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
             </div>
 
             {/* ── Resumen financiero ── */}
-            <div className="grid grid-cols-2 gap-2">
-                <StatChip
-                    label="Comisión semana"
-                    value={loading ? '—' : `$${stats.comisionSemana.toFixed(0)}`}
-                    color={tier.color}
-                />
-                <StatChip
-                    label="Tasa comisión"
-                    value={tier.rate > 0 ? `${(tier.rate * 100).toFixed(1)}%` : '—'}
-                    color={tier.color}
-                    sub="sobre cobrado"
-                />
-                <StatChip
-                    label="Ingreso base/mes"
-                    value={`$${ingresoBase}`}
-                    sub="fijo + viáticos"
-                />
-                <StatChip
-                    label="Despachos hoy"
-                    value={loading ? '—' : stats.despachoHoy}
-                />
-            </div>
+            {statCards.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                    {statCards.map((c, i) => (
+                        <StatChip
+                            key={c.key}
+                            label={c.label}
+                            value={c.value}
+                            color={c.color}
+                            sub={c.sub}
+                            className={statCards.length % 2 === 1 && i === statCards.length - 1 ? 'col-span-2' : ''}
+                        />
+                    ))}
+                </div>
+            )}
 
             {/* ── Bonos de estado ── */}
-            <div className="space-y-2">
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Estado de Bonos</p>
+            {showBonosSection && (
+                <div className="space-y-2">
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Estado de Bonos</p>
 
-                <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
-                    {stats.activacionOk
-                        ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
-                        : <AlertCircle size={20} className="text-amber-400 shrink-0" />
-                    }
-                    <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-semibold">Bono Activación (+1%)</p>
-                        <p className="text-slate-400 text-xs">
+                    {showActivacion && (
+                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
                             {stats.activacionOk
-                                ? '¡Activación lograda esta semana!'
-                                : `Cubre ${stats.puntosActivacion}/${stats.puntosTotal} puntos con mín. ${commConfig.activacionMinUnits} uds para ganarlo`
+                                ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
+                                : <AlertCircle size={20} className="text-amber-400 shrink-0" />
                             }
-                        </p>
-                    </div>
-                </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-white text-sm font-semibold">Bono Activación (+{commConfig.bonusActivacion}%)</p>
+                                <p className="text-slate-400 text-xs">
+                                    {stats.activacionOk
+                                        ? '¡Activación lograda esta semana!'
+                                        : `Cubre ${stats.puntosActivacion}/${stats.puntosTotal} puntos con mín. ${commConfig.activacionMinUnits} uds para ganarlo`
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                    )}
 
-                <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
-                    {stats.facturasPorVencer === 0
-                        ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
-                        : <Clock size={20} className="text-red-400 shrink-0" />
-                    }
-                    <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-semibold">Bono Puntualidad (+1%)</p>
-                        <p className="text-slate-400 text-xs">
+                    {showPuntualidad && (
+                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
                             {stats.facturasPorVencer === 0
-                                ? 'Sin facturas próximas a vencer'
-                                : `${stats.facturasPorVencer} factura${stats.facturasPorVencer > 1 ? 's' : ''} por vencer — cobra para no perder el bono`
+                                ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
+                                : <Clock size={20} className="text-red-400 shrink-0" />
                             }
-                        </p>
-                    </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-white text-sm font-semibold">Bono Puntualidad (+{commConfig.bonusPuntualidad}%)</p>
+                                <p className="text-slate-400 text-xs">
+                                    {stats.facturasPorVencer === 0
+                                        ? 'Sin facturas próximas a vencer'
+                                        : `${stats.facturasPorVencer} factura${stats.facturasPorVencer > 1 ? 's' : ''} por vencer — cobra para no perder el bono`
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                    )}
                 </div>
-            </div>
+            )}
 
             {/* ── Acción principal ── */}
             <div className="space-y-2">
