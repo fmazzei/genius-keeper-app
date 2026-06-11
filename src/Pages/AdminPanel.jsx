@@ -976,7 +976,6 @@ const MODULE_ROLE_CONFIG = [
         roles: ['director', 'gerencia', 'sales_manager'],
         items: [
             { key: 'marketTrends',         label: 'Análisis de Tendencias',  icon: 'TrendingUp'    },
-            { key: 'inventoryManager',     label: 'Inventario',              icon: 'Package'       },
             { key: 'plannerManager',       label: 'Planificador',            icon: 'MapIcon'       },
             { key: 'rendimientoComercial', label: 'Rendimiento Comercial',   icon: 'Users'         },
         ],

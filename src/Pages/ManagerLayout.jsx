@@ -7,13 +7,12 @@ import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/Firebase/config.js';
-import { LogOut, BarChart2, TrendingUp, Bell, Settings, Package, Sun, DollarSign, Target, Map as MapIcon, Menu, ChevronsRight, Users, ClipboardList, Download, Warehouse } from 'lucide-react';
+import { LogOut, BarChart2, TrendingUp, Bell, Settings, Sun, DollarSign, Target, Map as MapIcon, Menu, ChevronsRight, Users, ClipboardList, Download, Warehouse } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import GerencialDashboard from './GerencialDashboard.jsx';
 import MarketTrendsView from './MarketTrendsView.jsx';
 import AlertsCenterView from './AlertsCenterView.jsx';
-import InventoryPanel from './InventoryPanel.jsx';
 import AdminPanel from './AdminPanel.jsx';
 import VentasView from './VentasView.jsx';
 import RendimientoComercialView from './RendimientoComercialView.jsx';
@@ -55,16 +54,13 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         // El módulo-gate solo aplica al master. El director siempre ve tendencias.
         if (role === 'master') {
             if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
-            if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('dashboard');
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
         }
         if (role === 'director') {
             if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
-            if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('dashboard');
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
         }
         if (role === 'gerencia' || role === 'sales_manager') {
-            if (currentView === 'inventory' && !modules.inventoryManager) setCurrentView('ventas');
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('ventas');
             if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('ventas');
         }
@@ -85,7 +81,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             dashboard:        'Dashboard Gerencial',
             trends:           'Análisis de Tendencias',
             alerts:           'Centro de Notificaciones',
-            inventory:        'Panel de Inventario',
             settings:         'Panel de Administración',
             ventas:           'Ventas',
             planner:          'Centro de Planificación',
@@ -117,7 +112,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
-                {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
                 <NavItem icon={<Settings size={24} />} text="Administración" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
@@ -133,7 +127,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
-                {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
             </ul>
         );
@@ -147,7 +140,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
-                {modules.inventoryManager && <NavItem icon={<Package size={24} />} text="Inventario" active={currentView === 'inventory'} onClick={() => setCurrentView('inventory')} />}
                 {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
             </ul>
         );
@@ -205,10 +197,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <div className={currentView === 'alerts' ? 'block h-full' : 'hidden'}>
                     <AlertsCenterView onNavigate={setCurrentView} />
                 </div>
-                <div className={currentView === 'inventory' ? 'block h-full' : 'hidden'}>
-                    <InventoryPanel role={role} readOnly={readOnly} />
-                </div>
-
                 {/* Almacén Comercial — recepción de despachos Kroma + ajustes de inventario */}
                 <div className={currentView === 'almacenComercial' ? 'block h-full' : 'hidden'}>
                     <AlmacenComercialPage />

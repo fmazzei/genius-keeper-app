@@ -12,7 +12,6 @@ export interface ModulesConfig {
   marketTrends: boolean;
   salesFocus: boolean;
   plannerManager: boolean;
-  inventoryManager: boolean;
   plannerMerchandiser: boolean;
   logisticsMerchandiser: boolean;
   pedidosVendedor: boolean;
@@ -38,7 +37,6 @@ const defaultModules: ModulesConfig = {
   marketTrends: true,
   salesFocus: true,
   plannerManager: true,
-  inventoryManager: true,
   plannerMerchandiser: true,
   logisticsMerchandiser: true,
   pedidosVendedor: true,
