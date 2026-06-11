@@ -204,6 +204,20 @@ service cloud.firestore {
       allow update, delete: if isMaster();
     }
 
+    match /pedidos_mercaderista/{pedidoId} {
+      // Pedidos verbales: creados por mercaderistas (TomarPedidoForm) o por
+      // el propio vendedor (Tomar Pedido en GK). El vendedor asignado los
+      // ve y confirma/rechaza en su pestaña "Pedidos" (MisPedidosView).
+      allow get, list: if isAuthenticated() && (
+        isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid
+      );
+      allow create: if isAuthenticated() && (isMerchandiser() || isVendedor() || isAdmin());
+      allow update: if isAuthenticated() && (
+        isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid
+      );
+      allow delete: if isMaster();
+    }
+
     match /despachos/{despachoId} {
       // Created by merchandisers/vendedores (PedidoForm); read by admin
       // dashboards and by vendedores for their own portfolio (query filters

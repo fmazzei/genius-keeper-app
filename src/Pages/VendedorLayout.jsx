@@ -335,6 +335,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     });
     const [loading, setLoading]                       = useState(true);
     const [posList, setPosList]                       = useState([]);
+    const [clientesPosList, setClientesPosList]       = useState([]);
     const [alertas, setAlertas]                       = useState([]);
     const [loadingAlertas, setLoadingAlertas]         = useState(false);
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
@@ -576,6 +577,14 @@ const VendedorLayout = ({ user, onLogout }) => {
                 });
                 setPosList(vendorPosList);
 
+                // Lista para "Tomar Pedido": todos los clientes activos de la
+                // cartera, tengan o no un PDV vinculado en la colección `pos`.
+                setClientesPosList(cartera.map(c => ({
+                    id:    c.posId || c.id,
+                    name:  c.clientName,
+                    chain: c.chain || '',
+                })));
+
                 // 7. Sync alert conditions to Firestore then load them
                 await syncAlertas(user.uid, newStats);
                 await loadAlertas(user.uid);
@@ -645,8 +654,10 @@ const VendedorLayout = ({ user, onLogout }) => {
             if (subView === 'tomar_pedido') {
                 return (
                     <TomarPedidoForm
-                        posList={posList}
+                        posList={clientesPosList}
                         selectedReporter={{ id: vendedor.reporterId, name: vendedor.nombre }}
+                        vendedor={vendedor}
+                        theme="dark"
                         onBack={() => { setCurrentView('home'); setSubView(null); }}
                     />
                 );
