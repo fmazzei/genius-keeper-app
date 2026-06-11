@@ -50,6 +50,7 @@ const AlmacenComercialPage = () => {
     const [adjustItem, setAdjustItem]       = useState(null);
     const [newAlmacenName, setNewAlmacenName] = useState('');
     const [creatingAlmacen, setCreatingAlmacen] = useState(false);
+    const [showCreateAlmacen, setShowCreateAlmacen] = useState(false);
     const [expanded, setExpanded]           = useState({});
     const [syncing, setSyncing]             = useState(false);
     const [syncMessage, setSyncMessage]     = useState('');
@@ -93,6 +94,7 @@ const AlmacenComercialPage = () => {
                 createdAt: serverTimestamp(),
             });
             setNewAlmacenName('');
+            setShowCreateAlmacen(false);
             await load();
         } catch (e) {
             alert('No se pudo crear el almacén. ' + e.message);
@@ -258,6 +260,15 @@ const AlmacenComercialPage = () => {
                 >
                     {syncing ? <Loader size={18} className="animate-spin" /> : <Download size={18} />}
                 </button>
+                {tab === 'inventario' && (
+                    <button
+                        onClick={() => setShowCreateAlmacen(s => !s)}
+                        title="Nuevo almacén comercial"
+                        className={`p-2 rounded-lg transition-colors ${showCreateAlmacen ? 'bg-brand-blue text-white' : 'text-slate-400 hover:text-brand-blue'}`}
+                    >
+                        <Plus size={18} />
+                    </button>
+                )}
             </div>
 
             {syncMessage && (
@@ -357,26 +368,29 @@ const AlmacenComercialPage = () => {
             {tab === 'inventario' && (
                 <div className="space-y-3">
                     {/* New almacén */}
-                    <div className="bg-white rounded-xl shadow border border-slate-100 p-4">
-                        <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Nuevo Almacén Comercial</p>
-                        <div className="flex gap-2">
-                            <input
-                                type="text"
-                                value={newAlmacenName}
-                                onChange={e => setNewAlmacenName(e.target.value)}
-                                placeholder="Ej: Depósito Comercial Caracas"
-                                className="flex-1 p-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
-                            />
-                            <button
-                                onClick={handleCreateAlmacen}
-                                disabled={creatingAlmacen || !newAlmacenName.trim()}
-                                className="bg-brand-blue text-white font-bold px-4 py-2.5 rounded-xl text-sm flex items-center gap-1 disabled:opacity-50"
-                            >
-                                {creatingAlmacen ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
-                                Crear
-                            </button>
+                    {showCreateAlmacen && (
+                        <div className="bg-white rounded-xl shadow border border-slate-100 p-4">
+                            <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Nuevo Almacén Comercial</p>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={newAlmacenName}
+                                    onChange={e => setNewAlmacenName(e.target.value)}
+                                    placeholder="Ej: Depósito Comercial Caracas"
+                                    autoFocus
+                                    className="flex-1 min-w-0 p-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                                />
+                                <button
+                                    onClick={handleCreateAlmacen}
+                                    disabled={creatingAlmacen || !newAlmacenName.trim()}
+                                    className="bg-brand-blue text-white font-bold px-3 py-2.5 rounded-xl text-sm flex items-center gap-1 disabled:opacity-50 shrink-0"
+                                >
+                                    {creatingAlmacen ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
+                                    Crear
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {inventarioPorAlmacen.length === 0 && (
                         <p className="text-slate-400 text-sm text-center py-8">Aún no hay almacenes comerciales creados.</p>
