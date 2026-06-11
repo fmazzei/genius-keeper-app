@@ -35,7 +35,7 @@ const InlineRow = ({ label, hint, value, onChange, step = 1, min = 0, suffix }) 
                 type="number"
                 min={min}
                 step={step}
-                value={value}
+                value={value === 0 ? '' : value}
                 onChange={e => onChange(Number(e.target.value) || 0)}
                 className="w-20 text-center p-2 border border-slate-200 rounded-lg text-sm font-mono bg-white"
             />
@@ -209,7 +209,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                         <div className="flex items-center gap-1">
                                             <input
                                                 type="number" min="0" step="5"
-                                                value={tier.minPct}
+                                                value={tier.minPct === 0 ? '' : tier.minPct}
                                                 onChange={e => updateTier(i, 'minPct', Number(e.target.value) || 0)}
                                                 className="min-w-0 w-full text-center p-2 border border-slate-200 rounded-xl text-sm font-mono"
                                             />
@@ -221,7 +221,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                         <div className="flex items-center gap-1">
                                             <input
                                                 type="number" min="0" step="0.5"
-                                                value={tier.rate}
+                                                value={tier.rate === 0 ? '' : tier.rate}
                                                 onChange={e => updateTier(i, 'rate', Number(e.target.value) || 0)}
                                                 className="min-w-0 w-full text-center p-2 border border-slate-200 rounded-xl text-sm font-mono"
                                             />
@@ -291,7 +291,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                     <p className="text-sm font-semibold text-slate-600 w-12 shrink-0">Mes {i + 1}</p>
                                     <input
                                         type="number" min="0"
-                                        value={item.meta}
+                                        value={item.meta === 0 ? '' : item.meta}
                                         onChange={e => updateArranque(i, Number(e.target.value) || 0)}
                                         className="flex-1 min-w-0 p-2 border border-slate-200 rounded-xl text-sm font-mono text-center"
                                     />
