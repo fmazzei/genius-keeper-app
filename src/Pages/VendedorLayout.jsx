@@ -283,13 +283,24 @@ function AlertasView({ alertas, loadingAlertas, onDelete }) {
             <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest pt-2">Alertas Activas</p>
             {alertas.map((alert) => {
                 const isDanger = alert.alertType === 'facturas_venciendo';
+                const isInfo = alert.alertType === 'despacho_en_transito';
+                const cardClass = isDanger
+                    ? 'bg-red-500/10 border-red-500/30'
+                    : isInfo
+                        ? 'bg-blue-500/10 border-blue-500/30'
+                        : 'bg-amber-500/10 border-amber-500/30';
+                const titleClass = isDanger
+                    ? 'text-red-300'
+                    : isInfo
+                        ? 'text-blue-300'
+                        : 'text-amber-300';
                 return (
                     <div
                         key={alert.id}
-                        className={`rounded-xl p-4 border flex items-start gap-3 ${isDanger ? 'bg-red-500/10 border-red-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}
+                        className={`rounded-xl p-4 border flex items-start gap-3 ${cardClass}`}
                     >
                         <div className="flex-1 min-w-0">
-                            <p className={`font-bold text-sm ${isDanger ? 'text-red-300' : 'text-amber-300'}`}>{alert.title}</p>
+                            <p className={`font-bold text-sm ${titleClass}`}>{alert.title}</p>
                             <p className="text-slate-400 text-sm mt-1">{alert.body}</p>
                         </div>
                         <button
@@ -667,7 +678,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         if (currentView === 'reportesAnaquel') {
             return (
                 <div className="flex-1 overflow-y-auto p-4 pb-24">
-                    <ReportesAnaquelView />
+                    <ReportesAnaquelView theme="dark" />
                 </div>
             );
         }
@@ -675,7 +686,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         if (currentView === 'almacen') {
             return (
                 <div className="flex-1 overflow-y-auto pb-24">
-                    <AlmacenComercialPage />
+                    <AlmacenComercialPage theme="dark" />
                 </div>
             );
         }

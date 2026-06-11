@@ -174,11 +174,11 @@ service cloud.firestore {
 
     match /vendedor_alertas/{docId} {
       allow read: if isAuthenticated() && (
-        isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid
+        isAdmin() || isMaster() || resource.data.uid == request.auth.uid
       );
       allow create: if isAuthenticated();
       allow update, delete: if isAuthenticated() && (
-        isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid
+        isAdmin() || isMaster() || resource.data.uid == request.auth.uid
       );
     }
 

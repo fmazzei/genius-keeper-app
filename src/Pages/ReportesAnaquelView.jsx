@@ -36,9 +36,122 @@ function daysSinceTs(ts) {
     return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// Variantes visuales: 'light' (Gerencia, sobre fondo blanco) y 'dark'
+// (módulo Vendedor, sobre bg-slate-950) — misma estructura, distinta piel.
+const THEME = {
+    light: {
+        card: 'bg-white border border-slate-200 shadow-sm',
+        cardTitle: 'text-slate-800',
+        cardSub: 'text-slate-500',
+        editBtn: 'text-slate-400 hover:text-brand-blue',
+        meta: 'text-slate-500',
+        metricValue: 'text-slate-800',
+        metricPrimary: 'text-brand-blue',
+        metricLabel: 'text-slate-400',
+        metricCompetidores: 'text-amber-600',
+        metricEntrantes: 'text-red-500',
+        expandBtn: 'border-t border-slate-100 text-slate-400 hover:bg-slate-50',
+        divider: 'border-t border-slate-100',
+        fieldLabel: 'text-slate-400',
+        fieldValue: 'text-slate-800',
+        popOk: 'text-emerald-600',
+        popBad: 'text-red-500',
+        popNeutral: 'text-slate-500',
+        batchRow: 'bg-slate-50',
+        batchCode: 'text-slate-700',
+        batchExpiry: 'text-slate-500',
+        competitorRow: 'bg-amber-50 border border-amber-100',
+        competitorName: 'text-amber-900',
+        competitorPrice: 'text-amber-700',
+        competitorPop: 'text-slate-500',
+        entrantRow: 'bg-red-50 border border-red-100',
+        entrantBrand: 'text-red-800',
+        entrantPresentation: 'text-red-600',
+        notesBox: 'bg-slate-50 text-slate-700',
+        stockoutTotal: 'text-red-600 bg-red-50 border-red-200',
+        stockoutPartial: 'text-amber-600 bg-amber-50 border-amber-200',
+        stockoutNone: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+        tabsWrap: 'bg-slate-100',
+        tabActive: 'bg-white text-slate-800 shadow-sm',
+        tabInactive: 'text-slate-500',
+        filterCard: 'bg-white border border-slate-200',
+        filterLabel: 'text-slate-400',
+        periodActive: 'bg-brand-blue text-white',
+        periodInactive: 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+        select: 'border border-slate-300 text-slate-700 focus:ring-brand-blue bg-white',
+        pdvResultsBox: 'border border-slate-200 shadow-sm',
+        pdvResultRow: 'hover:bg-slate-50 border-b border-slate-100',
+        pdvResultName: 'text-slate-800',
+        pdvResultChain: 'text-slate-400',
+        pdvNoResults: 'text-slate-500',
+        emptyIcon: 'text-slate-300',
+        emptyTitle: 'text-slate-500',
+        emptySub: 'text-slate-400',
+        loadingSpinner: 'text-slate-400',
+        errorBox: 'bg-red-50 border border-red-200',
+        errorTitle: 'text-red-700',
+        errorText: 'text-red-600',
+        reportCount: 'text-slate-400',
+    },
+    dark: {
+        card: 'bg-slate-900 border border-slate-700',
+        cardTitle: 'text-white',
+        cardSub: 'text-slate-400',
+        editBtn: 'text-slate-400 hover:text-emerald-400',
+        meta: 'text-slate-400',
+        metricValue: 'text-white',
+        metricPrimary: 'text-emerald-400',
+        metricLabel: 'text-slate-500',
+        metricCompetidores: 'text-amber-400',
+        metricEntrantes: 'text-red-400',
+        expandBtn: 'border-t border-slate-700 text-slate-500 hover:bg-slate-800/60',
+        divider: 'border-t border-slate-700',
+        fieldLabel: 'text-slate-500',
+        fieldValue: 'text-white',
+        popOk: 'text-emerald-400',
+        popBad: 'text-red-400',
+        popNeutral: 'text-slate-400',
+        batchRow: 'bg-slate-800/60',
+        batchCode: 'text-slate-200',
+        batchExpiry: 'text-slate-400',
+        competitorRow: 'bg-amber-500/10 border border-amber-500/30',
+        competitorName: 'text-amber-200',
+        competitorPrice: 'text-amber-400',
+        competitorPop: 'text-slate-400',
+        entrantRow: 'bg-red-500/10 border border-red-500/30',
+        entrantBrand: 'text-red-300',
+        entrantPresentation: 'text-red-400',
+        notesBox: 'bg-slate-800/60 text-slate-300',
+        stockoutTotal: 'text-red-300 bg-red-500/10 border-red-500/30',
+        stockoutPartial: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
+        stockoutNone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
+        tabsWrap: 'bg-slate-800/60 border border-slate-700',
+        tabActive: 'bg-emerald-600 text-white',
+        tabInactive: 'text-slate-400',
+        filterCard: 'bg-slate-900 border border-slate-700',
+        filterLabel: 'text-slate-500',
+        periodActive: 'bg-emerald-600 text-white',
+        periodInactive: 'bg-slate-800 text-slate-300 hover:bg-slate-700',
+        select: 'border border-slate-700 text-white focus:ring-emerald-500 bg-slate-800',
+        pdvResultsBox: 'border border-slate-700',
+        pdvResultRow: 'hover:bg-slate-800 border-b border-slate-700',
+        pdvResultName: 'text-white',
+        pdvResultChain: 'text-slate-500',
+        pdvNoResults: 'text-slate-400',
+        emptyIcon: 'text-slate-600',
+        emptyTitle: 'text-slate-400',
+        emptySub: 'text-slate-500',
+        loadingSpinner: 'text-emerald-400',
+        errorBox: 'bg-red-500/10 border border-red-500/30',
+        errorTitle: 'text-red-300',
+        errorText: 'text-red-400',
+        reportCount: 'text-slate-500',
+    },
+};
+
 // ── Report Card ──────────────────────────────────────────────────────────────
 
-function ReportCard({ report, isMaster, onEdit }) {
+function ReportCard({ report, isMaster, onEdit, t }) {
     const [expanded, setExpanded] = useState(false);
 
     const stockout = report.stockout;
@@ -50,10 +163,10 @@ function ReportCard({ report, isMaster, onEdit }) {
                 ? 'Sin quiebre'
                 : '—';
     const stockoutColor = stockout === true || stockout === 'total'
-        ? 'text-red-600 bg-red-50 border-red-200'
+        ? t.stockoutTotal
         : stockout === 'partial'
-            ? 'text-amber-600 bg-amber-50 border-amber-200'
-            : 'text-emerald-600 bg-emerald-50 border-emerald-200';
+            ? t.stockoutPartial
+            : t.stockoutNone;
 
     const ago = daysSinceTs(report.createdAt);
     const agoLabel = ago === null ? '' : ago === 0 ? 'Hoy' : ago === 1 ? 'Ayer' : `Hace ${ago} días`;
@@ -66,25 +179,25 @@ function ReportCard({ report, isMaster, onEdit }) {
     }[report.popStatus] || report.popStatus;
 
     const popColor = report.popStatus === 'Exhibido correctamente'
-        ? 'text-emerald-600'
+        ? t.popOk
         : report.popStatus === 'Ausente' || report.popStatus === 'Dañado'
-            ? 'text-red-500'
-            : 'text-slate-500';
+            ? t.popBad
+            : t.popNeutral;
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className={`rounded-2xl overflow-hidden ${t.card}`}>
             {/* Header */}
             <div className="p-4">
                 <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="min-w-0 flex-1">
-                        <p className="font-bold text-slate-800 truncate text-base">{report.posName || 'PDV sin nombre'}</p>
-                        <p className="text-xs text-slate-500 mt-0.5 truncate">{report.posZone || '—'}</p>
+                        <p className={`font-bold truncate text-base ${t.cardTitle}`}>{report.posName || 'PDV sin nombre'}</p>
+                        <p className={`text-xs mt-0.5 truncate ${t.cardSub}`}>{report.posZone || '—'}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                         {isMaster && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); onEdit(report); }}
-                                className="text-slate-400 hover:text-brand-blue transition-colors"
+                                className={`transition-colors ${t.editBtn}`}
                                 title="Editar reporte"
                             >
                                 <Pencil size={15} />
@@ -96,7 +209,7 @@ function ReportCard({ report, isMaster, onEdit }) {
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${t.meta}`}>
                     <span className="flex items-center gap-1">
                         <User size={11} />
                         {report.userName || 'Mercaderista'}
@@ -111,40 +224,40 @@ function ReportCard({ report, isMaster, onEdit }) {
                 <div className="flex items-center gap-5 mt-3 flex-wrap">
                     {report.inventoryLevel !== undefined && report.inventoryLevel !== '' && (
                         <div className="text-center">
-                            <p className="text-lg font-black text-brand-blue leading-none">{report.inventoryLevel}</p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">En anaquel</p>
+                            <p className={`text-lg font-black leading-none ${t.metricPrimary}`}>{report.inventoryLevel}</p>
+                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>En anaquel</p>
                         </div>
                     )}
                     {report.facing !== undefined && report.facing !== '' && (
                         <div className="text-center">
-                            <p className="text-lg font-black text-slate-800 leading-none">{report.facing}</p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">Caras vis.</p>
+                            <p className={`text-lg font-black leading-none ${t.metricValue}`}>{report.facing}</p>
+                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Caras vis.</p>
                         </div>
                     )}
                     {report.price !== undefined && report.price !== '' && (
                         <div className="text-center">
-                            <p className="text-lg font-black text-slate-800 leading-none">${report.price}</p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">Precio</p>
+                            <p className={`text-lg font-black leading-none ${t.metricValue}`}>${report.price}</p>
+                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Precio</p>
                         </div>
                     )}
                     {report.batches !== undefined && report.batches !== '' && (
                         <div className="text-center">
-                            <p className="text-lg font-black text-slate-800 leading-none">
+                            <p className={`text-lg font-black leading-none ${t.metricValue}`}>
                                 {Array.isArray(report.batches) ? report.batches.length : report.batches}
                             </p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">Lotes</p>
+                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Lotes</p>
                         </div>
                     )}
                     {report.competition?.length > 0 && (
                         <div className="text-center">
-                            <p className="text-lg font-black text-amber-600 leading-none">{report.competition.length}</p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">Competid.</p>
+                            <p className={`text-lg font-black leading-none ${t.metricCompetidores}`}>{report.competition.length}</p>
+                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Competid.</p>
                         </div>
                     )}
                     {report.newEntrants?.length > 0 && (
                         <div className="text-center">
-                            <p className="text-lg font-black text-red-500 leading-none">{report.newEntrants.length}</p>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mt-0.5">Entrantes</p>
+                            <p className={`text-lg font-black leading-none ${t.metricEntrantes}`}>{report.newEntrants.length}</p>
+                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Entrantes</p>
                         </div>
                     )}
                 </div>
@@ -153,7 +266,7 @@ function ReportCard({ report, isMaster, onEdit }) {
             {/* Expand button */}
             <button
                 onClick={() => setExpanded(!expanded)}
-                className="w-full flex items-center justify-center gap-1.5 py-2.5 border-t border-slate-100 text-xs text-slate-400 hover:bg-slate-50 transition-colors"
+                className={`w-full flex items-center justify-center gap-1.5 py-2.5 text-xs transition-colors ${t.expandBtn}`}
             >
                 {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 {expanded ? 'Menos detalles' : 'Ver detalles completos'}
@@ -161,30 +274,30 @@ function ReportCard({ report, isMaster, onEdit }) {
 
             {/* Expanded content */}
             {expanded && (
-                <div className="px-4 pb-4 pt-3 border-t border-slate-100 space-y-4">
+                <div className={`px-4 pb-4 pt-3 space-y-4 ${t.divider}`}>
                     {/* Grid of fields */}
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                         {report.orderQuantity !== undefined && report.orderQuantity !== '' && (
                             <div>
-                                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Cantidad pedido</p>
-                                <p className="font-semibold text-slate-800 mt-0.5">{report.orderQuantity}</p>
+                                <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Cantidad pedido</p>
+                                <p className={`font-semibold mt-0.5 ${t.fieldValue}`}>{report.orderQuantity}</p>
                             </div>
                         )}
                         {report.shelfLocation && (
                             <div>
-                                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Ubicación anaquel</p>
-                                <p className="font-semibold text-slate-800 mt-0.5">{report.shelfLocation}</p>
+                                <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Ubicación anaquel</p>
+                                <p className={`font-semibold mt-0.5 ${t.fieldValue}`}>{report.shelfLocation}</p>
                             </div>
                         )}
                         {report.adjacentCategory && (
                             <div>
-                                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Categoría adyacente</p>
-                                <p className="font-semibold text-slate-800 mt-0.5">{report.adjacentCategory}</p>
+                                <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Categoría adyacente</p>
+                                <p className={`font-semibold mt-0.5 ${t.fieldValue}`}>{report.adjacentCategory}</p>
                             </div>
                         )}
                         {report.popStatus && (
                             <div>
-                                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Material POP</p>
+                                <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Material POP</p>
                                 <p className={`font-semibold mt-0.5 ${popColor}`}>{popLabel}</p>
                             </div>
                         )}
@@ -193,12 +306,12 @@ function ReportCard({ report, isMaster, onEdit }) {
                     {/* Batches list */}
                     {Array.isArray(report.batches) && report.batches.length > 0 && (
                         <div>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold mb-2">Lotes en anaquel</p>
+                            <p className={`text-[10px] uppercase tracking-wide font-semibold mb-2 ${t.fieldLabel}`}>Lotes en anaquel</p>
                             <div className="space-y-1.5">
                                 {report.batches.map((b, i) => (
-                                    <div key={i} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-sm">
-                                        <span className="font-medium text-slate-700">{b.batchCode || b.code || `Lote ${i + 1}`}</span>
-                                        {b.expiryDate && <span className="text-slate-500 text-xs">{b.expiryDate}</span>}
+                                    <div key={i} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${t.batchRow}`}>
+                                        <span className={`font-medium ${t.batchCode}`}>{b.batchCode || b.code || `Lote ${i + 1}`}</span>
+                                        {b.expiryDate && <span className={`text-xs ${t.batchExpiry}`}>{b.expiryDate}</span>}
                                     </div>
                                 ))}
                             </div>
@@ -208,16 +321,16 @@ function ReportCard({ report, isMaster, onEdit }) {
                     {/* Competitors */}
                     {report.competition?.length > 0 && (
                         <div>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold mb-2">
+                            <p className={`text-[10px] uppercase tracking-wide font-semibold mb-2 ${t.fieldLabel}`}>
                                 Competidores ({report.competition.length})
                             </p>
                             <div className="space-y-1.5">
                                 {report.competition.map((c, i) => (
-                                    <div key={i} className="flex items-center justify-between bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-sm">
-                                        <span className="font-medium text-amber-900 truncate flex-1 mr-2">{c.product}</span>
+                                    <div key={i} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${t.competitorRow}`}>
+                                        <span className={`font-medium truncate flex-1 mr-2 ${t.competitorName}`}>{c.product}</span>
                                         <div className="flex items-center gap-2 shrink-0">
-                                            {c.price && <span className="font-semibold text-amber-700">${c.price}</span>}
-                                            {c.hasPop === true && <span className="text-xs text-slate-500">POP</span>}
+                                            {c.price && <span className={`font-semibold ${t.competitorPrice}`}>${c.price}</span>}
+                                            {c.hasPop === true && <span className={`text-xs ${t.competitorPop}`}>POP</span>}
                                         </div>
                                     </div>
                                 ))}
@@ -228,14 +341,14 @@ function ReportCard({ report, isMaster, onEdit }) {
                     {/* New entrants */}
                     {report.newEntrants?.length > 0 && (
                         <div>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold mb-2">
+                            <p className={`text-[10px] uppercase tracking-wide font-semibold mb-2 ${t.fieldLabel}`}>
                                 Nuevos Entrantes ({report.newEntrants.length})
                             </p>
                             <div className="space-y-1.5">
                                 {report.newEntrants.map((e, i) => (
-                                    <div key={i} className="bg-red-50 border border-red-100 rounded-lg px-3 py-2 text-sm">
-                                        <span className="font-medium text-red-800">{e.brand}</span>
-                                        {e.presentation && <span className="text-red-600 ml-1.5 text-xs">· {e.presentation}</span>}
+                                    <div key={i} className={`rounded-lg px-3 py-2 text-sm ${t.entrantRow}`}>
+                                        <span className={`font-medium ${t.entrantBrand}`}>{e.brand}</span>
+                                        {e.presentation && <span className={`ml-1.5 text-xs ${t.entrantPresentation}`}>· {e.presentation}</span>}
                                     </div>
                                 ))}
                             </div>
@@ -245,8 +358,8 @@ function ReportCard({ report, isMaster, onEdit }) {
                     {/* Notes */}
                     {report.notes && (
                         <div>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1">Observaciones</p>
-                            <p className="text-sm text-slate-700 bg-slate-50 rounded-lg px-3 py-2 leading-relaxed">{report.notes}</p>
+                            <p className={`text-[10px] uppercase tracking-wide mb-1 ${t.fieldLabel}`}>Observaciones</p>
+                            <p className={`text-sm rounded-lg px-3 py-2 leading-relaxed ${t.notesBox}`}>{report.notes}</p>
                         </div>
                     )}
                 </div>
@@ -257,7 +370,8 @@ function ReportCard({ report, isMaster, onEdit }) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-const ReportesAnaquelView = () => {
+const ReportesAnaquelView = ({ theme = 'light' }) => {
+    const t = THEME[theme] || THEME.light;
     const { role } = useAuth();
     const [activeTab, setActiveTab]         = useState('recientes');
     const [reports, setReports]             = useState([]);
@@ -351,16 +465,16 @@ const ReportesAnaquelView = () => {
     return (
         <div className="max-w-2xl mx-auto">
             {/* Tabs */}
-            <div className="flex bg-slate-100 rounded-xl p-1 mb-4">
+            <div className={`flex rounded-xl p-1 mb-4 ${t.tabsWrap}`}>
                 <button
                     onClick={() => setActiveTab('recientes')}
-                    className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'recientes' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
+                    className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'recientes' ? t.tabActive : t.tabInactive}`}
                 >
                     Últimos Reportes
                 </button>
                 <button
                     onClick={() => setActiveTab('historico')}
-                    className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'historico' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}
+                    className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${activeTab === 'historico' ? t.tabActive : t.tabInactive}`}
                 >
                     Histórico
                 </button>
@@ -368,16 +482,16 @@ const ReportesAnaquelView = () => {
 
             {/* Histórico filters */}
             {activeTab === 'historico' && (
-                <div className="space-y-4 mb-4 bg-white rounded-2xl border border-slate-200 p-4">
+                <div className={`space-y-4 mb-4 rounded-2xl p-4 ${t.filterCard}`}>
                     {/* Period */}
                     <div>
-                        <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Período</p>
+                        <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${t.filterLabel}`}>Período</p>
                         <div className="flex flex-wrap gap-2">
                             {PERIODS.map(p => (
                                 <button
                                     key={p.days}
                                     onClick={() => setPeriodDays(p.days)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${periodDays === p.days ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${periodDays === p.days ? t.periodActive : t.periodInactive}`}
                                 >
                                     {p.label}
                                 </button>
@@ -387,7 +501,7 @@ const ReportesAnaquelView = () => {
 
                     {/* Scope */}
                     <div>
-                        <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Filtrar por</p>
+                        <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${t.filterLabel}`}>Filtrar por</p>
                         <div className="flex gap-2">
                             {[
                                 { id: 'todos',  label: 'Todos los PDVs' },
@@ -397,7 +511,7 @@ const ReportesAnaquelView = () => {
                                 <button
                                     key={s.id}
                                     onClick={() => resetScopeFilters(s.id)}
-                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${scopeType === s.id ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${scopeType === s.id ? t.periodActive : t.periodInactive}`}
                                 >
                                     {s.label}
                                 </button>
@@ -408,11 +522,11 @@ const ReportesAnaquelView = () => {
                     {/* Chain picker */}
                     {scopeType === 'cadena' && (
                         <div>
-                            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Cadena</p>
+                            <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${t.filterLabel}`}>Cadena</p>
                             <select
                                 value={selectedChain}
                                 onChange={e => setSelectedChain(e.target.value)}
-                                className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-base text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-blue bg-white"
+                                className={`w-full rounded-xl px-3 py-2.5 text-base focus:outline-none focus:ring-2 ${t.select}`}
                             >
                                 <option value="">Selecciona una cadena…</option>
                                 {chains.map(c => <option key={c} value={c}>{c}</option>)}
@@ -423,35 +537,35 @@ const ReportesAnaquelView = () => {
                     {/* PDV search */}
                     {scopeType === 'pdv' && (
                         <div>
-                            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-2">Punto de venta</p>
+                            <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${t.filterLabel}`}>Punto de venta</p>
                             <div className="relative">
-                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                <Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${t.filterLabel}`} />
                                 <input
                                     type="text"
                                     value={pdvSearch}
                                     onChange={e => { setPdvSearch(e.target.value); setSelectedPdvId(''); }}
                                     placeholder="Buscar PDV…"
-                                    className="w-full border border-slate-300 rounded-xl pl-9 pr-3 py-2.5 text-base text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                                    className={`w-full rounded-xl pl-9 pr-3 py-2.5 text-base focus:outline-none focus:ring-2 ${t.select}`}
                                 />
                             </div>
                             {pdvSearch && !selectedPdvId && (
-                                <div className="mt-1 border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                                <div className={`mt-1 rounded-xl overflow-hidden ${t.pdvResultsBox}`}>
                                     {filteredPdvs.length === 0 ? (
-                                        <p className="p-3 text-sm text-slate-500 text-center">Sin resultados</p>
+                                        <p className={`p-3 text-sm text-center ${t.pdvNoResults}`}>Sin resultados</p>
                                     ) : filteredPdvs.map(p => (
                                         <button
                                             key={p.id}
                                             onClick={() => { setSelectedPdvId(p.id); setPdvSearch(p.name); }}
-                                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-slate-50 border-b last:border-b-0 border-slate-100"
+                                            className={`w-full text-left px-3 py-2.5 text-sm last:border-b-0 ${t.pdvResultRow}`}
                                         >
-                                            <span className="font-medium text-slate-800">{p.name}</span>
-                                            {p.chain && <span className="text-slate-400 ml-1.5 text-xs">· {p.chain}</span>}
+                                            <span className={`font-medium ${t.pdvResultName}`}>{p.name}</span>
+                                            {p.chain && <span className={`ml-1.5 text-xs ${t.pdvResultChain}`}>· {p.chain}</span>}
                                         </button>
                                     ))}
                                 </div>
                             )}
                             {selectedPdvId && (
-                                <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
+                                <p className="text-xs text-emerald-500 mt-1 flex items-center gap-1">
                                     <CheckCircle size={12} /> PDV seleccionado
                                 </p>
                             )}
@@ -463,17 +577,17 @@ const ReportesAnaquelView = () => {
             {/* Content */}
             {loading ? (
                 <div className="flex justify-center items-center py-20">
-                    <Loader size={28} className="animate-spin text-slate-400" />
+                    <Loader size={28} className={`animate-spin ${t.loadingSpinner}`} />
                 </div>
             ) : error ? (
-                <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
-                    <AlertTriangle size={18} className="text-red-500 shrink-0 mt-0.5" />
+                <div className={`rounded-2xl p-4 flex items-start gap-3 ${t.errorBox}`}>
+                    <AlertTriangle size={18} className={`shrink-0 mt-0.5 ${t.errorText}`} />
                     <div>
-                        <p className="font-semibold text-red-700">Error al cargar reportes</p>
-                        <p className="text-sm text-red-600 mt-0.5">{error}</p>
+                        <p className={`font-semibold ${t.errorTitle}`}>Error al cargar reportes</p>
+                        <p className={`text-sm mt-0.5 ${t.errorText}`}>{error}</p>
                         <button
                             onClick={() => fetchReports(activeTab === 'recientes' ? 7 : periodDays)}
-                            className="mt-2 text-sm font-semibold text-red-700 underline"
+                            className={`mt-2 text-sm font-semibold underline ${t.errorTitle}`}
                         >
                             Reintentar
                         </button>
@@ -481,9 +595,9 @@ const ReportesAnaquelView = () => {
                 </div>
             ) : displayReports.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center">
-                    <ClipboardList size={48} className="text-slate-300 mb-3" />
-                    <p className="text-slate-500 font-semibold">Sin reportes</p>
-                    <p className="text-slate-400 text-sm mt-1">
+                    <ClipboardList size={48} className={`mb-3 ${t.emptyIcon}`} />
+                    <p className={`font-semibold ${t.emptyTitle}`}>Sin reportes</p>
+                    <p className={`text-sm mt-1 ${t.emptySub}`}>
                         {activeTab === 'recientes'
                             ? 'No hay reportes de anaquel en los últimos 7 días.'
                             : 'No hay reportes en el período y filtros seleccionados.'}
@@ -491,7 +605,7 @@ const ReportesAnaquelView = () => {
                 </div>
             ) : (
                 <div className="space-y-3">
-                    <p className="text-xs text-slate-400 font-semibold">
+                    <p className={`text-xs font-semibold ${t.reportCount}`}>
                         {displayReports.length} reporte{displayReports.length !== 1 ? 's' : ''}
                         {activeTab === 'recientes' ? ' · Últimos 7 días' : ` · Últimos ${periodDays} días`}
                     </p>
@@ -501,6 +615,7 @@ const ReportesAnaquelView = () => {
                             report={r}
                             isMaster={role === 'master'}
                             onEdit={setEditingReport}
+                            t={t}
                         />
                     ))}
                 </div>

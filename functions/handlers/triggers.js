@@ -426,6 +426,27 @@ exports.onDespachoCreated = functions.firestore
             body: `${despacho.responsable?.nombre || "Kroma"} despachó ${totalItems} unidades (${lineas.length} línea${lineas.length !== 1 ? "s" : ""}) — en tránsito.`,
         }, { link: "/supply_chain", tipo: "nuevo_despacho" });
 
+        // Alertar a los vendedores: el Almacén Comercial recibirá este
+        // despacho cuando llegue, así que les avisamos que viene en tránsito.
+        if (despacho.estado === "en_transito") {
+            try {
+                const vendedoresSnap = await admin.firestore()
+                    .collection("users_metadata")
+                    .where("role", "==", "vendedor")
+                    .get();
+                const activos = vendedoresSnap.docs.filter(d => d.data().active !== false);
+                await Promise.all(activos.map(d => admin.firestore().collection("vendedor_alertas").add({
+                    uid: d.id,
+                    alertType: "despacho_en_transito",
+                    title: "Pedido en tránsito desde planta",
+                    body: `${despacho.responsable?.nombre || "Kroma"} despachó ${totalItems} unidades (${lineas.length} línea${lineas.length !== 1 ? "s" : ""}) hacia el Almacén Comercial.`,
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                })));
+            } catch (err) {
+                functions.logger.error("Error creando alertas de despacho en tránsito para vendedores:", err);
+            }
+        }
+
         return null;
     });
 

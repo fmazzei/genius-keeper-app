@@ -35,7 +35,67 @@ const fmtDateTime = (ts) => {
     return d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 
-const AlmacenComercialPage = () => {
+// Variantes visuales: 'light' (Admin/Gerencia, sobre fondo blanco) y 'dark'
+// (módulo Vendedor, sobre bg-slate-950) — misma estructura, distinta piel.
+const THEME = {
+    light: {
+        iconWrap: 'bg-brand-yellow text-black',
+        title: 'text-slate-800',
+        subtitle: 'text-slate-500',
+        iconBtn: 'text-slate-400 hover:text-brand-blue',
+        iconBtnActive: 'bg-brand-blue text-white',
+        syncMsg: 'text-brand-blue bg-blue-50 border border-blue-100',
+        error: 'text-red-600 bg-red-50',
+        tabsWrap: 'bg-slate-100',
+        tabActive: 'bg-brand-blue text-white',
+        tabInactive: 'text-slate-500 hover:text-slate-800',
+        warning: 'text-amber-600 bg-amber-50 border border-amber-200',
+        emptyIcon: 'text-slate-300',
+        emptyText: 'text-slate-400',
+        card: 'bg-white shadow border border-slate-100',
+        badgeTransito: 'bg-amber-100 text-amber-700',
+        chip: 'bg-slate-100 text-slate-600',
+        meta: 'text-slate-400',
+        itemTitle: 'text-slate-800',
+        itemSub: 'text-slate-600',
+        select: 'border border-slate-300 bg-white text-slate-800 focus:ring-brand-blue',
+        primaryBtn: 'bg-brand-blue text-white',
+        input: 'border border-slate-300 bg-white text-slate-800 placeholder-slate-400 focus:ring-brand-blue',
+        divider: 'border-slate-100',
+        itemRow: 'bg-slate-50 hover:bg-slate-100',
+        chevron: 'text-slate-400',
+    },
+    dark: {
+        iconWrap: 'bg-amber-500/20 border border-amber-500/40 text-amber-400',
+        title: 'text-white',
+        subtitle: 'text-slate-400',
+        iconBtn: 'text-slate-400 hover:text-emerald-400',
+        iconBtnActive: 'bg-emerald-600 text-white',
+        syncMsg: 'text-blue-300 bg-blue-500/10 border border-blue-500/30',
+        error: 'text-red-300 bg-red-500/10 border border-red-500/30',
+        tabsWrap: 'bg-slate-800/60 border border-slate-700',
+        tabActive: 'bg-emerald-600 text-white',
+        tabInactive: 'text-slate-400 hover:text-slate-200',
+        warning: 'text-amber-300 bg-amber-500/10 border border-amber-500/30',
+        emptyIcon: 'text-slate-600',
+        emptyText: 'text-slate-500',
+        card: 'bg-slate-900 border border-slate-700',
+        badgeTransito: 'bg-amber-500/20 text-amber-400',
+        chip: 'bg-slate-800 text-slate-300',
+        meta: 'text-slate-500',
+        itemTitle: 'text-white',
+        itemSub: 'text-slate-300',
+        select: 'border border-slate-700 bg-slate-800 text-white focus:ring-emerald-500',
+        primaryBtn: 'bg-emerald-600 hover:bg-emerald-500 text-white',
+        input: 'border border-slate-700 bg-slate-800 text-white placeholder-slate-500 focus:ring-emerald-500',
+        divider: 'border-slate-700',
+        itemRow: 'bg-slate-800/60 hover:bg-slate-800',
+        chevron: 'text-slate-500',
+    },
+};
+
+const AlmacenComercialPage = ({ theme = 'light' }) => {
+    const t = THEME[theme] || THEME.light;
     const { user } = useAuth();
     const [tab, setTab]                 = useState('recepcion');
     const [almacenes, setAlmacenes]     = useState([]);
@@ -234,7 +294,7 @@ const AlmacenComercialPage = () => {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full p-10">
-                <Loader className="animate-spin text-brand-blue" size={28} />
+                <Loader className={`animate-spin ${theme === 'dark' ? 'text-emerald-400' : 'text-brand-blue'}`} size={28} />
             </div>
         );
     }
@@ -242,21 +302,21 @@ const AlmacenComercialPage = () => {
     return (
         <div className="p-4 md:p-8 max-w-2xl mx-auto w-full">
             <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-brand-yellow rounded-full flex items-center justify-center flex-shrink-0">
-                    <Warehouse size={24} className="text-black" />
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${t.iconWrap}`}>
+                    <Warehouse size={24} />
                 </div>
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800">Almacén Comercial</h2>
-                    <p className="text-slate-500 text-sm">Recepción de despachos de planta y stock disponible</p>
+                    <h2 className={`text-2xl font-bold ${t.title}`}>Almacén Comercial</h2>
+                    <p className={`text-sm ${t.subtitle}`}>Recepción de despachos de planta y stock disponible</p>
                 </div>
-                <button onClick={load} className="ml-auto text-slate-400 hover:text-brand-blue p-2">
+                <button onClick={load} className={`ml-auto p-2 rounded-lg transition-colors ${t.iconBtn}`}>
                     <RefreshCw size={18} />
                 </button>
                 <button
                     onClick={handleSyncFromKroma}
                     disabled={syncing}
                     title="Sincronizar stock existente desde Kroma"
-                    className="text-slate-400 hover:text-brand-blue p-2 disabled:opacity-50"
+                    className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${t.iconBtn}`}
                 >
                     {syncing ? <Loader size={18} className="animate-spin" /> : <Download size={18} />}
                 </button>
@@ -264,7 +324,7 @@ const AlmacenComercialPage = () => {
                     <button
                         onClick={() => setShowCreateAlmacen(s => !s)}
                         title="Nuevo almacén comercial"
-                        className={`p-2 rounded-lg transition-colors ${showCreateAlmacen ? 'bg-brand-blue text-white' : 'text-slate-400 hover:text-brand-blue'}`}
+                        className={`p-2 rounded-lg transition-colors ${showCreateAlmacen ? t.iconBtnActive : t.iconBtn}`}
                     >
                         <Plus size={18} />
                     </button>
@@ -272,22 +332,22 @@ const AlmacenComercialPage = () => {
             </div>
 
             {syncMessage && (
-                <p className="text-xs text-brand-blue font-medium bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-4">
+                <p className={`text-xs font-medium rounded-lg px-3 py-2 mb-4 ${t.syncMsg}`}>
                     {syncMessage}
                 </p>
             )}
 
-            {error && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg font-medium mb-4">{error}</p>}
+            {error && <p className={`text-sm p-3 rounded-lg font-medium mb-4 ${t.error}`}>{error}</p>}
 
             {/* Tabs */}
-            <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
+            <div className={`flex gap-1 rounded-xl p-1 mb-6 w-fit ${t.tabsWrap}`}>
                 {[
                     ['recepcion', `Recepción${pendientes.length ? ` (${pendientes.length})` : ''}`],
                     ['inventario', 'Inventario'],
                 ].map(([id, label]) => (
                     <button key={id} onClick={() => setTab(id)}
                         className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                            tab === id ? 'bg-brand-blue text-white' : 'text-slate-500 hover:text-slate-800'
+                            tab === id ? t.tabActive : t.tabInactive
                         }`}>
                         {label}
                     </button>
@@ -298,29 +358,29 @@ const AlmacenComercialPage = () => {
             {tab === 'recepcion' && (
                 <div className="space-y-3">
                     {almacenes.length === 0 && (
-                        <p className="text-amber-600 text-sm bg-amber-50 border border-amber-200 rounded-xl p-3">
+                        <p className={`text-sm rounded-xl p-3 ${t.warning}`}>
                             Crea primero un almacén comercial en la pestaña "Inventario".
                         </p>
                     )}
                     {pendientes.length === 0 ? (
                         <div className="text-center py-16">
-                            <Truck size={32} className="text-slate-300 mx-auto mb-3" />
-                            <p className="text-slate-400 text-sm">No hay despachos de planta en tránsito.</p>
+                            <Truck size={32} className={`mx-auto mb-3 ${t.emptyIcon}`} />
+                            <p className={`text-sm ${t.emptyText}`}>No hay despachos de planta en tránsito.</p>
                         </div>
                     ) : pendientes.map(despacho => {
                         const lineas = despacho.lineas || [];
                         const destinos = [...new Set(lineas.map(l => destinoDisplay(l.destino)).filter(Boolean))];
                         return (
-                            <div key={despacho.id} className="bg-white rounded-xl shadow border border-slate-100 p-4">
+                            <div key={despacho.id} className={`rounded-xl p-4 ${t.card}`}>
                                 <div className="flex items-center gap-2 flex-wrap mb-2">
-                                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">En tránsito</span>
+                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${t.badgeTransito}`}>En tránsito</span>
                                     {destinos.slice(0, 3).map(d => (
-                                        <span key={d} className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                        <span key={d} className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${t.chip}`}>
                                             <MapPin size={10} /> {d}
                                         </span>
                                     ))}
                                 </div>
-                                <p className="text-xs text-slate-400 mb-3">
+                                <p className={`text-xs mb-3 ${t.meta}`}>
                                     Salió {fmtDateTime(despacho.horasSalida || despacho.createdAt)}
                                     {despacho.responsable?.nombre && ` · ${despacho.responsable.nombre}`}
                                 </p>
@@ -328,11 +388,11 @@ const AlmacenComercialPage = () => {
                                     {lineas.map((l, i) => (
                                         <div key={i} className="flex items-center justify-between text-sm">
                                             <div className="min-w-0">
-                                                <span className="font-semibold text-slate-800">{l.cantidad} {l.unit}</span>
-                                                <span className="text-slate-600"> {l.productoNombre}</span>
-                                                {l.presentacion && <span className="text-slate-400 text-xs"> · {l.presentacion}</span>}
+                                                <span className={`font-semibold ${t.itemTitle}`}>{l.cantidad} {l.unit}</span>
+                                                <span className={t.itemSub}> {l.productoNombre}</span>
+                                                {l.presentacion && <span className={`text-xs ${t.meta}`}> · {l.presentacion}</span>}
                                             </div>
-                                            <div className="text-right text-xs text-slate-400 shrink-0 ml-2">
+                                            <div className={`text-right text-xs shrink-0 ml-2 ${t.meta}`}>
                                                 {l.lote && <div>Lote {l.lote}</div>}
                                                 {l.fechaVencimiento && <div>Vence {l.fechaVencimiento}</div>}
                                             </div>
@@ -344,14 +404,14 @@ const AlmacenComercialPage = () => {
                                         <select
                                             value={almacenChoice[despacho.id] || ''}
                                             onChange={e => setAlmacenChoice(p => ({ ...p, [despacho.id]: e.target.value }))}
-                                            className="flex-1 p-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                                            className={`flex-1 p-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 ${t.select}`}
                                         >
                                             {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
                                         </select>
                                         <button
                                             onClick={() => handleRecibir(despacho)}
                                             disabled={savingId === despacho.id}
-                                            className="bg-brand-blue text-white font-bold px-4 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50"
+                                            className={`font-bold px-4 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50 ${t.primaryBtn}`}
                                         >
                                             {savingId === despacho.id ? <Loader size={14} className="animate-spin" /> : <CheckCircle size={14} />}
                                             Recibido
@@ -369,8 +429,8 @@ const AlmacenComercialPage = () => {
                 <div className="space-y-3">
                     {/* New almacén */}
                     {showCreateAlmacen && (
-                        <div className="bg-white rounded-xl shadow border border-slate-100 p-4">
-                            <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">Nuevo Almacén Comercial</p>
+                        <div className={`rounded-xl p-4 ${t.card}`}>
+                            <p className={`text-xs font-bold uppercase tracking-widest mb-2 ${t.meta}`}>Nuevo Almacén Comercial</p>
                             <div className="flex gap-2">
                                 <input
                                     type="text"
@@ -378,12 +438,12 @@ const AlmacenComercialPage = () => {
                                     onChange={e => setNewAlmacenName(e.target.value)}
                                     placeholder="Ej: Depósito Comercial Caracas"
                                     autoFocus
-                                    className="flex-1 min-w-0 p-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                                    className={`flex-1 min-w-0 p-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 ${t.input}`}
                                 />
                                 <button
                                     onClick={handleCreateAlmacen}
                                     disabled={creatingAlmacen || !newAlmacenName.trim()}
-                                    className="bg-brand-blue text-white font-bold px-3 py-2.5 rounded-xl text-sm flex items-center gap-1 disabled:opacity-50 shrink-0"
+                                    className={`font-bold px-3 py-2.5 rounded-xl text-sm flex items-center gap-1 disabled:opacity-50 shrink-0 ${t.primaryBtn}`}
                                 >
                                     {creatingAlmacen ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
                                     Crear
@@ -393,45 +453,45 @@ const AlmacenComercialPage = () => {
                     )}
 
                     {inventarioPorAlmacen.length === 0 && (
-                        <p className="text-slate-400 text-sm text-center py-8">Aún no hay almacenes comerciales creados.</p>
+                        <p className={`text-sm text-center py-8 ${t.emptyText}`}>Aún no hay almacenes comerciales creados.</p>
                     )}
 
                     {inventarioPorAlmacen.map(({ almacen, items }) => {
                         const isOpen = expanded[almacen.id] !== false; // default open
                         const totalUnidades = items.reduce((s, i) => s + (i.unidades || 0), 0);
                         return (
-                            <div key={almacen.id} className="bg-white rounded-xl shadow border border-slate-100 overflow-hidden">
+                            <div key={almacen.id} className={`rounded-xl overflow-hidden ${t.card}`}>
                                 <button
                                     onClick={() => setExpanded(p => ({ ...p, [almacen.id]: !isOpen }))}
                                     className="w-full flex items-center justify-between p-4 text-left"
                                 >
                                     <div>
-                                        <p className="font-bold text-slate-800">{almacen.nombre}</p>
-                                        <p className="text-xs text-slate-400">{items.length} ítem{items.length !== 1 ? 's' : ''} · {totalUnidades} unid. totales</p>
+                                        <p className={`font-bold ${t.itemTitle}`}>{almacen.nombre}</p>
+                                        <p className={`text-xs ${t.meta}`}>{items.length} ítem{items.length !== 1 ? 's' : ''} · {totalUnidades} unid. totales</p>
                                     </div>
-                                    {isOpen ? <ChevronDown size={18} className="text-slate-400" /> : <ChevronRight size={18} className="text-slate-400" />}
+                                    {isOpen ? <ChevronDown size={18} className={t.chevron} /> : <ChevronRight size={18} className={t.chevron} />}
                                 </button>
                                 {isOpen && (
-                                    <div className="border-t border-slate-100 px-4 pb-4 pt-2 space-y-2">
+                                    <div className={`border-t px-4 pb-4 pt-2 space-y-2 ${t.divider}`}>
                                         {items.length === 0 ? (
-                                            <p className="text-slate-400 text-sm py-2">Sin inventario. Recibe un despacho de planta para empezar.</p>
+                                            <p className={`text-sm py-2 ${t.emptyText}`}>Sin inventario. Recibe un despacho de planta para empezar.</p>
                                         ) : items.map(item => (
                                             <button
                                                 key={item.id}
                                                 onClick={() => setAdjustItem(item)}
-                                                className="w-full flex items-center justify-between bg-slate-50 hover:bg-slate-100 rounded-xl px-3 py-2.5 text-left transition-colors"
+                                                className={`w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors ${t.itemRow}`}
                                             >
                                                 <div className="min-w-0">
-                                                    <p className="text-sm font-semibold text-slate-800 truncate">{item.productoNombre}</p>
-                                                    <p className="text-xs text-slate-400">
+                                                    <p className={`text-sm font-semibold truncate ${t.itemTitle}`}>{item.productoNombre}</p>
+                                                    <p className={`text-xs ${t.meta}`}>
                                                         {item.presentacion}
                                                         {item.lote && ` · Lote ${item.lote}`}
                                                         {item.fechaVencimiento && ` · Vence ${item.fechaVencimiento}`}
                                                     </p>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0 ml-2">
-                                                    <span className="font-bold text-slate-800">{item.unidades} {item.unit || 'und'}</span>
-                                                    <Package size={14} className="text-slate-400" />
+                                                    <span className={`font-bold ${t.itemTitle}`}>{item.unidades} {item.unit || 'und'}</span>
+                                                    <Package size={14} className={t.meta} />
                                                 </div>
                                             </button>
                                         ))}
@@ -448,6 +508,7 @@ const AlmacenComercialPage = () => {
                     item={adjustItem}
                     onClose={() => setAdjustItem(null)}
                     onSave={handleAdjustSave}
+                    theme={theme}
                 />
             )}
         </div>
