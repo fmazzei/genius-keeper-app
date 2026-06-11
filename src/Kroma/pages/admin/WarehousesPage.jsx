@@ -147,6 +147,11 @@ function matBarPct(inv) {
 const isMilkTank   = (w) => /tanque|enfriamiento/i.test(w?.nombre || '');
 const isInsumosWh  = (w) => (w?.tipo === 'materiales' || w?.tipo === 'mixto') && !isMilkTank(w);
 
+// Depósitos comerciales (ej. "Depósito Comercial Caracas") se gestionan
+// exclusivamente desde GK → Almacén Comercial. Kroma solo tiene visibilidad
+// de solo lectura sobre ellos — sin carga, ajuste, transferencia ni edición.
+const isComercialWh = (w) => /comercial/i.test(w?.nombre || '');
+
 const matActiveRows = (inventoryMat) =>
     (inventoryMat || []).filter(i => i.active !== false && i.categoria !== 'leche');
 
@@ -461,7 +466,7 @@ function TransferModal({ item, warehouses, currentWarehouseId, saving, onClose, 
     const [destId, setDestId]   = useState('');
     const [qty, setQty]         = useState(maxQty);
 
-    const destWarehouses = warehouses.filter(w => w.id !== currentWarehouseId);
+    const destWarehouses = warehouses.filter(w => w.id !== currentWarehouseId && !isComercialWh(w));
     const canConfirm = destId && qty > 0 && qty <= maxQty;
 
     return (
@@ -1138,10 +1143,13 @@ function WarehouseDetail({ warehouse, inventoryPT, inventoryMat, movements, ware
     const whMovs = movements.filter(m => m.origenId === warehouse.id || m.destinoId === warehouse.id).slice(0, 30);
     const m = TIPO_META[warehouse.tipo] || TIPO_META.mixto;
 
-    const canEditPT = kromaRole === 'master' || kromaRole === 'kroma_admin' || kromaRole === 'produccion' || kromaRole === 'kroma_gerencial';
+    const isComercial = isComercialWh(warehouse);
+    const canEditPT = !isComercial && (kromaRole === 'master' || kromaRole === 'kroma_admin' || kromaRole === 'produccion' || kromaRole === 'kroma_gerencial');
     const isAdminOrMaster = kromaRole === 'master' || kromaRole === 'kroma_admin';
     const isPT = warehouse.tipo === 'PT' || warehouse.tipo === 'mixto';
-    const canCargar = canDo ? canDo('cargarInventarioPT') : false;
+    const canCargar = !isComercial && (canDo ? canDo('cargarInventarioPT') : false);
+    const canTransfer = !isComercial;
+    const canDeleteItem = !isComercial && isMaster;
 
     return (
         <div className="min-h-full">
@@ -1168,8 +1176,19 @@ function WarehouseDetail({ warehouse, inventoryPT, inventoryMat, movements, ware
 
             <div className="px-4 md:px-6 py-5 space-y-6">
 
+                {/* Read-only notice — comercial warehouses are managed exclusively from GK */}
+                {isComercial && (
+                    <div className="bg-sky-900/20 border border-sky-700/30 rounded-xl px-4 py-3 flex items-start gap-2.5">
+                        <Truck size={15} className="text-sky-400 shrink-0 mt-0.5" />
+                        <p className="text-sky-300 text-xs leading-relaxed">
+                            Este es un depósito comercial. Su inventario y ajustes se gestionan
+                            exclusivamente desde GK → Almacén Comercial. Esta vista es de solo lectura.
+                        </p>
+                    </div>
+                )}
+
                 {/* Pending edits section — visible only for admin/master */}
-                {isAdminOrMaster && (
+                {isAdminOrMaster && !isComercial && (
                     <PendingEditsSection
                         warehouseId={warehouse.id}
                         kromaUser={kromaUser}
@@ -1233,17 +1252,19 @@ function WarehouseDetail({ warehouse, inventoryPT, inventoryMat, movements, ware
                                                         Ajustar
                                                     </button>
                                                 )}
-                                                {isMaster && (
+                                                {canDeleteItem && (
                                                     <button onClick={() => setDeleteConfirmId(item.id)}
                                                         className="flex items-center justify-center text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-500 hover:border-rose-500/50 hover:text-rose-400 transition-colors">
                                                         <Trash2 size={11} />
                                                     </button>
                                                 )}
-                                                <button onClick={() => onTransfer(item, warehouse.id)}
-                                                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
-                                                    <ArrowRight size={11} />
-                                                    Transferir
-                                                </button>
+                                                {canTransfer && (
+                                                    <button onClick={() => onTransfer(item, warehouse.id)}
+                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
+                                                        <ArrowRight size={11} />
+                                                        Transferir
+                                                    </button>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1289,17 +1310,19 @@ function WarehouseDetail({ warehouse, inventoryPT, inventoryMat, movements, ware
                                                         Ajustar
                                                     </button>
                                                 )}
-                                                {isMaster && (
+                                                {canDeleteItem && (
                                                     <button onClick={() => setDeleteConfirmId(item.id)}
                                                         className="flex items-center justify-center text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-500 hover:border-rose-500/50 hover:text-rose-400 transition-colors">
                                                         <Trash2 size={11} />
                                                     </button>
                                                 )}
-                                                <button onClick={() => onTransfer(item, warehouse.id)}
-                                                    className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
-                                                    <ArrowRight size={11} />
-                                                    Transferir
-                                                </button>
+                                                {canTransfer && (
+                                                    <button onClick={() => onTransfer(item, warehouse.id)}
+                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
+                                                        <ArrowRight size={11} />
+                                                        Transferir
+                                                    </button>
+                                                )}
                                             </div>
                                         )}
                                     </div>
@@ -1955,8 +1978,8 @@ export default function WarehousesPage() {
                         matCount={isInsumosWh(wh) ? matCount() : null}
                         matLow={isInsumosWh(wh) ? matLowCount() : 0}
                         warn={hasExpiringSoon(wh.id)}
-                        canEdit={canEdit('almacenes')}
-                        canDelete={canDelete('almacenes')}
+                        canEdit={canEdit('almacenes') && !isComercialWh(wh)}
+                        canDelete={canDelete('almacenes') && !isComercialWh(wh)}
                         onOpen={() => { setSelected(wh.id); setView('detail'); }}
                         onEdit={setEditWarehouse}
                         onDeactivate={deactivateWarehouse}
