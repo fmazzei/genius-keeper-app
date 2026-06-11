@@ -493,23 +493,29 @@ const VendedorLayout = ({ user, onLogout }) => {
                     return t >= hoy;
                 }).reduce((s, d) => s + (d.cantidad || 0), 0);
 
-                // 3. Pagos de la semana (para comisión) — también depende de reporterId
+                // 3. Pagos de la semana (para comisión) — también depende de reporterId.
+                //    No crítico: si falla (p.ej. permisos), no debe abortar el resto
+                //    de la carga (cartera/PDV/pedidos).
                 let comisionSemana = 0;
                 if (reporterId) {
-                    const pagosSnap = await getDocs(
-                        query(collection(db, 'pagos_registrados'), where('reporterId', '==', reporterId))
-                    );
-                    const pagosSem = pagosSnap.docs
-                        .map(d => d.data())
-                        .filter(p => {
-                            const t = p.createdAt?.toDate?.() || new Date(p.createdAt);
-                            return t >= inicioSem;
-                        });
-                    const montoSem       = pagosSem.reduce((s, p) => s + (p.montoUSD || 0), 0);
-                    const pct            = metaMensual > 0 ? unidadesDelMes / metaMensual : 0;
-                    const effectiveTiers = buildTiers(cfg);
-                    const tier           = getTierFromConfig(pct, effectiveTiers);
-                    comisionSemana       = montoSem * tier.rate;
+                    try {
+                        const pagosSnap = await getDocs(
+                            query(collection(db, 'pagos_registrados'), where('reporterId', '==', reporterId))
+                        );
+                        const pagosSem = pagosSnap.docs
+                            .map(d => d.data())
+                            .filter(p => {
+                                const t = p.createdAt?.toDate?.() || new Date(p.createdAt);
+                                return t >= inicioSem;
+                            });
+                        const montoSem       = pagosSem.reduce((s, p) => s + (p.montoUSD || 0), 0);
+                        const pct            = metaMensual > 0 ? unidadesDelMes / metaMensual : 0;
+                        const effectiveTiers = buildTiers(cfg);
+                        const tier           = getTierFromConfig(pct, effectiveTiers);
+                        comisionSemana       = montoSem * tier.rate;
+                    } catch (e) {
+                        console.warn('pagos_registrados load error:', e);
+                    }
                 }
 
                 // 4. Cartera propia del vendedor (para activación y lista de despacho)

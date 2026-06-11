@@ -89,7 +89,14 @@ service cloud.firestore {
     }
 
     match /pagos_registrados/{pagoId} {
-      allow read, write: if isAdmin();
+      // Admin gestiona todo. El vendedor puede leer sus propios pagos
+      // (comisión de la semana en GK → VendedorLayout) comparando el
+      // reporterId del pago con el reporterId configurado en su perfil.
+      allow read: if isAdmin() || (
+        isVendedor() &&
+        resource.data.reporterId == get(/databases/$(database)/documents/users_metadata/$(request.auth.uid)).data.reporterId
+      );
+      allow write: if isAdmin();
       allow delete: if false;
     }
 
