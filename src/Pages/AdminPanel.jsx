@@ -1734,7 +1734,7 @@ const VendedoresManagement = () => {
     const [carteraTarget, setCarteraTarget]           = useState(null);
     const [pendingCounts, setPendingCounts]           = useState({});
 
-    const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '' };
+    const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '', fechaIngreso: '' };
     const [form, setForm] = useState(EMPTY_FORM);
 
     useEffect(() => {
@@ -1837,6 +1837,7 @@ const VendedoresManagement = () => {
                 name:         form.name.trim(),
                 reporterId:   form.reporterId,
                 reporterName: form.reporterName,
+                fechaIngreso: form.fechaIngreso || null,
             });
             closeModal();
         } catch (err) {
@@ -1854,6 +1855,7 @@ const VendedoresManagement = () => {
             password:     '',
             reporterId:   v.reporterId || '',
             reporterName: v.reporterName || '',
+            fechaIngreso: v.fechaIngreso || '',
         });
         setIsAddModalOpen(true);
     };
@@ -1961,6 +1963,11 @@ const VendedoresManagement = () => {
                                 </div>
                             </>
                         )}
+                        <div className="sm:col-span-2">
+                            <label className="block text-sm font-semibold text-slate-700 mb-1">Fecha de ingreso</label>
+                            <input type="date" value={form.fechaIngreso} onChange={e => setForm(p => ({ ...p, fechaIngreso: e.target.value }))} className="w-full p-3 border border-slate-300 rounded-lg" />
+                            <p className="text-xs text-slate-400 mt-1">Se usa para calcular el período de arranque (metas reducidas) configurado en el constructor de comisiones.</p>
+                        </div>
                         <div className="sm:col-span-2">
                             <label className="block text-sm font-semibold text-slate-700 mb-1">Reporter vinculado</label>
                             <select value={form.reporterId} onChange={e => handleReporterChange(e.target.value)} className="w-full p-3 border border-slate-300 rounded-lg bg-white">

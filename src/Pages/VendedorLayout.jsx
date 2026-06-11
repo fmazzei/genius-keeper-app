@@ -250,7 +250,9 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
                     <p className="text-white text-sm">
                         Mes {vendedor.mesArranque} — Meta reducida: <span className="font-bold">{vendedor.metaMensual.toLocaleString()} uds</span>
                     </p>
-                    <p className="text-slate-400 text-xs mt-1">La meta plena (2.400 uds) comienza el mes 3.</p>
+                    <p className="text-slate-400 text-xs mt-1">
+                        La meta plena ({commConfig.metaMensual.toLocaleString()} uds) comienza el mes {(commConfig.arranque?.length || 0) + 1}.
+                    </p>
                 </div>
             )}
         </div>
@@ -313,7 +315,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [currentView, setCurrentView]               = useState('home');
     const [selectedPos, setSelectedPos]               = useState(null);
     const [subView, setSubView]                       = useState(null);
-    const [vendedor, setVendedor]                     = useState({ uid: null, nombre: '', metaMensual: 2400, reporterId: null });
+    const [vendedor, setVendedor]                     = useState({ uid: null, nombre: '', metaMensual: 2400, reporterId: null, mesArranque: 0 });
     const [commConfig, setCommConfig]                 = useState(DEFAULT_COMMISSION_CONFIG);
     const [stats, setStats]                           = useState({
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
@@ -426,9 +428,26 @@ const VendedorLayout = ({ user, onLogout }) => {
                     ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
                     : DEFAULT_COMMISSION_CONFIG;
                 // metaMensual lives at top-level AND is mirrored inside commissionConfig
-                const metaMensual = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+                let metaMensual = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+
+                // Período de arranque: si el vendedor tiene fechaIngreso y el
+                // máster configuró metas reducidas para los primeros meses,
+                // se usa la meta del mes de arranque correspondiente.
+                let mesArranque = 0;
+                if (meta.fechaIngreso && Array.isArray(cfg.arranque) && cfg.arranque.length > 0) {
+                    const ingreso = meta.fechaIngreso?.toDate ? meta.fechaIngreso.toDate() : new Date(meta.fechaIngreso);
+                    if (!isNaN(ingreso.getTime())) {
+                        const hoy = new Date();
+                        const transcurridos = (hoy.getFullYear() - ingreso.getFullYear()) * 12 + (hoy.getMonth() - ingreso.getMonth()) + 1;
+                        if (transcurridos >= 1 && transcurridos <= cfg.arranque.length) {
+                            mesArranque = transcurridos;
+                            metaMensual = cfg.arranque[transcurridos - 1].meta;
+                        }
+                    }
+                }
+
                 setCommConfig(cfg);
-                setVendedor({ uid: user.uid, nombre, metaMensual, reporterId });
+                setVendedor({ uid: user.uid, nombre, metaMensual, reporterId, mesArranque });
 
                 if (!reporterId) { setLoading(false); return; }
 
