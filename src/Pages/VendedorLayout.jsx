@@ -334,6 +334,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         facturasPorVencer: 0,
     });
     const [loading, setLoading]                       = useState(true);
+    const [loadError, setLoadError]                   = useState('');
     const [posList, setPosList]                       = useState([]);
     const [clientesPosList, setClientesPosList]       = useState([]);
     const [alertas, setAlertas]                       = useState([]);
@@ -504,15 +505,17 @@ const VendedorLayout = ({ user, onLogout }) => {
                 }
 
                 // 4. Cartera propia del vendedor (para activación y lista de despacho)
+                //    Filtrado de "estado" en cliente (evita índice compuesto).
                 const carteraSnap = await getDocs(
                     query(
                         collection(db, 'vendor_clients'),
                         where('vendedorId', '==', user.uid),
-                        where('estado', '==', 'activo'),
                         where('active', '==', true),
                     )
                 );
-                const cartera = carteraSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const cartera = carteraSnap.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(c => c.estado === 'activo');
                 const puntosTotal = cartera.length;
 
                 // Despachos de esta semana con mínimo de unidades, cruzados contra cartera
@@ -613,6 +616,7 @@ const VendedorLayout = ({ user, onLogout }) => {
 
             } catch (e) {
                 console.warn('VendedorLayout load error:', e);
+                setLoadError(e?.message || 'Error cargando datos del vendedor.');
             } finally {
                 setLoading(false);
             }
@@ -665,6 +669,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                         selectedReporter={{ id: vendedor.reporterId, name: vendedor.nombre }}
                         vendedor={vendedor}
                         theme="dark"
+                        loadError={loadError}
                         onBack={() => { setCurrentView('home'); setSubView(null); }}
                     />
                 );

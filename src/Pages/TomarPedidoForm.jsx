@@ -84,7 +84,7 @@ async function findVendedorForPos(pos) {
     return null;
 }
 
-const TomarPedidoForm = ({ posList = [], selectedReporter, vendedor = null, onBack, theme = 'light' }) => {
+const TomarPedidoForm = ({ posList = [], selectedReporter, vendedor = null, onBack, theme = 'light', loadError = '' }) => {
     const t = THEME[theme] || THEME.light;
     const [posId, setPosId]         = useState('');
     const [cantidad, setCantidad]   = useState('');
@@ -246,8 +246,12 @@ const TomarPedidoForm = ({ posList = [], selectedReporter, vendedor = null, onBa
 
             {sortedPosList.length === 0 && (
                 <div className={`text-sm rounded-xl p-3 mb-5 ${t.error}`}>
-                    No tienes clientes activos en tu cartera todavía. Agrega o espera la aprobación
-                    de tus clientes en la pestaña "Cartera" para poder tomar pedidos.
+                    {loadError
+                        ? <>No se pudo cargar tu cartera de clientes. Vuelve a intentarlo más tarde.{' '}
+                            <span className="opacity-70">({loadError})</span></>
+                        : <>No tienes clientes activos en tu cartera todavía. Agrega o espera la aprobación
+                            de tus clientes en la pestaña "Cartera" para poder tomar pedidos.</>
+                    }
                 </div>
             )}
 
