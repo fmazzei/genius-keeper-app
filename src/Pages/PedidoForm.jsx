@@ -1,9 +1,9 @@
 // RUTA: src/Pages/PedidoForm.jsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ShoppingCart, ChevronLeft, CheckCircle, Camera, Loader } from 'lucide-react';
+import { collection, addDoc, updateDoc, doc, getDocs, query, where, increment, serverTimestamp } from 'firebase/firestore';
+import { ShoppingCart, ChevronLeft, CheckCircle, Camera, Loader, Package, Edit3 } from 'lucide-react';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
 import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import { useVisionAPI } from '@/hooks/useVisionAPI.js';
@@ -23,6 +23,8 @@ const customFileToDataURL = (file) =>
         reader.readAsDataURL(file);
     });
 
+const productKey = (it) => `${it.productoNombre || ''}__${it.presentacion || ''}`;
+
 // ── PedidoForm ────────────────────────────────────────────────────────────────
 // pos is pre-selected (passed from AppShell after PDV selection).
 const PedidoForm = ({ pos, selectedReporter, onBack }) => {
@@ -36,12 +38,59 @@ const PedidoForm = ({ pos, selectedReporter, onBack }) => {
     const [scannerStatus, setScannerStatus] = useState('');
     const [isOptimizing, setIsOptimizing]   = useState(false);
 
+    // ── Inventario comercial: producto / lote (trazabilidad Kroma) ─────────────
+    const [loteOptions, setLoteOptions]       = useState([]); // inventario_comercial con unidades > 0
+    const [loadingLotes, setLoadingLotes]     = useState(true);
+    const [manualMode, setManualMode]         = useState(false); // forzado por el usuario o sin stock disponible
+    const [selectedProductKey, setSelectedProductKey] = useState('');
+    const [selectedLoteId, setSelectedLoteId] = useState('');
+
     const { processImageForDate, isProcessing } = useVisionAPI();
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const snap = await getDocs(query(collection(db, 'inventario_comercial'), where('unidades', '>', 0)));
+                if (cancelled) return;
+                const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                setLoteOptions(items);
+                if (items.length === 0) setManualMode(true);
+            } catch (e) {
+                // Sin permisos (p.ej. mercaderista) o sin colección disponible: caer a flujo manual.
+                if (!cancelled) setManualMode(true);
+            } finally {
+                if (!cancelled) setLoadingLotes(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
+    const productOptions = Array.from(new Map(loteOptions.map(it => [productKey(it), it])).values());
+    const lotesForProduct = loteOptions
+        .filter(it => productKey(it) === selectedProductKey)
+        .sort((a, b) => (a.fechaVencimiento || '').localeCompare(b.fechaVencimiento || ''));
+    const selectedLote = loteOptions.find(it => it.id === selectedLoteId) || null;
+
+    const useInventoryMode = !manualMode && loteOptions.length > 0;
+    const quantityNum = Number(quantity) || 0;
+    const exceedsStock = useInventoryMode && selectedLote && quantityNum > (selectedLote.unidades || 0);
 
     const displayDate = new Date().toLocaleString('es-VE', {
         day: '2-digit', month: '2-digit', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
     });
+
+    const handleSelectProduct = (key) => {
+        setSelectedProductKey(key);
+        setSelectedLoteId('');
+        setExpiryDate('');
+    };
+
+    const handleSelectLote = (item) => {
+        setSelectedLoteId(item.id);
+        setExpiryDate(item.fechaVencimiento || '');
+    };
 
     const handleScanComplete = async (imageDataUrl) => {
         if (!imageDataUrl || typeof imageDataUrl !== 'string') return;
@@ -74,6 +123,10 @@ const PedidoForm = ({ pos, selectedReporter, onBack }) => {
             alert('Debes ingresar la cantidad y la fecha de vencimiento.');
             return;
         }
+        if (exceedsStock) {
+            alert(`No hay suficiente stock en ese lote. Disponible: ${selectedLote.unidades} unidades.`);
+            return;
+        }
         setSaving(true);
         try {
             await addDoc(collection(db, 'despachos'), {
@@ -85,8 +138,23 @@ const PedidoForm = ({ pos, selectedReporter, onBack }) => {
                 numeroOC:     numeroOC.trim() || null,
                 reporterId:   selectedReporter?.id   || '',
                 reporterName: selectedReporter?.name || '',
+                lote:                   selectedLote?.lote || null,
+                productoNombre:         selectedLote?.productoNombre || null,
+                presentacion:           selectedLote?.presentacion || null,
+                almacenComercialId:     selectedLote?.almacenId || null,
+                almacenComercialNombre: selectedLote?.almacenNombre || null,
+                inventarioComercialId:  selectedLote?.id || null,
                 createdAt:    serverTimestamp(),
             });
+
+            // Descontar del inventario comercial el lote despachado
+            if (selectedLote) {
+                await updateDoc(doc(db, 'inventario_comercial', selectedLote.id), {
+                    unidades:  increment(-Number(quantity)),
+                    updatedAt: serverTimestamp(),
+                });
+            }
+
             setSaved(true);
         } catch (err) {
             console.error('Error al guardar despacho:', err);
@@ -143,7 +211,76 @@ const PedidoForm = ({ pos, selectedReporter, onBack }) => {
                     </div>
                 </div>
 
-                {/* 3. Cantidad — NumPad */}
+                {/* 3. Producto y lote — desde Almacén Comercial */}
+                {!loadingLotes && useInventoryMode && (
+                    <div className="bg-white rounded-xl shadow p-4 border border-slate-100">
+                        <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+                                Producto y Lote <span className="text-red-500">*</span>
+                            </p>
+                            <button type="button" onClick={() => { setManualMode(true); setSelectedProductKey(''); setSelectedLoteId(''); setExpiryDate(''); }}
+                                className="flex items-center gap-1 text-xs text-slate-400 hover:text-brand-blue font-semibold">
+                                <Edit3 size={12} /> Manual
+                            </button>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 mb-3">
+                            {productOptions.map(it => {
+                                const key = productKey(it);
+                                const active = key === selectedProductKey;
+                                return (
+                                    <button key={key} type="button" onClick={() => handleSelectProduct(key)}
+                                        className={`px-3 py-2 rounded-xl border text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                                            active ? 'border-brand-blue bg-brand-blue text-white' : 'border-slate-200 bg-slate-50 text-slate-600'
+                                        }`}>
+                                        <Package size={13} />
+                                        {it.productoNombre}{it.presentacion ? ` · ${it.presentacion}` : ''}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {selectedProductKey && (
+                            <div className="space-y-2">
+                                {lotesForProduct.map(item => {
+                                    const active = item.id === selectedLoteId;
+                                    return (
+                                        <button key={item.id} type="button" onClick={() => handleSelectLote(item)}
+                                            className={`w-full text-left px-3 py-2.5 rounded-xl border transition-colors ${
+                                                active ? 'border-brand-blue bg-blue-50' : 'border-slate-200 bg-white'
+                                            }`}>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="font-mono text-sm font-bold text-slate-700">{item.lote || 'Sin lote'}</span>
+                                                <span className="text-xs font-semibold text-emerald-600">{item.unidades} disp.</span>
+                                            </div>
+                                            <div className="flex items-center justify-between gap-2 mt-0.5">
+                                                <span className="text-xs text-slate-400">Vence: {item.fechaVencimiento || '—'}</span>
+                                                <span className="text-xs text-slate-400">{item.almacenNombre}</span>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {exceedsStock && (
+                            <p className="text-sm text-red-600 font-semibold mt-2">
+                                Cantidad mayor al stock disponible ({selectedLote.unidades} unidades).
+                            </p>
+                        )}
+                    </div>
+                )}
+
+                {manualMode && !loadingLotes && loteOptions.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center justify-between gap-2">
+                        <p className="text-amber-700 text-xs">Registrando sin vincular a un lote del almacén comercial.</p>
+                        <button type="button" onClick={() => setManualMode(false)} className="text-xs font-bold text-brand-blue shrink-0">
+                            Usar inventario
+                        </button>
+                    </div>
+                )}
+
+                {/* 4. Cantidad — NumPad */}
                 <div className="bg-white rounded-xl shadow p-4 border border-slate-100">
                     <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
                         Cantidad de Unidades <span className="text-red-500">*</span>
@@ -161,34 +298,41 @@ const PedidoForm = ({ pos, selectedReporter, onBack }) => {
                     </button>
                 </div>
 
-                {/* 4. Fecha de vencimiento */}
+                {/* 5. Fecha de vencimiento */}
                 <div className="bg-white rounded-xl shadow p-4 border border-slate-100">
                     <p className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
                         Fecha de Vencimiento <span className="text-red-500">*</span>
                     </p>
-                    <div className="space-y-3">
-                        <div className="w-full p-3 border-2 rounded-xl text-center">
-                            <input
-                                type="date"
-                                value={expiryDate}
-                                onChange={e => setExpiryDate(e.target.value)}
-                                className="w-full text-center font-bold text-xl bg-transparent border-none focus:ring-0 p-0"
-                            />
+                    {useInventoryMode && selectedLote ? (
+                        <div className="w-full p-3 border-2 border-slate-100 bg-slate-50 rounded-xl text-center">
+                            <p className="font-bold text-xl text-slate-700">{expiryDate || '—'}</p>
+                            <p className="text-xs text-slate-400 mt-1">Tomada del lote {selectedLote.lote || ''} (Kroma)</p>
                         </div>
-                        <button
-                            type="button"
-                            onClick={() => setScannerOpen(true)}
-                            className="w-full flex items-center justify-center gap-3 bg-brand-blue text-white font-bold py-3 px-4 rounded-xl text-base active:scale-95 transition-transform"
-                        >
-                            <Camera size={20} /> Escanear Fecha con Cámara
-                        </button>
-                    </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="w-full p-3 border-2 rounded-xl text-center">
+                                <input
+                                    type="date"
+                                    value={expiryDate}
+                                    onChange={e => setExpiryDate(e.target.value)}
+                                    className="w-full text-center font-bold text-xl bg-transparent border-none focus:ring-0 p-0"
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setScannerOpen(true)}
+                                className="w-full flex items-center justify-center gap-3 bg-brand-blue text-white font-bold py-3 px-4 rounded-xl text-base active:scale-95 transition-transform"
+                            >
+                                <Camera size={20} /> Escanear Fecha con Cámara
+                            </button>
+                        </div>
+                    )}
                     {scannerStatus && !isProcessing && !isOptimizing && (
                         <p className="text-sm text-amber-600 mt-2 font-medium">{scannerStatus}</p>
                     )}
                 </div>
 
-                {/* 5. Número OC — optional */}
+                {/* 6. Número OC — optional */}
                 <div className="bg-white rounded-xl shadow p-4 border border-slate-100">
                     <label className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3 block">
                         Número de OC <span className="text-slate-400 font-normal normal-case">(opcional)</span>
@@ -204,7 +348,7 @@ const PedidoForm = ({ pos, selectedReporter, onBack }) => {
 
                 <button
                     type="submit"
-                    disabled={saving || !quantity || !expiryDate}
+                    disabled={saving || !quantity || !expiryDate || exceedsStock}
                     className="w-full bg-brand-yellow text-black font-black py-4 rounded-xl text-lg hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                     {saving ? 'Guardando...' : 'Confirmar Despacho'}

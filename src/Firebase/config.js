@@ -34,5 +34,3 @@ export { messaging };
 export const functions = getFunctions(app, 'us-central1');
 // ✅ SE ELIMINA LA EXPORTACIÓN DE DYNAMIC LINKS
 // export const dynamicLinks = getDynamicLinks(app);
-
-export const VISION_API_KEY = "AIzaSyA3lGxMdhX_vrFAXUQVxQVm-4hSYEFM3Ts";
