@@ -220,6 +220,7 @@ const AlmacenComercialPage = () => {
             setSyncMessage('No se pudo sincronizar con Kroma. ' + e.message);
         } finally {
             setSyncing(false);
+            setTimeout(() => setSyncMessage(''), 4000);
         }
     };
 
@@ -249,7 +250,21 @@ const AlmacenComercialPage = () => {
                 <button onClick={load} className="ml-auto text-slate-400 hover:text-brand-blue p-2">
                     <RefreshCw size={18} />
                 </button>
+                <button
+                    onClick={handleSyncFromKroma}
+                    disabled={syncing}
+                    title="Sincronizar stock existente desde Kroma"
+                    className="text-slate-400 hover:text-brand-blue p-2 disabled:opacity-50"
+                >
+                    {syncing ? <Loader size={18} className="animate-spin" /> : <Download size={18} />}
+                </button>
             </div>
+
+            {syncMessage && (
+                <p className="text-xs text-brand-blue font-medium bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-4">
+                    {syncMessage}
+                </p>
+            )}
 
             {error && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg font-medium mb-4">{error}</p>}
 
@@ -362,28 +377,6 @@ const AlmacenComercialPage = () => {
                             </button>
                         </div>
                     </div>
-
-                    {/* Importar stock existente desde Kroma */}
-                    {almacenes.length > 0 && (
-                        <div className="bg-white rounded-xl shadow border border-slate-100 p-4 flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                                <p className="text-sm font-semibold text-slate-800">Sincronizar con Kroma</p>
-                                <p className="text-xs text-slate-400">
-                                    Importa stock de PT que ya está físicamente en el depósito comercial de Kroma
-                                    pero aún no figura aquí.
-                                </p>
-                                {syncMessage && <p className="text-xs text-brand-blue font-medium mt-1">{syncMessage}</p>}
-                            </div>
-                            <button
-                                onClick={handleSyncFromKroma}
-                                disabled={syncing}
-                                className="bg-slate-800 text-white font-bold px-4 py-2.5 rounded-xl text-sm flex items-center gap-2 disabled:opacity-50 shrink-0"
-                            >
-                                {syncing ? <Loader size={14} className="animate-spin" /> : <Download size={14} />}
-                                Sincronizar
-                            </button>
-                        </div>
-                    )}
 
                     {inventarioPorAlmacen.length === 0 && (
                         <p className="text-slate-400 text-sm text-center py-8">Aún no hay almacenes comerciales creados.</p>
