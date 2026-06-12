@@ -133,16 +133,40 @@ function AddClientForm({ vendedor, onSaved, onCancel }) {
     );
 }
 
+// ─── Resolve a vendor_client against the live PDV record ──────────────────────
+// Los vendor_clients guardan una "foto" de tipoDespacho/chain/nombre al momento
+// de asignar el PDV. Si el admin edita el PDV después (p.ej. cambia "Central
+// Madeirense - La Alameda" de Centralizado a Directo), esa foto queda
+// desactualizada. Aquí se sobreescribe con los datos actuales de `pos` para
+// que la cartera del vendedor sea siempre el reflejo orgánico de Administración.
+function resolveClient(c, posById) {
+    const livePos = c.posId ? posById[c.posId] : null;
+    if (!livePos) return c;
+
+    const isCentralizado = livePos.tipoDespacho === 'centralizado'
+        || (!livePos.tipoDespacho && livePos.chain && livePos.chain !== 'Automercados Individuales');
+
+    return {
+        ...c,
+        clientName:   livePos.name    || c.clientName,
+        chain:        livePos.chain   || c.chain,
+        tipoDespacho: isCentralizado ? 'centralizado' : 'directo',
+        address:      livePos.address || c.address,
+        city:         livePos.city    || c.city,
+        zone:         livePos.zone    || c.zone,
+    };
+}
+
 // ─── Group clients for display ────────────────────────────────────────────────
 // Rules:
 // - Explicit tipoDespacho:'centralizado' with chain field → one chain card
 // - Legacy: multiple entries sharing same "ChainName - " prefix → one chain card
 // - Single entry or tipoDespacho:'directo' → individual card
-function groupClients(clients) {
+function groupClients(clients, posById = {}, allPos = []) {
     const chainMap = {};   // chainName → members[]
     const individual = [];
 
-    clients.forEach(c => {
+    clients.map(c => resolveClient(c, posById)).forEach(c => {
         if (c.tipoDespacho === 'centralizado' && c.chain) {
             if (!chainMap[c.chain]) chainMap[c.chain] = [];
             chainMap[c.chain].push(c);
@@ -173,6 +197,7 @@ function groupClients(clients) {
         const dominantEstado =
             members.some(m => m.estado === 'activo')    ? 'activo'    :
             members.some(m => m.estado === 'pendiente') ? 'pendiente' : 'rechazado';
+        const liveBranchCount = allPos.filter(p => p.chain === chainName).length;
         result.push({
             _type:     'chain',
             _key:      chainName,
@@ -180,7 +205,7 @@ function groupClients(clients) {
             members,
             estado:    dominantEstado,
             city:      members[0]?.city || '',
-            branchCount: members[0]?.branchCount || members.length,
+            branchCount: liveBranchCount || members[0]?.branchCount || members.length,
         });
     });
 
@@ -191,6 +216,7 @@ function groupClients(clients) {
 // ─── Main cartera view ────────────────────────────────────────────────────────
 function VendedorCartera({ vendedor }) {
     const [clients, setClients]   = useState([]);
+    const [allPos, setAllPos]     = useState([]);
     const [loading, setLoading]   = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [filter, setFilter]     = useState('todos');
@@ -209,6 +235,21 @@ function VendedorCartera({ vendedor }) {
         return unsub;
     }, [vendedor?.uid]);
 
+    // Datos en vivo de los PDV (Administración → PDV) para reflejar de forma
+    // orgánica cualquier cambio de tipoDespacho/cadena/nombre.
+    useEffect(() => {
+        const q = query(collection(db, 'pos'), where('active', '==', true));
+        const unsub = onSnapshot(q, snap => {
+            setAllPos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        }, () => {});
+        return unsub;
+    }, []);
+
+    const posById = useMemo(
+        () => Object.fromEntries(allPos.map(p => [p.id, p])),
+        [allPos],
+    );
+
     if (showForm) {
         return (
             <AddClientForm
@@ -226,7 +267,7 @@ function VendedorCartera({ vendedor }) {
                   : filter === 'pendientes' ? pendientes
                   : clients.filter(c => c.estado !== 'rechazado');
 
-    const displayItems = useMemo(() => groupClients(visible), [visible]);
+    const displayItems = useMemo(() => groupClients(visible, posById, allPos), [visible, posById, allPos]);
 
     if (loading) return (
         <div className="flex-1 flex items-center justify-center">
