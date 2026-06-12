@@ -10,6 +10,7 @@ import {
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line } from 'recharts';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import { useSalesGoal } from '@/hooks/useSalesGoal.js';
+import { useTeamMetaMensual } from '@/hooks/useTeamMetaMensual.js';
 import { useAuth } from '@/context/AuthContext';
 import { usePendingSales } from '@/hooks/usePendingSales.js';
 import Modal from '@/Components/Modal.jsx';
@@ -59,8 +60,15 @@ const AlertRow = ({ alert, onNavigate }) => {
 const VentasView = ({ reports, posList, loading, onNavigate, allAlerts }) => {
     const { user } = useAuth();
     const { pendingSales, loading: pendingLoading }  = usePendingSales();
-    const { salesGoal: unitGoal, loading: goalLoading } = useSalesGoal(user?.uid);
+    const { salesGoal: manualGoal, loading: manualGoalLoading } = useSalesGoal(user?.uid);
+    const { teamGoal, loading: teamGoalLoading } = useTeamMetaMensual();
     const [activeModal, setActiveModal] = useState(null);
+
+    // Si el gerente tiene una meta configurada manualmente (AdminPanel) se
+    // respeta esa; si no, se usa la suma de las metas mensuales efectivas
+    // de los vendedores activos (igual a "Meta Global del Equipo").
+    const unitGoal    = manualGoal > 0 ? manualGoal : teamGoal;
+    const goalLoading = manualGoalLoading || teamGoalLoading;
 
     // ── Computed metrics ──────────────────────────────────────────────────────
     const metrics = useMemo(() => {
