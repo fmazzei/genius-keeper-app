@@ -5,6 +5,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { Users, Trophy, RefreshCw } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
+import { computeMetaMensual } from '@/utils/vendedorMeta.js';
 
 // Exact same tier definitions as VendedorLayout
 const TIERS = {
@@ -64,7 +65,7 @@ const RendimientoComercialView = () => {
 
             const enriched = vends.map(v => {
                 const units = unitsByReporter[v.reporterId] || 0;
-                const goal  = v.metaMensual || 0;
+                const { metaMensual: goal } = computeMetaMensual(v);
                 const ratio = goal > 0 ? units / goal : 0;
                 const tier  = getTier(ratio);
                 const comision = (pagosByReporter[v.reporterId] || 0) * tier.rate;

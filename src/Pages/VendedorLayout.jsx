@@ -24,6 +24,7 @@ import ReportesAnaquelView from '@/Pages/ReportesAnaquelView.jsx';
 import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
+import { computeMetaMensual } from '@/utils/vendedorMeta.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
 // ─── Tier style palette (by tier index, 0 = highest) ─────────────────────────
@@ -586,24 +587,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const cfg = meta.commissionConfig
                     ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
                     : DEFAULT_COMMISSION_CONFIG;
-                // metaMensual lives at top-level AND is mirrored inside commissionConfig
-                let metaMensual = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
 
-                // Período de arranque: si el vendedor tiene fechaIngreso y el
-                // máster configuró metas reducidas para los primeros meses,
-                // se usa la meta del mes de arranque correspondiente.
-                let mesArranque = 0;
-                if (meta.fechaIngreso && Array.isArray(cfg.arranque) && cfg.arranque.length > 0) {
-                    const ingreso = meta.fechaIngreso?.toDate ? meta.fechaIngreso.toDate() : new Date(meta.fechaIngreso);
-                    if (!isNaN(ingreso.getTime())) {
-                        const hoy = new Date();
-                        const transcurridos = (hoy.getFullYear() - ingreso.getFullYear()) * 12 + (hoy.getMonth() - ingreso.getMonth()) + 1;
-                        if (transcurridos >= 1 && transcurridos <= cfg.arranque.length) {
-                            mesArranque = transcurridos;
-                            metaMensual = cfg.arranque[transcurridos - 1].meta;
-                        }
-                    }
-                }
+                // Meta mensual efectiva, aplicando Período de Arranque si corresponde.
+                const { metaMensual, mesArranque } = computeMetaMensual(meta);
 
                 setCommConfig(cfg);
                 setVendedor({ uid: user.uid, nombre, metaMensual, reporterId, mesArranque });
