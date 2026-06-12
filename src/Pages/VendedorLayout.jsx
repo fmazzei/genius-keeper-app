@@ -55,6 +55,13 @@ function getTierFromConfig(pct, tiers) {
     return { label: 'Baja', min: 0, rate: 0, ...BAJA_STYLE };
 }
 
+function saludoDelDia() {
+    const h = new Date().getHours();
+    if (h < 12) return 'Buenos días';
+    if (h < 19) return 'Buenas tardes';
+    return 'Buenas noches';
+}
+
 function startOfMonth() {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -88,12 +95,13 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
     const unidadesParaSiguiente = () => {
         for (let i = tiers.length - 1; i >= 0; i--) {
             if (pct < tiers[i].min) {
-                return Math.ceil((tiers[i].min - pct) * vendedor.metaMensual);
+                return { uds: Math.ceil((tiers[i].min - pct) * vendedor.metaMensual), tier: tiers[i] };
             }
         }
         return null;
     };
-    const faltan = unidadesParaSiguiente();
+    const siguiente = unidadesParaSiguiente();
+    const faltan = siguiente?.uds ?? null;
     const ingresoBase = commConfig.salarioFijo + commConfig.viaticosSemanales * 4;
     const hasComision = (tiers || []).some(t => t.rate > 0);
     const showActivacion   = commConfig.bonusActivacion > 0;
@@ -132,7 +140,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
 
             {/* ── Saludo ── */}
             <div className="pt-2">
-                <p className="text-slate-400 text-sm">Buenos días,</p>
+                <p className="text-slate-400 text-sm">{saludoDelDia()},</p>
                 <p className="text-white font-black text-2xl leading-tight">{vendedor.nombre?.split(' ')[0] || 'Vendedor'}</p>
             </div>
 
@@ -169,7 +177,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
                             <p className="text-slate-500 text-xs">{(pct * 100).toFixed(0)}% del objetivo</p>
                             {faltan !== null && (
                                 <p className={`text-xs font-semibold ${tier.color}`}>
-                                    {faltan.toLocaleString()} uds → siguiente nivel
+                                    {faltan.toLocaleString()} uds → Nivel {siguiente.tier.label} ({(siguiente.tier.rate * 100).toFixed(1)}%)
                                 </p>
                             )}
                         </div>
