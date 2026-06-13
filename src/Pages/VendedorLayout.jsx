@@ -53,7 +53,11 @@ function getTierFromConfig(pct, tiers) {
     for (const t of tiers) {
         if (pct >= t.min) return t;
     }
-    return { label: 'Baja', min: 0, rate: 0, ...BAJA_STYLE };
+    // Por debajo del tier más bajo configurado ("Baja"): paga la misma
+    // comisión base que ese tier (p.ej. 3,5%), pero sin bonos — el nivel
+    // "Baja" ya no es "$0 / sin comisión por meta".
+    const lowest = tiers[tiers.length - 1];
+    return { label: 'Baja', min: 0, rate: lowest?.rate ?? 0, ...BAJA_STYLE };
 }
 
 function saludoDelDia() {

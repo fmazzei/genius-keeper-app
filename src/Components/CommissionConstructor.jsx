@@ -359,17 +359,24 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                     );
                                 })}
 
-                            <div className="bg-slate-100 rounded-xl p-3.5 border border-slate-200">
-                                <div className="flex items-baseline justify-between mb-1.5">
-                                    <span className="font-bold text-slate-400">Baja <span className="text-xs font-normal">(&lt;{lowestMinPct}%)</span></span>
-                                    <span className="font-black text-slate-400 text-xl">${(config.salarioFijo + config.viaticosSemanales * 4).toFixed(0)}</span>
-                                </div>
-                                <div className="flex flex-wrap gap-x-3 text-xs text-slate-400">
-                                    <span>Fijo <b className="font-semibold">${config.salarioFijo}</b></span>
-                                    <span>Viáticos <b className="font-semibold">${config.viaticosSemanales * 4}</b></span>
-                                    <span className="italic">Sin comisión por meta</span>
-                                </div>
-                            </div>
+                            {(() => {
+                                const lowestTier = [...config.tiers].sort((a, b) => a.minPct - b.minPct)[0];
+                                const p = project(lowestTier?.rate || 0);
+                                return (
+                                    <div className="bg-slate-100 rounded-xl p-3.5 border border-slate-200">
+                                        <div className="flex items-baseline justify-between mb-1.5">
+                                            <span className="font-bold text-slate-500">Baja <span className="text-xs font-normal">(&lt;{lowestMinPct}%)</span></span>
+                                            <span className="font-black text-slate-600 text-xl">${p.total.toFixed(0)}</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
+                                            <span>Fijo <b className="text-slate-600 font-semibold">${p.fijo}</b></span>
+                                            <span>Viáticos <b className="text-slate-600 font-semibold">${p.viaticos}</b></span>
+                                            <span>Comisión <b className="text-slate-600 font-semibold">${p.commission.toFixed(0)}</b></span>
+                                            <span className="italic">Sin bonos por meta</span>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         <p className="text-[11px] text-slate-400">
