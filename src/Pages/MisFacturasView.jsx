@@ -118,9 +118,14 @@ const MisFacturasView = ({ vendedorId }) => {
                                 ${Number(f.monto || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}
                             </p>
                             {vencStr && (
-                                <p className={`text-xs ${vencida ? 'text-red-400 font-semibold' : 'text-slate-500'}`}>
-                                    Vence: {vencStr}
-                                </p>
+                                <div className="text-right">
+                                    <p className={`text-xs ${vencida ? 'text-red-400 font-semibold' : 'text-slate-500'}`}>
+                                        Vence: {vencStr}
+                                    </p>
+                                    {Number.isFinite(f.diasCredito) && (
+                                        <p className="text-slate-500 text-[10px] mt-0.5">{f.diasCredito} días de crédito</p>
+                                    )}
+                                </div>
                             )}
                         </div>
                     </div>

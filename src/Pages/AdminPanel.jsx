@@ -2224,9 +2224,12 @@ const CompetitorManagement = () => {
 const IntegracionesSection = () => {
     const [zohoSales, setZohoSales]       = useState(false);
     const [zohoComis, setZohoComis]       = useState(false);
+    const [zohoOrgId, setZohoOrgId]       = useState('');
     const [loading, setLoading]           = useState(true);
     const [saving, setSaving]             = useState(false);
     const [saved, setSaved]               = useState(false);
+    const [sinVendedor, setSinVendedor]   = useState(null);
+    const [loadingAlert, setLoadingAlert] = useState(true);
 
     useEffect(() => {
         getDoc(doc(db, 'settings', 'appConfig')).then(snap => {
@@ -2234,9 +2237,15 @@ const IntegracionesSection = () => {
                 const d = snap.data();
                 setZohoSales(d.zohoSalesWebhookActive === true);
                 setZohoComis(d.zohoCommissionsWebhookActive === true);
+                setZohoOrgId(d.zohoOrgIdLacteoca || '');
             }
             setLoading(false);
         }).catch(() => setLoading(false));
+
+        getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', null)))
+            .then(snap => setSinVendedor(snap.size))
+            .catch(() => setSinVendedor(null))
+            .finally(() => setLoadingAlert(false));
     }, []);
 
     const save = async () => {
@@ -2245,6 +2254,7 @@ const IntegracionesSection = () => {
             await setDoc(doc(db, 'settings', 'appConfig'), {
                 zohoSalesWebhookActive:       zohoSales,
                 zohoCommissionsWebhookActive: zohoComis,
+                zohoOrgIdLacteoca:            zohoOrgId.trim(),
             }, { merge: true });
             setSaved(true);
             setTimeout(() => setSaved(false), 2500);
@@ -2297,6 +2307,19 @@ const IntegracionesSection = () => {
                             enabled={zohoComis}
                             setEnabled={setZohoComis}
                         />
+                        <div className="pt-4">
+                            <label className="font-semibold text-slate-800 text-sm">ID de organización Zoho (Lacteoca)</label>
+                            <p className="text-slate-400 text-xs mt-0.5 mb-2">
+                                Si se configura, los webhooks ignoran cualquier factura/nota de crédito cuyo <code className="bg-slate-100 px-1 rounded">organization_id</code> no coincida — filtro de seguridad para no mezclar con otras instancias de Zoho Books (p.ej. Lácteos Danny).
+                            </p>
+                            <input
+                                type="text"
+                                value={zohoOrgId}
+                                onChange={e => setZohoOrgId(e.target.value)}
+                                placeholder="organization_id de Lacteoca en Zoho Books"
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm"
+                            />
+                        </div>
                         <button
                             onClick={save}
                             disabled={saving}
@@ -2308,6 +2331,21 @@ const IntegracionesSection = () => {
                     </>
                 )}
             </div>
+
+            {!loadingAlert && sinVendedor !== null && sinVendedor > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-4 flex items-start gap-3">
+                    <AlertCircle size={20} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                    <div>
+                        <p className="font-bold text-amber-800 text-sm">
+                            {sinVendedor} factura{sinVendedor === 1 ? '' : 's'} de Lacteoca sin vendedor asignado
+                        </p>
+                        <p className="text-amber-700 text-xs mt-1">
+                            Estas facturas no generan comisión para nadie. Revisa que el campo "Salesperson" en Zoho Books
+                            coincida exactamente con el "Nombre en Zoho" configurado en Vendedores → Editar.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Endpoint del webhook de facturas</p>
@@ -2322,10 +2360,13 @@ const IntegracionesSection = () => {
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-4">
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Próximas integraciones</p>
-                <ul className="text-slate-400 text-xs space-y-1.5">
-                    <li>· Zoho Books — <span className="text-slate-500">creditnote.applied</span> (devoluciones → ajuste de comisión)</li>
-                </ul>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Endpoint de notas de crédito</p>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                    Configura en Zoho Books un webhook hacia <code className="bg-white px-1 py-0.5 rounded border border-slate-200">procesarNotaCreditoDesdeZoho</code> para
+                    el evento <span className="text-slate-700 font-medium">creditnote.applied</span>, con el mismo header <code className="bg-white px-1 py-0.5 rounded border border-slate-200">X-Zoho-Secret</code>.
+                    Ajusta (reduce) la comisión ya generada de las facturas afectadas, a la tasa-cohorte que tenían congelada. Se activa con el mismo
+                    interruptor "Webhook de Facturas".
+                </p>
             </div>
         </div>
     );

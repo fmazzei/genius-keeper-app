@@ -2,6 +2,7 @@
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+const { DEFAULT_COMMISSION_CONFIG, buildTiers, getTierFromConfig, mesCohorteFromDate, diffDias } = require('./commissionEngine');
 
 // Secreto compartido para validar los webhooks de Zoho Books, gestionado vía
 // Secret Manager (firebase functions:secrets:set ZOHO_SECRET). Reemplaza al
@@ -57,7 +58,7 @@ exports.procesarComisionesDesdeZoho = withZohoSecret(async (req, res) => {
         const configRef = admin.firestore().doc('settings/appConfig');
         const configDoc = await configRef.get();
 
-        if (!configDoc.exists() || configDoc.data().zohoCommissionsWebhookActive !== true) {
+        if (!configDoc.exists || configDoc.data().zohoCommissionsWebhookActive !== true) {
             functions.logger.log("Webhook de Comisiones de Zoho está desactivado. Ignorando la solicitud.");
             res.status(200).send("Webhook inactivo, solicitud ignorada.");
             return;
@@ -137,24 +138,180 @@ exports.procesarComisionesDesdeZoho = withZohoSecret(async (req, res) => {
 });
 
 /**
- * Webhook para recibir eventos de FACTURAS de Zoho Books (invoice.created,
- * invoice.overdue, invoice.paid, etc.) y mantener sincronizada la colección
- * `facturas_vendedor` que alimenta "Mis Facturas" y el Bono Puntualidad del
- * vendedor.
+ * Resuelve el vendedor de GK correspondiente a un `salesperson_name` de Zoho.
+ * Se busca en `users_metadata` (role == 'vendedor') un documento cuyo
+ * `zohoSalespersonName` (o, si no está configurado, `name`) coincida sin
+ * distinguir mayúsculas/espacios con el nombre enviado por Zoho.
  *
- * Mapeo factura → vendedor: se busca en `users_metadata` (role == 'vendedor')
- * un documento cuyo `zohoSalespersonName` (o, si no está configurado, `name`)
- * coincida (sin distinguir mayúsculas/acentos de espacios) con el
- * `salesperson_name` enviado por Zoho. Si no hay coincidencia, la factura se
- * guarda igual (para auditoría/admin) pero sin `vendedorId`, por lo que no
- * aparecerá en la app del vendedor hasta que se configure el mapeo.
+ * @returns {Promise<{id: string, data: object} | null>}
+ */
+async function resolveVendedor(salespersonName) {
+    const name = (salespersonName || '').trim().toLowerCase();
+    if (!name) return null;
+    const vendedoresSnap = await admin.firestore()
+        .collection('users_metadata')
+        .where('role', '==', 'vendedor')
+        .get();
+    const match = vendedoresSnap.docs.find(d => {
+        const data = d.data();
+        const zohoName = (data.zohoSalespersonName || data.name || '').trim().toLowerCase();
+        return zohoName && zohoName === name;
+    });
+    return match ? { id: match.id, data: match.data() } : null;
+}
+
+const toDate = (value) => {
+    if (!value) return null;
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
+};
+
+/**
+ * Verifica que la factura pertenezca a la organización de Zoho Books de
+ * Lacteoca. Si `settings/appConfig.zohoOrgIdLacteoca` no está configurado,
+ * o el payload no incluye `organization_id`, no se bloquea (no se puede
+ * validar) — pero se deja registro en logs para auditoría.
+ */
+function esOrganizacionLacteoca(appConfig, body, invoice) {
+    const orgIdEsperado = appConfig.zohoOrgIdLacteoca;
+    if (!orgIdEsperado) return true; // sin filtro configurado
+    const orgId = body?.organization_id || invoice?.organization_id || null;
+    if (!orgId) return true; // payload sin organization_id, no se puede validar
+    return String(orgId) === String(orgIdEsperado);
+}
+
+/**
+ * Determina/congela la tasa-cohorte de una factura: acumula sus unidades en
+ * `comisiones_mensuales/{vendedorId}_{mesCohorte}` y devuelve el tier
+ * resultante DESPUÉS de sumar esas unidades — esa es la tasa que se congela
+ * para esta factura (tasa "al momento de la factura", sin recalcular
+ * facturas previas del mismo mes).
+ */
+async function congelarTasaCohorte(vendedor, mesCohorte, unidades) {
+    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
+    const metaMensual = vendedor.data.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+    const tiers = buildTiers(cfg);
+    const mesRef = admin.firestore().collection('comisiones_mensuales').doc(`${vendedor.id}_${mesCohorte}`);
+
+    return admin.firestore().runTransaction(async (tx) => {
+        const mesSnap = await tx.get(mesRef);
+        const prevUnidades = mesSnap.exists ? (mesSnap.data().unidadesFacturadas || 0) : 0;
+        const nuevoTotal = prevUnidades + unidades;
+        const pct = metaMensual > 0 ? nuevoTotal / metaMensual : 0;
+        const tier = getTierFromConfig(pct, tiers);
+
+        tx.set(mesRef, {
+            vendedorId: vendedor.id,
+            reporterId: vendedor.data.reporterId || null,
+            mes: mesCohorte,
+            unidadesFacturadas: nuevoTotal,
+            metaMensual,
+            nivel: tier.label,
+            tasaActual: tier.rate * 100,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+        return tier;
+    });
+}
+
+/**
+ * `invoice.paid`: calcula la comisión sobre el monto cobrado a la
+ * tasa-cohorte congelada de la factura, aplica el corte de
+ * `commissionConfig.facturaMaxDias` y evalúa el bono de puntualidad
+ * (vencimiento + 5 días de margen). Escribe el resultado en
+ * `pagos_registrados` (con `vendedorId`/`reporterId`, distinto de los
+ * registros que escribe `procesarComisionesDesdeZoho`, que no tienen
+ * vendedor asociado — ver CLAUDE.md punto 6/7).
+ *
+ * Política de cobro parcial: la comisión solo se libera cuando Zoho dispara
+ * `invoice.paid` (saldo == 0). Un abono parcial no genera ningún registro.
+ */
+async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento }) {
+    if (!vendedor) {
+        functions.logger.warn(`Factura #${facturaData.numero} pagada pero sin vendedor asignado — no se genera comisión.`);
+        return;
+    }
+
+    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
+    const facturaMaxDias = cfg.facturaMaxDias || DEFAULT_COMMISSION_CONFIG.facturaMaxDias;
+
+    // Fecha de pago: usamos el momento de recepción del webhook como proxy,
+    // ya que Zoho dispara `invoice.paid` cuando el saldo de la factura llega
+    // a 0 (cobro 100%).
+    const fechaPago = new Date();
+    const diasParaCobrar = fechaFactura ? diffDias(fechaFactura, fechaPago) : null;
+
+    // Regla de 45 días (configurable vía "Días máx. sin cobrar"): si se
+    // superó el plazo, la comisión queda anulada permanentemente aunque la
+    // factura termine cobrándose.
+    const comisionAnulada = diasParaCobrar !== null && diasParaCobrar > facturaMaxDias;
+
+    const tasaCohorte = facturaData.tasaCohorte || 0;
+    const comisionGenerada = comisionAnulada ? 0 : facturaData.monto * (tasaCohorte / 100);
+
+    const diasCredito = facturaData.diasCredito;
+    const pagadaDentroDePlazo = (diasCredito !== null && diasCredito !== undefined && diasParaCobrar !== null)
+        ? diasParaCobrar <= (diasCredito + 5)
+        : null;
+
+    facturaData.comisionAnulada     = comisionAnulada;
+    facturaData.comisionGenerada    = comisionGenerada;
+    facturaData.pagadaDentroDePlazo = pagadaDentroDePlazo;
+    facturaData.fechaPago           = admin.firestore.Timestamp.fromDate(fechaPago);
+    facturaData.diasParaCobrar      = diasParaCobrar;
+
+    await admin.firestore().collection('pagos_registrados').add({
+        vendedorId:           vendedor.id,
+        reporterId:           vendedor.data.reporterId || null,
+        facturaNumero:        facturaData.numero,
+        clienteName:          facturaData.clienteName,
+        montoUSD:             facturaData.monto,
+        tasaCohorte,
+        mesCohorte:           facturaData.mesCohorte,
+        calculatedCommission: comisionGenerada,
+        comisionAnulada,
+        pagadaDentroDePlazo,
+        diasParaCobrar,
+        diasCredito,
+        invoiceNumbers:       [facturaData.numero],
+        createdAt:            admin.firestore.FieldValue.serverTimestamp(),
+        origen:               'invoice.paid',
+    });
+
+    functions.logger.log(`Factura #${facturaData.numero}: comisión ${comisionGenerada.toFixed(2)} USD (tasa ${tasaCohorte}%, anulada: ${comisionAnulada}, a tiempo: ${pagadaDentroDePlazo}).`);
+}
+
+/**
+ * Webhook para recibir eventos de FACTURAS de Zoho Books (invoice.created,
+ * invoice.overdue, invoice.paid) y:
+ *  1. Mantener sincronizada `facturas_vendedor` (alimenta "Mis Facturas" y
+ *     el semáforo de vencimientos del vendedor).
+ *  2. Acumular las unidades facturadas del mes por vendedor y congelar la
+ *     tasa-cohorte de cada factura (`comisiones_mensuales`).
+ *  3. En `invoice.paid`, calcular y registrar la comisión generada
+ *     (`pagos_registrados`), aplicando la regla de 45 días y el bono de
+ *     puntualidad.
+ *
+ * Formato esperado del payload (payload "default" de Zoho Books — todos los
+ * parámetros del módulo Invoice como JSON): `req.body.invoice` (o
+ * `req.body.data` / `req.body` directamente) con, al menos,
+ * `invoice_number`, `customer_name`, `total`, `date`, `due_date`, `status`,
+ * `salesperson_name` y `line_items: [{ quantity, ... }]`. Si Zoho se
+ * configura con un payload personalizado, debe incluir esos mismos nombres
+ * de campo (o ajustar este handler).
+ *
+ * Mapeo factura → vendedor: ver `resolveVendedor`. Si no hay match, la
+ * factura se guarda igual (para auditoría/admin, visible en AdminPanel →
+ * Integraciones como "sin vendedor asignado") pero sin `vendedorId`/comisión.
  */
 exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
     try {
         const configRef = admin.firestore().doc('settings/appConfig');
         const configDoc = await configRef.get();
+        const appConfig = configDoc.exists ? configDoc.data() : {};
 
-        if (!configDoc.exists() || configDoc.data().zohoSalesWebhookActive !== true) {
+        if (appConfig.zohoSalesWebhookActive !== true) {
             functions.logger.log("Webhook de Facturas de Zoho está desactivado. Ignorando la solicitud.");
             res.status(200).send("Webhook inactivo, solicitud ignorada.");
             return;
@@ -177,58 +334,183 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
             return;
         }
 
-        // Resolver vendedorId por nombre de vendedor en Zoho
-        let vendedorId = null;
-        const salespersonName = (invoice.salesperson_name || '').trim().toLowerCase();
-        if (salespersonName) {
-            const vendedoresSnap = await admin.firestore()
-                .collection('users_metadata')
-                .where('role', '==', 'vendedor')
-                .get();
-            const match = vendedoresSnap.docs.find(d => {
-                const data = d.data();
-                const zohoName = (data.zohoSalespersonName || data.name || '').trim().toLowerCase();
-                return zohoName && zohoName === salespersonName;
-            });
-            if (match) vendedorId = match.id;
-            else functions.logger.warn(`No se encontró vendedor para salesperson_name "${invoice.salesperson_name}". Configura "Nombre en Zoho" en Administración.`);
+        if (!esOrganizacionLacteoca(appConfig, req.body, invoice)) {
+            functions.logger.log(`Factura #${invoice.invoice_number} de organización Zoho ajena, ignorada.`);
+            res.status(200).send("Organización ajena, ignorada.");
+            return;
         }
 
-        const toDate = (value) => {
-            if (!value) return null;
-            const d = new Date(value);
-            return isNaN(d.getTime()) ? null : admin.firestore.Timestamp.fromDate(d);
-        };
+        const vendedor = await resolveVendedor(invoice.salesperson_name);
+        if (!vendedor) {
+            functions.logger.warn(`No se encontró vendedor para salesperson_name "${invoice.salesperson_name}" (factura #${invoice.invoice_number}). Configura "Nombre en Zoho" en Administración.`);
+        }
 
         const estado = invoice.status === 'paid' ? 'pagada'
             : invoice.status === 'overdue' ? 'vencida'
             : 'pendiente';
 
+        const fechaFactura  = toDate(invoice.date);
+        const vencimiento   = toDate(invoice.due_date);
+        const diasCredito   = diffDias(fechaFactura, vencimiento);
+        const mesCohorte    = mesCohorteFromDate(fechaFactura);
+        const unidades = Array.isArray(invoice.line_items)
+            ? invoice.line_items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
+            : 0;
+
+        const facturasRef = admin.firestore().collection('facturas_vendedor');
+        const existingSnap = await facturasRef.where('numero', '==', invoice.invoice_number).limit(1).get();
+        const existing     = existingSnap.empty ? null : existingSnap.docs[0];
+        const existingData = existing ? existing.data() : null;
+
         const facturaData = {
             numero:       invoice.invoice_number,
             clienteName:  invoice.customer_name || '',
             monto:        Number(invoice.total) || 0,
-            fecha:        toDate(invoice.date),
-            vencimiento:  toDate(invoice.due_date),
+            fecha:        fechaFactura ? admin.firestore.Timestamp.fromDate(fechaFactura) : null,
+            vencimiento:  vencimiento ? admin.firestore.Timestamp.fromDate(vencimiento) : null,
+            diasCredito,
+            unidades,
             estado,
-            vendedorId,
+            vendedorId:   vendedor?.id || null,
+            reporterId:   vendedor?.data?.reporterId || null,
+            mesCohorte,
             updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        const facturasRef = admin.firestore().collection('facturas_vendedor');
-        const existingSnap = await facturasRef.where('numero', '==', invoice.invoice_number).limit(1).get();
+        // Tasa-cohorte: se congela UNA sola vez, cuando se contabilizan por
+        // primera vez las unidades de esta factura en el acumulado mensual
+        // del vendedor. Actualizaciones posteriores (overdue/paid) conservan
+        // la tasa ya congelada.
+        const yaContabilizada = existingData?.unidadesContabilizadas === true;
+        if (vendedor && mesCohorte && unidades > 0 && !yaContabilizada) {
+            const tier = await congelarTasaCohorte(vendedor, mesCohorte, unidades);
+            facturaData.tasaCohorte = tier.rate * 100;
+            facturaData.tierCohorte = tier.label;
+            facturaData.unidadesContabilizadas = true;
+        } else if (existingData) {
+            facturaData.tasaCohorte = existingData.tasaCohorte ?? null;
+            facturaData.tierCohorte = existingData.tierCohorte ?? null;
+            facturaData.unidadesContabilizadas = existingData.unidadesContabilizadas === true;
+        }
 
-        if (!existingSnap.empty) {
-            await existingSnap.docs[0].ref.update(facturaData);
+        // invoice.paid (primera vez que se reporta como pagada): calcular comisión.
+        if (estado === 'pagada' && existingData?.estado !== 'pagada') {
+            await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
+        }
+
+        if (existing) {
+            await existing.ref.update(facturaData);
         } else {
             await facturasRef.add({ ...facturaData, createdAt: admin.firestore.FieldValue.serverTimestamp() });
         }
 
-        functions.logger.log(`Factura Zoho #${invoice.invoice_number} sincronizada (vendedorId: ${vendedorId || 'sin asignar'}).`);
+        functions.logger.log(`Factura Zoho #${invoice.invoice_number} sincronizada (vendedorId: ${vendedor?.id || 'sin asignar'}, estado: ${estado}).`);
         res.status(200).send("Factura sincronizada con éxito.");
 
     } catch (error) {
         functions.logger.error("Error procesando webhook de Zoho (Facturas):", error);
+        res.status(500).send("Error interno del servidor.");
+    }
+});
+
+/**
+ * Webhook para `creditnote.applied`: ajusta (reduce) la comisión generada
+ * por las facturas afectadas por una nota de crédito, aplicando la misma
+ * tasa-cohorte que ya tenía congelada cada factura. Escribe un registro
+ * negativo en `pagos_registrados` (origen `creditnote.applied`).
+ *
+ * Arquitectura preparada según CLAUDE.md punto 9 — requiere activar el
+ * evento `creditnote.applied` en Zoho Books apuntando a esta función,
+ * además del webhook de facturas (`zohoSalesWebhookActive`).
+ *
+ * Formato esperado del payload (payload "default" de Zoho Books — módulo
+ * Credit Note): `req.body.creditnote` (o `req.body.data` / `req.body`) con
+ * `total` y la lista de facturas asociadas en `invoices` (o
+ * `associated_invoices`), cada una con `invoice_number`. Si Zoho no incluye
+ * esa relación en el payload por defecto, debe configurarse un payload
+ * personalizado que la incluya.
+ */
+exports.procesarNotaCreditoDesdeZoho = withZohoSecret(async (req, res) => {
+    try {
+        const configRef = admin.firestore().doc('settings/appConfig');
+        const configDoc = await configRef.get();
+        const appConfig = configDoc.exists ? configDoc.data() : {};
+
+        if (appConfig.zohoSalesWebhookActive !== true) {
+            functions.logger.log("Webhook de Facturas de Zoho está desactivado. Ignorando nota de crédito.");
+            res.status(200).send("Webhook inactivo, solicitud ignorada.");
+            return;
+        }
+
+        if (req.header('X-Zoho-Secret') !== process.env[ZOHO_SECRET_PARAM]) {
+            res.status(401).send("Unauthorized");
+            return;
+        }
+
+        if (req.method !== 'POST') {
+            res.status(405).send('Method Not Allowed');
+            return;
+        }
+
+        const creditnote = req.body?.creditnote || req.body?.data || req.body;
+        if (!creditnote) {
+            res.status(400).send("Payload de nota de crédito inválido.");
+            return;
+        }
+
+        if (!esOrganizacionLacteoca(appConfig, req.body, creditnote)) {
+            functions.logger.log(`Nota de crédito #${creditnote.creditnote_number || ''} de organización Zoho ajena, ignorada.`);
+            res.status(200).send("Organización ajena, ignorada.");
+            return;
+        }
+
+        const facturasAsociadas = (creditnote.invoices || creditnote.associated_invoices || [])
+            .map(i => i.invoice_number)
+            .filter(Boolean);
+        if (facturasAsociadas.length === 0 && creditnote.reference_number) {
+            facturasAsociadas.push(creditnote.reference_number);
+        }
+
+        const montoTotal = Number(creditnote.total) || 0;
+        const facturasRef = admin.firestore().collection('facturas_vendedor');
+
+        for (const numero of facturasAsociadas) {
+            const snap = await facturasRef.where('numero', '==', numero).limit(1).get();
+            if (snap.empty) {
+                functions.logger.warn(`Nota de crédito: no se encontró factura #${numero}.`);
+                continue;
+            }
+            const factura = snap.docs[0].data();
+            if (!factura.vendedorId || !factura.comisionGenerada) {
+                continue; // factura sin comisión generada — nada que ajustar
+            }
+
+            const tasaCohorte = factura.tasaCohorte || 0;
+            // Monto de la nota de crédito prorrateado entre las facturas asociadas.
+            const montoAsociado = facturasAsociadas.length > 1 ? montoTotal / facturasAsociadas.length : montoTotal;
+            const ajusteComision = montoAsociado * (tasaCohorte / 100);
+
+            await admin.firestore().collection('pagos_registrados').add({
+                vendedorId:           factura.vendedorId,
+                reporterId:           factura.reporterId || null,
+                facturaNumero:        numero,
+                clienteName:          factura.clienteName || '',
+                montoUSD:             -montoAsociado,
+                tasaCohorte,
+                mesCohorte:           factura.mesCohorte || null,
+                calculatedCommission: -ajusteComision,
+                invoiceNumbers:       [numero],
+                createdAt:            admin.firestore.FieldValue.serverTimestamp(),
+                origen:               'creditnote.applied',
+            });
+
+            functions.logger.log(`Nota de crédito aplicada a factura #${numero}: ajuste de comisión -${ajusteComision.toFixed(2)} USD.`);
+        }
+
+        res.status(200).send("Nota de crédito procesada.");
+
+    } catch (error) {
+        functions.logger.error("Error procesando webhook de Zoho (Nota de Crédito):", error);
         res.status(500).send("Error interno del servidor.");
     }
 });

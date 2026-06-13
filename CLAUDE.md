@@ -21,13 +21,19 @@ Sección de seguimiento para terminar de conectar el módulo de comisiones del
 vendedor (GK) con Zoho Books. Mantener actualizada a medida que se resuelvan
 items.
 
-### Estado actual
-- `commissionConfig` por vendedor (tiers, bonos, período de arranque) — ✅ completo, vive en `users_metadata/{uid}.commissionConfig`, configurado desde `CommissionConstructor.jsx`.
-- Home del vendedor (`VendedorLayout.jsx`) — ✅ todas las tarjetas (comisión semana, tasa, despachos, bonos activación/puntualidad, período de arranque) están conectadas a `commissionConfig` real y se ocultan si su valor está en 0/sin configurar.
-- `facturas_vendedor` — ✅ regla de Firestore agregada; `facturasPorVencer` (Bono Puntualidad) consulta esta colección.
-- Cloud Function `sincronizarFacturaDesdeZoho` — ✅ implementada (recibe `invoice.created/overdue/paid`, hace upsert en `facturas_vendedor`, mapea por `zohoSalespersonName`).
-- Cloud Function `procesarComisionesDesdeZoho` (pagos) — ✅ implementada, escribe en `pagos_registrados`.
+### Estado actual (2026-06-13 — Fase 1+2 del motor de comisiones completas)
+- `commissionConfig` por vendedor (tiers, bonos, período de arranque, `facturaMaxDias`) — ✅ completo, vive en `users_metadata/{uid}.commissionConfig`, configurado desde `CommissionConstructor.jsx`. Nivel "Baja" ahora paga la tasa base del tier más bajo (antes $0).
+- `functions/handlers/commissionEngine.js` — ✅ NUEVO: lógica pura de tiers/tasa compartida entre `VendedorLayout.jsx` y los webhooks (`buildTiers`, `getTierFromConfig`, `mesCohorteFromDate`, `diffDias`).
+- Home del vendedor (`VendedorLayout.jsx`) — ✅ `unidadesDelMes`/nivel/tasa ahora se leen de `comisiones_mensuales/{uid}_{mes}` (unidades FACTURADAS vía Zoho) si existe ese documento; si no, cae a despachos (fallback pre-Zoho). `comisionSemana` suma directamente `calculatedCommission` de `pagos_registrados` (ya viene con tasa-cohorte aplicada). Bono Puntualidad ahora es proporcional (`stats.puntualidadPct`, basado en `pagadaDentroDePlazo` de `facturas_vendedor`).
+- `facturas_vendedor` — ✅ regla de Firestore agregada; ahora incluye `diasCredito`, `unidades`, `mesCohorte`, `tasaCohorte`, `tierCohorte`, `comisionGenerada`, `comisionAnulada`, `pagadaDentroDePlazo`, `fechaPago`. `MisFacturasView` muestra días de crédito.
+- `comisiones_mensuales/{vendedorId}_{mes}` — ✅ NUEVO: acumulado de unidades facturadas + nivel/tasa del mes, escrito por `sincronizarFacturaDesdeZoho` dentro de una transacción (`congelarTasaCohorte`). Regla de Firestore agregada.
+- Cloud Function `sincronizarFacturaDesdeZoho` — ✅ REESCRITA: resuelve vendedor (`resolveVendedor`, por `zohoSalespersonName`), filtra por `organization_id` (Lacteoca, vía `esOrganizacionLacteoca`/`settings/appConfig.zohoOrgIdLacteoca`), congela tasa-cohorte por factura (`congelarTasaCohorte`, una sola vez por factura), y en `invoice.paid` calcula comisión (`procesarPagoFactura`): aplica regla de 45 días (`facturaMaxDias`) y marca `pagadaDentroDePlazo` (vencimiento + 5 días). Escribe en `pagos_registrados` CON `vendedorId`/`reporterId`.
+- Cloud Function `procesarNotaCreditoDesdeZoho` — ✅ NUEVA (`creditnote.applied`): ajusta (resta) comisión ya generada de las facturas asociadas a la tasa-cohorte ya congelada. Arquitectura prevista por el punto 9 original, ya implementada — solo falta activar el evento en Zoho.
+- Cloud Function `procesarComisionesDesdeZoho` (pagos, legacy) — ✅ sin cambios, sigue con tasa fija `COMMISSION_RATE = 0.065` y sin `vendedorId` (ver punto 6 más abajo, decisión de negocio pendiente).
 - Secreto `X-Zoho-Secret` — ✅ migrado de `functions.config()` (deprecado) a Secret Manager vía `runWith({ secrets: ['ZOHO_SECRET'] })`.
+- **Bug crítico corregido**: `configDoc.exists()`/`mesSnap.exists()` (Admin SDK expone `exists` como propiedad, no método) — llamarlo como función lanzaba `TypeError` y devolvía 500 en TODOS los webhooks, incluyendo `procesarComisionesDesdeZoho` que ya estaba "implementado". Corregido en los 4 usos de `functions/handlers/webhooks.js`.
+- AdminPanel → Integraciones — ✅ agregado input para `zohoOrgIdLacteoca` (filtro anti-contaminación cross-org), alerta "N facturas de Lacteoca sin vendedor asignado" (consulta `facturas_vendedor where vendedorId == null`), y documentación del endpoint `procesarNotaCreditoDesdeZoho`.
+- `EditPosModal.jsx` — ✅ agregado campo `regimenComision` ('estandar' | 'anaquel') por PDV, visible solo cuando `tipoDespacho === 'centralizado'` (caso Excelsior Gama).
 - CI (`.github/workflows/firebase-deploy.yml`) — ✅ agregado paso de `firebase deploy --only functions` (con `continue-on-error` hasta que el service account tenga permisos).
 
 ### Pendiente (requiere acción manual / decisiones de negocio)
@@ -38,15 +44,17 @@ items.
    **Acción requerida**: un usuario con rol de "Project Owner"/"Editor" en GCP debe:
    - Habilitar manualmente `secretmanager.googleapis.com` en https://console.cloud.google.com/apis/library/secretmanager.googleapis.com?project=362565450545, **o**
    - Otorgar al service account de CI el rol `roles/serviceusage.serviceUsageAdmin` (o `Editor`/`Owner`) para que pueda habilitar APIs por sí mismo.
-   Mientras esto no se resuelva, **ningún cambio en `functions/handlers/*.js` llega a producción** (incluye el trigger `onDespachoCreated` que crea la alerta `despacho_en_transito` para vendedores, agregado el 2026-06-11).
-3. **Configurar en Zoho Books** (Configuración → Automatización → Webhooks):
+   Mientras esto no se resuelva, **ningún cambio en `functions/handlers/*.js` llega a producción** (incluye `sincronizarFacturaDesdeZoho`/`procesarNotaCreditoDesdeZoho` reescritos arriba, y el trigger `onDespachoCreated` agregado el 2026-06-11).
+3. **Configurar en Zoho Books** (Configuración → Automatización → Webhooks), payload "default" (todos los campos del módulo como JSON):
    - `invoice.created`, `invoice.overdue`, `invoice.paid` → URL de `sincronizarFacturaDesdeZoho` + header `X-Zoho-Secret`.
-   - Pago de factura → URL de `procesarComisionesDesdeZoho` + header `X-Zoho-Secret`.
-4. **Mapeo vendedor ↔ Zoho**: para cada vendedor, completar el campo "Nombre en Zoho (vendedor)" (`zohoSalespersonName`) en AdminPanel → Vendedores → Editar, igual al "Salesperson" configurado en Zoho Books. Sin esto, las facturas llegan sin `vendedorId` y no aparecen en la app del vendedor.
-5. **Activar toggles** en AdminPanel → Integraciones: "Webhook de Facturas" y "Webhook de Comisiones / Pagos" (`settings/appConfig.zohoSalesWebhookActive` / `zohoCommissionsWebhookActive`).
-6. **Revisar `procesarComisionesDesdeZoho`**: usa una tasa fija `COMMISSION_RATE = 0.065` (margen "precio planta") para calcular `calculatedCommission`, independiente de los `tiers` configurados por vendedor en `CommissionConstructor`. Definir si esto debe alinearse con `commissionConfig.tiers` (requeriría resolver `vendedorId` también en este webhook, igual que en `sincronizarFacturaDesdeZoho`) o si son conceptos de negocio distintos (margen de planta vs. comisión del vendedor) y deben mantenerse separados.
-7. **`pagos_registrados`** no tiene `vendedorId` — si se quiere una vista de comisiones por vendedor (no solo global en `CommissionsView.jsx`), hay que agregarlo al escribir el documento en `procesarComisionesDesdeZoho`.
-8. **Próxima integración no implementada**: `creditnote.applied` (devoluciones → ajuste de comisión).
+   - `creditnote.applied` → URL de `procesarNotaCreditoDesdeZoho` + header `X-Zoho-Secret` (se activa con el mismo toggle "Webhook de Facturas").
+   - Pago de factura (legacy) → URL de `procesarComisionesDesdeZoho` + header `X-Zoho-Secret`.
+   ⚠️ El parseo de `sincronizarFacturaDesdeZoho`/`procesarNotaCreditoDesdeZoho` asume los nombres de campo estándar de la API v3 de Zoho Books (`invoice_number`, `customer_name`, `total`, `date`, `due_date`, `status`, `salesperson_name`, `line_items[].quantity`, `organization_id`, y para notas de crédito `creditnote.invoices[].invoice_number` / `reference_number`). **Antes de activar en producción, validar contra un payload real de Zoho Books de Lacteoca** (enviar un webhook de prueba y revisar los logs de Cloud Functions) — si Zoho usa nombres distintos en el payload "default" o se configura un payload personalizado, ajustar el handler.
+4. **Mapeo vendedor ↔ Zoho**: para cada vendedor, completar el campo "Nombre en Zoho (vendedor)" (`zohoSalespersonName`) en AdminPanel → Vendedores → Editar, igual al "Salesperson" configurado en Zoho Books. Sin esto, las facturas llegan sin `vendedorId` (se reflejan en la alerta de Integraciones) y no generan comisión ni aparecen en la app del vendedor.
+5. **Configurar `zohoOrgIdLacteoca`** en AdminPanel → Integraciones con el `organization_id` de la instancia de Zoho Books de Lacteoca (Configuración → Detalles de la organización en Zoho). Si se deja vacío, los webhooks NO filtran por organización (aceptan cualquier payload con secreto válido).
+6. **Activar toggles** en AdminPanel → Integraciones: "Webhook de Facturas" (cubre `sincronizarFacturaDesdeZoho` + `procesarNotaCreditoDesdeZoho`) y "Webhook de Comisiones / Pagos" (`procesarComisionesDesdeZoho`, legacy).
+7. **Revisar `procesarComisionesDesdeZoho`** (legacy, sin cambios): usa una tasa fija `COMMISSION_RATE = 0.065` (margen "precio planta"), independiente de los `tiers` configurados por vendedor, y no escribe `vendedorId`. El nuevo flujo de comisiones por vendedor vive en `sincronizarFacturaDesdeZoho`/`procesarPagoFactura`. Definir si `procesarComisionesDesdeZoho` debe desactivarse, o si ambos conceptos (margen de planta global vs. comisión del vendedor) deben coexistir.
+8. **Régimen "Disponibilidad en Anaquel"** (cuentas con despacho centralizado/consignación, p.ej. Excelsior Gama): el flag `pos.regimenComision` ('estandar'|'anaquel') ya existe en `EditPosModal.jsx`, pero el cálculo del bono (+1% si el 80% de las sucursales activas promedia >12 uds en visitas de martes/viernes vía `visit_reports`, sustituyendo a Cobertura de Cartera) **no está implementado todavía** en `VendedorLayout.jsx`. Pendiente como siguiente fase.
 
 
 ---

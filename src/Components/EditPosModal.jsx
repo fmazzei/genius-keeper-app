@@ -79,8 +79,9 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
         city:          pos.city          || '',
         zone:          pos.zone          || '',
         address:       pos.address       || '',
-        tipoDespacho:  pos.tipoDespacho  || 'directo',
-        visitInterval: pos.visitInterval ?? 7,
+        tipoDespacho:    pos.tipoDespacho    || 'directo',
+        visitInterval:   pos.visitInterval   ?? 7,
+        regimenComision: pos.regimenComision || 'estandar',
     });
 
     // Map / location
@@ -219,8 +220,9 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
                 city:          form.city.trim(),
                 zone:          form.zone.trim(),
                 address:       form.address.trim(),
-                tipoDespacho:  form.tipoDespacho,
-                visitInterval: parseInt(form.visitInterval, 10) || 0,
+                tipoDespacho:    form.tipoDespacho,
+                regimenComision: form.tipoDespacho === 'centralizado' ? form.regimenComision : 'estandar',
+                visitInterval:   parseInt(form.visitInterval, 10) || 0,
                 active:        (parseInt(form.visitInterval, 10) || 0) > 0,
             };
             if (coordsChanged) {
@@ -322,6 +324,26 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
                                 ))}
                             </div>
                         </div>
+
+                        {form.tipoDespacho === 'centralizado' && (
+                            <div className="flex items-center justify-between p-3 border border-slate-200 rounded-xl">
+                                <div>
+                                    <span className="text-sm font-medium text-slate-700">Régimen de comisión</span>
+                                    <p className="text-xs text-slate-400">Cuentas con despacho centralizado / consignación (p.ej. cadenas)</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    {[
+                                        { v: 'estandar', label: 'Estándar' },
+                                        { v: 'anaquel', label: 'Disp. Anaquel' },
+                                    ].map(({ v, label }) => (
+                                        <button key={v} type="button" onClick={() => handleField('regimenComision', v)}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${form.regimenComision === v ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="flex items-center gap-3 p-3 border border-slate-200 rounded-xl">
                             <span className="text-sm font-medium text-slate-700 flex-1">Intervalo de visita</span>

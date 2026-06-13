@@ -248,8 +248,16 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
                                 : <Clock size={20} className="text-red-400 shrink-0" />
                             }
                             <div className="flex-1 min-w-0">
-                                <p className="text-white text-sm font-semibold">Bono Puntualidad (+{commConfig.bonusPuntualidad}%)</p>
+                                <p className="text-white text-sm font-semibold">
+                                    Bono Puntualidad
+                                    {stats.puntualidadPct !== null
+                                        ? ` (+${(commConfig.bonusPuntualidad * stats.puntualidadPct / 100).toFixed(2)}% de +${commConfig.bonusPuntualidad}%)`
+                                        : ` (+${commConfig.bonusPuntualidad}%)`}
+                                </p>
                                 <p className="text-slate-400 text-xs">
+                                    {stats.puntualidadPct !== null && (
+                                        <>{stats.puntualidadPct.toFixed(0)}% de tus facturas cobradas este mes, a tiempo (+5 días de margen). </>
+                                    )}
                                     {stats.facturasPorVencer === 0
                                         ? 'Sin facturas próximas a vencer'
                                         : `${stats.facturasPorVencer} factura${stats.facturasPorVencer > 1 ? 's' : ''} por vencer — cobra para no perder el bono`
@@ -479,7 +487,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [stats, setStats]                           = useState({
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
-        facturasPorVencer: 0,
+        facturasPorVencer: 0, puntualidadPct: null,
     });
     const [loading, setLoading]                       = useState(true);
     const [loadError, setLoadError]                   = useState('');
@@ -620,13 +628,32 @@ const VendedorLayout = ({ user, onLogout }) => {
                             return t >= inicioMes;
                         });
                 }
-                const unidadesDelMes = despachos.reduce((s, d) => s + (d.cantidad || 0), 0);
+                let unidadesDelMes = despachos.reduce((s, d) => s + (d.cantidad || 0), 0);
                 const despachoHoy    = despachos.filter(d => {
                     const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
                     return t >= hoy;
                 }).reduce((s, d) => s + (d.cantidad || 0), 0);
 
+                // 2b. Unidades facturadas del mes (Zoho) — si ya hay facturación
+                //     sincronizada para este mes, el nivel/tasa se basa en
+                //     unidades FACTURADAS (acumulado congelado por
+                //     sincronizarFacturaDesdeZoho en `comisiones_mensuales`),
+                //     no en despachos. Si todavía no hay facturación Zoho para
+                //     este mes, se usa el fallback por despachos de arriba.
+                const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                try {
+                    const comisionMesSnap = await getDoc(doc(db, 'comisiones_mensuales', `${user.uid}_${mesActual}`));
+                    if (comisionMesSnap.exists()) {
+                        unidadesDelMes = comisionMesSnap.data().unidadesFacturadas ?? unidadesDelMes;
+                    }
+                } catch (e) {
+                    console.warn('comisiones_mensuales load error:', e);
+                }
+
                 // 3. Pagos de la semana (para comisión) — también depende de reporterId.
+                //    `calculatedCommission` ya viene calculado por
+                //    procesarPagoFactura con la tasa-cohorte congelada de cada
+                //    factura, así que solo se suma directamente.
                 //    No crítico: si falla (p.ej. permisos), no debe abortar el resto
                 //    de la carga (cartera/PDV/pedidos).
                 let comisionSemana = 0;
@@ -635,17 +662,13 @@ const VendedorLayout = ({ user, onLogout }) => {
                         const pagosSnap = await getDocs(
                             query(collection(db, 'pagos_registrados'), where('reporterId', '==', reporterId))
                         );
-                        const pagosSem = pagosSnap.docs
+                        comisionSemana = pagosSnap.docs
                             .map(d => d.data())
                             .filter(p => {
                                 const t = p.createdAt?.toDate?.() || new Date(p.createdAt);
                                 return t >= inicioSem;
-                            });
-                        const montoSem       = pagosSem.reduce((s, p) => s + (p.montoUSD || 0), 0);
-                        const pct            = metaMensual > 0 ? unidadesDelMes / metaMensual : 0;
-                        const effectiveTiers = buildTiers(cfg);
-                        const tier           = getTierFromConfig(pct, effectiveTiers);
-                        comisionSemana       = montoSem * tier.rate;
+                            })
+                            .reduce((s, p) => s + (p.calculatedCommission || 0), 0);
                     } catch (e) {
                         console.warn('pagos_registrados load error:', e);
                     }
@@ -676,25 +699,39 @@ const VendedorLayout = ({ user, onLogout }) => {
 
                 const activacionOk = puntosTotal > 0 && puntosActivacion / puntosTotal >= (cfg.activacionThreshold / 100);
 
-                // 5. Facturas por vencer (próximos 3 días, no pagadas)
+                // 5. Facturas por vencer (próximos 3 días, no pagadas) y % de
+                //    facturas cobradas dentro de plazo este mes (Bono
+                //    Puntualidad proporcional: pagadaDentroDePlazo viene de
+                //    procesarPagoFactura, con +5 días de margen sobre el
+                //    vencimiento heredado de Zoho).
                 let facturasPorVencer = 0;
+                let puntualidadPct = null;
                 try {
                     const facturasSnap = await getDocs(
                         query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', user.uid))
                     );
+                    const facturas = facturasSnap.docs.map(d => d.data());
                     const tresDias = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-                    facturasPorVencer = facturasSnap.docs
-                        .map(d => d.data())
-                        .filter(f => {
-                            if (f.estado === 'pagada') return false;
-                            const venc = f.vencimiento?.toDate?.() || (f.vencimiento ? new Date(f.vencimiento) : null);
-                            return venc && venc <= tresDias;
-                        }).length;
+                    facturasPorVencer = facturas.filter(f => {
+                        if (f.estado === 'pagada') return false;
+                        const venc = f.vencimiento?.toDate?.() || (f.vencimiento ? new Date(f.vencimiento) : null);
+                        return venc && venc <= tresDias;
+                    }).length;
+
+                    const facturasPagadasMes = facturas.filter(f => {
+                        if (f.estado !== 'pagada' || f.pagadaDentroDePlazo === null || f.pagadaDentroDePlazo === undefined) return false;
+                        const pago = f.fechaPago?.toDate?.() || (f.fechaPago ? new Date(f.fechaPago) : null);
+                        return pago && pago >= inicioMes;
+                    });
+                    if (facturasPagadasMes.length > 0) {
+                        const aTiempo = facturasPagadasMes.filter(f => f.pagadaDentroDePlazo === true).length;
+                        puntualidadPct = (aTiempo / facturasPagadasMes.length) * 100;
+                    }
                 } catch (e) {
                     console.warn('facturas_vendedor load error:', e);
                 }
 
-                const newStats = { unidadesDelMes, comisionSemana, despachoHoy, activacionOk, puntosActivacion, puntosTotal, facturasPorVencer };
+                const newStats = { unidadesDelMes, comisionSemana, despachoHoy, activacionOk, puntosActivacion, puntosTotal, facturasPorVencer, puntualidadPct };
                 setStats(newStats);
 
                 // 6. PDV list for dispatch — fetch pos docs to resolve tipoDespacho/isChainHead,
