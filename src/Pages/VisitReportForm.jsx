@@ -230,6 +230,7 @@ const Step2_Sales = ({ report, setReport, isReadOnly }) => (
     <FormSection title="PVP y Reposición" icon={<DollarSign className="text-brand-blue mr-3"/>}>
         <div className="space-y-4">
             <FormInput label="Precio de Venta al Público (PVP)" type="number" value={report.price} onChange={e => setReport(prev => ({...prev, price: e.target.value}))} placeholder="Ej: 10.25" disabled={isReadOnly} />
+            <FormInput label="Unidades Pedidas (Reposición)" type="number" value={report.orderQuantity} onChange={e => setReport(prev => ({...prev, orderQuantity: e.target.value}))} placeholder="Ej: 12" disabled={isReadOnly} />
         </div>
     </FormSection>
 );
@@ -381,6 +382,9 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince 
 const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly = false, initialData = null }) => {
     const { competitorFrequencyDays } = useAppConfig();
     const formOpenTime = useRef(new Date().toISOString());
+    // ID estable por intento de envío — se guarda como campo (no como ID de
+    // documento) para poder detectar/depurar reportes duplicados.
+    const reportId = useRef(crypto.randomUUID()).current;
     const [currentStep, setCurrentStep] = useState(1);
     const [submissionState, setSubmissionState] = useState('form');
     const [isOfflineSave, setIsOfflineSave] = useState(false);
@@ -497,44 +501,54 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             try {
                 await addDoc(collection(db, "visit_reports"), {
                     ...finalReportData,
+                    reportId,
                     createdAt: serverTimestamp(),
                 });
-                // Update POS with latest competitor snapshot to track frequency
-                if (pos?.id) {
-                    await updateDoc(doc(db, 'pos', pos.id), {
-                        lastCompetitorReport: serverTimestamp(),
-                        lastCompetitorData: finalReportData.competition,
-                    });
+
+                // Efectos secundarios no críticos: si fallan, el reporte ya
+                // quedó guardado arriba — no debe reintentarse vía offline
+                // sync (eso crearía un reporte duplicado).
+                try {
+                    // Update POS with latest competitor snapshot to track frequency
+                    if (pos?.id) {
+                        await updateDoc(doc(db, 'pos', pos.id), {
+                            lastCompetitorReport: serverTimestamp(),
+                            lastCompetitorData: finalReportData.competition,
+                        });
+                    }
+                    // Notify admins when new entrants are detected
+                    if (finalReportData.newEntrants?.length > 0) {
+                        const adminSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', 'in', ['master', 'sales_manager', 'director'])));
+                        const entrantNames = finalReportData.newEntrants.map(e => `${e.brand} ${e.presentation}`).join(', ');
+                        await Promise.all(adminSnap.docs.map(adminDoc =>
+                            addDoc(collection(db, 'notifications'), {
+                                userId: adminDoc.id,
+                                title: 'Nuevo Entrante Detectado',
+                                body: `${finalReportData.userName} reportó ${finalReportData.newEntrants.length} nuevo(s) entrante(s) en ${finalReportData.posName}: ${entrantNames}.`,
+                                type: 'new_entrant',
+                                posName: finalReportData.posName,
+                                reporterName: finalReportData.userName,
+                                newEntrants: finalReportData.newEntrants,
+                                read: false,
+                                createdAt: serverTimestamp(),
+                            })
+                        ));
+                    }
+                } catch (sideEffectErr) {
+                    console.error("Reporte guardado, pero falló un efecto secundario (POS/notificaciones):", sideEffectErr);
                 }
-                // Notify admins when new entrants are detected
-                if (finalReportData.newEntrants?.length > 0) {
-                    const adminSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', 'in', ['master', 'sales_manager', 'director'])));
-                    const entrantNames = finalReportData.newEntrants.map(e => `${e.brand} ${e.presentation}`).join(', ');
-                    await Promise.all(adminSnap.docs.map(adminDoc =>
-                        addDoc(collection(db, 'notifications'), {
-                            userId: adminDoc.id,
-                            title: 'Nuevo Entrante Detectado',
-                            body: `${finalReportData.userName} reportó ${finalReportData.newEntrants.length} nuevo(s) entrante(s) en ${finalReportData.posName}: ${entrantNames}.`,
-                            type: 'new_entrant',
-                            posName: finalReportData.posName,
-                            reporterName: finalReportData.userName,
-                            newEntrants: finalReportData.newEntrants,
-                            read: false,
-                            createdAt: serverTimestamp(),
-                        })
-                    ));
-                }
+
                 setIsOfflineSave(false);
                 setSubmissionState('success');
             } catch (err) {
                 console.error("Error al enviar el reporte a Firestore (online):", err);
-                await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
+                await localDB.pending_reports.add({ ...finalReportData, reportId, createdAt: new Date().toISOString() });
                 setIsOfflineSave(true);
                 setSubmissionState('success');
             }
         } else {
             try {
-                await localDB.pending_reports.add({ ...finalReportData, createdAt: new Date().toISOString() });
+                await localDB.pending_reports.add({ ...finalReportData, reportId, createdAt: new Date().toISOString() });
                 setIsOfflineSave(true);
                 setSubmissionState('success');
             } catch (err) {

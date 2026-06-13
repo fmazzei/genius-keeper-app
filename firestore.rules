@@ -205,6 +205,11 @@ service cloud.firestore {
 
     match /notifications/{notificationId} {
       allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Mercaderistas notifican a gerencia/admin sobre nuevos entrantes detectados
+      // en visita (VisitReportForm). Sin esta regla, el addDoc fallaba con
+      // permission-denied y abortaba toda la confirmación del reporte de visita,
+      // provocando reportes duplicados (ver useOfflineSync).
+      allow create: if isMerchandiser() || isAdmin();
       allow delete: if isMaster();
     }
 
