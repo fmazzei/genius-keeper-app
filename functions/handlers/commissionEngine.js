@@ -21,6 +21,9 @@ const DEFAULT_COMMISSION_CONFIG = {
     bonusActivacion: 1.0,
     activacionThreshold: 80,
     activacionMinUnits: 24,
+    bonusAnaquel: 1.0,
+    anaquelThreshold: 80,
+    anaquelMinUnits: 12,
     arranque: [],
     facturaMaxDias: 60,
 };

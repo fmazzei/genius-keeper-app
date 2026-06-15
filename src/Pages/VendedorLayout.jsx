@@ -109,9 +109,10 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
     const faltan = siguiente?.uds ?? null;
     const ingresoBase = commConfig.salarioFijo + commConfig.viaticosSemanales * 4;
     const hasComision = (tiers || []).some(t => t.rate > 0);
-    const showActivacion   = commConfig.bonusActivacion > 0;
+    const showAnaquel      = commConfig.bonusAnaquel > 0 && stats.hasAnaquel;
+    const showActivacion   = commConfig.bonusActivacion > 0 && !stats.hasAnaquel;
     const showPuntualidad  = commConfig.bonusPuntualidad > 0;
-    const showBonosSection = showActivacion || showPuntualidad;
+    const showBonosSection = showActivacion || showPuntualidad || showAnaquel;
 
     const statCards = [
         hasComision && {
@@ -235,6 +236,24 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
                                     {stats.activacionOk
                                         ? '¡Activación lograda esta semana!'
                                         : `Cubre ${stats.puntosActivacion}/${stats.puntosTotal} puntos con mín. ${commConfig.activacionMinUnits} uds para ganarlo`
+                                    }
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {showAnaquel && (
+                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
+                            {stats.anaquelOk
+                                ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
+                                : <AlertCircle size={20} className="text-amber-400 shrink-0" />
+                            }
+                            <div className="flex-1 min-w-0">
+                                <p className="text-white text-sm font-semibold">Bono Disponibilidad en Anaquel (+{commConfig.bonusAnaquel}%)</p>
+                                <p className="text-slate-400 text-xs">
+                                    {stats.anaquelOk
+                                        ? '¡Disponibilidad lograda esta semana!'
+                                        : `Cubre ${stats.anaquelCubiertos}/${stats.anaquelTotal} sucursales con +${commConfig.anaquelMinUnits} uds promedio (mar/vie) para ganarlo`
                                     }
                                 </p>
                             </div>
@@ -699,6 +718,62 @@ const VendedorLayout = ({ user, onLogout }) => {
 
                 const activacionOk = puntosTotal > 0 && puntosActivacion / puntosTotal >= (cfg.activacionThreshold / 100);
 
+                // 4b. PDV docs de la cartera (para detectar régimen 'anaquel' y,
+                //     más abajo, armar la lista de despacho por cadena).
+                const posDocsMap = {};
+                if (carteraPosIds.size > 0) {
+                    const snaps = await Promise.all(
+                        [...carteraPosIds].map(id => getDoc(doc(db, 'pos', id)))
+                    );
+                    snaps.forEach(snap => { if (snap.exists()) posDocsMap[snap.id] = snap.data(); });
+                }
+
+                // 4c. Bono "Disponibilidad en Anaquel" — sustituye al Bono
+                //     Activación para cuentas con `pos.regimenComision ===
+                //     'anaquel'` (despacho centralizado/consignación, p.ej.
+                //     Excelsior Gama): se cumple si al menos
+                //     `cfg.anaquelThreshold`% de esas sucursales activas
+                //     promedian más de `cfg.anaquelMinUnits` unidades en
+                //     `visit_reports` de martes/viernes de esta semana.
+                const anaquelPosIds = cartera
+                    .filter(c => c.posId && posDocsMap[c.posId]?.regimenComision === 'anaquel' && posDocsMap[c.posId]?.active !== false)
+                    .map(c => c.posId);
+                const hasAnaquel = anaquelPosIds.length > 0;
+                let anaquelCubiertos = 0;
+                let anaquelOk = false;
+                if (hasAnaquel) {
+                    try {
+                        const visitas = [];
+                        for (let i = 0; i < anaquelPosIds.length; i += 10) {
+                            const chunk = anaquelPosIds.slice(i, i + 10);
+                            const visitasSnap = await getDocs(
+                                query(collection(db, 'visit_reports'), where('posId', 'in', chunk))
+                            );
+                            visitas.push(...visitasSnap.docs.map(d => d.data()));
+                        }
+                        const visitasMarVie = visitas.filter(v => {
+                            const t = v.createdAt?.toDate?.() || new Date(v.createdAt);
+                            if (t < inicioSem) return false;
+                            const dia = t.getDay(); // 2 = martes, 5 = viernes
+                            return dia === 2 || dia === 5;
+                        });
+                        const inventarioPorPos = {};
+                        visitasMarVie.forEach(v => {
+                            if (!inventarioPorPos[v.posId]) inventarioPorPos[v.posId] = [];
+                            inventarioPorPos[v.posId].push(v.inventoryLevel || 0);
+                        });
+                        anaquelCubiertos = anaquelPosIds.filter(posId => {
+                            const niveles = inventarioPorPos[posId];
+                            if (!niveles || niveles.length === 0) return false;
+                            const promedio = niveles.reduce((a, b) => a + b, 0) / niveles.length;
+                            return promedio > cfg.anaquelMinUnits;
+                        }).length;
+                        anaquelOk = (anaquelCubiertos / anaquelPosIds.length) >= (cfg.anaquelThreshold / 100);
+                    } catch (e) {
+                        console.warn('visit_reports (anaquel) load error:', e);
+                    }
+                }
+
                 // 5. Facturas por vencer (próximos 3 días, no pagadas) y % de
                 //    facturas cobradas dentro de plazo este mes (Bono
                 //    Puntualidad proporcional: pagadaDentroDePlazo viene de
@@ -731,19 +806,16 @@ const VendedorLayout = ({ user, onLogout }) => {
                     console.warn('facturas_vendedor load error:', e);
                 }
 
-                const newStats = { unidadesDelMes, comisionSemana, despachoHoy, activacionOk, puntosActivacion, puntosTotal, facturasPorVencer, puntualidadPct };
+                const newStats = {
+                    unidadesDelMes, comisionSemana, despachoHoy,
+                    activacionOk, puntosActivacion, puntosTotal,
+                    facturasPorVencer, puntualidadPct,
+                    hasAnaquel, anaquelOk, anaquelCubiertos, anaquelTotal: anaquelPosIds.length,
+                };
                 setStats(newStats);
 
-                // 6. PDV list for dispatch — fetch pos docs to resolve tipoDespacho/isChainHead,
-                //    then collapse centralizado chains to a single entry per chain.
-                const posDocsMap = {};
-                if (carteraPosIds.size > 0) {
-                    const snaps = await Promise.all(
-                        [...carteraPosIds].map(id => getDoc(doc(db, 'pos', id)))
-                    );
-                    snaps.forEach(snap => { if (snap.exists()) posDocsMap[snap.id] = snap.data(); });
-                }
-
+                // 6. PDV list for dispatch — collapse centralizado chains to a single entry per chain
+                //    (posDocsMap fue cargado arriba, en 4b).
                 const centralizadoByChain = {};
                 const vendorPosList = [];
                 cartera.forEach(c => {

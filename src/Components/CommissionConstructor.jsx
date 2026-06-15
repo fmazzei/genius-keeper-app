@@ -19,6 +19,9 @@ export const DEFAULT_COMMISSION_CONFIG = {
     bonusActivacion:     1.0,
     activacionThreshold: 80,
     activacionMinUnits:  24,
+    bonusAnaquel:        1.0,
+    anaquelThreshold:    80,
+    anaquelMinUnits:     12,
     arranque:            [],
     facturaMaxDias:      60,
 };
@@ -268,6 +271,30 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             value={config.activacionMinUnits}
                             step={1}
                             onChange={v => setConfig(p => ({ ...p, activacionMinUnits: v }))}
+                        />
+                        <InlineRow
+                            label="Bono Disponibilidad en Anaquel"
+                            hint="Sustituye al Bono Activación en cuentas con régimen 'Anaquel' (despacho centralizado/consignación)"
+                            suffix="%"
+                            value={config.bonusAnaquel}
+                            step={0.5}
+                            onChange={v => setConfig(p => ({ ...p, bonusAnaquel: v }))}
+                        />
+                        <InlineRow
+                            label="Umbral de anaquel"
+                            hint="% de sucursales activas que deben cumplir el mínimo"
+                            suffix="%"
+                            value={config.anaquelThreshold}
+                            step={5}
+                            onChange={v => setConfig(p => ({ ...p, anaquelThreshold: v }))}
+                        />
+                        <InlineRow
+                            label="Mín. unidades en anaquel"
+                            hint="Promedio mín. en visitas de martes/viernes para que cuente"
+                            suffix="uds"
+                            value={config.anaquelMinUnits}
+                            step={1}
+                            onChange={v => setConfig(p => ({ ...p, anaquelMinUnits: v }))}
                         />
                     </div>
                 </section>
