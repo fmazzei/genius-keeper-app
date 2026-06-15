@@ -4,12 +4,13 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { DEFAULT_COMMISSION_CONFIG, buildTiers, getTierFromConfig, mesCohorteFromDate, diffDias } = require('./commissionEngine');
 
-// Secreto compartido para validar los webhooks de Zoho Books, gestionado vía
-// Secret Manager (firebase functions:secrets:set ZOHO_SECRET). Reemplaza al
-// antiguo `functions.config().genius.zoho_secret`, que está deprecado.
+// Secreto compartido para validar los webhooks de Zoho Books, inyectado como
+// variable de entorno desde functions/.env.<project-id> (generado por CI a
+// partir del secreto ZOHO_SECRET de GitHub Actions). Reemplaza al antiguo
+// `functions.config().genius.zoho_secret`, que está deprecado.
 const ZOHO_SECRET_PARAM = "ZOHO_SECRET";
 const withZohoSecret = (handler) =>
-    functions.runWith({ secrets: [ZOHO_SECRET_PARAM] }).https.onRequest(handler);
+    functions.https.onRequest(handler);
 
 // --- Helper de Notificaciones ---
 const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
