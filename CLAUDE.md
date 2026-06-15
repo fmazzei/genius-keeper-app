@@ -21,6 +21,15 @@ Sección de seguimiento para terminar de conectar el módulo de comisiones del
 vendedor (GK) con Zoho Books. Mantener actualizada a medida que se resuelvan
 items.
 
+### Estado actual (2026-06-15 — integración Zoho Books validada en producción, end-to-end)
+- ✅ **Deploy de Cloud Functions desbloqueado**: el secreto `X-Zoho-Secret` ya NO se gestiona vía Secret Manager (`runWith({ secrets: [...] })`) — bloqueaba el deploy por permisos del service account de CI (`secretmanager.versions.get` 403, sin causa raíz identificable). Se reemplazó por un archivo `.env.geniuskeeper-36553` generado por CI a partir del secreto de GitHub Actions `ZOHO_SECRET`, escrito justo antes de `firebase deploy --only functions` y borrado después (ver `.github/workflows/firebase-deploy.yml`, paso "Deploy Cloud Functions"; `functions/handlers/webhooks.js` ahora lee `process.env.ZOHO_SECRET` directo). `functions/.gitignore` excluye `.env`/`.env.*`. El secreto original en Secret Manager quedó huérfano (sin usar) — se puede borrar cuando se quiera.
+- ✅ **Webhooks configurados en Zoho Books** (Configuración → Automatización → Reglas de flujo de trabajo): "GK - Sincronizar Facturas" + "GK - Factura Vencida" → `sincronizarFacturaDesdeZoho`; "GK - Nota de Crédito" → `procesarNotaCreditoDesdeZoho`. Ambos con header `X-Zoho-Secret` = mismo valor que `ZOHO_SECRET` en GitHub Actions.
+- ✅ **Mapeo vendedor ↔ Zoho**: `zohoSalespersonName` completado para Wilmer Casares.
+- ✅ **`zohoOrgIdLacteoca`** configurado en AdminPanel → Integraciones (`793482918`).
+- ✅ **Toggles activados** en AdminPanel → Integraciones: "Webhook de Facturas" ON (cubre `sincronizarFacturaDesdeZoho` + `procesarNotaCreditoDesdeZoho`). "Webhook de Comisiones / Pagos" (`procesarComisionesDesdeZoho`, legacy) se deja OFF — no se configuró ese webhook en Zoho (ver punto 7 pendiente).
+- ✅ **Prueba end-to-end exitosa**: factura real de Zoho (INV-001638, Francisco Bianco) llegó a "Mis Facturas" del vendedor como "Vencida"; al marcarla pagada en Zoho, el webhook `invoice.paid` actualizó el estado a "Pagada" y el Home del vendedor reflejó `1/1,429 uds`, nivel "Básica (3.5%)" y Bono Puntualidad proporcional (100%) — confirma tasa-cohorte, regla de 45 días y `pagadaDentroDePlazo` funcionando en producción.
+- Puntos 1-6 del listado "Pendiente" de abajo: **completados**. Quedan abiertos los puntos 7 (decisión de negocio sobre `procesarComisionesDesdeZoho` legacy) y 8 (bono "Disponibilidad en Anaquel").
+
 ### Estado actual (2026-06-13 — Fase 1+2 del motor de comisiones completas)
 - `commissionConfig` por vendedor (tiers, bonos, período de arranque, `facturaMaxDias`) — ✅ completo, vive en `users_metadata/{uid}.commissionConfig`, configurado desde `CommissionConstructor.jsx`. Nivel "Baja" ahora paga la tasa base del tier más bajo (antes $0).
 - `functions/handlers/commissionEngine.js` — ✅ NUEVO: lógica pura de tiers/tasa compartida entre `VendedorLayout.jsx` y los webhooks (`buildTiers`, `getTierFromConfig`, `mesCohorteFromDate`, `diffDias`).
