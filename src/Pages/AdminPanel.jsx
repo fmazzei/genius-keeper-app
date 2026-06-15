@@ -2331,11 +2331,11 @@ const FacturaManagementTool = () => {
 
                     <div className="border-t border-slate-100 pt-3 mb-3">
                         <p className="text-xs font-semibold text-slate-700 mb-1.5">Reasignar a otro vendedor</p>
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                             <select
                                 value={nuevoVendedorId}
                                 onChange={e => setNuevoVendedorId(e.target.value)}
-                                className="flex-1 p-2 border border-slate-300 rounded-lg text-sm"
+                                className="w-full sm:flex-1 min-w-0 p-2 border border-slate-300 rounded-lg text-sm"
                             >
                                 <option value="">Selecciona un vendedor…</option>
                                 {vendedores.filter(v => v.id !== factura.vendedorId).map(v => (
@@ -2345,35 +2345,39 @@ const FacturaManagementTool = () => {
                             <button
                                 onClick={() => ejecutar('reasignar')}
                                 disabled={!nuevoVendedorId || actionLoading !== ''}
-                                className="px-3 py-2 bg-brand-blue text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                                className="w-full sm:w-auto px-3 py-2 bg-brand-blue text-white rounded-lg text-sm font-semibold disabled:opacity-50 shrink-0"
                             >
                                 {actionLoading === 'reasignar' ? '...' : 'Reasignar'}
                             </button>
                         </div>
                     </div>
 
-                    <div className="border-t border-slate-100 pt-3 flex items-center gap-2">
+                    <div className="border-t border-slate-100 pt-3">
                         {confirmAction === 'anular' ? (
-                            <>
-                                <p className="text-xs text-slate-600 flex-1">¿Anular esta factura y revertir su comisión? Quedará visible en "Anuladas".</p>
-                                <button onClick={() => ejecutar('anular')} disabled={actionLoading !== ''} className="px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-semibold disabled:opacity-50 shrink-0">
-                                    {actionLoading === 'anular' ? '...' : 'Confirmar'}
-                                </button>
-                                <button onClick={() => setConfirmAction(null)} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold shrink-0">Cancelar</button>
-                            </>
+                            <div className="flex flex-col gap-2">
+                                <p className="text-xs text-slate-600">¿Anular esta factura y revertir su comisión? Quedará visible en "Anuladas".</p>
+                                <div className="flex gap-2">
+                                    <button onClick={() => ejecutar('anular')} disabled={actionLoading !== ''} className="flex-1 px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-semibold disabled:opacity-50">
+                                        {actionLoading === 'anular' ? '...' : 'Confirmar'}
+                                    </button>
+                                    <button onClick={() => setConfirmAction(null)} className="flex-1 px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold">Cancelar</button>
+                                </div>
+                            </div>
                         ) : confirmAction === 'eliminar' ? (
-                            <>
-                                <p className="text-xs text-slate-600 flex-1">¿Eliminar esta factura por completo? Esta acción no se puede deshacer.</p>
-                                <button onClick={() => ejecutar('eliminar')} disabled={actionLoading !== ''} className="px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 shrink-0">
-                                    {actionLoading === 'eliminar' ? '...' : 'Confirmar'}
-                                </button>
-                                <button onClick={() => setConfirmAction(null)} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold shrink-0">Cancelar</button>
-                            </>
+                            <div className="flex flex-col gap-2">
+                                <p className="text-xs text-slate-600">¿Eliminar esta factura por completo? Esta acción no se puede deshacer.</p>
+                                <div className="flex gap-2">
+                                    <button onClick={() => ejecutar('eliminar')} disabled={actionLoading !== ''} className="flex-1 px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50">
+                                        {actionLoading === 'eliminar' ? '...' : 'Confirmar'}
+                                    </button>
+                                    <button onClick={() => setConfirmAction(null)} className="flex-1 px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold">Cancelar</button>
+                                </div>
+                            </div>
                         ) : (
-                            <>
-                                <button onClick={() => setConfirmAction('anular')} className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-xs font-semibold">Anular factura</button>
-                                <button onClick={() => setConfirmAction('eliminar')} className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-xs font-semibold">Eliminar factura</button>
-                            </>
+                            <div className="flex gap-2">
+                                <button onClick={() => setConfirmAction('anular')} className="flex-1 px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-xs font-semibold">Anular factura</button>
+                                <button onClick={() => setConfirmAction('eliminar')} className="flex-1 px-3 py-2 bg-red-100 text-red-700 rounded-lg text-xs font-semibold">Eliminar factura</button>
+                            </div>
                         )}
                     </div>
                 </div>
