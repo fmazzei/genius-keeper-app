@@ -2,7 +2,8 @@
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const { DEFAULT_COMMISSION_CONFIG, buildTiers, getTierFromConfig, mesCohorteFromDate, diffDias } = require('./commissionEngine');
+const { mesCohorteFromDate, diffDias } = require('./commissionEngine');
+const { congelarTasaCohorte, procesarPagoFactura } = require('./facturaCommissionOps');
 
 // Secreto compartido para validar los webhooks de Zoho Books, inyectado como
 // variable de entorno desde functions/.env.<project-id> (generado por CI a
@@ -179,108 +180,6 @@ function esOrganizacionLacteoca(appConfig, body, invoice) {
     const orgId = body?.organization_id || invoice?.organization_id || null;
     if (!orgId) return true; // payload sin organization_id, no se puede validar
     return String(orgId) === String(orgIdEsperado);
-}
-
-/**
- * Determina/congela la tasa-cohorte de una factura: acumula sus unidades en
- * `comisiones_mensuales/{vendedorId}_{mesCohorte}` y devuelve el tier
- * resultante DESPUÉS de sumar esas unidades — esa es la tasa que se congela
- * para esta factura (tasa "al momento de la factura", sin recalcular
- * facturas previas del mismo mes).
- */
-async function congelarTasaCohorte(vendedor, mesCohorte, unidades) {
-    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
-    const metaMensual = vendedor.data.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-    const tiers = buildTiers(cfg);
-    const mesRef = admin.firestore().collection('comisiones_mensuales').doc(`${vendedor.id}_${mesCohorte}`);
-
-    return admin.firestore().runTransaction(async (tx) => {
-        const mesSnap = await tx.get(mesRef);
-        const prevUnidades = mesSnap.exists ? (mesSnap.data().unidadesFacturadas || 0) : 0;
-        const nuevoTotal = prevUnidades + unidades;
-        const pct = metaMensual > 0 ? nuevoTotal / metaMensual : 0;
-        const tier = getTierFromConfig(pct, tiers);
-
-        tx.set(mesRef, {
-            vendedorId: vendedor.id,
-            reporterId: vendedor.data.reporterId || null,
-            mes: mesCohorte,
-            unidadesFacturadas: nuevoTotal,
-            metaMensual,
-            nivel: tier.label,
-            tasaActual: tier.rate * 100,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-        return tier;
-    });
-}
-
-/**
- * `invoice.paid`: calcula la comisión sobre el monto cobrado a la
- * tasa-cohorte congelada de la factura, aplica el corte de
- * `commissionConfig.facturaMaxDias` y evalúa el bono de puntualidad
- * (vencimiento + 5 días de margen). Escribe el resultado en
- * `pagos_registrados` (con `vendedorId`/`reporterId`, distinto de los
- * registros que escribe `procesarComisionesDesdeZoho`, que no tienen
- * vendedor asociado — ver CLAUDE.md punto 6/7).
- *
- * Política de cobro parcial: la comisión solo se libera cuando Zoho dispara
- * `invoice.paid` (saldo == 0). Un abono parcial no genera ningún registro.
- */
-async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento }) {
-    if (!vendedor) {
-        functions.logger.warn(`Factura #${facturaData.numero} pagada pero sin vendedor asignado — no se genera comisión.`);
-        return;
-    }
-
-    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
-    const facturaMaxDias = cfg.facturaMaxDias || DEFAULT_COMMISSION_CONFIG.facturaMaxDias;
-
-    // Fecha de pago: usamos el momento de recepción del webhook como proxy,
-    // ya que Zoho dispara `invoice.paid` cuando el saldo de la factura llega
-    // a 0 (cobro 100%).
-    const fechaPago = new Date();
-    const diasParaCobrar = fechaFactura ? diffDias(fechaFactura, fechaPago) : null;
-
-    // Regla de 45 días (configurable vía "Días máx. sin cobrar"): si se
-    // superó el plazo, la comisión queda anulada permanentemente aunque la
-    // factura termine cobrándose.
-    const comisionAnulada = diasParaCobrar !== null && diasParaCobrar > facturaMaxDias;
-
-    const tasaCohorte = facturaData.tasaCohorte || 0;
-    const comisionGenerada = comisionAnulada ? 0 : facturaData.monto * (tasaCohorte / 100);
-
-    const diasCredito = facturaData.diasCredito;
-    const pagadaDentroDePlazo = (diasCredito !== null && diasCredito !== undefined && diasParaCobrar !== null)
-        ? diasParaCobrar <= (diasCredito + 5)
-        : null;
-
-    facturaData.comisionAnulada     = comisionAnulada;
-    facturaData.comisionGenerada    = comisionGenerada;
-    facturaData.pagadaDentroDePlazo = pagadaDentroDePlazo;
-    facturaData.fechaPago           = admin.firestore.Timestamp.fromDate(fechaPago);
-    facturaData.diasParaCobrar      = diasParaCobrar;
-
-    await admin.firestore().collection('pagos_registrados').add({
-        vendedorId:           vendedor.id,
-        reporterId:           vendedor.data.reporterId || null,
-        facturaNumero:        facturaData.numero,
-        clienteName:          facturaData.clienteName,
-        montoUSD:             facturaData.monto,
-        tasaCohorte,
-        mesCohorte:           facturaData.mesCohorte,
-        calculatedCommission: comisionGenerada,
-        comisionAnulada,
-        pagadaDentroDePlazo,
-        diasParaCobrar,
-        diasCredito,
-        invoiceNumbers:       [facturaData.numero],
-        createdAt:            admin.firestore.FieldValue.serverTimestamp(),
-        origen:               'invoice.paid',
-    });
-
-    functions.logger.log(`Factura #${facturaData.numero}: comisión ${comisionGenerada.toFixed(2)} USD (tasa ${tasaCohorte}%, anulada: ${comisionAnulada}, a tiempo: ${pagadaDentroDePlazo}).`);
 }
 
 /**

@@ -2219,6 +2219,169 @@ const CompetitorManagement = () => {
     );
 };
 
+// ─── Gestión de facturas Zoho — reasignar / anular / eliminar ────────────────
+
+const FacturaManagementTool = () => {
+    const [numero, setNumero]               = useState('');
+    const [factura, setFactura]             = useState(null);
+    const [vendedores, setVendedores]       = useState([]);
+    const [loadingSearch, setLoadingSearch] = useState(false);
+    const [error, setError]                 = useState('');
+    const [actionLoading, setActionLoading] = useState('');
+    const [nuevoVendedorId, setNuevoVendedorId] = useState('');
+    const [confirmAction, setConfirmAction] = useState(null); // 'eliminar' | 'anular'
+
+    useEffect(() => {
+        getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
+            .then(snap => setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+            .catch(() => {});
+    }, []);
+
+    const buscar = async () => {
+        const term = numero.trim();
+        if (!term) return;
+        setLoadingSearch(true);
+        setError('');
+        setFactura(null);
+        try {
+            const snap = await getDocs(query(collection(db, 'facturas_vendedor'), where('numero', '==', term), limit(1)));
+            if (snap.empty) {
+                setError('No se encontró ninguna factura con ese número.');
+            } else {
+                const d = snap.docs[0];
+                setFactura({ id: d.id, ...d.data() });
+                setNuevoVendedorId('');
+                setConfirmAction(null);
+            }
+        } catch (e) {
+            console.error(e);
+            setError('Error al buscar la factura.');
+        } finally {
+            setLoadingSearch(false);
+        }
+    };
+
+    const ejecutar = async (action) => {
+        if (!factura) return;
+        setActionLoading(action);
+        setError('');
+        try {
+            const fn = httpsCallable(functions, 'gestionarFacturaVendedor');
+            await fn({
+                facturaId: factura.id,
+                action,
+                ...(action === 'reasignar' ? { nuevoVendedorId } : {}),
+            });
+            if (action === 'eliminar') {
+                setFactura(null);
+                setNumero('');
+            } else {
+                const snap = await getDoc(doc(db, 'facturas_vendedor', factura.id));
+                setFactura(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+            }
+            setConfirmAction(null);
+            setNuevoVendedorId('');
+        } catch (e) {
+            console.error(e);
+            setError(e.message || 'Error al procesar la acción.');
+        } finally {
+            setActionLoading('');
+        }
+    };
+
+    const vendedorActual = vendedores.find(v => v.id === factura?.vendedorId);
+
+    return (
+        <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+            <p className="font-bold text-slate-800 mb-1">Gestión de facturas Zoho</p>
+            <p className="text-slate-400 text-xs mb-3">
+                Busca una factura sincronizada por su número para reasignarla a otro vendedor, anularla o eliminarla (p.ej. una factura de prueba).
+            </p>
+            <div className="flex gap-2">
+                <input
+                    type="text"
+                    value={numero}
+                    onChange={e => setNumero(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && buscar()}
+                    placeholder="Número de factura (ej. INV-001638)"
+                    className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm"
+                />
+                <button onClick={buscar} disabled={loadingSearch} className="px-4 py-2.5 bg-slate-800 text-white rounded-lg text-sm font-semibold disabled:opacity-60">
+                    {loadingSearch ? 'Buscando…' : 'Buscar'}
+                </button>
+            </div>
+
+            {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
+
+            {factura && (
+                <div className="mt-4 border border-slate-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <p className="font-bold text-slate-800 text-sm">{factura.numero}</p>
+                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{factura.estado}</span>
+                    </div>
+                    <div className="text-xs text-slate-500 space-y-0.5 mb-3">
+                        <p>Cliente: <span className="text-slate-700">{factura.clienteName || '—'}</span></p>
+                        <p>Monto: <span className="text-slate-700">${Number(factura.monto || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span></p>
+                        <p>Unidades: <span className="text-slate-700">{factura.unidades ?? '—'}</span></p>
+                        <p>Vendedor actual: <span className="text-slate-700">{vendedorActual?.name || factura.vendedorId || 'sin asignar'}</span></p>
+                        {Number.isFinite(factura.comisionGenerada) && factura.comisionGenerada > 0 && (
+                            <p>Comisión generada: <span className="text-slate-700">${factura.comisionGenerada.toFixed(2)}</span></p>
+                        )}
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-3 mb-3">
+                        <p className="text-xs font-semibold text-slate-700 mb-1.5">Reasignar a otro vendedor</p>
+                        <div className="flex gap-2">
+                            <select
+                                value={nuevoVendedorId}
+                                onChange={e => setNuevoVendedorId(e.target.value)}
+                                className="flex-1 p-2 border border-slate-300 rounded-lg text-sm"
+                            >
+                                <option value="">Selecciona un vendedor…</option>
+                                {vendedores.filter(v => v.id !== factura.vendedorId).map(v => (
+                                    <option key={v.id} value={v.id}>{v.name}</option>
+                                ))}
+                            </select>
+                            <button
+                                onClick={() => ejecutar('reasignar')}
+                                disabled={!nuevoVendedorId || actionLoading !== ''}
+                                className="px-3 py-2 bg-brand-blue text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                            >
+                                {actionLoading === 'reasignar' ? '...' : 'Reasignar'}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-3 flex items-center gap-2">
+                        {confirmAction === 'anular' ? (
+                            <>
+                                <p className="text-xs text-slate-600 flex-1">¿Anular esta factura y revertir su comisión? Quedará visible en "Anuladas".</p>
+                                <button onClick={() => ejecutar('anular')} disabled={actionLoading !== ''} className="px-3 py-2 bg-amber-500 text-white rounded-lg text-xs font-semibold disabled:opacity-50 shrink-0">
+                                    {actionLoading === 'anular' ? '...' : 'Confirmar'}
+                                </button>
+                                <button onClick={() => setConfirmAction(null)} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold shrink-0">Cancelar</button>
+                            </>
+                        ) : confirmAction === 'eliminar' ? (
+                            <>
+                                <p className="text-xs text-slate-600 flex-1">¿Eliminar esta factura por completo? Esta acción no se puede deshacer.</p>
+                                <button onClick={() => ejecutar('eliminar')} disabled={actionLoading !== ''} className="px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 shrink-0">
+                                    {actionLoading === 'eliminar' ? '...' : 'Confirmar'}
+                                </button>
+                                <button onClick={() => setConfirmAction(null)} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold shrink-0">Cancelar</button>
+                            </>
+                        ) : (
+                            <>
+                                <button onClick={() => setConfirmAction('anular')} className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-xs font-semibold">Anular factura</button>
+                                <button onClick={() => setConfirmAction('eliminar')} className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-xs font-semibold">Eliminar factura</button>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ─── Integraciones — Zoho Books webhook config ────────────────────────────────
 
 const IntegracionesSection = () => {
@@ -2331,6 +2494,8 @@ const IntegracionesSection = () => {
                     </>
                 )}
             </div>
+
+            <FacturaManagementTool />
 
             {!loadingAlert && sinVendedor !== null && sinVendedor > 0 && (
                 <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-4 flex items-start gap-3">

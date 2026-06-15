@@ -13,5 +13,6 @@ const scheduled      = require('./handlers/scheduled');
 const webhooks       = require('./handlers/webhooks');
 const reports        = require('./handlers/reports');
 const kromaNotifs    = require('./handlers/kromaNotifications');
+const adminTools     = require('./handlers/adminTools');
 
-Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs);
+Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools);

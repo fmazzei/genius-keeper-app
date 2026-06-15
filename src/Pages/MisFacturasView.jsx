@@ -12,6 +12,7 @@ const TABS = [
     { id: 'porVencer', label: 'Por vencer' },
     { id: 'vigentes', label: 'Vigentes' },
     { id: 'pagadas', label: 'Pagadas' },
+    { id: 'anuladas', label: 'Anuladas' },
 ];
 
 const MisFacturasView = ({ vendedorId }) => {
@@ -48,9 +49,13 @@ const MisFacturasView = ({ vendedorId }) => {
     const now = new Date();
 
     const categorized = useMemo(() => {
-        const groups = { vencidas: [], porVencer: [], vigentes: [], pagadas: [] };
+        const groups = { vencidas: [], porVencer: [], vigentes: [], pagadas: [], anuladas: [] };
         for (const f of facturas) {
             const vencimiento = f.vencimiento?.toDate?.();
+            if (f.estado === 'anulada') {
+                groups.anuladas.push(f);
+                continue;
+            }
             if (f.estado === 'pagada') {
                 groups.pagadas.push(f);
                 continue;
@@ -84,12 +89,13 @@ const MisFacturasView = ({ vendedorId }) => {
         groups.porVencer.sort(byVencimientoAsc);
         groups.vigentes.sort(byVencimientoAsc);
         groups.pagadas.sort(byFechaDesc);
+        groups.anuladas.sort(byFechaDesc);
 
         return groups;
     }, [facturas, now]);
 
     const totalPorCobrar = facturas
-        .filter(f => f.estado !== 'pagada')
+        .filter(f => f.estado !== 'pagada' && f.estado !== 'anulada')
         .reduce((acc, f) => acc + Number(f.monto || 0), 0);
 
     const visibleFacturas = useMemo(() => {
@@ -203,20 +209,24 @@ const MisFacturasView = ({ vendedorId }) => {
                         const vencStr = vencimiento
                             ? vencimiento.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })
                             : null;
-                        const vencida = vencimiento && vencimiento < now && f.estado !== 'pagada';
+                        const vencida = vencimiento && vencimiento < now && f.estado !== 'pagada' && f.estado !== 'anulada';
                         const diasParaVencer = vencimiento
                             ? Math.ceil((vencimiento - now) / (1000 * 60 * 60 * 24))
                             : null;
-                        const porVencer = !vencida && f.estado !== 'pagada' && diasParaVencer !== null && diasParaVencer <= PROXIMO_A_VENCER_DIAS;
+                        const porVencer = !vencida && f.estado !== 'pagada' && f.estado !== 'anulada' && diasParaVencer !== null && diasParaVencer <= PROXIMO_A_VENCER_DIAS;
 
-                        const estadoStyle = f.estado === 'pagada'
+                        const estadoStyle = f.estado === 'anulada'
+                            ? 'bg-slate-600/40 text-slate-400 border-slate-500/30'
+                            : f.estado === 'pagada'
                             ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
                             : vencida
                             ? 'bg-red-500/20 text-red-400 border-red-500/30'
                             : porVencer
                             ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                             : 'bg-slate-700/40 text-slate-300 border-slate-600/40';
-                        const estadoLabel = f.estado === 'pagada'
+                        const estadoLabel = f.estado === 'anulada'
+                            ? 'Anulada'
+                            : f.estado === 'pagada'
                             ? 'Pagada'
                             : vencida
                             ? 'Vencida'
