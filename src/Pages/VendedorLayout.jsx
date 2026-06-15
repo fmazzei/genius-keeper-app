@@ -368,7 +368,10 @@ function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClos
                 <div className="mb-5">
                     <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Niveles de Comisión</p>
                     <div className="space-y-2">
-                        {tiers.map((t, i) => {
+                        {[...tiers, { label: 'Baja', rate: (commConfig.bajaRate || 0) / 100, min: 0, ...BAJA_STYLE }].map((t, i) => {
+                            const isBaja = t.label === 'Baja';
+                            const lowest = tiers[tiers.length - 1];
+                            const lowestMinUnits = lowest ? Math.round(lowest.min * vendedor.metaMensual) : 0;
                             const minUnits = Math.round(t.min * vendedor.metaMensual);
                             const isActive = tier.label === t.label;
                             return (
@@ -382,7 +385,7 @@ function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClos
                                     </div>
                                     <div className="text-right">
                                         <p className={`text-sm font-mono font-bold ${isActive ? t.color : 'text-slate-400'}`}>{t.rate > 0 ? `${(t.rate * 100).toFixed(1)}%` : '—'}</p>
-                                        <p className="text-slate-500 text-[10px]">desde {minUnits.toLocaleString()} uds</p>
+                                        <p className="text-slate-500 text-[10px]">{isBaja ? `< ${lowestMinUnits.toLocaleString()} uds` : `desde ${minUnits.toLocaleString()} uds`}</p>
                                     </div>
                                 </div>
                             );
