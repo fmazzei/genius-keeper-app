@@ -1128,7 +1128,7 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
 
 // ─── Warehouse Detail View ────────────────────────────────────────────────────
 
-function WarehouseDetail({ warehouse, inventoryPT, inventoryMat, movements, warehouses, kromaUser, kromaRole, canDo, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
+function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventoryMat, movements, warehouses, kromaUser, kromaRole, canDo, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
     const [showMov, setShowMov] = useState(false);
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const isMaster = kromaRole === 'master';
@@ -1136,14 +1136,19 @@ function WarehouseDetail({ warehouse, inventoryPT, inventoryMat, movements, ware
     const showMaterials = isInsumosWh(warehouse);
     const matRows = showMaterials ? matActiveRows(inventoryMat) : [];
 
-    const items     = inventoryPT.filter(i => (i.warehouseId || '__cava__') === (warehouse.id || '__cava__'));
+    const isComercial = isComercialWh(warehouse);
+
+    // Depósitos comerciales: la fuente de verdad es `inventario_comercial`
+    // (GK → Almacén Comercial), no `kroma_inventory_pt` — ver banner abajo.
+    const items = isComercial
+        ? inventarioComercial.filter(i => (i.almacenNombre || '').trim().toLowerCase() === (warehouse.nombre || '').trim().toLowerCase())
+        : inventoryPT.filter(i => (i.warehouseId || '__cava__') === (warehouse.id || '__cava__'));
     const empacados = items.filter(i => i.tipo === 'empacado' && (i.unidades ?? 0) > 0);
     const sinEnv    = items.filter(i => i.tipo === 'sin_envasar' && (i.kgTotales ?? 0) > 0);
 
     const whMovs = movements.filter(m => m.origenId === warehouse.id || m.destinoId === warehouse.id).slice(0, 30);
     const m = TIPO_META[warehouse.tipo] || TIPO_META.mixto;
 
-    const isComercial = isComercialWh(warehouse);
     const canEditPT = !isComercial && (kromaRole === 'master' || kromaRole === 'kroma_admin' || kromaRole === 'produccion' || kromaRole === 'kroma_gerencial');
     const isAdminOrMaster = kromaRole === 'master' || kromaRole === 'kroma_admin';
     const isPT = warehouse.tipo === 'PT' || warehouse.tipo === 'mixto';
@@ -1548,6 +1553,7 @@ export default function WarehousesPage() {
 
     const [warehouses,   setWarehouses]   = useState([]);
     const [inventoryPT,  setInventoryPT]  = useState([]);
+    const [inventarioComercial, setInventarioComercial] = useState([]);
     const [inventoryMat, setInventoryMat] = useState([]);
     const [movements,    setMovements]    = useState([]);
     const [loading,      setLoading]      = useState(true);
@@ -1569,11 +1575,12 @@ export default function WarehousesPage() {
     async function loadData() {
         setLoading(true); setError(null);
         try {
-            const [whSnap, invSnap, movSnap, matSnap] = await Promise.all([
+            const [whSnap, invSnap, movSnap, matSnap, comercialSnap] = await Promise.all([
                 getDocs(query(collection(db, 'kroma_warehouses'), where('active', '==', true))),
                 getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_warehouse_movements')),
                 getDocs(collection(db, 'kroma_inventory_materials')),
+                getDocs(collection(db, 'inventario_comercial')),
             ]);
 
             let wh = whSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1597,8 +1604,11 @@ export default function WarehousesPage() {
 
             const mats = matSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
+            const comercialInv = comercialSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
             setWarehouses(wh);
             setInventoryPT(resolvedInv);
+            setInventarioComercial(comercialInv);
             setInventoryMat(mats);
             setMovements(movs);
         } catch (e) { setError(e.message); }
@@ -1843,15 +1853,33 @@ export default function WarehousesPage() {
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
-    function countItems(wId) {
-        return inventoryPT.filter(i => i.warehouseId === wId && (
+    // Para depósitos comerciales, la fuente de verdad es `inventario_comercial`
+    // (gestionado desde GK → Almacén Comercial) — se vincula por nombre.
+    function comercialItemsFor(wh) {
+        return inventarioComercial.filter(i => (i.almacenNombre || '').trim().toLowerCase() === (wh?.nombre || '').trim().toLowerCase());
+    }
+
+    function countItems(wh) {
+        if (isComercialWh(wh)) {
+            return comercialItemsFor(wh).filter(i => (i.unidades ?? 0) > 0).length;
+        }
+        return inventoryPT.filter(i => i.warehouseId === wh.id && (
             (i.tipo === 'empacado' && (i.unidades ?? 0) > 0) ||
             (i.tipo === 'sin_envasar' && (i.kgTotales ?? 0) > 0)
         )).length;
     }
 
-    function warehouseStock(wId) {
-        const items = inventoryPT.filter(i => i.warehouseId === wId);
+    function warehouseStock(wh) {
+        if (isComercialWh(wh)) {
+            const totalUnidades = comercialItemsFor(wh).reduce((sum, i) => sum + (i.unidades ?? 0), 0);
+            return {
+                totalUnidades,
+                docenas: Math.floor(totalUnidades / 12),
+                sueltas: totalUnidades % 12,
+                totalKgSinEnvasar: 0,
+            };
+        }
+        const items = inventoryPT.filter(i => i.warehouseId === wh.id);
         const totalUnidades = items
             .filter(i => i.tipo === 'empacado')
             .reduce((sum, i) => sum + (i.unidades ?? 0), 0);
@@ -1870,9 +1898,12 @@ export default function WarehousesPage() {
     function matCount()    { return activeMats.length; }
     function matLowCount() { return activeMats.filter(i => ['low', 'critical', 'empty'].includes(matStockStatus(i))).length; }
 
-    function hasExpiringSoon(wId) {
+    function hasExpiringSoon(wh) {
         const limit = Date.now() + 30 * 86400000;
-        return inventoryPT.some(i => i.warehouseId === wId && i.fechaVencimiento && new Date(i.fechaVencimiento).getTime() < limit);
+        if (isComercialWh(wh)) {
+            return comercialItemsFor(wh).some(i => i.fechaVencimiento && new Date(i.fechaVencimiento).getTime() < limit);
+        }
+        return inventoryPT.some(i => i.warehouseId === wh.id && i.fechaVencimiento && new Date(i.fechaVencimiento).getTime() < limit);
     }
 
     // ── Loading / Error states ─────────────────────────────────────────────────
@@ -1900,6 +1931,7 @@ export default function WarehousesPage() {
                 <WarehouseDetail
                     warehouse={whData}
                     inventoryPT={inventoryPT}
+                    inventarioComercial={inventarioComercial}
                     inventoryMat={inventoryMat}
                     movements={movements}
                     warehouses={warehouses}
@@ -1952,7 +1984,7 @@ export default function WarehousesPage() {
             <div className="flex items-start justify-between gap-4">
                 <div>
                     <h2 className="text-xl font-bold text-white mb-0.5">Almacenes</h2>
-                    <p className="text-slate-400 text-sm">{warehouses.length} ubicaciones · {inventoryPT.filter(i => (i.tipo === 'empacado' ? i.unidades : i.kgTotales) > 0).length} partidas en stock</p>
+                    <p className="text-slate-400 text-sm">{warehouses.length} ubicaciones · {inventoryPT.filter(i => !warehouses.find(w => w.id === i.warehouseId && isComercialWh(w)) && (i.tipo === 'empacado' ? i.unidades : i.kgTotales) > 0).length + inventarioComercial.filter(i => (i.unidades ?? 0) > 0).length} partidas en stock</p>
                 </div>
                 <button onClick={() => setShowNew(true)}
                     className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-4 py-2.5 rounded-xl shrink-0 transition-colors">
@@ -1973,11 +2005,11 @@ export default function WarehousesPage() {
                     <WarehouseCard
                         key={wh.id}
                         wh={wh}
-                        count={countItems(wh.id)}
-                        stock={warehouseStock(wh.id)}
+                        count={countItems(wh)}
+                        stock={warehouseStock(wh)}
                         matCount={isInsumosWh(wh) ? matCount() : null}
                         matLow={isInsumosWh(wh) ? matLowCount() : 0}
-                        warn={hasExpiringSoon(wh.id)}
+                        warn={hasExpiringSoon(wh)}
                         canEdit={canEdit('almacenes') && !isComercialWh(wh)}
                         canDelete={canDelete('almacenes') && !isComercialWh(wh)}
                         onOpen={() => { setSelected(wh.id); setView('detail'); }}
