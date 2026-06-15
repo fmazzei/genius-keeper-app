@@ -55,68 +55,63 @@ const SectionHeader = ({ label, action }) => (
     </div>
 );
 
+const fmtUnits = (n) => Math.round(n).toLocaleString('es-VE');
+
 // ─── Desglose por unidades: % según meta + % total (con bonos) ────────────────
 // Espejo de buildTiers/getTierFromConfig (functions/handlers/commissionEngine.js):
 // "Baja" = por debajo del tier más bajo configurado, paga la misma tasa base de ese tier.
+// Devuelve un mapa { [tier.label]: row, __baja__: row } con el rango de unidades
+// y el % total (tasa + bonos) para una meta dada — usado para que la "Estructura
+// de Comisión" refleje automáticamente las unidades de cada nivel, tanto en la
+// meta plena como en cada mes del período de arranque.
 const buildBreakdown = (config, meta) => {
     const sorted = [...config.tiers].sort((a, b) => a.minPct - b.minPct); // asc: Básica, Óptima, Plus
     const lowest = sorted[0];
     const bonusTotal = (config.bonusPuntualidad || 0) + (config.bonusActivacion || 0);
 
-    const rows = [];
-    rows.push({
+    const rows = {};
+    rows.__baja__ = {
         label: 'Baja',
         pctLabel: lowest ? `< ${lowest.minPct}%` : '—',
         minUnits: 0,
         maxUnits: lowest ? Math.round(meta * lowest.minPct / 100) - 1 : null,
         rate: lowest?.rate ?? 0,
         total: lowest?.rate ?? 0,
-    });
+    };
     sorted.forEach((tier, i) => {
         const next = sorted[i + 1];
-        rows.push({
+        rows[tier.label] = {
             label: tier.label,
             pctLabel: next ? `${tier.minPct}%` : `+${tier.minPct}%`,
             minUnits: Math.round(meta * tier.minPct / 100),
             maxUnits: next ? Math.round(meta * next.minPct / 100) - 1 : null,
             rate: tier.rate,
             total: tier.rate + bonusTotal,
-        });
+        };
     });
     return rows;
 };
 
-const fmtUnits = (n) => Math.round(n).toLocaleString('es-VE');
+const unitsLabel = (row) => {
+    if (!row) return '—';
+    if (row.maxUnits === null) return `≥ ${fmtUnits(row.minUnits)} uds`;
+    if (row.minUnits === 0)    return `< ${fmtUnits(row.maxUnits + 1)} uds`;
+    return `${fmtUnits(row.minUnits)} – ${fmtUnits(row.maxUnits)} uds`;
+};
 
-// ─── Tabla de desglose por unidades ────────────────────────────────────────────
-const BreakdownTable = ({ title, rows }) => (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
-            <p className="text-xs font-bold text-slate-600">{title}</p>
-        </div>
-        <div className="px-4">
-            {rows.map((r, i) => (
-                <div key={i} className="flex items-center gap-3 py-2.5 border-b border-slate-100 last:border-b-0">
-                    <div className="w-16 shrink-0">
-                        <p className="text-sm font-bold text-slate-700 leading-tight">{r.label}</p>
-                        <p className="text-[11px] text-slate-400 leading-tight">{r.pctLabel}</p>
-                    </div>
-                    <div className="flex-1 min-w-0 text-xs text-slate-500 font-mono">
-                        {r.maxUnits === null
-                            ? `≥ ${fmtUnits(r.minUnits)} uds`
-                            : r.minUnits === 0
-                                ? `< ${fmtUnits(r.maxUnits + 1)} uds`
-                                : `${fmtUnits(r.minUnits)} – ${fmtUnits(r.maxUnits)} uds`}
-                    </div>
-                    <div className="text-right shrink-0">
-                        <p className="text-sm font-black text-emerald-700">{r.total.toFixed(1)}%</p>
-                        {r.total !== r.rate && <p className="text-[10px] text-slate-400">{r.rate}% + bonos</p>}
-                    </div>
-                </div>
-            ))}
-        </div>
-    </div>
-);
+// Escenarios de meta a mostrar: la meta plena + un escenario por cada mes de
+// arranque (con su meta reducida) — así los rangos de unidades de cada nivel
+// se ven correctos sin desfase durante el período de arranque.
+const getScenarios = (config) => [
+    {
+        title: config.arranque.length > 0 ? `Meta plena (desde mes ${config.arranque.length + 1})` : 'Meta mensual',
+        meta: config.metaMensual,
+    },
+    ...config.arranque.map((a, i) => ({
+        title: `Mes ${i + 1} de arranque`,
+        meta: a.meta || config.metaMensual,
+    })),
+];
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
@@ -134,11 +129,18 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     const userData = snap.data();
                     // metaMensual lives at the top level; merge into config
                     const topMeta = userData.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-                    setConfig({
+                    const merged = {
                         ...DEFAULT_COMMISSION_CONFIG,
                         metaMensual: topMeta,
                         ...(userData.commissionConfig || {}),
+                    };
+                    // Normaliza arranque a { mes, pct, meta }: si solo había `meta`
+                    // (formato anterior), deriva el % equivalente sobre la meta plena.
+                    merged.arranque = (merged.arranque || []).map((a, i) => {
+                        const pct = a.pct ?? (topMeta > 0 ? Math.round(((a.meta || 0) / topMeta) * 100) : 0);
+                        return { mes: a.mes ?? (i + 1), pct, meta: a.meta ?? Math.round(topMeta * pct / 100) };
                     });
+                    setConfig(merged);
                 }
             } catch (e) {
                 console.warn('CommissionConstructor load error:', e);
@@ -171,12 +173,24 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
         setConfig(p => ({ ...p, tiers: [...p.tiers, { label: 'Nuevo', minPct: 0, rate: 0 }] }));
     const removeTier    = (i) =>
         setConfig(p => ({ ...p, tiers: p.tiers.filter((_, j) => j !== i) }));
-    const updateArranque = (i, meta) =>
-        setConfig(p => ({ ...p, arranque: p.arranque.map((a, j) => j === i ? { ...a, meta } : a) }));
+
+    // Las metas de arranque se definen como % de la meta mensual; las unidades
+    // (`meta`) se derivan automáticamente y se recalculan si cambia la meta mensual.
+    const updateArranquePct = (i, pct) =>
+        setConfig(p => ({
+            ...p,
+            arranque: p.arranque.map((a, j) => j === i ? { ...a, pct, meta: Math.round(p.metaMensual * pct / 100) } : a),
+        }));
     const addArranque   = () =>
-        setConfig(p => ({ ...p, arranque: [...p.arranque, { mes: p.arranque.length + 1, meta: 0 }] }));
+        setConfig(p => ({ ...p, arranque: [...p.arranque, { mes: p.arranque.length + 1, pct: 0, meta: 0 }] }));
     const removeArranque = (i) =>
         setConfig(p => ({ ...p, arranque: p.arranque.filter((_, j) => j !== i) }));
+    const setMetaMensual = (v) =>
+        setConfig(p => ({
+            ...p,
+            metaMensual: v,
+            arranque: p.arranque.map(a => ({ ...a, meta: Math.round(v * (a.pct || 0) / 100) })),
+        }));
 
     const project = (rate) => {
         const commission = simAmount * (rate / 100);
@@ -191,6 +205,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
     );
 
     const lowestMinPct = config.tiers.length > 0 ? Math.min(...config.tiers.map(t => t.minPct)) : 90;
+    const scenarios = getScenarios(config);
 
     return (
         <div className="w-full" style={{ overflowX: 'hidden', touchAction: 'pan-y' }}>
@@ -203,7 +218,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 )}
 
-                {/* ── 1. Metas ── */}
+                {/* ── 1. Meta Mensual ── */}
                 <section>
                     <SectionHeader label="Meta Mensual" />
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
@@ -213,36 +228,54 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             suffix="uds"
                             value={config.metaMensual}
                             step={50}
-                            onChange={v => setConfig(p => ({ ...p, metaMensual: v }))}
+                            onChange={setMetaMensual}
                         />
                     </div>
                 </section>
 
-                {/* ── 2. Ingresos Base ── */}
+                {/* ── 2. Período de Arranque ── */}
                 <section>
-                    <SectionHeader label="Ingresos Base" />
-                    <div className="bg-white border border-slate-200 rounded-xl px-4">
-                        <InlineRow
-                            label="Salario fijo mensual"
-                            suffix="USD"
-                            value={config.salarioFijo}
-                            step={10}
-                            onChange={v => setConfig(p => ({ ...p, salarioFijo: v }))}
-                        />
-                        <InlineRow
-                            label="Viáticos por semana"
-                            suffix="USD"
-                            value={config.viaticosSemanales}
-                            step={5}
-                            onChange={v => setConfig(p => ({ ...p, viaticosSemanales: v }))}
-                        />
-                    </div>
+                    <SectionHeader
+                        label="Período de Arranque"
+                        action={
+                            <button type="button" onClick={addArranque} className="flex items-center gap-1 text-xs font-semibold text-blue-600 active:opacity-60">
+                                <Plus size={13} /> Mes
+                            </button>
+                        }
+                    />
+                    {config.arranque.length === 0 ? (
+                        <p className="text-sm text-slate-400 italic py-2 px-1">Sin período de arranque — meta plena desde el inicio.</p>
+                    ) : (
+                        <div className="bg-white border border-slate-200 rounded-xl px-4">
+                            {config.arranque.map((item, i) => (
+                                <div key={i} className="flex items-center gap-2 py-3 border-b border-slate-100 last:border-b-0">
+                                    <p className="text-sm font-semibold text-slate-600 w-12 shrink-0">Mes {i + 1}</p>
+                                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                                        <input
+                                            type="number" min="0" max="100" step="5"
+                                            value={item.pct === 0 ? '' : item.pct}
+                                            onChange={e => updateArranquePct(i, Number(e.target.value) || 0)}
+                                            className="w-16 shrink-0 p-2 border border-slate-200 rounded-xl text-sm font-mono text-center"
+                                        />
+                                        <span className="text-sm text-slate-400 shrink-0">% =</span>
+                                        <span className="flex-1 min-w-0 text-sm font-mono text-slate-600 text-right truncate">{fmtUnits(item.meta)} uds</span>
+                                    </div>
+                                    <button type="button" onClick={() => removeArranque(i)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0">
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <p className="text-xs text-slate-400 mt-1.5 px-1">
+                        % de la meta mensual para cada mes — las unidades se calculan automáticamente y se actualizan si cambia la meta.
+                    </p>
                 </section>
 
                 {/* ── 3. Estructura de Comisión ── */}
                 <section>
                     <SectionHeader
-                        label="Estructura de Comisión"
+                        label="Estructura de Comisión — Tu % Según Meta"
                         action={
                             <button type="button" onClick={addTier} className="flex items-center gap-1 text-xs font-semibold text-blue-600 active:opacity-60">
                                 <Plus size={13} /> Nivel
@@ -250,55 +283,95 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                         }
                     />
                     <div className="space-y-2">
-                        {config.tiers.map((tier, i) => (
-                            <div key={i} className="bg-white border border-slate-200 rounded-xl p-4">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <input
-                                        type="text"
-                                        value={tier.label}
-                                        onChange={e => updateTier(i, 'label', e.target.value)}
-                                        className="flex-1 min-w-0 text-base font-bold text-slate-800 border border-transparent focus:border-blue-400 focus:outline-none rounded-lg px-2 py-1 bg-slate-50"
-                                        placeholder="Nombre del nivel"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => removeTier(i)}
-                                        disabled={config.tiers.length <= 1}
-                                        className="p-1.5 text-slate-300 hover:text-red-500 disabled:opacity-20 transition-colors shrink-0"
-                                    >
-                                        <Trash2 size={15} />
-                                    </button>
-                                </div>
-                                <div className="flex gap-3">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-xs text-slate-400 mb-1">Cumplimiento mín.</p>
-                                        <div className="flex items-center gap-1">
-                                            <input
-                                                type="number" min="0" step="5"
-                                                value={tier.minPct === 0 ? '' : tier.minPct}
-                                                onChange={e => updateTier(i, 'minPct', Number(e.target.value) || 0)}
-                                                className="min-w-0 w-full text-center p-2 border border-slate-200 rounded-xl text-sm font-mono"
-                                            />
-                                            <span className="text-slate-400 text-sm shrink-0">%</span>
+                        {config.tiers.map((tier, i) => {
+                            const rowsByScenario = scenarios.map(s => ({ ...s, row: buildBreakdown(config, s.meta)[tier.label] }));
+                            return (
+                                <div key={i} className="bg-white border border-slate-200 rounded-xl p-4">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <input
+                                            type="text"
+                                            value={tier.label}
+                                            onChange={e => updateTier(i, 'label', e.target.value)}
+                                            className="flex-1 min-w-0 text-base font-bold text-slate-800 border border-transparent focus:border-blue-400 focus:outline-none rounded-lg px-2 py-1 bg-slate-50"
+                                            placeholder="Nombre del nivel"
+                                        />
+                                        <span className="text-xs font-black text-emerald-700 shrink-0 whitespace-nowrap">
+                                            {rowsByScenario[0].row.total.toFixed(1)}% total
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => removeTier(i)}
+                                            disabled={config.tiers.length <= 1}
+                                            className="p-1.5 text-slate-300 hover:text-red-500 disabled:opacity-20 transition-colors shrink-0"
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
+                                    </div>
+                                    <div className="flex gap-3 mb-3">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-slate-400 mb-1">Cumplimiento mín.</p>
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="number" min="0" step="5"
+                                                    value={tier.minPct === 0 ? '' : tier.minPct}
+                                                    onChange={e => updateTier(i, 'minPct', Number(e.target.value) || 0)}
+                                                    className="min-w-0 w-full text-center p-2 border border-slate-200 rounded-xl text-sm font-mono"
+                                                />
+                                                <span className="text-slate-400 text-sm shrink-0">%</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-slate-400 mb-1">Comisión</p>
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="number" min="0" step="0.5"
+                                                    value={tier.rate === 0 ? '' : tier.rate}
+                                                    onChange={e => updateTier(i, 'rate', Number(e.target.value) || 0)}
+                                                    className="min-w-0 w-full text-center p-2 border border-slate-200 rounded-xl text-sm font-mono"
+                                                />
+                                                <span className="text-slate-400 text-sm shrink-0">%</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-xs text-slate-400 mb-1">Comisión</p>
-                                        <div className="flex items-center gap-1">
-                                            <input
-                                                type="number" min="0" step="0.5"
-                                                value={tier.rate === 0 ? '' : tier.rate}
-                                                onChange={e => updateTier(i, 'rate', Number(e.target.value) || 0)}
-                                                className="min-w-0 w-full text-center p-2 border border-slate-200 rounded-xl text-sm font-mono"
-                                            />
-                                            <span className="text-slate-400 text-sm shrink-0">%</span>
-                                        </div>
+                                    <div className="space-y-1 border-t border-slate-100 pt-2">
+                                        {rowsByScenario.map((s, j) => (
+                                            <div key={j} className="flex items-center justify-between text-xs gap-2">
+                                                <span className="text-slate-400 truncate">{s.title}</span>
+                                                <span className="font-mono text-slate-600 shrink-0">{unitsLabel(s.row)}</span>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
+
+                        {/* Nivel "Baja" — implícito, por debajo del nivel más bajo configurado */}
+                        {(() => {
+                            const rowsByScenario = scenarios.map(s => ({ ...s, row: buildBreakdown(config, s.meta).__baja__ }));
+                            return (
+                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                                    <div className="flex items-center justify-between gap-2 mb-1">
+                                        <span className="text-base font-bold text-slate-500">
+                                            Baja <span className="text-xs font-normal text-slate-400">({rowsByScenario[0].row.pctLabel})</span>
+                                        </span>
+                                        <span className="text-xs font-black text-slate-500 shrink-0 whitespace-nowrap">{rowsByScenario[0].row.total.toFixed(1)}% total</span>
+                                    </div>
+                                    <p className="text-xs text-slate-400 mb-2">Tasa del nivel más bajo configurado — sin bonos por meta.</p>
+                                    <div className="space-y-1 border-t border-slate-100 pt-2">
+                                        {rowsByScenario.map((s, j) => (
+                                            <div key={j} className="flex items-center justify-between text-xs gap-2">
+                                                <span className="text-slate-400 truncate">{s.title}</span>
+                                                <span className="font-mono text-slate-500 shrink-0">{unitsLabel(s.row)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
-                    <p className="text-xs text-slate-400 mt-1.5 px-1">Evalúa de arriba a abajo — ordénalos de mayor a menor.</p>
+                    <p className="text-xs text-slate-400 mt-1.5 px-1">
+                        Evalúa de arriba a abajo — ordénalos de mayor a menor. El % total incluye Bono Puntualidad (+{config.bonusPuntualidad}%) y Bono Activación/Anaquel (+{config.bonusActivacion}%); en "Baja" no aplican bonos por meta.
+                    </p>
                 </section>
 
                 {/* ── 4. Bonos ── */}
@@ -362,63 +435,25 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 </section>
 
-                {/* ── 5. Período de Arranque ── */}
+                {/* ── 5. Ingresos Base ── */}
                 <section>
-                    <SectionHeader
-                        label="Período de Arranque"
-                        action={
-                            <button type="button" onClick={addArranque} className="flex items-center gap-1 text-xs font-semibold text-blue-600 active:opacity-60">
-                                <Plus size={13} /> Mes
-                            </button>
-                        }
-                    />
-                    {config.arranque.length === 0 ? (
-                        <p className="text-sm text-slate-400 italic py-2 px-1">Sin período de arranque — meta plena desde el inicio.</p>
-                    ) : (
-                        <div className="bg-white border border-slate-200 rounded-xl px-4">
-                            {config.arranque.map((item, i) => (
-                                <div key={i} className="flex items-center gap-3 py-3 border-b border-slate-100 last:border-b-0">
-                                    <p className="text-sm font-semibold text-slate-600 w-12 shrink-0">Mes {i + 1}</p>
-                                    <input
-                                        type="number" min="0"
-                                        value={item.meta === 0 ? '' : item.meta}
-                                        onChange={e => updateArranque(i, Number(e.target.value) || 0)}
-                                        className="flex-1 min-w-0 p-2 border border-slate-200 rounded-xl text-sm font-mono text-center"
-                                    />
-                                    <span className="text-sm text-slate-400 shrink-0">uds</span>
-                                    <button type="button" onClick={() => removeArranque(i)} className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0">
-                                        <Trash2 size={14} />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </section>
-
-                {/* ── 5b. Tu % Según Meta (desglose por unidades) ── */}
-                <section>
-                    <SectionHeader label="Tu % Según Meta" />
-                    <div className="space-y-3">
-                        <BreakdownTable
-                            title={
-                                config.arranque.length > 0
-                                    ? `Meta plena (desde mes ${config.arranque.length + 1}) · ${fmtUnits(config.metaMensual)} uds = 100%`
-                                    : `${fmtUnits(config.metaMensual)} uds/mes = 100%`
-                            }
-                            rows={buildBreakdown(config, config.metaMensual)}
+                    <SectionHeader label="Ingresos Base" />
+                    <div className="bg-white border border-slate-200 rounded-xl px-4">
+                        <InlineRow
+                            label="Salario fijo mensual"
+                            suffix="USD"
+                            value={config.salarioFijo}
+                            step={10}
+                            onChange={v => setConfig(p => ({ ...p, salarioFijo: v }))}
                         />
-                        {config.arranque.map((a, i) => (
-                            <BreakdownTable
-                                key={i}
-                                title={`Mes ${i + 1} de arranque · ${fmtUnits(a.meta)} uds = 100%`}
-                                rows={buildBreakdown(config, a.meta || config.metaMensual)}
-                            />
-                        ))}
+                        <InlineRow
+                            label="Viáticos por semana"
+                            suffix="USD"
+                            value={config.viaticosSemanales}
+                            step={5}
+                            onChange={v => setConfig(p => ({ ...p, viaticosSemanales: v }))}
+                        />
                     </div>
-                    <p className="text-xs text-slate-400 mt-1.5 px-1">
-                        El % Total incluye Bono Puntualidad (+{config.bonusPuntualidad}%) y Bono Activación/Anaquel (+{config.bonusActivacion}%).
-                        En "Baja" no aplican bonos por meta. {config.arranque.length > 0 && 'Durante el período de arranque, los rangos de unidades se calculan sobre la meta reducida de ese mes, no sobre la meta plena.'}
-                    </p>
                 </section>
 
                 {/* ── 6. Política de Cobro ── */}
