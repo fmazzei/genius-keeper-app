@@ -28,7 +28,7 @@ async function congelarTasaCohorte(vendedor, mesCohorte, unidades) {
         const prevUnidades = mesSnap.exists ? (mesSnap.data().unidadesFacturadas || 0) : 0;
         const nuevoTotal = prevUnidades + unidades;
         const pct = metaMensual > 0 ? nuevoTotal / metaMensual : 0;
-        const tier = getTierFromConfig(pct, tiers);
+        const tier = getTierFromConfig(pct, tiers, cfg.bajaRate);
 
         tx.set(mesRef, {
             vendedorId: vendedor.id,
@@ -148,7 +148,7 @@ async function revertirAcumulados(factura) {
             const metaMensual = vendedorData.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
             const tiers = buildTiers(cfg);
             const pct = metaMensual > 0 ? nuevoTotal / metaMensual : 0;
-            const tier = getTierFromConfig(pct, tiers);
+            const tier = getTierFromConfig(pct, tiers, cfg.bajaRate);
 
             tx.update(mesRef, {
                 unidadesFacturadas: nuevoTotal,

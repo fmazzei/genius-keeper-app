@@ -15,6 +15,7 @@ export const DEFAULT_COMMISSION_CONFIG = {
         { label: 'Óptima', minPct: 100, rate: 4.0 },
         { label: 'Básica', minPct: 90,  rate: 3.5 },
     ],
+    bajaRate:            3.5,
     bonusPuntualidad:    1.0,
     bonusActivacion:     1.0,
     activacionThreshold: 80,
@@ -75,8 +76,8 @@ const buildBreakdown = (config, meta) => {
         pctLabel: lowest ? `< ${lowest.minPct}%` : '—',
         minUnits: 0,
         maxUnits: lowest ? Math.round(meta * lowest.minPct / 100) - 1 : null,
-        rate: lowest?.rate ?? 0,
-        total: lowest?.rate ?? 0,
+        rate: config.bajaRate ?? 0,
+        total: config.bajaRate ?? 0,
     };
     sorted.forEach((tier, i) => {
         const next = sorted[i + 1];
@@ -345,23 +346,42 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             );
                         })}
 
-                        {/* Nivel "Baja" — implícito, por debajo del nivel más bajo configurado */}
+                        {/* Nivel "Baja" — cuarto escalón, por debajo del nivel más bajo configurado */}
                         {(() => {
                             const rowsByScenario = scenarios.map(s => ({ ...s, row: buildBreakdown(config, s.meta).__baja__ }));
                             return (
-                                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                                    <div className="flex items-center justify-between gap-2 mb-1">
-                                        <span className="text-base font-bold text-slate-500">
+                                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <span className="flex-1 min-w-0 text-base font-bold text-slate-800 px-2 py-1">
                                             Baja <span className="text-xs font-normal text-slate-400">({rowsByScenario[0].row.pctLabel})</span>
                                         </span>
                                         <span className="text-xs font-black text-slate-500 shrink-0 whitespace-nowrap">{rowsByScenario[0].row.total.toFixed(1)}% total</span>
                                     </div>
-                                    <p className="text-xs text-slate-400 mb-2">Tasa del nivel más bajo configurado — sin bonos por meta.</p>
+                                    <div className="flex gap-3 mb-3">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-slate-400 mb-1">Cumplimiento mín.</p>
+                                            <div className="flex items-center gap-1 p-2 bg-slate-50 rounded-xl">
+                                                <span className="w-full text-center text-sm font-mono text-slate-400">{rowsByScenario[0].row.pctLabel}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs text-slate-400 mb-1">Comisión</p>
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    type="number" min="0" step="0.5"
+                                                    value={config.bajaRate === 0 ? '' : config.bajaRate}
+                                                    onChange={e => setConfig(p => ({ ...p, bajaRate: Number(e.target.value) || 0 }))}
+                                                    className="min-w-0 w-full text-center p-2 border border-slate-200 rounded-xl text-sm font-mono"
+                                                />
+                                                <span className="text-slate-400 text-sm shrink-0">%</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                     <div className="space-y-1 border-t border-slate-100 pt-2">
                                         {rowsByScenario.map((s, j) => (
                                             <div key={j} className="flex items-center justify-between text-xs gap-2">
                                                 <span className="text-slate-400 truncate">{s.title}</span>
-                                                <span className="font-mono text-slate-500 shrink-0">{unitsLabel(s.row)}</span>
+                                                <span className="font-mono text-slate-600 shrink-0">{unitsLabel(s.row)}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -370,7 +390,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                         })()}
                     </div>
                     <p className="text-xs text-slate-400 mt-1.5 px-1">
-                        Evalúa de arriba a abajo — ordénalos de mayor a menor. El % total incluye Bono Puntualidad (+{config.bonusPuntualidad}%) y Bono Activación/Anaquel (+{config.bonusActivacion}%); en "Baja" no aplican bonos por meta.
+                        Evalúa de arriba a abajo — ordénalos de mayor a menor. "Baja" aplica por debajo del nivel más bajo configurado, con su propia tasa. El % total incluye Bono Puntualidad (+{config.bonusPuntualidad}%) y Bono Activación/Anaquel (+{config.bonusActivacion}%); en "Baja" no aplican bonos por meta.
                     </p>
                 </section>
 
@@ -511,8 +531,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                 })}
 
                             {(() => {
-                                const lowestTier = [...config.tiers].sort((a, b) => a.minPct - b.minPct)[0];
-                                const p = project(lowestTier?.rate || 0);
+                                const p = project(config.bajaRate || 0);
                                 return (
                                     <div className="bg-slate-100 rounded-xl p-3.5 border border-slate-200">
                                         <div className="flex items-baseline justify-between mb-1.5">

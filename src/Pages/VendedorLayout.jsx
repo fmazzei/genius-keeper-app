@@ -49,15 +49,16 @@ function buildTiers(config) {
     return tiers;
 }
 
-function getTierFromConfig(pct, tiers) {
+function getTierFromConfig(pct, tiers, bajaRate) {
     for (const t of tiers) {
         if (pct >= t.min) return t;
     }
-    // Por debajo del tier más bajo configurado ("Baja"): paga la misma
-    // comisión base que ese tier (p.ej. 3,5%), pero sin bonos — el nivel
-    // "Baja" ya no es "$0 / sin comisión por meta".
+    // Por debajo del tier más bajo configurado: paga la tasa "Baja", un
+    // cuarto escalón independiente y editable (`commConfig.bajaRate`), sin
+    // bonos — el nivel "Baja" ya no es "$0 / sin comisión por meta".
     const lowest = tiers[tiers.length - 1];
-    return { label: 'Baja', min: 0, rate: lowest?.rate ?? 0, ...BAJA_STYLE };
+    const rate = bajaRate !== undefined && bajaRate !== null ? bajaRate / 100 : (lowest?.rate ?? 0);
+    return { label: 'Baja', min: 0, rate, ...BAJA_STYLE };
 }
 
 function saludoDelDia() {
@@ -94,7 +95,7 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
 function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
     const [showMetaModal, setShowMetaModal] = useState(false);
     const pct     = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
-    const tier    = getTierFromConfig(pct, tiers);
+    const tier    = getTierFromConfig(pct, tiers, commConfig.bajaRate);
     const barPct  = Math.min(pct, 1.25);
 
     const unidadesParaSiguiente = () => {

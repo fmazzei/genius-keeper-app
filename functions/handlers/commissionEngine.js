@@ -17,6 +17,7 @@ const DEFAULT_COMMISSION_CONFIG = {
         { label: 'Óptima', minPct: 100, rate: 4.0 },
         { label: 'Básica', minPct: 90, rate: 3.5 },
     ],
+    bajaRate: 3.5,
     bonusPuntualidad: 1.0,
     bonusActivacion: 1.0,
     activacionThreshold: 80,
@@ -42,15 +43,17 @@ function buildTiers(config) {
 
 /**
  * Resuelve el tier correspondiente a un % de cumplimiento de meta.
- * Por debajo del tier más bajo configurado ("Baja"), paga la misma tasa
- * base que ese tier (p.ej. 3,5%) — ver VendedorLayout.jsx::getTierFromConfig.
+ * Por debajo del tier más bajo configurado, paga la tasa "Baja" — un
+ * cuarto escalón independiente y editable (`cfg.bajaRate`), no la tasa del
+ * tier más bajo — ver VendedorLayout.jsx::getTierFromConfig.
  */
-function getTierFromConfig(pct, tiers) {
+function getTierFromConfig(pct, tiers, bajaRate) {
     for (const t of tiers) {
         if (pct >= t.min) return t;
     }
     const lowest = tiers[tiers.length - 1];
-    return { label: 'Baja', min: 0, rate: lowest ? lowest.rate : 0 };
+    const rate = bajaRate !== undefined && bajaRate !== null ? bajaRate / 100 : (lowest ? lowest.rate : 0);
+    return { label: 'Baja', min: 0, rate };
 }
 
 /** Mes calendario (YYYY-MM) a partir de un objeto Date. */
