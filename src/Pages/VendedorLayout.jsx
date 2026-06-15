@@ -252,8 +252,8 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
                                 <p className="text-white text-sm font-semibold">Bono Disponibilidad en Anaquel (+{commConfig.bonusAnaquel}%)</p>
                                 <p className="text-slate-400 text-xs">
                                     {stats.anaquelOk
-                                        ? '¡Disponibilidad lograda esta semana!'
-                                        : `Cubre ${stats.anaquelCubiertos}/${stats.anaquelTotal} sucursales con +${commConfig.anaquelMinUnits} uds promedio (mar/vie) para ganarlo`
+                                        ? '¡Disponibilidad lograda este mes!'
+                                        : `Cubre ${stats.anaquelCubiertos}/${stats.anaquelTotal} sucursales con +${commConfig.anaquelMinUnits} uds promedio en visitas mar/vie de este mes para ganarlo`
                                     }
                                 </p>
                             </div>
@@ -734,7 +734,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //     Excelsior Gama): se cumple si al menos
                 //     `cfg.anaquelThreshold`% de esas sucursales activas
                 //     promedian más de `cfg.anaquelMinUnits` unidades en
-                //     `visit_reports` de martes/viernes de esta semana.
+                //     `visit_reports` de martes/viernes DEL MES en curso
+                //     (a diferencia del Bono Activación, que se evalúa por
+                //     semana — ver propuesta de esquema de remuneración).
                 const anaquelPosIds = cartera
                     .filter(c => c.posId && posDocsMap[c.posId]?.regimenComision === 'anaquel' && posDocsMap[c.posId]?.active !== false)
                     .map(c => c.posId);
@@ -753,7 +755,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                         }
                         const visitasMarVie = visitas.filter(v => {
                             const t = v.createdAt?.toDate?.() || new Date(v.createdAt);
-                            if (t < inicioSem) return false;
+                            if (t < inicioMes) return false;
                             const dia = t.getDay(); // 2 = martes, 5 = viernes
                             return dia === 2 || dia === 5;
                         });
