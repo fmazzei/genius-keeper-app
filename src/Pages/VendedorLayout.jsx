@@ -651,23 +651,24 @@ const VendedorLayout = ({ user, onLogout }) => {
                             return t >= inicioMes;
                         });
                 }
-                let unidadesDelMes = despachos.reduce((s, d) => s + (d.cantidad || 0), 0);
                 const despachoHoy    = despachos.filter(d => {
                     const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
                     return t >= hoy;
                 }).reduce((s, d) => s + (d.cantidad || 0), 0);
 
-                // 2b. Unidades facturadas del mes (Zoho) — si ya hay facturación
-                //     sincronizada para este mes, el nivel/tasa se basa en
-                //     unidades FACTURADAS (acumulado congelado por
-                //     sincronizarFacturaDesdeZoho en `comisiones_mensuales`),
-                //     no en despachos. Si todavía no hay facturación Zoho para
-                //     este mes, se usa el fallback por despachos de arriba.
+                // 2b. Unidades del mes para nivel/tasa: SOLO unidades FACTURADAS
+                //     vía Zoho (acumulado congelado por sincronizarFacturaDesdeZoho
+                //     en `comisiones_mensuales`). Los despachos aún no facturados
+                //     no cuentan para la meta — si no hay documento para este mes,
+                //     es porque todavía no se ha facturado nada, y debe verse en 0
+                //     (no el total despachado, que generaría un desfase con lo
+                //     que realmente paga comisión).
+                let unidadesDelMes = 0;
                 const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
                 try {
                     const comisionMesSnap = await getDoc(doc(db, 'comisiones_mensuales', `${user.uid}_${mesActual}`));
                     if (comisionMesSnap.exists()) {
-                        unidadesDelMes = comisionMesSnap.data().unidadesFacturadas ?? unidadesDelMes;
+                        unidadesDelMes = comisionMesSnap.data().unidadesFacturadas ?? 0;
                     }
                 } catch (e) {
                     console.warn('comisiones_mensuales load error:', e);
