@@ -55,6 +55,69 @@ const SectionHeader = ({ label, action }) => (
     </div>
 );
 
+// ─── Desglose por unidades: % según meta + % total (con bonos) ────────────────
+// Espejo de buildTiers/getTierFromConfig (functions/handlers/commissionEngine.js):
+// "Baja" = por debajo del tier más bajo configurado, paga la misma tasa base de ese tier.
+const buildBreakdown = (config, meta) => {
+    const sorted = [...config.tiers].sort((a, b) => a.minPct - b.minPct); // asc: Básica, Óptima, Plus
+    const lowest = sorted[0];
+    const bonusTotal = (config.bonusPuntualidad || 0) + (config.bonusActivacion || 0);
+
+    const rows = [];
+    rows.push({
+        label: 'Baja',
+        pctLabel: lowest ? `< ${lowest.minPct}%` : '—',
+        minUnits: 0,
+        maxUnits: lowest ? Math.round(meta * lowest.minPct / 100) - 1 : null,
+        rate: lowest?.rate ?? 0,
+        total: lowest?.rate ?? 0,
+    });
+    sorted.forEach((tier, i) => {
+        const next = sorted[i + 1];
+        rows.push({
+            label: tier.label,
+            pctLabel: next ? `${tier.minPct}%` : `+${tier.minPct}%`,
+            minUnits: Math.round(meta * tier.minPct / 100),
+            maxUnits: next ? Math.round(meta * next.minPct / 100) - 1 : null,
+            rate: tier.rate,
+            total: tier.rate + bonusTotal,
+        });
+    });
+    return rows;
+};
+
+const fmtUnits = (n) => Math.round(n).toLocaleString('es-VE');
+
+// ─── Tabla de desglose por unidades ────────────────────────────────────────────
+const BreakdownTable = ({ title, rows }) => (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
+            <p className="text-xs font-bold text-slate-600">{title}</p>
+        </div>
+        <div className="px-4">
+            {rows.map((r, i) => (
+                <div key={i} className="flex items-center gap-3 py-2.5 border-b border-slate-100 last:border-b-0">
+                    <div className="w-16 shrink-0">
+                        <p className="text-sm font-bold text-slate-700 leading-tight">{r.label}</p>
+                        <p className="text-[11px] text-slate-400 leading-tight">{r.pctLabel}</p>
+                    </div>
+                    <div className="flex-1 min-w-0 text-xs text-slate-500 font-mono">
+                        {r.maxUnits === null
+                            ? `≥ ${fmtUnits(r.minUnits)} uds`
+                            : r.minUnits === 0
+                                ? `< ${fmtUnits(r.maxUnits + 1)} uds`
+                                : `${fmtUnits(r.minUnits)} – ${fmtUnits(r.maxUnits)} uds`}
+                    </div>
+                    <div className="text-right shrink-0">
+                        <p className="text-sm font-black text-emerald-700">{r.total.toFixed(1)}%</p>
+                        {r.total !== r.rate && <p className="text-[10px] text-slate-400">{r.rate}% + bonos</p>}
+                    </div>
+                </div>
+            ))}
+        </div>
+    </div>
+);
+
 // ─── Main component ───────────────────────────────────────────────────────────
 const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
     const [config, setConfig]       = useState(DEFAULT_COMMISSION_CONFIG);
@@ -330,6 +393,32 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             ))}
                         </div>
                     )}
+                </section>
+
+                {/* ── 5b. Tu % Según Meta (desglose por unidades) ── */}
+                <section>
+                    <SectionHeader label="Tu % Según Meta" />
+                    <div className="space-y-3">
+                        <BreakdownTable
+                            title={
+                                config.arranque.length > 0
+                                    ? `Meta plena (desde mes ${config.arranque.length + 1}) · ${fmtUnits(config.metaMensual)} uds = 100%`
+                                    : `${fmtUnits(config.metaMensual)} uds/mes = 100%`
+                            }
+                            rows={buildBreakdown(config, config.metaMensual)}
+                        />
+                        {config.arranque.map((a, i) => (
+                            <BreakdownTable
+                                key={i}
+                                title={`Mes ${i + 1} de arranque · ${fmtUnits(a.meta)} uds = 100%`}
+                                rows={buildBreakdown(config, a.meta || config.metaMensual)}
+                            />
+                        ))}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1.5 px-1">
+                        El % Total incluye Bono Puntualidad (+{config.bonusPuntualidad}%) y Bono Activación/Anaquel (+{config.bonusActivacion}%).
+                        En "Baja" no aplican bonos por meta. {config.arranque.length > 0 && 'Durante el período de arranque, los rangos de unidades se calculan sobre la meta reducida de ese mes, no sobre la meta plena.'}
+                    </p>
                 </section>
 
                 {/* ── 6. Política de Cobro ── */}
