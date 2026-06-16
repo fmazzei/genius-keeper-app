@@ -267,6 +267,10 @@ service cloud.firestore {
       allow read:  if isKromaAccess();
       allow write: if isKromaMaster();
     }
+    match /kroma_fixed_costs/{mesId} {
+      allow read:  if isKromaAccess();
+      allow write: if isKromaMaster();
+    }
     match /kroma_users/{userId} {
       allow read, write: if isKromaAccess();
     }

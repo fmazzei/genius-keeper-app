@@ -14,6 +14,7 @@ import {
 } from './pages/AdminPages';
 import KromaNotificationsPage from './pages/admin/KromaNotificationsPage';
 import CavaRotacionPage from './pages/admin/CavaRotacionPage';
+import CostosFijosPage from './pages/admin/CostosFijosPage';
 
 // Manager pages
 import { ManagerHome, FinancialBoard, ProductionKPIsPage, QualityBoard } from './pages/ManagerPages';
@@ -55,6 +56,7 @@ const ALL_NAV_ITEMS = [
     // — Administración —
     { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,     modulo: 'almacenes',            section: 'Administración' },
     { id: 'cava_rotacion', label: 'Rotación de Cava',   Icon: RotateCcw,     masterOnly: true,               section: 'Administración' },
+    { id: 'costos_fijos',  label: 'Costos Fijos',       Icon: DollarSign,    masterOnly: true,               section: 'Administración' },
     { id: 'history',       label: 'Historial',           Icon: ClipboardList, modulo: 'historialProduccion',  section: 'Administración' },
     { id: 'products',      label: 'Catálogo Productos',  Icon: Tag,           modulo: 'catalogos',            section: 'Administración' },
     { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,         modulo: 'catalogos',            section: 'Administración' },
@@ -99,6 +101,7 @@ function renderPage(view, role, kromaUser, onNavigate) {
         case 'despacho':      return <DespachoPage />;
         case 'warehouses':    return <WarehousesPage />;
         case 'cava_rotacion': return <CavaRotacionPage />;
+        case 'costos_fijos':  return <CostosFijosPage />;
         case 'history':       return <ProductionHistoryPage />;
         case 'products':      return <ProductCatalogPage />;
         case 'suppliers':     return <SuppliersPage />;
