@@ -263,6 +263,10 @@ service cloud.firestore {
       allow write: if isAuthenticated() && isComercialAccess();
     }
 
+    match /kroma_settings/{docId} {
+      allow read:  if isKromaAccess();
+      allow write: if isKromaMaster();
+    }
     match /kroma_users/{userId} {
       allow read, write: if isKromaAccess();
     }

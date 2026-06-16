@@ -13,6 +13,7 @@ import {
     ProductCatalogPage, ProductionHistoryPage, KromaUsersPage, ControlSistemaPage,
 } from './pages/AdminPages';
 import KromaNotificationsPage from './pages/admin/KromaNotificationsPage';
+import CavaRotacionPage from './pages/admin/CavaRotacionPage';
 
 // Manager pages
 import { ManagerHome, FinancialBoard, ProductionKPIsPage, QualityBoard } from './pages/ManagerPages';
@@ -28,7 +29,7 @@ import {
     LayoutDashboard, Warehouse, Truck, Package, ClipboardList, Users, Tag,
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
-    LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell,
+    LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell, RotateCcw,
 } from 'lucide-react';
 
 // ─── Module defaults per role ─────────────────────────────────────────────────
@@ -53,6 +54,7 @@ const ALL_NAV_ITEMS = [
     { id: 'despacho',     label: 'Despachos',           Icon: Truck,         modulo: 'despachos',            section: 'Operativo' },
     // — Administración —
     { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,     modulo: 'almacenes',            section: 'Administración' },
+    { id: 'cava_rotacion', label: 'Rotación de Cava',   Icon: RotateCcw,     masterOnly: true,               section: 'Administración' },
     { id: 'history',       label: 'Historial',           Icon: ClipboardList, modulo: 'historialProduccion',  section: 'Administración' },
     { id: 'products',      label: 'Catálogo Productos',  Icon: Tag,           modulo: 'catalogos',            section: 'Administración' },
     { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,         modulo: 'catalogos',            section: 'Administración' },
@@ -96,6 +98,7 @@ function renderPage(view, role, kromaUser, onNavigate) {
         case 'fichas':        return <FichaBuilderPage />;
         case 'despacho':      return <DespachoPage />;
         case 'warehouses':    return <WarehousesPage />;
+        case 'cava_rotacion': return <CavaRotacionPage />;
         case 'history':       return <ProductionHistoryPage />;
         case 'products':      return <ProductCatalogPage />;
         case 'suppliers':     return <SuppliersPage />;
@@ -211,6 +214,7 @@ function KromaInner({ onExitKroma }) {
         ? ALL_NAV_ITEMS.filter(item => item.id !== 'notifications')
         : ALL_NAV_ITEMS.filter(item => {
             if (item.id === 'notifications') return false; // bell in header is sufficient
+            if (item.masterOnly) return false;             // master-only items hidden for other roles
             if (!item.modulo) return true;
             // Special case: show 'control' if any delegation action is granted
             if (item.delegation?.some(a => canDo(a))) return true;
