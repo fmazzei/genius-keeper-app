@@ -736,21 +736,29 @@ export default function CavaRotacionPage() {
     const itemsEnScope = inventoryPT.filter(i => monitoredIds.includes(i.warehouseId));
 
     // Filas calculadas
-    let rows = computeRotation(itemsEnScope, productConfigMap, globalCfg, velocityMap, today);
+    let rowsAll = computeRotation(itemsEnScope, productConfigMap, globalCfg, velocityMap, today);
 
-    // Filtros de visualización
-    if (!globalCfg.mostrarVencidos)   rows = rows.filter(r => r.riesgo !== 'vencido');
-    if (!globalCfg.mostrarSinConfig)  rows = rows.filter(r => r.riesgo !== 'sin_config');
-    if (filterRiesgo !== 'all')        rows = rows.filter(r => r.riesgo === filterRiesgo);
+    // Filtros de visualización (toggles de config — afectan rowsAll y KPIs)
+    if (!globalCfg.mostrarVencidos)   rowsAll = rowsAll.filter(r => r.riesgo !== 'vencido');
+    if (!globalCfg.mostrarSinConfig)  rowsAll = rowsAll.filter(r => r.riesgo !== 'sin_config');
 
-    // KPIs
-    const totalLotes     = rows.length;
-    const lotesUrgentes  = rows.filter(r => r.riesgo === 'urgente' || r.riesgo === 'vencido').length;
-    const lotesAtencion  = rows.filter(r => r.riesgo === 'atencion').length;
-    const udEnRiesgo     = rows.reduce((s, r) => s + (r.unidadesEnRiesgo || 0), 0);
+    // Filtro de pill — solo afecta el listado, NO los KPIs
+    const rows = filterRiesgo !== 'all'
+        ? rowsAll.filter(r => r.riesgo === filterRiesgo)
+        : rowsAll;
+
+    // KPIs calculados desde rowsAll (sin pill filter)
+    const totalLotes     = rowsAll.length;
+    const lotesUrgentes  = rowsAll.filter(r => r.riesgo === 'urgente' || r.riesgo === 'vencido').length;
+    const lotesAtencion  = rowsAll.filter(r => r.riesgo === 'atencion').length;
+    const udEnRiesgo     = rowsAll.reduce((s, r) => s + (r.unidadesEnRiesgo || 0), 0);
     const totalUnidades  = itemsEnScope.filter(i => i.tipo === 'empacado').reduce((s, i) => s + (i.unidades || 0), 0);
     const velTotal       = Object.values(velocityMap).reduce((s, v) => s + v, 0);
     const coberturasDias = velTotal > 0 ? Math.round(totalUnidades / velTotal) : null;
+
+    // Conteo por estado para las pills
+    const countByRiesgo = {};
+    rowsAll.forEach(r => { countByRiesgo[r.riesgo] = (countByRiesgo[r.riesgo] || 0) + 1; });
 
     if (loading) return (
         <div className="flex items-center justify-center h-full py-24">
@@ -855,32 +863,37 @@ export default function CavaRotacionPage() {
                         </div>
                     )}
 
-                    {/* Filtro de estado */}
-                    {rows.length > 0 && (
+                    {/* Filtro de estado — siempre visible si hay lotes */}
+                    {rowsAll.length > 0 && (
                         <div className="flex flex-wrap gap-2 items-center">
                             <span className="text-slate-500 text-xs">Filtrar:</span>
                             {[
-                                { id: 'all',      label: 'Todos' },
-                                { id: 'vencido',  label: 'Vencidos' },
-                                { id: 'urgente',  label: 'Urgentes' },
-                                { id: 'atencion', label: 'Atención' },
-                                { id: 'ok',       label: 'OK' },
+                                { id: 'all',        label: 'Todos'       },
+                                { id: 'vencido',    label: 'Vencidos'    },
+                                { id: 'urgente',    label: 'Urgentes'    },
+                                { id: 'atencion',   label: 'Atención'    },
+                                { id: 'ok',         label: 'OK'          },
                                 { id: 'sin_config', label: 'Sin config.' },
-                            ].map(f => (
-                                <button key={f.id} onClick={() => setFilterRiesgo(f.id)}
-                                    className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${filterRiesgo === f.id
-                                        ? 'bg-violet-900/40 border-violet-600/60 text-violet-300'
-                                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-                                    }`}>
-                                    {f.label}
-                                </button>
-                            ))}
+                            ].map(f => {
+                                const cnt = f.id === 'all' ? rowsAll.length : (countByRiesgo[f.id] || 0);
+                                if (f.id !== 'all' && cnt === 0) return null; // ocultar pills vacías
+                                return (
+                                    <button key={f.id} onClick={() => setFilterRiesgo(f.id)}
+                                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition-colors ${filterRiesgo === f.id
+                                            ? 'bg-violet-900/40 border-violet-600/60 text-violet-300'
+                                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                                        }`}>
+                                        {f.label}
+                                        <span className={`text-[10px] font-mono px-1 py-0.5 rounded ${filterRiesgo === f.id ? 'bg-violet-700/50' : 'bg-slate-700'}`}>{cnt}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
 
                     {/* FEFO table */}
                     <div className="space-y-2">
-                        {rows.length === 0 ? (
+                        {rowsAll.length === 0 ? (
                             <div className="text-center py-16 text-slate-600">
                                 <Package size={32} className="mx-auto mb-3 opacity-30" />
                                 <p className="text-sm">Sin lotes que mostrar</p>
@@ -889,6 +902,15 @@ export default function CavaRotacionPage() {
                                         ? 'Configura los almacenes a monitorear'
                                         : 'No hay inventario empacado activo en los almacenes seleccionados'}
                                 </p>
+                            </div>
+                        ) : rows.length === 0 ? (
+                            <div className="text-center py-10 text-slate-600">
+                                <Package size={24} className="mx-auto mb-2 opacity-30" />
+                                <p className="text-sm">Sin lotes con estado "{filterRiesgo}"</p>
+                                <button onClick={() => setFilterRiesgo('all')}
+                                    className="mt-2 text-xs text-violet-400 hover:text-violet-300 transition-colors">
+                                    ← Ver todos los lotes
+                                </button>
                             </div>
                         ) : (
                             rows.map(row => (
