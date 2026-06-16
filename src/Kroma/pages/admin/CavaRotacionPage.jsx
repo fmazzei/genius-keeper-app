@@ -20,7 +20,7 @@ import { db } from '@/Firebase/config.js';
 import {
     RotateCcw, AlertTriangle, CheckCircle, XCircle, Clock, Settings,
     Package, ChevronDown, ChevronUp, Edit2, Save, X, Info, Calendar,
-    Zap, TrendingDown, Loader, RefreshCw, Shield, BarChart2, Eye, EyeOff,
+    Zap, TrendingDown, Loader, RefreshCw, Shield, BarChart2, Eye, EyeOff, Truck,
 } from 'lucide-react';
 
 // ─── Configuración global por defecto ────────────────────────────────────────
