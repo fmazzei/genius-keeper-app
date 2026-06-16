@@ -58,7 +58,7 @@ function computeRotation(inventoryItems, productConfigMap, globalCfg, velocityMa
     const rows = inventoryItems
         .filter(item =>
             (item.tipo === 'empacado' || item.tipo === 'sin_envasar') &&
-            ((item.unidades ?? 0) + (item.kgTotales ?? 0)) > 0
+            (item.tipo === 'empacado' ? (item.unidades ?? 0) > 0 : (item.kgTotales ?? 0) > 0)
         )
         .map(item => {
             const esSinEnvasar = item.tipo === 'sin_envasar';
@@ -859,7 +859,7 @@ export default function CavaRotacionPage() {
         .filter(i =>
             monitoredIds.includes(i.warehouseId) &&
             !comercialWhIds.has(i.warehouseId) &&
-            ((i.unidades ?? 0) + (i.kgTotales ?? 0)) > 0   // excluir lotes vacíos
+            (i.tipo === 'empacado' ? (i.unidades ?? 0) > 0 : (i.kgTotales ?? 0) > 0)
         )
         .map(i => ({ ...i, warehouseNombre: warehouses.find(w => w.id === i.warehouseId)?.nombre || '', esComercial: false }));
 
