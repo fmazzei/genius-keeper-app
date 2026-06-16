@@ -55,8 +55,15 @@ function addDays(date, days) {
 function computeRotation(inventoryItems, productConfigMap, globalCfg, velocityMap, today) {
     const normKey = s => (s || '').trim().toLowerCase();
     const rows = inventoryItems
-        .filter(item => item.tipo === 'empacado' && (item.unidades ?? 0) > 0)
+        .filter(item =>
+            (item.tipo === 'empacado' || item.tipo === 'sin_envasar') &&
+            ((item.unidades ?? 0) + (item.kgTotales ?? 0)) > 0
+        )
         .map(item => {
+            const esSinEnvasar = item.tipo === 'sin_envasar';
+            const cantidad     = esSinEnvasar ? (item.kgTotales ?? 0) : (item.unidades ?? 0);
+            const unidadDisplay = esSinEnvasar ? 'kg' : 'ud';
+
             const pCfg = productConfigMap[normKey(item.productoNombre)] || {};
             const diasMinimoAnaquel   = pCfg.diasMinimoAnaquel > 0 ? pCfg.diasMinimoAnaquel : null;
             const diasVigenciaTotal   = pCfg.diasVigenciaTotal  > 0 ? pCfg.diasVigenciaTotal  : null;
@@ -77,25 +84,25 @@ function computeRotation(inventoryItems, productConfigMap, globalCfg, velocityMa
                 ? addDays(today, ventanaDeDespacho)
                 : null;
 
-            // Velocidad de salida
-            const histVelocidad = velocityMap[item.productoNombre] ?? null;
+            // Velocidad: para sin_envasar no hay historial de despachos en kg → solo velocidadManual
+            const histVelocidad = esSinEnvasar ? null : (velocityMap[item.productoNombre] ?? null);
             const velocidadDiaria = velocidadManual ?? histVelocidad;
             const tieneVelocidadManual = !!velocidadManual;
 
             const diasParaAgotar = (velocidadDiaria && velocidadDiaria > 0)
-                ? item.unidades / velocidadDiaria
+                ? cantidad / velocidadDiaria
                 : null;
             const fechaProyectadaAgotamiento = diasParaAgotar !== null
                 ? addDays(today, diasParaAgotar)
                 : null;
 
-            // Unidades que no saldrán a tiempo (dentro de la ventana válida)
+            // Cantidad que no saldrá a tiempo (dentro de la ventana válida)
             let unidadesEnRiesgo = 0;
             if (diasHastaVencer !== null && ventanaDeDespacho !== null && velocidadDiaria) {
                 const saldranATiempo = Math.floor(velocidadDiaria * Math.max(0, ventanaDeDespacho));
-                unidadesEnRiesgo = Math.max(0, item.unidades - saldranATiempo);
+                unidadesEnRiesgo = Math.max(0, cantidad - saldranATiempo);
             } else if (ventanaDeDespacho !== null && ventanaDeDespacho < 0) {
-                unidadesEnRiesgo = item.unidades; // ya pasó la ventana
+                unidadesEnRiesgo = cantidad; // ya pasó la ventana
             }
 
             // Clasificación de riesgo
@@ -106,10 +113,10 @@ function computeRotation(inventoryItems, productConfigMap, globalCfg, velocityMa
                 riesgo = 'sin_vencimiento';
             } else if (diasHastaVencer <= 0) {
                 riesgo = 'vencido';
-                unidadesEnRiesgo = item.unidades;
+                unidadesEnRiesgo = cantidad;
             } else if (ventanaDeDespacho <= 0) {
                 riesgo = 'urgente'; // ventana ya cerrada pero no vencido aún
-                unidadesEnRiesgo = item.unidades;
+                unidadesEnRiesgo = cantidad;
             } else if (ventanaDeDespacho <= globalCfg.diasAlertaUrgente) {
                 riesgo = 'urgente';
             } else if (ventanaDeDespacho <= globalCfg.diasAlertaAtencion) {
@@ -126,6 +133,9 @@ function computeRotation(inventoryItems, productConfigMap, globalCfg, velocityMa
 
             return {
                 ...item,
+                cantidad,
+                unidadDisplay,
+                esSinEnvasar,
                 diasHastaVencer,
                 diasMinimoAnaquel,
                 diasVigenciaTotal,
@@ -486,8 +496,10 @@ function LoteRow({ row, globalCfg }) {
                             <p className="text-slate-500 text-xs">{row.presentacion || ''} {row.lote ? `· ${row.lote}` : ''}</p>
                         </div>
                         <div>
-                            <p className="text-slate-500 text-[10px] uppercase font-medium">Unidades</p>
-                            <p className="text-white font-mono font-bold text-sm">{row.unidades.toLocaleString()}</p>
+                            <p className="text-slate-500 text-[10px] uppercase font-medium">{row.esSinEnvasar ? 'Kilos' : 'Unidades'}</p>
+                            <p className="text-white font-mono font-bold text-sm">
+                                {row.cantidad.toLocaleString()} <span className="text-slate-500 text-xs font-normal">{row.unidadDisplay}</span>
+                            </p>
                         </div>
                         <div>
                             <p className="text-slate-500 text-[10px] uppercase font-medium">Vencimiento</p>
@@ -498,7 +510,7 @@ function LoteRow({ row, globalCfg }) {
                         <div className="flex items-center gap-3">
                             <RiesgoBadge riesgo={row.riesgo} />
                             {row.unidadesEnRiesgo > 0 && (
-                                <span className="text-rose-400 text-xs font-mono">{row.unidadesEnRiesgo.toLocaleString()} ud en riesgo</span>
+                                <span className="text-rose-400 text-xs font-mono">{row.unidadesEnRiesgo.toLocaleString()} {row.unidadDisplay} en riesgo</span>
                             )}
                         </div>
                     </div>
@@ -531,7 +543,7 @@ function LoteRow({ row, globalCfg }) {
                             <p className="text-slate-500 text-[10px] uppercase font-medium mb-1">Velocidad de salida</p>
                             {row.velocidadDiaria ? (
                                 <>
-                                    <p className="text-white font-mono font-bold text-base">{row.velocidadDiaria.toFixed(1)} <span className="text-slate-500 text-xs font-normal">ud/día</span></p>
+                                    <p className="text-white font-mono font-bold text-base">{row.velocidadDiaria.toFixed(1)} <span className="text-slate-500 text-xs font-normal">{row.unidadDisplay}/día</span></p>
                                     <p className="text-slate-500 text-[10px] mt-0.5">
                                         {row.tieneVelocidadManual ? '⚡ Velocidad manual' : `Promedio ${globalCfg.semanasHistorial} sem.`}
                                     </p>
@@ -586,9 +598,9 @@ function LoteRow({ row, globalCfg }) {
                         <div className="mt-3 bg-rose-900/20 border border-rose-700/40 rounded-xl px-4 py-2.5 flex items-center gap-2">
                             <TrendingDown size={14} className="text-rose-400 shrink-0" />
                             <p className="text-rose-300 text-xs">
-                                <strong>{row.unidadesEnRiesgo.toLocaleString()} unidades</strong> no saldrán a tiempo a la velocidad actual.
+                                <strong>{row.unidadesEnRiesgo.toLocaleString()} {row.unidadDisplay}</strong> no saldrán a tiempo a la velocidad actual.
                                 {row.ventanaDeDespacho > 0 && row.velocidadDiaria && (
-                                    <span> Sólo alcanza a despachar <strong>{Math.floor(row.velocidadDiaria * row.ventanaDeDespacho).toLocaleString()}</strong> ud antes de la ventana.</span>
+                                    <span> Sólo alcanza a despachar <strong>{Math.floor(row.velocidadDiaria * row.ventanaDeDespacho).toLocaleString()}</strong> {row.unidadDisplay} antes de la ventana.</span>
                                 )}
                             </p>
                         </div>
@@ -855,7 +867,9 @@ export default function CavaRotacionPage() {
     const lotesUrgentes  = rowsAll.filter(r => r.riesgo === 'urgente' || r.riesgo === 'vencido').length;
     const lotesAtencion  = rowsAll.filter(r => r.riesgo === 'atencion').length;
     const udEnRiesgo     = rowsAll.reduce((s, r) => s + (r.unidadesEnRiesgo || 0), 0);
-    const totalUnidades  = itemsEnScope.filter(i => i.tipo === 'empacado').reduce((s, i) => s + (i.unidades || 0), 0);
+    const totalUnidades  = itemsEnScope
+        .filter(i => i.tipo === 'empacado' || i.tipo === 'sin_envasar')
+        .reduce((s, i) => s + (i.tipo === 'sin_envasar' ? (i.kgTotales || 0) : (i.unidades || 0)), 0);
     const velTotal       = Object.values(velocityMap).reduce((s, v) => s + v, 0);
     const coberturasDias = velTotal > 0 ? Math.round(totalUnidades / velTotal) : null;
 
