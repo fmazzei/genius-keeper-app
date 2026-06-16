@@ -53,10 +53,11 @@ function addDays(date, days) {
 // ─── Motor de cálculo de rotación ────────────────────────────────────────────
 
 function computeRotation(inventoryItems, productConfigMap, globalCfg, velocityMap, today) {
+    const normKey = s => (s || '').trim().toLowerCase();
     const rows = inventoryItems
         .filter(item => item.tipo === 'empacado' && (item.unidades ?? 0) > 0)
         .map(item => {
-            const pCfg = productConfigMap[item.productoNombre] || {};
+            const pCfg = productConfigMap[normKey(item.productoNombre)] || {};
             const diasMinimoAnaquel   = pCfg.diasMinimoAnaquel > 0 ? pCfg.diasMinimoAnaquel : null;
             const diasVigenciaTotal   = pCfg.diasVigenciaTotal  > 0 ? pCfg.diasVigenciaTotal  : null;
             const velocidadManual     = pCfg.velocidadManualDiaria > 0 ? pCfg.velocidadManualDiaria : null;
@@ -217,7 +218,17 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
         set('warehouseNombres', next);
     };
 
-    const handleSave = () => { onChange(draft); onSave(draft); };
+    const handleSave = () => {
+        // Clampear valores al guardar (no en onChange para no bloquear la escritura)
+        const cleaned = {
+            ...draft,
+            semanasHistorial:   Math.max(1,  Math.min(26, Number(draft.semanasHistorial)  || DEFAULT_GLOBAL_CFG.semanasHistorial)),
+            diasAlertaUrgente:  Math.max(1,  Math.min(60, Number(draft.diasAlertaUrgente) || DEFAULT_GLOBAL_CFG.diasAlertaUrgente)),
+            diasAlertaAtencion: Math.max(1,  Math.min(90, Number(draft.diasAlertaAtencion)|| DEFAULT_GLOBAL_CFG.diasAlertaAtencion)),
+        };
+        onChange(cleaned);
+        onSave(cleaned);
+    };
 
     return (
         <div className="space-y-5">
@@ -227,7 +238,7 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
                     <label className="block text-slate-400 text-xs mb-1.5">Semanas de historial (velocidad)</label>
                     <div className="flex items-center gap-2">
                         <input type="number" min={1} max={26} value={draft.semanasHistorial}
-                            onChange={e => set('semanasHistorial', Math.max(1, Math.min(26, Number(e.target.value))))}
+                            onChange={e => set('semanasHistorial', e.target.value)}
                             className="w-20 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 text-center font-mono"
                         />
                         <span className="text-slate-500 text-xs">semanas</span>
@@ -239,7 +250,7 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
                     <label className="block text-slate-400 text-xs mb-1.5">Días ventana → Urgente</label>
                     <div className="flex items-center gap-2">
                         <input type="number" min={1} max={60} value={draft.diasAlertaUrgente}
-                            onChange={e => set('diasAlertaUrgente', Math.max(1, Math.min(60, Number(e.target.value))))}
+                            onChange={e => set('diasAlertaUrgente', e.target.value)}
                             className="w-20 bg-slate-800 border border-rose-700/50 rounded-lg px-3 py-2 text-rose-300 text-sm focus:outline-none focus:ring-1 focus:ring-rose-500 text-center font-mono"
                         />
                         <span className="text-slate-500 text-xs">días</span>
@@ -251,7 +262,7 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
                     <label className="block text-slate-400 text-xs mb-1.5">Días ventana → Atención</label>
                     <div className="flex items-center gap-2">
                         <input type="number" min={1} max={90} value={draft.diasAlertaAtencion}
-                            onChange={e => set('diasAlertaAtencion', Math.max(1, Math.min(90, Number(e.target.value))))}
+                            onChange={e => set('diasAlertaAtencion', e.target.value)}
                             className="w-20 bg-slate-800 border border-amber-700/50 rounded-lg px-3 py-2 text-amber-300 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500 text-center font-mono"
                         />
                         <span className="text-slate-500 text-xs">días</span>
@@ -260,24 +271,36 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
                 </div>
             </div>
 
-            {/* Almacenes a monitorear */}
+            {/* Almacenes a monitorear — agrupados por tipo */}
             <div>
                 <label className="block text-slate-400 text-xs mb-2">Almacenes monitoreados</label>
-                <div className="flex flex-wrap gap-2">
-                    {allWarehouses.filter(w => w.tipo === 'PT' || w.tipo === 'mixto').map(w => {
-                        const active = (draft.warehouseNombres || []).includes(w.nombre);
-                        return (
-                            <button key={w.id} onClick={() => toggleWarehouse(w.nombre)}
-                                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${active
-                                    ? 'bg-violet-900/40 border-violet-600/60 text-violet-300'
-                                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
-                                }`}>
-                                {w.nombre}
-                            </button>
-                        );
-                    })}
-                </div>
-                <p className="text-slate-600 text-[10px] mt-1.5">Solo almacenes de tipo PT o mixto.</p>
+                {[
+                    { label: 'Producción (Cava)', color: 'text-emerald-400', filter: w => (w.tipo === 'PT' || w.tipo === 'mixto') && !/comercial/i.test(w.nombre), activeStyle: 'bg-emerald-900/40 border-emerald-600/60 text-emerald-300' },
+                    { label: 'Depósitos Comerciales', color: 'text-amber-400', filter: w => /comercial/i.test(w.nombre), activeStyle: 'bg-amber-900/30 border-amber-600/50 text-amber-300' },
+                ].map(grupo => {
+                    const grupoWhs = allWarehouses.filter(grupo.filter);
+                    if (grupoWhs.length === 0) return null;
+                    return (
+                        <div key={grupo.label} className="mb-3">
+                            <p className={`text-[10px] font-bold uppercase tracking-wide mb-1.5 ${grupo.color}`}>{grupo.label}</p>
+                            <div className="flex flex-wrap gap-2">
+                                {grupoWhs.map(w => {
+                                    const active = (draft.warehouseNombres || []).includes(w.nombre);
+                                    return (
+                                        <button key={w.id} onClick={() => toggleWarehouse(w.nombre)}
+                                            className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${active
+                                                ? grupo.activeStyle
+                                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                                            }`}>
+                                            {w.nombre}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })}
+                <p className="text-slate-600 text-[10px] mt-1">Los depósitos comerciales muestran datos de GK → Almacén Comercial.</p>
             </div>
 
             {/* Opciones de visualización */}
@@ -587,17 +610,72 @@ function LoteRow({ row, globalCfg }) {
     );
 }
 
+// ─── Grupo de almacén colapsable ─────────────────────────────────────────────
+
+function WarehouseGroup({ grupo, globalCfg }) {
+    const [open, setOpen] = useState(true);
+    const { nombre, esComercial, rows } = grupo;
+
+    const urgentes = rows.filter(r => r.riesgo === 'urgente' || r.riesgo === 'vencido').length;
+    const totalUds = rows.reduce((s, r) => s + (r.unidades || 0), 0);
+
+    const headerColor = esComercial
+        ? 'border-amber-700/40 bg-amber-900/10'
+        : 'border-emerald-700/40 bg-emerald-900/10';
+    const labelColor  = esComercial ? 'text-amber-300' : 'text-emerald-300';
+    const badgeStyle  = esComercial
+        ? 'bg-amber-900/40 border-amber-700/50 text-amber-400'
+        : 'bg-emerald-900/40 border-emerald-700/50 text-emerald-400';
+
+    return (
+        <div className="rounded-xl border border-slate-800 overflow-hidden">
+            {/* Cabecera del grupo */}
+            <button onClick={() => setOpen(p => !p)}
+                className={`w-full flex items-center justify-between px-4 py-3 border-b ${open ? headerColor : 'bg-slate-900 border-slate-800'} transition-colors`}>
+                <div className="flex items-center gap-2">
+                    {esComercial
+                        ? <Truck size={13} className="text-amber-400" />
+                        : <Package size={13} className="text-emerald-400" />}
+                    <span className={`text-sm font-semibold ${labelColor}`}>{nombre}</span>
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${badgeStyle}`}>
+                        {esComercial ? 'Comercial' : 'Producción'}
+                    </span>
+                    {urgentes > 0 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-900/40 border border-rose-700/50 text-rose-300">
+                            {urgentes} urgente{urgentes > 1 ? 's' : ''}
+                        </span>
+                    )}
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="text-slate-500 text-xs font-mono">{rows.length} lote{rows.length !== 1 ? 's' : ''} · {totalUds.toLocaleString()} ud</span>
+                    {open ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+                </div>
+            </button>
+
+            {/* Lotes del grupo */}
+            {open && (
+                <div className="p-3 space-y-2 bg-slate-950/40">
+                    {rows.map(row => (
+                        <LoteRow key={row.id} row={row} globalCfg={globalCfg} />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function CavaRotacionPage() {
     const [tab, setTab] = useState('tablero');
 
     // Data
-    const [warehouses,    setWarehouses]    = useState([]);
-    const [inventoryPT,   setInventoryPT]   = useState([]);
-    const [products,      setProducts]      = useState([]);
-    const [despachos,     setDespachos]     = useState([]);
-    const [globalCfg,     setGlobalCfg]     = useState(DEFAULT_GLOBAL_CFG);
+    const [warehouses,           setWarehouses]           = useState([]);
+    const [inventoryPT,          setInventoryPT]          = useState([]);
+    const [inventarioComercial,  setInventarioComercial]  = useState([]);
+    const [products,             setProducts]             = useState([]);
+    const [despachos,            setDespachos]            = useState([]);
+    const [globalCfg,            setGlobalCfg]            = useState(DEFAULT_GLOBAL_CFG);
 
     // UI state
     const [loading,       setLoading]       = useState(true);
@@ -615,11 +693,12 @@ export default function CavaRotacionPage() {
     const loadData = useCallback(async () => {
         setLoading(true); setError('');
         try {
-            const [whSnap, invSnap, prodSnap, cfgSnap] = await Promise.all([
+            const [whSnap, invSnap, prodSnap, cfgSnap, comercialSnap] = await Promise.all([
                 getDocs(query(collection(db, 'kroma_warehouses'), where('active', '==', true))),
                 getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_products')),
                 getDoc(doc(db, 'kroma_settings', 'rotacion')),
+                getDocs(collection(db, 'inventario_comercial')),
             ]);
 
             const whs = whSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -631,6 +710,7 @@ export default function CavaRotacionPage() {
                 const data = d.data();
                 return { id: d.id, ...data, warehouseId: data.warehouseId || cava?.id };
             }));
+            setInventarioComercial(comercialSnap.docs.map(d => ({ id: d.id, ...d.data() })));
 
             setProducts(prodSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.active !== false));
 
@@ -703,10 +783,13 @@ export default function CavaRotacionPage() {
 
     // ── Cálculos derivados ─────────────────────────────────────────────────────
 
-    // Mapa de config por nombre de producto
+    // Normaliza nombre para matching robusto (trim + lowercase)
+    const norm = s => (s || '').trim().toLowerCase();
+
+    // Mapa de config por nombre de producto (matching normalizado)
     const productConfigMap = {};
     products.forEach(p => {
-        if (p.rotacionConfig) productConfigMap[p.nombre] = p.rotacionConfig;
+        if (p.rotacionConfig) productConfigMap[norm(p.nombre)] = p.rotacionConfig;
     });
 
     // Velocidad histórica por producto (últimas semanasHistorial semanas)
@@ -728,14 +811,34 @@ export default function CavaRotacionPage() {
     });
 
     // Almacenes monitoreados
-    const monitoredIds = warehouses
-        .filter(w => (globalCfg.warehouseNombres || []).includes(w.nombre))
-        .map(w => w.id);
+    const monitoredWhs = warehouses.filter(w => (globalCfg.warehouseNombres || []).includes(w.nombre));
+    const monitoredIds = monitoredWhs.map(w => w.id);
+    const comercialWhIds = new Set(warehouses.filter(w => /comercial/i.test(w.nombre || '')).map(w => w.id));
 
-    // Items en alcance
-    const itemsEnScope = inventoryPT.filter(i => monitoredIds.includes(i.warehouseId));
+    // Items en alcance:
+    // - Para almacenes NO comerciales: kroma_inventory_pt (fuente de producción)
+    // - Para almacenes comerciales: inventario_comercial (fuente de verdad GK)
+    const ptItems = inventoryPT
+        .filter(i => monitoredIds.includes(i.warehouseId) && !comercialWhIds.has(i.warehouseId))
+        .map(i => ({ ...i, warehouseNombre: warehouses.find(w => w.id === i.warehouseId)?.nombre || '', esComercial: false }));
 
-    // Filas calculadas
+    const comercialItems = monitoredWhs
+        .filter(w => comercialWhIds.has(w.id))
+        .flatMap(w =>
+            inventarioComercial
+                .filter(i => norm(i.almacenNombre) === norm(w.nombre) && (i.unidades ?? 0) > 0)
+                .map(i => ({
+                    ...i,
+                    warehouseId:     w.id,
+                    warehouseNombre: w.nombre,
+                    tipo:            i.tipo || 'empacado',
+                    esComercial:     true,
+                }))
+        );
+
+    const itemsEnScope = [...ptItems, ...comercialItems];
+
+    // Filas calculadas (productConfigMap ya usa claves normalizadas)
     let rowsAll = computeRotation(itemsEnScope, productConfigMap, globalCfg, velocityMap, today);
 
     // Filtros de visualización (toggles de config — afectan rowsAll y KPIs)
@@ -759,6 +862,15 @@ export default function CavaRotacionPage() {
     // Conteo por estado para las pills
     const countByRiesgo = {};
     rowsAll.forEach(r => { countByRiesgo[r.riesgo] = (countByRiesgo[r.riesgo] || 0) + 1; });
+
+    // Agrupación por almacén para el tablero (orden: Cava primero, Comercial después)
+    const groupedByWh = {};
+    rows.forEach(r => {
+        const key = r.warehouseNombre || r.warehouseId || 'Sin almacén';
+        if (!groupedByWh[key]) groupedByWh[key] = { nombre: key, esComercial: !!r.esComercial, rows: [] };
+        groupedByWh[key].rows.push(r);
+    });
+    const whGroups = Object.values(groupedByWh).sort((a, b) => a.esComercial - b.esComercial);
 
     if (loading) return (
         <div className="flex items-center justify-center h-full py-24">
@@ -891,8 +1003,8 @@ export default function CavaRotacionPage() {
                         </div>
                     )}
 
-                    {/* FEFO table */}
-                    <div className="space-y-2">
+                    {/* FEFO table — agrupado por almacén */}
+                    <div className="space-y-4">
                         {rowsAll.length === 0 ? (
                             <div className="text-center py-16 text-slate-600">
                                 <Package size={32} className="mx-auto mb-3 opacity-30" />
@@ -913,8 +1025,8 @@ export default function CavaRotacionPage() {
                                 </button>
                             </div>
                         ) : (
-                            rows.map(row => (
-                                <LoteRow key={row.id} row={row} globalCfg={globalCfg} />
+                            whGroups.map(grupo => (
+                                <WarehouseGroup key={grupo.nombre} grupo={grupo} globalCfg={globalCfg} />
                             ))
                         )}
                     </div>
