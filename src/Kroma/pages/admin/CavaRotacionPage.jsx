@@ -26,12 +26,13 @@ import {
 // ─── Configuración global por defecto ────────────────────────────────────────
 
 const DEFAULT_GLOBAL_CFG = {
-    semanasHistorial:    4,      // semanas de despachos históricos para velocidad
-    diasAlertaUrgente:   7,      // días de ventana restante → URGENTE
-    diasAlertaAtencion:  14,     // días de ventana restante → ATENCIÓN
-    warehouseNombres:    ['Cava Cuarto Planta'], // almacenes a monitorear
-    mostrarSinConfig:    true,   // mostrar lotes de productos sin config de rotación
-    mostrarVencidos:     true,   // mostrar lotes ya vencidos
+    semanasHistorial:       4,      // semanas de despachos históricos para velocidad
+    diasAlertaUrgente:      7,      // días de ventana restante → URGENTE
+    diasAlertaAtencion:     14,     // días de ventana restante → ATENCIÓN
+    warehouseNombres:       ['Cava Cuarto Planta'], // almacenes a monitorear
+    mostrarSinConfig:       true,   // mostrar lotes de productos sin config de rotación
+    mostrarVencidos:        true,   // mostrar lotes ya vencidos
+    mostrarSinVencimiento:  false,  // mostrar lotes sin fecha de vencimiento
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -329,6 +330,13 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
                     </div>
                     <span className="text-slate-400 text-xs">Mostrar lotes vencidos</span>
                 </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                    <div onClick={() => set('mostrarSinVencimiento', !draft.mostrarSinVencimiento)}
+                        className={`w-9 h-5 rounded-full transition-colors relative ${draft.mostrarSinVencimiento ? 'bg-violet-600' : 'bg-slate-700'}`}>
+                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${draft.mostrarSinVencimiento ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    </div>
+                    <span className="text-slate-400 text-xs">Mostrar lotes sin fecha de vencimiento</span>
+                </label>
             </div>
 
             <button onClick={handleSave} disabled={saving}
@@ -346,8 +354,11 @@ function ProductConfigSection({ products, configMap, onSaveProduct, savingProduc
     const [editId, setEditId]   = useState(null);
     const [draft, setDraft]     = useState({});
 
+    // configMap usa claves normalizadas (norm) — hay que normalizar el nombre al buscar
+    const norm = s => (s || '').trim().toLowerCase();
+
     const startEdit = (p) => {
-        const cur = configMap[p.nombre] || {};
+        const cur = configMap[norm(p.nombre)] || {};
         setDraft({
             diasVigenciaTotal:      cur.diasVigenciaTotal      || '',
             diasMinimoAnaquel:      cur.diasMinimoAnaquel      || '',
@@ -389,7 +400,7 @@ function ProductConfigSection({ products, configMap, onSaveProduct, savingProduc
                     <tbody>
                         {products.map(p => {
                             const isEditing = editId === p.id;
-                            const cfg = configMap[p.nombre] || {};
+                            const cfg = configMap[norm(p.nombre)] || {};
                             return (
                                 <tr key={p.id} className="border-b border-slate-800/50 hover:bg-slate-800/20">
                                     <td className="py-2.5 pr-3">
@@ -485,11 +496,18 @@ function LoteRow({ row, globalCfg }) {
     const m = RIESGO_META[row.riesgo] || RIESGO_META.sin_config;
 
     return (
-        <div className={`border rounded-xl overflow-hidden transition-colors ${m.border} ${open ? m.bg : 'bg-slate-900/60 border-slate-800'}`}>
+        <div className={`border rounded-xl overflow-hidden transition-colors ${row.esSinEnvasar ? 'border-indigo-700/50' : m.border} ${open ? (row.esSinEnvasar ? 'bg-indigo-950/30' : m.bg) : 'bg-slate-900/60'}`}>
+            {/* Banner sin envasar */}
+            {row.esSinEnvasar && (
+                <div className="bg-indigo-900/30 border-b border-indigo-700/30 px-3 py-1 flex items-center gap-1.5">
+                    <Package size={10} className="text-indigo-400" />
+                    <span className="text-indigo-300 text-[10px] font-bold uppercase tracking-wide">Sin envasar · En maduración</span>
+                </div>
+            )}
             {/* Resumen (siempre visible) */}
             <button onClick={() => setOpen(p => !p)} className="w-full text-left px-4 py-3">
                 <div className="flex items-center gap-3">
-                    <div className={`w-1.5 h-10 rounded-full shrink-0 ${row.riesgo === 'vencido' ? 'bg-red-500' : row.riesgo === 'urgente' ? 'bg-rose-500' : row.riesgo === 'atencion' ? 'bg-amber-400' : row.riesgo === 'ok' ? 'bg-emerald-500' : 'bg-slate-600'}`} />
+                    <div className={`w-1.5 h-10 rounded-full shrink-0 ${row.esSinEnvasar ? 'bg-indigo-500' : row.riesgo === 'vencido' ? 'bg-red-500' : row.riesgo === 'urgente' ? 'bg-rose-500' : row.riesgo === 'atencion' ? 'bg-amber-400' : row.riesgo === 'ok' ? 'bg-emerald-500' : 'bg-slate-600'}`} />
                     <div className="flex-1 min-w-0 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-0.5">
                         <div className="col-span-2 sm:col-span-1">
                             <p className="text-white text-sm font-semibold truncate">{row.productoNombre}</p>
@@ -629,7 +647,14 @@ function WarehouseGroup({ grupo, globalCfg }) {
     const { nombre, esComercial, rows } = grupo;
 
     const urgentes = rows.filter(r => r.riesgo === 'urgente' || r.riesgo === 'vencido').length;
-    const totalUds = rows.reduce((s, r) => s + (r.unidades || 0), 0);
+    const udRows = rows.filter(r => !r.esSinEnvasar);
+    const kgRows = rows.filter(r =>  r.esSinEnvasar);
+    const totalUds = udRows.reduce((s, r) => s + (r.cantidad || 0), 0);
+    const totalKgs = kgRows.reduce((s, r) => s + (r.cantidad || 0), 0);
+    const stockLabel = [
+        udRows.length > 0 && `${totalUds.toLocaleString()} ud`,
+        kgRows.length > 0 && `${totalKgs.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg`,
+    ].filter(Boolean).join(' · ');
 
     const headerColor = esComercial
         ? 'border-amber-700/40 bg-amber-900/10'
@@ -659,7 +684,7 @@ function WarehouseGroup({ grupo, globalCfg }) {
                     )}
                 </div>
                 <div className="flex items-center gap-3">
-                    <span className="text-slate-500 text-xs font-mono">{rows.length} lote{rows.length !== 1 ? 's' : ''} · {totalUds.toLocaleString()} ud</span>
+                    <span className="text-slate-500 text-xs font-mono">{rows.length} lote{rows.length !== 1 ? 's' : ''}{stockLabel ? ` · ${stockLabel}` : ''}</span>
                     {open ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
                 </div>
             </button>
@@ -831,7 +856,11 @@ export default function CavaRotacionPage() {
     // - Para almacenes NO comerciales: kroma_inventory_pt (fuente de producción)
     // - Para almacenes comerciales: inventario_comercial (fuente de verdad GK)
     const ptItems = inventoryPT
-        .filter(i => monitoredIds.includes(i.warehouseId) && !comercialWhIds.has(i.warehouseId))
+        .filter(i =>
+            monitoredIds.includes(i.warehouseId) &&
+            !comercialWhIds.has(i.warehouseId) &&
+            ((i.unidades ?? 0) + (i.kgTotales ?? 0)) > 0   // excluir lotes vacíos
+        )
         .map(i => ({ ...i, warehouseNombre: warehouses.find(w => w.id === i.warehouseId)?.nombre || '', esComercial: false }));
 
     const comercialItems = monitoredWhs
@@ -854,8 +883,9 @@ export default function CavaRotacionPage() {
     let rowsAll = computeRotation(itemsEnScope, productConfigMap, globalCfg, velocityMap, today);
 
     // Filtros de visualización (toggles de config — afectan rowsAll y KPIs)
-    if (!globalCfg.mostrarVencidos)   rowsAll = rowsAll.filter(r => r.riesgo !== 'vencido');
-    if (!globalCfg.mostrarSinConfig)  rowsAll = rowsAll.filter(r => r.riesgo !== 'sin_config');
+    if (!globalCfg.mostrarVencidos)       rowsAll = rowsAll.filter(r => r.riesgo !== 'vencido');
+    if (!globalCfg.mostrarSinConfig)      rowsAll = rowsAll.filter(r => r.riesgo !== 'sin_config');
+    if (!globalCfg.mostrarSinVencimiento) rowsAll = rowsAll.filter(r => r.riesgo !== 'sin_vencimiento');
 
     // Filtro de pill — solo afecta el listado, NO los KPIs
     const rows = filterRiesgo !== 'all'
@@ -952,7 +982,7 @@ export default function CavaRotacionPage() {
                         <KPICard
                             label="Lotes en cava"
                             value={totalLotes}
-                            sub={`${totalUnidades.toLocaleString()} ud totales`}
+                            sub={`${totalUnidades.toLocaleString()} en stock`}
                             color="text-white"
                             icon={Package}
                         />
