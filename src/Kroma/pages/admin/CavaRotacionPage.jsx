@@ -27,8 +27,8 @@ import {
 
 const DEFAULT_GLOBAL_CFG = {
     semanasHistorial:           4,      // semanas de despachos históricos para velocidad
-    diasAlertaUrgente:          7,      // días de ventana restante → URGENTE
-    diasAlertaAtencion:         14,     // días de ventana restante → ATENCIÓN
+    diasAlertaUrgente:          5,      // días antes del cierre de ventana → URGENTE
+    diasAlertaAtencion:         10,     // días antes del cierre de ventana → ATENCIÓN
     diasMinimoAnaquelGlobal:    14,     // mín. anaquel global para productos sin config propia
     warehouseNombres:           ['Cava Cuarto Planta'],
     mostrarSinConfig:           true,
@@ -284,7 +284,7 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
                 </div>
                 {/* Umbral urgente */}
                 <div>
-                    <label className="block text-slate-400 text-xs mb-1.5">Días ventana → Urgente</label>
+                    <label className="block text-slate-400 text-xs mb-1.5">Días antes del cierre → Urgente</label>
                     <div className="flex items-center gap-2">
                         <input type="number" min={1} max={60} value={draft.diasAlertaUrgente}
                             onChange={e => set('diasAlertaUrgente', e.target.value)}
@@ -292,11 +292,11 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
                         />
                         <span className="text-slate-500 text-xs">días</span>
                     </div>
-                    <p className="text-slate-600 text-[10px] mt-1">Ventana ≤ este valor → estado <strong className="text-rose-400">URGENTE</strong>.</p>
+                    <p className="text-slate-600 text-[10px] mt-1">Alerta <strong className="text-rose-400">URGENTE</strong> cuando queden ≤ estos días para cerrar la ventana de despacho.</p>
                 </div>
                 {/* Umbral atención */}
                 <div>
-                    <label className="block text-slate-400 text-xs mb-1.5">Días ventana → Atención</label>
+                    <label className="block text-slate-400 text-xs mb-1.5">Días antes del cierre → Atención</label>
                     <div className="flex items-center gap-2">
                         <input type="number" min={1} max={90} value={draft.diasAlertaAtencion}
                             onChange={e => set('diasAlertaAtencion', e.target.value)}
@@ -304,7 +304,7 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
                         />
                         <span className="text-slate-500 text-xs">días</span>
                     </div>
-                    <p className="text-slate-600 text-[10px] mt-1">Ventana ≤ este valor → estado <strong className="text-amber-400">ATENCIÓN</strong>.</p>
+                    <p className="text-slate-600 text-[10px] mt-1">Alerta <strong className="text-amber-400">ATENCIÓN</strong> cuando queden ≤ estos días para cerrar la ventana de despacho.</p>
                 </div>
             </div>
 
@@ -975,7 +975,7 @@ export default function CavaRotacionPage() {
                         </span>
                     </div>
                     <p className="text-slate-500 text-sm">
-                        Análisis FEFO · {(globalCfg.warehouseNombres || []).join(', ')} · ventana ≤{globalCfg.diasAlertaUrgente}d urgente / ≤{globalCfg.diasAlertaAtencion}d atención
+                        Análisis FEFO · {(globalCfg.warehouseNombres || []).join(', ')} · urgente ≤{globalCfg.diasAlertaUrgente}d al cierre / atención ≤{globalCfg.diasAlertaAtencion}d al cierre
                     </p>
                 </div>
                 <button onClick={loadData}
