@@ -585,31 +585,34 @@ export default function DespachoPage() {
     const markEntregado = async (despacho) => {
         const id = despacho.id;
         try {
-            // Find Caracas warehouse (already loaded)
             const caracasWh = warehouses.find(w => w.nombre === 'Depósito Comercial Caracas');
+            const norm = s => (s || '').trim().toLowerCase();
+
+            // Pre-load GK almacenes and inventario_comercial so we can sync on delivery
+            const [almSnap, invComSnap] = await Promise.all([
+                getDocs(collection(db, 'almacenes_comerciales')),
+                getDocs(collection(db, 'inventario_comercial')),
+            ]);
+            const gkAlmacenes = almSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            let invCom = invComSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
             for (const linea of (despacho.lineas || [])) {
-                const { inventoryId, cantidad, tipo, destino } = linea;
+                const { inventoryId, cantidad, destino } = linea;
                 if (!inventoryId) continue;
 
                 const srcRef  = doc(db, 'kroma_inventory_pt', inventoryId);
                 const srcSnap = await getDoc(srcRef);
                 if (!srcSnap.exists()) continue;
 
-                const srcData   = srcSnap.data();
+                const srcData    = srcSnap.data();
                 const isEmpacado = srcData.tipo === 'empacado';
-                const field     = isEmpacado ? 'unidades' : 'kgTotales';
-                const current   = srcData[field] || 0;
-                const deducir   = isEmpacado ? Math.round(cantidad) : (parseFloat(cantidad) || 0);
-                const remaining = Math.max(0, +(current - deducir).toFixed(3));
+                const field      = isEmpacado ? 'unidades' : 'kgTotales';
+                const current    = srcData[field] || 0;
+                const deducir    = isEmpacado ? Math.round(cantidad) : (parseFloat(cantidad) || 0);
+                const remaining  = Math.max(0, +(current - deducir).toFixed(3));
 
-                // Deduct (or soft-delete if depleted)
-                const srcPatch = remaining === 0
-                    ? { [field]: 0, active: false }
-                    : { [field]: remaining };
-                await updateDoc(srcRef, srcPatch);
+                await updateDoc(srcRef, remaining === 0 ? { [field]: 0, active: false } : { [field]: remaining });
 
-                // Transfer to Caracas warehouse if applicable
                 const isCaracasDest =
                     destino?.ciudad === 'Caracas' ||
                     destino?.estado === 'Distrito Capital' ||
@@ -619,20 +622,63 @@ export default function DespachoPage() {
                     const { id: _id, warehouseNombre: _wn, ...itemBase } = srcData;
                     await addDoc(collection(db, 'kroma_inventory_pt'), {
                         ...itemBase,
-                        [field]:     deducir,
-                        warehouseId: caracasWh.id,
-                        active:      true,
+                        [field]:          deducir,
+                        warehouseId:      caracasWh.id,
+                        active:           true,
                         origenDespachoId: id,
-                        createdAt:   serverTimestamp(),
+                        createdAt:        serverTimestamp(),
                     });
+
+                    // Sync to GK inventario_comercial
+                    const gkAlmacen   = gkAlmacenes.find(a => norm(a.nombre) === norm(caracasWh.nombre));
+                    const loteKey     = linea.lote || srcData.lote || '';
+                    const vencKey     = linea.fechaVencimiento || srcData.fechaVencimiento || '';
+                    const existing    = invCom.find(i =>
+                        norm(i.almacenNombre) === norm(caracasWh.nombre) &&
+                        norm(i.productoNombre) === norm(linea.productoNombre) &&
+                        (i.lote || '') === loteKey &&
+                        (i.fechaVencimiento || '') === vencKey
+                    );
+                    if (existing) {
+                        await updateDoc(doc(db, 'inventario_comercial', existing.id), {
+                            unidades:  (existing.unidades || 0) + deducir,
+                            updatedAt: serverTimestamp(),
+                        });
+                        invCom = invCom.map(i => i.id === existing.id
+                            ? { ...i, unidades: (i.unidades || 0) + deducir }
+                            : i
+                        );
+                    } else {
+                        const newRef = await addDoc(collection(db, 'inventario_comercial'), {
+                            almacenId:        gkAlmacen?.id || null,
+                            almacenNombre:    caracasWh.nombre,
+                            productoNombre:   linea.productoNombre,
+                            presentacion:     linea.presentacion || srcData.presentacion || '',
+                            tipo:             srcData.tipo || 'empacado',
+                            unit:             isEmpacado ? 'ud' : 'kg',
+                            lote:             loteKey,
+                            fechaVencimiento: vencKey,
+                            unidades:         deducir,
+                            updatedAt:        serverTimestamp(),
+                        });
+                        invCom = [...invCom, {
+                            id:               newRef.id,
+                            almacenId:        gkAlmacen?.id || null,
+                            almacenNombre:    caracasWh.nombre,
+                            productoNombre:   linea.productoNombre,
+                            lote:             loteKey,
+                            fechaVencimiento: vencKey,
+                            unidades:         deducir,
+                        }];
+                    }
 
                     const srcWhNombre = warehouses.find(w => w.id === srcData.warehouseId)?.nombre || 'Planta';
                     await addDoc(collection(db, 'kroma_warehouse_movements'), {
-                        tipo:          'despacho_entregado',
-                        origenId:      srcData.warehouseId || null,
-                        origenNombre:  srcWhNombre,
-                        destinoId:     caracasWh.id,
-                        destinoNombre: caracasWh.nombre,
+                        tipo:           'despacho_entregado',
+                        origenId:       srcData.warehouseId || null,
+                        origenNombre:   srcWhNombre,
+                        destinoId:      caracasWh.id,
+                        destinoNombre:  caracasWh.nombre,
                         productoNombre: linea.productoNombre,
                         presentacion:   linea.presentacion || '',
                         lote:           linea.lote || '',
