@@ -26,13 +26,14 @@ import {
 // ─── Configuración global por defecto ────────────────────────────────────────
 
 const DEFAULT_GLOBAL_CFG = {
-    semanasHistorial:       4,      // semanas de despachos históricos para velocidad
-    diasAlertaUrgente:      7,      // días de ventana restante → URGENTE
-    diasAlertaAtencion:     14,     // días de ventana restante → ATENCIÓN
-    warehouseNombres:       ['Cava Cuarto Planta'], // almacenes a monitorear
-    mostrarSinConfig:       true,   // mostrar lotes de productos sin config de rotación
-    mostrarVencidos:        true,   // mostrar lotes ya vencidos
-    mostrarSinVencimiento:  false,  // mostrar lotes sin fecha de vencimiento
+    semanasHistorial:           4,      // semanas de despachos históricos para velocidad
+    diasAlertaUrgente:          7,      // días de ventana restante → URGENTE
+    diasAlertaAtencion:         14,     // días de ventana restante → ATENCIÓN
+    diasMinimoAnaquelGlobal:    14,     // mín. anaquel global para productos sin config propia
+    warehouseNombres:           ['Cava Cuarto Planta'],
+    mostrarSinConfig:           true,
+    mostrarVencidos:            true,
+    mostrarSinVencimiento:      false,
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -66,10 +67,15 @@ function computeRotation(inventoryItems, productConfigMap, globalCfg, velocityMa
             const unidadDisplay = esSinEnvasar ? 'kg' : 'ud';
 
             const pCfg = productConfigMap[normKey(item.productoNombre)] || {};
-            const diasMinimoAnaquel   = pCfg.diasMinimoAnaquel > 0 ? pCfg.diasMinimoAnaquel : null;
-            const diasVigenciaTotal   = pCfg.diasVigenciaTotal  > 0 ? pCfg.diasVigenciaTotal  : null;
-            const velocidadManual     = pCfg.velocidadManualDiaria > 0 ? pCfg.velocidadManualDiaria : null;
-            const productoActivo      = pCfg.activa !== false;
+            // Fallback: si no hay config por producto, usar mínimo de anaquel global
+            const tieneConfigPropia     = pCfg.diasMinimoAnaquel > 0;
+            const diasMinimoAnaquel     = tieneConfigPropia
+                ? pCfg.diasMinimoAnaquel
+                : (globalCfg.diasMinimoAnaquelGlobal > 0 ? globalCfg.diasMinimoAnaquelGlobal : null);
+            const usandoConfigGlobal    = !tieneConfigPropia && diasMinimoAnaquel !== null;
+            const diasVigenciaTotal     = pCfg.diasVigenciaTotal  > 0 ? pCfg.diasVigenciaTotal  : null;
+            const velocidadManual       = pCfg.velocidadManualDiaria > 0 ? pCfg.velocidadManualDiaria : null;
+            const productoActivo        = pCfg.activa !== false;
 
             if (!productoActivo) return null;
 
@@ -137,6 +143,7 @@ function computeRotation(inventoryItems, productConfigMap, globalCfg, velocityMa
                 cantidad,
                 unidadDisplay,
                 esSinEnvasar,
+                usandoConfigGlobal,
                 diasHastaVencer,
                 diasMinimoAnaquel,
                 diasVigenciaTotal,
@@ -233,9 +240,10 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
         // Clampear valores al guardar (no en onChange para no bloquear la escritura)
         const cleaned = {
             ...draft,
-            semanasHistorial:   Math.max(1,  Math.min(26, Number(draft.semanasHistorial)  || DEFAULT_GLOBAL_CFG.semanasHistorial)),
-            diasAlertaUrgente:  Math.max(1,  Math.min(60, Number(draft.diasAlertaUrgente) || DEFAULT_GLOBAL_CFG.diasAlertaUrgente)),
-            diasAlertaAtencion: Math.max(1,  Math.min(90, Number(draft.diasAlertaAtencion)|| DEFAULT_GLOBAL_CFG.diasAlertaAtencion)),
+            semanasHistorial:        Math.max(1,  Math.min(26, Number(draft.semanasHistorial)        || DEFAULT_GLOBAL_CFG.semanasHistorial)),
+            diasAlertaUrgente:       Math.max(1,  Math.min(60, Number(draft.diasAlertaUrgente)       || DEFAULT_GLOBAL_CFG.diasAlertaUrgente)),
+            diasAlertaAtencion:      Math.max(1,  Math.min(90, Number(draft.diasAlertaAtencion)      || DEFAULT_GLOBAL_CFG.diasAlertaAtencion)),
+            diasMinimoAnaquelGlobal: Math.max(0,  Math.min(90, Number(draft.diasMinimoAnaquelGlobal) ?? DEFAULT_GLOBAL_CFG.diasMinimoAnaquelGlobal)),
         };
         onChange(cleaned);
         onSave(cleaned);
@@ -243,6 +251,24 @@ function GlobalConfigSection({ cfg, allWarehouses, onChange, onSave, saving }) {
 
     return (
         <div className="space-y-5">
+            {/* Mínimo de anaquel global — el parámetro más importante */}
+            <div className="bg-violet-900/20 border border-violet-700/30 rounded-xl p-4">
+                <label className="block text-violet-300 text-xs font-semibold mb-1.5">
+                    Días mínimos en anaquel (global) <span className="text-violet-500 font-normal">— aplica a todos los productos sin config propia</span>
+                </label>
+                <div className="flex items-center gap-3">
+                    <input type="number" min={0} max={90} value={draft.diasMinimoAnaquelGlobal}
+                        onChange={e => set('diasMinimoAnaquelGlobal', e.target.value)}
+                        className="w-20 bg-slate-800 border border-violet-600/60 rounded-lg px-3 py-2 text-violet-200 text-sm focus:outline-none focus:ring-1 focus:ring-violet-500 text-center font-mono"
+                    />
+                    <span className="text-slate-500 text-xs">días de vida útil mínima al llegar al cliente</span>
+                </div>
+                <p className="text-violet-400/60 text-[10px] mt-1.5">
+                    Ejemplo: 14 significa que el producto debe llegar al cliente con al menos 14 días de vida útil restante.
+                    La <strong>ventana de despacho</strong> = días hasta vencer − este valor.
+                </p>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* Historial de velocidad */}
                 <div>
@@ -381,8 +407,9 @@ function ProductConfigSection({ products, configMap, onSaveProduct, savingProduc
     return (
         <div className="space-y-2">
             <p className="text-slate-500 text-xs">
-                Los campos de rotación solo aplican a productos con inventario de tipo <strong className="text-slate-400">empacado</strong> en los almacenes monitoreados.
-                La velocidad manual anula el cálculo histórico.
+                Configura aquí parámetros específicos por producto. Si no configuras un producto,
+                se aplica el <strong className="text-violet-400">mínimo de anaquel global</strong> definido arriba.
+                La velocidad manual anula el historial de despachos.
             </p>
 
             <div className="overflow-x-auto">
@@ -597,9 +624,12 @@ function LoteRow({ row, globalCfg }) {
                                     <span className="text-slate-500">Vigencia total</span>
                                     <span className="text-slate-300 font-mono">{row.diasVigenciaTotal ? `${row.diasVigenciaTotal}d` : '—'}</span>
                                 </div>
-                                <div className="flex justify-between text-xs">
+                                <div className="flex justify-between text-xs gap-2">
                                     <span className="text-slate-500">Mín. anaquel</span>
-                                    <span className="text-violet-300 font-mono font-semibold">{row.diasMinimoAnaquel ? `${row.diasMinimoAnaquel}d` : '—'}</span>
+                                    <span className="text-right">
+                                        <span className="text-violet-300 font-mono font-semibold">{row.diasMinimoAnaquel ? `${row.diasMinimoAnaquel}d` : '—'}</span>
+                                        {row.usandoConfigGlobal && <span className="text-slate-600 text-[9px] block">global</span>}
+                                    </span>
                                 </div>
                                 <div className="flex justify-between text-xs">
                                     <span className="text-slate-500">Días hasta vencer</span>
