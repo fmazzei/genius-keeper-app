@@ -252,15 +252,18 @@ service cloud.firestore {
 
     // ── Almacén Comercial (puente Kroma → GK) ──────────────────────────────
     // Inventario de los depósitos comerciales (ej. "Depósito Comercial
-    // Caracas"). Kroma (isKromaAccess) tiene SOLO LECTURA — la edición y los
-    // ajustes de stock son exclusivos de GK (vendedor, gerencia, master).
+    // Caracas"). La CONFIGURACIÓN de almacenes (almacenes_comerciales) es
+    // exclusiva de GK. El INVENTARIO (inventario_comercial) lo escribe tanto GK
+    // (recepción/ajuste manual) como Kroma: al marcar un despacho como
+    // entregado en Caracas, el operario de despacho sincroniza el stock
+    // recibido — escritura legítima del puente Kroma → GK.
     match /almacenes_comerciales/{almacenId} {
       allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess());
       allow write: if isAuthenticated() && isComercialAccess();
     }
     match /inventario_comercial/{itemId} {
       allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess());
-      allow write: if isAuthenticated() && isComercialAccess();
+      allow write: if isAuthenticated() && (isKromaAccess() || isComercialAccess());
     }
 
     match /kroma_settings/{docId} {
