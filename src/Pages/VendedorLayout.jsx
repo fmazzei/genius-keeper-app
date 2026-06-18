@@ -882,9 +882,11 @@ const VendedorLayout = ({ user, onLogout }) => {
                     chain: c.chain || '',
                 })));
 
-                // 7. Sync alert conditions to Firestore then load them
-                await syncAlertas(user.uid, newStats);
-                await loadAlertas(user.uid);
+                // 7. Sync alert conditions to Firestore y cargarlas — en
+                //    segundo plano: el Home ya tiene todo lo que necesita
+                //    (stats, posList, clientesPosList) y no debe esperar
+                //    a esto para liberar el spinner de "Meta del Mes".
+                syncAlertas(user.uid, newStats).then(() => loadAlertas(user.uid));
 
             } catch (e) {
                 console.warn('VendedorLayout load error:', e);
