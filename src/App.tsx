@@ -18,6 +18,7 @@ import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import InAppNotification from '@/Components/InAppNotification.jsx';
 import ReportDetailModalController from '@/Components/ReportDetailModalController.tsx';
 import RouteInviteModal from '@/Components/RouteInviteModal.tsx';
+import ErrorBoundary from '@/Components/ErrorBoundary.jsx';
 import { LogOut, Lock } from 'lucide-react';
 
 interface AppNotification {
@@ -116,7 +117,9 @@ const AppLayout: React.FC = () => {
                     onClose={() => setInviteId(null)} 
                 />
             )}
-            {renderAppContent()}
+            <ErrorBoundary key={user?.uid || 'anon'}>
+                {renderAppContent()}
+            </ErrorBoundary>
         </>
     );
 };

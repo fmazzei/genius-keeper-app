@@ -12,7 +12,7 @@ import {
     Home, MapPin, Package, Bell,
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
-    ClipboardList, Receipt, Store, Warehouse, X,
+    ClipboardList, Receipt, Store, Warehouse, X, RefreshCw,
 } from 'lucide-react';
 import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
@@ -92,7 +92,7 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
     );
 }
 
-function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
+function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loadError, onRetry }) {
     const [showMetaModal, setShowMetaModal] = useState(false);
     const pct     = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
     const tier    = getTierFromConfig(pct, tiers, commConfig.bajaRate);
@@ -150,6 +150,19 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig }) {
                 <p className="text-slate-400 text-sm">{saludoDelDia()},</p>
                 <p className="text-white font-black text-2xl leading-tight">{vendedor.nombre?.split(' ')[0] || 'Vendedor'}</p>
             </div>
+
+            {loadError && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center gap-3">
+                    <AlertCircle size={18} className="text-amber-400 shrink-0" />
+                    <p className="text-amber-300 text-xs flex-1">{loadError}</p>
+                    <button
+                        onClick={onRetry}
+                        className="flex items-center gap-1 text-amber-300 text-xs font-semibold bg-amber-500/15 hover:bg-amber-500/25 px-2.5 py-1.5 rounded-lg transition-colors shrink-0"
+                    >
+                        <RefreshCw size={12} /> Reintentar
+                    </button>
+                </div>
+            )}
 
             {/* ── Commission Meter ── */}
             <button
@@ -519,6 +532,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [alertas, setAlertas]                       = useState([]);
     const [loadingAlertas, setLoadingAlertas]         = useState(false);
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
+    const [reloadKey, setReloadKey]                   = useState(0);
 
     // ── Load alerts (last 24 h) ── filtrado de fecha en cliente (evita índice compuesto uid+createdAt)
     const loadAlertas = async (uid) => {
@@ -609,8 +623,25 @@ const VendedorLayout = ({ user, onLogout }) => {
     useEffect(() => {
         if (!user?.uid) return;
 
+        setLoading(true);
+        setLoadError('');
+
         // Request FCM permission in background on login
         requestNotificationPermission(user.uid).catch(() => {});
+
+        // Red de seguridad: si una lectura de Firestore se queda colgada
+        // (conexión móvil pobre, etc.) el spinner de "Meta del Mes" no debe
+        // girar para siempre. A los 20s liberamos el loading con un aviso
+        // y botón de reintentar, aunque load() siga corriendo en segundo
+        // plano y termine de poblar los datos más tarde.
+        let settled = false;
+        const timeoutId = setTimeout(() => {
+            if (!settled) {
+                console.warn('VendedorLayout: load() excedió 20s, liberando spinner.');
+                setLoadError('La conexión está lenta y no terminó de cargar. Reintenta.');
+                setLoading(false);
+            }
+        }, 20000);
 
         const load = async () => {
             try {
@@ -866,11 +897,15 @@ const VendedorLayout = ({ user, onLogout }) => {
                 console.warn('VendedorLayout load error:', e);
                 setLoadError(e?.message || 'Error cargando datos del vendedor.');
             } finally {
+                settled = true;
+                clearTimeout(timeoutId);
                 setLoading(false);
             }
         };
         load();
-    }, [user?.uid]);
+
+        return () => clearTimeout(timeoutId);
+    }, [user?.uid, reloadKey]);
 
     // ── Live badge: pedidos verbales pendientes de confirmar/rechazar ──
     useEffect(() => {
@@ -988,6 +1023,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                 onNavigate={navigate}
                 tiers={tiers}
                 commConfig={commConfig}
+                loadError={loadError}
+                onRetry={() => setReloadKey(k => k + 1)}
             />
         );
     };
