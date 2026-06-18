@@ -664,24 +664,46 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const hoy       = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                 const inicioMes = startOfMonth();
                 const inicioSem = startOfWeek();
+                const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-                // 2. Despachos del mes (requiere reporterId — vínculo con
-                //    el módulo de mercaderistas; no todos los vendedores lo
-                //    tienen configurado, pero su cartera/PDV/pedidos no
-                //    dependen de esto). Filtrado de fecha en cliente (evita
-                //    índice compuesto reporterId+createdAt).
-                let despachos = [];
-                if (reporterId) {
-                    const despachosSnap = await getDocs(
-                        query(collection(db, 'despachos'), where('reporterId', '==', reporterId))
-                    );
-                    despachos = despachosSnap.docs
+                // 2-5. Lecturas independientes en paralelo. Antes cada una se
+                // esperaba en secuencia (despachos → comisiones del mes → pagos
+                // → cartera → facturas), sumando un round-trip de Firestore
+                // tras otro — en conexión móvil eso se nota como demora visible
+                // aunque nunca llegue a colgarse. Ninguna depende del resultado
+                // de otra, así que corren todas a la vez.
+                const [despachosSnap, comisionMesSnap, pagosSnap, carteraSnap, facturasSnap] = await Promise.all([
+                    reporterId
+                        ? getDocs(query(collection(db, 'despachos'), where('reporterId', '==', reporterId)))
+                        : Promise.resolve(null),
+                    getDoc(doc(db, 'comisiones_mensuales', `${user.uid}_${mesActual}`))
+                        .catch(e => { console.warn('comisiones_mensuales load error:', e); return null; }),
+                    reporterId
+                        ? getDocs(query(collection(db, 'pagos_registrados'), where('reporterId', '==', reporterId)))
+                            .catch(e => { console.warn('pagos_registrados load error:', e); return null; })
+                        : Promise.resolve(null),
+                    getDocs(query(
+                        collection(db, 'vendor_clients'),
+                        where('vendedorId', '==', user.uid),
+                        where('active', '==', true),
+                    )),
+                    getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', user.uid)))
+                        .catch(e => { console.warn('facturas_vendedor load error:', e); return null; }),
+                ]);
+
+                // 2. Despachos del mes (requiere reporterId — vínculo con el
+                //    módulo de mercaderistas; no todos los vendedores lo tienen
+                //    configurado, pero su cartera/PDV/pedidos no dependen de
+                //    esto). Filtrado de fecha en cliente (evita índice
+                //    compuesto reporterId+createdAt).
+                const despachos = despachosSnap
+                    ? despachosSnap.docs
                         .map(d => d.data())
                         .filter(d => {
                             const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
                             return t >= inicioMes;
-                        });
-                }
+                        })
+                    : [];
                 const despachoHoy    = despachos.filter(d => {
                     const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
                     return t >= hoy;
@@ -694,16 +716,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //     es porque todavía no se ha facturado nada, y debe verse en 0
                 //     (no el total despachado, que generaría un desfase con lo
                 //     que realmente paga comisión).
-                let unidadesDelMes = 0;
-                const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-                try {
-                    const comisionMesSnap = await getDoc(doc(db, 'comisiones_mensuales', `${user.uid}_${mesActual}`));
-                    if (comisionMesSnap.exists()) {
-                        unidadesDelMes = comisionMesSnap.data().unidadesFacturadas ?? 0;
-                    }
-                } catch (e) {
-                    console.warn('comisiones_mensuales load error:', e);
-                }
+                const unidadesDelMes = comisionMesSnap?.exists?.() ? (comisionMesSnap.data().unidadesFacturadas ?? 0) : 0;
 
                 // 3. Pagos de la semana (para comisión) — también depende de reporterId.
                 //    `calculatedCommission` ya viene calculado por
@@ -711,33 +724,18 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //    factura, así que solo se suma directamente.
                 //    No crítico: si falla (p.ej. permisos), no debe abortar el resto
                 //    de la carga (cartera/PDV/pedidos).
-                let comisionSemana = 0;
-                if (reporterId) {
-                    try {
-                        const pagosSnap = await getDocs(
-                            query(collection(db, 'pagos_registrados'), where('reporterId', '==', reporterId))
-                        );
-                        comisionSemana = pagosSnap.docs
-                            .map(d => d.data())
-                            .filter(p => {
-                                const t = p.createdAt?.toDate?.() || new Date(p.createdAt);
-                                return t >= inicioSem;
-                            })
-                            .reduce((s, p) => s + (p.calculatedCommission || 0), 0);
-                    } catch (e) {
-                        console.warn('pagos_registrados load error:', e);
-                    }
-                }
+                const comisionSemana = pagosSnap
+                    ? pagosSnap.docs
+                        .map(d => d.data())
+                        .filter(p => {
+                            const t = p.createdAt?.toDate?.() || new Date(p.createdAt);
+                            return t >= inicioSem;
+                        })
+                        .reduce((s, p) => s + (p.calculatedCommission || 0), 0)
+                    : 0;
 
                 // 4. Cartera propia del vendedor (para activación y lista de despacho)
                 //    Filtrado de "estado" en cliente (evita índice compuesto).
-                const carteraSnap = await getDocs(
-                    query(
-                        collection(db, 'vendor_clients'),
-                        where('vendedorId', '==', user.uid),
-                        where('active', '==', true),
-                    )
-                );
                 const cartera = carteraSnap.docs
                     .map(d => ({ id: d.id, ...d.data() }))
                     .filter(c => c.estado === 'activo');
@@ -819,10 +817,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //    vencimiento heredado de Zoho).
                 let facturasPorVencer = 0;
                 let puntualidadPct = null;
-                try {
-                    const facturasSnap = await getDocs(
-                        query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', user.uid))
-                    );
+                if (facturasSnap) {
                     const facturas = facturasSnap.docs.map(d => d.data());
                     const tresDias = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
                     facturasPorVencer = facturas.filter(f => {
@@ -840,8 +835,6 @@ const VendedorLayout = ({ user, onLogout }) => {
                         const aTiempo = facturasPagadasMes.filter(f => f.pagadaDentroDePlazo === true).length;
                         puntualidadPct = (aTiempo / facturasPagadasMes.length) * 100;
                     }
-                } catch (e) {
-                    console.warn('facturas_vendedor load error:', e);
                 }
 
                 const newStats = {
