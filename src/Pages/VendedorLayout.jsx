@@ -13,6 +13,7 @@ import {
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
     ClipboardList, Receipt, Store, Warehouse, X, RefreshCw,
+    Zap,
 } from 'lucide-react';
 import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
@@ -217,6 +218,27 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                 />
             )}
 
+            {/* ── Velocidad de Venta ── */}
+            {!loading && stats.unidadesDelMes > 0 && (
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4">
+                    <div className="flex items-center gap-3 mb-2">
+                        <div className="p-2 bg-blue-500/15 rounded-lg text-blue-400 shrink-0"><Zap size={18} /></div>
+                        <div>
+                            <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Velocidad de Venta</p>
+                            <p className="text-white text-xl font-black font-mono">
+                                {stats.runRateActual.toFixed(1)} <span className="text-slate-500 text-sm font-normal">uds/día</span>
+                            </p>
+                        </div>
+                    </div>
+                    <p className="text-slate-400 text-xs bg-slate-800/60 rounded-lg p-2.5">
+                        {stats.runRateNeeded > 0
+                            ? <>Necesitas <span className="font-bold text-blue-400">{stats.runRateNeeded.toFixed(1)} uds/día</span> los próximos <span className="font-bold text-white">{stats.diasRestantes}</span> días para llegar a la meta.</>
+                            : '¡Meta del mes alcanzada!'
+                        }
+                    </p>
+                </div>
+            )}
+
             {/* ── Resumen financiero ── */}
             {statCards.length > 0 && (
                 <div className="grid grid-cols-2 gap-2">
@@ -298,6 +320,51 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                                 </p>
                             </div>
                         </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Radar de Acción Operativa ── */}
+            {!loading && (
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                        <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Radar de Acción Operativa</p>
+                        {stats.stockoutsCount > 0 && (
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
+                                {stats.stockoutsCount} quiebre{stats.stockoutsCount > 1 ? 's' : ''}
+                            </span>
+                        )}
+                    </div>
+
+                    {stats.radarAlerts.length === 0 ? (
+                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
+                            <CheckCircle size={20} className="text-emerald-400 shrink-0" />
+                            <p className="text-slate-300 text-sm">Tu cartera está al día — sin visitas vencidas ni quiebres de stock.</p>
+                        </div>
+                    ) : (
+                        stats.radarAlerts.slice(0, 4).map(a => {
+                            const isCritica = a.type === 'Quiebre de Stock';
+                            return (
+                                <div
+                                    key={a.id}
+                                    className={`rounded-xl p-3.5 border flex items-start gap-3 ${isCritica ? 'bg-red-500/10 border-red-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}
+                                >
+                                    {isCritica
+                                        ? <Package size={18} className="text-red-400 shrink-0 mt-0.5" />
+                                        : <AlertCircle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+                                    }
+                                    <div className="flex-1 min-w-0">
+                                        <p className={`font-bold text-sm ${isCritica ? 'text-red-300' : 'text-amber-300'}`}>
+                                            {a.type} — {a.posName}
+                                        </p>
+                                        <p className="text-slate-400 text-xs mt-0.5">{a.details}</p>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                    {stats.radarAlerts.length > 4 && (
+                        <p className="text-slate-500 text-xs text-center">+{stats.radarAlerts.length - 4} alerta{stats.radarAlerts.length - 4 > 1 ? 's' : ''} más en tu cartera</p>
                     )}
                 </div>
             )}
@@ -524,6 +591,8 @@ const VendedorLayout = ({ user, onLogout }) => {
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
         facturasPorVencer: 0, puntualidadPct: null,
+        runRateActual: 0, runRateNeeded: 0, diasRestantes: 0,
+        radarAlerts: [], stockoutsCount: 0,
     });
     const [loading, setLoading]                       = useState(true);
     const [loadError, setLoadError]                   = useState('');
@@ -718,6 +787,17 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //     que realmente paga comisión).
                 const unidadesDelMes = comisionMesSnap?.exists?.() ? (comisionMesSnap.data().unidadesFacturadas ?? 0) : 0;
 
+                // 2c. Velocidad de Venta — ritmo actual vs. ritmo necesario para
+                //     alcanzar la meta del mes, igual a la fórmula de VentasView
+                //     (ahora escalado a la cartera/meta de este vendedor, sin
+                //     lecturas adicionales).
+                const diasTotalesMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                const diasPasados    = now.getDate();
+                const diasRestantes  = diasTotalesMes - diasPasados;
+                const runRateActual  = diasPasados > 0 ? unidadesDelMes / diasPasados : 0;
+                const ventaRestante  = Math.max(0, metaMensual - unidadesDelMes);
+                const runRateNeeded  = diasRestantes > 0 && ventaRestante > 0 ? ventaRestante / diasRestantes : 0;
+
                 // 3. Pagos de la semana (para comisión) — también depende de reporterId.
                 //    `calculatedCommission` ya viene calculado por
                 //    procesarPagoFactura con la tasa-cohorte congelada de cada
@@ -777,38 +857,96 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const hasAnaquel = anaquelPosIds.length > 0;
                 let anaquelCubiertos = 0;
                 let anaquelOk = false;
-                if (hasAnaquel) {
+
+                // 4c-bis. Visitas de TODA la cartera (no solo anaquel) — una sola
+                //     lectura, reusada para el bono Anaquel (filtrado a
+                //     anaquelPosIds + mar/vie + mes en curso, abajo) y para el
+                //     Radar de Acción Operativa / Quiebres de Stock (todo el
+                //     historial, sin filtro de fecha — necesita la ÚLTIMA visita
+                //     de cada PDV, sea de este mes o no).
+                let visitasCartera = [];
+                if (carteraPosIds.size > 0) {
                     try {
-                        const visitas = [];
-                        for (let i = 0; i < anaquelPosIds.length; i += 10) {
-                            const chunk = anaquelPosIds.slice(i, i + 10);
+                        const idsArr = [...carteraPosIds];
+                        for (let i = 0; i < idsArr.length; i += 10) {
+                            const chunk = idsArr.slice(i, i + 10);
                             const visitasSnap = await getDocs(
                                 query(collection(db, 'visit_reports'), where('posId', 'in', chunk))
                             );
-                            visitas.push(...visitasSnap.docs.map(d => d.data()));
+                            visitasCartera.push(...visitasSnap.docs.map(d => d.data()));
                         }
-                        const visitasMarVie = visitas.filter(v => {
-                            const t = v.createdAt?.toDate?.() || new Date(v.createdAt);
-                            if (t < inicioMes) return false;
-                            const dia = t.getDay(); // 2 = martes, 5 = viernes
-                            return dia === 2 || dia === 5;
-                        });
-                        const inventarioPorPos = {};
-                        visitasMarVie.forEach(v => {
-                            if (!inventarioPorPos[v.posId]) inventarioPorPos[v.posId] = [];
-                            inventarioPorPos[v.posId].push(v.inventoryLevel || 0);
-                        });
-                        anaquelCubiertos = anaquelPosIds.filter(posId => {
-                            const niveles = inventarioPorPos[posId];
-                            if (!niveles || niveles.length === 0) return false;
-                            const promedio = niveles.reduce((a, b) => a + b, 0) / niveles.length;
-                            return promedio > cfg.anaquelMinUnits;
-                        }).length;
-                        anaquelOk = (anaquelCubiertos / anaquelPosIds.length) >= (cfg.anaquelThreshold / 100);
                     } catch (e) {
-                        console.warn('visit_reports (anaquel) load error:', e);
+                        console.warn('visit_reports (cartera) load error:', e);
                     }
                 }
+
+                if (hasAnaquel) {
+                    const visitasMarVie = visitasCartera.filter(v => {
+                        if (!anaquelPosIds.includes(v.posId)) return false;
+                        const t = v.createdAt?.toDate?.() || new Date(v.createdAt);
+                        if (t < inicioMes) return false;
+                        const dia = t.getDay(); // 2 = martes, 5 = viernes
+                        return dia === 2 || dia === 5;
+                    });
+                    const inventarioPorPos = {};
+                    visitasMarVie.forEach(v => {
+                        if (!inventarioPorPos[v.posId]) inventarioPorPos[v.posId] = [];
+                        inventarioPorPos[v.posId].push(v.inventoryLevel || 0);
+                    });
+                    anaquelCubiertos = anaquelPosIds.filter(posId => {
+                        const niveles = inventarioPorPos[posId];
+                        if (!niveles || niveles.length === 0) return false;
+                        const promedio = niveles.reduce((a, b) => a + b, 0) / niveles.length;
+                        return promedio > cfg.anaquelMinUnits;
+                    }).length;
+                    anaquelOk = (anaquelCubiertos / anaquelPosIds.length) >= (cfg.anaquelThreshold / 100);
+                }
+
+                // 4d. Radar de Acción Operativa — misma lógica que useAlerts.js
+                //     (Visita Vencida / Nunca Visitado / Quiebre de Stock) pero
+                //     acotada a la cartera de ESTE vendedor y emparejada por
+                //     `posId` (más confiable que `posName`, ya disponible en
+                //     posDocsMap/cartera sin lecturas extra).
+                const latestVisitByPos = {};
+                visitasCartera.forEach(v => {
+                    const t = v.createdAt?.toDate?.() || new Date(v.createdAt);
+                    if (!latestVisitByPos[v.posId] || t > latestVisitByPos[v.posId]._t) {
+                        latestVisitByPos[v.posId] = { ...v, _t: t };
+                    }
+                });
+                const radarAlerts = [];
+                cartera.forEach(c => {
+                    if (!c.posId) return;
+                    const posData = posDocsMap[c.posId];
+                    if (posData && posData.active === false) return;
+                    const visitInterval = posData?.visitInterval || 7;
+                    const lastVisit = latestVisitByPos[c.posId];
+                    if (lastVisit) {
+                        const lastVisitDate = new Date(lastVisit._t);
+                        lastVisitDate.setHours(0, 0, 0, 0);
+                        const daysSinceLastVisit = (hoy - lastVisitDate) / (1000 * 60 * 60 * 24);
+                        if (daysSinceLastVisit > visitInterval) {
+                            radarAlerts.push({
+                                id: `ovd-${c.posId}`, type: 'Visita Vencida', posName: c.clientName,
+                                details: `Han pasado ${Math.floor(daysSinceLastVisit)} días (intervalo: ${visitInterval}).`,
+                                priorityScore: 2,
+                            });
+                        }
+                        if (lastVisit.stockout) {
+                            radarAlerts.push({
+                                id: `stk-${c.posId}`, type: 'Quiebre de Stock', posName: c.clientName,
+                                details: 'El último reporte indicó 0 unidades.', priorityScore: 1,
+                            });
+                        }
+                    } else {
+                        radarAlerts.push({
+                            id: `nvr-${c.posId}`, type: 'Nunca Visitado', posName: c.clientName,
+                            details: 'Este PDV activo nunca ha registrado una visita.', priorityScore: 2,
+                        });
+                    }
+                });
+                radarAlerts.sort((a, b) => a.priorityScore - b.priorityScore);
+                const stockoutsCount = radarAlerts.filter(a => a.type === 'Quiebre de Stock').length;
 
                 // 5. Facturas por vencer (próximos 3 días, no pagadas) y % de
                 //    facturas cobradas dentro de plazo este mes (Bono
@@ -842,6 +980,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                     activacionOk, puntosActivacion, puntosTotal,
                     facturasPorVencer, puntualidadPct,
                     hasAnaquel, anaquelOk, anaquelCubiertos, anaquelTotal: anaquelPosIds.length,
+                    runRateActual, runRateNeeded, diasRestantes,
+                    radarAlerts, stockoutsCount,
                 };
                 setStats(newStats);
 
