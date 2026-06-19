@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 // ✅ REPARACIÓN: Se restauran TODAS las rutas para usar el alias '@' que tu proyecto espera.
 import { db, functions } from '@/Firebase/config.js'; 
 import { httpsCallable } from 'firebase/functions';
@@ -23,7 +23,9 @@ import TaskList from '@/Components/TaskList.jsx';
 import Modal from '@/Components/Modal.jsx';
 import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx';
 import ProvisionalGpsModal from '@/Components/ProvisionalGpsModal.jsx';
-import Planner from './Planner/Planner.jsx';
+// Lazy: el mercaderista abre la app casi siempre en 'hub', no en 'planner' —
+// cargar leaflet/react-beautiful-dnd solo cuando navega a esa vista.
+const Planner = lazy(() => import('./Planner/Planner.jsx'));
 
 const ReporterSelectionScreen = ({ onSelect }) => {
     const [reporters, setReporters] = useState([]);
@@ -314,7 +316,9 @@ const AppShell = ({ user, role, onLogout }) => {
                     <h2 className="text-lg sm:text-2xl font-semibold text-slate-800 ml-2 truncate">{getGreeting()}</h2>
                 </header>
                 <main className="flex-1 overflow-y-auto bg-slate-50">
-                    {merchandiserContent()}
+                    <Suspense fallback={<div className="flex justify-center items-center h-full"><LoadingSpinner /></div>}>
+                        {merchandiserContent()}
+                    </Suspense>
                 </main>
             </div>
             {posToUpdateGps && <UpdatePosGpsModal pos={posToUpdateGps} onClose={() => setPosToUpdateGps(null)} onConfirm={handleGpsUpdateConfirm} />}

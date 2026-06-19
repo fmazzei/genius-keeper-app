@@ -1,6 +1,6 @@
 // RUTA: src/App.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { onMessage, type MessagePayload } from "firebase/messaging";
@@ -9,10 +9,6 @@ import { useAuth } from '@/context/AuthContext.tsx';
 import { useReportView } from '@/context/ReportViewContext.jsx';
 import { useInvite } from '@/context/InviteContext.tsx';
 import LoginScreen from '@/Pages/LoginScreen.jsx';
-import ManagerLayout from '@/Pages/ManagerLayout.jsx';
-import VendedorLayout from '@/Pages/VendedorLayout.jsx';
-import AppShell from '@/Pages/AppShell.jsx';
-import KromaShell from '@/Kroma/KromaShell.jsx';
 import SecurityLockScreen from '@/Components/SecurityLockScreen.tsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import InAppNotification from '@/Components/InAppNotification.jsx';
@@ -20,6 +16,15 @@ import ReportDetailModalController from '@/Components/ReportDetailModalControlle
 import RouteInviteModal from '@/Components/RouteInviteModal.tsx';
 import ErrorBoundary from '@/Components/ErrorBoundary.jsx';
 import { LogOut, Lock } from 'lucide-react';
+
+// Cada rol usa EXACTAMENTE uno de estos layouts — cargarlos con lazy() evita
+// que, por ejemplo, un mercaderista tenga que descargar/parsear todo el
+// árbol de ManagerLayout (recharts, leaflet, AdminPanel, Planner...) antes
+// de ver su propia pantalla de inicio.
+const ManagerLayout  = lazy(() => import('@/Pages/ManagerLayout.jsx'));
+const VendedorLayout = lazy(() => import('@/Pages/VendedorLayout.jsx'));
+const AppShell       = lazy(() => import('@/Pages/AppShell.jsx'));
+const KromaShell     = lazy(() => import('@/Kroma/KromaShell.jsx'));
 
 interface AppNotification {
   title: string;
@@ -118,7 +123,9 @@ const AppLayout: React.FC = () => {
                 />
             )}
             <ErrorBoundary key={user?.uid || 'anon'}>
-                {renderAppContent()}
+                <Suspense fallback={<div className="flex justify-center items-center h-screen bg-slate-950"><LoadingSpinner /></div>}>
+                    {renderAppContent()}
+                </Suspense>
             </ErrorBoundary>
         </>
     );
