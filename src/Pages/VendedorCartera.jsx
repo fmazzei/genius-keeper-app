@@ -18,6 +18,18 @@ const StatusPill = ({ estado }) => {
     return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">Rechazado</span>;
 };
 
+// ─── Alert badge — refleja el Radar de Acción Operativa del Home para este PDV ──
+const AlertBadge = ({ alerts }) => {
+    if (!alerts || alerts.length === 0) return null;
+    const isCritica = alerts.some(a => a.type === 'Quiebre de Stock');
+    return (
+        <p className={`text-xs flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-700 ${isCritica ? 'text-red-400' : 'text-amber-400'}`}>
+            <AlertCircle size={11} className="shrink-0" />
+            {alerts.map(a => a.type).join(' · ')}
+        </p>
+    );
+};
+
 const EMPTY_FORM = {
     clientName:  '',
     address:     '',
@@ -214,7 +226,7 @@ function groupClients(clients, posById = {}, allPos = []) {
 }
 
 // ─── Main cartera view ────────────────────────────────────────────────────────
-function VendedorCartera({ vendedor }) {
+function VendedorCartera({ vendedor, radarAlertsByPosId = {} }) {
     const [clients, setClients]   = useState([]);
     const [allPos, setAllPos]     = useState([]);
     const [loading, setLoading]   = useState(true);
@@ -262,9 +274,11 @@ function VendedorCartera({ vendedor }) {
 
     const activos    = clients.filter(c => c.estado === 'activo');
     const pendientes = clients.filter(c => c.estado === 'pendiente');
+    const conAlerta  = clients.filter(c => c.posId && radarAlertsByPosId[c.posId]?.length > 0);
 
     const visible = filter === 'activos'    ? activos
                   : filter === 'pendientes' ? pendientes
+                  : filter === 'alertas'    ? conAlerta
                   : clients.filter(c => c.estado !== 'rechazado');
 
     const displayItems = useMemo(() => groupClients(visible, posById, allPos), [visible, posById, allPos]);
@@ -298,18 +312,19 @@ function VendedorCartera({ vendedor }) {
             </div>
 
             {/* ── Filter pills ── */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
                 {[
                     { id: 'todos',      label: 'Todos' },
                     { id: 'activos',    label: `Activos (${activos.length})` },
                     { id: 'pendientes', label: `Pendientes (${pendientes.length})` },
-                ].map(f => (
+                    conAlerta.length > 0 && { id: 'alertas', label: `Con alerta (${conAlerta.length})` },
+                ].filter(Boolean).map(f => (
                     <button
                         key={f.id}
                         onClick={() => setFilter(f.id)}
                         className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                             filter === f.id
-                                ? 'bg-emerald-600 text-white'
+                                ? f.id === 'alertas' ? 'bg-amber-500 text-slate-950' : 'bg-emerald-600 text-white'
                                 : 'bg-slate-800 text-slate-400 border border-slate-700'
                         }`}
                     >
@@ -329,32 +344,48 @@ function VendedorCartera({ vendedor }) {
                     </p>
                 </div>
             ) : (
-                displayItems.map(item => (
-                    item._type === 'chain' ? (
-                        /* ── Chain card ── */
-                        <div key={item._key} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
-                            <div className="flex items-start justify-between gap-2 mb-1">
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                    <Building2 size={14} className="text-slate-500 shrink-0" />
-                                    <p className="font-bold text-white text-sm leading-tight truncate">
-                                        {item.chainName}
-                                    </p>
+                displayItems.map(item => {
+                    if (item._type === 'chain') {
+                        const chainAlerts = item.members.flatMap(m =>
+                            (radarAlertsByPosId[m.posId] || []).map(a => ({ ...a, branchName: m.clientName }))
+                        );
+                        return (
+                            /* ── Chain card ── */
+                            <div key={item._key} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
+                                <div className="flex items-start justify-between gap-2 mb-1">
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <Building2 size={14} className="text-slate-500 shrink-0" />
+                                        <p className="font-bold text-white text-sm leading-tight truncate">
+                                            {item.chainName}
+                                        </p>
+                                    </div>
+                                    <StatusPill estado={item.estado} />
                                 </div>
-                                <StatusPill estado={item.estado} />
-                            </div>
-                            <p className="text-xs text-slate-500 mt-1 pl-5">
-                                {item.branchCount} sucursal{item.branchCount !== 1 ? 'es' : ''}
-                                {item.city ? ` · ${item.city}` : ''}
-                            </p>
-                            <p className="text-[10px] text-blue-500/80 mt-0.5 pl-5">Despacho centralizado</p>
-                            {item.estado === 'pendiente' && (
-                                <p className="text-xs text-amber-400 flex items-center gap-1 mt-2 pt-2 border-t border-slate-700">
-                                    <Clock size={11} className="shrink-0" />
-                                    Esperando aprobación del máster
+                                <p className="text-xs text-slate-500 mt-1 pl-5">
+                                    {item.branchCount} sucursal{item.branchCount !== 1 ? 'es' : ''}
+                                    {item.city ? ` · ${item.city}` : ''}
                                 </p>
-                            )}
-                        </div>
-                    ) : (
+                                <p className="text-[10px] text-blue-500/80 mt-0.5 pl-5">Despacho centralizado</p>
+                                {item.estado === 'pendiente' && (
+                                    <p className="text-xs text-amber-400 flex items-center gap-1 mt-2 pt-2 border-t border-slate-700">
+                                        <Clock size={11} className="shrink-0" />
+                                        Esperando aprobación del máster
+                                    </p>
+                                )}
+                                {chainAlerts.length > 0 && (
+                                    <div className="mt-2 pt-2 border-t border-slate-700 space-y-1">
+                                        {chainAlerts.map(a => (
+                                            <p key={a.id} className={`text-xs flex items-center gap-1.5 ${a.type === 'Quiebre de Stock' ? 'text-red-400' : 'text-amber-400'}`}>
+                                                <AlertCircle size={11} className="shrink-0" />
+                                                {a.branchName}: {a.type}
+                                            </p>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    }
+                    return (
                         /* ── Individual card ── */
                         <div key={item._key} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
                             <div className="flex items-start justify-between gap-2 mb-1">
@@ -398,9 +429,10 @@ function VendedorCartera({ vendedor }) {
                                     Rechazado: "{item.rejectionReason}"
                                 </p>
                             )}
+                            <AlertBadge alerts={radarAlertsByPosId[item.posId]} />
                         </div>
-                    )
-                ))
+                    );
+                })
             )}
         </div>
     );

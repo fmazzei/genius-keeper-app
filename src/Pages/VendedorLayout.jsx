@@ -345,9 +345,10 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                         stats.radarAlerts.slice(0, 4).map(a => {
                             const isCritica = a.type === 'Quiebre de Stock';
                             return (
-                                <div
+                                <button
                                     key={a.id}
-                                    className={`rounded-xl p-3.5 border flex items-start gap-3 ${isCritica ? 'bg-red-500/10 border-red-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}
+                                    onClick={() => onNavigate('cartera')}
+                                    className={`w-full text-left rounded-xl p-3.5 border flex items-start gap-3 active:scale-[0.99] transition-transform ${isCritica ? 'bg-red-500/10 border-red-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}
                                 >
                                     {isCritica
                                         ? <Package size={18} className="text-red-400 shrink-0 mt-0.5" />
@@ -359,12 +360,17 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                                         </p>
                                         <p className="text-slate-400 text-xs mt-0.5">{a.details}</p>
                                     </div>
-                                </div>
+                                </button>
                             );
                         })
                     )}
                     {stats.radarAlerts.length > 4 && (
-                        <p className="text-slate-500 text-xs text-center">+{stats.radarAlerts.length - 4} alerta{stats.radarAlerts.length - 4 > 1 ? 's' : ''} más en tu cartera</p>
+                        <button
+                            onClick={() => onNavigate('cartera')}
+                            className="w-full text-center text-slate-400 text-xs py-1 underline-offset-2 hover:text-white hover:underline transition-colors"
+                        >
+                            +{stats.radarAlerts.length - 4} alerta{stats.radarAlerts.length - 4 > 1 ? 's' : ''} más — ver en tu cartera
+                        </button>
                     )}
                 </div>
             )}
@@ -592,7 +598,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
         facturasPorVencer: 0, puntualidadPct: null,
         runRateActual: 0, runRateNeeded: 0, diasRestantes: 0,
-        radarAlerts: [], stockoutsCount: 0,
+        radarAlerts: [], stockoutsCount: 0, radarAlertsByPosId: {},
     });
     const [loading, setLoading]                       = useState(true);
     const [loadError, setLoadError]                   = useState('');
@@ -927,26 +933,34 @@ const VendedorLayout = ({ user, onLogout }) => {
                         const daysSinceLastVisit = (hoy - lastVisitDate) / (1000 * 60 * 60 * 24);
                         if (daysSinceLastVisit > visitInterval) {
                             radarAlerts.push({
-                                id: `ovd-${c.posId}`, type: 'Visita Vencida', posName: c.clientName,
+                                id: `ovd-${c.posId}`, posId: c.posId, type: 'Visita Vencida', posName: c.clientName,
                                 details: `Han pasado ${Math.floor(daysSinceLastVisit)} días (intervalo: ${visitInterval}).`,
                                 priorityScore: 2,
                             });
                         }
                         if (lastVisit.stockout) {
                             radarAlerts.push({
-                                id: `stk-${c.posId}`, type: 'Quiebre de Stock', posName: c.clientName,
+                                id: `stk-${c.posId}`, posId: c.posId, type: 'Quiebre de Stock', posName: c.clientName,
                                 details: 'El último reporte indicó 0 unidades.', priorityScore: 1,
                             });
                         }
                     } else {
                         radarAlerts.push({
-                            id: `nvr-${c.posId}`, type: 'Nunca Visitado', posName: c.clientName,
+                            id: `nvr-${c.posId}`, posId: c.posId, type: 'Nunca Visitado', posName: c.clientName,
                             details: 'Este PDV activo nunca ha registrado una visita.', priorityScore: 2,
                         });
                     }
                 });
                 radarAlerts.sort((a, b) => a.priorityScore - b.priorityScore);
                 const stockoutsCount = radarAlerts.filter(a => a.type === 'Quiebre de Stock').length;
+
+                // Mapa posId → alertas, para que la Cartera resalte qué PDV
+                // están generando el radar (botón "+N alertas más").
+                const radarAlertsByPosId = {};
+                radarAlerts.forEach(a => {
+                    if (!radarAlertsByPosId[a.posId]) radarAlertsByPosId[a.posId] = [];
+                    radarAlertsByPosId[a.posId].push(a);
+                });
 
                 // 5. Facturas por vencer (próximos 3 días, no pagadas) y % de
                 //    facturas cobradas dentro de plazo este mes (Bono
@@ -981,7 +995,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     facturasPorVencer, puntualidadPct,
                     hasAnaquel, anaquelOk, anaquelCubiertos, anaquelTotal: anaquelPosIds.length,
                     runRateActual, runRateNeeded, diasRestantes,
-                    radarAlerts, stockoutsCount,
+                    radarAlerts, stockoutsCount, radarAlertsByPosId,
                 };
                 setStats(newStats);
 
@@ -1112,7 +1126,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         if (currentView === 'cartera') {
-            return <VendedorCartera vendedor={vendedor} />;
+            return <VendedorCartera vendedor={vendedor} radarAlertsByPosId={stats.radarAlertsByPosId} />;
         }
 
         if (currentView === 'pedidos') {
