@@ -3,73 +3,112 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
-import { Users, Trophy, RefreshCw } from 'lucide-react';
+import { Users, Trophy, RefreshCw, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import { computeMetaMensual } from '@/utils/vendedorMeta.js';
 
-// Exact same tier definitions as VendedorLayout
-const TIERS = {
-    plus:   { label: 'Plus',   min: 1.20, rate: 0.045, color: 'text-emerald-600', bg: 'bg-emerald-100',  bar: 'bg-emerald-500'  },
-    optima: { label: 'Óptima', min: 1.00, rate: 0.040, color: 'text-blue-600',    bg: 'bg-blue-100',     bar: 'bg-blue-500'     },
-    basica: { label: 'Básica', min: 0.90, rate: 0.035, color: 'text-amber-600',   bg: 'bg-amber-100',    bar: 'bg-amber-500'    },
-    baja:   { label: 'Baja',   min: 0,    rate: 0,     color: 'text-slate-500',   bg: 'bg-slate-100',    bar: 'bg-slate-400'    },
+// Estilos visuales por nombre de nivel — el nivel/tasa real de cada
+// vendedor viene congelado en `comisiones_mensuales` (puede variar si su
+// commissionConfig fue personalizado), así que esto es solo apariencia,
+// con un estilo neutro de respaldo para nombres de nivel no reconocidos.
+const TIER_STYLE_BY_LABEL = {
+    'Plus':    { color: 'text-emerald-600', bg: 'bg-emerald-100', bar: 'bg-emerald-500' },
+    'Óptima':  { color: 'text-blue-600',    bg: 'bg-blue-100',    bar: 'bg-blue-500'    },
+    'Básica':  { color: 'text-amber-600',   bg: 'bg-amber-100',   bar: 'bg-amber-500'   },
+    'Baja':    { color: 'text-slate-500',   bg: 'bg-slate-100',   bar: 'bg-slate-400'   },
 };
+const FALLBACK_TIER_STYLE = { color: 'text-slate-500', bg: 'bg-slate-100', bar: 'bg-slate-400' };
 
-function getTier(ratio) {
-    if (ratio >= TIERS.plus.min)   return TIERS.plus;
-    if (ratio >= TIERS.optima.min) return TIERS.optima;
-    if (ratio >= TIERS.basica.min) return TIERS.basica;
-    return TIERS.baja;
-}
-
-function startOfMonth() {
+function mesActual() {
     const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function monthLabel() {
     return new Date().toLocaleString('es', { month: 'long', year: 'numeric' });
 }
 
+const ESTADO_BADGE = {
+    pagada:    'bg-emerald-100 text-emerald-700',
+    vencida:   'bg-red-100 text-red-700',
+    pendiente: 'bg-amber-100 text-amber-700',
+    anulada:   'bg-slate-100 text-slate-500',
+};
+
+// Nivel del agregado del equipo, basado en los umbrales por defecto — los
+// vendedores individuales pueden tener commissionConfig personalizado, pero
+// para la tarjeta de "Meta Global" no hay un config único al que atribuirla.
+function getTeamTier(ratio) {
+    const label = ratio >= 1.20 ? 'Plus' : ratio >= 1.00 ? 'Óptima' : ratio >= 0.90 ? 'Básica' : 'Baja';
+    return { label, ...TIER_STYLE_BY_LABEL[label] };
+}
+
 const RendimientoComercialView = () => {
     const [vendedores, setVendedores] = useState([]);
     const [loading, setLoading]       = useState(true);
     const [error, setError]           = useState('');
+    const [expandedId, setExpandedId] = useState(null);
 
     const load = async () => {
         setLoading(true);
         setError('');
         try {
-            // 1. All active vendedores
-            const vendSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')));
-            const vends = vendSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(v => v.active !== false);
+            const mes = mesActual();
 
+            // Todo lo que mide ventas reales viene de lo que Zoho Books ya
+            // facturó (no de despachos/pedidos, que son actividad previa a
+            // la factura y pueden no llegar a concretarse). Las 4 lecturas
+            // son independientes entre sí, así que corren en paralelo —
+            // con 50 vendedores sigue siendo una sola lectura por
+            // colección, no una por vendedor.
+            const [vendSnap, comisionesSnap, pagosSnap, facturasSnap] = await Promise.all([
+                getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
+                getDocs(query(collection(db, 'comisiones_mensuales'), where('mes', '==', mes))),
+                getDocs(query(collection(db, 'pagos_registrados'), where('mesCohorte', '==', mes))),
+                getDocs(query(collection(db, 'facturas_vendedor'), where('mesCohorte', '==', mes))),
+            ]);
+
+            const vends = vendSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(v => v.active !== false);
             if (vends.length === 0) { setVendedores([]); setLoading(false); return; }
 
-            // 2. This month's despachos
-            const mos = startOfMonth();
-            const despSnap = await getDocs(query(collection(db, 'despachos'), where('createdAt', '>=', mos)));
-            const unitsByReporter = {};
-            despSnap.docs.forEach(d => {
-                const { reporterId, cantidad } = d.data();
-                if (reporterId) unitsByReporter[reporterId] = (unitsByReporter[reporterId] || 0) + (Number(cantidad) || 0);
+            // Unidades facturadas + nivel/tasa-cohorte del mes, congelados por
+            // sincronizarFacturaDesdeZoho (uno por vendedor, no por reporter).
+            const comisionByVendedor = {};
+            comisionesSnap.docs.forEach(d => {
+                const data = d.data();
+                if (data.vendedorId) comisionByVendedor[data.vendedorId] = data;
             });
 
-            // 3. This month's pagos (weekly commissions source)
-            const pagosSnap = await getDocs(query(collection(db, 'pagos_registrados'), where('createdAt', '>=', mos)));
-            const pagosByReporter = {};
+            // Comisión del mes: calculatedCommission ya viene calculado con
+            // la tasa-cohorte de cada factura (procesarPagoFactura), solo se suma.
+            const comisionMesByVendedor = {};
             pagosSnap.docs.forEach(d => {
-                const { reporterId, montoUSD } = d.data();
-                if (reporterId) pagosByReporter[reporterId] = (pagosByReporter[reporterId] || 0) + (Number(montoUSD) || 0);
+                const { vendedorId, calculatedCommission } = d.data();
+                if (vendedorId) comisionMesByVendedor[vendedorId] = (comisionMesByVendedor[vendedorId] || 0) + (Number(calculatedCommission) || 0);
+            });
+
+            // Detalle de facturas del mes por vendedor, para el desplegable.
+            const facturasByVendedor = {};
+            facturasSnap.docs.forEach(d => {
+                const data = d.data();
+                if (!data.vendedorId) return;
+                (facturasByVendedor[data.vendedorId] ||= []).push({ id: d.id, ...data });
+            });
+            Object.values(facturasByVendedor).forEach(list => {
+                list.sort((a, b) => (b.fecha?.toMillis?.() || 0) - (a.fecha?.toMillis?.() || 0));
             });
 
             const enriched = vends.map(v => {
-                const units = unitsByReporter[v.reporterId] || 0;
+                const cm = comisionByVendedor[v.id];
+                const units = cm?.unidadesFacturadas || 0;
                 const { metaMensual: goal } = computeMetaMensual(v);
                 const ratio = goal > 0 ? units / goal : 0;
-                const tier  = getTier(ratio);
-                const comision = (pagosByReporter[v.reporterId] || 0) * tier.rate;
-                return { ...v, units, goal, ratio, tier, comision };
+                const tierLabel = cm?.nivel || 'Baja';
+                const tierRate  = cm?.tasaActual != null ? cm.tasaActual / 100 : 0;
+                const tier = { label: tierLabel, rate: tierRate, ...(TIER_STYLE_BY_LABEL[tierLabel] || FALLBACK_TIER_STYLE) };
+                const comision = comisionMesByVendedor[v.id] || 0;
+                const facturas = facturasByVendedor[v.id] || [];
+                return { ...v, units, goal, ratio, tier, comision, facturas };
             }).sort((a, b) => b.ratio - a.ratio);
 
             setVendedores(enriched);
@@ -85,7 +124,7 @@ const RendimientoComercialView = () => {
     const totalUnits = vendedores.reduce((s, v) => s + v.units, 0);
     const totalGoal  = vendedores.reduce((s, v) => s + v.goal,  0);
     const teamRatio  = totalGoal > 0 ? totalUnits / totalGoal : 0;
-    const teamTier   = getTier(teamRatio);
+    const teamTier   = getTeamTier(teamRatio);
     const teamPct    = Math.round(teamRatio * 100);
 
     if (loading) return <div className="flex items-center justify-center h-full"><LoadingSpinner /></div>;
@@ -194,6 +233,39 @@ const RendimientoComercialView = () => {
                                             </div>
                                         )}
                                     </div>
+
+                                    {/* Detalle de ventas del mes (facturas Zoho) */}
+                                    <button
+                                        onClick={() => setExpandedId(expandedId === v.id ? null : v.id)}
+                                        className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-600 pt-3 mt-1 border-t border-slate-50"
+                                    >
+                                        <FileText size={13} />
+                                        {v.facturas.length} factura{v.facturas.length !== 1 ? 's' : ''} este mes
+                                        {expandedId === v.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                    </button>
+
+                                    {expandedId === v.id && (
+                                        <div className="mt-2 space-y-1.5">
+                                            {v.facturas.length === 0 ? (
+                                                <p className="text-xs text-slate-400 text-center py-2">Sin facturas registradas este mes.</p>
+                                            ) : v.facturas.map(f => (
+                                                <div key={f.id} className="flex items-center justify-between gap-2 bg-slate-50 rounded-lg px-3 py-2">
+                                                    <div className="min-w-0">
+                                                        <p className="text-xs font-bold text-slate-700 truncate">#{f.numero} · {f.clienteName}</p>
+                                                        <p className="text-[11px] text-slate-400">
+                                                            {f.fecha?.toDate?.().toLocaleDateString('es') || '—'} · {f.unidades || 0} uds
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-right shrink-0">
+                                                        <p className="text-xs font-bold text-slate-700">${(f.monto || 0).toFixed(0)}</p>
+                                                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${ESTADO_BADGE[f.estado] || 'bg-slate-100 text-slate-500'}`}>
+                                                            {f.estado}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
