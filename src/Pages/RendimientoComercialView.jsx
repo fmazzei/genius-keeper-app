@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
-import { Users, Trophy, RefreshCw, ChevronDown, ChevronUp, FileText } from 'lucide-react';
+import { Users, Trophy, RefreshCw, ChevronDown, ChevronUp, FileText, AlertTriangle } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import { computeMetaMensual } from '@/utils/vendedorMeta.js';
 
@@ -45,6 +45,8 @@ function getTeamTier(ratio) {
 
 const RendimientoComercialView = () => {
     const [vendedores, setVendedores] = useState([]);
+    const [companyTotals, setCompanyTotals] = useState({ units: 0, monto: 0 });
+    const [sinAsignar, setSinAsignar] = useState([]);
     const [loading, setLoading]       = useState(true);
     const [error, setError]           = useState('');
     const [expandedId, setExpandedId] = useState(null);
@@ -69,7 +71,6 @@ const RendimientoComercialView = () => {
             ]);
 
             const vends = vendSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(v => v.active !== false);
-            if (vends.length === 0) { setVendedores([]); setLoading(false); return; }
 
             // Unidades facturadas + nivel/tasa-cohorte del mes, congelados por
             // sincronizarFacturaDesdeZoho (uno por vendedor, no por reporter).
@@ -87,16 +88,40 @@ const RendimientoComercialView = () => {
                 if (vendedorId) comisionMesByVendedor[vendedorId] = (comisionMesByVendedor[vendedorId] || 0) + (Number(calculatedCommission) || 0);
             });
 
-            // Detalle de facturas del mes por vendedor, para el desplegable.
+            // Detalle de facturas del mes: por vendedor para el desplegable de
+            // cada tarjeta, y aparte un balde de facturas SIN vendedor
+            // resuelto (salesperson_name de Zoho sin mapear a ningún
+            // zohoSalespersonName en Administración → Vendedores). Esas
+            // facturas son ventas reales de Lacteoca — no deben perderse del
+            // total de la empresa solo porque no están atribuidas a nadie.
+            // Las anuladas (eliminadas/anuladas desde la herramienta de
+            // Integraciones) ya tienen sus unidades revertidas del acumulado
+            // del vendedor, así que se excluyen de los totales (se siguen
+            // listando en el detalle, para auditoría).
             const facturasByVendedor = {};
+            const sinAsignarList = [];
+            let unitsCompany = 0;
+            let montoCompany = 0;
             facturasSnap.docs.forEach(d => {
                 const data = d.data();
-                if (!data.vendedorId) return;
-                (facturasByVendedor[data.vendedorId] ||= []).push({ id: d.id, ...data });
+                const f = { id: d.id, ...data };
+                if (data.estado !== 'anulada') {
+                    unitsCompany += Number(data.unidades) || 0;
+                    montoCompany += Number(data.monto) || 0;
+                }
+                if (data.vendedorId) {
+                    (facturasByVendedor[data.vendedorId] ||= []).push(f);
+                } else {
+                    sinAsignarList.push(f);
+                }
             });
-            Object.values(facturasByVendedor).forEach(list => {
-                list.sort((a, b) => (b.fecha?.toMillis?.() || 0) - (a.fecha?.toMillis?.() || 0));
-            });
+            const porFechaDesc = (a, b) => (b.fecha?.toMillis?.() || 0) - (a.fecha?.toMillis?.() || 0);
+            Object.values(facturasByVendedor).forEach(list => list.sort(porFechaDesc));
+            sinAsignarList.sort(porFechaDesc);
+            setCompanyTotals({ units: unitsCompany, monto: montoCompany });
+            setSinAsignar(sinAsignarList);
+
+            if (vends.length === 0) { setVendedores([]); setLoading(false); return; }
 
             const enriched = vends.map(v => {
                 const cm = comisionByVendedor[v.id];
@@ -121,7 +146,11 @@ const RendimientoComercialView = () => {
 
     useEffect(() => { load(); }, []);
 
-    const totalUnits = vendedores.reduce((s, v) => s + v.units, 0);
+    // Meta Global usa el total FACTURADO de toda la empresa (companyTotals,
+    // incluye facturas sin vendedor resuelto) — no la suma de lo atribuido a
+    // vendedores, que subestimaría el desempeño real si hay facturas sin
+    // mapear. La meta (denominador) sigue siendo la suma de metas individuales.
+    const totalUnits = companyTotals.units;
     const totalGoal  = vendedores.reduce((s, v) => s + v.goal,  0);
     const teamRatio  = totalGoal > 0 ? totalUnits / totalGoal : 0;
     const teamTier   = getTeamTier(teamRatio);
@@ -169,7 +198,53 @@ const RendimientoComercialView = () => {
                         </span>
                         <span className="text-white/40 text-xs">{vendedores.length} vendedores activos</span>
                     </div>
+                    <p className="text-white/40 text-xs mt-2">${companyTotals.monto.toLocaleString()} facturado este mes (Lacteoca, todas las cuentas)</p>
                 </div>
+
+                {/* Facturas sin vendedor asignado — ventas reales que no se
+                    reflejan en ninguna tarjeta de abajo porque su
+                    salesperson_name de Zoho no coincide con ningún
+                    zohoSalespersonName configurado en Administración →
+                    Vendedores. Ya están sumadas en "Meta Global" arriba. */}
+                {sinAsignar.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                        <button
+                            onClick={() => setExpandedId(expandedId === 'sin-asignar' ? null : 'sin-asignar')}
+                            className="w-full flex items-start gap-2.5 text-left"
+                        >
+                            <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-amber-800">
+                                    {sinAsignar.length} factura{sinAsignar.length !== 1 ? 's' : ''} sin vendedor asignado
+                                </p>
+                                <p className="text-xs text-amber-700 mt-0.5">
+                                    Cuentan en el total de la empresa, pero no en la cartera de ningún vendedor. Configura el "Nombre en Zoho" en Administración → Vendedores para mapearlas.
+                                </p>
+                            </div>
+                            {expandedId === 'sin-asignar' ? <ChevronUp size={16} className="text-amber-500 shrink-0" /> : <ChevronDown size={16} className="text-amber-500 shrink-0" />}
+                        </button>
+                        {expandedId === 'sin-asignar' && (
+                            <div className="mt-3 space-y-1.5">
+                                {sinAsignar.map(f => (
+                                    <div key={f.id} className="flex items-center justify-between gap-2 bg-white/60 rounded-lg px-3 py-2">
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-bold text-amber-900 truncate">#{f.numero} · {f.clienteName}</p>
+                                            <p className="text-[11px] text-amber-700">
+                                                {f.fecha?.toDate?.().toLocaleDateString('es') || '—'} · {f.unidades || 0} uds
+                                            </p>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <p className="text-xs font-bold text-amber-900">${(f.monto || 0).toFixed(0)}</p>
+                                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${ESTADO_BADGE[f.estado] || 'bg-slate-100 text-slate-500'}`}>
+                                                {f.estado}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* Vendor list */}
                 {vendedores.length === 0 ? (
