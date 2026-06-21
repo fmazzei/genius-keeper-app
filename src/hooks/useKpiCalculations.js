@@ -93,17 +93,36 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         const reports = [...filteredReports].sort((a, b) => b.createdAt.seconds - a.createdAt.seconds);
         const totalVisits = reports.length;
 
-        let daysInRange = 1;
-        if (reports.length > 1) {
-            const diffTime = Math.abs(
-                new Date(reports[0].createdAt.seconds * 1000) - new Date(reports[reports.length - 1].createdAt.seconds * 1000)
-            );
-            daysInRange = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        }
-        if (timeRange !== 'all') daysInRange = parseInt(timeRange.replace('d', ''));
+        // Rotación real: 'orderQuantity' es lo que el mercaderista PIDE en reposición,
+        // no lo que el consumidor compra — la mayoría de visitas no requieren pedido
+        // aunque el producto sí se esté vendiendo, así que usarlo como proxy de venta
+        // subestima brutalmente la velocidad real (y dispara los Días de Inventario).
+        // En su lugar, se mide la caída real de `inventoryLevel` entre visitas
+        // consecutivas al mismo PDV, sumando de vuelta lo pedido en la visita anterior
+        // (se asume ya entregado antes de la siguiente visita).
+        const reportsByPosForRotation = reports.reduce((acc, r) => {
+            if (!r.posId) return acc;
+            if (!acc[r.posId]) acc[r.posId] = [];
+            acc[r.posId].push(r);
+            return acc;
+        }, {});
 
-        const totalUnitsSold    = reports.reduce((sum, r) => sum + (Number(r.orderQuantity) || 0), 0);
-        const averageDailySales = safeAvg(totalUnitsSold, daysInRange);
+        let totalUnitsSold = 0;
+        let totalStoreDays = 0;
+        Object.values(reportsByPosForRotation).forEach(storeReports => {
+            const sorted = [...storeReports].sort((a, b) => a.createdAt.seconds - b.createdAt.seconds);
+            for (let i = 1; i < sorted.length; i++) {
+                const prev = sorted[i - 1];
+                const curr = sorted[i];
+                const daysBetween = (curr.createdAt.seconds - prev.createdAt.seconds) / 86400;
+                if (daysBetween <= 0) continue;
+                const stockDisponible = (Number(prev.inventoryLevel) || 0) + (Number(prev.orderQuantity) || 0);
+                const consumido = Math.max(0, stockDisponible - (Number(curr.inventoryLevel) || 0));
+                totalUnitsSold += consumido;
+                totalStoreDays += daysBetween;
+            }
+        });
+        const averageDailySales = safeAvg(totalUnitsSold, totalStoreDays);
         const productRotation   = { total: totalUnitsSold, averageDaily: averageDailySales };
 
         const stockoutCount = reports.filter(r => r.stockout === true).length;
