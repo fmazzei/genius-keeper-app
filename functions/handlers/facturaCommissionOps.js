@@ -11,6 +11,21 @@ const admin = require("firebase-admin");
 const { DEFAULT_COMMISSION_CONFIG, buildTiers, getTierFromConfig, diffDias } = require('./commissionEngine');
 
 /**
+ * Normaliza el nombre de una razón social (customer_name de Zoho) a una clave
+ * estable usable como docId de `zoho_customer_map`. Se usa tanto al escribir el
+ * mapa (adminTools) como al resolver el vendedor en el webhook (webhooks.js),
+ * por eso vive aquí (fuente única de verdad, evita drift).
+ */
+function normalizeCustomerKey(name) {
+    return String(name || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/\//g, '-') // '/' no es válido en un docId de Firestore
+        .slice(0, 400);
+}
+
+/**
  * Determina/congela la tasa-cohorte de una factura: acumula sus unidades en
  * `comisiones_mensuales/{vendedorId}_{mesCohorte}` y devuelve el tier
  * resultante DESPUÉS de sumar esas unidades — esa es la tasa que se congela
@@ -174,4 +189,5 @@ module.exports = {
     congelarTasaCohorte,
     procesarPagoFactura,
     revertirAcumulados,
+    normalizeCustomerKey,
 };

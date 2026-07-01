@@ -2221,6 +2221,102 @@ const CompetitorManagement = () => {
 
 // ─── Gestión de facturas Zoho — reasignar / anular / eliminar ────────────────
 
+// Fase 3.3/3.4 — Vinculación de razones sociales (clientes Zoho) → vendedor.
+// Carga inicial en lote de todas las razones sociales ya vistas en facturas;
+// un clic por cliente nuevo. Al vincular, el backend re-atribuye las facturas
+// ya recibidas de esa razón social (ver vincularRazonSocial en adminTools.js).
+const VinculacionRazonesSociales = () => {
+    const [razones, setRazones]       = useState([]);
+    const [vendedores, setVendedores] = useState([]);
+    const [loading, setLoading]       = useState(true);
+    const [saving, setSaving]         = useState('');
+    const [msg, setMsg]               = useState('');
+
+    const cargar = async () => {
+        setLoading(true); setMsg('');
+        try {
+            const [factSnap, mapSnap, vendSnap] = await Promise.all([
+                getDocs(collection(db, 'facturas_vendedor')),
+                getDocs(collection(db, 'zoho_customer_map')),
+                getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
+            ]);
+            const mapByName = {};
+            mapSnap.docs.forEach(d => { const x = d.data(); if (x.customerName) mapByName[x.customerName] = x.vendedorId; });
+            const agg = {};
+            factSnap.docs.forEach(d => {
+                const f = d.data();
+                const name = f.clienteName || '(sin nombre)';
+                if (!agg[name]) agg[name] = { customerName: name, count: 0, sinAsignar: 0 };
+                agg[name].count++;
+                if (!f.vendedorId) agg[name].sinAsignar++;
+            });
+            const list = Object.values(agg).map(r => ({ ...r, mapVendedorId: mapByName[r.customerName] || '' }));
+            list.sort((a, b) => (a.mapVendedorId ? 1 : 0) - (b.mapVendedorId ? 1 : 0) || a.customerName.localeCompare(b.customerName));
+            setRazones(list);
+            setVendedores(vendSnap.docs.map(d => ({ id: d.id, name: d.data().name || d.data().email || d.id })));
+        } catch (e) { setMsg('Error al cargar: ' + e.message); }
+        setLoading(false);
+    };
+    useEffect(() => { cargar(); }, []);
+
+    const vincular = async (customerName, vendedorId) => {
+        if (!vendedorId) return;
+        setSaving(customerName); setMsg('');
+        try {
+            const fn = httpsCallable(functions, 'vincularRazonSocial');
+            const res = await fn({ customerName, vendedorId });
+            setRazones(rs => rs.map(r => r.customerName === customerName ? { ...r, mapVendedorId: vendedorId, sinAsignar: 0 } : r));
+            setMsg(`✓ "${customerName}" vinculada · ${res.data?.backfilled || 0} factura(s) actualizada(s).`);
+        } catch (e) { setMsg('Error: ' + e.message); }
+        setSaving('');
+    };
+
+    const pendientes = razones.filter(r => !r.mapVendedorId).length;
+
+    return (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+            <div className="flex items-center justify-between mb-1">
+                <p className="font-bold text-slate-800 text-sm">Vinculación de clientes Zoho → Vendedor</p>
+                <button onClick={cargar} className="text-xs font-semibold text-brand-blue">{loading ? 'Cargando…' : 'Actualizar'}</button>
+            </div>
+            <p className="text-xs text-slate-500 mb-3">
+                Asigna cada razón social de Zoho a su vendedor (una sola vez). Al vincular, sus facturas ya recibidas se re-atribuyen solas.
+            </p>
+            {pendientes > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg px-3 py-2 mb-3 text-xs text-amber-800 font-semibold">
+                    {pendientes} razón{pendientes === 1 ? '' : 'es'} social{pendientes === 1 ? '' : 'es'} por vincular
+                </div>
+            )}
+            {msg && <p className="text-xs mb-2 text-slate-600">{msg}</p>}
+            {loading ? (
+                <p className="text-slate-400 text-xs">Cargando…</p>
+            ) : razones.length === 0 ? (
+                <p className="text-slate-400 text-xs">Aún no hay facturas recibidas.</p>
+            ) : (
+                <div className="space-y-2 max-h-96 overflow-auto">
+                    {razones.map(r => (
+                        <div key={r.customerName} className={`flex items-center gap-2 p-2 rounded-lg border ${r.mapVendedorId ? 'border-slate-100' : 'border-amber-200 bg-amber-50/40'}`}>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm text-slate-800 truncate">{r.customerName}</p>
+                                <p className="text-[10px] text-slate-400">{r.count} factura(s){r.sinAsignar > 0 ? ` · ${r.sinAsignar} sin asignar` : ''}</p>
+                            </div>
+                            <select
+                                value={r.mapVendedorId}
+                                disabled={saving === r.customerName}
+                                onChange={e => vincular(r.customerName, e.target.value)}
+                                className="w-40 shrink-0 p-2 border border-slate-300 rounded-lg text-xs bg-white"
+                            >
+                                <option value="">{saving === r.customerName ? 'Guardando…' : 'Elegir vendedor…'}</option>
+                                {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                            </select>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // DIAGNÓSTICO (temporal): muestra el payload completo del último webhook de
 // Zoho recibido (guardado en settings/zohoLastPayload). Sirve para confirmar
 // bajo qué nombre viene el customer_id. A prueba de caché de frontend.
@@ -2541,6 +2637,8 @@ const IntegracionesSection = () => {
                     </>
                 )}
             </div>
+
+            <VinculacionRazonesSociales />
 
             <ZohoPayloadDiag />
 

@@ -115,6 +115,14 @@ service cloud.firestore {
       allow write: if isAdmin() || isMaster();
     }
 
+    match /zoho_customer_map/{key} {
+      // Mapa razón social (customer_name de Zoho) → vendedor (Fase 3.3).
+      // Lo escribe la Cloud Function vincularRazonSocial (Admin SDK); desde el
+      // cliente solo se lee para mostrar la herramienta de vinculación.
+      allow get, list: if isAuthenticated() && (isAdmin() || isMaster());
+      allow write: if isAdmin() || isMaster();
+    }
+
     match /pos/{posId} {
       allow get, list: if isAuthenticated();
       allow create: if isMaster() || isAdmin() || isMerchandiser();

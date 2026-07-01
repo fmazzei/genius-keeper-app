@@ -3,7 +3,7 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { mesCohorteFromDate, diffDias } = require('./commissionEngine');
-const { congelarTasaCohorte, procesarPagoFactura } = require('./facturaCommissionOps');
+const { congelarTasaCohorte, procesarPagoFactura, normalizeCustomerKey } = require('./facturaCommissionOps');
 
 // Secreto compartido para validar los webhooks de Zoho Books, inyectado como
 // variable de entorno desde functions/.env.<project-id> (generado por CI a
@@ -147,6 +147,26 @@ exports.procesarComisionesDesdeZoho = withZohoSecret(async (req, res) => {
  *
  * @returns {Promise<{id: string, data: object} | null>}
  */
+/**
+ * Resuelve el vendedor por CARTERA: mapea la razón social de la factura
+ * (`customer_name`) al vendedor dueño de ese cliente, según el mapa
+ * `zoho_customer_map` que se construye una sola vez desde AdminPanel →
+ * Integraciones (Fase 3.3). Esta es la vía PRINCIPAL de atribución; el
+ * salesperson de Zoho queda solo como respaldo (ver handler).
+ *
+ * @returns {Promise<{id: string, data: object} | null>}
+ */
+async function resolveVendedorPorRazonSocial(customerName) {
+    const key = normalizeCustomerKey(customerName);
+    if (!key) return null;
+    const mapSnap = await admin.firestore().doc(`zoho_customer_map/${key}`).get();
+    if (!mapSnap.exists) return null;
+    const vendedorId = mapSnap.data().vendedorId;
+    if (!vendedorId) return null;
+    const vSnap = await admin.firestore().doc(`users_metadata/${vendedorId}`).get();
+    return vSnap.exists ? { id: vendedorId, data: vSnap.data() } : null;
+}
+
 async function resolveVendedor(salespersonName) {
     const name = (salespersonName || '').trim().toLowerCase();
     if (!name) return null;
@@ -253,9 +273,14 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
             return;
         }
 
-        const vendedor = await resolveVendedor(invoice.salesperson_name);
+        // Atribución por CARTERA (razón social → vendedor) como vía principal;
+        // el salesperson de Zoho queda solo como respaldo para clientes aún no
+        // vinculados. Si ninguna resuelve, la factura queda sin asignar (visible
+        // en la herramienta de vinculación para asignarla con un clic).
+        let vendedor = await resolveVendedorPorRazonSocial(invoice.customer_name);
+        if (!vendedor) vendedor = await resolveVendedor(invoice.salesperson_name);
         if (!vendedor) {
-            functions.logger.warn(`No se encontró vendedor para salesperson_name "${invoice.salesperson_name}" (factura #${invoice.invoice_number}). Configura "Nombre en Zoho" en Administración.`);
+            functions.logger.warn(`Factura #${invoice.invoice_number}: razón social "${invoice.customer_name}" sin vendedor. Vincúlala en AdminPanel → Integraciones.`);
         }
 
         const estado = invoice.status === 'paid' ? 'pagada'
