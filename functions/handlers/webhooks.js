@@ -264,6 +264,11 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
         const zohoCustomerId = invoice.customer_id != null ? String(invoice.customer_id)
             : (invoice.contact_id != null ? String(invoice.contact_id) : null);
 
+        // DIAGNÓSTICO (temporal): imprime la estructura real del payload de Zoho
+        // para ubicar el identificador del cliente. Quitar una vez confirmado el
+        // nombre/ubicación del campo customer_id.
+        functions.logger.log(`[DIAG customer_id] factura #${invoice.invoice_number} — body keys: [${Object.keys(req.body || {}).join(', ')}] | invoice keys: [${Object.keys(invoice || {}).join(', ')}] | customer_id=${invoice.customer_id} | contact_id=${invoice.contact_id} | customer_name=${invoice.customer_name}`);
+
         const facturasRef = admin.firestore().collection('facturas_vendedor');
         const existingSnap = await facturasRef.where('numero', '==', invoice.invoice_number).limit(1).get();
         const existing     = existingSnap.empty ? null : existingSnap.docs[0];

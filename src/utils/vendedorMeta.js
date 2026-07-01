@@ -6,6 +6,13 @@ const MS_DIA = 86400000;
 
 const toDate = (v) => {
     if (!v) return null;
+    // Una fecha "YYYY-MM-DD" (como la que guarda el input date de fechaIngreso)
+    // se parsea en LOCAL, no en UTC — si no, en zonas negativas (Venezuela UTC-4)
+    // se corre un día hacia atrás (15/06 se vería como 14/06).
+    if (typeof v === 'string') {
+        const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
     const d = v?.toDate ? v.toDate() : new Date(v);
     return isNaN(d?.getTime?.()) ? null : d;
 };
