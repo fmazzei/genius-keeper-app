@@ -10,6 +10,7 @@
 // src/Components/CommissionConstructor.jsx.
 const DEFAULT_COMMISSION_CONFIG = {
     metaMensual: 2400,
+    precioUnidad: 5.6,
     salarioFijo: 300,
     viaticosSemanales: 25,
     tiers: [
@@ -18,7 +19,7 @@ const DEFAULT_COMMISSION_CONFIG = {
         { label: 'Básica', minPct: 90, rate: 3.5 },
     ],
     bajaRate: 3.5,
-    bonusPuntualidad: 1.0,
+    bonusPuntualidad: 2.0, // "Bono Cobranza" en la UI (ver CommissionConstructor.jsx)
     bonusActivacion: 1.0,
     activacionThreshold: 80,
     activacionMinUnits: 24,
@@ -26,7 +27,12 @@ const DEFAULT_COMMISSION_CONFIG = {
     anaquelThreshold: 80,
     anaquelMinUnits: 12,
     arranque: [],
-    facturaMaxDias: 60,
+    // Cobranza + Cuentas Recuperadas — el motor los consume en la Fase 3 del
+    // rediseño (por ahora solo se persisten desde la UI para mantener el espejo).
+    metaCobranza: 1340,
+    cobranzaDias: 30,
+    comisionRecuperadas: 5.0,
+    facturaMaxDias: 45,
 };
 
 /**

@@ -3,11 +3,13 @@
 import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
-import { Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, AlertCircle, FileText } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
+import CommissionProposalDoc from '@/Components/CommissionProposalDoc.jsx';
 
 export const DEFAULT_COMMISSION_CONFIG = {
     metaMensual:        2400,
+    precioUnidad:        5.6,   // precio de venta por unidad — convierte metas uds↔$ y alimenta la propuesta
     salarioFijo:        300,
     viaticosSemanales:  25,
     tiers: [
@@ -16,7 +18,11 @@ export const DEFAULT_COMMISSION_CONFIG = {
         { label: 'Básica', minPct: 90,  rate: 3.5 },
     ],
     bajaRate:            3.5,
-    bonusPuntualidad:    1.0,
+    // "Bono Cobranza" en la UI. El gating por volumen/plazo (cobrar metaCobranza
+    // en cobranzaDias) se cablea en la Fase 3 del rediseño de comisiones; por
+    // ahora este campo guarda la TASA del bono (reusa la clave existente para no
+    // romper el motor/Home que ya la leen).
+    bonusPuntualidad:    2.0,
     bonusActivacion:     1.0,
     activacionThreshold: 80,
     activacionMinUnits:  24,
@@ -24,7 +30,12 @@ export const DEFAULT_COMMISSION_CONFIG = {
     anaquelThreshold:    80,
     anaquelMinUnits:     12,
     arranque:            [],
-    facturaMaxDias:      60,
+    // Cobranza (caja)
+    metaCobranza:        1340,  // uds a cobrar en el mes (≈ costos del mes)
+    cobranzaDias:        30,    // ventana en días para ganar el Bono Cobranza
+    // Cuentas Recuperadas: facturas heredadas de la cartera que el vendedor cobra
+    comisionRecuperadas: 5.0,   // % flat sobre lo cobrado de esas facturas adoptadas
+    facturaMaxDias:      45,    // >45 días sin cobrar → la comisión se anula
 };
 
 // ─── Inline number row ────────────────────────────────────────────────────────
@@ -121,6 +132,8 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
     const [saving, setSaving]       = useState(false);
     const [error, setError]         = useState('');
     const [simAmount, setSimAmount] = useState(10000);
+    const [showProposal, setShowProposal] = useState(false);
+    const [vendedorName, setVendedorName] = useState(vendedor.name || vendedor.nombre || 'Vendedor');
 
     useEffect(() => {
         (async () => {
@@ -128,6 +141,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                 const snap = await getDoc(doc(db, 'users_metadata', vendedor.id));
                 if (snap.exists()) {
                     const userData = snap.data();
+                    if (userData.name) setVendedorName(userData.name);
                     // metaMensual lives at the top level; merge into config
                     const topMeta = userData.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
                     const merged = {
@@ -219,19 +233,62 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 )}
 
+                {/* ── 0. Descargar propuesta ── */}
+                <button
+                    type="button"
+                    onClick={() => setShowProposal(true)}
+                    className="w-full flex items-center justify-center gap-2 bg-[#0D2B4C] hover:bg-[#123a63] text-white font-bold text-sm py-3 rounded-xl active:opacity-80 transition-colors"
+                >
+                    <FileText size={16} /> Ver / Descargar propuesta (PDF)
+                </button>
+
                 {/* ── 1. Meta Mensual ── */}
                 <section>
-                    <SectionHeader label="Meta Mensual" />
+                    <SectionHeader label="Meta de Facturación" />
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
                         <InlineRow
                             label="Meta mensual"
-                            hint="Unidades a despachar por mes para cumplimiento 100%"
+                            hint="Unidades a facturar/colocar por mes para cumplimiento 100%"
                             suffix="uds"
                             value={config.metaMensual}
                             step={50}
                             onChange={setMetaMensual}
                         />
+                        <InlineRow
+                            label="Precio por unidad"
+                            hint="Convierte metas de unidades a dólares (y alimenta la propuesta)"
+                            suffix="USD"
+                            value={config.precioUnidad}
+                            step={0.1}
+                            onChange={v => setConfig(p => ({ ...p, precioUnidad: v }))}
+                        />
                     </div>
+                </section>
+
+                {/* ── 1b. Meta de Cobranza (caja) ── */}
+                <section>
+                    <SectionHeader label="Meta de Cobranza (Caja)" />
+                    <div className="bg-white border border-slate-200 rounded-xl px-4">
+                        <InlineRow
+                            label="Meta de cobranza"
+                            hint="Unidades a cobrar en el mes para cubrir los costos (caja)"
+                            suffix="uds"
+                            value={config.metaCobranza}
+                            step={20}
+                            onChange={v => setConfig(p => ({ ...p, metaCobranza: v }))}
+                        />
+                        <InlineRow
+                            label="Días para el Bono Cobranza"
+                            hint="Cobrar dentro de este plazo activa el bono"
+                            suffix="días"
+                            value={config.cobranzaDias}
+                            step={1}
+                            onChange={v => setConfig(p => ({ ...p, cobranzaDias: v }))}
+                        />
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1.5 px-1">
+                        {fmtUnits(config.metaCobranza)} uds ≈ ${fmtUnits((config.metaCobranza || 0) * (config.precioUnidad || 0))} de caja al mes.
+                    </p>
                 </section>
 
                 {/* ── 2. Período de Arranque ── */}
@@ -390,7 +447,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                         })()}
                     </div>
                     <p className="text-xs text-slate-400 mt-1.5 px-1">
-                        Evalúa de arriba a abajo — ordénalos de mayor a menor. "Baja" aplica por debajo del nivel más bajo configurado, con su propia tasa. El % total incluye Bono Puntualidad (+{config.bonusPuntualidad}%) y Bono Activación/Anaquel (+{config.bonusActivacion}%); en "Baja" no aplican bonos por meta.
+                        Evalúa de arriba a abajo — ordénalos de mayor a menor. "Baja" aplica por debajo del nivel más bajo configurado, con su propia tasa. El % total incluye Bono Cobranza (+{config.bonusPuntualidad}%) y Bono Activación/Anaquel (+{config.bonusActivacion}%); en "Baja" no aplican bonos por meta.
                     </p>
                 </section>
 
@@ -399,7 +456,8 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     <SectionHeader label="Bonos" />
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
                         <InlineRow
-                            label="Bono Puntualidad"
+                            label="Bono Cobranza"
+                            hint="Por cobrar la meta de cobranza dentro del plazo"
                             suffix="%"
                             value={config.bonusPuntualidad}
                             step={0.5}
@@ -482,11 +540,19 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
                         <InlineRow
                             label="Días máx. sin cobrar"
-                            hint="Facturas más antiguas no computan hasta cobrarse"
+                            hint="Pasado este plazo la comisión de la factura se anula"
                             suffix="días"
                             value={config.facturaMaxDias}
                             step={5}
                             onChange={v => setConfig(p => ({ ...p, facturaMaxDias: v }))}
+                        />
+                        <InlineRow
+                            label="Comisión Cuentas Recuperadas"
+                            hint="Tasa flat por cobrar facturas heredadas de la cartera (previas o sin dueño)"
+                            suffix="%"
+                            value={config.comisionRecuperadas}
+                            step={0.5}
+                            onChange={v => setConfig(p => ({ ...p, comisionRecuperadas: v }))}
                         />
                     </div>
                 </section>
@@ -556,6 +622,14 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                 </section>
 
             </div>
+
+            {showProposal && (
+                <CommissionProposalDoc
+                    config={config}
+                    vendedorName={vendedorName}
+                    onClose={() => setShowProposal(false)}
+                />
+            )}
         </div>
     );
 });
