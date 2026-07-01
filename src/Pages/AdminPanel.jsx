@@ -2295,16 +2295,17 @@ const VinculacionRazonesSociales = () => {
             ) : (
                 <div className="space-y-2 max-h-96 overflow-auto">
                     {razones.map(r => (
-                        <div key={r.customerName} className={`flex items-center gap-2 p-2 rounded-lg border ${r.mapVendedorId ? 'border-slate-100' : 'border-amber-200 bg-amber-50/40'}`}>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm text-slate-800 truncate">{r.customerName}</p>
-                                <p className="text-[10px] text-slate-400">{r.count} factura(s){r.sinAsignar > 0 ? ` · ${r.sinAsignar} sin asignar` : ''}</p>
-                            </div>
+                        <div key={r.customerName} className={`p-2.5 rounded-lg border ${r.mapVendedorId ? 'border-slate-100' : 'border-amber-200 bg-amber-50/40'}`}>
+                            <p className="text-sm text-slate-800 font-medium break-words leading-snug">{r.customerName}</p>
+                            <p className="text-[10px] text-slate-400 mb-2">
+                                {r.count} factura(s){r.sinAsignar > 0 ? ` · ${r.sinAsignar} sin asignar` : ''}
+                                {r.mapVendedorId ? ' · ✓ vinculada' : ''}
+                            </p>
                             <select
                                 value={r.mapVendedorId}
                                 disabled={saving === r.customerName}
                                 onChange={e => vincular(r.customerName, e.target.value)}
-                                className="w-40 shrink-0 p-2 border border-slate-300 rounded-lg text-xs bg-white"
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white"
                             >
                                 <option value="">{saving === r.customerName ? 'Guardando…' : 'Elegir vendedor…'}</option>
                                 {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}

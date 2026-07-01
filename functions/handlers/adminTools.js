@@ -5,7 +5,7 @@
 // humano: vendedor incorrecto, factura anulada en Zoho, o factura de prueba
 // a eliminar. Ver AdminPanel → Integraciones.
 
-const { onCall } = require("firebase-functions/v2/https");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { congelarTasaCohorte, procesarPagoFactura, revertirAcumulados, normalizeCustomerKey } = require('./facturaCommissionOps');
 
@@ -111,72 +111,79 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
  * re-facturar en Zoho. Requiere rol `master` o `sales_manager`.
  */
 exports.vincularRazonSocial = onCall({ region: "us-central1" }, async (request) => {
-    if (!request.auth) throw new Error("No autorizado");
+    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
 
     const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
     const role = userSnap.data()?.role;
-    if (!["master", "sales_manager"].includes(role)) throw new Error("Permisos insuficientes");
-
-    const { customerName, vendedorId } = request.data || {};
-    if (!customerName || !vendedorId) throw new Error("Parámetros inválidos");
-
-    const vendedorSnap = await admin.firestore().doc(`users_metadata/${vendedorId}`).get();
-    if (!vendedorSnap.exists) throw new Error("Vendedor no encontrado");
-    const vendedor = { id: vendedorId, data: vendedorSnap.data() };
-
-    // 1. Guardar/actualizar el mapa razón social → vendedor.
-    const key = normalizeCustomerKey(customerName);
-    await admin.firestore().doc(`zoho_customer_map/${key}`).set({
-        customerName,
-        vendedorId,
-        vendedorName: vendedor.data.name || null,
-        reporterId:   vendedor.data.reporterId || null,
-        updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
-        mappedBy:     request.auth.uid,
-    }, { merge: true });
-
-    // 2. Backfill: re-atribuir las facturas ya recibidas de esa razón social.
-    const snap = await admin.firestore().collection('facturas_vendedor')
-        .where('clienteName', '==', customerName).get();
-
-    let backfilled = 0;
-    for (const docSnap of snap.docs) {
-        const factura = { id: docSnap.id, ...docSnap.data() };
-        if (factura.vendedorId === vendedorId) continue; // ya está bien
-        if (factura.estado === 'anulada') continue;
-
-        // Si estaba asignada a OTRO vendedor, revertir sus acumulados primero.
-        if (factura.vendedorId) await revertirAcumulados(factura);
-
-        const updateData = {
-            vendedorId,
-            reporterId: vendedor.data.reporterId || null,
-            tasaCohorte: null, tierCohorte: null, unidadesContabilizadas: false,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
-
-        if (factura.mesCohorte && factura.unidades > 0) {
-            const tier = await congelarTasaCohorte(vendedor, factura.mesCohorte, factura.unidades);
-            updateData.tasaCohorte = tier.rate * 100;
-            updateData.tierCohorte = tier.label;
-            updateData.unidadesContabilizadas = true;
-        }
-
-        if (factura.estado === 'pagada') {
-            const facturaData = { ...factura, ...updateData };
-            const fechaFactura = factura.fecha?.toDate?.() || null;
-            const vencimiento  = factura.vencimiento?.toDate?.() || null;
-            await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
-            updateData.comisionAnulada     = facturaData.comisionAnulada;
-            updateData.comisionGenerada    = facturaData.comisionGenerada;
-            updateData.pagadaDentroDePlazo = facturaData.pagadaDentroDePlazo;
-            updateData.fechaPago           = facturaData.fechaPago;
-            updateData.diasParaCobrar      = facturaData.diasParaCobrar;
-        }
-
-        await docSnap.ref.update(updateData);
-        backfilled++;
+    if (!["master", "sales_manager"].includes(role)) {
+        throw new HttpsError("permission-denied", `Permisos insuficientes (rol: ${role || 'sin rol'})`);
     }
 
-    return { ok: true, backfilled };
+    const { customerName, vendedorId } = request.data || {};
+    if (!customerName || !vendedorId) throw new HttpsError("invalid-argument", "Faltan customerName o vendedorId");
+
+    const vendedorSnap = await admin.firestore().doc(`users_metadata/${vendedorId}`).get();
+    if (!vendedorSnap.exists) throw new HttpsError("not-found", "Vendedor no encontrado");
+    const vendedor = { id: vendedorId, data: vendedorSnap.data() };
+
+    try {
+        // 1. Guardar/actualizar el mapa razón social → vendedor.
+        const key = normalizeCustomerKey(customerName);
+        await admin.firestore().doc(`zoho_customer_map/${key}`).set({
+            customerName,
+            vendedorId,
+            vendedorName: vendedor.data.name || null,
+            reporterId:   vendedor.data.reporterId || null,
+            updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
+            mappedBy:     request.auth.uid,
+        }, { merge: true });
+
+        // 2. Backfill: re-atribuir las facturas ya recibidas de esa razón social.
+        const snap = await admin.firestore().collection('facturas_vendedor')
+            .where('clienteName', '==', customerName).get();
+
+        let backfilled = 0;
+        for (const docSnap of snap.docs) {
+            const factura = { id: docSnap.id, ...docSnap.data() };
+            if (factura.vendedorId === vendedorId) continue; // ya está bien
+            if (factura.estado === 'anulada') continue;
+
+            // Si estaba asignada a OTRO vendedor, revertir sus acumulados primero.
+            if (factura.vendedorId) await revertirAcumulados(factura);
+
+            const updateData = {
+                vendedorId,
+                reporterId: vendedor.data.reporterId || null,
+                tasaCohorte: null, tierCohorte: null, unidadesContabilizadas: false,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            };
+
+            if (factura.mesCohorte && factura.unidades > 0) {
+                const tier = await congelarTasaCohorte(vendedor, factura.mesCohorte, factura.unidades);
+                updateData.tasaCohorte = tier.rate * 100;
+                updateData.tierCohorte = tier.label;
+                updateData.unidadesContabilizadas = true;
+            }
+
+            if (factura.estado === 'pagada') {
+                const facturaData = { ...factura, ...updateData };
+                const fechaFactura = factura.fecha?.toDate?.() || null;
+                const vencimiento  = factura.vencimiento?.toDate?.() || null;
+                await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
+                updateData.comisionAnulada     = facturaData.comisionAnulada;
+                updateData.comisionGenerada    = facturaData.comisionGenerada;
+                updateData.pagadaDentroDePlazo = facturaData.pagadaDentroDePlazo;
+                updateData.fechaPago           = facturaData.fechaPago;
+                updateData.diasParaCobrar      = facturaData.diasParaCobrar;
+            }
+
+            await docSnap.ref.update(updateData);
+            backfilled++;
+        }
+
+        return { ok: true, backfilled };
+    } catch (err) {
+        console.error("vincularRazonSocial falló:", err);
+        throw new HttpsError("internal", `Error al vincular/backfill: ${err.message}`);
+    }
 });
