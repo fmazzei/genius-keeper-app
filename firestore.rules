@@ -108,9 +108,16 @@ service cloud.firestore {
     }
 
     match /comisiones_mensuales/{mesId} {
-      // Acumulado mensual de unidades facturadas + tasa-cohorte por vendedor
-      // (escrito por sincronizarFacturaDesdeZoho). Cada vendedor lee solo su
+      // Acumulado por mes de CALENDARIO (gerente / Rendimiento Comercial),
+      // escrito por sincronizarFacturaDesdeZoho. Cada vendedor lee solo su
       // propio acumulado; admin/master leen todos.
+      allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
+      allow write: if isAdmin() || isMaster();
+    }
+
+    match /comisiones_periodos/{periodoId} {
+      // Acumulado por PERÍODO DE EMPLEO del vendedor (mes 15→14, Fase 3.5):
+      // define su tasa-cohorte y su Estado de Cuenta. Mismo patrón de acceso.
       allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
       allow write: if isAdmin() || isMaster();
     }

@@ -2,7 +2,7 @@
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const { mesCohorteFromDate, diffDias } = require('./commissionEngine');
+const { mesCohorteFromDate, periodoCohorteFromDate, diffDias } = require('./commissionEngine');
 const { congelarTasaCohorte, procesarPagoFactura, normalizeCustomerKey } = require('./facturaCommissionOps');
 
 // Secreto compartido para validar los webhooks de Zoho Books, inyectado como
@@ -290,10 +290,18 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
         const fechaFactura  = toDate(invoice.date);
         const vencimiento   = toDate(invoice.due_date);
         const diasCredito   = diffDias(fechaFactura, vencimiento);
-        const mesCohorte    = mesCohorteFromDate(fechaFactura);
+        const mesCohorte    = mesCohorteFromDate(fechaFactura); // calendario (gerente)
         const unidades = Array.isArray(invoice.line_items)
             ? invoice.line_items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
             : 0;
+
+        // Fase 3.5 — Período de EMPLEO del vendedor (mes 15→14, anclado a
+        // fechaIngreso). `recuperada` = factura previa al ingreso (no cuenta a
+        // su meta; será Cuenta Recuperada 5% en Fase 3.6). Requiere el vendedor
+        // ya resuelto (por cartera, arriba).
+        const { periodKey: periodoCohorte, recuperada } = vendedor
+            ? periodoCohorteFromDate(vendedor.data.fechaIngreso, fechaFactura)
+            : { periodKey: null, recuperada: false };
 
         // Fase 3.1 — Identidad del cliente en Zoho. Es la llave para atribuir la
         // factura por CARTERA (no por salesperson): más adelante se mapeará
@@ -337,6 +345,8 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
             vendedorId:   vendedor?.id || null,
             reporterId:   vendedor?.data?.reporterId || null,
             mesCohorte,
+            periodoCohorte,
+            recuperada,
             updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
         };
 
@@ -346,7 +356,7 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
         // la tasa ya congelada.
         const yaContabilizada = existingData?.unidadesContabilizadas === true;
         if (vendedor && mesCohorte && unidades > 0 && !yaContabilizada) {
-            const tier = await congelarTasaCohorte(vendedor, mesCohorte, unidades);
+            const tier = await congelarTasaCohorte(vendedor, mesCohorte, unidades, periodoCohorte);
             facturaData.tasaCohorte = tier.rate * 100;
             facturaData.tierCohorte = tier.label;
             facturaData.unidadesContabilizadas = true;

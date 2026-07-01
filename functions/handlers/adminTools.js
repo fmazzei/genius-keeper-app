@@ -8,6 +8,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { congelarTasaCohorte, procesarPagoFactura, revertirAcumulados, normalizeCustomerKey } = require('./facturaCommissionOps');
+const { periodoCohorteFromDate } = require('./commissionEngine');
 
 /**
  * Acciones soportadas sobre un documento de `facturas_vendedor`:
@@ -69,9 +70,15 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
 
     await revertirAcumulados(factura);
 
+    // Período de empleo del NUEVO vendedor para esta factura (Fase 3.5).
+    const { periodKey: nuevoPeriodo, recuperada: nuevaRecuperada } =
+        periodoCohorteFromDate(nuevoVendedor.data.fechaIngreso, factura.fecha?.toDate?.() || null);
+
     const updateData = {
         vendedorId: nuevoVendedorId,
         reporterId: nuevoVendedor.data.reporterId || null,
+        periodoCohorte: nuevoPeriodo,
+        recuperada: nuevaRecuperada,
         tasaCohorte: null,
         tierCohorte: null,
         unidadesContabilizadas: false,
@@ -79,7 +86,7 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
     };
 
     if (factura.mesCohorte && factura.unidades > 0) {
-        const tier = await congelarTasaCohorte(nuevoVendedor, factura.mesCohorte, factura.unidades);
+        const tier = await congelarTasaCohorte(nuevoVendedor, factura.mesCohorte, factura.unidades, nuevoPeriodo);
         updateData.tasaCohorte = tier.rate * 100;
         updateData.tierCohorte = tier.label;
         updateData.unidadesContabilizadas = true;
@@ -151,15 +158,19 @@ exports.vincularRazonSocial = onCall({ region: "us-central1" }, async (request) 
             // Si estaba asignada a OTRO vendedor, revertir sus acumulados primero.
             if (factura.vendedorId) await revertirAcumulados(factura);
 
+            const { periodKey: periodoCohorte, recuperada } =
+                periodoCohorteFromDate(vendedor.data.fechaIngreso, factura.fecha?.toDate?.() || null);
+
             const updateData = {
                 vendedorId,
                 reporterId: vendedor.data.reporterId || null,
+                periodoCohorte, recuperada,
                 tasaCohorte: null, tierCohorte: null, unidadesContabilizadas: false,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             };
 
             if (factura.mesCohorte && factura.unidades > 0) {
-                const tier = await congelarTasaCohorte(vendedor, factura.mesCohorte, factura.unidades);
+                const tier = await congelarTasaCohorte(vendedor, factura.mesCohorte, factura.unidades, periodoCohorte);
                 updateData.tasaCohorte = tier.rate * 100;
                 updateData.tierCohorte = tier.label;
                 updateData.unidadesContabilizadas = true;

@@ -26,38 +26,63 @@ function normalizeCustomerKey(name) {
 }
 
 /**
- * Determina/congela la tasa-cohorte de una factura: acumula sus unidades en
- * `comisiones_mensuales/{vendedorId}_{mesCohorte}` y devuelve el tier
- * resultante DESPUÉS de sumar esas unidades — esa es la tasa que se congela
- * para esta factura (tasa "al momento de la factura", sin recalcular
- * facturas previas del mismo mes).
+ * Acumula las unidades de una factura en UNA doc dada (calendario o período) y
+ * devuelve el tier resultante DESPUÉS de sumarlas — la tasa "al momento de la
+ * factura". `mesLabel` es la clave humana que se guarda en el campo `mes`.
  */
-async function congelarTasaCohorte(vendedor, mesCohorte, unidades) {
-    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
-    const metaMensual = vendedor.data.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-    const tiers = buildTiers(cfg);
-    const mesRef = admin.firestore().collection('comisiones_mensuales').doc(`${vendedor.id}_${mesCohorte}`);
-
+async function acumularEnDoc(ref, vendedor, mesLabel, unidades, cfg, metaMensual, tiers) {
     return admin.firestore().runTransaction(async (tx) => {
-        const mesSnap = await tx.get(mesRef);
-        const prevUnidades = mesSnap.exists ? (mesSnap.data().unidadesFacturadas || 0) : 0;
+        const snap = await tx.get(ref);
+        const prevUnidades = snap.exists ? (snap.data().unidadesFacturadas || 0) : 0;
         const nuevoTotal = prevUnidades + unidades;
         const pct = metaMensual > 0 ? nuevoTotal / metaMensual : 0;
         const tier = getTierFromConfig(pct, tiers, cfg.bajaRate);
-
-        tx.set(mesRef, {
+        tx.set(ref, {
             vendedorId: vendedor.id,
             reporterId: vendedor.data.reporterId || null,
-            mes: mesCohorte,
+            mes: mesLabel,
             unidadesFacturadas: nuevoTotal,
             metaMensual,
             nivel: tier.label,
             tasaActual: tier.rate * 100,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
-
         return tier;
     });
+}
+
+/**
+ * Congela la tasa-cohorte de una factura acumulando en DOS relojes (Fase 3.5):
+ *  - Calendario: `comisiones_mensuales/{vendedorId}_{mesCohorte}` (mes de
+ *    calendario) — alimenta la vista gerencial (Rendimiento Comercial), que
+ *    reporta por contabilidad. Se mantiene siempre.
+ *  - Período de empleo: `comisiones_periodos/{vendedorId}_{periodoCohorte}`
+ *    (mes 15→14 del vendedor) — es la que define la tasa que efectivamente se
+ *    le paga al vendedor y su Estado de Cuenta. Solo si hay `periodoCohorte`.
+ *
+ * La tasa congelada (retornada) es la del PERÍODO cuando existe; si no hay
+ * período (sin fechaIngreso, o factura previa al ingreso), cae a la calendario
+ * para no romper el comportamiento anterior.
+ */
+async function congelarTasaCohorte(vendedor, mesCohorte, unidades, periodoCohorte) {
+    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
+    const metaMensual = vendedor.data.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+    const tiers = buildTiers(cfg);
+
+    let tierCalendario = null;
+    if (mesCohorte) {
+        const calRef = admin.firestore().collection('comisiones_mensuales').doc(`${vendedor.id}_${mesCohorte}`);
+        tierCalendario = await acumularEnDoc(calRef, vendedor, mesCohorte, unidades, cfg, metaMensual, tiers);
+    }
+
+    let tierPeriodo = null;
+    if (periodoCohorte) {
+        const perRef = admin.firestore().collection('comisiones_periodos').doc(`${vendedor.id}_${periodoCohorte}`);
+        tierPeriodo = await acumularEnDoc(perRef, vendedor, periodoCohorte, unidades, cfg, metaMensual, tiers);
+    }
+
+    // La tasa del vendedor manda; calendario es respaldo (compat.).
+    return tierPeriodo || tierCalendario || getTierFromConfig(0, tiers, cfg.bajaRate);
 }
 
 /**
@@ -141,37 +166,48 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
  * Usado por AdminPanel → Integraciones al anular, eliminar o reasignar una
  * factura a otro vendedor (`functions/handlers/adminTools.js`).
  */
+// Resta las unidades de una factura de UN acumulador (calendario o período),
+// recalculando nivel/tasa; borra la doc si queda en cero.
+async function revertirEnDoc(ref, vendedorId, unidades) {
+    await admin.firestore().runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) return;
+        const nuevoTotal = Math.max(0, (snap.data().unidadesFacturadas || 0) - unidades);
+        if (nuevoTotal === 0) { tx.delete(ref); return; }
+
+        const vendedorSnap = await tx.get(admin.firestore().doc(`users_metadata/${vendedorId}`));
+        const vendedorData = vendedorSnap.exists ? vendedorSnap.data() : {};
+        const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedorData.commissionConfig || {}) };
+        const metaMensual = vendedorData.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+        const tiers = buildTiers(cfg);
+        const pct = metaMensual > 0 ? nuevoTotal / metaMensual : 0;
+        const tier = getTierFromConfig(pct, tiers, cfg.bajaRate);
+        tx.update(ref, {
+            unidadesFacturadas: nuevoTotal,
+            nivel: tier.label,
+            tasaActual: tier.rate * 100,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    });
+}
+
 async function revertirAcumulados(factura) {
     if (!factura.vendedorId) return;
 
-    if (factura.unidadesContabilizadas && factura.mesCohorte && factura.unidades) {
-        const mesRef = admin.firestore().collection('comisiones_mensuales').doc(`${factura.vendedorId}_${factura.mesCohorte}`);
-        await admin.firestore().runTransaction(async (tx) => {
-            const mesSnap = await tx.get(mesRef);
-            if (!mesSnap.exists) return;
-            const data = mesSnap.data();
-            const nuevoTotal = Math.max(0, (data.unidadesFacturadas || 0) - factura.unidades);
-
-            if (nuevoTotal === 0) {
-                tx.delete(mesRef);
-                return;
-            }
-
-            const vendedorSnap = await tx.get(admin.firestore().doc(`users_metadata/${factura.vendedorId}`));
-            const vendedorData = vendedorSnap.exists ? vendedorSnap.data() : {};
-            const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedorData.commissionConfig || {}) };
-            const metaMensual = vendedorData.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-            const tiers = buildTiers(cfg);
-            const pct = metaMensual > 0 ? nuevoTotal / metaMensual : 0;
-            const tier = getTierFromConfig(pct, tiers, cfg.bajaRate);
-
-            tx.update(mesRef, {
-                unidadesFacturadas: nuevoTotal,
-                nivel: tier.label,
-                tasaActual: tier.rate * 100,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-        });
+    if (factura.unidadesContabilizadas && factura.unidades) {
+        // Revierte AMBOS relojes (Fase 3.5): calendario y período de empleo.
+        if (factura.mesCohorte) {
+            await revertirEnDoc(
+                admin.firestore().collection('comisiones_mensuales').doc(`${factura.vendedorId}_${factura.mesCohorte}`),
+                factura.vendedorId, factura.unidades,
+            );
+        }
+        if (factura.periodoCohorte) {
+            await revertirEnDoc(
+                admin.firestore().collection('comisiones_periodos').doc(`${factura.vendedorId}_${factura.periodoCohorte}`),
+                factura.vendedorId, factura.unidades,
+            );
+        }
     }
 
     const pagosSnap = await admin.firestore().collection('pagos_registrados')

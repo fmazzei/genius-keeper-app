@@ -49,8 +49,13 @@ items.
 
 **Plan futuro — blindar con `customer_id` real (opcional):** hoy la llave es `customer_name`. Es estable (Zoho obliga nombres únicos por org) pero se rompería si renombran la razón social en Zoho (raro; se re-vincula con un clic). Para blindarlo del todo, configurar un **payload personalizado** en la regla de flujo de Zoho que incluya `customer_id`, y cambiar la llave del mapa a ese ID. No es urgente; el nombre funciona bien para arrancar.
 
+- **3.5 hecho ✅ — Dos relojes (calendario para gerente, período de empleo para vendedor).** Decisión de negocio: el gerente reporta por mes de CALENDARIO (contabilidad de la empresa; `RendimientoComercialView` no se toca) y el vendedor por su MES DE EMPLEO (15→14). Implementado con doble acumulador, desacoplado:
+  - `comisiones_mensuales/{vendedorId}_{mesCohorte}` (mes calendario) — gerente, sin cambios.
+  - `comisiones_periodos/{vendedorId}_{periodoCohorte}` (mes de empleo) — NUEVO: define la tasa que se le paga al vendedor y su Estado de Cuenta (Fase 3.7). `periodoCohorteFromDate(fechaIngreso, fecha)` en `commissionEngine.js` devuelve `{periodKey, recuperada}` (clave = fecha de inicio del período; `recuperada:true` si la factura es previa al ingreso → no cuenta a la meta, será Cuenta Recuperada 5% en 3.6).
+  - `congelarTasaCohorte(vendedor, mesCohorte, unidades, periodoCohorte)` acumula en AMBAS docs; la tasa congelada retornada es la del PERÍODO (calendario como respaldo si no hay período). `revertirAcumulados` revierte ambas. `sincronizarFacturaDesdeZoho` guarda `periodoCohorte`+`recuperada` en la factura; `gestionarFacturaVendedor`/`vincularRazonSocial` recalculan el período del nuevo vendedor al reasignar/backfill.
+  - Reglas Firestore para `comisiones_periodos` (mismo patrón que `comisiones_mensuales`).
+
 **Hoja de ruta (en orden de dependencia):**
-- **3.5 — Motor por período de empleo** en el webhook: acumular en `comisiones_mensuales` por período (no calendario), congelar tasa-cohorte por período, y congelar el resultado al cerrar.
 - **3.6 — Meta de cobranza + Bono Cobranza** (gating: cobrar `metaCobranza` en `cobranzaDias`) + **Cuentas Recuperadas** (5% en facturas con fecha < `fechaIngreso`). Renombrar `bonusPuntualidad`→`bonusCobranza` y cablear el Home.
 - **3.7 — Estado de Cuenta** del vendedor (histórico por período: devengado/pagado/saldo).
 - **3.8 — Liquidaciones** (registrar pagos al vendedor; `master` por ahora).
