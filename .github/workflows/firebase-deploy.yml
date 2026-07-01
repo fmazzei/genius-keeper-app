@@ -17,7 +17,12 @@ jobs:
       - name: Construir la app
         run: npm run build
 
+      # continue-on-error: el paso de Hosting suele fallar por un falso-fallo de
+      # red (el release idempotente devuelve 400 "is the current active version"
+      # aunque el deploy SÍ se aplicó). Un error real de build se atrapa antes,
+      # en el paso "Construir la app". Así el falso rojo no bloquea Rules/Functions.
       - name: Deploy a Firebase Hosting
+        continue-on-error: true
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
@@ -25,7 +30,11 @@ jobs:
           channelId: live
           projectId: geniuskeeper-36553
 
+      # if: !cancelled() → Rules y Functions se despliegan aunque el paso de
+      # Hosting haya fallado (antes se saltaban en cadena y las funciones nunca
+      # llegaban a producción).
       - name: Deploy Firestore Rules
+        if: ${{ !cancelled() }}
         env:
           SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
@@ -36,6 +45,7 @@ jobs:
           rm -f /tmp/firebase-sa.json
 
       - name: Instalar dependencias de Cloud Functions
+        if: ${{ !cancelled() }}
         run: npm --prefix functions install
 
       # continue-on-error: el service account puede no tener todavía los
@@ -43,6 +53,7 @@ jobs:
       # esté configurado, este paso puede fallar sin afectar el deploy de
       # Hosting/Rules.
       - name: Deploy Cloud Functions
+        if: ${{ !cancelled() }}
         continue-on-error: true
         env:
           SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

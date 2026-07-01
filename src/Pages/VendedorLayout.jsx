@@ -174,8 +174,15 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                 className={`w-full text-left bg-slate-900 border ${tier.border} rounded-2xl p-5 active:scale-[0.99] transition-transform`}
             >
                 <div className="flex items-center justify-between mb-1">
-                    <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Meta del Mes</p>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tier.bg} ${tier.color}`}>
+                    <div className="min-w-0">
+                        <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">
+                            {stats.mesArranque > 0 ? `Meta · Mes ${stats.mesArranque}` : 'Meta del Mes'}
+                        </p>
+                        {stats.periodoLabel && (
+                            <p className="text-slate-500 text-[11px] mt-0.5">{stats.periodoLabel}</p>
+                        )}
+                    </div>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tier.bg} ${tier.color} shrink-0`}>
                         Nivel {tier.label}
                     </span>
                 </div>
@@ -603,6 +610,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         facturasPorVencer: 0, puntualidadPct: null,
         runRateActual: 0, runRateNeeded: 0, diasRestantes: 0,
         radarAlerts: [], stockoutsCount: 0, radarAlertsByPosId: {},
+        periodoLabel: '', mesArranque: 0,
     });
     const [loading, setLoading]                       = useState(true);
     const [loadError, setLoadError]                   = useState('');
@@ -733,8 +741,10 @@ const VendedorLayout = ({ user, onLogout }) => {
                     ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
                     : DEFAULT_COMMISSION_CONFIG;
 
-                // Meta mensual efectiva, aplicando Período de Arranque si corresponde.
-                const { metaMensual, mesArranque } = computeMetaMensual(meta);
+                // Meta y PERÍODO efectivos. El período corre por mes de empleo
+                // (anclado a fechaIngreso), no por mes de calendario — ver
+                // vendedorMeta.js.
+                const { metaMensual, mesArranque, periodStart, periodEnd, periodoLabel } = computeMetaMensual(meta);
 
                 setCommConfig(cfg);
                 setVendedor({ uid: user.uid, nombre, metaMensual, reporterId, mesArranque });
@@ -788,23 +798,26 @@ const VendedorLayout = ({ user, onLogout }) => {
                     return t >= hoy;
                 }).reduce((s, d) => s + (d.cantidad || 0), 0);
 
-                // 2b. Unidades del mes para nivel/tasa: SOLO unidades FACTURADAS
-                //     vía Zoho (acumulado congelado por sincronizarFacturaDesdeZoho
-                //     en `comisiones_mensuales`). Los despachos aún no facturados
-                //     no cuentan para la meta — si no hay documento para este mes,
-                //     es porque todavía no se ha facturado nada, y debe verse en 0
-                //     (no el total despachado, que generaría un desfase con lo
-                //     que realmente paga comisión).
-                const unidadesDelMes = comisionMesSnap?.exists?.() ? (comisionMesSnap.data().unidadesFacturadas ?? 0) : 0;
+                // 2b. Unidades del PERÍODO para nivel/tasa: unidades FACTURADAS vía
+                //     Zoho (facturas_vendedor) cuya fecha cae dentro del período de
+                //     empleo vigente [periodStart, periodEnd), excluyendo anuladas.
+                //     Se calcula desde facturas_vendedor (no desde el acumulado
+                //     calendario `comisiones_mensuales`) para respetar el mes de
+                //     empleo del vendedor, no el mes de calendario.
+                const facturasVend = facturasSnap ? facturasSnap.docs.map(d => d.data()) : [];
+                const enPeriodo = (f) => {
+                    const t = f.fecha?.toDate?.() || (f.fecha ? new Date(f.fecha) : null);
+                    return t && t >= periodStart && t < periodEnd;
+                };
+                const unidadesDelMes = facturasVend
+                    .filter(f => f.estado !== 'anulada' && enPeriodo(f))
+                    .reduce((s, f) => s + (Number(f.unidades) || 0), 0);
 
-                // 2c. Velocidad de Venta — ritmo actual vs. ritmo necesario para
-                //     alcanzar la meta del mes, igual a la fórmula de VentasView
-                //     (ahora escalado a la cartera/meta de este vendedor, sin
-                //     lecturas adicionales).
-                const diasTotalesMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-                const diasPasados    = now.getDate();
-                const diasRestantes  = diasTotalesMes - diasPasados;
-                const runRateActual  = diasPasados > 0 ? unidadesDelMes / diasPasados : 0;
+                // 2c. Velocidad de Venta — ritmo actual vs. ritmo necesario, medido
+                //     sobre el período de empleo vigente (no el mes de calendario).
+                const diasPasados   = Math.max(0, Math.floor((now - periodStart) / 86400000));
+                const diasRestantes = Math.max(0, Math.ceil((periodEnd - now) / 86400000));
+                const runRateActual = diasPasados > 0 ? unidadesDelMes / diasPasados : 0;
                 const ventaRestante  = Math.max(0, metaMensual - unidadesDelMes);
                 const runRateNeeded  = diasRestantes > 0 && ventaRestante > 0 ? ventaRestante / diasRestantes : 0;
 
@@ -1000,6 +1013,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     hasAnaquel, anaquelOk, anaquelCubiertos, anaquelTotal: anaquelPosIds.length,
                     runRateActual, runRateNeeded, diasRestantes,
                     radarAlerts, stockoutsCount, radarAlertsByPosId,
+                    periodoLabel, mesArranque,
                 };
                 setStats(newStats);
 
