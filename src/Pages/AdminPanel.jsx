@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { db, functions } from '../Firebase/config.js';
-import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit } from 'firebase/firestore';
+import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
@@ -2259,15 +2259,38 @@ const VinculacionRazonesSociales = () => {
     };
     useEffect(() => { cargar(); }, []);
 
+    // Espejo EXACTO de normalizeCustomerKey en functions/handlers/facturaCommissionOps.js
+    // (el webhook lee el mapa por esta misma clave).
+    const normalizeCustomerKey = (name) => String(name || '')
+        .trim().toLowerCase().replace(/\s+/g, ' ').replace(/\//g, '-').slice(0, 400);
+
     const vincular = async (customerName, vendedorId) => {
         if (!vendedorId) return;
         setSaving(customerName); setMsg('');
         try {
-            const fn = httpsCallable(functions, 'vincularRazonSocial');
-            const res = await fn({ customerName, vendedorId });
+            const vend = vendedores.find(v => v.id === vendedorId);
+            // 1. Mapa razón social → vendedor (lo lee el webhook para facturas futuras).
+            await setDoc(doc(db, 'zoho_customer_map', normalizeCustomerKey(customerName)), {
+                customerName,
+                vendedorId,
+                vendedorName: vend?.name || null,
+                updatedAt: serverTimestamp(),
+            }, { merge: true });
+
+            // 2. Backfill de las facturas ya recibidas, reusando gestionarFacturaVendedor
+            //    (ya desplegada y probada) — evita depender de la función nueva.
+            const fn = httpsCallable(functions, 'gestionarFacturaVendedor');
+            const snap = await getDocs(query(collection(db, 'facturas_vendedor'), where('clienteName', '==', customerName)));
+            let backfilled = 0;
+            for (const d of snap.docs) {
+                const f = d.data();
+                if (f.vendedorId === vendedorId || f.estado === 'anulada') continue;
+                await fn({ facturaId: d.id, action: 'reasignar', nuevoVendedorId: vendedorId });
+                backfilled++;
+            }
             setRazones(rs => rs.map(r => r.customerName === customerName ? { ...r, mapVendedorId: vendedorId, sinAsignar: 0 } : r));
-            setMsg(`✓ "${customerName}" vinculada · ${res.data?.backfilled || 0} factura(s) actualizada(s).`);
-        } catch (e) { setMsg('Error: ' + e.message); }
+            setMsg(`✓ "${customerName}" vinculada · ${backfilled} factura(s) actualizada(s).`);
+        } catch (e) { setMsg('Error: ' + (e?.message || e)); }
         setSaving('');
     };
 
