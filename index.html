@@ -1,7 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="es" translate="no">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      La app es 100% en español. Declararla como `lang="en"` hacía que Chrome
+      la detectara como "inglés con texto español" y la auto-tradujera para
+      usuarios con idioma destino inglés. La traducción reemplaza los nodos de
+      texto (envueltos en <font>) y, al re-renderizar React (Home del vendedor:
+      loading→stats→alertas), rompe la reconciliación con
+      "Failed to execute 'insertBefore' on 'Node'". lang="es" + notranslate lo evita.
+    -->
+    <meta name="google" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
