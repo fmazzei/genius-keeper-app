@@ -257,6 +257,13 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
             ? invoice.line_items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
             : 0;
 
+        // Fase 3.1 — Identidad del cliente en Zoho. Es la llave para atribuir la
+        // factura por CARTERA (no por salesperson): más adelante se mapeará
+        // `zohoCustomerId` → vendor_clients → vendedor. Por ahora solo se captura
+        // y se loguea para verificar que Zoho lo envía en el payload real.
+        const zohoCustomerId = invoice.customer_id != null ? String(invoice.customer_id)
+            : (invoice.contact_id != null ? String(invoice.contact_id) : null);
+
         const facturasRef = admin.firestore().collection('facturas_vendedor');
         const existingSnap = await facturasRef.where('numero', '==', invoice.invoice_number).limit(1).get();
         const existing     = existingSnap.empty ? null : existingSnap.docs[0];
@@ -265,6 +272,7 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
         const facturaData = {
             numero:       invoice.invoice_number,
             clienteName:  invoice.customer_name || '',
+            zohoCustomerId,
             monto:        Number(invoice.total) || 0,
             fecha:        fechaFactura ? admin.firestore.Timestamp.fromDate(fechaFactura) : null,
             vencimiento:  vencimiento ? admin.firestore.Timestamp.fromDate(vencimiento) : null,
@@ -304,7 +312,7 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
             await facturasRef.add({ ...facturaData, createdAt: admin.firestore.FieldValue.serverTimestamp() });
         }
 
-        functions.logger.log(`Factura Zoho #${invoice.invoice_number} sincronizada (vendedorId: ${vendedor?.id || 'sin asignar'}, estado: ${estado}).`);
+        functions.logger.log(`Factura Zoho #${invoice.invoice_number} sincronizada (vendedorId: ${vendedor?.id || 'sin asignar'}, zohoCustomerId: ${zohoCustomerId || 'AUSENTE'}, cliente: "${invoice.customer_name || ''}", estado: ${estado}).`);
         res.status(200).send("Factura sincronizada con éxito.");
 
     } catch (error) {
