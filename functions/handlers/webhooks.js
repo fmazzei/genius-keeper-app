@@ -228,6 +228,19 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
         }
 
         const invoice = req.body?.invoice || req.body?.data || req.body;
+
+        // DIAGNÓSTICO (temporal, a prueba de caché): guarda el payload COMPLETO
+        // del último evento de Zoho en un doc fijo, visible desde AdminPanel →
+        // Integraciones. Permite ver el JSON entero sin depender de logs ni de
+        // que el frontend esté fresco. Se elimina al confirmar el campo customer_id.
+        try {
+            await admin.firestore().doc('settings/zohoLastPayload').set({
+                receivedAt:    admin.firestore.FieldValue.serverTimestamp(),
+                invoiceNumber: invoice?.invoice_number || null,
+                raw:           JSON.stringify(req.body || {}).slice(0, 9000),
+            });
+        } catch (e) { /* diagnóstico, no crítico */ }
+
         if (!invoice || !invoice.invoice_number) {
             functions.logger.error("Payload de factura de Zoho inválido:", req.body);
             res.status(400).send("Payload de factura inválido.");

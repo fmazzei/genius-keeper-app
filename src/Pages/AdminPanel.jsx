@@ -2221,6 +2221,43 @@ const CompetitorManagement = () => {
 
 // ─── Gestión de facturas Zoho — reasignar / anular / eliminar ────────────────
 
+// DIAGNÓSTICO (temporal): muestra el payload completo del último webhook de
+// Zoho recibido (guardado en settings/zohoLastPayload). Sirve para confirmar
+// bajo qué nombre viene el customer_id. A prueba de caché de frontend.
+const ZohoPayloadDiag = () => {
+    const [data, setData]     = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [err, setErr]       = useState('');
+
+    const cargar = async () => {
+        setLoading(true); setErr('');
+        try {
+            const snap = await getDoc(doc(db, 'settings', 'zohoLastPayload'));
+            setData(snap.exists() ? snap.data() : { _vacio: true });
+        } catch (e) { setErr(e.message); }
+        setLoading(false);
+    };
+    useEffect(() => { cargar(); }, []);
+
+    let pretty = '';
+    if (data?.raw) { try { pretty = JSON.stringify(JSON.parse(data.raw), null, 2); } catch { pretty = data.raw; } }
+
+    return (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+            <div className="flex items-center justify-between mb-2">
+                <p className="font-bold text-slate-800 text-sm">Diagnóstico · Último payload de Zoho</p>
+                <button onClick={cargar} className="text-xs font-semibold text-brand-blue">{loading ? 'Cargando…' : 'Actualizar'}</button>
+            </div>
+            {err && <p className="text-red-500 text-xs">{err}</p>}
+            {data?._vacio && <p className="text-slate-400 text-xs">Aún no se ha recibido ningún webhook (o el deploy con la captura es más reciente que el último evento).</p>}
+            {data?.invoiceNumber && <p className="text-xs text-slate-500 mb-1">Factura: <span className="font-mono text-slate-700">{data.invoiceNumber}</span></p>}
+            {pretty && (
+                <pre className="text-[10px] text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 overflow-auto max-h-72 whitespace-pre-wrap break-words">{pretty}</pre>
+            )}
+        </div>
+    );
+};
+
 const FacturaManagementTool = () => {
     const [numero, setNumero]               = useState('');
     const [factura, setFactura]             = useState(null);
@@ -2504,6 +2541,8 @@ const IntegracionesSection = () => {
                     </>
                 )}
             </div>
+
+            <ZohoPayloadDiag />
 
             <FacturaManagementTool />
 
