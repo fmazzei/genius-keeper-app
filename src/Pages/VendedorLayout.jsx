@@ -98,6 +98,8 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
     const pct     = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
     const tier    = getTierFromConfig(pct, tiers, commConfig.bajaRate);
     const barPct  = Math.min(pct, 1.25);
+    const metaAlcanzada = vendedor.metaMensual > 0 && stats.unidadesDelMes >= vendedor.metaMensual;
+    const faltanParaMeta = Math.max(0, vendedor.metaMensual - stats.unidadesDelMes);
 
     const unidadesParaSiguiente = () => {
         for (let i = tiers.length - 1; i >= 0; i--) {
@@ -231,9 +233,11 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                         </div>
                     </div>
                     <p className="text-slate-400 text-xs bg-slate-800/60 rounded-lg p-2.5">
-                        {stats.runRateNeeded > 0
-                            ? <>Necesitas <span className="font-bold text-blue-400">{stats.runRateNeeded.toFixed(1)} uds/día</span> los próximos <span className="font-bold text-white">{stats.diasRestantes}</span> días para llegar a la meta.</>
-                            : '¡Meta del mes alcanzada!'
+                        {metaAlcanzada
+                            ? '¡Meta del mes alcanzada!'
+                            : stats.diasRestantes > 0
+                                ? <>Necesitas <span className="font-bold text-blue-400">{stats.runRateNeeded.toFixed(1)} uds/día</span> los próximos <span className="font-bold text-white">{stats.diasRestantes}</span> día{stats.diasRestantes > 1 ? 's' : ''} para llegar a la meta.</>
+                                : <>El mes cerró a <span className="font-bold text-amber-400">{faltanParaMeta.toLocaleString()} uds</span> de la meta.</>
                         }
                     </p>
                 </div>
