@@ -2322,6 +2322,11 @@ const FacturaManagementTool = () => {
                     <div className="text-xs text-slate-500 space-y-0.5 mb-3">
                         <p>Cliente: <span className="text-slate-700">{factura.clienteName || '—'}</span></p>
                         <p>ID cliente Zoho: <span className="text-slate-700 font-mono">{factura.zohoCustomerId || '— (factura previa a la captura)'}</span></p>
+                        {factura._diag && (
+                            <p className="text-[10px] text-slate-400 break-words mt-1 bg-slate-50 border border-slate-200 rounded p-1.5 font-mono">
+                                DIAG · invoice keys: [{factura._diag.invoiceKeys}] · customer_id={String(factura._diag.customer_id)} · contact_id={String(factura._diag.contact_id)}
+                            </p>
+                        )}
                         <p>Monto: <span className="text-slate-700">${Number(factura.monto || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span></p>
                         <p>Unidades: <span className="text-slate-700">{factura.unidades ?? '—'}</span></p>
                         <p>Vendedor actual: <span className="text-slate-700">{vendedorActual?.name || factura.vendedorId || 'sin asignar'}</span></p>

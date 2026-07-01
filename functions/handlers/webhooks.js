@@ -269,6 +269,17 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
         // nombre/ubicación del campo customer_id.
         functions.logger.log(`[DIAG customer_id] factura #${invoice.invoice_number} — body keys: [${Object.keys(req.body || {}).join(', ')}] | invoice keys: [${Object.keys(invoice || {}).join(', ')}] | customer_id=${invoice.customer_id} | contact_id=${invoice.contact_id} | customer_name=${invoice.customer_name}`);
 
+        // DIAGNÓSTICO visible en la app (temporal): guarda la estructura del
+        // payload en la factura para verla desde AdminPanel → Gestión de facturas
+        // Zoho, sin depender de los logs de Cloud. Se elimina al confirmar el campo.
+        const _diag = {
+            bodyKeys:      Object.keys(req.body || {}).join(', '),
+            invoiceKeys:   Object.keys(invoice || {}).join(', '),
+            customer_id:   invoice.customer_id ?? null,
+            contact_id:    invoice.contact_id ?? null,
+            customer_name: invoice.customer_name ?? null,
+        };
+
         const facturasRef = admin.firestore().collection('facturas_vendedor');
         const existingSnap = await facturasRef.where('numero', '==', invoice.invoice_number).limit(1).get();
         const existing     = existingSnap.empty ? null : existingSnap.docs[0];
@@ -278,6 +289,7 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
             numero:       invoice.invoice_number,
             clienteName:  invoice.customer_name || '',
             zohoCustomerId,
+            _diag,
             monto:        Number(invoice.total) || 0,
             fecha:        fechaFactura ? admin.firestore.Timestamp.fromDate(fechaFactura) : null,
             vencimiento:  vencimiento ? admin.firestore.Timestamp.fromDate(vencimiento) : null,

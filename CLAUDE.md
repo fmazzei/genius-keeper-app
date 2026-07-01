@@ -21,6 +21,34 @@ Sección de seguimiento para terminar de conectar el módulo de comisiones del
 vendedor (GK) con Zoho Books. Mantener actualizada a medida que se resuelvan
 items.
 
+### Fase 3 — Rediseño de comisiones (atribución por cartera + período de empleo + estado de cuenta)
+
+**Decisiones de negocio (cerradas con el dueño, 2026-06/07):**
+- **Atribución por CARTERA, no por salesperson.** Una factura pertenece al vendedor dueño del cliente. Se mapea `zohoCustomerId` (de la factura Zoho) → `vendor_clients` → `vendedorId`. El salesperson de Zoho suele ser genérico ("Ventas de oficina"), por eso NO sirve para atribuir.
+- **Período del vendedor = MES DE EMPLEO** (anclado a `users_metadata.fechaIngreso`), no mes de calendario. Ej.: ingreso 15/06 → Mes 1 = 15/06–14/07. El arranque y todo lo que ve el vendedor corren por este período.
+- **Dos metas que se afectan entre sí:** Facturación (colocar ~2.000 uds/mes, mover inventario) y **Cobranza** (cobrar ~1.340 uds ≈ $7.500 = costos del mes, en ≤30 días). La comisión se paga **sobre lo cobrado**, con la **tasa que da el nivel de facturación**. "Una unidad solo vale cuando se cobra."
+- **Ventanas de cobro:** 0–30 días → comisión base + Bono Cobranza; 31–45 → base sin bono; >45 → anulada (`facturaMaxDias=45`, `cobranzaDias=30`).
+- **Bono Cobranza 2%** (reusa la clave `bonusPuntualidad` hasta la Fase 3.6). **Comisión por Cuentas Recuperadas 5% flat**: facturas heredadas de la cartera (previas al ingreso o sin dueño) que el vendedor cobra — cuentan para su **comisión** pero NO para su **meta de facturación**.
+- **Estado de Cuenta** por período con 3 números explícitos: **Devengado / Pagado / Saldo**. Requiere registrar **liquidaciones** (pagos al vendedor). Al cerrar cada período se **congela** el resultado y pasa al histórico.
+- **Liquidaciones**: por ahora accesibles al `master`; a futuro un usuario "administrador" con módulos asignables (aún no existe en GK).
+- **Propuesta de comisiones en PDF** (una página, muy visual) para el vendedor — ✅ hecho (`CommissionProposalDoc.jsx`, impresión nativa).
+
+**Hecho ✅:**
+- CI endurecido: Functions/Rules se despliegan aunque Hosting flaquee (`if: !cancelled()` + Hosting `continue-on-error`). Antes un falso-fallo de red de Hosting saltaba en cadena el deploy de funciones.
+- Config de comisiones extendida (`CommissionConstructor.jsx` + espejo en `commissionEngine.js`): `precioUnidad`, `metaCobranza`, `cobranzaDias`, `comisionRecuperadas`, Bono Cobranza (2%), `facturaMaxDias=45`. Todo editable.
+- Reperiodización (frontend): `vendedorMeta.js` calcula el período por mes de empleo (meses completos desde ingreso, con parseo local de la fecha para evitar corrimiento UTC). `VendedorLayout` suma `unidadesDelMes` desde `facturas_vendedor` dentro de `[periodStart, periodEnd)` y muestra el rango ("Mes 1 · 15-jun – 14-jul").
+- `sincronizarFacturaDesdeZoho` captura `zohoCustomerId` en `facturas_vendedor` (Fase 3.1). Diagnóstico visible en AdminPanel → Gestión de facturas Zoho (`_diag` con las claves del payload) — temporal, para confirmar dónde/si Zoho envía el `customer_id`.
+
+**Hoja de ruta (en orden de dependencia):**
+- **3.2 — Confirmar payload de Zoho:** verificar con `_diag` si el `customer_id` viene y bajo qué nombre. **Compuerta** de la atribución. Si Zoho no lo envía en el payload por defecto, configurar payload personalizado en la regla de flujo.
+- **3.3 — Vinculación cartera ↔ Zoho:** herramienta en Admin para mapear cada `customer_id` a un `vendor_clients` (escribe `zohoCustomerId` en el cliente de la cartera).
+- **3.4 — Atribución por cartera** en `sincronizarFacturaDesdeZoho` (reemplaza salesperson; fallback y huérfanas) + **backfill** de las facturas ya recibidas sin asignar.
+- **3.5 — Motor por período de empleo** en el webhook: acumular en `comisiones_mensuales` por período (no calendario), congelar tasa-cohorte por período, y congelar el resultado al cerrar.
+- **3.6 — Meta de cobranza + Bono Cobranza** (gating: cobrar `metaCobranza` en `cobranzaDias`) + **Cuentas Recuperadas** (5% en facturas con fecha < `fechaIngreso`). Renombrar `bonusPuntualidad`→`bonusCobranza` y cablear el Home.
+- **3.7 — Estado de Cuenta** del vendedor (histórico por período: devengado/pagado/saldo).
+- **3.8 — Liquidaciones** (registrar pagos al vendedor; `master` por ahora).
+- **3.9 — Home del vendedor:** separar "Facturas por cobrar" (cartera) de "Meta/Comisión".
+
 ### Estado actual (2026-06-15 — integración Zoho Books validada en producción, end-to-end)
 - ✅ **Deploy de Cloud Functions desbloqueado**: el secreto `X-Zoho-Secret` ya NO se gestiona vía Secret Manager (`runWith({ secrets: [...] })`) — bloqueaba el deploy por permisos del service account de CI (`secretmanager.versions.get` 403, sin causa raíz identificable). Se reemplazó por un archivo `.env.geniuskeeper-36553` generado por CI a partir del secreto de GitHub Actions `ZOHO_SECRET`, escrito justo antes de `firebase deploy --only functions` y borrado después (ver `.github/workflows/firebase-deploy.yml`, paso "Deploy Cloud Functions"; `functions/handlers/webhooks.js` ahora lee `process.env.ZOHO_SECRET` directo). `functions/.gitignore` excluye `.env`/`.env.*`. El secreto original en Secret Manager quedó huérfano (sin usar) — se puede borrar cuando se quiera.
 - ✅ **Webhooks configurados en Zoho Books** (Configuración → Automatización → Reglas de flujo de trabajo): "GK - Sincronizar Facturas" + "GK - Factura Vencida" → `sincronizarFacturaDesdeZoho`; "GK - Nota de Crédito" → `procesarNotaCreditoDesdeZoho`. Ambos con header `X-Zoho-Secret` = mismo valor que `ZOHO_SECRET` en GitHub Actions.
