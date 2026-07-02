@@ -100,12 +100,10 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
     const bonoRate = commConfig.bonusPuntualidad ?? 0;
     const [showDoc, setShowDoc] = useState(false);
 
-    // Dos vistas para no contaminar el balance actual con el histórico:
-    //  · 'actual'    → SOLO el período en curso (balance resumido, limpio).
-    //  · 'historico' → píldoras agrupadas por año + la tarjeta del período elegido.
-    const [modo, setModo]     = useState('actual');
+    // Una sola tarjeta a la vez (nunca un "chorizo"). Por defecto, el período en
+    // curso (índice 0). Un selector de píldoras por año permite ver el histórico.
     const [selIdx, setSelIdx] = useState(0);
-    const idx = modo === 'actual' ? 0 : Math.min(selIdx, Math.max(0, estados.length - 1));
+    const idx = Math.min(selIdx, Math.max(0, estados.length - 1));
     const p = estados[idx];
 
     // Dinero adeudado de períodos CERRADOS (no el provisional en curso): se
@@ -116,12 +114,12 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
 
     const anio = (e) => (e?.periodKey ? e.periodKey.slice(0, 4) : '');
 
-    // Agrupar períodos por año para la vista histórica (píldoras + años).
+    // Agrupar períodos por año para el selector de píldoras (mes + año).
     const porAnio = {};
     estados.forEach((e, i) => { const y = anio(e) || '—'; (porAnio[y] = porAnio[y] || []).push({ e, i }); });
     const anios = Object.keys(porAnio).sort().reverse();
 
-    const irAAdeudado = () => { if (primerAdeudadoIdx >= 0) { setModo('historico'); setSelIdx(primerAdeudadoIdx); } };
+    const irAAdeudado = () => { if (primerAdeudadoIdx >= 0) setSelIdx(primerAdeudadoIdx); };
 
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
@@ -165,30 +163,14 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                     </button>
                 )}
 
-                {/* Conmutador Balance actual / Histórico (solo si hay más de un período) */}
+                {/* Selector de períodos (píldoras por año). Solo aparece cuando
+                    hay más de un período — con uno solo se ve directo su balance. */}
                 {estados.length > 1 && (
-                    <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1">
-                        <button
-                            onClick={() => setModo('actual')}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${modo === 'actual' ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400'}`}
-                        >
-                            Balance actual
-                        </button>
-                        <button
-                            onClick={() => { setModo('historico'); setSelIdx(idx); }}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${modo === 'historico' ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400'}`}
-                        >
-                            Histórico ({estados.length})
-                        </button>
-                    </div>
-                )}
-
-                {/* Vista histórica: píldoras agrupadas por año */}
-                {modo === 'historico' && estados.length > 1 && (
                     <div className="space-y-2">
+                        <p className="text-slate-500 text-[11px] font-bold uppercase tracking-widest">Períodos</p>
                         {anios.map(y => (
                             <div key={y}>
-                                <p className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-1.5">{y}</p>
+                                <p className="text-slate-500 text-[10px] font-semibold mb-1">{y}</p>
                                 <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
                                     {porAnio[y].map(({ e, i }) => {
                                         const activo = i === idx;
@@ -220,8 +202,10 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                 <div className={`bg-slate-900 border rounded-2xl p-4 ${p.cerrado ? 'border-slate-700' : 'border-emerald-600/40'}`}>
                     <div className="flex items-center justify-between mb-3">
                         <div>
-                            <p className="text-white font-bold">Mes {p.mes} <span className="text-slate-500 text-xs font-normal">· {p.rango} · {anio(p)}</span></p>
-                            <p className={`text-[11px] font-semibold ${p.congelado ? 'text-blue-300' : p.cerrado ? 'text-slate-400' : 'text-emerald-400'}`}>{p.congelado ? 'Cerrado · congelado 🔒' : p.cerrado ? 'Cerrado (provisional)' : 'En curso · provisional'}</p>
+                            <p className="text-white font-bold">{p.cerrado ? 'Período' : 'Período en curso'} <span className="text-slate-400 text-sm font-normal">{p.rango} · {anio(p)}</span></p>
+                            <p className={`text-[11px] font-semibold ${p.congelado ? 'text-blue-300' : p.cerrado ? 'text-slate-400' : 'text-emerald-400'}`}>
+                                Mes {p.mes} de empleo · {p.congelado ? 'cerrado · congelado 🔒' : p.cerrado ? 'cerrado (provisional)' : 'en curso · provisional'}
+                            </p>
                         </div>
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 ${p.cerrado ? 'text-slate-300' : 'text-emerald-400'}`}>Nivel {p.nivel}</span>
                     </div>
