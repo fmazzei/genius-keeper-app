@@ -16,7 +16,9 @@ const uds   = (n) => `${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 
 function computeProposal(config = {}) {
     const precio = Number(config.precioUnidad) || 5.6;
-    const base   = (Number(config.salarioFijo) || 0) + (Number(config.viaticosSemanales) || 0) * 4;
+    const fijo       = Number(config.salarioFijo) || 0;
+    const viaticosMes = (Number(config.viaticosSemanales) || 0) * 4;
+    const base   = fijo + viaticosMes;
 
     const tiers = [...(config.tiers || [])].sort((a, b) => b.minPct - a.minPct);
     // Nivel "objetivo" = el que aplica al 100% de cumplimiento.
@@ -38,7 +40,7 @@ function computeProposal(config = {}) {
     const montoCobranza    = montoFacturacion;
     const comisionEjemplo  = montoCobranza * tasaObjetivo / 100;
 
-    return { precio, base, tiers, objetivo, bonoCobranza, bonoActivacion, tasaObjetivo, topRate, montoFacturacion, comisionObjetivo, potencial, montoCobranza, comisionEjemplo };
+    return { precio, base, fijo, viaticosMes, tiers, objetivo, bonoCobranza, bonoActivacion, tasaObjetivo, topRate, montoFacturacion, comisionObjetivo, potencial, montoCobranza, comisionEjemplo };
 }
 
 const PRINT_CSS = `
@@ -51,14 +53,15 @@ const PRINT_CSS = `
   #gk-proposal-portal { position: static !important; inset: auto !important; background: #fff !important; overflow: visible !important; display: block !important; }
   #gk-proposal-portal .gk-no-print { display: none !important; }
   #gk-proposal-portal > div { padding: 0 !important; display: block !important; }
-  /* La hoja ocupa el ancho de la página carta (no el ancho del celular). */
+  /* La hoja ocupa el ancho de la página carta (no el ancho del celular).
+     overflow visible: si no, el redondeo (overflow-hidden) recorta el cuerpo
+     al imprimir y sale en blanco bajo el encabezado. */
   #gk-proposal-sheet {
     position: static !important;
     width: 100% !important; max-width: 100% !important;
     margin: 0 !important; box-shadow: none !important; border-radius: 0 !important;
+    overflow: visible !important;
   }
-  /* Evitar que un bloque se parta y empuje a una segunda hoja. */
-  #gk-proposal-sheet > div, #gk-proposal-sheet > div > div { break-inside: avoid; }
 }
 `;
 
@@ -69,7 +72,7 @@ const Step = ({ label, rate, highlight }) => (
     </div>
 );
 
-const Badge = ({ Icon, title, value, tone = 'emerald' }) => {
+const Badge = ({ Icon, title, value, sub, tone = 'emerald' }) => {
     const tones = {
         emerald: 'bg-emerald-50 border-emerald-200 text-emerald-700',
         blue:    'bg-blue-50 border-blue-200 text-blue-700',
@@ -81,6 +84,7 @@ const Badge = ({ Icon, title, value, tone = 'emerald' }) => {
             <div className="min-w-0">
                 <p className="text-[11px] font-semibold leading-tight opacity-80">{title}</p>
                 <p className="text-sm font-black leading-tight">{value}</p>
+                {sub && <p className="text-[10px] font-semibold leading-tight opacity-70 mt-0.5">{sub}</p>}
             </div>
         </div>
     );
@@ -141,7 +145,7 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
 
                         {/* Piso + Meta */}
                         <div className="grid grid-cols-2 gap-3">
-                            <Badge Icon={Shield} title="Tu piso seguro" value={`${money(p.base)} / mes`} tone="blue" />
+                            <Badge Icon={Shield} title="Tu piso seguro" value={`${money(p.base)} / mes`} sub={`fijo ${money(p.fijo)} + viáticos ${money(p.viaticosMes)}`} tone="blue" />
                             <Badge Icon={Package} title="Meta de colocación" value={`${uds(config.metaMensual)} uds`} tone="emerald" />
                         </div>
 
