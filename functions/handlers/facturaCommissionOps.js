@@ -108,7 +108,7 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
 
     const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
     const facturaMaxDias = cfg.facturaMaxDias || DEFAULT_COMMISSION_CONFIG.facturaMaxDias;
-    const cobranzaDias   = cfg.cobranzaDias   || DEFAULT_COMMISSION_CONFIG.cobranzaDias;
+    const cobranzaGraciaDias = cfg.cobranzaGraciaDias ?? DEFAULT_COMMISSION_CONFIG.cobranzaGraciaDias;
     const comisionRecuperadas = cfg.comisionRecuperadas ?? DEFAULT_COMMISSION_CONFIG.comisionRecuperadas;
 
     // Fecha de pago: usamos el momento de recepción del webhook como proxy,
@@ -133,13 +133,14 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     // (Fase 3.7). Para recuperadas, la tasa flat sí es definitiva por factura.
     const comisionGenerada = comisionAnulada ? 0 : facturaData.monto * (tasaAplicada / 100);
 
-    // Cobranza dentro del plazo del Bono Cobranza (≤ cobranzaDias, def. 30).
-    const cobradaEnPlazo = diasParaCobrar !== null ? diasParaCobrar <= cobranzaDias : null;
-
+    // Cobranza "a tiempo" (Bono Cobranza por PUNTUALIDAD): cobrada dentro de
+    // vencimiento + cobranzaGraciaDias. diasCredito = días de la factura al
+    // vencimiento; +gracia = margen tras el vencimiento.
     const diasCredito = facturaData.diasCredito;
     const pagadaDentroDePlazo = (diasCredito !== null && diasCredito !== undefined && diasParaCobrar !== null)
-        ? diasParaCobrar <= (diasCredito + 5)
+        ? diasParaCobrar <= (diasCredito + cobranzaGraciaDias)
         : null;
+    const cobradaEnPlazo = pagadaDentroDePlazo; // alias (mismo criterio de puntualidad)
 
     facturaData.comisionAnulada     = comisionAnulada;
     facturaData.comisionGenerada    = comisionGenerada;

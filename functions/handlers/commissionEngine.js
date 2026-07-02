@@ -18,10 +18,10 @@ const DEFAULT_COMMISSION_CONFIG = {
         { label: 'Óptima', minPct: 100, rate: 4.0 },
         { label: 'Básica', minPct: 90, rate: 3.5 },
     ],
-    bajaRate: 3.5,
+    bajaRate: 3.0,
     bajaLabel: 'Baja',
     bajaActiva: true,
-    bonusPuntualidad: 2.0, // "Bono Cobranza" en la UI (ver CommissionConstructor.jsx)
+    bonusPuntualidad: 2.5, // "Bono Cobranza" — se gana por cobrar a tiempo (puntualidad)
     bonusActivacion: 1.0,
     activacionThreshold: 80,
     activacionMinUnits: 24,
@@ -29,12 +29,14 @@ const DEFAULT_COMMISSION_CONFIG = {
     anaquelThreshold: 80,
     anaquelMinUnits: 12,
     arranque: [],
-    // Cobranza + Cuentas Recuperadas — el motor los consume en la Fase 3 del
-    // rediseño (por ahora solo se persisten desde la UI para mantener el espejo).
-    metaCobranza: 1340,
-    cobranzaDias: 30,
+    // Cobranza por PUNTUALIDAD: a tiempo = cobrar dentro de vencimiento +
+    // cobranzaGraciaDias; el bono se gana si el % a tiempo ≥ cobranzaUmbral.
+    cobranzaGraciaDias: 5,
+    cobranzaUmbral: 85,
     comisionRecuperadas: 5.0,
     facturaMaxDias: 45,
+    metaCobranza: 1340, // (obsoleto)
+    cobranzaDias: 30,   // (obsoleto)
 };
 
 /**

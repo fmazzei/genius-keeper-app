@@ -17,14 +17,12 @@ export const DEFAULT_COMMISSION_CONFIG = {
         { label: 'Óptima', minPct: 100, rate: 4.0 },
         { label: 'Básica', minPct: 90,  rate: 3.5 },
     ],
-    bajaRate:            3.5,
+    bajaRate:            3.0,
     bajaLabel:           'Baja',   // nombre editable del nivel más bajo
     bajaActiva:          true,     // false = sin comisión por debajo del nivel más bajo
-    // "Bono Cobranza" en la UI. El gating por volumen/plazo (cobrar metaCobranza
-    // en cobranzaDias) se cablea en la Fase 3 del rediseño de comisiones; por
-    // ahora este campo guarda la TASA del bono (reusa la clave existente para no
-    // romper el motor/Home que ya la leen).
-    bonusPuntualidad:    2.0,
+    // "Bono Cobranza" (reusa la clave bonusPuntualidad): TASA del bono. Se gana
+    // por CUMPLIR LA COBRANZA A TIEMPO (no por volumen) — ver cobranzaUmbral.
+    bonusPuntualidad:    2.5,
     bonusActivacion:     1.0,
     activacionThreshold: 80,
     activacionMinUnits:  24,
@@ -32,9 +30,12 @@ export const DEFAULT_COMMISSION_CONFIG = {
     anaquelThreshold:    80,
     anaquelMinUnits:     12,
     arranque:            [],
-    // Cobranza (caja)
-    metaCobranza:        1340,  // uds a cobrar en el mes (≈ costos del mes)
-    cobranzaDias:        30,    // ventana en días para ganar el Bono Cobranza
+    // Cobranza por PUNTUALIDAD (no por volumen). Se mide sobre las facturas que
+    // vencen: cobrar dentro de vencimiento + cobranzaGraciaDias = "a tiempo".
+    cobranzaGraciaDias:  5,     // días de gracia tras el vencimiento que aún cuentan a tiempo
+    cobranzaUmbral:      85,    // % de facturas vencidas cobradas a tiempo para ganar el Bono Cobranza
+    metaCobranza:        1340,  // (obsoleto) meta de cobranza por volumen — reemplazada por puntualidad
+    cobranzaDias:        30,    // (obsoleto)
     // Cuentas Recuperadas: facturas heredadas de la cartera que el vendedor cobra
     comisionRecuperadas: 5.0,   // % flat sobre lo cobrado de esas facturas adoptadas
     facturaMaxDias:      45,    // >45 días sin cobrar → la comisión se anula
@@ -267,29 +268,29 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 </section>
 
-                {/* ── 1b. Meta de Cobranza (caja) ── */}
+                {/* ── 1b. Cobranza (por puntualidad) ── */}
                 <section>
-                    <SectionHeader label="Meta de Cobranza (Caja)" />
+                    <SectionHeader label="Cobranza (a tiempo)" />
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
                         <InlineRow
-                            label="Meta de cobranza"
-                            hint="Unidades a cobrar en el mes para cubrir los costos (caja)"
-                            suffix="uds"
-                            value={config.metaCobranza}
-                            step={20}
-                            onChange={v => setConfig(p => ({ ...p, metaCobranza: v }))}
+                            label="Días de gracia tras vencimiento"
+                            hint="Cobrar dentro de vencimiento + estos días cuenta como 'a tiempo'"
+                            suffix="días"
+                            value={config.cobranzaGraciaDias}
+                            step={1}
+                            onChange={v => setConfig(p => ({ ...p, cobranzaGraciaDias: v }))}
                         />
                         <InlineRow
-                            label="Días para el Bono Cobranza"
-                            hint="Cobrar dentro de este plazo activa el bono"
-                            suffix="días"
-                            value={config.cobranzaDias}
-                            step={1}
-                            onChange={v => setConfig(p => ({ ...p, cobranzaDias: v }))}
+                            label="Umbral del Bono Cobranza"
+                            hint="% de facturas vencidas cobradas a tiempo para ganar el bono"
+                            suffix="%"
+                            value={config.cobranzaUmbral}
+                            step={5}
+                            onChange={v => setConfig(p => ({ ...p, cobranzaUmbral: v }))}
                         />
                     </div>
                     <p className="text-xs text-slate-400 mt-1.5 px-1">
-                        {fmtUnits(config.metaCobranza)} uds ≈ ${fmtUnits((config.metaCobranza || 0) * (config.precioUnidad || 0))} de caja al mes.
+                        La cobranza se mide por <b>puntualidad</b>, no por volumen: mantener la cartera al día. El Bono Cobranza (+{config.bonusPuntualidad}%) se gana al cobrar a tiempo ≥ {config.cobranzaUmbral}% de las facturas que vencen.
                     </p>
                 </section>
 

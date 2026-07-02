@@ -159,8 +159,8 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                         <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 flex items-center gap-3">
                             <Banknote size={22} className="text-emerald-600 shrink-0" />
                             <div>
-                                <p className="text-slate-800 text-sm font-black">Cobra {money(p.montoCobranza)} ({uds(config.metaCobranza)} uds) en {cobranzaDias} días</p>
-                                <p className="text-slate-400 text-xs">Cobrar rápido activa tu Bono Cobranza</p>
+                                <p className="text-slate-800 text-sm font-black">Cobra a tiempo ≥ {Number(config.cobranzaUmbral) || 85}% de tus facturas</p>
+                                <p className="text-slate-400 text-xs">Dentro de vencimiento + {Number(config.cobranzaGraciaDias) || 5} días → Bono Cobranza +{p.bonoCobranza}%</p>
                             </div>
                         </div>
 
