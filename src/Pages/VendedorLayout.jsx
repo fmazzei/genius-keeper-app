@@ -13,7 +13,7 @@ import {
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
     ClipboardList, Receipt, Store, Warehouse, X, RefreshCw,
-    Zap,
+    Zap, ChevronLeft, Wallet,
 } from 'lucide-react';
 import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
@@ -25,7 +25,7 @@ import ReportesAnaquelView from '@/Pages/ReportesAnaquelView.jsx';
 import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
-import { computeMetaMensual } from '@/utils/vendedorMeta.js';
+import { computeMetaMensual, computeEstadosDeCuenta } from '@/utils/vendedorMeta.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
 // ─── Tier style palette (by tier index, 0 = highest) ─────────────────────────
@@ -88,6 +88,53 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
             <p className={`text-xl font-black font-mono ${color}`}>{value}</p>
             <p className="text-slate-400 text-xs mt-0.5 leading-tight">{label}</p>
             {sub && <p className="text-slate-500 text-[10px] mt-0.5">{sub}</p>}
+        </div>
+    );
+}
+
+// ─── Estado de Cuenta (Fase 3.7) — histórico por período de empleo ───────────
+function EstadoCuentaView({ estados, onBack }) {
+    const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
+    return (
+        <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
+            <div className="flex items-center gap-3">
+                <button onClick={onBack} className="p-2 rounded-xl bg-slate-800 text-slate-400 shrink-0"><ChevronLeft size={18} /></button>
+                <div>
+                    <p className="text-white font-black text-lg leading-tight">Estado de Cuenta</p>
+                    <p className="text-slate-400 text-xs">Tu comisión por período (mes de empleo)</p>
+                </div>
+            </div>
+            {estados.length === 0 ? (
+                <p className="text-slate-400 text-sm">Aún no hay períodos que mostrar.</p>
+            ) : estados.map(p => (
+                <div key={p.mes} className={`bg-slate-900 border rounded-2xl p-4 ${p.cerrado ? 'border-slate-700' : 'border-emerald-600/40'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                        <div>
+                            <p className="text-white font-bold">Mes {p.mes} <span className="text-slate-500 text-xs font-normal">· {p.rango}</span></p>
+                            <p className="text-slate-400 text-[11px]">{p.cerrado ? 'Cerrado' : 'En curso (provisional)'}</p>
+                        </div>
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 ${p.cerrado ? 'text-slate-300' : 'text-emerald-400'}`}>Nivel {p.nivel}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                        <div className="bg-slate-800/60 rounded-lg p-2">
+                            <p className="text-slate-400">Facturación</p>
+                            <p className="text-white font-bold">{p.unidades.toLocaleString()} / {p.metaMensual.toLocaleString()} uds</p>
+                        </div>
+                        <div className="bg-slate-800/60 rounded-lg p-2">
+                            <p className="text-slate-400">Cobranza a tiempo</p>
+                            <p className={`font-bold ${p.cobranzaOk ? 'text-emerald-400' : 'text-white'}`}>{p.cobranzaTasa === null ? '—' : `${p.cobranzaTasa.toFixed(0)}%`}</p>
+                        </div>
+                    </div>
+                    <div className="border-t border-slate-800 pt-2 space-y-1 text-sm">
+                        <div className="flex justify-between"><span className="text-slate-400">Comisión devengada</span><span className="text-white font-bold font-mono">{money(p.devengadoComision)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-400">Base (fijo + viáticos)</span><span className="text-slate-300 font-mono">{money(p.base)}</span></div>
+                        <div className="flex justify-between border-t border-slate-800 pt-1"><span className="text-slate-300 font-semibold">Devengado total</span><span className="text-emerald-400 font-black font-mono">{money(p.devengadoTotal)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-400">Pagado</span><span className="text-slate-300 font-mono">$0</span></div>
+                        <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo pendiente</span><span className="text-amber-400 font-black font-mono">{money(p.devengadoTotal)}</span></div>
+                    </div>
+                </div>
+            ))}
+            <p className="text-slate-500 text-[11px] px-1">La comisión se calcula con el <b>nivel final</b> del período sobre lo cobrado. "Pagado" se registrará con las liquidaciones (Fase 3.8).</p>
         </div>
     );
 }
@@ -430,6 +477,13 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                     <ClipboardList size={30} />
                     <span className="text-xl">Nuevo Pedido</span>
                 </button>
+                <button
+                    onClick={() => onNavigate('estado_cuenta')}
+                    className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 active:scale-[0.98] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2.5 transition-all"
+                >
+                    <Wallet size={20} className="text-emerald-400" />
+                    <span>Estado de Cuenta</span>
+                </button>
             </div>
 
             {/* ── Período de arranque ── */}
@@ -636,6 +690,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [currentView, setCurrentView]               = useState('home');
     const [selectedPos, setSelectedPos]               = useState(null);
     const [subView, setSubView]                       = useState(null);
+    const [estados, setEstados]                       = useState([]);
     const [vendedor, setVendedor]                     = useState({ uid: null, nombre: '', metaMensual: 2400, reporterId: null, mesArranque: 0 });
     const [commConfig, setCommConfig]                 = useState(DEFAULT_COMMISSION_CONFIG);
     const [stats, setStats]                           = useState({
@@ -1071,6 +1126,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 };
                 setStats(newStats);
 
+                // Estado de Cuenta por período (Fase 3.7) — histórico devengado.
+                setEstados(computeEstadosDeCuenta(meta, facturasSnap ? facturasSnap.docs.map(d => d.data()) : []));
+
                 // 6. PDV list for dispatch — collapse centralizado chains to a single entry per chain
                 //    (posDocsMap fue cargado arriba, en 4b).
                 const centralizadoByChain = {};
@@ -1207,6 +1265,10 @@ const VendedorLayout = ({ user, onLogout }) => {
 
         if (currentView === 'facturas') {
             return <MisFacturasView vendedorId={user.uid} />;
+        }
+
+        if (currentView === 'estado_cuenta') {
+            return <EstadoCuentaView estados={estados} onBack={() => setCurrentView('home')} />;
         }
 
         if (currentView === 'alertas') {

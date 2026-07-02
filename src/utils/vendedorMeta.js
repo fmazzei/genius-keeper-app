@@ -77,3 +77,93 @@ export function computeMetaMensual(meta = {}) {
 
     return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel };
 }
+
+const rangoLabel = (start, end) => {
+    const fmt = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
+    return `${fmt(start)} – ${fmt(new Date(end.getTime() - MS_DIA))}`;
+};
+
+/**
+ * Fase 3.7 — Estado de Cuenta por PERÍODO de empleo. Función pura: dado el
+ * `users_metadata` del vendedor y sus facturas, devuelve un arreglo (más
+ * reciente primero) con el resultado de cada período de empleo desde su ingreso.
+ *
+ * Modelo confirmado: la comisión se calcula con el NIVEL FINAL del período
+ * (facturación total del período → tier) aplicado a lo COBRADO del período,
+ * + Bono Cobranza (si cumple puntualidad) + Cuentas Recuperadas (5% flat). Los
+ * períodos ya cerrados tienen su resultado fijo (no cambian sus datos); el
+ * período en curso es PROVISIONAL. `pagado` (liquidaciones) llega en 3.8.
+ *
+ * @returns {Array<{mes,rango,cerrado,unidades,metaMensual,nivel,tasa,
+ *   cobranzaTasa,cobranzaOk,cobrado,devengadoComision,base,devengadoTotal}>}
+ */
+export function computeEstadosDeCuenta(meta = {}, facturas = []) {
+    const cfg = meta.commissionConfig
+        ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
+        : DEFAULT_COMMISSION_CONFIG;
+    const ingreso = toDate(meta.fechaIngreso);
+    if (!ingreso) return [];
+
+    const metaPlena     = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+    const arranque      = Array.isArray(cfg.arranque) ? cfg.arranque : [];
+    const tiersDesc     = [...(cfg.tiers || [])].sort((a, b) => b.minPct - a.minPct);
+    const bajaRate      = cfg.bajaRate ?? 0;
+    const bajaLabel     = cfg.bajaLabel || 'Baja';
+    const bonoCobranza  = cfg.bonusPuntualidad ?? 0;
+    const umbral        = cfg.cobranzaUmbral ?? 85;
+    const tasaRecup     = cfg.comisionRecuperadas ?? 5;
+    const baseMes       = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
+
+    const tierFor = (pct) => {
+        for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
+        return { label: bajaLabel, rate: bajaRate };
+    };
+
+    const ahora = new Date();
+    const nPeriodos = mesesCompletos(ingreso, ahora) + 1;
+    const out = [];
+
+    for (let i = nPeriodos - 1; i >= 0; i--) {
+        const start = addMonths(ingreso, i);
+        const end   = addMonths(ingreso, i + 1);
+        const metaMensual = i < arranque.length ? (arranque[i].meta || metaPlena) : metaPlena;
+
+        let unidades = 0, cobradoRegular = 0, cobradoRecup = 0, cobrDen = 0, cobrATiempo = 0;
+        facturas.forEach(f => {
+            const t = toDate(f.fecha);
+            if (f.estado === 'anulada' || !t || t < start || t >= end) return;
+            const pagada = f.estado === 'pagada';
+            const monto  = Number(f.monto) || 0;
+            if (f.recuperada) {
+                if (pagada && !f.comisionAnulada) cobradoRecup += monto;
+            } else {
+                unidades += Number(f.unidades) || 0;
+                if (pagada && !f.comisionAnulada) cobradoRegular += monto;
+                const venc = toDate(f.vencimiento);
+                const vencida = venc && venc <= ahora;
+                if (vencida || pagada) { cobrDen++; if (pagada && f.pagadaDentroDePlazo === true) cobrATiempo++; }
+            }
+        });
+
+        const pct = metaMensual > 0 ? unidades / metaMensual : 0;
+        const tier = tierFor(pct);
+        const cobranzaTasa = cobrDen > 0 ? (cobrATiempo / cobrDen) * 100 : null;
+        const cobranzaOk = cobranzaTasa !== null && cobranzaTasa >= umbral;
+        const tasaTotal = tier.rate + (cobranzaOk ? bonoCobranza : 0);
+        const devengadoComision = cobradoRegular * tasaTotal / 100 + cobradoRecup * tasaRecup / 100;
+
+        out.push({
+            mes: i + 1,
+            rango: rangoLabel(start, end),
+            cerrado: end <= ahora,
+            unidades, metaMensual,
+            nivel: tier.label, tasa: tier.rate,
+            cobranzaTasa, cobranzaOk,
+            cobrado: cobradoRegular + cobradoRecup,
+            devengadoComision,
+            base: baseMes,
+            devengadoTotal: devengadoComision + baseMes,
+        });
+    }
+    return out;
+}
