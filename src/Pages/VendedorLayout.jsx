@@ -1516,6 +1516,15 @@ const VendedorLayout = ({ user, onLogout }) => {
 
     const alertCount = alertas.length;
 
+    // Refresh global del perfil del vendedor: re-dispara la carga principal
+    // (metas, comisión, cartera, facturas, estado de cuenta, radar…) y las
+    // alertas. La cuenta de pedidos ya es en tiempo real (onSnapshot).
+    const handleRefresh = () => {
+        if (loading) return;
+        setReloadKey(k => k + 1);
+        loadAlertas(user?.uid);
+    };
+
     return (
         <div className="relative flex flex-col h-screen bg-slate-950 text-white overflow-hidden">
 
@@ -1527,7 +1536,16 @@ const VendedorLayout = ({ user, onLogout }) => {
                     </div>
                     <span className="text-white font-bold text-sm">GK Vendedor</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                    {/* Refresh global — actualiza todo el perfil del vendedor en vivo */}
+                    <button
+                        onClick={handleRefresh}
+                        disabled={loading}
+                        className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center disabled:opacity-60"
+                        aria-label="Actualizar"
+                    >
+                        <RefreshCw size={16} className={`text-slate-300 ${loading ? 'animate-spin' : ''}`} />
+                    </button>
                     {/* Estado de Cuenta — píldora glanceable: tu comisión del período en curso */}
                     <button
                         onClick={() => navigate('estado_cuenta')}
