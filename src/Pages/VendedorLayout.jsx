@@ -251,6 +251,9 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                             {p.bonoCobranzaMonto > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Bono Cobranza ({p.bonoCobranzaRate}% de lo cobrado a tiempo)</span><span className="text-emerald-400 font-mono">+{money(p.bonoCobranzaMonto)}</span></div>
                             )}
+                            {p.bonoActivacionMonto > 0 && (
+                                <div className="flex justify-between"><span className="text-slate-400">Bono Activación ({p.bonoActivacionRate}% × {p.actSemanasLogradas}/{p.actSemanasTotales} sem.)</span><span className="text-emerald-400 font-mono">+{money(p.bonoActivacionMonto)}</span></div>
+                            )}
                             {p.cobradoRecup > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Cuentas recuperadas ({p.tasaRecup}%)</span><span className="text-white font-mono">{money(p.cobradoRecup)}</span></div>
                             )}
@@ -598,23 +601,39 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                 <div className="space-y-2">
                     <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Estado de Bonos</p>
 
-                    {showActivacion && (
-                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
-                            {stats.activacionOk
-                                ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
-                                : <AlertCircle size={20} className="text-amber-400 shrink-0" />
-                            }
-                            <div className="flex-1 min-w-0">
-                                <p className="text-white text-sm font-semibold">Bono Activación (+{commConfig.bonusActivacion}%)</p>
-                                <p className="text-slate-400 text-xs">
-                                    {stats.activacionOk
-                                        ? '¡Activación lograda esta semana!'
-                                        : `Cubre ${stats.puntosActivacion}/${stats.puntosTotal} puntos con mín. ${commConfig.activacionMinUnits} uds para ganarlo`
-                                    }
-                                </p>
+                    {showActivacion && estadoActual && (() => {
+                        const faltanAct = Math.max(0, (estadoActual.actSemObjetivo || 0) - (estadoActual.actSemActivados || 0));
+                        return (
+                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
+                            <div className="flex items-center gap-3">
+                                {estadoActual.actSemLograda
+                                    ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
+                                    : <AlertCircle size={20} className="text-amber-400 shrink-0" />
+                                }
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-white text-sm font-semibold">Bono Activación (+{commConfig.bonusActivacion}%)</p>
+                                    {estadoActual.carteraSize > 0 ? (
+                                        <p className="text-slate-400 text-xs">
+                                            Esta semana: <b className={estadoActual.actSemLograda ? 'text-emerald-400' : 'text-white'}>{estadoActual.actSemActivados}/{estadoActual.carteraSize}</b> clientes con ≥{commConfig.activacionMinUnits} uds · objetivo {estadoActual.actSemObjetivo}
+                                            {estadoActual.actSemLograda ? ' — ¡lograda!' : ` · faltan ${faltanAct}`}
+                                        </p>
+                                    ) : (
+                                        <p className="text-slate-400 text-xs">Aún no tienes cartera asignada.</p>
+                                    )}
+                                </div>
                             </div>
+                            {estadoActual.carteraSize > 0 && (
+                                <>
+                                    <div className="mt-2.5 flex items-center justify-between text-[11px]">
+                                        <span className="text-slate-500">Semanas logradas este período</span>
+                                        <span className="text-emerald-400 font-bold">{estadoActual.actSemanasLogradas}/{estadoActual.actSemanasTotales}</span>
+                                    </div>
+                                    <p className="text-slate-500 text-[10px] mt-1.5">Se paga proporcional: <b className="text-slate-400">+{commConfig.bonusActivacion}% × (semanas logradas ÷ semanas del período)</b> sobre lo cobrado.</p>
+                                </>
+                            )}
                         </div>
-                    )}
+                        );
+                    })()}
 
                     {showAnaquel && (
                         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
@@ -1358,7 +1377,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 // Estado de Cuenta por período (Fase 3.7/3.8) — histórico devengado
                 // vs. pagado (liquidaciones registradas por administración).
                 const liquidaciones = liquidacionesSnap ? liquidacionesSnap.docs.map(d => d.data()) : [];
-                setEstados(computeEstadosDeCuenta(meta, facturasSnap ? facturasSnap.docs.map(d => d.data()) : [], liquidaciones));
+                setEstados(computeEstadosDeCuenta(meta, facturasSnap ? facturasSnap.docs.map(d => d.data()) : [], liquidaciones, { carteraSize: puntosTotal }));
 
                 // 6. PDV list for dispatch — collapse centralizado chains to a single entry per chain
                 //    (posDocsMap fue cargado arriba, en 4b).

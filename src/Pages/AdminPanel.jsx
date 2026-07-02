@@ -2585,15 +2585,18 @@ const LiquidacionesManagement = () => {
         setLoading(true);
         setError('');
         try {
-            const [metaSnap, facturasSnap, liquidSnap] = await Promise.all([
+            const [metaSnap, facturasSnap, liquidSnap, carteraSnap] = await Promise.all([
                 getDoc(doc(db, 'users_metadata', uid)),
                 getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', uid))),
                 getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', uid))),
+                getDocs(query(collection(db, 'vendor_clients'), where('vendedorId', '==', uid), where('active', '==', true)))
+                    .catch(() => null),
             ]);
             const meta = metaSnap.exists() ? metaSnap.data() : {};
             const facturas = facturasSnap.docs.map(d => d.data());
             const liqs = liquidSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setEstados(computeEstadosDeCuenta(meta, facturas, liqs));
+            const carteraSize = carteraSnap ? carteraSnap.docs.filter(d => (d.data().estado || 'activo') === 'activo').length : 0;
+            setEstados(computeEstadosDeCuenta(meta, facturas, liqs, { carteraSize }));
             setLiquid(liqs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')));
         } catch (e) {
             console.error(e);

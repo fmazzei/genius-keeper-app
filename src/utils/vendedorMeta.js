@@ -84,6 +84,45 @@ const rangoLabel = (start, end) => {
 };
 
 /**
+ * Bono Activación (semanal, proporcional). Divide el período en ventanas de 7
+ * días desde su inicio. Una SEMANA está "lograda" si al menos `threshold`% de la
+ * cartera fue FACTURADA ≥ `minUnits` unidades en esa semana. El factor del
+ * período = semanas logradas / semanas transcurridas. El bono se paga como
+ * `bonusActivacion% × factor` sobre lo cobrado (fuera de esta función).
+ *
+ * Devuelve también el estado de la SEMANA EN CURSO (la última ventana elegible)
+ * para el tracking en vivo del vendedor.
+ */
+const MS_SEMANA = 7 * MS_DIA;
+function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minUnits, threshold) {
+    const vacio = { semanasTotales: 0, semanasLogradas: 0, factor: 0, semActivados: 0, semObjetivo: 0, semLograda: false };
+    if (!carteraSize || carteraSize <= 0) return vacio;
+    const objetivo = Math.max(1, Math.ceil(carteraSize * threshold / 100));
+    const limite = Math.min(end.getTime(), ahora.getTime());
+    let semanasTotales = 0, semanasLogradas = 0, semActivados = 0, semLograda = false;
+    for (let ws = start.getTime(); ws < limite; ws += MS_SEMANA) {
+        const we = ws + MS_SEMANA;
+        const porCliente = {};
+        facturas.forEach(f => {
+            if (f.estado === 'anulada' || f.recuperada) return;
+            const t = toDate(f.fecha);
+            if (!t) return;
+            const tm = t.getTime();
+            if (tm < ws || tm >= we) return;
+            const key = f.zohoCustomerId || f.clienteName || f.customerName || '?';
+            porCliente[key] = (porCliente[key] || 0) + (Number(f.unidades) || 0);
+        });
+        const activados = Object.values(porCliente).filter(u => u >= minUnits).length;
+        const lograda = activados >= objetivo;
+        semanasTotales++;
+        if (lograda) semanasLogradas++;
+        semActivados = activados; semLograda = lograda; // última ventana = semana en curso
+    }
+    const factor = semanasTotales > 0 ? semanasLogradas / semanasTotales : 0;
+    return { semanasTotales, semanasLogradas, factor, semActivados, semObjetivo: objetivo, semLograda };
+}
+
+/**
  * Fase 3.7 — Estado de Cuenta por PERÍODO de empleo. Función pura: dado el
  * `users_metadata` del vendedor y sus facturas, devuelve un arreglo (más
  * reciente primero) con el resultado de cada período de empleo desde su ingreso.
@@ -97,7 +136,7 @@ const rangoLabel = (start, end) => {
  * @returns {Array<{mes,rango,cerrado,unidades,metaMensual,nivel,tasa,
  *   cobranzaTasa,cobranzaOk,cobrado,devengadoComision,base,devengadoTotal}>}
  */
-export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = []) {
+export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], opts = {}) {
     const cfg = meta.commissionConfig
         ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
         : DEFAULT_COMMISSION_CONFIG;
@@ -119,6 +158,13 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
     const bonoCobranza  = cfg.bonusPuntualidad ?? 0;
     const tasaRecup     = cfg.comisionRecuperadas ?? 5;
     const baseMes       = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
+
+    // Bono Activación (semanal, proporcional): base para saber cuántos clientes
+    // son el objetivo. `carteraSize` = nº de clientes activos del vendedor.
+    const bonoActivacion = cfg.bonusActivacion ?? 0;
+    const actMinUnits    = cfg.activacionMinUnits ?? 24;
+    const actThreshold   = cfg.activacionThreshold ?? 80;
+    const carteraSize    = Number(opts.carteraSize) || 0;
 
     const tierFor = (pct) => {
         for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
@@ -166,7 +212,11 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
         const cobranzaTasa = cobrDen > 0 ? (cobrATiempo / cobrDen) * 100 : null;
         // Bono Cobranza proporcional: bonoCobranza% sobre lo cobrado a tiempo.
         const bonoCobranzaMonto = cobradoRegularATiempo * bonoCobranza / 100;
-        const devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + cobradoRecup * tasaRecup / 100;
+        // Bono Activación proporcional: bonusActivacion% × (semanas logradas /
+        // semanas del período) sobre lo cobrado.
+        const act = computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, actMinUnits, actThreshold);
+        const bonoActivacionMonto = cobradoRegular * (bonoActivacion / 100) * act.factor;
+        const devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + cobradoRecup * tasaRecup / 100;
         const devengadoTotal = devengadoComision + baseMes;
         const pagado = pagadoPorPeriodo[periodKey] || 0;
 
@@ -183,6 +233,16 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             cobradoRegular, cobradoRegularATiempo, cobradoRecup,  // desglose
             bonoCobranzaRate: bonoCobranza,       // % del Bono Cobranza (config)
             bonoCobranzaMonto,                    // $ ganado por cobrar a tiempo
+            // Activación
+            bonoActivacionRate: bonoActivacion,
+            bonoActivacionMonto,
+            actFactor: act.factor,
+            actSemanasLogradas: act.semanasLogradas,
+            actSemanasTotales: act.semanasTotales,
+            actSemActivados: act.semActivados,     // clientes activados en la semana en curso
+            actSemObjetivo: act.semObjetivo,       // clientes necesarios (objetivo)
+            actSemLograda: act.semLograda,
+            carteraSize,
             tasaRecup,
             devengadoComision,
             base: baseMes,

@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, Shield, Zap, Target, Package, Banknote, ArrowUpRight, RotateCcw } from 'lucide-react';
+import { X, Printer, Shield, Zap, Target, Package, ArrowUpRight, RotateCcw } from 'lucide-react';
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 const uds   = (n) => `${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
@@ -34,7 +34,8 @@ function computeProposal(config = {}) {
     const comisionObjetivo = montoFacturacion * tasaObjetivo / 100;
     const potencial        = base + comisionObjetivo;
 
-    const montoCobranza    = (Number(config.metaCobranza) || 0) * precio;
+    // Ejemplo: cobras a tiempo lo que colocas y activas tu cartera → tasa objetivo.
+    const montoCobranza    = montoFacturacion;
     const comisionEjemplo  = montoCobranza * tasaObjetivo / 100;
 
     return { precio, base, tiers, objetivo, bonoCobranza, bonoActivacion, tasaObjetivo, topRate, montoFacturacion, comisionObjetivo, potencial, montoCobranza, comisionEjemplo };
@@ -42,8 +43,8 @@ function computeProposal(config = {}) {
 
 const PRINT_CSS = `
 @media print {
-  /* Tamaño CARTA, una hoja. */
-  @page { size: letter; margin: 14mm; }
+  /* Tamaño CARTA, una sola hoja. */
+  @page { size: letter; margin: 11mm; }
   /* Ocultar TODA la app con display:none del root (rápido) en vez de recalcular
      la visibilidad de cada nodo (lento). Solo queda el overlay del PDF. */
   body > *:not(#gk-proposal-portal) { display: none !important; }
@@ -56,6 +57,8 @@ const PRINT_CSS = `
     width: 100% !important; max-width: 100% !important;
     margin: 0 !important; box-shadow: none !important; border-radius: 0 !important;
   }
+  /* Evitar que un bloque se parta y empuje a una segunda hoja. */
+  #gk-proposal-sheet > div, #gk-proposal-sheet > div > div { break-inside: avoid; }
 }
 `;
 
@@ -85,9 +88,11 @@ const Badge = ({ Icon, title, value, tone = 'emerald' }) => {
 
 export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor', onClose }) {
     const p = computeProposal(config);
-    const allTiers = [...p.tiers, { label: 'Baja', rate: Number(config.bajaRate) || 0 }];
+    const allTiers = [...p.tiers, { label: config.bajaLabel || 'Baja', rate: Number(config.bajaRate) || 0 }];
     const fecha = new Date().toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
-    const cobranzaDias = Number(config.cobranzaDias) || 30;
+    const gracia     = Number(config.cobranzaGraciaDias) || 5;
+    const minUnits   = Number(config.activacionMinUnits) || 24;
+    const threshold  = Number(config.activacionThreshold) || 80;
     const recuperadas  = Number(config.comisionRecuperadas) || 0;
 
     // Portal al <body>: si el overlay se renderiza dentro del modal del
@@ -126,13 +131,13 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                     </div>
 
                     {/* Hero */}
-                    <div className="px-6 py-6 text-center border-b border-slate-100">
-                        <p className="text-slate-400 text-xs font-bold uppercase tracking-[0.2em]">Tu potencial mensual</p>
-                        <p className="text-emerald-600 text-5xl font-black leading-none my-2">hasta {money(p.potencial)}</p>
-                        <p className="text-slate-400 text-xs">Ingreso base + comisión al cumplir tu meta, con bonos activos</p>
+                    <div className="px-6 py-4 text-center border-b border-slate-100">
+                        <p className="text-slate-400 text-[11px] font-bold uppercase tracking-[0.2em]">Tu potencial mensual</p>
+                        <p className="text-emerald-600 text-4xl font-black leading-none my-1.5">hasta {money(p.potencial)}</p>
+                        <p className="text-slate-400 text-[11px]">Ingreso base + comisión al cumplir tu meta, con bonos activos</p>
                     </div>
 
-                    <div className="px-6 py-5 space-y-5">
+                    <div className="px-6 py-4 space-y-3.5">
 
                         {/* Piso + Meta */}
                         <div className="grid grid-cols-2 gap-3">
@@ -142,7 +147,7 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
 
                         {/* Escalera de comisión */}
                         <div>
-                            <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-2 flex items-center gap-1.5">
+                            <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
                                 <ArrowUpRight size={14} /> Tu comisión crece contigo
                             </p>
                             <div className="flex items-end gap-1.5">
@@ -153,37 +158,45 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                             <p className="text-slate-400 text-[10px] mt-1 text-center">% sobre el monto que <b>cobras</b> — a más colocación, mejor tasa</p>
                         </div>
 
-                        {/* Bonos */}
-                        <div className="grid grid-cols-2 gap-3">
-                            <Badge Icon={Zap} title="Bono Cobranza" value={`+${p.bonoCobranza}%`} tone="emerald" />
-                            <Badge Icon={Target} title="Bono Activación" value={`+${p.bonoActivacion}%`} tone="amber" />
-                        </div>
-                        <p className="text-center text-sm font-black text-emerald-700 -mt-2">Hasta {p.topRate.toFixed(1)}% sobre lo que cobras</p>
-
-                        {/* Metas de caja */}
-                        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 flex items-center gap-3">
-                            <Banknote size={22} className="text-emerald-600 shrink-0" />
-                            <div>
-                                <p className="text-slate-800 text-sm font-black">Cobra a tiempo ≥ {Number(config.cobranzaUmbral) || 85}% de tus facturas</p>
-                                <p className="text-slate-400 text-xs">Dentro de vencimiento + {Number(config.cobranzaGraciaDias) || 5} días → Bono Cobranza +{p.bonoCobranza}%</p>
+                        {/* Bonos que suben tu tasa */}
+                        <div>
+                            <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
+                                <Zap size={14} /> Bonos que suben tu comisión
+                            </p>
+                            <div className="space-y-2">
+                                <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2 flex items-start gap-2.5">
+                                    <Zap size={17} className="text-emerald-600 shrink-0 mt-0.5" />
+                                    <div className="min-w-0">
+                                        <p className="text-emerald-800 text-sm font-black leading-tight">Bono Cobranza +{p.bonoCobranza}%</p>
+                                        <p className="text-slate-500 text-[11px] leading-snug">Sobre <b>cada factura</b> que cobras a tiempo (dentro de vencimiento + {gracia} días de gracia). Mientras más puntual, más ganas.</p>
+                                    </div>
+                                </div>
+                                <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2 flex items-start gap-2.5">
+                                    <Target size={17} className="text-amber-600 shrink-0 mt-0.5" />
+                                    <div className="min-w-0">
+                                        <p className="text-amber-800 text-sm font-black leading-tight">Bono Activación +{p.bonoActivacion}%</p>
+                                        <p className="text-slate-500 text-[11px] leading-snug">Coloca ≥{minUnits} uds en el <b>{threshold}% de tu cartera cada semana</b>. Se paga proporcional a las semanas que lo logras, sobre lo que cobras.</p>
+                                    </div>
+                                </div>
                             </div>
+                            <p className="text-center text-sm font-black text-emerald-700 mt-2">Hasta {p.topRate.toFixed(1)}% sobre lo que cobras</p>
                         </div>
 
                         {/* Cuentas recuperadas */}
                         {recuperadas > 0 && (
-                            <div className="rounded-xl bg-[#0D2B4C]/5 border border-[#0D2B4C]/15 px-4 py-3 flex items-center gap-3">
-                                <RotateCcw size={20} className="text-[#0D2B4C] shrink-0" />
-                                <p className="text-slate-700 text-sm">
+                            <div className="rounded-xl bg-[#0D2B4C]/5 border border-[#0D2B4C]/15 px-3.5 py-2 flex items-center gap-2.5">
+                                <RotateCcw size={18} className="text-[#0D2B4C] shrink-0" />
+                                <p className="text-slate-700 text-[12px] leading-snug">
                                     <b>Cuentas Recuperadas:</b> cobra facturas heredadas de tu cartera y gana <b>+{recuperadas}%</b> extra sobre lo recuperado.
                                 </p>
                             </div>
                         )}
 
                         {/* Ejemplo */}
-                        <div className="rounded-xl border-2 border-emerald-200 px-4 py-3 text-center">
-                            <p className="text-slate-400 text-[11px] font-bold uppercase tracking-widest">Ejemplo</p>
-                            <p className="text-slate-700 text-sm mt-0.5">
-                                Cobras <b>{money(p.montoCobranza)}</b> en nivel <b>{p.objetivo.label}</b> →
+                        <div className="rounded-xl border-2 border-emerald-200 px-4 py-2.5 text-center">
+                            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Ejemplo</p>
+                            <p className="text-slate-700 text-[13px] mt-0.5 leading-snug">
+                                Cobras a tiempo <b>{money(p.montoCobranza)}</b> en nivel <b>{p.objetivo.label}</b> con tu cartera activa →
                                 <span className="text-emerald-700 font-black"> ~{money(p.comisionEjemplo)}</span> de comisión <b>+ tu base</b>
                             </p>
                         </div>
