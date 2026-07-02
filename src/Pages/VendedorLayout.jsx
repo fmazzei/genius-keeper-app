@@ -100,11 +100,12 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
     const gracia = commConfig.cobranzaGraciaDias ?? 5;
     const [showDoc, setShowDoc] = useState(false);
 
-    // Vista por período (evita el "chorizo" de tarjetas): un selector de píldoras
-    // y UNA sola tarjeta a la vez. Por defecto, el período en curso (índice 0,
-    // ya que `estados` viene más reciente primero).
+    // Dos vistas para no contaminar el balance actual con el histórico:
+    //  · 'actual'    → SOLO el período en curso (balance resumido, limpio).
+    //  · 'historico' → píldoras agrupadas por año + la tarjeta del período elegido.
+    const [modo, setModo]     = useState('actual');
     const [selIdx, setSelIdx] = useState(0);
-    const idx = Math.min(selIdx, Math.max(0, estados.length - 1));
+    const idx = modo === 'actual' ? 0 : Math.min(selIdx, Math.max(0, estados.length - 1));
     const p = estados[idx];
 
     // Dinero adeudado de períodos CERRADOS (no el provisional en curso): se
@@ -114,6 +115,13 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
     const primerAdeudadoIdx = adeudado > 0 ? estados.indexOf(anteriores[anteriores.length - 1]) : -1;
 
     const anio = (e) => (e?.periodKey ? e.periodKey.slice(0, 4) : '');
+
+    // Agrupar períodos por año para la vista histórica (píldoras + años).
+    const porAnio = {};
+    estados.forEach((e, i) => { const y = anio(e) || '—'; (porAnio[y] = porAnio[y] || []).push({ e, i }); });
+    const anios = Object.keys(porAnio).sort().reverse();
+
+    const irAAdeudado = () => { if (primerAdeudadoIdx >= 0) { setModo('historico'); setSelIdx(primerAdeudadoIdx); } };
 
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
@@ -145,7 +153,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                 {/* Banner: dinero adeudado de períodos anteriores */}
                 {adeudado > 0 && (
                     <button
-                        onClick={() => primerAdeudadoIdx >= 0 && setSelIdx(primerAdeudadoIdx)}
+                        onClick={irAAdeudado}
                         className="w-full flex items-center gap-3 bg-amber-500/10 border border-amber-500/40 rounded-xl p-3 text-left active:scale-[0.99] transition-transform"
                     >
                         <Wallet size={20} className="text-amber-400 shrink-0" />
@@ -157,26 +165,51 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                     </button>
                 )}
 
-                {/* Selector de períodos (píldoras, scroll horizontal) */}
+                {/* Conmutador Balance actual / Histórico (solo si hay más de un período) */}
                 {estados.length > 1 && (
-                    <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-                        {estados.map((e, i) => {
-                            const activo = i === idx;
-                            const conSaldo = e.saldo > 0.5;
-                            return (
-                                <button
-                                    key={e.periodKey || e.mes}
-                                    onClick={() => setSelIdx(i)}
-                                    className={`relative shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
-                                        activo ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
-                                               : 'bg-slate-900 border-slate-700 text-slate-400'
-                                    }`}
-                                >
-                                    {e.cerrado ? `Mes ${e.mes}` : 'En curso'}
-                                    {conSaldo && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 border-2 border-slate-950" />}
-                                </button>
-                            );
-                        })}
+                    <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1">
+                        <button
+                            onClick={() => setModo('actual')}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${modo === 'actual' ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400'}`}
+                        >
+                            Balance actual
+                        </button>
+                        <button
+                            onClick={() => { setModo('historico'); setSelIdx(idx); }}
+                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${modo === 'historico' ? 'bg-emerald-500/15 text-emerald-300' : 'text-slate-400'}`}
+                        >
+                            Histórico ({estados.length})
+                        </button>
+                    </div>
+                )}
+
+                {/* Vista histórica: píldoras agrupadas por año */}
+                {modo === 'historico' && estados.length > 1 && (
+                    <div className="space-y-2">
+                        {anios.map(y => (
+                            <div key={y}>
+                                <p className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-1.5">{y}</p>
+                                <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                                    {porAnio[y].map(({ e, i }) => {
+                                        const activo = i === idx;
+                                        const conSaldo = e.saldo > 0.5;
+                                        return (
+                                            <button
+                                                key={e.periodKey || e.mes}
+                                                onClick={() => setSelIdx(i)}
+                                                className={`relative shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
+                                                    activo ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
+                                                           : 'bg-slate-900 border-slate-700 text-slate-400'
+                                                }`}
+                                            >
+                                                {e.cerrado ? `Mes ${e.mes}` : 'En curso'}
+                                                {conSaldo && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 border-2 border-slate-950" />}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
 

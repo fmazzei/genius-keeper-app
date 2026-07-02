@@ -15,6 +15,7 @@ const money = (n) => `$ ${(Number(n) || 0).toLocaleString('es-VE', { minimumFrac
 const uds   = (n) => `${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 
 const MONO = "'Courier New', 'Consolas', 'Liberation Mono', monospace";
+const SANS = "'Helvetica Neue', Arial, 'Segoe UI', sans-serif";
 const NAVY = '#12386b';
 
 const PRINT_CSS = `
@@ -30,12 +31,12 @@ const PRINT_CSS = `
 
 // Fila con líneas de puntos (leaders) — nunca se desborda: la etiqueta y el
 // valor son fijos y los puntos ocupan el espacio libre entre ambos.
-function LeaderRow({ label, value, bold, valueColor }) {
+function LeaderRow({ label, value, bold, valueColor, nowrap = true }) {
     return (
         <div className="flex items-baseline gap-2 py-0.5">
-            <span className={bold ? 'font-bold' : ''} style={{ color: '#333' }}>{label}</span>
-            <span className="flex-1 border-b border-dotted border-slate-400 relative -top-1" />
-            <span className={`text-right ${bold ? 'font-bold' : ''}`} style={{ color: valueColor || '#111', whiteSpace: 'nowrap' }}>{value}</span>
+            <span className={bold ? 'font-bold shrink-0' : 'shrink-0'} style={{ color: '#333' }}>{label}</span>
+            <span className="flex-1 border-b border-dotted border-slate-400 relative -top-1 min-w-[12px]" />
+            <span className={`text-right ${bold ? 'font-bold' : ''}`} style={{ color: valueColor || '#111', whiteSpace: nowrap ? 'nowrap' : 'normal' }}>{value}</span>
         </div>
     );
 }
@@ -54,9 +55,12 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
         return a;
     }, { devengado: 0, pagado: 0, saldo: 0 });
 
-    const periodoCubierto = filas.length
-        ? `${filas[0].rango} ${filas[0].periodKey?.slice(0, 4) || ''} — ${filas[filas.length - 1].rango} ${filas[filas.length - 1].periodKey?.slice(0, 4) || ''}`
-        : '—';
+    const rangoAnio = (e) => `${e.rango} ${e.periodKey?.slice(0, 4) || ''}`.trim();
+    const periodoCubierto = filas.length === 0
+        ? '—'
+        : filas.length === 1
+            ? rangoAnio(filas[0])
+            : `${rangoAnio(filas[0])} — ${rangoAnio(filas[filas.length - 1])}`;
 
     const SecTitle = ({ children }) => (
         <p className="font-bold text-[12px] tracking-wide mt-5 mb-2 pb-1 border-b-2" style={{ color: NAVY, borderColor: NAVY }}>{children}</p>
@@ -84,13 +88,17 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
                     className="bg-white w-full max-w-[680px] shadow-2xl self-start text-[13px] leading-relaxed text-[#111]"
                     style={{ fontFamily: MONO }}
                 >
-                    {/* ── Encabezado ── */}
-                    <div className="px-8 pt-8">
-                        <p className="font-bold text-[16px]" style={{ color: NAVY }}>GENIUS KEEPER</p>
-                        <p className="text-[12px] text-slate-500">Lácteoca, C.A. — Banco de Comisiones</p>
-
-                        <p className="text-center font-bold text-[14px] tracking-wide mt-5">ESTADO DE CUENTA DE COMISIONES</p>
+                    {/* ── Encabezado con logo GK (marca en tipografía normal) ── */}
+                    <div className="px-8 pt-8 flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ background: NAVY }}>
+                            <span className="text-[#FFD600] font-black text-xl leading-none" style={{ fontFamily: SANS }}>GK</span>
+                        </div>
+                        <div style={{ fontFamily: SANS }}>
+                            <p className="font-black text-[18px] leading-tight" style={{ color: NAVY }}>Genius Keeper</p>
+                            <p className="text-[12px] text-slate-500 leading-tight">Lácteoca, C.A. — Banco de Comisiones</p>
+                        </div>
                     </div>
+                    <p className="px-8 text-center font-bold text-[14px] tracking-wide mt-5">ESTADO DE CUENTA DE COMISIONES</p>
                     <div className="mx-8 mt-2" style={{ height: 2, background: '#3aa66b' }} />
 
                     {/* ── Datos del extracto ── */}
@@ -98,7 +106,11 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
                         <LeaderRow label="Titular" value={vendedorName} />
                         <LeaderRow label="Empresa" value="LACTEOCA, C.A." />
                         <LeaderRow label="Emitido" value={fechaHora} />
-                        <LeaderRow label="Período cubierto" value={periodoCubierto} />
+                        {/* Período cubierto: bloque que envuelve (evita desborde en rangos largos) */}
+                        <div className="pt-1">
+                            <span className="text-slate-600">Período cubierto:</span>{' '}
+                            <span className="break-words">{periodoCubierto}</span>
+                        </div>
                     </div>
 
                     {/* ── Resumen ── */}
