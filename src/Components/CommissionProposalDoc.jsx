@@ -42,15 +42,20 @@ function computeProposal(config = {}) {
 
 const PRINT_CSS = `
 @media print {
-  body * { visibility: hidden !important; }
-  #gk-proposal-sheet, #gk-proposal-sheet * { visibility: visible !important; }
+  /* Tamaño CARTA, una hoja. */
+  @page { size: letter; margin: 14mm; }
+  /* Ocultar TODA la app con display:none del root (rápido) en vez de recalcular
+     la visibilidad de cada nodo (lento). Solo queda el overlay del PDF. */
+  body > *:not(#gk-proposal-portal) { display: none !important; }
+  #gk-proposal-portal { position: static !important; inset: auto !important; background: #fff !important; overflow: visible !important; display: block !important; }
+  #gk-proposal-portal .gk-no-print { display: none !important; }
+  #gk-proposal-portal > div { padding: 0 !important; display: block !important; }
+  /* La hoja ocupa el ancho de la página carta (no el ancho del celular). */
   #gk-proposal-sheet {
-    position: fixed !important; inset: 0 !important;
-    margin: 0 !important; width: 100% !important; max-width: none !important;
-    box-shadow: none !important; border-radius: 0 !important;
+    position: static !important;
+    width: 100% !important; max-width: 100% !important;
+    margin: 0 !important; box-shadow: none !important; border-radius: 0 !important;
   }
-  .gk-no-print { display: none !important; }
-  @page { size: A4; margin: 12mm; }
 }
 `;
 
@@ -90,7 +95,7 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
     // ancestro y la barra de acciones queda fuera de vista → app "atrapada".
     // Con el portal, el overlay ocupa el viewport real y la barra siempre se ve.
     return createPortal((
-        <div className="fixed inset-0 z-[100] bg-slate-900/80 flex flex-col overflow-auto">
+        <div id="gk-proposal-portal" className="fixed inset-0 z-[100] bg-slate-900/80 flex flex-col overflow-auto">
             {/* Toolbar — no se imprime */}
             <div className="gk-no-print sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-900 px-4 py-3">
                 <button onClick={onClose} className="flex items-center gap-1.5 text-slate-300 text-sm font-semibold hover:text-white">
