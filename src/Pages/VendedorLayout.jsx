@@ -97,6 +97,22 @@ function EstadoCuentaView({ estados, commConfig = {}, onBack }) {
     const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
     const umbral = commConfig.cobranzaUmbral ?? 85;
     const gracia = commConfig.cobranzaGraciaDias ?? 5;
+
+    // Vista por período (evita el "chorizo" de tarjetas): un selector de píldoras
+    // y UNA sola tarjeta a la vez. Por defecto, el período en curso (índice 0,
+    // ya que `estados` viene más reciente primero).
+    const [selIdx, setSelIdx] = useState(0);
+    const idx = Math.min(selIdx, Math.max(0, estados.length - 1));
+    const p = estados[idx];
+
+    // Dinero adeudado de períodos CERRADOS (no el provisional en curso): se
+    // muestra arriba en un banner para que nunca quede enterrado.
+    const anteriores = estados.filter(e => e.cerrado && e.saldo > 0.5);
+    const adeudado = anteriores.reduce((s, e) => s + e.saldo, 0);
+    const primerAdeudadoIdx = adeudado > 0 ? estados.indexOf(anteriores[anteriores.length - 1]) : -1;
+
+    const anio = (e) => (e?.periodKey ? e.periodKey.slice(0, 4) : '');
+
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
             <div className="flex items-center gap-3">
@@ -106,15 +122,57 @@ function EstadoCuentaView({ estados, commConfig = {}, onBack }) {
                     <p className="text-slate-400 text-xs">Tu comisión por período (mes de empleo)</p>
                 </div>
             </div>
+
             {estados.length === 0 ? (
                 <p className="text-slate-400 text-sm">Aún no hay períodos que mostrar.</p>
-            ) : estados.map(p => {
-                const pctMeta = p.metaMensual > 0 ? Math.round((p.unidades / p.metaMensual) * 100) : 0;
-                return (
-                <div key={p.mes} className={`bg-slate-900 border rounded-2xl p-4 ${p.cerrado ? 'border-slate-700' : 'border-emerald-600/40'}`}>
+            ) : (
+              <>
+                {/* Banner: dinero adeudado de períodos anteriores */}
+                {adeudado > 0 && (
+                    <button
+                        onClick={() => primerAdeudadoIdx >= 0 && setSelIdx(primerAdeudadoIdx)}
+                        className="w-full flex items-center gap-3 bg-amber-500/10 border border-amber-500/40 rounded-xl p-3 text-left active:scale-[0.99] transition-transform"
+                    >
+                        <Wallet size={20} className="text-amber-400 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-amber-300 font-bold text-sm leading-tight">Se te adeuda de períodos anteriores</p>
+                            <p className="text-amber-400/70 text-[11px]">{anteriores.length} período{anteriores.length === 1 ? '' : 's'} con saldo · toca para ver</p>
+                        </div>
+                        <span className="text-amber-300 font-black font-mono text-lg">{money(adeudado)}</span>
+                    </button>
+                )}
+
+                {/* Selector de períodos (píldoras, scroll horizontal) */}
+                {estados.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                        {estados.map((e, i) => {
+                            const activo = i === idx;
+                            const conSaldo = e.saldo > 0.5;
+                            return (
+                                <button
+                                    key={e.periodKey || e.mes}
+                                    onClick={() => setSelIdx(i)}
+                                    className={`relative shrink-0 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
+                                        activo ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300'
+                                               : 'bg-slate-900 border-slate-700 text-slate-400'
+                                    }`}
+                                >
+                                    {e.cerrado ? `Mes ${e.mes}` : 'En curso'}
+                                    {conSaldo && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 border-2 border-slate-950" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Tarjeta del período seleccionado */}
+                {p && (() => {
+                    const pctMeta = p.metaMensual > 0 ? Math.round((p.unidades / p.metaMensual) * 100) : 0;
+                    return (
+                <div className={`bg-slate-900 border rounded-2xl p-4 ${p.cerrado ? 'border-slate-700' : 'border-emerald-600/40'}`}>
                     <div className="flex items-center justify-between mb-3">
                         <div>
-                            <p className="text-white font-bold">Mes {p.mes} <span className="text-slate-500 text-xs font-normal">· {p.rango}</span></p>
+                            <p className="text-white font-bold">Mes {p.mes} <span className="text-slate-500 text-xs font-normal">· {p.rango} · {anio(p)}</span></p>
                             <p className={`text-[11px] font-semibold ${p.cerrado ? 'text-slate-400' : 'text-emerald-400'}`}>{p.cerrado ? 'Cerrado' : 'En curso · provisional'}</p>
                         </div>
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 ${p.cerrado ? 'text-slate-300' : 'text-emerald-400'}`}>Nivel {p.nivel}</span>
@@ -162,13 +220,16 @@ function EstadoCuentaView({ estados, commConfig = {}, onBack }) {
                         <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo por cobrar</span><span className={`font-black font-mono ${p.saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(p.saldo)}</span></div>
                     </div>
                 </div>
-                );
-            })}
-            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-1.5">
-                <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Comisión</b> = lo que <b>cobras</b> × la tasa de tu <b>nivel final</b> del período (a más colocación, mejor tasa).</p>
-                <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Cobranza a tiempo</b> = facturas cobradas dentro de su vencimiento (+{gracia} días de gracia). Al llegar a <b>{umbral}%</b> ganas el <b>Bono Cobranza</b>.</p>
-                <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Pagado</b> son las liquidaciones que te registra administración; el <b>saldo</b> se salda semanalmente sobre el mes vencido.</p>
-            </div>
+                    );
+                })()}
+
+                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Comisión</b> = lo que <b>cobras</b> × la tasa de tu <b>nivel final</b> del período (a más colocación, mejor tasa).</p>
+                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Cobranza a tiempo</b> = facturas cobradas dentro de su vencimiento (+{gracia} días de gracia). Al llegar a <b>{umbral}%</b> ganas el <b>Bono Cobranza</b>.</p>
+                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Pagado</b> son las liquidaciones que te registra administración; el <b>saldo</b> se salda semanalmente sobre el mes vencido.</p>
+                </div>
+              </>
+            )}
         </div>
     );
 }
