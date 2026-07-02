@@ -174,7 +174,12 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             unidades, metaMensual,
             nivel: tier.label, tasa: tier.rate,
             cobranzaTasa, cobranzaOk,
+            cobrATiempo, cobrDen,                 // "X de Y facturas a tiempo"
             cobrado: cobradoRegular + cobradoRecup,
+            cobradoRegular, cobradoRecup,         // desglose para el "cómo se calcula"
+            tasaTotal,                            // tier + bono (si aplica)
+            bonoAplicado: cobranzaOk ? bonoCobranza : 0,
+            tasaRecup,
             devengadoComision,
             base: baseMes,
             devengadoTotal,

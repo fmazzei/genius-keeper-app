@@ -92,9 +92,11 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
     );
 }
 
-// ─── Estado de Cuenta (Fase 3.7) — histórico por período de empleo ───────────
-function EstadoCuentaView({ estados, onBack }) {
+// ─── Estado de Cuenta (Fase 3.7/3.8) — histórico por período de empleo ───────
+function EstadoCuentaView({ estados, commConfig = {}, onBack }) {
     const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
+    const umbral = commConfig.cobranzaUmbral ?? 85;
+    const gracia = commConfig.cobranzaGraciaDias ?? 5;
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
             <div className="flex items-center gap-3">
@@ -106,35 +108,67 @@ function EstadoCuentaView({ estados, onBack }) {
             </div>
             {estados.length === 0 ? (
                 <p className="text-slate-400 text-sm">Aún no hay períodos que mostrar.</p>
-            ) : estados.map(p => (
+            ) : estados.map(p => {
+                const pctMeta = p.metaMensual > 0 ? Math.round((p.unidades / p.metaMensual) * 100) : 0;
+                return (
                 <div key={p.mes} className={`bg-slate-900 border rounded-2xl p-4 ${p.cerrado ? 'border-slate-700' : 'border-emerald-600/40'}`}>
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-3">
                         <div>
                             <p className="text-white font-bold">Mes {p.mes} <span className="text-slate-500 text-xs font-normal">· {p.rango}</span></p>
-                            <p className="text-slate-400 text-[11px]">{p.cerrado ? 'Cerrado' : 'En curso (provisional)'}</p>
+                            <p className={`text-[11px] font-semibold ${p.cerrado ? 'text-slate-400' : 'text-emerald-400'}`}>{p.cerrado ? 'Cerrado' : 'En curso · provisional'}</p>
                         </div>
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 ${p.cerrado ? 'text-slate-300' : 'text-emerald-400'}`}>Nivel {p.nivel}</span>
                     </div>
+
+                    {/* Metas del período */}
                     <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                        <div className="bg-slate-800/60 rounded-lg p-2">
-                            <p className="text-slate-400">Facturación</p>
+                        <div className="bg-slate-800/60 rounded-lg p-2.5">
+                            <p className="text-slate-400">Facturación (colocado)</p>
                             <p className="text-white font-bold">{p.unidades.toLocaleString()} / {p.metaMensual.toLocaleString()} uds</p>
+                            <p className="text-slate-500 text-[10px]">{pctMeta}% de tu meta → define tu nivel</p>
                         </div>
-                        <div className="bg-slate-800/60 rounded-lg p-2">
+                        <div className="bg-slate-800/60 rounded-lg p-2.5">
                             <p className="text-slate-400">Cobranza a tiempo</p>
                             <p className={`font-bold ${p.cobranzaOk ? 'text-emerald-400' : 'text-white'}`}>{p.cobranzaTasa === null ? '—' : `${p.cobranzaTasa.toFixed(0)}%`}</p>
+                            <p className="text-slate-500 text-[10px]">
+                                {p.cobrDen > 0 ? `${p.cobrATiempo} de ${p.cobrDen} facturas a tiempo` : 'sin facturas por cobrar aún'}
+                            </p>
                         </div>
                     </div>
+
+                    {/* Cómo se calcula la comisión */}
+                    <div className="bg-slate-800/40 rounded-lg p-3 mb-3">
+                        <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">Cómo se calcula</p>
+                        <div className="space-y-1 text-xs">
+                            <div className="flex justify-between"><span className="text-slate-400">Cobrado en el período</span><span className="text-white font-mono">{money(p.cobradoRegular)}</span></div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-400">Tasa aplicada</span>
+                                <span className="text-white font-mono">
+                                    {p.tasa}%{p.bonoAplicado > 0 ? <span className="text-emerald-400"> +{p.bonoAplicado}% bono</span> : ''}
+                                </span>
+                            </div>
+                            {p.cobradoRecup > 0 && (
+                                <div className="flex justify-between"><span className="text-slate-400">Cuentas recuperadas ({p.tasaRecup}%)</span><span className="text-white font-mono">{money(p.cobradoRecup)}</span></div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Resultado */}
                     <div className="border-t border-slate-800 pt-2 space-y-1 text-sm">
                         <div className="flex justify-between"><span className="text-slate-400">Comisión devengada</span><span className="text-white font-bold font-mono">{money(p.devengadoComision)}</span></div>
                         <div className="flex justify-between"><span className="text-slate-400">Base (fijo + viáticos)</span><span className="text-slate-300 font-mono">{money(p.base)}</span></div>
                         <div className="flex justify-between border-t border-slate-800 pt-1"><span className="text-slate-300 font-semibold">Devengado total</span><span className="text-emerald-400 font-black font-mono">{money(p.devengadoTotal)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-400">Pagado</span><span className="text-slate-300 font-mono">{money(p.pagado)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo pendiente</span><span className={`font-black font-mono ${p.saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(p.saldo)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-400">Pagado (liquidado)</span><span className="text-slate-300 font-mono">{money(p.pagado)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo por cobrar</span><span className={`font-black font-mono ${p.saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(p.saldo)}</span></div>
                     </div>
                 </div>
-            ))}
-            <p className="text-slate-500 text-[11px] px-1">La comisión se calcula con el <b>nivel final</b> del período sobre lo cobrado. "Pagado" son las liquidaciones registradas por administración; el saldo se salda semanalmente sobre el mes vencido.</p>
+                );
+            })}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Comisión</b> = lo que <b>cobras</b> × la tasa de tu <b>nivel final</b> del período (a más colocación, mejor tasa).</p>
+                <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Cobranza a tiempo</b> = facturas cobradas dentro de su vencimiento (+{gracia} días de gracia). Al llegar a <b>{umbral}%</b> ganas el <b>Bono Cobranza</b>.</p>
+                <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Pagado</b> son las liquidaciones que te registra administración; el <b>saldo</b> se salda semanalmente sobre el mes vencido.</p>
+            </div>
         </div>
     );
 }
@@ -466,25 +500,6 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                     )}
                 </div>
             )}
-
-            {/* ── Acción principal ── */}
-            <div className="space-y-2">
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Acciones</p>
-                <button
-                    onClick={() => onNavigate('pedido')}
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-[0.97] text-white font-black py-7 rounded-2xl flex flex-col items-center gap-2.5 transition-all shadow-lg shadow-emerald-900/40"
-                >
-                    <ClipboardList size={30} />
-                    <span className="text-xl">Nuevo Pedido</span>
-                </button>
-                <button
-                    onClick={() => onNavigate('estado_cuenta')}
-                    className="w-full bg-slate-900 border border-slate-700 hover:border-slate-500 active:scale-[0.98] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2.5 transition-all"
-                >
-                    <Wallet size={20} className="text-emerald-400" />
-                    <span>Estado de Cuenta</span>
-                </button>
-            </div>
 
             {/* ── Período de arranque ── */}
             {vendedor.mesArranque > 0 && (
@@ -1272,7 +1287,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         if (currentView === 'estado_cuenta') {
-            return <EstadoCuentaView estados={estados} onBack={() => setCurrentView('home')} />;
+            return <EstadoCuentaView estados={estados} commConfig={commConfig} onBack={() => setCurrentView('home')} />;
         }
 
         if (currentView === 'alertas') {
@@ -1319,7 +1334,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const alertCount = alertas.length;
 
     return (
-        <div className="flex flex-col h-screen bg-slate-950 text-white overflow-hidden">
+        <div className="relative flex flex-col h-screen bg-slate-950 text-white overflow-hidden">
 
             {/* ── Header ── */}
             <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0">
@@ -1330,6 +1345,17 @@ const VendedorLayout = ({ user, onLogout }) => {
                     <span className="text-white font-bold text-sm">GK Vendedor</span>
                 </div>
                 <div className="flex items-center gap-2">
+                    {/* Estado de Cuenta — píldora glanceable: tu comisión del período en curso */}
+                    <button
+                        onClick={() => navigate('estado_cuenta')}
+                        className="flex items-center gap-1.5 h-9 pl-2.5 pr-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 active:scale-95 transition-transform"
+                        aria-label="Estado de cuenta"
+                    >
+                        <Wallet size={16} className="text-emerald-400 shrink-0" />
+                        <span className="text-emerald-300 font-bold text-sm font-mono leading-none">
+                            ${Math.round(Number(estados[0]?.devengadoComision) || 0).toLocaleString('es-VE')}
+                        </span>
+                    </button>
                     <button
                         onClick={() => navigate('alertas')}
                         className="relative w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center"
@@ -1355,6 +1381,18 @@ const VendedorLayout = ({ user, onLogout }) => {
             <div className="flex-1 overflow-hidden flex flex-col">
                 {renderContent()}
             </div>
+
+            {/* ── FAB: Nuevo Pedido (acción #1 del vendedor, siempre a la mano) ── */}
+            {!subView && currentView !== 'despacho' && (
+                <button
+                    onClick={() => navigate('pedido')}
+                    className="absolute bottom-20 right-4 z-40 flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black pl-4 pr-5 py-3.5 rounded-full shadow-xl shadow-emerald-900/50 transition-all"
+                    aria-label="Nuevo pedido"
+                >
+                    <ClipboardList size={22} />
+                    <span className="text-sm">Nuevo Pedido</span>
+                </button>
+            )}
 
             {/* ── Bottom Tab Bar ── */}
             {!subView && (
