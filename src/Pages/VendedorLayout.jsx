@@ -13,7 +13,7 @@ import {
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
     ClipboardList, Receipt, Store, Warehouse, X, RefreshCw,
-    Zap, ChevronLeft, Wallet, Download,
+    Zap, ChevronLeft, Wallet, Download, Award,
 } from 'lucide-react';
 import EstadoCuentaDoc from '@/Components/EstadoCuentaDoc.jsx';
 import PosList from '@/Pages/PosList.jsx';
@@ -249,8 +249,76 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
     );
 }
 
-function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loadError, onRetry }) {
+// ─── Pantalla de cierre de período (Fase 3.9) — celebración al cerrar el mes ──
+function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
+    const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
+    const anio = periodo.periodKey ? periodo.periodKey.slice(0, 4) : '';
+    return (
+        <div className="fixed inset-0 z-[60] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-5">
+            <div className="w-full max-w-sm bg-slate-900 border border-emerald-600/40 rounded-3xl overflow-hidden shadow-2xl">
+                <div className="bg-gradient-to-b from-emerald-600/30 to-transparent px-6 pt-7 pb-5 text-center">
+                    <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center mb-3">
+                        <Award size={32} className="text-emerald-400" />
+                    </div>
+                    <p className="text-emerald-300/80 text-xs font-bold uppercase tracking-[0.2em]">Período cerrado</p>
+                    <p className="text-white text-2xl font-black leading-tight mt-1">¡Cerraste el Mes {periodo.mes}!</p>
+                    <p className="text-slate-400 text-xs mt-0.5">{periodo.rango} · {anio}</p>
+                </div>
+
+                <div className="px-6 pb-6">
+                    <div className="text-center mb-4">
+                        <p className="text-slate-400 text-xs uppercase tracking-widest">Ganaste este período</p>
+                        <p className="text-emerald-400 text-4xl font-black font-mono mt-1">{money(periodo.devengadoTotal)}</p>
+                        <p className="text-slate-500 text-xs mt-0.5">comisión {money(periodo.devengadoComision)} + base {money(periodo.base)}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                        <div className="bg-slate-800/60 rounded-xl p-3 text-center">
+                            <p className="text-slate-400 text-[11px]">Nivel alcanzado</p>
+                            <p className="text-white font-black">{periodo.nivel}</p>
+                            <p className="text-slate-500 text-[10px]">{periodo.unidades.toLocaleString()} uds</p>
+                        </div>
+                        <div className="bg-slate-800/60 rounded-xl p-3 text-center">
+                            <p className="text-slate-400 text-[11px]">Cobranza a tiempo</p>
+                            <p className={`font-black ${periodo.cobranzaOk ? 'text-emerald-400' : 'text-white'}`}>{periodo.cobranzaTasa === null ? '—' : `${Math.round(periodo.cobranzaTasa)}%`}</p>
+                            <p className="text-slate-500 text-[10px]">{periodo.bonoAplicado > 0 ? 'Bono logrado' : 'sin bono'}</p>
+                        </div>
+                    </div>
+
+                    {periodo.saldo > 0.5 && (
+                        <p className="text-amber-400/90 text-xs text-center mb-3">{money(periodo.saldo)} se te liquidará en las próximas semanas.</p>
+                    )}
+
+                    <button onClick={onVerDetalle} className="w-full bg-emerald-500 hover:bg-emerald-400 text-white font-black py-3 rounded-xl mb-2">Ver mi estado de cuenta</button>
+                    <button onClick={onClose} className="w-full bg-slate-800 text-slate-300 font-bold py-2.5 rounded-xl">¡Genial!</button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, estadoActual, ultimoCerrado, loadError, onRetry }) {
     const [showMetaModal, setShowMetaModal] = useState(false);
+    const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
+
+    // Pantalla de cierre de período (Fase 3.9): al cerrar un mes de empleo, se
+    // muestra UNA vez una celebración con el resultado. Se recuerda el último
+    // período cerrado ya visto en localStorage (por vendedor) para no repetir.
+    const [cierre, setCierre] = useState(null);
+    useEffect(() => {
+        if (!ultimoCerrado || !vendedor.uid) return;
+        const key = `gk_cierre_visto_${vendedor.uid}`;
+        let last = null;
+        try { last = localStorage.getItem(key); } catch { /* modo privado */ }
+        if (last !== ultimoCerrado.periodKey) setCierre(ultimoCerrado);
+    }, [ultimoCerrado, vendedor.uid]);
+    const cerrarCelebracion = () => {
+        if (cierre && vendedor.uid) {
+            try { localStorage.setItem(`gk_cierre_visto_${vendedor.uid}`, cierre.periodKey); } catch { /* modo privado */ }
+        }
+        setCierre(null);
+    };
+
     const pct     = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
     const tier    = getTierFromConfig(pct, tiers, commConfig.bajaRate, commConfig.bajaLabel);
     const barPct  = Math.min(pct, 1.25);
@@ -321,6 +389,43 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                         <RefreshCw size={12} /> Reintentar
                     </button>
                 </div>
+            )}
+
+            {cierre && (
+                <CierrePeriodoModal periodo={cierre} onClose={cerrarCelebracion} onVerDetalle={() => { cerrarCelebracion(); onNavigate('estado_cuenta'); }} />
+            )}
+
+            {/* ── Comisión en vivo (hero gamificado) ── */}
+            {!loading && hasComision && (
+                <button
+                    type="button"
+                    onClick={() => onNavigate('estado_cuenta')}
+                    className="w-full text-left bg-gradient-to-br from-emerald-600/20 via-slate-900 to-slate-900 border border-emerald-600/40 rounded-2xl p-5 active:scale-[0.99] transition-transform"
+                >
+                    <p className="text-emerald-300/80 text-xs font-semibold uppercase tracking-widest">Tu comisión este período</p>
+                    <div className="flex items-end gap-2 mt-1">
+                        <span className="text-emerald-400 text-4xl font-black font-mono leading-none">{money(estadoActual?.devengadoComision)}</span>
+                        <span className="text-slate-400 text-sm mb-0.5">y subiendo</span>
+                    </div>
+                    <p className="text-slate-400 text-xs mt-1.5">
+                        + base {money(ingresoBase)} = <b className="text-white">{money((estadoActual?.devengadoComision || 0) + ingresoBase)}</b> devengado
+                        {estadoActual?.saldo > 0.5 && <> · <span className="text-amber-400">{money(estadoActual.saldo)} por cobrar</span></>}
+                    </p>
+                    {faltan !== null && siguiente && (
+                        <div className="mt-3 bg-slate-800/50 rounded-lg p-2.5 flex items-center gap-2">
+                            <TrendingUp size={15} className="text-emerald-400 shrink-0" />
+                            <p className="text-xs text-slate-300">
+                                Cobra <b className="text-emerald-400">{faltan.toLocaleString()} uds</b> más → subes a <b className="text-white">Nivel {siguiente.tier.label}</b> ({(siguiente.tier.rate * 100).toFixed(1)}%) y tu tasa mejora.
+                            </p>
+                        </div>
+                    )}
+                    {faltan === null && (
+                        <div className="mt-3 bg-emerald-500/10 rounded-lg p-2.5 flex items-center gap-2">
+                            <CheckCircle size={15} className="text-emerald-400 shrink-0" />
+                            <p className="text-xs text-emerald-300">¡Estás en el nivel más alto! Cada unidad que cobras suma a tu comisión.</p>
+                        </div>
+                    )}
+                </button>
             )}
 
             {/* ── Commission Meter ── */}
@@ -1401,6 +1506,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                 onNavigate={navigate}
                 tiers={tiers}
                 commConfig={commConfig}
+                estadoActual={estados[0] || null}
+                ultimoCerrado={estados.find(e => e.cerrado) || null}
                 loadError={loadError}
                 onRetry={() => setReloadKey(k => k + 1)}
             />
