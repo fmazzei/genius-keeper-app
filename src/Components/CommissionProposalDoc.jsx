@@ -191,7 +191,7 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                             <div className="rounded-xl bg-[#0D2B4C]/5 border border-[#0D2B4C]/15 px-3.5 py-2 flex items-center gap-2.5">
                                 <RotateCcw size={18} className="text-[#0D2B4C] shrink-0" />
                                 <p className="text-slate-700 text-[12px] leading-snug">
-                                    <b>Cuentas Recuperadas:</b> cobra facturas heredadas de tu cartera y gana <b>+{recuperadas}%</b> extra sobre lo recuperado.
+                                    <b>Cuentas Recuperadas:</b> cobra facturas heredadas de tu cartera y gana una comisión del <b>{recuperadas}%</b> sobre el monto que cobres de ellas.
                                 </p>
                             </div>
                         )}
