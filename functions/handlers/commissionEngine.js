@@ -19,6 +19,8 @@ const DEFAULT_COMMISSION_CONFIG = {
         { label: 'Básica', minPct: 90, rate: 3.5 },
     ],
     bajaRate: 3.5,
+    bajaLabel: 'Baja',
+    bajaActiva: true,
     bonusPuntualidad: 2.0, // "Bono Cobranza" en la UI (ver CommissionConstructor.jsx)
     bonusActivacion: 1.0,
     activacionThreshold: 80,

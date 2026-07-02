@@ -50,16 +50,15 @@ function buildTiers(config) {
     return tiers;
 }
 
-function getTierFromConfig(pct, tiers, bajaRate) {
+function getTierFromConfig(pct, tiers, bajaRate, bajaLabel = 'Baja') {
     for (const t of tiers) {
         if (pct >= t.min) return t;
     }
-    // Por debajo del tier más bajo configurado: paga la tasa "Baja", un
-    // cuarto escalón independiente y editable (`commConfig.bajaRate`), sin
-    // bonos — el nivel "Baja" ya no es "$0 / sin comisión por meta".
+    // Por debajo del tier más bajo configurado: paga la tasa del nivel más bajo
+    // (editable/eliminable). Si se eliminó, bajaRate = 0 → sin comisión.
     const lowest = tiers[tiers.length - 1];
     const rate = bajaRate !== undefined && bajaRate !== null ? bajaRate / 100 : (lowest?.rate ?? 0);
-    return { label: 'Baja', min: 0, rate, ...BAJA_STYLE };
+    return { label: bajaLabel || 'Baja', min: 0, rate, ...BAJA_STYLE };
 }
 
 function saludoDelDia() {
@@ -96,7 +95,7 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
 function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loadError, onRetry }) {
     const [showMetaModal, setShowMetaModal] = useState(false);
     const pct     = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
-    const tier    = getTierFromConfig(pct, tiers, commConfig.bajaRate);
+    const tier    = getTierFromConfig(pct, tiers, commConfig.bajaRate, commConfig.bajaLabel);
     const barPct  = Math.min(pct, 1.25);
     const metaAlcanzada = vendedor.metaMensual > 0 && stats.unidadesDelMes >= vendedor.metaMensual;
     const faltanParaMeta = Math.max(0, vendedor.metaMensual - stats.unidadesDelMes);
@@ -490,8 +489,8 @@ function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClos
                 <div className="mb-5">
                     <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Niveles de Comisión</p>
                     <div className="space-y-2">
-                        {[...tiers, { label: 'Baja', rate: (commConfig.bajaRate || 0) / 100, min: 0, ...BAJA_STYLE }].map((t, i) => {
-                            const isBaja = t.label === 'Baja';
+                        {[...tiers, ...(commConfig.bajaActiva === false ? [] : [{ label: commConfig.bajaLabel || 'Baja', rate: (commConfig.bajaRate || 0) / 100, min: 0, ...BAJA_STYLE }])].map((t, i) => {
+                            const isBaja = t.min === 0 && i === tiers.length;
                             const lowest = tiers[tiers.length - 1];
                             const lowestMinUnits = lowest ? Math.round(lowest.min * vendedor.metaMensual) : 0;
                             const minUnits = Math.round(t.min * vendedor.metaMensual);

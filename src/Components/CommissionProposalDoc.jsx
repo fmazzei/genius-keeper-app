@@ -8,6 +8,7 @@
 // con estilos de impresión acotados a la hoja.
 
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X, Printer, Shield, Zap, Target, Package, Banknote, ArrowUpRight, RotateCcw } from 'lucide-react';
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
@@ -84,7 +85,11 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
     const cobranzaDias = Number(config.cobranzaDias) || 30;
     const recuperadas  = Number(config.comisionRecuperadas) || 0;
 
-    return (
+    // Portal al <body>: si el overlay se renderiza dentro del modal del
+    // AdminPanel (un ancestro con `transform`), `position: fixed` se ancla a ese
+    // ancestro y la barra de acciones queda fuera de vista → app "atrapada".
+    // Con el portal, el overlay ocupa el viewport real y la barra siempre se ve.
+    return createPortal((
         <div className="fixed inset-0 z-[100] bg-slate-900/80 flex flex-col overflow-auto">
             {/* Toolbar — no se imprime */}
             <div className="gk-no-print sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-900 px-4 py-3">
@@ -189,5 +194,5 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
 
             <style>{PRINT_CSS}</style>
         </div>
-    );
+    ), document.body);
 }

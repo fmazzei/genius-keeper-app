@@ -18,6 +18,8 @@ export const DEFAULT_COMMISSION_CONFIG = {
         { label: 'Básica', minPct: 90,  rate: 3.5 },
     ],
     bajaRate:            3.5,
+    bajaLabel:           'Baja',   // nombre editable del nivel más bajo
+    bajaActiva:          true,     // false = sin comisión por debajo del nivel más bajo
     // "Bono Cobranza" en la UI. El gating por volumen/plazo (cobrar metaCobranza
     // en cobranzaDias) se cablea en la Fase 3 del rediseño de comisiones; por
     // ahora este campo guarda la TASA del bono (reusa la clave existente para no
@@ -83,7 +85,7 @@ const buildBreakdown = (config, meta) => {
 
     const rows = {};
     rows.__baja__ = {
-        label: 'Baja',
+        label: config.bajaLabel || 'Baja',
         pctLabel: lowest ? `< ${lowest.minPct}%` : '—',
         minUnits: 0,
         maxUnits: lowest ? Math.round(meta * lowest.minPct / 100) - 1 : null,
@@ -403,16 +405,35 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             );
                         })}
 
-                        {/* Nivel "Baja" — cuarto escalón, por debajo del nivel más bajo configurado */}
-                        {(() => {
+                        {/* Nivel "Baja" — nivel más bajo, editable y eliminable */}
+                        {config.bajaActiva === false ? (
+                            <button
+                                type="button"
+                                onClick={() => setConfig(p => ({ ...p, bajaActiva: true, bajaRate: p.bajaRate || 3 }))}
+                                className="w-full flex items-center justify-center gap-1.5 py-3 border border-dashed border-slate-300 rounded-xl text-xs font-semibold text-blue-600 active:opacity-60"
+                            >
+                                <Plus size={13} /> Agregar nivel más bajo (sin él, por debajo del mínimo no hay comisión)
+                            </button>
+                        ) : (() => {
                             const rowsByScenario = scenarios.map(s => ({ ...s, row: buildBreakdown(config, s.meta).__baja__ }));
                             return (
                                 <div className="bg-white border border-slate-200 rounded-xl p-4">
                                     <div className="flex items-center gap-2 mb-3">
-                                        <span className="flex-1 min-w-0 text-base font-bold text-slate-800 px-2 py-1">
-                                            Baja <span className="text-xs font-normal text-slate-400">({rowsByScenario[0].row.pctLabel})</span>
-                                        </span>
+                                        <input
+                                            type="text"
+                                            value={config.bajaLabel || ''}
+                                            onChange={e => setConfig(p => ({ ...p, bajaLabel: e.target.value }))}
+                                            className="flex-1 min-w-0 text-base font-bold text-slate-800 border border-transparent focus:border-blue-400 focus:outline-none rounded-lg px-2 py-1 bg-slate-50"
+                                            placeholder="Nombre del nivel"
+                                        />
                                         <span className="text-xs font-black text-slate-500 shrink-0 whitespace-nowrap">{rowsByScenario[0].row.total.toFixed(1)}% total</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setConfig(p => ({ ...p, bajaActiva: false, bajaRate: 0 }))}
+                                            className="p-1.5 text-slate-300 hover:text-red-500 transition-colors shrink-0"
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
                                     </div>
                                     <div className="flex gap-3 mb-3">
                                         <div className="flex-1 min-w-0">
@@ -447,7 +468,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                         })()}
                     </div>
                     <p className="text-xs text-slate-400 mt-1.5 px-1">
-                        Evalúa de arriba a abajo — ordénalos de mayor a menor. "Baja" aplica por debajo del nivel más bajo configurado, con su propia tasa. El % total incluye Bono Cobranza (+{config.bonusPuntualidad}%) y Bono Activación/Anaquel (+{config.bonusActivacion}%); en "Baja" no aplican bonos por meta.
+                        Evalúa de arriba a abajo — ordénalos de mayor a menor. El nivel más bajo (editable y eliminable) aplica por debajo del mínimo configurado; si lo eliminas, por debajo del mínimo no hay comisión. El % total suma Bono Cobranza (+{config.bonusPuntualidad}%) y Bono Activación (+{config.bonusActivacion}%). El Bono Anaquel <b>sustituye</b> al de Activación en cuentas de régimen anaquel (no se suman), por eso no aparece aparte en el total. En el nivel más bajo no aplican bonos por meta.
                     </p>
                 </section>
 
