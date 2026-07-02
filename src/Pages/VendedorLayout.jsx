@@ -13,8 +13,9 @@ import {
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
     ClipboardList, Receipt, Store, Warehouse, X, RefreshCw,
-    Zap, ChevronLeft, Wallet,
+    Zap, ChevronLeft, Wallet, Download,
 } from 'lucide-react';
+import EstadoCuentaDoc from '@/Components/EstadoCuentaDoc.jsx';
 import PosList from '@/Pages/PosList.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
 import TomarPedidoForm from '@/Pages/TomarPedidoForm.jsx';
@@ -93,10 +94,11 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
 }
 
 // ─── Estado de Cuenta (Fase 3.7/3.8) — histórico por período de empleo ───────
-function EstadoCuentaView({ estados, commConfig = {}, onBack }) {
+function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor', onBack }) {
     const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
     const umbral = commConfig.cobranzaUmbral ?? 85;
     const gracia = commConfig.cobranzaGraciaDias ?? 5;
+    const [showDoc, setShowDoc] = useState(false);
 
     // Vista por período (evita el "chorizo" de tarjetas): un selector de píldoras
     // y UNA sola tarjeta a la vez. Por defecto, el período en curso (índice 0,
@@ -117,11 +119,24 @@ function EstadoCuentaView({ estados, commConfig = {}, onBack }) {
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
             <div className="flex items-center gap-3">
                 <button onClick={onBack} className="p-2 rounded-xl bg-slate-800 text-slate-400 shrink-0"><ChevronLeft size={18} /></button>
-                <div>
+                <div className="flex-1 min-w-0">
                     <p className="text-white font-black text-lg leading-tight">Estado de Cuenta</p>
                     <p className="text-slate-400 text-xs">Tu comisión por período (mes de empleo)</p>
                 </div>
+                {estados.length > 0 && (
+                    <button
+                        onClick={() => setShowDoc(true)}
+                        className="flex items-center gap-1.5 h-9 px-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold shrink-0 active:scale-95 transition-transform"
+                        aria-label="Descargar estado de cuenta"
+                    >
+                        <Download size={15} /> Descargar
+                    </button>
+                )}
             </div>
+
+            {showDoc && (
+                <EstadoCuentaDoc estados={estados} vendedorName={vendedorName} onClose={() => setShowDoc(false)} />
+            )}
 
             {estados.length === 0 ? (
                 <p className="text-slate-400 text-sm">Aún no hay períodos que mostrar.</p>
@@ -1348,7 +1363,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         if (currentView === 'estado_cuenta') {
-            return <EstadoCuentaView estados={estados} commConfig={commConfig} onBack={() => setCurrentView('home')} />;
+            return <EstadoCuentaView estados={estados} commConfig={commConfig} vendedorName={vendedor.nombre} onBack={() => setCurrentView('home')} />;
         }
 
         if (currentView === 'alertas') {
