@@ -108,6 +108,8 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
 
     const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
     const facturaMaxDias = cfg.facturaMaxDias || DEFAULT_COMMISSION_CONFIG.facturaMaxDias;
+    const cobranzaDias   = cfg.cobranzaDias   || DEFAULT_COMMISSION_CONFIG.cobranzaDias;
+    const comisionRecuperadas = cfg.comisionRecuperadas ?? DEFAULT_COMMISSION_CONFIG.comisionRecuperadas;
 
     // Fecha de pago: usamos el momento de recepción del webhook como proxy,
     // ya que Zoho dispara `invoice.paid` cuando el saldo de la factura llega
@@ -120,8 +122,19 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     // factura termine cobrándose.
     const comisionAnulada = diasParaCobrar !== null && diasParaCobrar > facturaMaxDias;
 
-    const tasaCohorte = facturaData.tasaCohorte || 0;
-    const comisionGenerada = comisionAnulada ? 0 : facturaData.monto * (tasaCohorte / 100);
+    // Cuentas Recuperadas (Fase 3.6): una factura PREVIA al ingreso del vendedor
+    // (recuperada) se paga a una tasa flat de recuperación (no la del nivel) y
+    // NO cuenta para su meta de facturación (ya se excluyó en 3.5: periodoCohorte
+    // null). Para el resto, la tasa es la congelada del período.
+    const esRecuperada = facturaData.recuperada === true;
+    const tasaAplicada = esRecuperada ? comisionRecuperadas : (facturaData.tasaCohorte || 0);
+    // NOTA (modelo de cierre): esta comisión por factura es PROVISIONAL — el
+    // devengado autoritativo se calcula al cerrar el período con el nivel FINAL
+    // (Fase 3.7). Para recuperadas, la tasa flat sí es definitiva por factura.
+    const comisionGenerada = comisionAnulada ? 0 : facturaData.monto * (tasaAplicada / 100);
+
+    // Cobranza dentro del plazo del Bono Cobranza (≤ cobranzaDias, def. 30).
+    const cobradaEnPlazo = diasParaCobrar !== null ? diasParaCobrar <= cobranzaDias : null;
 
     const diasCredito = facturaData.diasCredito;
     const pagadaDentroDePlazo = (diasCredito !== null && diasCredito !== undefined && diasParaCobrar !== null)
@@ -131,6 +144,7 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     facturaData.comisionAnulada     = comisionAnulada;
     facturaData.comisionGenerada    = comisionGenerada;
     facturaData.pagadaDentroDePlazo = pagadaDentroDePlazo;
+    facturaData.cobradaEnPlazo      = cobradaEnPlazo;
     facturaData.fechaPago           = admin.firestore.Timestamp.fromDate(fechaPago);
     facturaData.diasParaCobrar      = diasParaCobrar;
 
@@ -140,8 +154,12 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
         facturaNumero:        facturaData.numero,
         clienteName:          facturaData.clienteName,
         montoUSD:             facturaData.monto,
-        tasaCohorte,
+        unidades:             facturaData.unidades || 0,
+        tasaCohorte:          tasaAplicada,
+        recuperada:           esRecuperada,
+        cobradaEnPlazo,
         mesCohorte:           facturaData.mesCohorte,
+        periodoCohorte:       facturaData.periodoCohorte || null,
         calculatedCommission: comisionGenerada,
         comisionAnulada,
         pagadaDentroDePlazo,
@@ -152,7 +170,7 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
         origen:               'invoice.paid',
     });
 
-    functions.logger.log(`Factura #${facturaData.numero}: comisión ${comisionGenerada.toFixed(2)} USD (tasa ${tasaCohorte}%, anulada: ${comisionAnulada}, a tiempo: ${pagadaDentroDePlazo}).`);
+    functions.logger.log(`Factura #${facturaData.numero}: comisión ${comisionGenerada.toFixed(2)} USD (tasa ${tasaAplicada}%${esRecuperada ? ' RECUPERADA' : ''}, anulada: ${comisionAnulada}, cobrada en plazo: ${cobradaEnPlazo}).`);
 }
 
 /**

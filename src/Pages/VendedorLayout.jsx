@@ -250,6 +250,31 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, loa
                 </div>
             )}
 
+            {/* ── Meta de Cobranza (caja) — "una unidad solo vale cuando se cobra" ── */}
+            {!loading && stats.metaCobranza > 0 && (
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4">
+                    <div className="flex items-center justify-between mb-1">
+                        <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Meta de Cobranza</p>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${stats.cobranzaOk ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
+                            {stats.cobranzaOk ? 'Bono Cobranza logrado' : `Bono Cobranza +${commConfig.bonusPuntualidad}%`}
+                        </span>
+                    </div>
+                    <div className="flex items-end gap-2 my-2">
+                        <span className={`text-3xl font-black font-mono ${stats.cobranzaOk ? 'text-emerald-400' : 'text-white'}`}>{stats.unidadesCobradasEnPlazo.toLocaleString()}</span>
+                        <span className="text-slate-500 text-base mb-0.5">/ {stats.metaCobranza.toLocaleString()} uds cobradas</span>
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden mb-2">
+                        <div
+                            className={`h-2.5 rounded-full transition-all duration-700 ${stats.cobranzaOk ? 'bg-emerald-400' : 'bg-blue-400'}`}
+                            style={{ width: `${Math.min(100, stats.metaCobranza > 0 ? (stats.unidadesCobradasEnPlazo / stats.metaCobranza) * 100 : 0).toFixed(1)}%` }}
+                        />
+                    </div>
+                    <p className="text-slate-400 text-xs bg-slate-800/60 rounded-lg p-2.5">
+                        Una unidad solo vale cuando se cobra. Cobra <span className="font-bold text-white">{stats.metaCobranza.toLocaleString()} uds</span> dentro del plazo para ganar el Bono Cobranza.
+                    </p>
+                </div>
+            )}
+
             {/* ── Resumen financiero ── */}
             {statCards.length > 0 && (
                 <div className="grid grid-cols-2 gap-2">
@@ -611,6 +636,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         runRateActual: 0, runRateNeeded: 0, diasRestantes: 0,
         radarAlerts: [], stockoutsCount: 0, radarAlertsByPosId: {},
         periodoLabel: '', mesArranque: 0,
+        unidadesCobradas: 0, unidadesCobradasEnPlazo: 0, metaCobranza: 1340, cobranzaOk: false,
     });
     const [loading, setLoading]                       = useState(true);
     const [loadError, setLoadError]                   = useState('');
@@ -986,6 +1012,14 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //    vencimiento heredado de Zoho).
                 let facturasPorVencer = 0;
                 let puntualidadPct = null;
+                // Fase 3.6 — Cobranza del PERÍODO: unidades cobradas (facturas
+                // pagadas cuya fecha cae en el período) y cuántas dentro del plazo
+                // del Bono Cobranza (cobranzaDias). El bono se gana al alcanzar la
+                // meta de cobranza (metaCobranza) en plazo.
+                const metaCobranza = cfg.metaCobranza || DEFAULT_COMMISSION_CONFIG.metaCobranza;
+                const cobranzaDias = cfg.cobranzaDias || DEFAULT_COMMISSION_CONFIG.cobranzaDias;
+                let unidadesCobradas = 0;
+                let unidadesCobradasEnPlazo = 0;
                 if (facturasSnap) {
                     const facturas = facturasSnap.docs.map(d => d.data());
                     const tresDias = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
@@ -1004,7 +1038,19 @@ const VendedorLayout = ({ user, onLogout }) => {
                         const aTiempo = facturasPagadasMes.filter(f => f.pagadaDentroDePlazo === true).length;
                         puntualidadPct = (aTiempo / facturasPagadasMes.length) * 100;
                     }
+
+                    facturas.forEach(f => {
+                        if (f.estado !== 'pagada' || f.recuperada === true) return;
+                        const fFecha = f.fecha?.toDate?.() || (f.fecha ? new Date(f.fecha) : null);
+                        if (!fFecha || fFecha < periodStart || fFecha >= periodEnd) return;
+                        const u = Number(f.unidades) || 0;
+                        unidadesCobradas += u;
+                        const enPlazo = f.cobradaEnPlazo === true
+                            || (f.cobradaEnPlazo == null && f.diasParaCobrar != null && f.diasParaCobrar <= cobranzaDias);
+                        if (enPlazo) unidadesCobradasEnPlazo += u;
+                    });
                 }
+                const cobranzaOk = unidadesCobradasEnPlazo >= metaCobranza;
 
                 const newStats = {
                     unidadesDelMes, comisionSemana, despachoHoy,
@@ -1014,6 +1060,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     runRateActual, runRateNeeded, diasRestantes,
                     radarAlerts, stockoutsCount, radarAlertsByPosId,
                     periodoLabel, mesArranque,
+                    unidadesCobradas, unidadesCobradasEnPlazo, metaCobranza, cobranzaOk,
                 };
                 setStats(newStats);
 
