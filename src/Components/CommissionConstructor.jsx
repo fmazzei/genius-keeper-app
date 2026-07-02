@@ -20,8 +20,9 @@ export const DEFAULT_COMMISSION_CONFIG = {
     bajaRate:            3.0,
     bajaLabel:           'Baja',   // nombre editable del nivel más bajo
     bajaActiva:          true,     // false = sin comisión por debajo del nivel más bajo
-    // "Bono Cobranza" (reusa la clave bonusPuntualidad): TASA del bono. Se gana
-    // por CUMPLIR LA COBRANZA A TIEMPO (no por volumen) — ver cobranzaUmbral.
+    // "Bono Cobranza" (reusa la clave bonusPuntualidad): TASA del bono. Modelo
+    // PROPORCIONAL — se gana sobre CADA factura cobrada a tiempo (dentro de
+    // vencimiento + cobranzaGraciaDias). Ya NO hay umbral/gate.
     bonusPuntualidad:    2.5,
     bonusActivacion:     1.0,
     activacionThreshold: 80,
@@ -30,10 +31,11 @@ export const DEFAULT_COMMISSION_CONFIG = {
     anaquelThreshold:    80,
     anaquelMinUnits:     12,
     arranque:            [],
-    // Cobranza por PUNTUALIDAD (no por volumen). Se mide sobre las facturas que
-    // vencen: cobrar dentro de vencimiento + cobranzaGraciaDias = "a tiempo".
+    // Cobranza por PUNTUALIDAD (proporcional). "A tiempo" = cobrar dentro de
+    // vencimiento + cobranzaGraciaDias; el Bono Cobranza se paga sobre lo cobrado
+    // a tiempo, factura por factura.
     cobranzaGraciaDias:  5,     // días de gracia tras el vencimiento que aún cuentan a tiempo
-    cobranzaUmbral:      85,    // % de facturas vencidas cobradas a tiempo para ganar el Bono Cobranza
+    cobranzaUmbral:      85,    // (obsoleto) umbral/gate del bono — reemplazado por modelo proporcional
     metaCobranza:        1340,  // (obsoleto) meta de cobranza por volumen — reemplazada por puntualidad
     cobranzaDias:        30,    // (obsoleto)
     // Cuentas Recuperadas: facturas heredadas de la cartera que el vendedor cobra
@@ -268,32 +270,6 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 </section>
 
-                {/* ── 1b. Cobranza (por puntualidad) ── */}
-                <section>
-                    <SectionHeader label="Cobranza (a tiempo)" />
-                    <div className="bg-white border border-slate-200 rounded-xl px-4">
-                        <InlineRow
-                            label="Días de gracia tras vencimiento"
-                            hint="Cobrar dentro de vencimiento + estos días cuenta como 'a tiempo'"
-                            suffix="días"
-                            value={config.cobranzaGraciaDias}
-                            step={1}
-                            onChange={v => setConfig(p => ({ ...p, cobranzaGraciaDias: v }))}
-                        />
-                        <InlineRow
-                            label="Umbral del Bono Cobranza"
-                            hint="% de facturas vencidas cobradas a tiempo para ganar el bono"
-                            suffix="%"
-                            value={config.cobranzaUmbral}
-                            step={5}
-                            onChange={v => setConfig(p => ({ ...p, cobranzaUmbral: v }))}
-                        />
-                    </div>
-                    <p className="text-xs text-slate-400 mt-1.5 px-1">
-                        La cobranza se mide por <b>puntualidad</b>, no por volumen: mantener la cartera al día. El Bono Cobranza (+{config.bonusPuntualidad}%) se gana al cobrar a tiempo ≥ {config.cobranzaUmbral}% de las facturas que vencen.
-                    </p>
-                </section>
-
                 {/* ── 2. Período de Arranque ── */}
                 <section>
                     <SectionHeader
@@ -479,11 +455,19 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
                         <InlineRow
                             label="Bono Cobranza"
-                            hint="Por cobrar la meta de cobranza dentro del plazo"
+                            hint="Se gana sobre CADA factura cobrada a tiempo (dentro de vencimiento + días de gracia)"
                             suffix="%"
                             value={config.bonusPuntualidad}
                             step={0.5}
                             onChange={v => setConfig(p => ({ ...p, bonusPuntualidad: v }))}
+                        />
+                        <InlineRow
+                            label="Días de gracia (Bono Cobranza)"
+                            hint="Cobrar dentro de vencimiento + estos días cuenta como 'a tiempo'"
+                            suffix="días"
+                            value={config.cobranzaGraciaDias}
+                            step={1}
+                            onChange={v => setConfig(p => ({ ...p, cobranzaGraciaDias: v }))}
                         />
                         <InlineRow
                             label="Bono Activación"

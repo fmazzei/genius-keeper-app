@@ -117,7 +117,6 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
     const bajaRate      = cfg.bajaRate ?? 0;
     const bajaLabel     = cfg.bajaLabel || 'Baja';
     const bonoCobranza  = cfg.bonusPuntualidad ?? 0;
-    const umbral        = cfg.cobranzaUmbral ?? 85;
     const tasaRecup     = cfg.comisionRecuperadas ?? 5;
     const baseMes       = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
 
@@ -140,7 +139,9 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
         const periodKey = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
         const metaMensual = i < arranque.length ? (arranque[i].meta || metaPlena) : metaPlena;
 
-        let unidades = 0, cobradoRegular = 0, cobradoRecup = 0, cobrDen = 0, cobrATiempo = 0;
+        // Modelo PROPORCIONAL de cobranza: el Bono Cobranza se paga sobre lo
+        // COBRADO A TIEMPO (factura por factura), no por un umbral todo-o-nada.
+        let unidades = 0, cobradoRegular = 0, cobradoRegularATiempo = 0, cobradoRecup = 0, cobrDen = 0, cobrATiempo = 0;
         facturas.forEach(f => {
             const t = toDate(f.fecha);
             if (f.estado === 'anulada' || !t || t < start || t >= end) return;
@@ -150,7 +151,10 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
                 if (pagada && !f.comisionAnulada) cobradoRecup += monto;
             } else {
                 unidades += Number(f.unidades) || 0;
-                if (pagada && !f.comisionAnulada) cobradoRegular += monto;
+                if (pagada && !f.comisionAnulada) {
+                    cobradoRegular += monto;
+                    if (f.pagadaDentroDePlazo === true) cobradoRegularATiempo += monto;
+                }
                 const venc = toDate(f.vencimiento);
                 const vencida = venc && venc <= ahora;
                 if (vencida || pagada) { cobrDen++; if (pagada && f.pagadaDentroDePlazo === true) cobrATiempo++; }
@@ -160,9 +164,9 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
         const pct = metaMensual > 0 ? unidades / metaMensual : 0;
         const tier = tierFor(pct);
         const cobranzaTasa = cobrDen > 0 ? (cobrATiempo / cobrDen) * 100 : null;
-        const cobranzaOk = cobranzaTasa !== null && cobranzaTasa >= umbral;
-        const tasaTotal = tier.rate + (cobranzaOk ? bonoCobranza : 0);
-        const devengadoComision = cobradoRegular * tasaTotal / 100 + cobradoRecup * tasaRecup / 100;
+        // Bono Cobranza proporcional: bonoCobranza% sobre lo cobrado a tiempo.
+        const bonoCobranzaMonto = cobradoRegularATiempo * bonoCobranza / 100;
+        const devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + cobradoRecup * tasaRecup / 100;
         const devengadoTotal = devengadoComision + baseMes;
         const pagado = pagadoPorPeriodo[periodKey] || 0;
 
@@ -173,12 +177,12 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             cerrado: end <= ahora,
             unidades, metaMensual,
             nivel: tier.label, tasa: tier.rate,
-            cobranzaTasa, cobranzaOk,
+            cobranzaTasa,
             cobrATiempo, cobrDen,                 // "X de Y facturas a tiempo"
             cobrado: cobradoRegular + cobradoRecup,
-            cobradoRegular, cobradoRecup,         // desglose para el "cómo se calcula"
-            tasaTotal,                            // tier + bono (si aplica)
-            bonoAplicado: cobranzaOk ? bonoCobranza : 0,
+            cobradoRegular, cobradoRegularATiempo, cobradoRecup,  // desglose
+            bonoCobranzaRate: bonoCobranza,       // % del Bono Cobranza (config)
+            bonoCobranzaMonto,                    // $ ganado por cobrar a tiempo
             tasaRecup,
             devengadoComision,
             base: baseMes,

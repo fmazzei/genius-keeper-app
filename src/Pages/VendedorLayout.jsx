@@ -96,8 +96,8 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
 // ─── Estado de Cuenta (Fase 3.7/3.8) — histórico por período de empleo ───────
 function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor', onBack }) {
     const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
-    const umbral = commConfig.cobranzaUmbral ?? 85;
-    const gracia = commConfig.cobranzaGraciaDias ?? 5;
+    const gracia   = commConfig.cobranzaGraciaDias ?? 5;
+    const bonoRate = commConfig.bonusPuntualidad ?? 0;
     const [showDoc, setShowDoc] = useState(false);
 
     // Dos vistas para no contaminar el balance actual con el histórico:
@@ -235,7 +235,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                         </div>
                         <div className="bg-slate-800/60 rounded-lg p-2.5">
                             <p className="text-slate-400">Cobranza a tiempo</p>
-                            <p className={`font-bold ${p.cobranzaOk ? 'text-emerald-400' : 'text-white'}`}>{p.cobranzaTasa === null ? '—' : `${p.cobranzaTasa.toFixed(0)}%`}</p>
+                            <p className={`font-bold ${p.bonoCobranzaMonto > 0 ? 'text-emerald-400' : 'text-white'}`}>{p.cobranzaTasa === null ? '—' : `${p.cobranzaTasa.toFixed(0)}%`}</p>
                             <p className="text-slate-500 text-[10px]">
                                 {p.cobrDen > 0 ? `${p.cobrATiempo} de ${p.cobrDen} facturas a tiempo` : 'sin facturas por cobrar aún'}
                             </p>
@@ -247,12 +247,10 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                         <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">Cómo se calcula</p>
                         <div className="space-y-1 text-xs">
                             <div className="flex justify-between"><span className="text-slate-400">Cobrado en el período</span><span className="text-white font-mono">{money(p.cobradoRegular)}</span></div>
-                            <div className="flex justify-between">
-                                <span className="text-slate-400">Tasa aplicada</span>
-                                <span className="text-white font-mono">
-                                    {p.tasa}%{p.bonoAplicado > 0 ? <span className="text-emerald-400"> +{p.bonoAplicado}% bono</span> : ''}
-                                </span>
-                            </div>
+                            <div className="flex justify-between"><span className="text-slate-400">Comisión nivel {p.nivel} ({p.tasa}%)</span><span className="text-white font-mono">{money(p.cobradoRegular * p.tasa / 100)}</span></div>
+                            {p.bonoCobranzaMonto > 0 && (
+                                <div className="flex justify-between"><span className="text-slate-400">Bono Cobranza ({p.bonoCobranzaRate}% de lo cobrado a tiempo)</span><span className="text-emerald-400 font-mono">+{money(p.bonoCobranzaMonto)}</span></div>
+                            )}
                             {p.cobradoRecup > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Cuentas recuperadas ({p.tasaRecup}%)</span><span className="text-white font-mono">{money(p.cobradoRecup)}</span></div>
                             )}
@@ -273,7 +271,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
 
                 <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-1.5">
                     <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Comisión</b> = lo que <b>cobras</b> × la tasa de tu <b>nivel final</b> del período (a más colocación, mejor tasa).</p>
-                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Cobranza a tiempo</b> = facturas cobradas dentro de su vencimiento (+{gracia} días de gracia). Al llegar a <b>{umbral}%</b> ganas el <b>Bono Cobranza</b>.</p>
+                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Bono Cobranza</b> = <b>+{bonoRate}%</b> sobre <b>cada factura</b> que cobras a tiempo (dentro de vencimiento + {gracia} días de gracia).</p>
                     <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Pagado</b> son las liquidaciones que te registra administración; el <b>saldo</b> se salda semanalmente sobre el mes vencido.</p>
                 </div>
               </>
@@ -313,8 +311,8 @@ function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
                         </div>
                         <div className="bg-slate-800/60 rounded-xl p-3 text-center">
                             <p className="text-slate-400 text-[11px]">Cobranza a tiempo</p>
-                            <p className={`font-black ${periodo.cobranzaOk ? 'text-emerald-400' : 'text-white'}`}>{periodo.cobranzaTasa === null ? '—' : `${Math.round(periodo.cobranzaTasa)}%`}</p>
-                            <p className="text-slate-500 text-[10px]">{periodo.bonoAplicado > 0 ? 'Bono logrado' : 'sin bono'}</p>
+                            <p className={`font-black ${periodo.bonoCobranzaMonto > 0 ? 'text-emerald-400' : 'text-white'}`}>{periodo.cobranzaTasa === null ? '—' : `${Math.round(periodo.cobranzaTasa)}%`}</p>
+                            <p className="text-slate-500 text-[10px]">{periodo.bonoCobranzaMonto > 0 ? `+${money(periodo.bonoCobranzaMonto)} bono` : 'sin bono aún'}</p>
                         </div>
                     </div>
 
@@ -549,19 +547,19 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                 <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4">
                     <div className="flex items-center justify-between mb-1">
                         <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Cobranza a Tiempo</p>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${stats.cobranzaOk ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'}`}>
-                            {stats.cobranzaOk ? 'Bono Cobranza logrado' : `Bono Cobranza +${commConfig.bonusPuntualidad}%`}
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                            Bono Cobranza +{commConfig.bonusPuntualidad}%
                         </span>
                     </div>
                     <div className="flex items-end gap-2 my-2">
-                        <span className={`text-3xl font-black font-mono ${stats.cobranzaOk ? 'text-emerald-400' : 'text-white'}`}>
+                        <span className={`text-3xl font-black font-mono ${stats.cobranzaTasa > 0 ? 'text-emerald-400' : 'text-white'}`}>
                             {stats.cobranzaTasa === null ? '—' : `${stats.cobranzaTasa.toFixed(0)}%`}
                         </span>
-                        <span className="text-slate-500 text-base mb-0.5">cobrado a tiempo · meta {stats.cobranzaUmbral}%</span>
+                        <span className="text-slate-500 text-base mb-0.5">de tus facturas, cobrado a tiempo</span>
                     </div>
                     <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden mb-2">
                         <div
-                            className={`h-2.5 rounded-full transition-all duration-700 ${stats.cobranzaOk ? 'bg-emerald-400' : 'bg-blue-400'}`}
+                            className="h-2.5 rounded-full transition-all duration-700 bg-emerald-400"
                             style={{ width: `${Math.min(100, stats.cobranzaTasa || 0).toFixed(1)}%` }}
                         />
                     </div>
@@ -575,7 +573,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                             <p className="text-slate-400 text-[11px]">Por vencer (3 días)</p>
                         </div>
                     </div>
-                    <p className="text-slate-400 text-xs mt-2">Mantén tu cartera al día: cobra antes del vencimiento (+{commConfig.cobranzaGraciaDias} días de gracia) para ganar el bono.</p>
+                    <p className="text-slate-400 text-xs mt-2"><b className="text-slate-300">Cada factura</b> que cobras a tiempo (dentro de vencimiento + {commConfig.cobranzaGraciaDias} días de gracia) te suma <b className="text-emerald-400">+{commConfig.bonusPuntualidad}%</b> de comisión sobre ese monto.</p>
                 </div>
             )}
 

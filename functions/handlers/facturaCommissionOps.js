@@ -122,17 +122,6 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     // factura termine cobrándose.
     const comisionAnulada = diasParaCobrar !== null && diasParaCobrar > facturaMaxDias;
 
-    // Cuentas Recuperadas (Fase 3.6): una factura PREVIA al ingreso del vendedor
-    // (recuperada) se paga a una tasa flat de recuperación (no la del nivel) y
-    // NO cuenta para su meta de facturación (ya se excluyó en 3.5: periodoCohorte
-    // null). Para el resto, la tasa es la congelada del período.
-    const esRecuperada = facturaData.recuperada === true;
-    const tasaAplicada = esRecuperada ? comisionRecuperadas : (facturaData.tasaCohorte || 0);
-    // NOTA (modelo de cierre): esta comisión por factura es PROVISIONAL — el
-    // devengado autoritativo se calcula al cerrar el período con el nivel FINAL
-    // (Fase 3.7). Para recuperadas, la tasa flat sí es definitiva por factura.
-    const comisionGenerada = comisionAnulada ? 0 : facturaData.monto * (tasaAplicada / 100);
-
     // Cobranza "a tiempo" (Bono Cobranza por PUNTUALIDAD): cobrada dentro de
     // vencimiento + cobranzaGraciaDias. diasCredito = días de la factura al
     // vencimiento; +gracia = margen tras el vencimiento.
@@ -141,6 +130,20 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
         ? diasParaCobrar <= (diasCredito + cobranzaGraciaDias)
         : null;
     const cobradaEnPlazo = pagadaDentroDePlazo; // alias (mismo criterio de puntualidad)
+
+    // Cuentas Recuperadas (Fase 3.6): una factura PREVIA al ingreso del vendedor
+    // (recuperada) se paga a una tasa flat de recuperación (no la del nivel) y
+    // NO cuenta para su meta de facturación (ya se excluyó en 3.5: periodoCohorte
+    // null). Para el resto: tasa-cohorte del nivel + Bono Cobranza PROPORCIONAL
+    // (se suma solo si la factura se cobró a tiempo).
+    const esRecuperada = facturaData.recuperada === true;
+    const bonoCobranza = cfg.bonusPuntualidad ?? 0;
+    const tasaBono     = (!esRecuperada && pagadaDentroDePlazo === true) ? bonoCobranza : 0;
+    const tasaAplicada = esRecuperada ? comisionRecuperadas : ((facturaData.tasaCohorte || 0) + tasaBono);
+    // NOTA (modelo de cierre): esta comisión por factura es PROVISIONAL — el
+    // devengado autoritativo se calcula al cerrar el período con el nivel FINAL
+    // (Fase 3.7). Para recuperadas, la tasa flat sí es definitiva por factura.
+    const comisionGenerada = comisionAnulada ? 0 : facturaData.monto * (tasaAplicada / 100);
 
     facturaData.comisionAnulada     = comisionAnulada;
     facturaData.comisionGenerada    = comisionGenerada;
