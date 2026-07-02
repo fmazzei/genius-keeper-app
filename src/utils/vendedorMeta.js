@@ -127,14 +127,16 @@ function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minU
  * `users_metadata` del vendedor y sus facturas, devuelve un arreglo (más
  * reciente primero) con el resultado de cada período de empleo desde su ingreso.
  *
- * Modelo confirmado: la comisión se calcula con el NIVEL FINAL del período
- * (facturación total del período → tier) aplicado a lo COBRADO del período,
- * + Bono Cobranza (si cumple puntualidad) + Cuentas Recuperadas (5% flat). Los
- * períodos ya cerrados tienen su resultado fijo (no cambian sus datos); el
- * período en curso es PROVISIONAL. `pagado` (liquidaciones) llega en 3.8.
+ * Modelo: la comisión se calcula con el NIVEL FINAL del período (facturación
+ * total → tier) sobre lo COBRADO, + Bono Cobranza PROPORCIONAL (sobre lo cobrado
+ * a tiempo) + Bono Activación (bonusActivacion% × semanas logradas/totales, o
+ * Bono Anaquel en cuentas de ese régimen) + Cuentas Recuperadas (5% flat).
+ * `pagado` sale de las liquidaciones. Un período CERRADO puede CONGELARse
+ * (opts.cerrados[periodKey]) → su devengado queda fijo aunque cambien las
+ * facturas después; el pagado/saldo sigue en vivo.
  *
- * @returns {Array<{mes,rango,cerrado,unidades,metaMensual,nivel,tasa,
- *   cobranzaTasa,cobranzaOk,cobrado,devengadoComision,base,devengadoTotal}>}
+ * @param {object} opts - { carteraSize, cerrados: {periodKey→snapshot},
+ *   anaquel: {hasAnaquel, factor} }
  */
 export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], opts = {}) {
     const cfg = meta.commissionConfig
@@ -165,6 +167,17 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
     const actMinUnits    = cfg.activacionMinUnits ?? 24;
     const actThreshold   = cfg.activacionThreshold ?? 80;
     const carteraSize    = Number(opts.carteraSize) || 0;
+
+    // Bono Anaquel (sustituye a Activación en cuentas con régimen 'anaquel').
+    // Como depende de visit_reports (no de facturas), su factor del período en
+    // curso llega precomputado desde el frontend en `opts.anaquel`.
+    const bonoAnaquel   = cfg.bonusAnaquel ?? 0;
+    const hasAnaquel    = !!(opts.anaquel && opts.anaquel.hasAnaquel);
+    const anaquelFactor = Number(opts.anaquel && opts.anaquel.factor) || 0;
+
+    // Cierres congelados (Fase 3.10): mapa periodKey → snapshot del devengado.
+    // Un período cerrado y congelado NO se recalcula (queda fijo lo pagado).
+    const cerrados = opts.cerrados || {};
 
     const tierFor = (pct) => {
         for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
@@ -207,24 +220,28 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             }
         });
 
+        const cerrado = end <= ahora;
+        const enCurso = !cerrado;
         const pct = metaMensual > 0 ? unidades / metaMensual : 0;
         const tier = tierFor(pct);
         const cobranzaTasa = cobrDen > 0 ? (cobrATiempo / cobrDen) * 100 : null;
         // Bono Cobranza proporcional: bonoCobranza% sobre lo cobrado a tiempo.
         const bonoCobranzaMonto = cobradoRegularATiempo * bonoCobranza / 100;
         // Bono Activación proporcional: bonusActivacion% × (semanas logradas /
-        // semanas del período) sobre lo cobrado.
+        // semanas del período) sobre lo cobrado. En cuentas de régimen anaquel,
+        // el Bono Anaquel lo sustituye (su factor llega precomputado y solo se
+        // aplica al período en curso, que es el que tiene datos de visitas).
         const act = computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, actMinUnits, actThreshold);
-        const bonoActivacionMonto = cobradoRegular * (bonoActivacion / 100) * act.factor;
-        const devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + cobradoRecup * tasaRecup / 100;
-        const devengadoTotal = devengadoComision + baseMes;
-        const pagado = pagadoPorPeriodo[periodKey] || 0;
+        const bonoActivacionMonto = hasAnaquel ? 0 : cobradoRegular * (bonoActivacion / 100) * act.factor;
+        const bonoAnaquelMonto    = (hasAnaquel && enCurso) ? cobradoRegular * (bonoAnaquel / 100) * anaquelFactor : 0;
+        let devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + bonoAnaquelMonto + cobradoRecup * tasaRecup / 100;
+        let devengadoTotal = devengadoComision + baseMes;
 
-        out.push({
+        const row = {
             mes: i + 1,
             periodKey,
             rango: rangoLabel(start, end),
-            cerrado: end <= ahora,
+            cerrado,
             unidades, metaMensual,
             nivel: tier.label, tasa: tier.rate,
             cobranzaTasa,
@@ -233,9 +250,12 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             cobradoRegular, cobradoRegularATiempo, cobradoRecup,  // desglose
             bonoCobranzaRate: bonoCobranza,       // % del Bono Cobranza (config)
             bonoCobranzaMonto,                    // $ ganado por cobrar a tiempo
-            // Activación
+            // Activación / Anaquel
             bonoActivacionRate: bonoActivacion,
             bonoActivacionMonto,
+            bonoAnaquelRate: bonoAnaquel,
+            bonoAnaquelMonto,
+            hasAnaquel,
             actFactor: act.factor,
             actSemanasLogradas: act.semanasLogradas,
             actSemanasTotales: act.semanasTotales,
@@ -247,9 +267,29 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             devengadoComision,
             base: baseMes,
             devengadoTotal,
-            pagado,
-            saldo: devengadoTotal - pagado,
-        });
+            congelado: false,
+        };
+
+        // Si el período está CERRADO y CONGELADO, sus números de dinero quedan
+        // fijos (snapshot al cierre): así un cobro tardío / nota de crédito
+        // posterior no altera lo ya liquidado. `pagado` sigue en vivo.
+        const frozen = cerrados[periodKey];
+        if (frozen && cerrado) {
+            row.congelado = true;
+            row.congeladoEn = frozen.congeladoEn || null;
+            [
+                'unidades', 'nivel', 'tasa', 'cobranzaTasa', 'cobrATiempo', 'cobrDen',
+                'cobrado', 'cobradoRegular', 'cobradoRegularATiempo', 'cobradoRecup',
+                'bonoCobranzaMonto', 'bonoActivacionMonto', 'bonoAnaquelMonto',
+                'actFactor', 'actSemanasLogradas', 'actSemanasTotales',
+                'devengadoComision', 'base', 'devengadoTotal',
+            ].forEach(k => { if (frozen[k] !== undefined && frozen[k] !== null) row[k] = frozen[k]; });
+        }
+
+        const pagado = pagadoPorPeriodo[periodKey] || 0;
+        row.pagado = pagado;
+        row.saldo  = row.devengadoTotal - pagado;
+        out.push(row);
     }
     return out;
 }

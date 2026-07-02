@@ -221,7 +221,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                     <div className="flex items-center justify-between mb-3">
                         <div>
                             <p className="text-white font-bold">Mes {p.mes} <span className="text-slate-500 text-xs font-normal">· {p.rango} · {anio(p)}</span></p>
-                            <p className={`text-[11px] font-semibold ${p.cerrado ? 'text-slate-400' : 'text-emerald-400'}`}>{p.cerrado ? 'Cerrado' : 'En curso · provisional'}</p>
+                            <p className={`text-[11px] font-semibold ${p.congelado ? 'text-blue-300' : p.cerrado ? 'text-slate-400' : 'text-emerald-400'}`}>{p.congelado ? 'Cerrado · congelado 🔒' : p.cerrado ? 'Cerrado (provisional)' : 'En curso · provisional'}</p>
                         </div>
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 ${p.cerrado ? 'text-slate-300' : 'text-emerald-400'}`}>Nivel {p.nivel}</span>
                     </div>
@@ -253,6 +253,9 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                             )}
                             {p.bonoActivacionMonto > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Bono Activación ({p.bonoActivacionRate}% × {p.actSemanasLogradas}/{p.actSemanasTotales} sem.)</span><span className="text-emerald-400 font-mono">+{money(p.bonoActivacionMonto)}</span></div>
+                            )}
+                            {p.bonoAnaquelMonto > 0 && (
+                                <div className="flex justify-between"><span className="text-slate-400">Bono Anaquel ({p.bonoAnaquelRate}%)</span><span className="text-emerald-400 font-mono">+{money(p.bonoAnaquelMonto)}</span></div>
                             )}
                             {p.cobradoRecup > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Cuentas recuperadas ({p.tasaRecup}%)</span><span className="text-white font-mono">{money(p.cobradoRecup)}</span></div>
@@ -946,7 +949,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         runRateActual: 0, runRateNeeded: 0, diasRestantes: 0,
         radarAlerts: [], stockoutsCount: 0, radarAlertsByPosId: {},
         periodoLabel: '', mesArranque: 0,
-        cobranzaTasa: null, cobranzaUmbral: 85, cobranzaOk: false, facturasVencidas: 0, montoVencido: 0,
+        cobranzaTasa: null, facturasVencidas: 0, montoVencido: 0,
     });
     const [loading, setLoading]                       = useState(true);
     const [loadError, setLoadError]                   = useState('');
@@ -1097,7 +1100,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 // tras otro — en conexión móvil eso se nota como demora visible
                 // aunque nunca llegue a colgarse. Ninguna depende del resultado
                 // de otra, así que corren todas a la vez.
-                const [despachosSnap, comisionMesSnap, pagosSnap, carteraSnap, facturasSnap, liquidacionesSnap] = await Promise.all([
+                const [despachosSnap, comisionMesSnap, pagosSnap, carteraSnap, facturasSnap, liquidacionesSnap, cerradosSnap] = await Promise.all([
                     reporterId
                         ? getDocs(query(collection(db, 'despachos'), where('reporterId', '==', reporterId)))
                         : Promise.resolve(null),
@@ -1116,6 +1119,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                         .catch(e => { console.warn('facturas_vendedor load error:', e); return null; }),
                     getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', user.uid)))
                         .catch(e => { console.warn('liquidaciones load error:', e); return null; }),
+                    getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', user.uid)))
+                        .catch(e => { console.warn('comisiones_cerradas load error:', e); return null; }),
                 ]);
 
                 // 2. Despachos del mes (requiere reporterId — vínculo con el
@@ -1324,11 +1329,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //    vencimiento heredado de Zoho).
                 // Fase 3.6 — Cobranza por PUNTUALIDAD (no por volumen). Se mide
                 // sobre las facturas de la cartera que ya "debían cobrarse"
-                // (vencidas o pagadas): qué % se cobró a tiempo
-                // (pagadaDentroDePlazo). El Bono Cobranza se gana si el % ≥
-                // cobranzaUmbral. Además, contadores accionables: por vencer /
-                // vencidas (la lista de qué cobrar).
-                const cobranzaUmbral = cfg.cobranzaUmbral ?? DEFAULT_COMMISSION_CONFIG.cobranzaUmbral;
+                // (vencidas o pagadas): qué % se cobró a tiempo (pagadaDentroDePlazo)
+                // — solo informativo, el Bono Cobranza se paga proporcional por
+                // factura. Además, contadores accionables: por vencer / vencidas.
                 let facturasPorVencer = 0;
                 let facturasVencidas = 0;
                 let montoVencido = 0;
@@ -1360,7 +1363,6 @@ const VendedorLayout = ({ user, onLogout }) => {
                     if (cobranzaDenominador > 0) puntualidadPct = (cobranzaATiempo / cobranzaDenominador) * 100;
                 }
                 const cobranzaTasa = cobranzaDenominador > 0 ? (cobranzaATiempo / cobranzaDenominador) * 100 : null;
-                const cobranzaOk = cobranzaTasa !== null && cobranzaTasa >= cobranzaUmbral;
 
                 const newStats = {
                     unidadesDelMes, comisionSemana, despachoHoy,
@@ -1370,14 +1372,24 @@ const VendedorLayout = ({ user, onLogout }) => {
                     runRateActual, runRateNeeded, diasRestantes,
                     radarAlerts, stockoutsCount, radarAlertsByPosId,
                     periodoLabel, mesArranque,
-                    cobranzaTasa, cobranzaUmbral, cobranzaOk, facturasVencidas, montoVencido,
+                    cobranzaTasa, facturasVencidas, montoVencido,
                 };
                 setStats(newStats);
 
                 // Estado de Cuenta por período (Fase 3.7/3.8) — histórico devengado
                 // vs. pagado (liquidaciones registradas por administración).
                 const liquidaciones = liquidacionesSnap ? liquidacionesSnap.docs.map(d => d.data()) : [];
-                setEstados(computeEstadosDeCuenta(meta, facturasSnap ? facturasSnap.docs.map(d => d.data()) : [], liquidaciones, { carteraSize: puntosTotal }));
+                // Períodos congelados (snapshot al cierre) → mapa por periodKey.
+                const cerradosMap = {};
+                if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerradosMap[c.periodKey] = c; });
+                // Factor de anaquel del período en curso (proxy v1: logrado=1 / no=0).
+                const anaquelOpts = hasAnaquel ? { hasAnaquel: true, factor: anaquelOk ? 1 : 0 } : { hasAnaquel: false, factor: 0 };
+                setEstados(computeEstadosDeCuenta(
+                    meta,
+                    facturasSnap ? facturasSnap.docs.map(d => d.data()) : [],
+                    liquidaciones,
+                    { carteraSize: puntosTotal, cerrados: cerradosMap, anaquel: anaquelOpts },
+                ));
 
                 // 6. PDV list for dispatch — collapse centralizado chains to a single entry per chain
                 //    (posDocsMap fue cargado arriba, en 4b).

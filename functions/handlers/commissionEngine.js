@@ -29,14 +29,12 @@ const DEFAULT_COMMISSION_CONFIG = {
     anaquelThreshold: 80,
     anaquelMinUnits: 12,
     arranque: [],
-    // Cobranza por PUNTUALIDAD: a tiempo = cobrar dentro de vencimiento +
-    // cobranzaGraciaDias; el bono se gana si el % a tiempo ≥ cobranzaUmbral.
+    // Cobranza por PUNTUALIDAD (proporcional): a tiempo = cobrar dentro de
+    // vencimiento + cobranzaGraciaDias; el Bono Cobranza se paga sobre cada
+    // factura cobrada a tiempo.
     cobranzaGraciaDias: 5,
-    cobranzaUmbral: 85,
     comisionRecuperadas: 5.0,
     facturaMaxDias: 45,
-    metaCobranza: 1340, // (obsoleto)
-    cobranzaDias: 30,   // (obsoleto)
 };
 
 /**

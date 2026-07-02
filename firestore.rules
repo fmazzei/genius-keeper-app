@@ -130,6 +130,15 @@ service cloud.firestore {
       allow write: if isAdmin() || isMaster();
     }
 
+    match /comisiones_cerradas/{cierreId} {
+      // Snapshot congelado del devengado de un período de empleo cerrado (Fase
+      // 3.10). El vendedor lee los suyos; admin/master leen y congelan; master
+      // reabre (borra). Escritura desde el cliente (admin) → permitida a admin.
+      allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
+      allow create, update: if isAdmin() || isMaster();
+      allow delete: if isMaster();
+    }
+
     match /liquidaciones/{liqId} {
       // Pagos de comisión al vendedor (Fase 3.8). El vendedor lee solo los
       // suyos (Estado de Cuenta: devengado/pagado/saldo); admin/master leen y

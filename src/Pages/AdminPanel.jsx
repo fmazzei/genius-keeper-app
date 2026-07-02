@@ -2585,18 +2585,22 @@ const LiquidacionesManagement = () => {
         setLoading(true);
         setError('');
         try {
-            const [metaSnap, facturasSnap, liquidSnap, carteraSnap] = await Promise.all([
+            const [metaSnap, facturasSnap, liquidSnap, carteraSnap, cerradosSnap] = await Promise.all([
                 getDoc(doc(db, 'users_metadata', uid)),
                 getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', uid))),
                 getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', uid))),
                 getDocs(query(collection(db, 'vendor_clients'), where('vendedorId', '==', uid), where('active', '==', true)))
+                    .catch(() => null),
+                getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', uid)))
                     .catch(() => null),
             ]);
             const meta = metaSnap.exists() ? metaSnap.data() : {};
             const facturas = facturasSnap.docs.map(d => d.data());
             const liqs = liquidSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             const carteraSize = carteraSnap ? carteraSnap.docs.filter(d => (d.data().estado || 'activo') === 'activo').length : 0;
-            setEstados(computeEstadosDeCuenta(meta, facturas, liqs, { carteraSize }));
+            const cerrados = {};
+            if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerrados[c.periodKey] = c; });
+            setEstados(computeEstadosDeCuenta(meta, facturas, liqs, { carteraSize, cerrados }));
             setLiquid(liqs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')));
         } catch (e) {
             console.error(e);
@@ -2652,6 +2656,41 @@ const LiquidacionesManagement = () => {
             await cargar(vendedorId);
         } catch (e) {
             alert(e.message || 'No se pudo eliminar.');
+        }
+    };
+
+    // Cierre/freeze de período (Fase 3.10): congela el devengado de un período
+    // cerrado para que cobros tardíos / notas de crédito posteriores no alteren
+    // lo ya liquidado. `master`/`admin` congelan; `master` reabre.
+    const [cerrando, setCerrando] = useState('');
+    const cerrarPeriodo = async (e) => {
+        if (!e.cerrado || e.congelado) return;
+        if (!window.confirm(`¿Cerrar y congelar el Mes ${e.mes} (${e.rango})? Su devengado (${money(e.devengadoTotal)}) quedará fijo.`)) return;
+        setCerrando(e.periodKey);
+        try {
+            const { pagado, saldo, congelado, ...snapshot } = e; // congelamos el devengado, no el pagado
+            await setDoc(doc(db, 'comisiones_cerradas', `${vendedorId}_${e.periodKey}`), {
+                ...snapshot,
+                vendedorId,
+                congeladoPor: auth.currentUser?.uid || null,
+                congeladoPorEmail: auth.currentUser?.email || null,
+                congeladoEn: serverTimestamp(),
+            });
+            await cargar(vendedorId);
+        } catch (err) {
+            alert(err.message || 'No se pudo cerrar el período.');
+        } finally {
+            setCerrando('');
+        }
+    };
+    const reabrirPeriodo = async (e) => {
+        if (!e.congelado) return;
+        if (!window.confirm(`¿Reabrir el Mes ${e.mes}? Volverá a recalcularse en vivo.`)) return;
+        try {
+            await deleteDoc(doc(db, 'comisiones_cerradas', `${vendedorId}_${e.periodKey}`));
+            await cargar(vendedorId);
+        } catch (err) {
+            alert(err.message || 'No se pudo reabrir el período.');
         }
     };
 
@@ -2760,19 +2799,28 @@ const LiquidacionesManagement = () => {
                         ) : (
                             <div className="space-y-2">
                                 {estados.map(e => (
-                                    <div key={e.periodKey} className="flex items-center justify-between border border-slate-100 rounded-lg px-3 py-2 text-sm">
-                                        <div>
-                                            <p className="font-semibold text-slate-700">Mes {e.mes} <span className="text-slate-400 font-normal">· {e.rango}</span></p>
+                                    <div key={e.periodKey} className="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2 text-sm">
+                                        <div className="min-w-0">
+                                            <p className="font-semibold text-slate-700">Mes {e.mes} <span className="text-slate-400 font-normal">· {e.rango}</span>{e.congelado && <span className="ml-1.5 text-[10px] font-bold text-blue-600">🔒 congelado</span>}</p>
                                             <p className="text-slate-400 text-xs">{e.cerrado ? 'Cerrado' : 'En curso'} · Nivel {e.nivel} · {e.unidades.toLocaleString()} uds</p>
                                         </div>
-                                        <div className="text-right">
+                                        <div className="text-right shrink-0">
                                             <p className="text-slate-700">Dev. {money(e.devengadoTotal)} · Pag. {money(e.pagado)}</p>
                                             <p className={`font-bold ${e.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>Saldo {money(e.saldo)}</p>
+                                            {e.cerrado && !e.congelado && (
+                                                <button onClick={() => cerrarPeriodo(e)} disabled={cerrando === e.periodKey} className="mt-1 text-[11px] font-semibold text-brand-blue disabled:opacity-50">
+                                                    {cerrando === e.periodKey ? 'Cerrando…' : 'Cerrar y congelar'}
+                                                </button>
+                                            )}
+                                            {e.congelado && (
+                                                <button onClick={() => reabrirPeriodo(e)} className="mt-1 text-[11px] font-semibold text-slate-400 hover:text-red-500">Reabrir</button>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         )}
+                        <p className="text-slate-400 text-[11px] mt-3"><b>Cerrar y congelar</b> fija el devengado de un período cerrado (cobros tardíos o notas de crédito posteriores ya no lo alteran). El <b>pagado/saldo</b> sigue en vivo según las liquidaciones. <b>Reabrir</b> lo vuelve a recalcular.</p>
                     </div>
 
                     {/* Historial de liquidaciones */}
@@ -3104,15 +3152,9 @@ const IntegracionesSection = () => {
                     <>
                         <Row
                             label="Webhook de Facturas"
-                            desc="Sincroniza facturas de Zoho (creadas, vencidas, pagadas) hacia Mis Facturas y el Bono Puntualidad de cada vendedor."
+                            desc="Sincroniza facturas de Zoho (creadas, vencidas, pagadas) hacia Mis Facturas y calcula la comisión del vendedor (niveles + Bono Cobranza + Activación + Cuentas Recuperadas)."
                             enabled={zohoSales}
                             setEnabled={setZohoSales}
-                        />
-                        <Row
-                            label="Webhook de Comisiones / Pagos"
-                            desc="Procesa cobros registrados en Zoho y calcula comisiones por vendedor."
-                            enabled={zohoComis}
-                            setEnabled={setZohoComis}
                         />
                         <div className="pt-4">
                             <label className="font-semibold text-slate-800 text-sm">ID de organización Zoho (Lacteoca)</label>

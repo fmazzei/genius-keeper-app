@@ -35,9 +35,6 @@ export const DEFAULT_COMMISSION_CONFIG = {
     // vencimiento + cobranzaGraciaDias; el Bono Cobranza se paga sobre lo cobrado
     // a tiempo, factura por factura.
     cobranzaGraciaDias:  5,     // días de gracia tras el vencimiento que aún cuentan a tiempo
-    cobranzaUmbral:      85,    // (obsoleto) umbral/gate del bono — reemplazado por modelo proporcional
-    metaCobranza:        1340,  // (obsoleto) meta de cobranza por volumen — reemplazada por puntualidad
-    cobranzaDias:        30,    // (obsoleto)
     // Cuentas Recuperadas: facturas heredadas de la cartera que el vendedor cobra
     comisionRecuperadas: 5.0,   // % flat sobre lo cobrado de esas facturas adoptadas
     facturaMaxDias:      45,    // >45 días sin cobrar → la comisión se anula
