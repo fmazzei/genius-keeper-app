@@ -1,11 +1,12 @@
 // RUTA: src/Pages/AdminPanel.jsx
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { db, functions } from '../Firebase/config.js';
+import { db, functions, auth } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
+import { computeEstadosDeCuenta } from '../utils/vendedorMeta.js';
 import CarteraManager from '../Components/CarteraManager.jsx';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
@@ -2549,6 +2550,255 @@ const FacturaManagementTool = () => {
     );
 };
 
+// ─── Liquidaciones (Fase 3.8) — pagos de comisión al vendedor ─────────────────
+//
+// El administrador (por ahora master/admin) elige un vendedor, ve su Estado de
+// Cuenta por período de empleo (devengado / pagado / saldo) y registra pagos
+// (liquidaciones) contra un período. La liquidación se salda semanalmente sobre
+// el mes vencido; cada registro rebaja el saldo del período correspondiente.
+const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const LiquidacionesManagement = () => {
+    const [vendedores, setVendedores]   = useState([]);
+    const [vendedorId, setVendedorId]   = useState('');
+    const [estados, setEstados]         = useState([]);
+    const [liquidaciones, setLiquid]    = useState([]);
+    const [loading, setLoading]         = useState(false);
+    const [error, setError]             = useState('');
+
+    // Formulario de registro
+    const [periodKey, setPeriodKey]     = useState('');
+    const [monto, setMonto]             = useState('');
+    const [fecha, setFecha]             = useState('');
+    const [nota, setNota]               = useState('');
+    const [saving, setSaving]           = useState(false);
+    const [okMsg, setOkMsg]             = useState('');
+
+    useEffect(() => {
+        getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
+            .then(snap => setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+            .catch(() => {});
+    }, []);
+
+    const cargar = useCallback(async (uid) => {
+        if (!uid) { setEstados([]); setLiquid([]); return; }
+        setLoading(true);
+        setError('');
+        try {
+            const [metaSnap, facturasSnap, liquidSnap] = await Promise.all([
+                getDoc(doc(db, 'users_metadata', uid)),
+                getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', uid))),
+                getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', uid))),
+            ]);
+            const meta = metaSnap.exists() ? metaSnap.data() : {};
+            const facturas = facturasSnap.docs.map(d => d.data());
+            const liqs = liquidSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setEstados(computeEstadosDeCuenta(meta, facturas, liqs));
+            setLiquid(liqs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')));
+        } catch (e) {
+            console.error(e);
+            setError('No se pudo cargar el estado de cuenta del vendedor.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const onSelectVendedor = (uid) => {
+        setVendedorId(uid);
+        setPeriodKey('');
+        setMonto('');
+        setNota('');
+        setOkMsg('');
+        cargar(uid);
+    };
+
+    const registrar = async () => {
+        if (!vendedorId || !periodKey || !(Number(monto) > 0)) return;
+        setSaving(true);
+        setError('');
+        setOkMsg('');
+        try {
+            const hoy = new Date();
+            const fechaVal = fecha || `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+            await addDoc(collection(db, 'liquidaciones'), {
+                vendedorId,
+                periodKey,
+                monto: Number(monto),
+                fecha: fechaVal,
+                nota: nota.trim(),
+                registradoPor: auth.currentUser?.uid || null,
+                registradoPorEmail: auth.currentUser?.email || null,
+                createdAt: serverTimestamp(),
+            });
+            setMonto('');
+            setNota('');
+            setOkMsg('Liquidación registrada.');
+            await cargar(vendedorId);
+        } catch (e) {
+            console.error(e);
+            setError(e.message || 'No se pudo registrar la liquidación.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const eliminar = async (id) => {
+        if (!window.confirm('¿Eliminar esta liquidación? El saldo del período volverá a subir.')) return;
+        try {
+            await deleteDoc(doc(db, 'liquidaciones', id));
+            await cargar(vendedorId);
+        } catch (e) {
+            alert(e.message || 'No se pudo eliminar.');
+        }
+    };
+
+    const periodLabel = (pk) => {
+        const est = estados.find(e => e.periodKey === pk);
+        return est ? `Mes ${est.mes} · ${est.rango}` : pk;
+    };
+
+    const totales = estados.reduce((acc, e) => {
+        acc.devengado += e.devengadoTotal;
+        acc.pagado    += e.pagado;
+        acc.saldo     += e.saldo;
+        return acc;
+    }, { devengado: 0, pagado: 0, saldo: 0 });
+
+    return (
+        <div className="max-w-3xl">
+            <div className="mb-6">
+                <h3 className="text-lg font-bold text-slate-800">Liquidaciones</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                    Registra los pagos de comisión a cada vendedor y consulta su estado de cuenta (devengado / pagado / saldo) por período de empleo.
+                </p>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                <label className="font-semibold text-slate-800 text-sm">Vendedor</label>
+                <select
+                    value={vendedorId}
+                    onChange={e => onSelectVendedor(e.target.value)}
+                    className="mt-2 w-full p-2.5 border border-slate-300 rounded-lg text-sm"
+                >
+                    <option value="">Selecciona un vendedor…</option>
+                    {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+            </div>
+
+            {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+            {loading && <LoadingSpinner />}
+
+            {!loading && vendedorId && (
+                <>
+                    {/* Resumen global */}
+                    <div className="grid grid-cols-3 gap-3 mb-4">
+                        <div className="bg-white border border-slate-200 rounded-xl p-4">
+                            <p className="text-slate-400 text-xs">Devengado total</p>
+                            <p className="text-slate-800 font-black text-lg">{money(totales.devengado)}</p>
+                        </div>
+                        <div className="bg-white border border-slate-200 rounded-xl p-4">
+                            <p className="text-slate-400 text-xs">Pagado</p>
+                            <p className="text-emerald-600 font-black text-lg">{money(totales.pagado)}</p>
+                        </div>
+                        <div className="bg-white border border-slate-200 rounded-xl p-4">
+                            <p className="text-slate-400 text-xs">Saldo pendiente</p>
+                            <p className={`font-black text-lg ${totales.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>{money(totales.saldo)}</p>
+                        </div>
+                    </div>
+
+                    {/* Registrar pago */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                        <p className="font-bold text-slate-800 mb-3">Registrar liquidación</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs font-semibold text-slate-600">Período</label>
+                                <select value={periodKey} onChange={e => setPeriodKey(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm">
+                                    <option value="">Selecciona…</option>
+                                    {estados.map(e => (
+                                        <option key={e.periodKey} value={e.periodKey}>
+                                            Mes {e.mes} · {e.rango} — saldo {money(e.saldo)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-slate-600">Monto (USD)</label>
+                                <input type="number" min="0" step="0.01" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0.00" className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-slate-600">Fecha del pago</label>
+                                <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-semibold text-slate-600">Nota (opcional)</label>
+                                <input type="text" value={nota} onChange={e => setNota(e.target.value)} placeholder="Ej. Semana 1, transferencia" className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
+                            </div>
+                        </div>
+                        {periodKey && (() => {
+                            const est = estados.find(e => e.periodKey === periodKey);
+                            if (est && Number(monto) > est.saldo + 0.01) {
+                                return <p className="text-amber-600 text-xs mt-2">El monto excede el saldo pendiente de ese período ({money(est.saldo)}). Puedes continuar, pero revisa el importe.</p>;
+                            }
+                            return null;
+                        })()}
+                        <div className="flex items-center gap-3 mt-3">
+                            <button onClick={registrar} disabled={saving || !periodKey || !(Number(monto) > 0)} className="bg-brand-blue text-white font-semibold text-sm px-4 py-2 rounded-lg disabled:opacity-50">
+                                {saving ? 'Registrando…' : 'Registrar pago'}
+                            </button>
+                            {okMsg && <span className="text-emerald-600 text-sm font-semibold">{okMsg}</span>}
+                        </div>
+                    </div>
+
+                    {/* Estado de cuenta por período */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                        <p className="font-bold text-slate-800 mb-3">Estado de cuenta por período</p>
+                        {estados.length === 0 ? (
+                            <p className="text-slate-400 text-sm">Este vendedor no tiene períodos (¿falta la fecha de ingreso?).</p>
+                        ) : (
+                            <div className="space-y-2">
+                                {estados.map(e => (
+                                    <div key={e.periodKey} className="flex items-center justify-between border border-slate-100 rounded-lg px-3 py-2 text-sm">
+                                        <div>
+                                            <p className="font-semibold text-slate-700">Mes {e.mes} <span className="text-slate-400 font-normal">· {e.rango}</span></p>
+                                            <p className="text-slate-400 text-xs">{e.cerrado ? 'Cerrado' : 'En curso'} · Nivel {e.nivel} · {e.unidades.toLocaleString()} uds</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-slate-700">Dev. {money(e.devengadoTotal)} · Pag. {money(e.pagado)}</p>
+                                            <p className={`font-bold ${e.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>Saldo {money(e.saldo)}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Historial de liquidaciones */}
+                    <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                        <p className="font-bold text-slate-800 mb-3">Liquidaciones registradas</p>
+                        {liquidaciones.length === 0 ? (
+                            <p className="text-slate-400 text-sm">Aún no hay pagos registrados para este vendedor.</p>
+                        ) : (
+                            <div className="space-y-2">
+                                {liquidaciones.map(l => (
+                                    <div key={l.id} className="flex items-center justify-between border border-slate-100 rounded-lg px-3 py-2 text-sm">
+                                        <div>
+                                            <p className="font-semibold text-slate-700">{money(l.monto)} <span className="text-slate-400 font-normal">· {l.fecha}</span></p>
+                                            <p className="text-slate-400 text-xs">{periodLabel(l.periodKey)}{l.nota ? ` · ${l.nota}` : ''}</p>
+                                        </div>
+                                        <button onClick={() => eliminar(l.id)} className="p-1.5 text-slate-300 hover:text-red-500" title="Eliminar liquidación">
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
 // ─── Integraciones — Zoho Books webhook config ────────────────────────────────
 
 const IntegracionesSection = () => {
@@ -2730,6 +2980,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             items: [
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
+                { id: 'liquidaciones', label: 'Liquidaciones', Icon: Wallet, badge: 'Nuevo' },
                 { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
                 { id: 'almacen_comercial', label: 'Almacén Comercial', Icon: Truck },
                 { id: 'competitors', label: 'Competidores',     Icon: ShoppingCart },
@@ -2789,6 +3040,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'campo':         return <ReportersManagement />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
+            case 'liquidaciones':  return <LiquidacionesManagement />;
             case 'depots':         return <DepotManagement />;
             case 'almacen_comercial': return <AlmacenComercialPage />;
             case 'competitors':    return <CompetitorManagement />;

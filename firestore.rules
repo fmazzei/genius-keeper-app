@@ -130,6 +130,15 @@ service cloud.firestore {
       allow write: if isAdmin() || isMaster();
     }
 
+    match /liquidaciones/{liqId} {
+      // Pagos de comisión al vendedor (Fase 3.8). El vendedor lee solo los
+      // suyos (Estado de Cuenta: devengado/pagado/saldo); admin/master leen y
+      // registran todos. Por ahora solo master borra (auditoría).
+      allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
+      allow create, update: if isAdmin() || isMaster();
+      allow delete: if isMaster();
+    }
+
     match /pos/{posId} {
       allow get, list: if isAuthenticated();
       allow create: if isMaster() || isAdmin() || isMerchandiser();

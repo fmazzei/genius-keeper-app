@@ -97,12 +97,19 @@ const rangoLabel = (start, end) => {
  * @returns {Array<{mes,rango,cerrado,unidades,metaMensual,nivel,tasa,
  *   cobranzaTasa,cobranzaOk,cobrado,devengadoComision,base,devengadoTotal}>}
  */
-export function computeEstadosDeCuenta(meta = {}, facturas = []) {
+export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = []) {
     const cfg = meta.commissionConfig
         ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
         : DEFAULT_COMMISSION_CONFIG;
     const ingreso = toDate(meta.fechaIngreso);
     if (!ingreso) return [];
+
+    // Pagado por período (liquidaciones ya filtradas por vendedor).
+    const pagadoPorPeriodo = {};
+    (liquidaciones || []).forEach(l => {
+        if (!l.periodKey) return;
+        pagadoPorPeriodo[l.periodKey] = (pagadoPorPeriodo[l.periodKey] || 0) + (Number(l.monto) || 0);
+    });
 
     const metaPlena     = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
     const arranque      = Array.isArray(cfg.arranque) ? cfg.arranque : [];
@@ -123,9 +130,14 @@ export function computeEstadosDeCuenta(meta = {}, facturas = []) {
     const nPeriodos = mesesCompletos(ingreso, ahora) + 1;
     const out = [];
 
+    const pad = (n) => String(n).padStart(2, '0');
+
     for (let i = nPeriodos - 1; i >= 0; i--) {
         const start = addMonths(ingreso, i);
         const end   = addMonths(ingreso, i + 1);
+        // Clave del período = fecha de inicio "YYYY-MM-DD" — misma convención que
+        // periodoCohorteFromDate (commissionEngine.js) y las liquidaciones.
+        const periodKey = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
         const metaMensual = i < arranque.length ? (arranque[i].meta || metaPlena) : metaPlena;
 
         let unidades = 0, cobradoRegular = 0, cobradoRecup = 0, cobrDen = 0, cobrATiempo = 0;
@@ -151,9 +163,12 @@ export function computeEstadosDeCuenta(meta = {}, facturas = []) {
         const cobranzaOk = cobranzaTasa !== null && cobranzaTasa >= umbral;
         const tasaTotal = tier.rate + (cobranzaOk ? bonoCobranza : 0);
         const devengadoComision = cobradoRegular * tasaTotal / 100 + cobradoRecup * tasaRecup / 100;
+        const devengadoTotal = devengadoComision + baseMes;
+        const pagado = pagadoPorPeriodo[periodKey] || 0;
 
         out.push({
             mes: i + 1,
+            periodKey,
             rango: rangoLabel(start, end),
             cerrado: end <= ahora,
             unidades, metaMensual,
@@ -162,7 +177,9 @@ export function computeEstadosDeCuenta(meta = {}, facturas = []) {
             cobrado: cobradoRegular + cobradoRecup,
             devengadoComision,
             base: baseMes,
-            devengadoTotal: devengadoComision + baseMes,
+            devengadoTotal,
+            pagado,
+            saldo: devengadoTotal - pagado,
         });
     }
     return out;

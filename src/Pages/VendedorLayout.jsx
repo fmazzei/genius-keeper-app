@@ -129,12 +129,12 @@ function EstadoCuentaView({ estados, onBack }) {
                         <div className="flex justify-between"><span className="text-slate-400">Comisión devengada</span><span className="text-white font-bold font-mono">{money(p.devengadoComision)}</span></div>
                         <div className="flex justify-between"><span className="text-slate-400">Base (fijo + viáticos)</span><span className="text-slate-300 font-mono">{money(p.base)}</span></div>
                         <div className="flex justify-between border-t border-slate-800 pt-1"><span className="text-slate-300 font-semibold">Devengado total</span><span className="text-emerald-400 font-black font-mono">{money(p.devengadoTotal)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-400">Pagado</span><span className="text-slate-300 font-mono">$0</span></div>
-                        <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo pendiente</span><span className="text-amber-400 font-black font-mono">{money(p.devengadoTotal)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-400">Pagado</span><span className="text-slate-300 font-mono">{money(p.pagado)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo pendiente</span><span className={`font-black font-mono ${p.saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(p.saldo)}</span></div>
                     </div>
                 </div>
             ))}
-            <p className="text-slate-500 text-[11px] px-1">La comisión se calcula con el <b>nivel final</b> del período sobre lo cobrado. "Pagado" se registrará con las liquidaciones (Fase 3.8).</p>
+            <p className="text-slate-500 text-[11px] px-1">La comisión se calcula con el <b>nivel final</b> del período sobre lo cobrado. "Pagado" son las liquidaciones registradas por administración; el saldo se salda semanalmente sobre el mes vencido.</p>
         </div>
     );
 }
@@ -851,7 +851,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 // tras otro — en conexión móvil eso se nota como demora visible
                 // aunque nunca llegue a colgarse. Ninguna depende del resultado
                 // de otra, así que corren todas a la vez.
-                const [despachosSnap, comisionMesSnap, pagosSnap, carteraSnap, facturasSnap] = await Promise.all([
+                const [despachosSnap, comisionMesSnap, pagosSnap, carteraSnap, facturasSnap, liquidacionesSnap] = await Promise.all([
                     reporterId
                         ? getDocs(query(collection(db, 'despachos'), where('reporterId', '==', reporterId)))
                         : Promise.resolve(null),
@@ -868,6 +868,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                     )),
                     getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', user.uid)))
                         .catch(e => { console.warn('facturas_vendedor load error:', e); return null; }),
+                    getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', user.uid)))
+                        .catch(e => { console.warn('liquidaciones load error:', e); return null; }),
                 ]);
 
                 // 2. Despachos del mes (requiere reporterId — vínculo con el
@@ -1126,8 +1128,10 @@ const VendedorLayout = ({ user, onLogout }) => {
                 };
                 setStats(newStats);
 
-                // Estado de Cuenta por período (Fase 3.7) — histórico devengado.
-                setEstados(computeEstadosDeCuenta(meta, facturasSnap ? facturasSnap.docs.map(d => d.data()) : []));
+                // Estado de Cuenta por período (Fase 3.7/3.8) — histórico devengado
+                // vs. pagado (liquidaciones registradas por administración).
+                const liquidaciones = liquidacionesSnap ? liquidacionesSnap.docs.map(d => d.data()) : [];
+                setEstados(computeEstadosDeCuenta(meta, facturasSnap ? facturasSnap.docs.map(d => d.data()) : [], liquidaciones));
 
                 // 6. PDV list for dispatch — collapse centralizado chains to a single entry per chain
                 //    (posDocsMap fue cargado arriba, en 4b).
