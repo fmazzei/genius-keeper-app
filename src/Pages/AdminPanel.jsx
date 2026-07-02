@@ -2799,6 +2799,218 @@ const LiquidacionesManagement = () => {
     );
 };
 
+// ─── Conciliación de facturas por vendedor (Zoho ↔ GK) ────────────────────────
+//
+// Zoho Books NO notifica eliminaciones: si una factura se borra en Zoho, su
+// documento sigue en `facturas_vendedor` (GK) inflando las unidades y la
+// comisión del vendedor. Esta herramienta lista TODAS las facturas que GK tiene
+// para un vendedor (con número, para poder cruzar contra Zoho), muestra los
+// totales que alimentan su perfil, y permite anular/eliminar las huérfanas
+// (revierte unidades y comisión). Es la base del proceso de conciliación que el
+// administrador de Lacteoca usará para pagar comisiones.
+const fmtFecha = (v) => {
+    if (!v) return '—';
+    const d = v?.toDate ? v.toDate() : (typeof v === 'string' ? new Date(v.replace(/-/g, '/')) : new Date(v));
+    return isNaN(d?.getTime?.()) ? '—' : d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+const ESTADO_BADGE = {
+    pagada:   'bg-emerald-100 text-emerald-700',
+    vencida:  'bg-red-100 text-red-700',
+    anulada:  'bg-slate-200 text-slate-500',
+    vigente:  'bg-blue-100 text-blue-700',
+};
+
+const ConciliacionFacturas = () => {
+    const [vendedores, setVendedores] = useState([]);
+    const [vendedorId, setVendedorId] = useState('');
+    const [facturas, setFacturas]     = useState([]);
+    const [loading, setLoading]       = useState(false);
+    const [error, setError]           = useState('');
+    const [busca, setBusca]           = useState('');
+    const [filtro, setFiltro]         = useState('activas'); // activas | todas | anuladas
+    const [actuando, setActuando]     = useState('');        // facturaId:accion
+    const [confirm, setConfirm]       = useState(null);      // {id, accion}
+
+    useEffect(() => {
+        getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
+            .then(snap => setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+            .catch(() => {});
+    }, []);
+
+    const cargar = useCallback(async (uid) => {
+        if (!uid) { setFacturas([]); return; }
+        setLoading(true);
+        setError('');
+        try {
+            const filtroVend = uid === '__none__'
+                ? where('vendedorId', '==', null)
+                : where('vendedorId', '==', uid);
+            const snap = await getDocs(query(collection(db, 'facturas_vendedor'), filtroVend));
+            const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            rows.sort((a, b) => {
+                const ta = (a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha || 0)).getTime?.() || 0;
+                const tb = (b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha || 0)).getTime?.() || 0;
+                return tb - ta;
+            });
+            setFacturas(rows);
+        } catch (e) {
+            console.error(e);
+            setError('No se pudieron cargar las facturas del vendedor.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const onSelect = (uid) => { setVendedorId(uid); setBusca(''); setConfirm(null); cargar(uid); };
+
+    const ejecutar = async (facturaId, accion) => {
+        setActuando(`${facturaId}:${accion}`);
+        setError('');
+        try {
+            const fn = httpsCallable(functions, 'gestionarFacturaVendedor');
+            await fn({ facturaId, action: accion });
+            await cargar(vendedorId);
+            setConfirm(null);
+        } catch (e) {
+            console.error(e);
+            setError(e.message || 'No se pudo procesar la acción.');
+        } finally {
+            setActuando('');
+        }
+    };
+
+    // Totales que alimentan el perfil del vendedor (excluye anuladas).
+    const activas = facturas.filter(f => f.estado !== 'anulada');
+    const tot = activas.reduce((a, f) => {
+        a.unidades += Number(f.unidades) || 0;
+        a.comision += Number(f.comisionGenerada) || 0;
+        a.monto    += Number(f.monto) || 0;
+        return a;
+    }, { unidades: 0, comision: 0, monto: 0 });
+    const anuladasCount = facturas.length - activas.length;
+
+    const term = busca.trim().toLowerCase();
+    const visibles = facturas
+        .filter(f => filtro === 'todas' ? true : filtro === 'anuladas' ? f.estado === 'anulada' : f.estado !== 'anulada')
+        .filter(f => !term || `${f.numero || ''} ${f.clienteName || f.customerName || ''}`.toLowerCase().includes(term));
+
+    return (
+        <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+            <p className="font-bold text-slate-800 mb-1">Conciliación de facturas por vendedor</p>
+            <p className="text-slate-400 text-xs mb-3">
+                Zoho no avisa cuando se <b>elimina</b> una factura. Si una factura de prueba (o borrada en Zoho) sigue aquí,
+                infla las unidades y la comisión del vendedor. Compara esta lista con Zoho y <b>elimina las que ya no existan</b> —
+                sus unidades y comisión se revierten automáticamente.
+            </p>
+
+            <select
+                value={vendedorId}
+                onChange={e => onSelect(e.target.value)}
+                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm mb-3"
+            >
+                <option value="">Selecciona un vendedor…</option>
+                {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                <option value="__none__">— Sin vendedor asignado —</option>
+            </select>
+
+            {error && <p className="text-red-500 text-xs mb-2">{error}</p>}
+            {loading && <LoadingSpinner />}
+
+            {!loading && vendedorId && (
+                <>
+                    {/* Totales de conciliación */}
+                    <div className="grid grid-cols-4 gap-2 mb-3">
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
+                            <p className="text-slate-800 font-black text-lg leading-none">{activas.length}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">Facturas activas</p>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
+                            <p className="text-slate-800 font-black text-lg leading-none">{tot.unidades.toLocaleString('es-VE')}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">Unidades</p>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
+                            <p className="text-slate-800 font-black text-lg leading-none">${Math.round(tot.monto).toLocaleString('es-VE')}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">Monto</p>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
+                            <p className="text-emerald-700 font-black text-lg leading-none">${tot.comision.toFixed(0)}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">Comisión</p>
+                        </div>
+                    </div>
+
+                    {/* Filtros + búsqueda */}
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                        {['activas', 'todas', 'anuladas'].map(f => (
+                            <button
+                                key={f}
+                                onClick={() => setFiltro(f)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize ${filtro === f ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-600'}`}
+                            >
+                                {f}{f === 'anuladas' && anuladasCount > 0 ? ` (${anuladasCount})` : ''}
+                            </button>
+                        ))}
+                        <input
+                            type="text"
+                            value={busca}
+                            onChange={e => setBusca(e.target.value)}
+                            placeholder="Buscar por número o cliente…"
+                            className="flex-1 min-w-[140px] p-2 border border-slate-300 rounded-lg text-sm"
+                        />
+                    </div>
+
+                    {visibles.length === 0 ? (
+                        <p className="text-slate-400 text-sm py-4 text-center">No hay facturas que mostrar.</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {visibles.map(f => (
+                                <div key={f.id} className="border border-slate-200 rounded-lg p-3">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <p className="font-bold text-slate-800 text-sm">
+                                                {f.numero || '(sin número)'}
+                                                <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${ESTADO_BADGE[f.estado] || 'bg-slate-100 text-slate-500'}`}>{f.estado || '—'}</span>
+                                                {f.recuperada && <span className="ml-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">recuperada</span>}
+                                            </p>
+                                            <p className="text-slate-500 text-xs truncate">{f.clienteName || f.customerName || '—'}</p>
+                                            <p className="text-slate-400 text-[11px] mt-0.5">
+                                                {fmtFecha(f.fecha)} · {Number(f.unidades) || 0} uds · ${Number(f.monto || 0).toLocaleString('es-VE')}
+                                                {Number(f.comisionGenerada) > 0 ? ` · comisión $${Number(f.comisionGenerada).toFixed(2)}` : ''}
+                                            </p>
+                                        </div>
+                                        {f.estado !== 'anulada' && (
+                                            confirm?.id === f.id ? (
+                                                <div className="flex flex-col gap-1 shrink-0">
+                                                    <button
+                                                        onClick={() => ejecutar(f.id, confirm.accion)}
+                                                        disabled={actuando !== ''}
+                                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold text-white disabled:opacity-50 ${confirm.accion === 'eliminar' ? 'bg-red-600' : 'bg-amber-500'}`}
+                                                    >
+                                                        {actuando === `${f.id}:${confirm.accion}` ? '...' : `Confirmar ${confirm.accion}`}
+                                                    </button>
+                                                    <button onClick={() => setConfirm(null)} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600">Cancelar</button>
+                                                </div>
+                                            ) : (
+                                                <div className="flex gap-1 shrink-0">
+                                                    <button onClick={() => setConfirm({ id: f.id, accion: 'anular' })} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-100 text-amber-700">Anular</button>
+                                                    <button onClick={() => setConfirm({ id: f.id, accion: 'eliminar' })} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-red-100 text-red-700">Eliminar</button>
+                                                </div>
+                                            )
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    <p className="text-slate-400 text-[11px] mt-3">
+                        <b>Anular</b> deja la factura visible (auditoría) pero fuera de los conteos y revierte su comisión. <b>Eliminar</b> la borra por completo. Ambas revierten unidades y comisión del vendedor.
+                    </p>
+                </>
+            )}
+        </div>
+    );
+};
+
 // ─── Integraciones — Zoho Books webhook config ────────────────────────────────
 
 const IntegracionesSection = () => {
@@ -2855,12 +3067,24 @@ const IntegracionesSection = () => {
         </div>
     );
 
+    const SectionTitle = ({ n, title, desc }) => (
+        <div className="flex items-start gap-2.5 mt-8 mb-3">
+            <span className="w-6 h-6 rounded-full bg-brand-blue text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{n}</span>
+            <div>
+                <p className="font-bold text-slate-800 text-[15px] leading-tight">{title}</p>
+                {desc && <p className="text-slate-400 text-xs mt-0.5">{desc}</p>}
+            </div>
+        </div>
+    );
+
     return (
         <div className="max-w-2xl">
-            <div className="mb-6">
-                <h3 className="text-lg font-bold text-slate-800">Integraciones</h3>
-                <p className="text-sm text-slate-500 mt-1">Conectores con sistemas externos. Los webhooks reciben datos de Zoho Books en tiempo real.</p>
+            <div className="mb-4">
+                <h3 className="text-lg font-bold text-slate-800">Integraciones · Zoho Books</h3>
+                <p className="text-sm text-slate-500 mt-1">Facturación y pagos de Zoho Books → GK en tiempo real. Conexión, conciliación por vendedor, vinculación de clientes y diagnóstico.</p>
             </div>
+
+            <SectionTitle n="1" title="Conexión y seguridad" desc="Interruptores de los webhooks y filtro por organización." />
 
             <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
                 <div className="flex items-center gap-3 mb-4">
@@ -2912,11 +3136,7 @@ const IntegracionesSection = () => {
                 )}
             </div>
 
-            <VinculacionRazonesSociales />
-
-            <ZohoPayloadDiag />
-
-            <FacturaManagementTool />
+            <SectionTitle n="2" title="Conciliación de facturas por vendedor" desc="Cruza lo que GK tiene contra Zoho y corrige facturas de prueba u huérfanas." />
 
             {!loadingAlert && sinVendedor !== null && sinVendedor > 0 && (
                 <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-4 flex items-start gap-3">
@@ -2927,11 +3147,23 @@ const IntegracionesSection = () => {
                         </p>
                         <p className="text-amber-700 text-xs mt-1">
                             Estas facturas no generan comisión para nadie. Revisa que el campo "Salesperson" en Zoho Books
-                            coincida exactamente con el "Nombre en Zoho" configurado en Vendedores → Editar.
+                            coincida exactamente con el "Nombre en Zoho" configurado en Vendedores → Editar (o víncula su razón social en la sección 3).
                         </p>
                     </div>
                 </div>
             )}
+
+            <ConciliacionFacturas />
+
+            <FacturaManagementTool />
+
+            <SectionTitle n="3" title="Vinculación de clientes → Vendedor" desc="Asigna cada razón social de Zoho a su vendedor (atribución por cartera)." />
+
+            <VinculacionRazonesSociales />
+
+            <SectionTitle n="4" title="Diagnóstico y referencia técnica" desc="Último payload recibido de Zoho y configuración de los endpoints." />
+
+            <ZohoPayloadDiag />
 
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Endpoint del webhook de facturas</p>
