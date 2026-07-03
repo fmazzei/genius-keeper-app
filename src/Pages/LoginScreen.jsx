@@ -2,16 +2,19 @@
 
 import React, { useState, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { db } from '@/Firebase/config.js';
+import { doc, getDoc } from 'firebase/firestore';
 import {
     Users, Factory, Loader, TrendingUp, BarChart2,
-    Eye, Shield, ChevronRight, X,
+    Eye, Shield, ChevronRight, X, LayoutGrid,
 } from 'lucide-react';
 
 const ROLE_DOORS = [
-    { id: 'vendedor',  label: 'Ventas',    Icon: TrendingUp, accent: 'text-emerald-400', bg: 'bg-emerald-500/20', desc: 'Portal de ventas y comisiones' },
-    { id: 'gerencia',  label: 'Gerencia',  Icon: BarChart2,  accent: 'text-blue-400',    bg: 'bg-blue-500/20',    desc: 'Gestión comercial'           },
-    { id: 'director',  label: 'Dirección', Icon: Eye,        accent: 'text-violet-400',  bg: 'bg-violet-500/20',  desc: 'Vista ejecutiva'             },
-    { id: 'master',    label: 'Máster',    Icon: Shield,     accent: 'text-amber-400',   bg: 'bg-amber-500/20',   desc: 'Administración total'        },
+    { id: 'vendedor',      label: 'Ventas',        Icon: TrendingUp, accent: 'text-emerald-400', bg: 'bg-emerald-500/20', desc: 'Portal de ventas y comisiones' },
+    { id: 'administrador', label: 'Administración',Icon: LayoutGrid, accent: 'text-teal-400',    bg: 'bg-teal-500/20',    desc: 'Comisiones y conciliación'    },
+    { id: 'gerencia',      label: 'Gerencia',      Icon: BarChart2,  accent: 'text-blue-400',    bg: 'bg-blue-500/20',    desc: 'Gestión comercial'           },
+    { id: 'director',      label: 'Dirección',     Icon: Eye,        accent: 'text-violet-400',  bg: 'bg-violet-500/20',  desc: 'Vista ejecutiva'             },
+    { id: 'master',        label: 'Máster',        Icon: Shield,     accent: 'text-amber-400',   bg: 'bg-amber-500/20',   desc: 'Administración total'        },
 ];
 
 const LoginScreen = () => {
@@ -26,12 +29,32 @@ const LoginScreen = () => {
     const MERCHANDISER_PASS = import.meta.env.VITE_MERCHANDISER_PASSWORD || 'Password123!';
     const PRODUCCION_PASS   = import.meta.env.VITE_PRODUCCION_PASSWORD   || 'ProduccionPass123!';
 
-    const handleLogin = async (loginEmail, loginPassword) => {
+    // Resuelve un identificador a correo: si trae '@' ya es correo; si no, se
+    // busca el nombre de usuario en el índice público `login_index`.
+    const resolveEmail = async (idf) => {
+        const v = (idf || '').trim();
+        if (!v) return null;
+        if (v.includes('@')) return v;
+        const key = v.toLowerCase().replace(/\s+/g, '_');
+        try {
+            const snap = await getDoc(doc(db, 'login_index', key));
+            if (snap.exists() && snap.data().email) return snap.data().email;
+        } catch { /* índice inaccesible → tratar como no encontrado */ }
+        return null;
+    };
+
+    const handleLogin = async (idfOrEmail, loginPassword) => {
         if (isSubmitting) return;
         setIsSubmitting(true);
         setError('');
         try {
-            await login(loginEmail, loginPassword);
+            const resolvedEmail = await resolveEmail(idfOrEmail);
+            if (!resolvedEmail) {
+                setError('Usuario no encontrado. Verifica tu usuario o correo.');
+                setIsSubmitting(false);
+                return;
+            }
+            await login(resolvedEmail, loginPassword);
         } catch {
             setError('Credenciales incorrectas o usuario no registrado.');
             setIsSubmitting(false);
@@ -106,12 +129,12 @@ const LoginScreen = () => {
                 >
                     <p className="text-white/60 text-sm text-center font-medium">Ingresa tus credenciales</p>
                     <input
-                        type="email"
+                        type="text"
                         value={email}
                         onChange={e => setEmail(e.target.value)}
                         className="w-full bg-white/10 border border-white/20 rounded-xl py-3.5 px-4 text-white placeholder-white/35 focus:outline-none focus:ring-2 focus:ring-[#FFD600] focus:border-transparent"
-                        placeholder="Correo electrónico"
-                        autoComplete="email"
+                        placeholder="Usuario o correo"
+                        autoComplete="username"
                         autoCapitalize="none"
                     />
                     <input

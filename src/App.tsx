@@ -25,6 +25,7 @@ const ManagerLayout  = lazy(() => import('@/Pages/ManagerLayout.jsx'));
 const VendedorLayout = lazy(() => import('@/Pages/VendedorLayout.jsx'));
 const AppShell       = lazy(() => import('@/Pages/AppShell.jsx'));
 const KromaShell     = lazy(() => import('@/Kroma/KromaShell.jsx'));
+const AdministracionLayout = lazy(() => import('@/Pages/AdministracionLayout.jsx'));
 
 interface AppNotification {
   title: string;
@@ -90,6 +91,9 @@ const AppLayout: React.FC = () => {
         }
         if (role === 'vendedor') {
             return <VendedorLayout user={user} onLogout={() => signOut(auth)} />;
+        }
+        if (role === 'administrador') {
+            return <AdministracionLayout user={user} onLogout={() => signOut(auth)} />;
         }
         if (role === 'produccion') {
             return <KromaShell onExitKroma={() => signOut(auth)} />;

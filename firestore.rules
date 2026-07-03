@@ -10,7 +10,11 @@ service cloud.firestore {
       return isMaster()
         || getRole(request.auth.uid) == 'sales_manager'
         || getRole(request.auth.uid) == 'gerencia'
-        || getRole(request.auth.uid) == 'director';
+        || getRole(request.auth.uid) == 'director'
+        || getRole(request.auth.uid) == 'administrador';
+    }
+    function isAdministrador() {
+      return getRole(request.auth.uid) == 'administrador';
     }
     function isMaster() {
       return request.auth.token.email == 'lacteoca@lacteoca.com';
@@ -54,6 +58,15 @@ service cloud.firestore {
       match /tokens/{tokenId} {
         allow read, create, delete: if request.auth.uid == userId;
       }
+    }
+
+    match /login_index/{key} {
+      // Índice público usuario→correo para permitir login por NOMBRE DE USUARIO
+      // (se resuelve el correo antes de autenticar). Solo expone el correo, no
+      // datos sensibles. Lo escribe el master al crear/editar usuarios.
+      allow get: if true;
+      allow list: if false;
+      allow create, update, delete: if isMaster();
     }
 
     match /reporters/{reporterId} {

@@ -18,6 +18,14 @@ import EditPosModal from '../Components/EditPosModal.jsx';
 import EditReportForm from '../Components/EditReportForm.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 
+// Índice público usuario→correo para permitir login por NOMBRE DE USUARIO.
+// Se escribe al crear/editar cualquier usuario con username.
+const writeLoginIndex = (username, email, uid) => {
+    if (!username || !email) return Promise.resolve();
+    return setDoc(doc(db, 'login_index', username), { email, uid: uid || null, updatedAt: serverTimestamp() }, { merge: true })
+        .catch(err => console.warn('login_index write error:', err));
+};
+
 const ToggleSwitch = ({ enabled, setEnabled, disabled = false }) => (
     <button onClick={() => !disabled && setEnabled(!enabled)} className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-200 focus:outline-none flex-shrink-0 ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${enabled ? 'bg-brand-blue' : 'bg-slate-300'}`}>
         <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform duration-200 ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -818,9 +826,10 @@ const UserCleanup = () => {
 // ─── Generic user-role management (Director / Gerencia) ──────────────────────
 
 const ROLE_META = {
-    director:      { label: 'Director',  color: 'bg-violet-100 text-violet-700', desc: 'Vista ejecutiva — solo lectura' },
-    gerencia:      { label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
-    sales_manager: { label: 'Gerencia',  color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
+    director:      { label: 'Director',      color: 'bg-violet-100 text-violet-700', desc: 'Vista ejecutiva — solo lectura' },
+    gerencia:      { label: 'Gerencia',      color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
+    sales_manager: { label: 'Gerencia',      color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
+    administrador: { label: 'Administración',color: 'bg-teal-100 text-teal-700',     desc: 'Comisiones y conciliación'      },
 };
 
 const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc, badgeColor = 'bg-slate-100 text-slate-700' }) => {
@@ -858,6 +867,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
             const tempAuth = getAuth(tempApp);
             const { user } = await createUserWithEmailAndPassword(tempAuth, newUser.email.trim(), newUser.password);
             await setDoc(doc(db, 'users_metadata', user.uid), { name: newUser.name.trim(), email: newUser.email.trim(), username, role: createRole, active: true, salesGoal: 0 });
+            await writeLoginIndex(username, newUser.email.trim(), user.uid);
             await tempAuth.signOut();
             await deleteApp(tempApp);
             setNewUser({ name: '', email: '', username: '', password: '' });
@@ -873,6 +883,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                     const tempAuth2 = getAuth(tempApp2);
                     const { user } = await signInWithEmailAndPassword(tempAuth2, newUser.email.trim(), newUser.password);
                     await setDoc(doc(db, 'users_metadata', user.uid), { name: newUser.name.trim(), email: newUser.email.trim(), username, role: createRole, active: true, salesGoal: 0 });
+                    await writeLoginIndex(username, newUser.email.trim(), user.uid);
                     await tempAuth2.signOut();
                     await deleteApp(tempApp2);
                     setNewUser({ name: '', email: '', username: '', password: '' });
@@ -1799,6 +1810,7 @@ const VendedoresManagement = () => {
                 reporterId:   form.reporterId,
                 reporterName: form.reporterName,
             });
+            await writeLoginIndex(username, form.email.trim(), user.uid);
             await tempAuth.signOut();
             await deleteApp(tempApp);
             closeModal();
@@ -1816,6 +1828,7 @@ const VendedoresManagement = () => {
                         role: 'vendedor', active: true,
                         reporterId: form.reporterId, reporterName: form.reporterName,
                     });
+                    await writeLoginIndex(username, form.email.trim(), user.uid);
                     await tempAuth2.signOut();
                     await deleteApp(tempApp2);
                     closeModal();
@@ -2558,7 +2571,7 @@ const FacturaManagementTool = () => {
 // el mes vencido; cada registro rebaja el saldo del período correspondiente.
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const LiquidacionesManagement = () => {
+export const LiquidacionesManagement = () => {
     const [vendedores, setVendedores]   = useState([]);
     const [vendedorId, setVendedorId]   = useState('');
     const [estados, setEstados]         = useState([]);
@@ -2872,7 +2885,7 @@ const ESTADO_BADGE = {
     vigente:  'bg-blue-100 text-blue-700',
 };
 
-const ConciliacionFacturas = () => {
+export const ConciliacionFacturas = () => {
     const [vendedores, setVendedores] = useState([]);
     const [vendedorId, setVendedorId] = useState('');
     const [facturas, setFacturas]     = useState([]);
@@ -3062,6 +3075,134 @@ const ConciliacionFacturas = () => {
     );
 };
 
+// ─── Dashboard de comisiones a pagar (por período y por vendedor) ─────────────
+//
+// Para el administrador: vista consolidada de cuánto se le debe a cada vendedor.
+// Por cada vendedor calcula su Estado de Cuenta (mismo motor que ve el vendedor,
+// con cierres congelados) y suma el SALDO A PAGAR por período. Total general
+// arriba; desglose por vendedor y por período.
+export const ComisionesDashboard = () => {
+    const [rows, setRows]       = useState([]);   // [{vendedor, periodos, totDev, totPag, totSaldo}]
+    const [loading, setLoading] = useState(true);
+    const [error, setError]     = useState('');
+    const [abierto, setAbierto] = useState({});   // vendedorId → expandido
+    const [soloSaldo, setSoloSaldo] = useState(true);
+
+    useEffect(() => {
+        let cancel = false;
+        (async () => {
+            setLoading(true);
+            setError('');
+            try {
+                const vendSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')));
+                const vendedores = vendSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const out = await Promise.all(vendedores.map(async (v) => {
+                    const [facturasSnap, liquidSnap, cerradosSnap, carteraSnap] = await Promise.all([
+                        getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', v.id))).catch(() => null),
+                        getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', v.id))).catch(() => null),
+                        getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', v.id))).catch(() => null),
+                        getDocs(query(collection(db, 'vendor_clients'), where('vendedorId', '==', v.id), where('active', '==', true))).catch(() => null),
+                    ]);
+                    const facturas = facturasSnap ? facturasSnap.docs.map(d => d.data()) : [];
+                    const liqs     = liquidSnap ? liquidSnap.docs.map(d => d.data()) : [];
+                    const cerrados = {};
+                    if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerrados[c.periodKey] = c; });
+                    const carteraSize = carteraSnap ? carteraSnap.docs.filter(d => (d.data().estado || 'activo') === 'activo').length : 0;
+                    const periodos = computeEstadosDeCuenta(v, facturas, liqs, { carteraSize, cerrados });
+                    const totDev = periodos.reduce((s, p) => s + p.devengadoTotal, 0);
+                    const totPag = periodos.reduce((s, p) => s + p.pagado, 0);
+                    const totSaldo = periodos.reduce((s, p) => s + p.saldo, 0);
+                    return { vendedor: v, periodos, totDev, totPag, totSaldo };
+                }));
+                if (!cancel) setRows(out.sort((a, b) => b.totSaldo - a.totSaldo));
+            } catch (e) {
+                console.error(e);
+                if (!cancel) setError('No se pudo cargar el dashboard de comisiones.');
+            } finally {
+                if (!cancel) setLoading(false);
+            }
+        })();
+        return () => { cancel = true; };
+    }, []);
+
+    const granDev   = rows.reduce((s, r) => s + r.totDev, 0);
+    const granPag   = rows.reduce((s, r) => s + r.totPag, 0);
+    const granSaldo = rows.reduce((s, r) => s + r.totSaldo, 0);
+
+    return (
+        <div className="max-w-3xl">
+            <div className="mb-6">
+                <h3 className="text-lg font-bold text-slate-800">Comisiones a pagar</h3>
+                <p className="text-sm text-slate-500 mt-1">Cuánto se le debe a cada vendedor por período (devengado − pagado). Los períodos congelados 🔒 tienen su devengado fijo.</p>
+            </div>
+
+            {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
+            {loading ? <LoadingSpinner /> : (
+                <>
+                    {/* Totales generales */}
+                    <div className="grid grid-cols-3 gap-3 mb-4">
+                        <div className="bg-white border border-slate-200 rounded-xl p-4">
+                            <p className="text-slate-400 text-xs">Devengado total</p>
+                            <p className="text-slate-800 font-black text-lg">{money(granDev)}</p>
+                        </div>
+                        <div className="bg-white border border-slate-200 rounded-xl p-4">
+                            <p className="text-slate-400 text-xs">Pagado</p>
+                            <p className="text-emerald-600 font-black text-lg">{money(granPag)}</p>
+                        </div>
+                        <div className="bg-white border-2 border-amber-300 rounded-xl p-4">
+                            <p className="text-amber-600 text-xs font-semibold">Total a pagar</p>
+                            <p className="text-amber-600 font-black text-lg">{money(granSaldo)}</p>
+                        </div>
+                    </div>
+
+                    <label className="flex items-center gap-2 text-xs text-slate-500 mb-3 cursor-pointer">
+                        <input type="checkbox" checked={soloSaldo} onChange={e => setSoloSaldo(e.target.checked)} />
+                        Mostrar solo vendedores con saldo por pagar
+                    </label>
+
+                    <div className="space-y-2">
+                        {rows.filter(r => !soloSaldo || r.totSaldo > 0.5).length === 0 ? (
+                            <p className="text-slate-400 text-sm">No hay saldos por pagar.</p>
+                        ) : rows.filter(r => !soloSaldo || r.totSaldo > 0.5).map(r => (
+                            <div key={r.vendedor.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                                <button
+                                    onClick={() => setAbierto(a => ({ ...a, [r.vendedor.id]: !a[r.vendedor.id] }))}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left"
+                                >
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-slate-800 truncate">{r.vendedor.name}</p>
+                                        <p className="text-slate-400 text-xs">Dev. {money(r.totDev)} · Pag. {money(r.totPag)}</p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <p className={`font-black ${r.totSaldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>{money(r.totSaldo)}</p>
+                                        <p className="text-slate-400 text-[11px]">{abierto[r.vendedor.id] ? 'ocultar' : 'ver períodos'}</p>
+                                    </div>
+                                </button>
+                                {abierto[r.vendedor.id] && (
+                                    <div className="border-t border-slate-100 divide-y divide-slate-50">
+                                        {r.periodos.map(p => (
+                                            <div key={p.periodKey} className="flex items-center justify-between px-4 py-2 text-sm">
+                                                <div>
+                                                    <p className="text-slate-700">Mes {p.mes} <span className="text-slate-400 font-normal">· {p.rango} · {p.periodKey?.slice(0, 4)}</span>{p.congelado && <span className="ml-1 text-[10px] text-blue-600">🔒</span>}</p>
+                                                    <p className="text-slate-400 text-xs">{p.cerrado ? 'Cerrado' : 'En curso'} · Nivel {p.nivel}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-slate-600 text-xs">Dev. {money(p.devengadoTotal)} · Pag. {money(p.pagado)}</p>
+                                                    <p className={`font-bold ${p.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>Saldo {money(p.saldo)}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
 // ─── Integraciones — Zoho Books webhook config ────────────────────────────────
 
 const IntegracionesSection = () => {
@@ -3235,6 +3376,98 @@ const IntegracionesSection = () => {
     );
 };
 
+// ─── Administradores — usuarios rol `administrador` + permisos por módulo ─────
+const ADMIN_MODULES = [
+    { id: 'dashboard',     label: 'Comisiones a pagar' },
+    { id: 'liquidaciones', label: 'Liquidaciones' },
+    { id: 'conciliacion',  label: 'Conciliación de facturas' },
+    { id: 'cartera',       label: 'Cartera' },
+];
+
+const AdministradoresManagement = () => {
+    const [admins, setAdmins] = useState([]);
+    const [syncing, setSyncing] = useState(false);
+    const [syncMsg, setSyncMsg] = useState('');
+    useEffect(() => {
+        const unsub = onSnapshot(
+            query(collection(db, 'users_metadata'), where('role', '==', 'administrador')),
+            snap => setAdmins(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+            () => {},
+        );
+        return unsub;
+    }, []);
+
+    // Backfill del índice de login por usuario para todos los usuarios existentes
+    // (los creados antes de esta función no tenían entrada en login_index).
+    const backfillLoginIndex = async () => {
+        setSyncing(true); setSyncMsg('');
+        try {
+            const snap = await getDocs(collection(db, 'users_metadata'));
+            let n = 0;
+            for (const d of snap.docs) {
+                const u = d.data();
+                if (u.username && u.email) { await writeLoginIndex(u.username, u.email, d.id); n++; }
+            }
+            setSyncMsg(`Listo: ${n} usuario${n === 1 ? '' : 's'} habilitado${n === 1 ? '' : 's'} para login por nombre de usuario.`);
+        } catch (e) {
+            setSyncMsg('Error: ' + (e.message || 'no se pudo sincronizar.'));
+        } finally {
+            setSyncing(false);
+        }
+    };
+
+    const toggleModulo = (uid, modulos, modId) => {
+        const currentlyOn = (modulos?.[modId]) !== false;
+        updateDoc(doc(db, 'users_metadata', uid), { [`modulos.${modId}`]: !currentlyOn })
+            .catch(() => alert('No se pudo actualizar el módulo.'));
+    };
+
+    return (
+        <div className="space-y-6">
+            <UserRoleManagement
+                targetRoles={['administrador']}
+                createRole="administrador"
+                sectionLabel="Administración"
+                sectionDesc="Usuarios operativos de Lacteoca: pagan comisiones, concilian facturas y gestionan cartera. Sin control del sistema ni gestión de metas."
+            />
+
+            <div className="bg-white rounded-lg shadow p-4">
+                <p className="font-bold text-slate-800 mb-1">Login por nombre de usuario</p>
+                <p className="text-slate-500 text-xs mb-3">Todos pueden entrar con su usuario (o correo) + contraseña. Los usuarios creados antes de esta función necesitan sincronizarse una vez.</p>
+                <button onClick={backfillLoginIndex} disabled={syncing} className="bg-slate-800 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-60">
+                    {syncing ? 'Sincronizando…' : 'Sincronizar usuarios para login por nombre'}
+                </button>
+                {syncMsg && <p className="text-emerald-600 text-xs mt-2">{syncMsg}</p>}
+            </div>
+
+            {admins.length > 0 && (
+                <div className="bg-white rounded-lg shadow p-4">
+                    <p className="font-bold text-slate-800 mb-1">Permisos por módulo</p>
+                    <p className="text-slate-500 text-xs mb-3">Activa o desactiva cada módulo por usuario administrador. Por defecto todos están activos.</p>
+                    <div className="space-y-3">
+                        {admins.map(a => (
+                            <div key={a.id} className="border border-slate-200 rounded-lg p-3">
+                                <p className="font-semibold text-slate-700 text-sm mb-2">{a.name} {a.username ? <span className="text-slate-400 font-normal">@{a.username}</span> : ''}</p>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {ADMIN_MODULES.map(m => {
+                                        const on = (a.modulos?.[m.id]) !== false;
+                                        return (
+                                            <div key={m.id} className="flex items-center justify-between gap-2 text-sm bg-slate-50 rounded-lg px-3 py-2">
+                                                <span className="text-slate-600">{m.label}</span>
+                                                <ToggleSwitch enabled={on} setEnabled={() => toggleModulo(a.id, a.modulos, m.id)} />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ─── Admin Panel Shell ─────────────────────────────────────────────────────────
 
 const AdminPanel = ({ user, posList, reports, loading }) => {
@@ -3248,7 +3481,8 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             items: [
                 { id: 'director_mgmt',label: 'Dirección',         Icon: Eye                          },
                 { id: 'gerencia_mgmt',label: 'Gerencia',          Icon: BarChart2                    },
-                { id: 'vendedores',   label: 'Vendedores',        Icon: TrendingUp,   badge: 'Nuevo' },
+                { id: 'admin_mgmt',   label: 'Administración',    Icon: LayoutGrid,   badge: 'Nuevo' },
+                { id: 'vendedores',   label: 'Vendedores',        Icon: TrendingUp                   },
                 { id: 'campo',        label: 'Personal de Campo', Icon: Users                        },
             ],
         },
@@ -3257,7 +3491,8 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             items: [
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
-                { id: 'liquidaciones', label: 'Liquidaciones', Icon: Wallet, badge: 'Nuevo' },
+                { id: 'comisiones_dash', label: 'Comisiones a pagar', Icon: BarChart2, badge: 'Nuevo' },
+                { id: 'liquidaciones', label: 'Liquidaciones', Icon: Wallet },
                 { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
                 { id: 'almacen_comercial', label: 'Almacén Comercial', Icon: Truck },
                 { id: 'competitors', label: 'Competidores',     Icon: ShoppingCart },
@@ -3314,9 +3549,11 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     sectionDesc="Usuarios con vista ejecutiva completa — solo lectura, sin administración."
                 />
             );
+            case 'admin_mgmt':    return <AdministradoresManagement />;
             case 'campo':         return <ReportersManagement />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
+            case 'comisiones_dash': return <ComisionesDashboard />;
             case 'liquidaciones':  return <LiquidacionesManagement />;
             case 'depots':         return <DepotManagement />;
             case 'almacen_comercial': return <AlmacenComercialPage />;
