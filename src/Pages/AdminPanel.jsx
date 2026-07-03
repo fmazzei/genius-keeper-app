@@ -7,6 +7,7 @@ import { httpsCallable } from 'firebase/functions';
 import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta } from '../utils/vendedorMeta.js';
+import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
 import CarteraManager from '../Components/CarteraManager.jsx';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
@@ -2586,6 +2587,7 @@ export const LiquidacionesManagement = () => {
     const [nota, setNota]               = useState('');
     const [saving, setSaving]           = useState(false);
     const [okMsg, setOkMsg]             = useState('');
+    const [comprobante, setComprobante] = useState(null); // liquidación para el PDF
 
     useEffect(() => {
         getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
@@ -2849,15 +2851,29 @@ export const LiquidacionesManagement = () => {
                                             <p className="font-semibold text-slate-700">{money(l.monto)} <span className="text-slate-400 font-normal">· {l.fecha}</span></p>
                                             <p className="text-slate-400 text-xs">{periodLabel(l.periodKey)}{l.nota ? ` · ${l.nota}` : ''}</p>
                                         </div>
-                                        <button onClick={() => eliminar(l.id)} className="p-1.5 text-slate-300 hover:text-red-500" title="Eliminar liquidación">
-                                            <Trash2 size={16} />
-                                        </button>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <button onClick={() => setComprobante(l)} className="p-1.5 text-slate-400 hover:text-brand-blue" title="Descargar comprobante">
+                                                <Receipt size={16} />
+                                            </button>
+                                            <button onClick={() => eliminar(l.id)} className="p-1.5 text-slate-300 hover:text-red-500" title="Eliminar liquidación">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         )}
                     </div>
                 </>
+            )}
+
+            {comprobante && (
+                <ComprobanteLiquidacionDoc
+                    liquidacion={comprobante}
+                    vendedorName={vendedores.find(v => v.id === vendedorId)?.name || ''}
+                    estado={estados.find(e => e.periodKey === comprobante.periodKey) || null}
+                    onClose={() => setComprobante(null)}
+                />
             )}
         </div>
     );
