@@ -125,6 +125,52 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
 });
 
 /**
+ * Limpia documentos DUPLICADOS de `facturas_vendedor` de un vendedor (mismo
+ * número de factura con varios docs, herencia de antes del ID determinista).
+ * Conserva UNO por número (preferentemente el de ID determinista / estado más
+ * avanzado / más reciente) y borra el resto, revirtiendo su contribución a los
+ * acumulados. NO bloquea el número (la factura real sigue sincronizándose).
+ */
+exports.limpiarDuplicadosFacturas = onCall({ region: "us-central1" }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
+    const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
+    const role = userSnap.data()?.role;
+    if (!["master", "sales_manager", "administrador"].includes(role)) {
+        throw new HttpsError("permission-denied", "Permisos insuficientes");
+    }
+    const { vendedorId } = request.data || {};
+    if (!vendedorId) throw new HttpsError("invalid-argument", "Falta vendedorId");
+
+    const snap = await admin.firestore().collection('facturas_vendedor').where('vendedorId', '==', vendedorId).get();
+    const groups = {};
+    snap.docs.forEach(d => { const n = d.data().numero; if (n) (groups[n] = groups[n] || []).push(d); });
+
+    let eliminados = 0;
+    for (const numero of Object.keys(groups)) {
+        const docs = groups[numero];
+        if (docs.length < 2) continue;
+        const key = String(numero).trim().replace(/\//g, '-');
+        const rank = (d) => {
+            const x = d.data();
+            let r = d.id === key ? 100 : 0;
+            r += x.estado === 'pagada' ? 30 : x.estado === 'vencida' ? 20 : x.estado === 'anulada' ? -100 : 10;
+            const u = x.updatedAt?.toDate ? x.updatedAt.toDate().getTime() : 0;
+            return r + u / 1e13;
+        };
+        docs.sort((a, b) => rank(b) - rank(a)); // el mejor primero (se conserva)
+        for (let i = 1; i < docs.length; i++) {
+            const dup = { id: docs[i].id, ...docs[i].data() };
+            if (dup.unidadesContabilizadas === true) {
+                try { await revertirAcumulados(dup); } catch (e) { /* no bloquear la limpieza */ }
+            }
+            await docs[i].ref.delete();
+            eliminados++;
+        }
+    }
+    return { ok: true, eliminados };
+});
+
+/**
  * Fase 3.3/3.4 — Vincula una razón social de Zoho (customer_name) a un vendedor
  * (atribución por cartera). Escribe el mapa `zoho_customer_map/{clave}` que usa
  * el webhook, y hace BACKFILL: re-atribuye todas las facturas ya recibidas de

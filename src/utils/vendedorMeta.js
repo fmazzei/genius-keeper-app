@@ -83,6 +83,33 @@ const rangoLabel = (start, end) => {
     return `${fmt(start)} – ${fmt(new Date(end.getTime() - MS_DIA))}`;
 };
 
+/**
+ * Lista los períodos de empleo del vendedor (más reciente primero), con sus
+ * límites de fecha — para el selector de período de la Conciliación.
+ * @returns {Array<{periodKey, mes, rango, anio, start:Date, end:Date, cerrado:boolean}>}
+ */
+export function listPeriodos(meta = {}) {
+    const ingreso = toDate(meta.fechaIngreso);
+    if (!ingreso) return [];
+    const pad = (n) => String(n).padStart(2, '0');
+    const ahora = new Date();
+    const n = mesesCompletos(ingreso, ahora) + 1;
+    const out = [];
+    for (let i = n - 1; i >= 0; i--) {
+        const start = addMonths(ingreso, i);
+        const end = addMonths(ingreso, i + 1);
+        out.push({
+            periodKey: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
+            mes: i + 1,
+            rango: rangoLabel(start, end),
+            anio: String(start.getFullYear()),
+            start, end,
+            cerrado: end <= ahora,
+        });
+    }
+    return out;
+}
+
 // Deduplica facturas por NÚMERO — blinda todos los cálculos contra documentos
 // duplicados (mismo INV con 2 docs). Ante duplicados conserva el estado más
 // avanzado (pagada > vencida > pendiente). Facturas sin número se conservan tal

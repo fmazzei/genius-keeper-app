@@ -6,7 +6,7 @@ import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setD
 import { httpsCallable } from 'firebase/functions';
 import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
-import { computeEstadosDeCuenta, computeDesglosePeriodo } from '../utils/vendedorMeta.js';
+import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
 import CarteraManager from '../Components/CarteraManager.jsx';
@@ -2930,36 +2930,48 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const vendedores = (vendedoresProp && vendedoresProp.length) ? vendedoresProp : vendedoresLocal;
     const [vendedorId, setVendedorId] = useState('');
     const [facturas, setFacturas]     = useState([]);
+    const [periodos, setPeriodos]     = useState([]);
+    const [carteraNames, setCarteraNames] = useState(() => new Set());
+    const [periodoSel, setPeriodoSel] = useState('');   // periodKey | 'recuperadas' | 'todas'
     const [loading, setLoading]       = useState(false);
     const [error, setError]           = useState('');
     const [busca, setBusca]           = useState('');
-    const [filtro, setFiltro]         = useState('activas'); // activas | todas | anuladas
-    const [actuando, setActuando]     = useState('');        // facturaId:accion
-    const [confirm, setConfirm]       = useState(null);      // {id, accion}
+    const [actuando, setActuando]     = useState('');
+    const [confirm, setConfirm]       = useState(null);
+    const [limpiando, setLimpiando]   = useState(false);
 
     useEffect(() => {
-        if (vendedoresProp && vendedoresProp.length) return; // ya vienen del layout
+        if (vendedoresProp && vendedoresProp.length) return;
         getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
             .then(snap => setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
             .catch(() => {});
     }, [vendedoresProp]);
 
     const cargar = useCallback(async (uid) => {
-        if (!uid) { setFacturas([]); return; }
+        if (!uid) { setFacturas([]); setPeriodos([]); return; }
         setLoading(true);
         setError('');
         try {
-            const filtroVend = uid === '__none__'
-                ? where('vendedorId', '==', null)
-                : where('vendedorId', '==', uid);
-            const snap = await getDocs(query(collection(db, 'facturas_vendedor'), filtroVend));
-            const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            const isNone = uid === '__none__';
+            const [facSnap, metaSnap, mapSnap] = await Promise.all([
+                getDocs(query(collection(db, 'facturas_vendedor'), isNone ? where('vendedorId', '==', null) : where('vendedorId', '==', uid))),
+                isNone ? Promise.resolve(null) : getDoc(doc(db, 'users_metadata', uid)),
+                isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'zoho_customer_map'), where('vendedorId', '==', uid))).catch(() => null),
+            ]);
+            const rows = facSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             rows.sort((a, b) => {
                 const ta = (a.fecha?.toDate ? a.fecha.toDate() : new Date(a.fecha || 0)).getTime?.() || 0;
                 const tb = (b.fecha?.toDate ? b.fecha.toDate() : new Date(b.fecha || 0)).getTime?.() || 0;
                 return tb - ta;
             });
             setFacturas(rows);
+            const meta = metaSnap && metaSnap.exists() ? metaSnap.data() : {};
+            const pers = isNone ? [] : listPeriodos(meta);
+            setPeriodos(pers);
+            setPeriodoSel(pers[0]?.periodKey || 'todas'); // por defecto, el período en curso
+            const names = new Set();
+            if (mapSnap) mapSnap.docs.forEach(d => { const c = d.data(); if (c.customerName) names.add(String(c.customerName).toLowerCase().trim()); });
+            setCarteraNames(names);
         } catch (e) {
             console.error(e);
             setError('No se pudieron cargar las facturas del vendedor.');
@@ -2986,33 +2998,67 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
         }
     };
 
-    // Totales reales, DEDUPLICADOS por número de factura y separando la
-    // facturación (cuenta a la meta) de las recuperadas (heredadas, no cuentan).
+    const limpiarDuplicados = async () => {
+        if (!vendedorId || vendedorId === '__none__') return;
+        if (!window.confirm('¿Eliminar los documentos duplicados (mismo número repetido)? Se conserva uno por factura y NO se bloquea el número (la factura real sigue sincronizándose).')) return;
+        setLimpiando(true); setError('');
+        try {
+            const fn = httpsCallable(functions, 'limpiarDuplicadosFacturas');
+            const res = await fn({ vendedorId });
+            await cargar(vendedorId);
+            if (res?.data?.eliminados != null) alert(`Duplicados eliminados: ${res.data.eliminados}.`);
+        } catch (e) {
+            setError(e.message || 'No se pudo limpiar duplicados.');
+        } finally {
+            setLimpiando(false);
+        }
+    };
+
+    // ── Verificación por período de empleo ──────────────────────────────────
+    const periodoActual = periodos.find(p => p.periodKey === periodoSel);
+    const facFecha = (f) => (f.fecha?.toDate ? f.fecha.toDate() : (f.fecha ? new Date(f.fecha) : null));
+    const enPeriodo = (f) => {
+        if (periodoSel === 'todas') return true;
+        if (periodoSel === 'recuperadas') return !!f.recuperada;
+        if (!periodoActual) return true;
+        if (f.recuperada) return false;
+        const t = facFecha(f);
+        return t && t >= periodoActual.start && t < periodoActual.end;
+    };
+
     const activas = facturas.filter(f => f.estado !== 'anulada');
-    const porNumero = {};
-    activas.forEach(f => { const n = f.numero || `__${f.id}`; (porNumero[n] = porNumero[n] || []).push(f); });
-    const numerosUnicos = Object.keys(porNumero);
-    const numerosDuplicados = numerosUnicos.filter(n => porNumero[n].length > 1);
-    const docsDuplicadosExtra = numerosDuplicados.reduce((s, n) => s + (porNumero[n].length - 1), 0);
-    const unicas = numerosUnicos.map(n => porNumero[n][0]); // una por número
-    const facturacionUds = unicas.filter(f => !f.recuperada).reduce((s, f) => s + (Number(f.unidades) || 0), 0);
-    const recuperadasUds = unicas.filter(f => f.recuperada).reduce((s, f) => s + (Number(f.unidades) || 0), 0);
-    const montoTot   = unicas.reduce((s, f) => s + (Number(f.monto) || 0), 0);
-    const comisionTot = unicas.reduce((s, f) => s + (Number(f.comisionGenerada) || 0), 0);
-    const anuladasCount = facturas.length - activas.length;
+    // Duplicados: número repetido en TODO el set activo del vendedor.
+    const countByNum = {};
+    activas.forEach(f => { if (f.numero) countByNum[f.numero] = (countByNum[f.numero] || 0) + 1; });
+    const isDup = (f) => f.numero && countByNum[f.numero] > 1;
+    const enCartera = (f) => {
+        if (vendedorId === '__none__' || carteraNames.size === 0) return true; // sin info, no marcar
+        const name = String(f.clienteName || f.customerName || '').toLowerCase().trim();
+        return carteraNames.has(name);
+    };
+
+    // Facturas del período (para conciliar) y sus cifras deduplicadas.
+    const delPeriodo = activas.filter(enPeriodo);
+    const porNum = {};
+    delPeriodo.forEach(f => { const n = f.numero || `__${f.id}`; if (!porNum[n]) porNum[n] = f; });
+    const unicasP = Object.values(porNum);
+    const udsPeriodo = unicasP.reduce((s, f) => s + (Number(f.unidades) || 0), 0);
+    const dupExtraPeriodo = delPeriodo.length - unicasP.length;
+    const fueraCartera = unicasP.filter(f => !enCartera(f)).length;
+    const observaciones = dupExtraPeriodo + fueraCartera;
+    const dupTotal = Object.values(countByNum).reduce((s, c) => s + (c - 1), 0);
 
     const term = busca.trim().toLowerCase();
-    const visibles = facturas
-        .filter(f => filtro === 'todas' ? true : filtro === 'anuladas' ? f.estado === 'anulada' : f.estado !== 'anulada')
-        .filter(f => !term || `${f.numero || ''} ${f.clienteName || f.customerName || ''}`.toLowerCase().includes(term));
+    const visibles = delPeriodo.filter(f => !term || `${f.numero || ''} ${f.clienteName || f.customerName || ''}`.toLowerCase().includes(term));
+
+    const periodoLabel = (p) => `Mes ${p.mes} · ${p.rango} · ${p.anio}`;
 
     return (
         <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
-            <p className="font-bold text-slate-800 mb-1">Conciliación de facturas por vendedor</p>
+            <p className="font-bold text-slate-800 mb-1">Conciliación de facturas</p>
             <p className="text-slate-400 text-xs mb-3">
-                Zoho no avisa cuando se <b>elimina</b> una factura. Si una factura de prueba (o borrada en Zoho) sigue aquí,
-                infla las unidades y la comisión del vendedor. Compara esta lista con Zoho y <b>elimina las que ya no existan</b> —
-                sus unidades y comisión se revierten automáticamente.
+                Verifica que las facturas de un vendedor en un <b>período</b> coincidan con su <b>cartera</b> y estén sin duplicados ni fantasmas.
+                Una vez conciliado, procede a la <b>liquidación</b>.
             </p>
 
             <select
@@ -3030,96 +3076,114 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
 
             {!loading && vendedorId && (
                 <>
-                    {/* Totales reales (deduplicados, con la facturación que cuenta a la meta) */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
+                    {/* Selector de período */}
+                    {vendedorId !== '__none__' && (
+                        <select
+                            value={periodoSel}
+                            onChange={e => setPeriodoSel(e.target.value)}
+                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm mb-3"
+                        >
+                            {periodos.map(p => <option key={p.periodKey} value={p.periodKey}>{periodoLabel(p)}{p.cerrado ? '' : ' · en curso'}</option>)}
+                            <option value="recuperadas">Recuperadas (heredadas, previas al ingreso)</option>
+                            <option value="todas">Todas las facturas</option>
+                        </select>
+                    )}
+
+                    {/* Resultado de la conciliación del período */}
+                    <div className="grid grid-cols-3 gap-2 mb-2">
                         <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-slate-800 font-black text-lg leading-none">{facturacionUds.toLocaleString('es-VE')}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">Facturación (cuenta a la meta)</p>
+                            <p className="text-slate-800 font-black text-lg leading-none">{unicasP.length}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">Facturas</p>
                         </div>
                         <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-purple-700 font-black text-lg leading-none">{recuperadasUds.toLocaleString('es-VE')}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">Recuperadas (heredadas)</p>
+                            <p className="text-slate-800 font-black text-lg leading-none">{udsPeriodo.toLocaleString('es-VE')}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">{periodoSel === 'recuperadas' ? 'Unidades recuperadas' : 'Unidades facturadas'}</p>
                         </div>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-slate-800 font-black text-lg leading-none">{numerosUnicos.length}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">Facturas (únicas)</p>
-                        </div>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-slate-800 font-black text-lg leading-none">${Math.round(montoTot).toLocaleString('es-VE')}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">Monto</p>
+                        <div className={`border rounded-lg p-2.5 text-center ${observaciones > 0 ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-200'}`}>
+                            <p className={`font-black text-lg leading-none ${observaciones > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{observaciones}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">Observaciones</p>
                         </div>
                     </div>
-                    <p className="text-slate-400 text-[11px] mb-3">
-                        La <b>facturación</b> es la que alimenta la meta del vendedor (debe coincidir con su perfil). Las <b>recuperadas</b> son cartera heredada (5% flat, no cuentan a la meta).
-                        {docsDuplicadosExtra > 0 && <span className="text-amber-600 font-semibold"> · ⚠ {docsDuplicadosExtra} documento{docsDuplicadosExtra === 1 ? '' : 's'} duplicado{docsDuplicadosExtra === 1 ? '' : 's'} (mismo número repetido) — bórralos abajo para limpiar.</span>}
+                    <p className="text-slate-400 text-[11px] mb-2">
+                        {periodoSel !== 'recuperadas' && periodoSel !== 'todas'
+                            ? <>Las <b>unidades facturadas</b> deben coincidir con las del perfil del vendedor para este período.</>
+                            : <>Vista global (todas las facturas del vendedor).</>}
+                        {observaciones > 0 && (
+                            <span className="text-amber-600 font-semibold">{' '}·{' '}
+                                {dupExtraPeriodo > 0 && `${dupExtraPeriodo} duplicado${dupExtraPeriodo === 1 ? '' : 's'}`}
+                                {dupExtraPeriodo > 0 && fueraCartera > 0 && ' · '}
+                                {fueraCartera > 0 && `${fueraCartera} fuera de cartera`}
+                            </span>
+                        )}
                     </p>
 
-                    {/* Filtros + búsqueda */}
-                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                        {['activas', 'todas', 'anuladas'].map(f => (
-                            <button
-                                key={f}
-                                onClick={() => setFiltro(f)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize ${filtro === f ? 'bg-brand-blue text-white' : 'bg-slate-100 text-slate-600'}`}
-                            >
-                                {f}{f === 'anuladas' && anuladasCount > 0 ? ` (${anuladasCount})` : ''}
-                            </button>
-                        ))}
-                        <input
-                            type="text"
-                            value={busca}
-                            onChange={e => setBusca(e.target.value)}
-                            placeholder="Buscar por número o cliente…"
-                            className="flex-1 min-w-[140px] p-2 border border-slate-300 rounded-lg text-sm"
-                        />
-                    </div>
+                    {dupTotal > 0 && (
+                        <button
+                            onClick={limpiarDuplicados}
+                            disabled={limpiando}
+                            className="mb-3 bg-amber-500 hover:bg-amber-400 text-white text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-60"
+                        >
+                            {limpiando ? 'Limpiando…' : `Limpiar ${dupTotal} documento${dupTotal === 1 ? '' : 's'} duplicado${dupTotal === 1 ? '' : 's'}`}
+                        </button>
+                    )}
+
+                    <input
+                        type="text"
+                        value={busca}
+                        onChange={e => setBusca(e.target.value)}
+                        placeholder="Buscar por número o cliente…"
+                        className="w-full p-2 border border-slate-300 rounded-lg text-sm mb-3"
+                    />
 
                     {visibles.length === 0 ? (
-                        <p className="text-slate-400 text-sm py-4 text-center">No hay facturas que mostrar.</p>
+                        <p className="text-slate-400 text-sm py-4 text-center">No hay facturas en este período.</p>
                     ) : (
                         <div className="space-y-2">
-                            {visibles.map(f => (
-                                <div key={f.id} className="border border-slate-200 rounded-lg p-3">
+                            {visibles.map(f => {
+                                const dup = isDup(f);
+                                const fuera = !enCartera(f);
+                                return (
+                                <div key={f.id} className={`border rounded-lg p-3 ${dup || fuera ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="min-w-0">
                                             <p className="font-bold text-slate-800 text-sm">
                                                 {f.numero || '(sin número)'}
                                                 <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${ESTADO_BADGE[f.estado] || 'bg-slate-100 text-slate-500'}`}>{f.estado || '—'}</span>
+                                                {dup && <span className="ml-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-800">duplicada</span>}
+                                                {fuera && <span className="ml-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">fuera de cartera</span>}
                                                 {f.recuperada && <span className="ml-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">recuperada</span>}
                                             </p>
                                             <p className="text-slate-500 text-xs truncate">{f.clienteName || f.customerName || '—'}</p>
                                             <p className="text-slate-400 text-[11px] mt-0.5">
                                                 {fmtFecha(f.fecha)} · {Number(f.unidades) || 0} uds · ${Number(f.monto || 0).toLocaleString('es-VE')}
-                                                {Number(f.comisionGenerada) > 0 ? ` · comisión $${Number(f.comisionGenerada).toFixed(2)}` : ''}
                                             </p>
                                             {f.updatedAt && <p className="text-slate-300 text-[10px]">GK la sincronizó: {fmtFecha(f.updatedAt)}</p>}
                                         </div>
-                                        {f.estado !== 'anulada' && (
-                                            confirm?.id === f.id ? (
-                                                <div className="flex flex-col gap-1 shrink-0">
-                                                    <button
-                                                        onClick={() => ejecutar(f.id, confirm.accion)}
-                                                        disabled={actuando !== ''}
-                                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold text-white disabled:opacity-50 ${confirm.accion === 'eliminar' ? 'bg-red-600' : 'bg-amber-500'}`}
-                                                    >
-                                                        {actuando === `${f.id}:${confirm.accion}` ? '...' : `Confirmar ${confirm.accion}`}
-                                                    </button>
-                                                    <button onClick={() => setConfirm(null)} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600">Cancelar</button>
-                                                </div>
-                                            ) : (
-                                                <div className="flex gap-1 shrink-0">
-                                                    <button onClick={() => setConfirm({ id: f.id, accion: 'anular' })} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-100 text-amber-700">Anular</button>
-                                                    <button onClick={() => setConfirm({ id: f.id, accion: 'eliminar' })} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-red-100 text-red-700">Eliminar</button>
-                                                </div>
-                                            )
+                                        {confirm?.id === f.id ? (
+                                            <div className="flex flex-col gap-1 shrink-0">
+                                                <button
+                                                    onClick={() => ejecutar(f.id, confirm.accion)}
+                                                    disabled={actuando !== ''}
+                                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold text-white disabled:opacity-50 ${confirm.accion === 'eliminar' ? 'bg-red-600' : 'bg-amber-500'}`}
+                                                >
+                                                    {actuando === `${f.id}:${confirm.accion}` ? '...' : `Confirmar ${confirm.accion}`}
+                                                </button>
+                                                <button onClick={() => setConfirm(null)} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600">Cancelar</button>
+                                            </div>
+                                        ) : (
+                                            <div className="flex gap-1 shrink-0">
+                                                <button onClick={() => setConfirm({ id: f.id, accion: 'anular' })} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-100 text-amber-700">Anular</button>
+                                                <button onClick={() => setConfirm({ id: f.id, accion: 'eliminar' })} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-red-100 text-red-700">Eliminar</button>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                     <p className="text-slate-400 text-[11px] mt-3">
-                        <b>Anular</b> deja la factura visible (auditoría) pero fuera de los conteos y revierte su comisión. <b>Eliminar</b> la borra por completo. Ambas revierten unidades y comisión del vendedor.
+                        <b>Duplicada</b>: mismo número repetido (usa "Limpiar duplicados"). <b>Fuera de cartera</b>: la razón social no está vinculada a este vendedor — revisa la vinculación. <b>Anular/Eliminar</b> revierten sus unidades y comisión (y la dejan sepultada).
                     </p>
                 </>
             )}
