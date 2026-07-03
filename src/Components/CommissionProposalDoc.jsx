@@ -150,6 +150,19 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                             <Badge Icon={Package} title="Meta de colocación" value={`${uds(config.metaMensual)} uds`} tone="emerald" />
                         </div>
 
+                        {/* Período de arranque (meta reducida los primeros meses) */}
+                        {Array.isArray(config.arranque) && config.arranque.length > 0 && (() => {
+                            const metaPlena = Number(config.metaMensual) || 1;
+                            return (
+                                <div className="rounded-xl bg-blue-50 border border-blue-200 px-3.5 py-2">
+                                    <p className="text-blue-800 text-[12px] font-black leading-tight">Período de arranque · meta reducida al inicio</p>
+                                    <p className="text-slate-600 text-[11px] leading-snug mt-0.5">
+                                        {config.arranque.map((a, i) => `Mes ${i + 1}: ${Math.round(((Number(a.meta) || 0) / metaPlena) * 100)}% (${uds(a.meta)} uds)`).join(' · ')}. Desde el mes {config.arranque.length + 1}, tu meta plena es <b>{uds(config.metaMensual)} uds</b>.
+                                    </p>
+                                </div>
+                            );
+                        })()}
+
                         {/* Escalera de comisión */}
                         <div>
                             <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
