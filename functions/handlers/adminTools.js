@@ -39,14 +39,30 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
     if (!facturaSnap.exists) throw new Error("Factura no encontrada");
     const factura = { id: facturaSnap.id, ...facturaSnap.data() };
 
+    // Tombstone: registra el número de factura en `facturas_bloqueadas` para que
+    // el webhook NO la vuelva a crear/actualizar aunque Zoho la reenvíe. Así una
+    // factura de prueba eliminada/anulada queda sepultada de verdad.
+    const bloquear = async (motivo) => {
+        if (!factura.numero) return;
+        const key = String(factura.numero).trim().replace(/\//g, '-');
+        await admin.firestore().doc(`facturas_bloqueadas/${key}`).set({
+            numero: factura.numero,
+            motivo,
+            bloqueadaPor: request.auth.uid,
+            bloqueadaEn: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    };
+
     if (action === 'eliminar') {
         await revertirAcumulados(factura);
+        await bloquear('eliminada');
         await facturaRef.delete();
         return { ok: true };
     }
 
     if (action === 'anular') {
         await revertirAcumulados(factura);
+        await bloquear('anulada');
         await facturaRef.update({
             estado: 'anulada',
             comisionGenerada: 0,

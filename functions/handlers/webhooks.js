@@ -200,6 +200,17 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
             return;
         }
 
+        // Factura BLOQUEADA manualmente (eliminada/anulada por un admin en GK):
+        // NO resucitar aunque Zoho la reenvíe (invoice.overdue re-dispara a
+        // diario). Así, borrar una factura de prueba la deja sepultada de verdad.
+        const blockKey = String(invoice.invoice_number).trim().replace(/\//g, '-');
+        const blockSnap = await admin.firestore().doc(`facturas_bloqueadas/${blockKey}`).get();
+        if (blockSnap.exists) {
+            functions.logger.log(`Factura #${invoice.invoice_number} BLOQUEADA (eliminada/anulada por admin). Ignorada.`);
+            res.status(200).send("Factura bloqueada, ignorada.");
+            return;
+        }
+
         // Atribución por CARTERA (razón social → vendedor) como vía principal;
         // el salesperson de Zoho queda solo como respaldo para clientes aún no
         // vinculados. Si ninguna resuelve, la factura queda sin asignar (visible

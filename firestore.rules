@@ -143,6 +143,13 @@ service cloud.firestore {
       allow write: if isAdmin() || isMaster();
     }
 
+    match /facturas_bloqueadas/{numero} {
+      // Tombstone de facturas eliminadas/anuladas por admin: el webhook (Admin
+      // SDK) las consulta para NO resucitarlas. Escritura solo vía Cloud Function.
+      allow get, list: if isAdmin() || isMaster();
+      allow write: if false;
+    }
+
     match /comisiones_cerradas/{cierreId} {
       // Snapshot congelado del devengado de un período de empleo cerrado (Fase
       // 3.10). El vendedor lee los suyos; admin/master leen y congelan; master
