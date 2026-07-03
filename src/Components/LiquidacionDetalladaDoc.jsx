@@ -22,6 +22,10 @@ const MONO = "'Courier New', 'Consolas', 'Liberation Mono', monospace";
 const SANS = "'Helvetica Neue', Arial, 'Segoe UI', sans-serif";
 const NAVY = '#12386b';
 
+// Colores por estado de factura (texto de la columna ESTADO)
+const ESTADO_COLOR = { pagada: '#127c3e', vencida: '#b91c1c', anulada: '#94a3b8', pendiente: '#b45309' };
+const estadoColor = (e) => ESTADO_COLOR[(e || '').toLowerCase()] || '#475569';
+
 const PRINT_CSS = `
 @media print {
   @page { size: letter; margin: 12mm; }
@@ -98,7 +102,9 @@ export default function LiquidacionDetalladaDoc({ desgloses, desglose, vendedorN
                     {multi && (
                         <div className="px-8 gk-sec">
                             <SecTitle>RESUMEN DEL CORTE</SecTitle>
-                            <table className="w-full text-[12px]"><tbody>
+                            <table className="w-full text-[12px]" style={{ tableLayout: 'fixed' }}>
+                                <colgroup><col style={{ width: '66%' }} /><col style={{ width: '34%' }} /></colgroup>
+                                <tbody>
                                 <tr className="border-b-2" style={{ borderColor: NAVY }}><td className="py-1 font-bold">DEVENGADO TOTAL DEL CORTE</td><td className="text-right"><Num bold color={NAVY}>{money(tot.dev)}</Num></td></tr>
                                 <tr><td className="py-0.5">Pagado (liquidaciones)</td><td className="text-right"><Num color="#127c3e">{money(tot.pag)}</Num></td></tr>
                                 <tr><td className="py-0.5 font-bold">Saldo por pagar</td><td className="text-right"><Num bold color={tot.saldo > 0.5 ? '#b45309' : '#127c3e'}>{money(tot.saldo)}</Num></td></tr>
@@ -135,8 +141,10 @@ function PeriodoDetalle({ d, multi }) {
             {/* Resumen del devengado */}
             <div className="px-8 gk-sec">
                 <SecTitle>RESUMEN DEL DEVENGADO</SecTitle>
-                <table className="w-full text-[12px]"><tbody>
-                    <tr><td className="py-0.5">Comisión nivel {d.nivel} ({d.tasa}% sobre lo cobrado)</td><td className="text-right"><Num>{money(comisionNivel)}</Num></td></tr>
+                <table className="w-full text-[12px]" style={{ tableLayout: 'fixed' }}>
+                    <colgroup><col style={{ width: '68%' }} /><col style={{ width: '32%' }} /></colgroup>
+                    <tbody>
+                    <tr><td className="py-0.5 pr-2">Comisión nivel {d.nivel} ({d.tasa}% sobre lo cobrado)</td><td className="text-right align-top"><Num>{money(comisionNivel)}</Num></td></tr>
                     {d.bonoCobranzaMonto > 0 && <tr><td className="py-0.5">Bono Cobranza ({d.bonoCobRate}% de lo cobrado a tiempo)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoCobranzaMonto)}</Num></td></tr>}
                     {d.bonoActivacionMonto > 0 && <tr><td className="py-0.5">Bono Activación ({d.bonoActRate}% × {d.semanasLogradas}/{d.semanasTotales} sem.)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoActivacionMonto)}</Num></td></tr>}
                     {d.bonoRecupMonto > 0 && <tr><td className="py-0.5">Cuentas recuperadas ({d.tasaRecup}%)</td><td className="text-right"><Num>{money(d.bonoRecupMonto)}</Num></td></tr>}
@@ -177,21 +185,28 @@ function PeriodoDetalle({ d, multi }) {
                     <>
                         <p className="text-[11px] text-slate-600 mb-2">Objetivo: activar ≥{d.actThreshold}% de la cartera ({d.objetivo} de {d.carteraSize} clientes) con ≥{d.actMinUnits} uds cada semana.</p>
                         {d.semanas.map(w => (
-                            <div key={w.n} className="mb-2 border border-slate-200 rounded">
-                                <div className="flex items-center justify-between px-2 py-1 text-[11px]" style={{ background: w.lograda ? '#e8f5ee' : '#f6f7f9' }}>
-                                    <span className="font-bold">Semana {w.n} <span className="font-normal text-slate-500">({fdate(w.desde)}–{fdate(w.hasta)})</span></span>
-                                    <span className={w.lograda ? 'font-bold' : ''} style={{ color: w.lograda ? '#127c3e' : '#64748b' }}>{w.activados}/{w.objetivo} clientes {w.lograda ? '· LOGRADA' : '· no lograda'}</span>
+                            <div key={w.n} className="mb-2 border border-slate-200 rounded overflow-hidden">
+                                <div className="flex items-center justify-between gap-2 px-2 py-1" style={{ background: w.lograda ? '#e8f5ee' : '#f6f7f9', fontFamily: SANS, fontSize: '10px' }}>
+                                    <span className="font-bold" style={{ whiteSpace: 'nowrap' }}>Semana {w.n} <span className="font-normal text-slate-500">({fdate(w.desde)} – {fdate(w.hasta)})</span></span>
+                                    <span className="font-bold" style={{ whiteSpace: 'nowrap', color: w.lograda ? '#127c3e' : '#64748b' }}>{w.activados}/{w.objetivo} · {w.lograda ? 'LOGRADA' : 'no lograda'}</span>
                                 </div>
                                 {w.clientes.length > 0 && (
-                                    <table className="w-full text-[10.5px]"><tbody>
-                                        {w.clientes.map((c, i) => (
-                                            <tr key={i} className="border-t border-slate-100">
-                                                <td className="px-2 py-0.5">{c.cliente}</td>
-                                                <td className="px-2 py-0.5 text-right"><Num>{uds(c.unidades)} uds</Num></td>
-                                                <td className="px-2 py-0.5 text-right text-slate-400">{c.facturas.join(', ')}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody></table>
+                                    <table className="w-full" style={{ tableLayout: 'fixed', fontFamily: SANS, fontSize: '9.5px' }}>
+                                        <colgroup>
+                                            <col style={{ width: '56%' }} />
+                                            <col style={{ width: '16%' }} />
+                                            <col style={{ width: '28%' }} />
+                                        </colgroup>
+                                        <tbody>
+                                            {w.clientes.map((c, i) => (
+                                                <tr key={i} className="border-t border-slate-100">
+                                                    <td className="px-2 py-1" style={clip} title={c.cliente}>{c.cliente}</td>
+                                                    <td className="px-2 py-1 text-right"><Num>{uds(c.unidades)} uds</Num></td>
+                                                    <td className="px-2 py-1 text-right text-slate-400" style={clip} title={c.facturas.join(', ')}><Num color="#94a3b8">{c.facturas.join(', ')}</Num></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
                                 )}
                             </div>
                         ))}
@@ -214,29 +229,43 @@ function PeriodoDetalle({ d, multi }) {
     );
 }
 
+// Celda de texto que NUNCA desborda: una sola línea, recorta con «…».
+const clip = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+
 function FacturasTable({ rows, empty }) {
     if (!rows || rows.length === 0) return <p className="text-[11px] text-slate-500">{empty || '—'}</p>;
     return (
-        <table className="w-full text-[10.5px]" style={{ borderCollapse: 'collapse' }}>
+        <table
+            className="w-full"
+            style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: SANS, fontSize: '9.5px' }}
+        >
+            <colgroup>
+                <col style={{ width: '17%' }} />
+                <col style={{ width: '33%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '12%' }} />
+            </colgroup>
             <thead>
-                <tr className="text-white text-[9.5px]" style={{ background: NAVY, fontFamily: SANS }}>
+                <tr className="text-white" style={{ background: NAVY, fontSize: '8.5px', letterSpacing: '.02em' }}>
                     <th className="py-1 px-1.5 text-left">FACTURA</th>
                     <th className="py-1 px-1.5 text-left">CLIENTE</th>
-                    <th className="py-1 px-1.5 text-right">FECHA</th>
+                    <th className="py-1 px-1.5 text-center">FECHA</th>
                     <th className="py-1 px-1.5 text-right">UDS</th>
                     <th className="py-1 px-1.5 text-right">MONTO</th>
-                    <th className="py-1 px-1.5 text-right">ESTADO</th>
+                    <th className="py-1 px-1.5 text-center">ESTADO</th>
                 </tr>
             </thead>
             <tbody>
                 {rows.map((f, i) => (
                     <tr key={i} style={{ background: i % 2 ? '#f6f7f9' : '#fff' }}>
-                        <td className="py-0.5 px-1.5 whitespace-nowrap">{f.numero}</td>
-                        <td className="py-0.5 px-1.5">{f.cliente}</td>
-                        <td className="py-0.5 px-1.5 text-right whitespace-nowrap"><Num>{fdate(f.fecha)}</Num></td>
-                        <td className="py-0.5 px-1.5 text-right"><Num>{uds(f.unidades)}</Num></td>
-                        <td className="py-0.5 px-1.5 text-right"><Num>{money(f.monto)}</Num></td>
-                        <td className="py-0.5 px-1.5 text-right">{f.estado}</td>
+                        <td className="py-1 px-1.5" style={clip}><Num>{f.numero}</Num></td>
+                        <td className="py-1 px-1.5" style={clip} title={f.cliente}>{f.cliente}</td>
+                        <td className="py-1 px-1.5 text-center"><Num>{fdate(f.fecha)}</Num></td>
+                        <td className="py-1 px-1.5 text-right"><Num>{uds(f.unidades)}</Num></td>
+                        <td className="py-1 px-1.5 text-right"><Num>{money(f.monto)}</Num></td>
+                        <td className="py-1 px-1.5 text-center" style={{ ...clip, fontWeight: 700, textTransform: 'capitalize', color: estadoColor(f.estado) }}>{f.estado}</td>
                     </tr>
                 ))}
             </tbody>
