@@ -65,9 +65,10 @@ const PRINT_CSS = `
 }
 `;
 
-const Step = ({ label, rate, highlight }) => (
+const Step = ({ label, rate, meta, highlight }) => (
     <div className={`flex-1 rounded-lg px-2 py-2.5 text-center border ${highlight ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'}`}>
         <p className={`text-[11px] font-bold ${highlight ? 'text-emerald-700' : 'text-slate-500'}`}>{label}</p>
+        {meta && <p className="text-[9px] text-slate-400 leading-tight">{meta} meta</p>}
         <p className={`text-base font-black ${highlight ? 'text-emerald-700' : 'text-slate-700'}`}>{rate}%</p>
     </div>
 );
@@ -155,11 +156,17 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                                 <ArrowUpRight size={14} /> Tu comisión crece contigo
                             </p>
                             <div className="flex items-end gap-1.5">
-                                {[...allTiers].reverse().map((t, i) => (
-                                    <Step key={i} label={t.label} rate={t.rate} highlight={t.label === p.objetivo.label} />
-                                ))}
+                                {(() => {
+                                    const minReal = p.tiers.length ? Math.min(...p.tiers.map(t => Number(t.minPct))) : 90;
+                                    return [...allTiers].reverse().map((t, i) => {
+                                        const meta = (t.minPct != null && t.minPct !== undefined)
+                                            ? `≥${t.minPct}%`
+                                            : `<${minReal}%`;
+                                        return <Step key={i} label={t.label} rate={t.rate} meta={meta} highlight={t.label === p.objetivo.label} />;
+                                    });
+                                })()}
                             </div>
-                            <p className="text-slate-400 text-[10px] mt-1 text-center">% sobre el monto que <b>cobras</b> — a más colocación, mejor tasa</p>
+                            <p className="text-slate-400 text-[10px] mt-1 text-center">"Meta" = % de tu meta de colocación que alcanzas · % = comisión sobre lo que <b>cobras</b></p>
                         </div>
 
                         {/* Bonos que suben tu tasa */}
