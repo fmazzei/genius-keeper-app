@@ -24,13 +24,18 @@ const NAVY = '#12386b';
 
 const PRINT_CSS = `
 @media print {
-  @page { size: letter; margin: 14mm; }
+  @page { size: letter; margin: 12mm; }
+  html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
   body > *:not(#gk-liq-portal) { display: none !important; }
-  #gk-liq-portal { position: static !important; inset: auto !important; background: #fff !important; overflow: visible !important; display: block !important; }
+  #gk-liq-portal { position: static !important; inset: auto !important; height: auto !important; max-height: none !important; overflow: visible !important; background: #fff !important; display: block !important; }
   #gk-liq-portal .gk-no-print { display: none !important; }
-  #gk-liq-portal > div { padding: 0 !important; display: block !important; }
-  #gk-liq-sheet { position: static !important; width: 100% !important; max-width: 100% !important; margin: 0 !important; box-shadow: none !important; }
-  .gk-sec { break-inside: avoid; }
+  #gk-liq-portal > div { padding: 0 !important; margin: 0 !important; display: block !important; height: auto !important; overflow: visible !important; }
+  #gk-liq-sheet { position: static !important; width: 100% !important; max-width: 100% !important; margin: 0 !important; box-shadow: none !important; height: auto !important; overflow: visible !important; }
+  /* Multi-página: no partir secciones pequeñas ni filas; repetir cabecera de tabla. */
+  .gk-sec { break-inside: avoid; page-break-inside: avoid; }
+  table { break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
 }
 `;
 
