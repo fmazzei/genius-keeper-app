@@ -3133,7 +3133,7 @@ export const ComisionesDashboard = () => {
         <div className="max-w-3xl">
             <div className="mb-6">
                 <h3 className="text-lg font-bold text-slate-800">Comisiones a pagar</h3>
-                <p className="text-sm text-slate-500 mt-1">Cuánto se le debe a cada vendedor por período (devengado − pagado). Los períodos congelados 🔒 tienen su devengado fijo.</p>
+                <p className="text-sm text-slate-500 mt-1">Cuánto se le debe a cada vendedor por período. <b>Devengado</b> = comisión + fijo del paquete; <b>saldo a pagar</b> = devengado − liquidado. Los períodos congelados 🔒 tienen su devengado fijo.</p>
             </div>
 
             {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
