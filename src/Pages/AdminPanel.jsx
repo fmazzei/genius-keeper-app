@@ -3057,6 +3057,7 @@ export const ConciliacionFacturas = () => {
                                                 {fmtFecha(f.fecha)} · {Number(f.unidades) || 0} uds · ${Number(f.monto || 0).toLocaleString('es-VE')}
                                                 {Number(f.comisionGenerada) > 0 ? ` · comisión $${Number(f.comisionGenerada).toFixed(2)}` : ''}
                                             </p>
+                                            {f.updatedAt && <p className="text-slate-300 text-[10px]">GK la sincronizó: {fmtFecha(f.updatedAt)}</p>}
                                         </div>
                                         {f.estado !== 'anulada' && (
                                             confirm?.id === f.id ? (

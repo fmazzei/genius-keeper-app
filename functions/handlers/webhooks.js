@@ -265,9 +265,18 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
         };
 
         const facturasRef = admin.firestore().collection('facturas_vendedor');
-        const existingSnap = await facturasRef.where('numero', '==', invoice.invoice_number).limit(1).get();
-        const existing     = existingSnap.empty ? null : existingSnap.docs[0];
-        const existingData = existing ? existing.data() : null;
+        // ID DETERMINISTA = número de factura normalizado. Hace la sincronización
+        // IDEMPOTENTE: dos eventos del mismo INV que lleguen a la vez escriben el
+        // MISMO documento (imposible duplicar). Fallback a un doc legacy con ID
+        // aleatorio para facturas creadas antes de este cambio.
+        const detRef = facturasRef.doc(blockKey);
+        let existing = await detRef.get();
+        let targetRef = detRef;
+        if (!existing.exists) {
+            const legacySnap = await facturasRef.where('numero', '==', invoice.invoice_number).limit(1).get();
+            if (!legacySnap.empty) { existing = legacySnap.docs[0]; targetRef = existing.ref; }
+        }
+        const existingData = existing.exists ? existing.data() : null;
 
         const facturaData = {
             numero:       invoice.invoice_number,
@@ -309,13 +318,13 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
             await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
         }
 
-        if (existing) {
-            await existing.ref.update(facturaData);
-        } else {
-            await facturasRef.add({ ...facturaData, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-        }
+        // Upsert idempotente (set-merge): crea o actualiza SIEMPRE el mismo doc.
+        await targetRef.set(
+            existingData ? facturaData : { ...facturaData, createdAt: admin.firestore.FieldValue.serverTimestamp() },
+            { merge: true },
+        );
 
-        functions.logger.log(`Factura Zoho #${invoice.invoice_number} sincronizada (vendedorId: ${vendedor?.id || 'sin asignar'}, zohoCustomerId: ${zohoCustomerId || 'AUSENTE'}, cliente: "${invoice.customer_name || ''}", estado: ${estado}).`);
+        functions.logger.log(`Factura Zoho #${invoice.invoice_number} sincronizada (doc: ${targetRef.id}, vendedorId: ${vendedor?.id || 'sin asignar'}, zohoCustomerId: ${zohoCustomerId || 'AUSENTE'}, cliente: "${invoice.customer_name || ''}", estado: ${estado}).`);
         res.status(200).send("Factura sincronizada con éxito.");
 
     } catch (error) {
