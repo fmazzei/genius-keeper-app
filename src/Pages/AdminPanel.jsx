@@ -6,8 +6,9 @@ import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setD
 import { httpsCallable } from 'firebase/functions';
 import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
-import { computeEstadosDeCuenta } from '../utils/vendedorMeta.js';
+import { computeEstadosDeCuenta, computeDesglosePeriodo } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
+import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
 import CarteraManager from '../Components/CarteraManager.jsx';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
@@ -2588,6 +2589,8 @@ export const LiquidacionesManagement = () => {
     const [saving, setSaving]           = useState(false);
     const [okMsg, setOkMsg]             = useState('');
     const [comprobante, setComprobante] = useState(null); // liquidación para el PDF
+    const [raw, setRaw]                 = useState(null);  // insumos para el desglose
+    const [desglose, setDesglose]       = useState(null);  // desglose detallado del período
 
     useEffect(() => {
         getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
@@ -2617,6 +2620,7 @@ export const LiquidacionesManagement = () => {
             if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerrados[c.periodKey] = c; });
             setEstados(computeEstadosDeCuenta(meta, facturas, liqs, { carteraSize, cerrados }));
             setLiquid(liqs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')));
+            setRaw({ meta, facturas, carteraSize, cerrados, liqs });
         } catch (e) {
             console.error(e);
             setError('No se pudo cargar el estado de cuenta del vendedor.');
@@ -2822,21 +2826,39 @@ export const LiquidacionesManagement = () => {
                                         <div className="text-right shrink-0">
                                             <p className="text-slate-700">Dev. {money(e.devengadoTotal)} · Pag. {money(e.pagado)}</p>
                                             <p className={`font-bold ${e.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>Saldo {money(e.saldo)}</p>
-                                            {e.cerrado && !e.congelado && (
-                                                <button onClick={() => cerrarPeriodo(e)} disabled={cerrando === e.periodKey} className="mt-1 text-[11px] font-semibold text-brand-blue disabled:opacity-50">
-                                                    {cerrando === e.periodKey ? 'Cerrando…' : 'Cerrar y congelar'}
-                                                </button>
-                                            )}
-                                            {e.congelado && (
-                                                <button onClick={() => reabrirPeriodo(e)} className="mt-1 text-[11px] font-semibold text-slate-400 hover:text-red-500">Reabrir</button>
-                                            )}
+                                            <div className="flex items-center justify-end gap-2 mt-1">
+                                                {raw && (
+                                                    <button
+                                                        onClick={() => setDesglose(computeDesglosePeriodo(raw.meta, raw.facturas, e.periodKey, { carteraSize: raw.carteraSize, cerrados: raw.cerrados, liquidaciones: raw.liqs }))}
+                                                        className="text-[11px] font-semibold text-brand-blue"
+                                                    >
+                                                        Comprobante detallado
+                                                    </button>
+                                                )}
+                                                {e.cerrado && !e.congelado && (
+                                                    <button onClick={() => cerrarPeriodo(e)} disabled={cerrando === e.periodKey} className="text-[11px] font-semibold text-slate-500 disabled:opacity-50">
+                                                        {cerrando === e.periodKey ? 'Cerrando…' : 'Congelar'}
+                                                    </button>
+                                                )}
+                                                {e.congelado && (
+                                                    <button onClick={() => reabrirPeriodo(e)} className="text-[11px] font-semibold text-slate-400 hover:text-red-500">Reabrir</button>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         )}
-                        <p className="text-slate-400 text-[11px] mt-3"><b>Cerrar y congelar</b> fija el devengado de un período cerrado (cobros tardíos o notas de crédito posteriores ya no lo alteran). El <b>pagado/saldo</b> sigue en vivo según las liquidaciones. <b>Reabrir</b> lo vuelve a recalcular.</p>
+                        <p className="text-slate-400 text-[11px] mt-3"><b>Comprobante detallado</b>: PDF con la evidencia de facturas por cada bono. <b>Congelar</b> fija el devengado de un período cerrado; <b>Reabrir</b> lo recalcula.</p>
                     </div>
+
+                    {desglose && (
+                        <LiquidacionDetalladaDoc
+                            desglose={desglose}
+                            vendedorName={vendedores.find(v => v.id === vendedorId)?.name || ''}
+                            onClose={() => setDesglose(null)}
+                        />
+                    )}
 
                     {/* Historial de liquidaciones */}
                     <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">

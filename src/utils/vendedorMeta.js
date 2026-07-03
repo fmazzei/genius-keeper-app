@@ -293,3 +293,170 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
     }
     return out;
 }
+
+/**
+ * Desglose DETALLADO de un período de empleo, con EVIDENCIA de facturas por cada
+ * concepto — insumo del comprobante de liquidación. Devuelve, para el período
+ * `periodKey`: la lista de facturas de facturación (y cómo definen el nivel), las
+ * facturas cobradas a tiempo (Bono Cobranza), el detalle SEMANAL de activación
+ * (clientes activados con ≥N uds y qué facturas lo prueban), las cuentas
+ * recuperadas, y todos los montos (que cuadran con computeEstadosDeCuenta).
+ *
+ * @param {object} opts - { carteraSize, cerrados, liquidaciones }
+ * @returns {object|null}
+ */
+export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) {
+    const cfg = meta.commissionConfig
+        ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
+        : DEFAULT_COMMISSION_CONFIG;
+    const ingreso = toDate(meta.fechaIngreso);
+    if (!ingreso || !periodKey) return null;
+
+    const metaPlena    = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+    const arranque     = Array.isArray(cfg.arranque) ? cfg.arranque : [];
+    const tiersDesc    = [...(cfg.tiers || [])].sort((a, b) => b.minPct - a.minPct);
+    const bajaRate     = cfg.bajaRate ?? 0;
+    const bajaLabel    = cfg.bajaLabel || 'Baja';
+    const bonoCobRate  = cfg.bonusPuntualidad ?? 0;
+    const graciaDias   = cfg.cobranzaGraciaDias ?? 5;
+    const tasaRecup    = cfg.comisionRecuperadas ?? 5;
+    const baseMes      = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
+    const bonoActRate  = cfg.bonusActivacion ?? 0;
+    const actMinUnits  = cfg.activacionMinUnits ?? 24;
+    const actThreshold = cfg.activacionThreshold ?? 80;
+    const carteraSize  = Number(opts.carteraSize) || 0;
+    const cerrados     = opts.cerrados || {};
+
+    const tierFor = (pct) => {
+        for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
+        return { label: bajaLabel, rate: bajaRate };
+    };
+    const clientKey = (f) => f.zohoCustomerId || f.clienteName || f.customerName || '?';
+    const clientName = (f) => f.clienteName || f.customerName || '—';
+    const pad = (n) => String(n).padStart(2, '0');
+
+    // Localizar el período (start/end/mes/metaMensual) por su clave.
+    const ahora = new Date();
+    const nPeriodos = mesesCompletos(ingreso, ahora) + 1;
+    let start = null, end = null, mes = 0, metaMensual = metaPlena;
+    for (let i = 0; i < nPeriodos; i++) {
+        const s = addMonths(ingreso, i);
+        const key = `${s.getFullYear()}-${pad(s.getMonth() + 1)}-${pad(s.getDate())}`;
+        if (key === periodKey) {
+            start = s; end = addMonths(ingreso, i + 1); mes = i + 1;
+            metaMensual = i < arranque.length ? (arranque[i].meta || metaPlena) : metaPlena;
+            break;
+        }
+    }
+    if (!start) return null;
+
+    // Clasificar las facturas del período.
+    const regulares = [];   // no recuperadas, no anuladas
+    const recuperadas = [];
+    facturas.forEach(f => {
+        const t = toDate(f.fecha);
+        if (f.estado === 'anulada' || !t || t < start || t >= end) return;
+        const pagada = f.estado === 'pagada';
+        const comisionAnulada = f.comisionAnulada === true;
+        const item = {
+            numero: f.numero || '—',
+            cliente: clientName(f),
+            fecha: t,
+            unidades: Number(f.unidades) || 0,
+            monto: Number(f.monto) || 0,
+            estado: f.estado || '—',
+            pagada,
+            comisionAnulada,
+            cobradaATiempo: pagada && f.pagadaDentroDePlazo === true && !comisionAnulada,
+            key: clientKey(f),
+        };
+        if (f.recuperada) recuperadas.push(item);
+        else regulares.push(item);
+    });
+    regulares.sort((a, b) => a.fecha - b.fecha);
+
+    const unidades = regulares.reduce((s, f) => s + f.unidades, 0);
+    const cobradoRegular = regulares.filter(f => f.pagada && !f.comisionAnulada).reduce((s, f) => s + f.monto, 0);
+    const facturasATiempo = regulares.filter(f => f.cobradaATiempo);
+    const cobradoRegularATiempo = facturasATiempo.reduce((s, f) => s + f.monto, 0);
+    const cobradoRecup = recuperadas.filter(f => f.pagada && !f.comisionAnulada).reduce((s, f) => s + f.monto, 0);
+
+    const pct = metaMensual > 0 ? unidades / metaMensual : 0;
+    const tier = tierFor(pct);
+    const bonoCobranzaMonto = cobradoRegularATiempo * bonoCobRate / 100;
+
+    // Activación semanal, con evidencia por semana.
+    const objetivo = carteraSize > 0 ? Math.max(1, Math.ceil(carteraSize * actThreshold / 100)) : 0;
+    const limite = Math.min(end.getTime(), ahora.getTime());
+    const semanas = [];
+    let wn = 0;
+    if (carteraSize > 0) {
+        for (let ws = start.getTime(); ws < limite; ws += MS_SEMANA) {
+            wn++;
+            const we = ws + MS_SEMANA;
+            const porCliente = {};
+            regulares.forEach(f => {
+                const tm = f.fecha.getTime();
+                if (tm < ws || tm >= we) return;
+                if (!porCliente[f.key]) porCliente[f.key] = { cliente: f.cliente, unidades: 0, facturas: [] };
+                porCliente[f.key].unidades += f.unidades;
+                porCliente[f.key].facturas.push(f.numero);
+            });
+            const activados = Object.values(porCliente).filter(c => c.unidades >= actMinUnits);
+            semanas.push({
+                n: wn,
+                desde: new Date(ws),
+                hasta: new Date(Math.min(we, end.getTime())),
+                objetivo,
+                activados: activados.length,
+                lograda: activados.length >= objetivo,
+                clientes: activados.sort((a, b) => b.unidades - a.unidades),
+            });
+        }
+    }
+    const semanasLogradas = semanas.filter(w => w.lograda).length;
+    const semanasTotales = semanas.length;
+    const factor = semanasTotales > 0 ? semanasLogradas / semanasTotales : 0;
+    const bonoActivacionMonto = cobradoRegular * (bonoActRate / 100) * factor;
+    const bonoRecupMonto = cobradoRecup * tasaRecup / 100;
+
+    let devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + bonoRecupMonto;
+    let devengadoTotal = devengadoComision + baseMes;
+    let congelado = false;
+
+    const frozen = cerrados[periodKey];
+    const cerrado = end <= ahora;
+    if (frozen && cerrado) {
+        congelado = true;
+        if (frozen.devengadoTotal != null) devengadoTotal = Number(frozen.devengadoTotal);
+        if (frozen.devengadoComision != null) devengadoComision = Number(frozen.devengadoComision);
+    }
+
+    const pagadoPorPeriodo = (opts.liquidaciones || [])
+        .filter(l => l.periodKey === periodKey)
+        .reduce((s, l) => s + (Number(l.monto) || 0), 0);
+
+    return {
+        periodKey, mes,
+        rango: rangoLabel(start, end),
+        anio: String(start.getFullYear()),
+        cerrado, congelado,
+        // Facturación
+        metaMensual, unidades, pct: Math.round(pct * 100),
+        nivel: tier.label, tasa: tier.rate,
+        facturas: regulares,
+        // Cobranza
+        cobradoRegular, cobradoRegularATiempo,
+        facturasATiempo,
+        bonoCobRate, bonoCobranzaMonto,
+        // Activación
+        actMinUnits, actThreshold, carteraSize, objetivo,
+        semanas, semanasLogradas, semanasTotales, factor,
+        bonoActRate, bonoActivacionMonto,
+        // Recuperadas
+        recuperadas, cobradoRecup, tasaRecup, bonoRecupMonto,
+        // Totales
+        base: baseMes, devengadoComision, devengadoTotal,
+        pagado: pagadoPorPeriodo, saldo: devengadoTotal - pagadoPorPeriodo,
+    };
+}

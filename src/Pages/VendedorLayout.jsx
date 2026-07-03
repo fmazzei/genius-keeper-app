@@ -26,7 +26,8 @@ import ReportesAnaquelView from '@/Pages/ReportesAnaquelView.jsx';
 import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
-import { computeMetaMensual, computeEstadosDeCuenta } from '@/utils/vendedorMeta.js';
+import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
+import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
 // ─── Tier style palette (by tier index, 0 = highest) ─────────────────────────
@@ -94,11 +95,18 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
 }
 
 // ─── Estado de Cuenta (Fase 3.7/3.8) — histórico por período de empleo ───────
-function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor', onBack }) {
+function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor', desgloseInputs = null, onBack }) {
     const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
     const gracia   = commConfig.cobranzaGraciaDias ?? 5;
     const bonoRate = commConfig.bonusPuntualidad ?? 0;
     const [showDoc, setShowDoc] = useState(false);
+    const [desglose, setDesglose] = useState(null);
+    const verDesglose = (periodKey) => {
+        if (!desgloseInputs) return;
+        setDesglose(computeDesglosePeriodo(desgloseInputs.meta, desgloseInputs.facturas, periodKey, {
+            carteraSize: desgloseInputs.carteraSize, cerrados: desgloseInputs.cerrados, liquidaciones: desgloseInputs.liquidaciones,
+        }));
+    };
 
     // Una sola tarjeta a la vez (nunca un "chorizo"). Por defecto, el período en
     // curso (índice 0). Un selector de píldoras por año permite ver el histórico.
@@ -255,9 +263,22 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                         <div className="flex justify-between"><span className="text-slate-400">Pagado (liquidado)</span><span className="text-slate-300 font-mono">{money(p.pagado)}</span></div>
                         <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo por cobrar</span><span className={`font-black font-mono ${p.saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(p.saldo)}</span></div>
                     </div>
+
+                    {desgloseInputs && (
+                        <button
+                            onClick={() => verDesglose(p.periodKey)}
+                            className="w-full mt-3 flex items-center justify-center gap-2 bg-slate-800 border border-slate-700 hover:border-slate-500 text-slate-200 text-xs font-semibold py-2.5 rounded-xl active:scale-[0.98] transition-transform"
+                        >
+                            <Download size={14} /> Comprobante detallado (con evidencia)
+                        </button>
+                    )}
                 </div>
                     );
                 })()}
+
+                {desglose && (
+                    <LiquidacionDetalladaDoc desglose={desglose} vendedorName={vendedorName} onClose={() => setDesglose(null)} />
+                )}
 
                 <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-1.5">
                     <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Comisión</b> = lo que <b>cobras</b> × la tasa de tu <b>nivel final</b> del período (a más colocación, mejor tasa).</p>
@@ -914,6 +935,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [selectedPos, setSelectedPos]               = useState(null);
     const [subView, setSubView]                       = useState(null);
     const [estados, setEstados]                       = useState([]);
+    const [desgloseInputs, setDesgloseInputs]         = useState(null);
     const [vendedor, setVendedor]                     = useState({ uid: null, nombre: '', metaMensual: 2400, reporterId: null, mesArranque: 0 });
     const [commConfig, setCommConfig]                 = useState(DEFAULT_COMMISSION_CONFIG);
     const [stats, setStats]                           = useState({
@@ -1358,12 +1380,15 @@ const VendedorLayout = ({ user, onLogout }) => {
                 if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerradosMap[c.periodKey] = c; });
                 // Factor de anaquel del período en curso (proxy v1: logrado=1 / no=0).
                 const anaquelOpts = hasAnaquel ? { hasAnaquel: true, factor: anaquelOk ? 1 : 0 } : { hasAnaquel: false, factor: 0 };
+                const facturasArr = facturasSnap ? facturasSnap.docs.map(d => d.data()) : [];
                 setEstados(computeEstadosDeCuenta(
                     meta,
-                    facturasSnap ? facturasSnap.docs.map(d => d.data()) : [],
+                    facturasArr,
                     liquidaciones,
                     { carteraSize: puntosTotal, cerrados: cerradosMap, anaquel: anaquelOpts },
                 ));
+                // Insumos para el comprobante detallado por período (desglose con evidencia).
+                setDesgloseInputs({ meta, facturas: facturasArr, carteraSize: puntosTotal, cerrados: cerradosMap, liquidaciones });
 
                 // 6. PDV list for dispatch — collapse centralizado chains to a single entry per chain
                 //    (posDocsMap fue cargado arriba, en 4b).
@@ -1504,7 +1529,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         if (currentView === 'estado_cuenta') {
-            return <EstadoCuentaView estados={estados} commConfig={commConfig} vendedorName={vendedor.nombre} onBack={() => setCurrentView('home')} />;
+            return <EstadoCuentaView estados={estados} commConfig={commConfig} vendedorName={vendedor.nombre} desgloseInputs={desgloseInputs} onBack={() => setCurrentView('home')} />;
         }
 
         if (currentView === 'alertas') {
