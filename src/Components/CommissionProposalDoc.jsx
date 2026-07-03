@@ -124,25 +124,25 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                 <div id="gk-proposal-sheet" className="bg-white w-full max-w-[800px] rounded-2xl shadow-2xl overflow-hidden self-start">
 
                     {/* Encabezado */}
-                    <div className="bg-[#0D2B4C] px-6 py-5 flex items-center justify-between">
+                    <div className="bg-[#0D2B4C] px-6 py-3.5 flex items-center justify-between">
                         <div>
-                            <p className="text-[#FFD600] text-[11px] font-black uppercase tracking-[0.2em]">Genius Keeper</p>
-                            <h1 className="text-white text-xl font-black leading-tight">Propuesta de Comisiones</h1>
+                            <p className="text-[#FFD600] text-[10px] font-black uppercase tracking-[0.2em]">Genius Keeper</p>
+                            <h1 className="text-white text-lg font-black leading-tight">Propuesta de Comisiones</h1>
                         </div>
                         <div className="text-right">
                             <p className="text-white/50 text-[10px] uppercase tracking-widest">Preparada para</p>
-                            <p className="text-white text-base font-bold">{vendedorName}</p>
+                            <p className="text-white text-sm font-bold">{vendedorName}</p>
                         </div>
                     </div>
 
                     {/* Hero */}
-                    <div className="px-6 py-4 text-center border-b border-slate-100">
-                        <p className="text-slate-400 text-[11px] font-bold uppercase tracking-[0.2em]">Tu potencial mensual</p>
-                        <p className="text-emerald-600 text-4xl font-black leading-none my-1.5">hasta {money(p.potencial)}</p>
-                        <p className="text-slate-400 text-[11px]">Ingreso base + comisión al cumplir tu meta, con bonos activos</p>
+                    <div className="px-6 py-3 text-center border-b border-slate-100">
+                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Tu potencial mensual</p>
+                        <p className="text-emerald-600 text-3xl font-black leading-none my-1">hasta {money(p.potencial)}</p>
+                        <p className="text-slate-400 text-[10px]">Ingreso base + comisión al cumplir tu meta, con bonos activos</p>
                     </div>
 
-                    <div className="px-6 py-4 space-y-3.5">
+                    <div className="px-6 py-3 space-y-2.5">
 
                         {/* Piso + Meta */}
                         <div className="grid grid-cols-2 gap-3">
@@ -203,7 +203,7 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                                     </div>
                                 </div>
                             </div>
-                            <p className="text-center text-sm font-black text-emerald-700 mt-2">Hasta {p.topRate.toFixed(1)}% sobre lo que cobras</p>
+                            <p className="text-center text-sm font-black text-emerald-700 mt-1.5">Hasta {p.topRate.toFixed(1)}% sobre lo que cobras</p>
                         </div>
 
                         {/* Cuentas recuperadas */}
