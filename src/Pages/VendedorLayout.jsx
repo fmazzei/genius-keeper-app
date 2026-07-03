@@ -363,20 +363,10 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
     const showPuntualidad  = commConfig.bonusPuntualidad > 0;
     const showBonosSection = showActivacion || showPuntualidad || showAnaquel;
 
+    // Nota: se quitaron "Comisión semana" (usaba otra ventana/fuente que el hero
+    // y el Estado de Cuenta → confundía) y "Tasa comisión" (ya vive en el medidor
+    // de meta y en el Estado de Cuenta).
     const statCards = [
-        hasComision && {
-            key: 'comisionSemana',
-            label: 'Comisión semana',
-            value: loading ? '—' : `$${stats.comisionSemana.toFixed(0)}`,
-            color: tier.color,
-        },
-        hasComision && {
-            key: 'tasaComision',
-            label: 'Tasa comisión',
-            value: tier.rate > 0 ? `${(tier.rate * 100).toFixed(1)}%` : '—',
-            color: tier.color,
-            sub: 'sobre cobrado',
-        },
         ingresoBase > 0 && {
             key: 'ingresoBase',
             label: 'Ingreso base/mes',
