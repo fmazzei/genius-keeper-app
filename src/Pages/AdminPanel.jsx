@@ -2591,7 +2591,9 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
     const [okMsg, setOkMsg]             = useState('');
     const [comprobante, setComprobante] = useState(null); // liquidación para el PDF
     const [raw, setRaw]                 = useState(null);  // insumos para el desglose
-    const [desglose, setDesglose]       = useState(null);  // desglose detallado del período
+    const [docDesgloses, setDocDesgloses] = useState(null); // comprobante detallado (1+ períodos)
+    const [corteDesde, setCorteDesde]   = useState('');
+    const [corteHasta, setCorteHasta]   = useState('');
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return; // ya vienen del layout
@@ -2831,7 +2833,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                                             <div className="flex items-center justify-end gap-2 mt-1">
                                                 {raw && (
                                                     <button
-                                                        onClick={() => setDesglose(computeDesglosePeriodo(raw.meta, raw.facturas, e.periodKey, { carteraSize: raw.carteraSize, cerrados: raw.cerrados, liquidaciones: raw.liqs }))}
+                                                        onClick={() => setDocDesgloses([computeDesglosePeriodo(raw.meta, raw.facturas, e.periodKey, { carteraSize: raw.carteraSize, cerrados: raw.cerrados, liquidaciones: raw.liqs })].filter(Boolean))}
                                                         className="text-[11px] font-semibold text-brand-blue"
                                                     >
                                                         Comprobante detallado
@@ -2854,11 +2856,52 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                         <p className="text-slate-400 text-[11px] mt-3"><b>Comprobante detallado</b>: PDF con la evidencia de facturas por cada bono. <b>Congelar</b> fija el devengado de un período cerrado; <b>Reabrir</b> lo recalcula.</p>
                     </div>
 
-                    {desglose && (
+                    {/* Comprobante de CORTE (uno o varios meses) */}
+                    {estados.length > 0 && raw && (
+                        <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                            <p className="font-bold text-slate-800 mb-1">Comprobante de corte</p>
+                            <p className="text-slate-500 text-xs mb-3">Genera un comprobante detallado por un corte de <b>uno o varios meses</b> (semanal/quincenal = un mes; multi-mes = rango).</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                                <div>
+                                    <label className="text-xs font-semibold text-slate-600">Desde el mes</label>
+                                    <select value={corteDesde} onChange={e => setCorteDesde(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm">
+                                        <option value="">—</option>
+                                        {estados.map(e => <option key={e.periodKey} value={e.periodKey}>Mes {e.mes} · {e.rango}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs font-semibold text-slate-600">Hasta el mes</label>
+                                    <select value={corteHasta} onChange={e => setCorteHasta(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm">
+                                        <option value="">—</option>
+                                        {estados.map(e => <option key={e.periodKey} value={e.periodKey}>Mes {e.mes} · {e.rango}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    const a = estados.find(x => x.periodKey === corteDesde);
+                                    const b = estados.find(x => x.periodKey === corteHasta);
+                                    if (!a || !b) return;
+                                    const lo = Math.min(a.mes, b.mes), hi = Math.max(a.mes, b.mes);
+                                    const keys = estados.filter(e => e.mes >= lo && e.mes <= hi).map(e => e.periodKey);
+                                    const arr = keys
+                                        .map(k => computeDesglosePeriodo(raw.meta, raw.facturas, k, { carteraSize: raw.carteraSize, cerrados: raw.cerrados, liquidaciones: raw.liqs }))
+                                        .filter(Boolean);
+                                    if (arr.length) setDocDesgloses(arr);
+                                }}
+                                disabled={!corteDesde || !corteHasta}
+                                className="bg-brand-blue text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
+                            >
+                                Comprobante del corte
+                            </button>
+                        </div>
+                    )}
+
+                    {docDesgloses && docDesgloses.length > 0 && (
                         <LiquidacionDetalladaDoc
-                            desglose={desglose}
+                            desgloses={docDesgloses}
                             vendedorName={vendedores.find(v => v.id === vendedorId)?.name || ''}
-                            onClose={() => setDesglose(null)}
+                            onClose={() => setDocDesgloses(null)}
                         />
                     )}
 
