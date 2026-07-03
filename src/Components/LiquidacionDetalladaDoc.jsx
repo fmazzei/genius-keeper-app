@@ -17,6 +17,7 @@ import { X, Printer } from 'lucide-react';
 const money = (n) => `$ ${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const uds   = (n) => `${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 const fdate = (d) => (d instanceof Date && !isNaN(d) ? d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—');
+const fdateShort = (d) => (d instanceof Date && !isNaN(d) ? d.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—');
 
 const MONO = "'Courier New', 'Consolas', 'Liberation Mono', monospace";
 const SANS = "'Helvetica Neue', Arial, 'Segoe UI', sans-serif";
@@ -229,43 +230,45 @@ function PeriodoDetalle({ d, multi }) {
     );
 }
 
-// Celda de texto que NUNCA desborda: una sola línea, recorta con «…».
+// Ninguna celda desborda: una sola línea, recorta con «…» si hace falta.
 const clip = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
+// Números tabulares en sans (más angostos que el monoespaciado → no chocan entre columnas).
+const numCell = { fontVariantNumeric: 'tabular-nums', ...clip };
 
 function FacturasTable({ rows, empty }) {
     if (!rows || rows.length === 0) return <p className="text-[11px] text-slate-500">{empty || '—'}</p>;
     return (
         <table
             className="w-full"
-            style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: SANS, fontSize: '9.5px' }}
+            style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: SANS, fontSize: '9px' }}
         >
             <colgroup>
+                <col style={{ width: '19%' }} />
+                <col style={{ width: '26%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '15%' }} />
                 <col style={{ width: '17%' }} />
-                <col style={{ width: '33%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '12%' }} />
             </colgroup>
             <thead>
-                <tr className="text-white" style={{ background: NAVY, fontSize: '8.5px', letterSpacing: '.02em' }}>
-                    <th className="py-1 px-1.5 text-left">FACTURA</th>
-                    <th className="py-1 px-1.5 text-left">CLIENTE</th>
-                    <th className="py-1 px-1.5 text-center">FECHA</th>
-                    <th className="py-1 px-1.5 text-right">UDS</th>
-                    <th className="py-1 px-1.5 text-right">MONTO</th>
-                    <th className="py-1 px-1.5 text-center">ESTADO</th>
+                <tr className="text-white" style={{ background: NAVY, fontSize: '8px', letterSpacing: '.02em' }}>
+                    <th className="py-1 px-1 text-left">FACTURA</th>
+                    <th className="py-1 px-1 text-left">CLIENTE</th>
+                    <th className="py-1 px-1 text-center">FECHA</th>
+                    <th className="py-1 px-1 text-right">UDS</th>
+                    <th className="py-1 px-1 text-right">MONTO</th>
+                    <th className="py-1 px-1 text-center">ESTADO</th>
                 </tr>
             </thead>
             <tbody>
                 {rows.map((f, i) => (
                     <tr key={i} style={{ background: i % 2 ? '#f6f7f9' : '#fff' }}>
-                        <td className="py-1 px-1.5" style={clip}><Num>{f.numero}</Num></td>
-                        <td className="py-1 px-1.5" style={clip} title={f.cliente}>{f.cliente}</td>
-                        <td className="py-1 px-1.5 text-center"><Num>{fdate(f.fecha)}</Num></td>
-                        <td className="py-1 px-1.5 text-right"><Num>{uds(f.unidades)}</Num></td>
-                        <td className="py-1 px-1.5 text-right"><Num>{money(f.monto)}</Num></td>
-                        <td className="py-1 px-1.5 text-center" style={{ ...clip, fontWeight: 700, textTransform: 'capitalize', color: estadoColor(f.estado) }}>{f.estado}</td>
+                        <td className="py-1 px-1" style={{ ...clip, fontFamily: MONO }} title={f.numero}>{f.numero}</td>
+                        <td className="py-1 px-1" style={clip} title={f.cliente}>{f.cliente}</td>
+                        <td className="py-1 px-1 text-center" style={numCell}>{fdateShort(f.fecha)}</td>
+                        <td className="py-1 px-1 text-right" style={numCell}>{uds(f.unidades)}</td>
+                        <td className="py-1 px-1 text-right" style={numCell}>{money(f.monto)}</td>
+                        <td className="py-1 px-1 text-center" style={{ ...clip, fontWeight: 700, textTransform: 'capitalize', color: estadoColor(f.estado) }} title={f.estado}>{f.estado}</td>
                     </tr>
                 ))}
             </tbody>
