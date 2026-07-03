@@ -27,38 +27,25 @@ const saludoDelDia = () => {
 };
 
 // Cartera para el administrador: elige un vendedor y gestiona su cartera con el
-// mismo CarteraManager que usa el master.
-const CarteraAdmin = () => {
-    const [vendedores, setVendedores] = useState([]);
+// mismo CarteraManager que usa el master. Recibe la lista de vendedores ya
+// cargada (compartida por el layout) para no re-consultar.
+const CarteraAdmin = ({ vendedores = [] }) => {
     const [sel, setSel] = useState(null);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
-            .then(snap => setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-            .catch(() => {})
-            .finally(() => setLoading(false));
-    }, []);
-
     return (
         <div className="max-w-3xl">
             <div className="mb-4">
                 <h3 className="text-lg font-bold text-slate-800">Cartera de clientes</h3>
                 <p className="text-sm text-slate-500 mt-1">Asigna, aprueba o retira clientes de la cartera de cada vendedor.</p>
             </div>
-            {loading ? <LoadingSpinner /> : (
-                <>
-                    <select
-                        value={sel?.id || ''}
-                        onChange={e => setSel(vendedores.find(v => v.id === e.target.value) || null)}
-                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm mb-4"
-                    >
-                        <option value="">Selecciona un vendedor…</option>
-                        {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    </select>
-                    {sel && <CarteraManager vendedor={sel} />}
-                </>
-            )}
+            <select
+                value={sel?.id || ''}
+                onChange={e => setSel(vendedores.find(v => v.id === e.target.value) || null)}
+                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm mb-4"
+            >
+                <option value="">Selecciona un vendedor…</option>
+                {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+            {sel && <CarteraManager vendedor={sel} />}
         </div>
     );
 };
@@ -74,6 +61,7 @@ export default function AdministracionLayout({ user, onLogout }) {
     const { user: authUser } = useAuth();
     const uid = user?.uid || authUser?.uid;
     const [perfil, setPerfil] = useState(null); // null = cargando; {name, modulos}
+    const [vendedores, setVendedores] = useState([]); // cargados UNA vez, compartidos
     const [active, setActive] = useState('dashboard');
 
     useEffect(() => {
@@ -82,6 +70,14 @@ export default function AdministracionLayout({ user, onLogout }) {
             .then(snap => setPerfil(snap.exists() ? { name: snap.data().name || '', modulos: snap.data().modulos || {} } : { name: '', modulos: {} }))
             .catch(() => setPerfil({ name: '', modulos: {} }));
     }, [uid]);
+
+    // Lista de vendedores: se carga una sola vez y se pasa a todas las secciones
+    // (evita el spinner del desplegable cada vez que se cambia de pestaña).
+    useEffect(() => {
+        getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
+            .then(snap => setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+            .catch(() => {});
+    }, []);
 
     if (perfil === null) {
         return <div className="flex items-center justify-center h-screen bg-slate-100"><LoadingSpinner /></div>;
@@ -138,7 +134,7 @@ export default function AdministracionLayout({ user, onLogout }) {
             <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
                 {visibles.length === 0 ? (
                     <p className="text-slate-400 text-sm">No tienes módulos asignados. Contacta al administrador del sistema.</p>
-                ) : CurrentComp ? <CurrentComp /> : null}
+                ) : CurrentComp ? <CurrentComp vendedores={vendedores} /> : null}
             </main>
         </div>
     );

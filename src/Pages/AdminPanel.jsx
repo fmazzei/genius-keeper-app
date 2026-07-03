@@ -2573,8 +2573,9 @@ const FacturaManagementTool = () => {
 // el mes vencido; cada registro rebaja el saldo del período correspondiente.
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export const LiquidacionesManagement = () => {
-    const [vendedores, setVendedores]   = useState([]);
+export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => {
+    const [vendedoresLocal, setVendedores] = useState([]);
+    const vendedores = (vendedoresProp && vendedoresProp.length) ? vendedoresProp : vendedoresLocal;
     const [vendedorId, setVendedorId]   = useState('');
     const [estados, setEstados]         = useState([]);
     const [liquidaciones, setLiquid]    = useState([]);
@@ -2593,10 +2594,11 @@ export const LiquidacionesManagement = () => {
     const [desglose, setDesglose]       = useState(null);  // desglose detallado del período
 
     useEffect(() => {
+        if (vendedoresProp && vendedoresProp.length) return; // ya vienen del layout
         getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
             .then(snap => setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
             .catch(() => {});
-    }, []);
+    }, [vendedoresProp]);
 
     const cargar = useCallback(async (uid) => {
         if (!uid) { setEstados([]); setLiquid([]); return; }
@@ -2923,8 +2925,9 @@ const ESTADO_BADGE = {
     vigente:  'bg-blue-100 text-blue-700',
 };
 
-export const ConciliacionFacturas = () => {
-    const [vendedores, setVendedores] = useState([]);
+export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
+    const [vendedoresLocal, setVendedores] = useState([]);
+    const vendedores = (vendedoresProp && vendedoresProp.length) ? vendedoresProp : vendedoresLocal;
     const [vendedorId, setVendedorId] = useState('');
     const [facturas, setFacturas]     = useState([]);
     const [loading, setLoading]       = useState(false);
@@ -2935,10 +2938,11 @@ export const ConciliacionFacturas = () => {
     const [confirm, setConfirm]       = useState(null);      // {id, accion}
 
     useEffect(() => {
+        if (vendedoresProp && vendedoresProp.length) return; // ya vienen del layout
         getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
             .then(snap => setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
             .catch(() => {});
-    }, []);
+    }, [vendedoresProp]);
 
     const cargar = useCallback(async (uid) => {
         if (!uid) { setFacturas([]); return; }
@@ -2982,14 +2986,19 @@ export const ConciliacionFacturas = () => {
         }
     };
 
-    // Totales que alimentan el perfil del vendedor (excluye anuladas).
+    // Totales reales, DEDUPLICADOS por número de factura y separando la
+    // facturación (cuenta a la meta) de las recuperadas (heredadas, no cuentan).
     const activas = facturas.filter(f => f.estado !== 'anulada');
-    const tot = activas.reduce((a, f) => {
-        a.unidades += Number(f.unidades) || 0;
-        a.comision += Number(f.comisionGenerada) || 0;
-        a.monto    += Number(f.monto) || 0;
-        return a;
-    }, { unidades: 0, comision: 0, monto: 0 });
+    const porNumero = {};
+    activas.forEach(f => { const n = f.numero || `__${f.id}`; (porNumero[n] = porNumero[n] || []).push(f); });
+    const numerosUnicos = Object.keys(porNumero);
+    const numerosDuplicados = numerosUnicos.filter(n => porNumero[n].length > 1);
+    const docsDuplicadosExtra = numerosDuplicados.reduce((s, n) => s + (porNumero[n].length - 1), 0);
+    const unicas = numerosUnicos.map(n => porNumero[n][0]); // una por número
+    const facturacionUds = unicas.filter(f => !f.recuperada).reduce((s, f) => s + (Number(f.unidades) || 0), 0);
+    const recuperadasUds = unicas.filter(f => f.recuperada).reduce((s, f) => s + (Number(f.unidades) || 0), 0);
+    const montoTot   = unicas.reduce((s, f) => s + (Number(f.monto) || 0), 0);
+    const comisionTot = unicas.reduce((s, f) => s + (Number(f.comisionGenerada) || 0), 0);
     const anuladasCount = facturas.length - activas.length;
 
     const term = busca.trim().toLowerCase();
@@ -3021,25 +3030,29 @@ export const ConciliacionFacturas = () => {
 
             {!loading && vendedorId && (
                 <>
-                    {/* Totales de conciliación */}
-                    <div className="grid grid-cols-4 gap-2 mb-3">
+                    {/* Totales reales (deduplicados, con la facturación que cuenta a la meta) */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2">
                         <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-slate-800 font-black text-lg leading-none">{activas.length}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">Facturas activas</p>
+                            <p className="text-slate-800 font-black text-lg leading-none">{facturacionUds.toLocaleString('es-VE')}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">Facturación (cuenta a la meta)</p>
                         </div>
                         <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-slate-800 font-black text-lg leading-none">{tot.unidades.toLocaleString('es-VE')}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">Unidades</p>
+                            <p className="text-purple-700 font-black text-lg leading-none">{recuperadasUds.toLocaleString('es-VE')}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">Recuperadas (heredadas)</p>
                         </div>
                         <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-slate-800 font-black text-lg leading-none">${Math.round(tot.monto).toLocaleString('es-VE')}</p>
+                            <p className="text-slate-800 font-black text-lg leading-none">{numerosUnicos.length}</p>
+                            <p className="text-slate-400 text-[11px] mt-1">Facturas (únicas)</p>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
+                            <p className="text-slate-800 font-black text-lg leading-none">${Math.round(montoTot).toLocaleString('es-VE')}</p>
                             <p className="text-slate-400 text-[11px] mt-1">Monto</p>
                         </div>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-emerald-700 font-black text-lg leading-none">${tot.comision.toFixed(0)}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">Comisión</p>
-                        </div>
                     </div>
+                    <p className="text-slate-400 text-[11px] mb-3">
+                        La <b>facturación</b> es la que alimenta la meta del vendedor (debe coincidir con su perfil). Las <b>recuperadas</b> son cartera heredada (5% flat, no cuentan a la meta).
+                        {docsDuplicadosExtra > 0 && <span className="text-amber-600 font-semibold"> · ⚠ {docsDuplicadosExtra} documento{docsDuplicadosExtra === 1 ? '' : 's'} duplicado{docsDuplicadosExtra === 1 ? '' : 's'} (mismo número repetido) — bórralos abajo para limpiar.</span>}
+                    </p>
 
                     {/* Filtros + búsqueda */}
                     <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -3120,7 +3133,7 @@ export const ConciliacionFacturas = () => {
 // Por cada vendedor calcula su Estado de Cuenta (mismo motor que ve el vendedor,
 // con cierres congelados) y suma el SALDO A PAGAR por período. Total general
 // arriba; desglose por vendedor y por período.
-export const ComisionesDashboard = () => {
+export const ComisionesDashboard = ({ vendedores: vendedoresProp } = {}) => {
     const [rows, setRows]       = useState([]);   // [{vendedor, periodos, totDev, totPag, totSaldo}]
     const [loading, setLoading] = useState(true);
     const [error, setError]     = useState('');
@@ -3133,8 +3146,11 @@ export const ComisionesDashboard = () => {
             setLoading(true);
             setError('');
             try {
-                const vendSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')));
-                const vendedores = vendSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                let vendedores = vendedoresProp;
+                if (!vendedores || !vendedores.length) {
+                    const vendSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')));
+                    vendedores = vendSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                }
                 const out = await Promise.all(vendedores.map(async (v) => {
                     const [facturasSnap, liquidSnap, cerradosSnap, carteraSnap] = await Promise.all([
                         getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', v.id))).catch(() => null),
@@ -3162,7 +3178,7 @@ export const ComisionesDashboard = () => {
             }
         })();
         return () => { cancel = true; };
-    }, []);
+    }, [vendedoresProp]);
 
     const granDev   = rows.reduce((s, r) => s + r.totDev, 0);
     const granPag   = rows.reduce((s, r) => s + r.totPag, 0);

@@ -83,6 +83,21 @@ const rangoLabel = (start, end) => {
     return `${fmt(start)} – ${fmt(new Date(end.getTime() - MS_DIA))}`;
 };
 
+// Deduplica facturas por NÚMERO — blinda todos los cálculos contra documentos
+// duplicados (mismo INV con 2 docs). Ante duplicados conserva el estado más
+// avanzado (pagada > vencida > pendiente). Facturas sin número se conservan tal
+// cual (no se pueden deduplicar).
+const rankEstado = (e) => (e === 'pagada' ? 3 : e === 'vencida' ? 2 : e === 'anulada' ? 0 : 1);
+function dedupFacturas(facturas) {
+    const byNum = {};
+    (facturas || []).forEach((f, i) => {
+        const n = f.numero || `__sinNumero_${i}`;
+        const prev = byNum[n];
+        if (!prev || rankEstado(f.estado) > rankEstado(prev.estado)) byNum[n] = f;
+    });
+    return Object.values(byNum);
+}
+
 /**
  * Bono Activación (semanal, proporcional). Divide el período en ventanas de 7
  * días desde su inicio. Una SEMANA está "lograda" si al menos `threshold`% de la
@@ -144,6 +159,8 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
         : DEFAULT_COMMISSION_CONFIG;
     const ingreso = toDate(meta.fechaIngreso);
     if (!ingreso) return [];
+
+    facturas = dedupFacturas(facturas);   // blindaje contra docs duplicados
 
     // Pagado por período (liquidaciones ya filtradas por vendedor).
     const pagadoPorPeriodo = {};
@@ -311,6 +328,8 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
         : DEFAULT_COMMISSION_CONFIG;
     const ingreso = toDate(meta.fechaIngreso);
     if (!ingreso || !periodKey) return null;
+
+    facturas = dedupFacturas(facturas);   // blindaje contra docs duplicados
 
     const metaPlena    = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
     const arranque     = Array.isArray(cfg.arranque) ? cfg.arranque : [];
