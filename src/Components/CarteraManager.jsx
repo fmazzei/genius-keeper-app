@@ -60,9 +60,11 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
         const centralizadoByChain = {};
         const directoList = [];
         filtered.forEach(pos => {
-            const isCentralizado =
-                pos.tipoDespacho === 'centralizado' ||
-                (!pos.tipoDespacho && pos.chain && pos.chain !== 'Automercados Individuales');
+            // Centralizado SOLO si está marcado explícitamente. Antes se asumía
+            // centralizado a cualquier PDV con cadena y sin `tipoDespacho`, lo que
+            // metía cadenas de despacho DIRECTO (p.ej. Río Supermarket) en el
+            // grupo equivocado. El despacho directo es el default.
+            const isCentralizado = pos.tipoDespacho === 'centralizado';
             if (isCentralizado) {
                 const key = pos.chain || 'Sin cadena';
                 if (!centralizadoByChain[key]) centralizadoByChain[key] = [];
