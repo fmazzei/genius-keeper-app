@@ -27,7 +27,7 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
 
     const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
     const role = userSnap.data()?.role;
-    if (!["master", "sales_manager"].includes(role)) throw new Error("Permisos insuficientes");
+    if (!["master", "sales_manager", "administrador"].includes(role)) throw new Error("Permisos insuficientes");
 
     const { facturaId, action, nuevoVendedorId } = request.data || {};
     if (!facturaId || !['eliminar', 'anular', 'reasignar'].includes(action)) {

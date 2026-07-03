@@ -3142,39 +3142,48 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                             {visibles.map(f => {
                                 const dup = isDup(f);
                                 const fuera = !enCartera(f);
+                                const flagged = dup || fuera;
+                                const confirming = confirm?.id === f.id;
                                 return (
-                                <div key={f.id} className={`border rounded-lg p-3 ${dup || fuera ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0">
-                                            <p className="font-bold text-slate-800 text-sm">
-                                                {f.numero || '(sin número)'}
-                                                <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${ESTADO_BADGE[f.estado] || 'bg-slate-100 text-slate-500'}`}>{f.estado || '—'}</span>
-                                                {dup && <span className="ml-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-800">duplicada</span>}
-                                                {fuera && <span className="ml-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">fuera de cartera</span>}
-                                                {f.recuperada && <span className="ml-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700">recuperada</span>}
-                                            </p>
-                                            <p className="text-slate-500 text-xs truncate">{f.clienteName || f.customerName || '—'}</p>
-                                            <p className="text-slate-400 text-[11px] mt-0.5">
-                                                {fmtFecha(f.fecha)} · {Number(f.unidades) || 0} uds · ${Number(f.monto || 0).toLocaleString('es-VE')}
-                                            </p>
-                                            {f.updatedAt && <p className="text-slate-300 text-[10px]">GK la sincronizó: {fmtFecha(f.updatedAt)}</p>}
+                                <div key={f.id} className={`rounded-xl border p-3.5 ${flagged ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 bg-white'}`}>
+                                    {/* Encabezado: número + estado */}
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="font-bold text-slate-800 text-[15px] truncate">{f.numero || '(sin número)'}</p>
+                                        <span className={`shrink-0 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${ESTADO_BADGE[f.estado] || 'bg-slate-100 text-slate-500'}`}>{f.estado || '—'}</span>
+                                    </div>
+
+                                    {/* Flags */}
+                                    {(dup || fuera || f.recuperada) && (
+                                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                            {dup && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-200 text-amber-800">duplicada</span>}
+                                            {fuera && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700">fuera de cartera</span>}
+                                            {f.recuperada && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">recuperada</span>}
                                         </div>
-                                        {confirm?.id === f.id ? (
-                                            <div className="flex flex-col gap-1 shrink-0">
+                                    )}
+
+                                    {/* Info */}
+                                    <p className="text-slate-600 text-sm mt-1.5 truncate">{f.clienteName || f.customerName || '—'}</p>
+                                    <p className="text-slate-400 text-xs mt-0.5">{fmtFecha(f.fecha)} · {Number(f.unidades) || 0} uds · ${Number(f.monto || 0).toLocaleString('es-VE')}</p>
+                                    {f.updatedAt && <p className="text-slate-300 text-[10px] mt-0.5">GK la sincronizó: {fmtFecha(f.updatedAt)}</p>}
+
+                                    {/* Acciones — fila propia, sin encimarse */}
+                                    <div className="flex justify-end gap-2 mt-2.5 pt-2.5 border-t border-slate-100">
+                                        {confirming ? (
+                                            <>
+                                                <button onClick={() => setConfirm(null)} className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200">Cancelar</button>
                                                 <button
                                                     onClick={() => ejecutar(f.id, confirm.accion)}
                                                     disabled={actuando !== ''}
-                                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold text-white disabled:opacity-50 ${confirm.accion === 'eliminar' ? 'bg-red-600' : 'bg-amber-500'}`}
+                                                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-50 ${confirm.accion === 'eliminar' ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-500 hover:bg-amber-600'}`}
                                                 >
-                                                    {actuando === `${f.id}:${confirm.accion}` ? '...' : `Confirmar ${confirm.accion}`}
+                                                    {actuando === `${f.id}:${confirm.accion}` ? 'Procesando…' : confirm.accion === 'eliminar' ? 'Confirmar eliminar' : 'Confirmar anular'}
                                                 </button>
-                                                <button onClick={() => setConfirm(null)} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600">Cancelar</button>
-                                            </div>
+                                            </>
                                         ) : (
-                                            <div className="flex gap-1 shrink-0">
-                                                <button onClick={() => setConfirm({ id: f.id, accion: 'anular' })} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-amber-100 text-amber-700">Anular</button>
-                                                <button onClick={() => setConfirm({ id: f.id, accion: 'eliminar' })} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-red-100 text-red-700">Eliminar</button>
-                                            </div>
+                                            <>
+                                                <button onClick={() => setConfirm({ id: f.id, accion: 'anular' })} className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200">Anular</button>
+                                                <button onClick={() => setConfirm({ id: f.id, accion: 'eliminar' })} className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-red-100 text-red-700 hover:bg-red-200">Eliminar</button>
+                                            </>
                                         )}
                                     </div>
                                 </div>
