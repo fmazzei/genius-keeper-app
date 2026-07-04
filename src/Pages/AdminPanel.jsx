@@ -3159,7 +3159,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
         if (!vendedorId || vendedorId === '__none__') return;
         setSincronizando(true); setSyncError(''); setSyncResult(null);
         try {
-            const fn = httpsCallable(functions, 'reconciliarFacturasZoho');
+            const fn = httpsCallable(functions, 'reconciliarFacturasZoho', { timeout: 540000 });
             const { data } = await fn({ vendedorId });
             setSyncResult(data);
             await cargar(vendedorId);
@@ -3631,7 +3631,7 @@ const IntegracionesSection = () => {
     const reconciliar = async () => {
         setReconciling(true); setReconError(''); setReconResult(null);
         try {
-            const fn = httpsCallable(functions, 'reconciliarFacturasZoho');
+            const fn = httpsCallable(functions, 'reconciliarFacturasZoho', { timeout: 540000 });
             const { data } = await fn({});
             setReconResult(data);
         } catch (e) {

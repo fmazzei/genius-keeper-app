@@ -172,6 +172,18 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         throw new HttpsError("internal", `Zoho: ${e.response?.data?.message || e.message}`);
     }
 
+    // PRE-CARGA (una sola vez) para resolver el vendedor en memoria por cada
+    // factura, sin consultar la BD en cada iteración (evita el timeout).
+    const [vendSnap, mapSnap] = await Promise.all([
+        admin.firestore().collection('users_metadata').where('role', '==', 'vendedor').get(),
+        admin.firestore().collection('zoho_customer_map').get(),
+    ]);
+    const vendedores = vendSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const vendedorById = new Map(vendedores.map(v => [v.id, v]));
+    const customerMap = new Map();
+    mapSnap.docs.forEach(d => { const x = d.data(); if (x.vendedorId) customerMap.set(d.id, x.vendedorId); });
+    const preload = { vendedores, vendedorById, customerMap };
+
     const res = {
         ok: true,
         revisadas: 0,        // facturas del alcance efectivamente conciliadas
@@ -205,7 +217,7 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         }
 
         try {
-            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId });
+            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId, preload });
             if (r.status === 'other_vendor') { continue; } // no es de este vendedor
             res.revisadas++;
             if (r.status === 'blocked') { res.bloqueadas++; continue; }

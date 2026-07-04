@@ -41,6 +41,28 @@ async function resolveVendedorPorRazonSocial(customerName) {
     return vSnap.exists ? { id: vendedorId, data: vSnap.data() } : null;
 }
 
+/**
+ * Resuelve el vendedor SIN tocar la BD, usando datos pre-cargados una sola vez
+ * (para la conciliación masiva). `preload` = { customerMap: Map(claveRazonSocial
+ * → vendedorId), vendedorById: Map(id → data), vendedores: [{id, ...data}] }.
+ */
+function resolveVendedorFromPreload(invoice, preload) {
+    const key = normalizeCustomerKey(invoice.customer_name);
+    const vid = key ? preload.customerMap.get(key) : null;
+    if (vid && preload.vendedorById.has(vid)) {
+        return { id: vid, data: preload.vendedorById.get(vid) };
+    }
+    const name = (invoice.salesperson_name || '').trim().toLowerCase();
+    if (name) {
+        const m = preload.vendedores.find(v => {
+            const zn = (v.zohoSalespersonName || v.name || '').trim().toLowerCase();
+            return zn && zn === name;
+        });
+        if (m) return { id: m.id, data: m };
+    }
+    return null;
+}
+
 /** Resuelve el vendedor por `salesperson_name` de Zoho (respaldo). */
 async function resolveVendedor(salespersonName) {
     const name = (salespersonName || '').trim().toLowerCase();
@@ -89,20 +111,28 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         return { status: 'foreign' };
     }
 
+    // Atribución: cartera (razón social) → salesperson (respaldo). En la
+    // conciliación masiva se pasan datos PRE-CARGADOS (opts.preload) para resolver
+    // en memoria y NO consultar la BD por cada factura (era el cuello de botella).
+    let vendedor;
+    if (opts.preload) {
+        vendedor = resolveVendedorFromPreload(invoice, opts.preload);
+    } else {
+        vendedor = await resolveVendedorPorRazonSocial(invoice.customer_name);
+        if (!vendedor) vendedor = await resolveVendedor(invoice.salesperson_name);
+    }
+
+    // Conciliación POR VENDEDOR: descarta de inmediato las facturas de otros
+    // vendedores ANTES de tocar la BD (tombstone/doc), para que el barrido scoped
+    // sea barato (solo las del vendedor pagan lecturas/escrituras).
+    if (opts.onlyVendedorId && (vendedor?.id || null) !== opts.onlyVendedorId) {
+        return { status: 'other_vendor' };
+    }
+
     // Tombstone: factura eliminada/anulada por un admin → no resucitar.
     const blockKey = String(invoice.invoice_number).trim().replace(/\//g, '-');
     const blockSnap = await admin.firestore().doc(`facturas_bloqueadas/${blockKey}`).get();
     if (blockSnap.exists) return { status: 'blocked' };
-
-    // Atribución: cartera (razón social) → salesperson (respaldo).
-    let vendedor = await resolveVendedorPorRazonSocial(invoice.customer_name);
-    if (!vendedor) vendedor = await resolveVendedor(invoice.salesperson_name);
-
-    // Conciliación POR VENDEDOR: si se pide conciliar solo a un vendedor, se
-    // ignoran las facturas que no le pertenecen (según la atribución actual).
-    if (opts.onlyVendedorId && (vendedor?.id || null) !== opts.onlyVendedorId) {
-        return { status: 'other_vendor' };
-    }
 
     const estado = invoice.status === 'paid' ? 'pagada'
         : invoice.status === 'overdue' ? 'vencida'
