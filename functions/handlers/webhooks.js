@@ -2,8 +2,7 @@
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const { mesCohorteFromDate, periodoCohorteFromDate, diffDias } = require('./commissionEngine');
-const { congelarTasaCohorte, procesarPagoFactura, normalizeCustomerKey } = require('./facturaCommissionOps');
+const { esOrganizacionLacteoca, upsertFacturaFromZoho } = require('./facturaSync');
 
 // Secreto compartido para validar los webhooks de Zoho Books, inyectado como
 // variable de entorno desde functions/.env.<project-id> (generado por CI a
@@ -66,68 +65,10 @@ exports.procesarComisionesDesdeZoho = withZohoSecret(async (req, res) => {
     res.status(200).send('Endpoint retirado: la comisión del vendedor se calcula en el webhook de facturas.');
 });
 
-/**
- * Resuelve el vendedor de GK correspondiente a un `salesperson_name` de Zoho.
- * Se busca en `users_metadata` (role == 'vendedor') un documento cuyo
- * `zohoSalespersonName` (o, si no está configurado, `name`) coincida sin
- * distinguir mayúsculas/espacios con el nombre enviado por Zoho.
- *
- * @returns {Promise<{id: string, data: object} | null>}
- */
-/**
- * Resuelve el vendedor por CARTERA: mapea la razón social de la factura
- * (`customer_name`) al vendedor dueño de ese cliente, según el mapa
- * `zoho_customer_map` que se construye una sola vez desde AdminPanel →
- * Integraciones (Fase 3.3). Esta es la vía PRINCIPAL de atribución; el
- * salesperson de Zoho queda solo como respaldo (ver handler).
- *
- * @returns {Promise<{id: string, data: object} | null>}
- */
-async function resolveVendedorPorRazonSocial(customerName) {
-    const key = normalizeCustomerKey(customerName);
-    if (!key) return null;
-    const mapSnap = await admin.firestore().doc(`zoho_customer_map/${key}`).get();
-    if (!mapSnap.exists) return null;
-    const vendedorId = mapSnap.data().vendedorId;
-    if (!vendedorId) return null;
-    const vSnap = await admin.firestore().doc(`users_metadata/${vendedorId}`).get();
-    return vSnap.exists ? { id: vendedorId, data: vSnap.data() } : null;
-}
-
-async function resolveVendedor(salespersonName) {
-    const name = (salespersonName || '').trim().toLowerCase();
-    if (!name) return null;
-    const vendedoresSnap = await admin.firestore()
-        .collection('users_metadata')
-        .where('role', '==', 'vendedor')
-        .get();
-    const match = vendedoresSnap.docs.find(d => {
-        const data = d.data();
-        const zohoName = (data.zohoSalespersonName || data.name || '').trim().toLowerCase();
-        return zohoName && zohoName === name;
-    });
-    return match ? { id: match.id, data: match.data() } : null;
-}
-
-const toDate = (value) => {
-    if (!value) return null;
-    const d = new Date(value);
-    return isNaN(d.getTime()) ? null : d;
-};
-
-/**
- * Verifica que la factura pertenezca a la organización de Zoho Books de
- * Lacteoca. Si `settings/appConfig.zohoOrgIdLacteoca` no está configurado,
- * o el payload no incluye `organization_id`, no se bloquea (no se puede
- * validar) — pero se deja registro en logs para auditoría.
- */
-function esOrganizacionLacteoca(appConfig, body, invoice) {
-    const orgIdEsperado = appConfig.zohoOrgIdLacteoca;
-    if (!orgIdEsperado) return true; // sin filtro configurado
-    const orgId = body?.organization_id || invoice?.organization_id || null;
-    if (!orgId) return true; // payload sin organization_id, no se puede validar
-    return String(orgId) === String(orgIdEsperado);
-}
+// La resolución del vendedor (por cartera / salesperson), el filtro de
+// organización y el upsert idempotente de la factura viven en `facturaSync.js`
+// — compartidos con la conciliación bajo demanda (`zohoReconcile.js`) para que
+// ambos caminos hagan EXACTAMENTE lo mismo (una sola fuente de verdad).
 
 /**
  * Webhook para recibir eventos de FACTURAS de Zoho Books (invoice.created,
@@ -194,147 +135,24 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
             return;
         }
 
-        if (!esOrganizacionLacteoca(appConfig, req.body, invoice)) {
+        // Sincronización idempotente compartida (misma lógica que la conciliación
+        // bajo demanda): filtro de organización, tombstone, resolución de vendedor
+        // (cartera → salesperson), período/recuperada, tasa-cohorte y comisión al
+        // pagar. Ver facturaSync.js.
+        const r = await upsertFacturaFromZoho(invoice, appConfig, { body: req.body });
+
+        if (r.status === 'foreign') {
             functions.logger.log(`Factura #${invoice.invoice_number} de organización Zoho ajena, ignorada.`);
             res.status(200).send("Organización ajena, ignorada.");
             return;
         }
-
-        // Factura BLOQUEADA manualmente (eliminada/anulada por un admin en GK):
-        // NO resucitar aunque Zoho la reenvíe (invoice.overdue re-dispara a
-        // diario). Así, borrar una factura de prueba la deja sepultada de verdad.
-        const blockKey = String(invoice.invoice_number).trim().replace(/\//g, '-');
-        const blockSnap = await admin.firestore().doc(`facturas_bloqueadas/${blockKey}`).get();
-        if (blockSnap.exists) {
+        if (r.status === 'blocked') {
             functions.logger.log(`Factura #${invoice.invoice_number} BLOQUEADA (eliminada/anulada por admin). Ignorada.`);
             res.status(200).send("Factura bloqueada, ignorada.");
             return;
         }
 
-        // Atribución por CARTERA (razón social → vendedor) como vía principal;
-        // el salesperson de Zoho queda solo como respaldo para clientes aún no
-        // vinculados. Si ninguna resuelve, la factura queda sin asignar (visible
-        // en la herramienta de vinculación para asignarla con un clic).
-        let vendedor = await resolveVendedorPorRazonSocial(invoice.customer_name);
-        if (!vendedor) vendedor = await resolveVendedor(invoice.salesperson_name);
-        if (!vendedor) {
-            functions.logger.warn(`Factura #${invoice.invoice_number}: razón social "${invoice.customer_name}" sin vendedor. Vincúlala en AdminPanel → Integraciones.`);
-        }
-
-        const estado = invoice.status === 'paid' ? 'pagada'
-            : invoice.status === 'overdue' ? 'vencida'
-            : 'pendiente';
-
-        const fechaFactura  = toDate(invoice.date);
-        const vencimiento   = toDate(invoice.due_date);
-        const diasCredito   = diffDias(fechaFactura, vencimiento);
-        const mesCohorte    = mesCohorteFromDate(fechaFactura); // calendario (gerente)
-        const unidades = Array.isArray(invoice.line_items)
-            ? invoice.line_items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
-            : 0;
-
-        // Fase 3.5 — Período de EMPLEO del vendedor (mes 15→14, anclado a
-        // fechaIngreso). `recuperada` = factura previa al ingreso (no cuenta a
-        // su meta; será Cuenta Recuperada 5% en Fase 3.6). Requiere el vendedor
-        // ya resuelto (por cartera, arriba).
-        const { periodKey: periodoCohorte, recuperada } = vendedor
-            ? periodoCohorteFromDate(vendedor.data.fechaIngreso, fechaFactura)
-            : { periodKey: null, recuperada: false };
-
-        // Fase 3.1 — Identidad del cliente en Zoho. Es la llave para atribuir la
-        // factura por CARTERA (no por salesperson): más adelante se mapeará
-        // `zohoCustomerId` → vendor_clients → vendedor. Por ahora solo se captura
-        // y se loguea para verificar que Zoho lo envía en el payload real.
-        const zohoCustomerId = invoice.customer_id != null ? String(invoice.customer_id)
-            : (invoice.contact_id != null ? String(invoice.contact_id) : null);
-
-        // DIAGNÓSTICO (temporal): imprime la estructura real del payload de Zoho
-        // para ubicar el identificador del cliente. Quitar una vez confirmado el
-        // nombre/ubicación del campo customer_id.
-        functions.logger.log(`[DIAG customer_id] factura #${invoice.invoice_number} — body keys: [${Object.keys(req.body || {}).join(', ')}] | invoice keys: [${Object.keys(invoice || {}).join(', ')}] | customer_id=${invoice.customer_id} | contact_id=${invoice.contact_id} | customer_name=${invoice.customer_name}`);
-
-        // DIAGNÓSTICO visible en la app (temporal): guarda la estructura del
-        // payload en la factura para verla desde AdminPanel → Gestión de facturas
-        // Zoho, sin depender de los logs de Cloud. Se elimina al confirmar el campo.
-        const _diag = {
-            bodyKeys:      Object.keys(req.body || {}).join(', '),
-            invoiceKeys:   Object.keys(invoice || {}).join(', '),
-            customer_id:   invoice.customer_id ?? null,
-            contact_id:    invoice.contact_id ?? null,
-            customer_name: invoice.customer_name ?? null,
-        };
-
-        const facturasRef = admin.firestore().collection('facturas_vendedor');
-        // ID DETERMINISTA = número de factura normalizado. Hace la sincronización
-        // IDEMPOTENTE: dos eventos del mismo INV que lleguen a la vez escriben el
-        // MISMO documento (imposible duplicar). Fallback a un doc legacy con ID
-        // aleatorio para facturas creadas antes de este cambio.
-        const detRef = facturasRef.doc(blockKey);
-        let existing = await detRef.get();
-        let targetRef = detRef;
-        if (!existing.exists) {
-            const legacySnap = await facturasRef.where('numero', '==', invoice.invoice_number).limit(1).get();
-            if (!legacySnap.empty) { existing = legacySnap.docs[0]; targetRef = existing.ref; }
-        }
-        const existingData = existing.exists ? existing.data() : null;
-
-        const facturaData = {
-            numero:       invoice.invoice_number,
-            clienteName:  invoice.customer_name || '',
-            zohoCustomerId,
-            _diag,
-            monto:        Number(invoice.total) || 0,
-            fecha:        fechaFactura ? admin.firestore.Timestamp.fromDate(fechaFactura) : null,
-            vencimiento:  vencimiento ? admin.firestore.Timestamp.fromDate(vencimiento) : null,
-            diasCredito,
-            unidades,
-            estado,
-            vendedorId:   vendedor?.id || null,
-            reporterId:   vendedor?.data?.reporterId || null,
-            mesCohorte,
-            periodoCohorte,
-            recuperada,
-            updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
-        };
-
-        // Tasa-cohorte: se congela UNA sola vez, cuando se contabilizan por
-        // primera vez las unidades de esta factura en el acumulado mensual
-        // del vendedor. Actualizaciones posteriores (overdue/paid) conservan
-        // la tasa ya congelada.
-        const yaContabilizada = existingData?.unidadesContabilizadas === true;
-        if (vendedor && mesCohorte && unidades > 0 && !yaContabilizada) {
-            const tier = await congelarTasaCohorte(vendedor, mesCohorte, unidades, periodoCohorte);
-            facturaData.tasaCohorte = tier.rate * 100;
-            facturaData.tierCohorte = tier.label;
-            facturaData.unidadesContabilizadas = true;
-        } else if (existingData) {
-            facturaData.tasaCohorte = existingData.tasaCohorte ?? null;
-            facturaData.tierCohorte = existingData.tierCohorte ?? null;
-            facturaData.unidadesContabilizadas = existingData.unidadesContabilizadas === true;
-        }
-
-        // invoice.paid (primera vez que se reporta como pagada): calcular comisión.
-        // ROBUSTEZ: el cálculo de comisión NO debe poder impedir que se persista
-        // el estado 'pagada'. Si `procesarPagoFactura` fallara, antes lanzaba y el
-        // handler devolvía 500 ANTES del set → la factura quedaba "pendiente/
-        // vencida" para siempre (un pago perdido). Ahora se aísla en try/catch: se
-        // registra el error pero el upsert de abajo igual marca la factura pagada;
-        // la comisión se puede recomputar luego (reasignar en la herramienta admin).
-        if (estado === 'pagada' && existingData?.estado !== 'pagada') {
-            try {
-                await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
-            } catch (e) {
-                functions.logger.error(`Factura #${invoice.invoice_number}: error calculando comisión al pagar (se persiste 'pagada' igual):`, e);
-            }
-        }
-
-        // Upsert idempotente (set-merge): crea o actualiza SIEMPRE el mismo doc.
-        await targetRef.set(
-            existingData ? facturaData : { ...facturaData, createdAt: admin.firestore.FieldValue.serverTimestamp() },
-            { merge: true },
-        );
-
-        functions.logger.log(`Factura Zoho #${invoice.invoice_number} sincronizada (doc: ${targetRef.id}, vendedorId: ${vendedor?.id || 'sin asignar'}, zohoCustomerId: ${zohoCustomerId || 'AUSENTE'}, cliente: "${invoice.customer_name || ''}", estado: ${estado}).`);
+        functions.logger.log(`Factura Zoho #${invoice.invoice_number} sincronizada (doc: ${r.facturaId}, vendedorId: ${r.vendedorId || 'sin asignar'}, estado: ${r.estado}${r.becamePaid ? ', PAGADA (comisión calculada)' : ''}).`);
         res.status(200).send("Factura sincronizada con éxito.");
 
     } catch (error) {

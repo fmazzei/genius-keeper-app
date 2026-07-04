@@ -265,6 +265,13 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Credenciales de la API de Zoho Books (OAuth self-client). SOLO el Admin SDK
+    // (Cloud Functions) las lee/escribe — nunca el cliente. Se guardan con la
+    // callable `guardarCredencialesZoho` (master) y las usa la conciliación.
+    match /zoho_secure/{docId} {
+      allow read, write: if false;
+    }
+
     match /notifications/{notificationId} {
       allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid;
       // Mercaderistas notifican a gerencia/admin sobre nuevos entrantes detectados

@@ -3509,6 +3509,52 @@ const IntegracionesSection = () => {
     const [sinVendedor, setSinVendedor]   = useState(null);
     const [loadingAlert, setLoadingAlert] = useState(true);
 
+    // Conciliación por API (GK consulta Zoho bajo demanda).
+    const [creds, setCreds]               = useState({ clientId: '', clientSecret: '', refreshToken: '', dataCenter: 'com' });
+    const [credSaving, setCredSaving]     = useState(false);
+    const [credMsg, setCredMsg]           = useState('');
+    const [testing, setTesting]           = useState(false);
+    const [reconciling, setReconciling]   = useState(false);
+    const [reconResult, setReconResult]   = useState(null);
+    const [reconError, setReconError]     = useState('');
+    const [ultimaConcil, setUltimaConcil] = useState(null);
+
+    const guardarCreds = async () => {
+        setCredSaving(true); setCredMsg('');
+        try {
+            const fn = httpsCallable(functions, 'guardarCredencialesZoho');
+            await fn(creds);
+            setCredMsg('Credenciales guardadas.');
+            setCreds(c => ({ ...c, clientSecret: '', refreshToken: '' })); // no las conservamos en pantalla
+            setTimeout(() => setCredMsg(''), 3000);
+        } catch (e) {
+            setCredMsg(e.message || 'Error al guardar credenciales.');
+        } finally { setCredSaving(false); }
+    };
+
+    const probarConexion = async () => {
+        setTesting(true); setReconError(''); setReconResult(null);
+        try {
+            const fn = httpsCallable(functions, 'probarConexionZoho');
+            const { data } = await fn({});
+            setCredMsg(`Conexión OK · ${data.muestra} factura(s) visibles${data.ejemplo ? ` (ej. ${data.ejemplo})` : ''}.`);
+            setTimeout(() => setCredMsg(''), 5000);
+        } catch (e) {
+            setReconError(e.message || 'No se pudo conectar con Zoho.');
+        } finally { setTesting(false); }
+    };
+
+    const reconciliar = async () => {
+        setReconciling(true); setReconError(''); setReconResult(null);
+        try {
+            const fn = httpsCallable(functions, 'reconciliarFacturasZoho');
+            const { data } = await fn({});
+            setReconResult(data);
+        } catch (e) {
+            setReconError(e.message || 'Error al conciliar con Zoho.');
+        } finally { setReconciling(false); }
+    };
+
     useEffect(() => {
         getDoc(doc(db, 'settings', 'appConfig')).then(snap => {
             if (snap.exists()) {
@@ -3516,6 +3562,7 @@ const IntegracionesSection = () => {
                 setZohoSales(d.zohoSalesWebhookActive === true);
                 setZohoComis(d.zohoCommissionsWebhookActive === true);
                 setZohoOrgId(d.zohoOrgIdLacteoca || '');
+                setUltimaConcil(d.zohoUltimaConciliacion || null);
             }
             setLoading(false);
         }).catch(() => setLoading(false));
@@ -3616,7 +3663,81 @@ const IntegracionesSection = () => {
                 )}
             </div>
 
-            <SectionTitle n="2" title="Conciliación de facturas por vendedor" desc="Cruza lo que GK tiene contra Zoho y corrige facturas de prueba u huérfanas." />
+            <SectionTitle n="2" title="Conciliación automática con Zoho (API)" desc="GK consulta a Zoho el estado real de las facturas y actualiza las que se pagaron. Úsalo cuando quieras — resuelve el que Zoho no siempre avise los pagos." />
+
+            <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                {/* Botón principal: conciliar ahora */}
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-2">
+                    <button
+                        onClick={reconciliar}
+                        disabled={reconciling}
+                        className="flex items-center justify-center gap-2 bg-emerald-600 text-white font-bold text-sm px-5 py-3 rounded-lg hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+                    >
+                        <RefreshCw size={16} className={reconciling ? 'animate-spin' : ''} />
+                        {reconciling ? 'Consultando Zoho…' : 'Actualizar facturas desde Zoho'}
+                    </button>
+                    {ultimaConcil && (
+                        <span className="text-xs text-slate-400">
+                            Última: {ultimaConcil.toDate ? ultimaConcil.toDate().toLocaleString('es-VE') : ''}
+                        </span>
+                    )}
+                </div>
+                <p className="text-xs text-slate-400 mb-2">
+                    Trae de Zoho el estado de cada factura y actualiza GK: marca las cobradas (calcula su comisión, incluidas las Cuentas Recuperadas) y crea las que falten. Es seguro correrlo las veces que necesites.
+                </p>
+
+                {reconError && <p className="text-red-500 text-xs mb-2">{reconError}</p>}
+                {reconResult && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-slate-700 mb-2">
+                        <p className="font-bold text-emerald-800 mb-1">Conciliación lista</p>
+                        <p>Revisadas: <b>{reconResult.revisadas}</b> · Marcadas como pagadas: <b className="text-emerald-700">{reconResult.marcadasPagadas}</b> · Creadas: <b>{reconResult.creadas}</b> · Sin vendedor: <b>{reconResult.sinVendedor}</b>{reconResult.errores ? <> · Errores: <b className="text-red-600">{reconResult.errores}</b></> : null}</p>
+                        {Array.isArray(reconResult.detalles) && reconResult.detalles.length > 0 && (
+                            <div className="mt-2 max-h-40 overflow-auto border-t border-emerald-200 pt-1">
+                                {reconResult.detalles.map((d, i) => (
+                                    <div key={i} className="flex justify-between gap-2 py-0.5">
+                                        <span className="font-mono">{d.numero}</span>
+                                        <span className="truncate text-slate-500 flex-1">{d.cliente}</span>
+                                        <span className="font-mono">${Number(d.monto).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Credenciales de la API (colapsable) */}
+                <details className="mt-3 border-t border-slate-100 pt-3">
+                    <summary className="cursor-pointer text-xs font-semibold text-slate-600 select-none">Credenciales de la API de Zoho (configurar una vez)</summary>
+                    <div className="mt-3 space-y-2">
+                        <p className="text-[11px] text-slate-400">
+                            Genera un <b>self-client</b> en el Zoho API Console (scope <code className="bg-slate-100 px-1 rounded">ZohoBooks.invoices.READ</code>) y pega aquí los datos. No se muestran de vuelta por seguridad; para actualizar uno, escríbelo de nuevo.
+                        </p>
+                        <input type="text" value={creds.clientId} onChange={e => setCreds(c => ({ ...c, clientId: e.target.value }))} placeholder="Client ID" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        <input type="password" value={creds.clientSecret} onChange={e => setCreds(c => ({ ...c, clientSecret: e.target.value }))} placeholder="Client Secret" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        <input type="password" value={creds.refreshToken} onChange={e => setCreds(c => ({ ...c, refreshToken: e.target.value }))} placeholder="Refresh Token" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        <select value={creds.dataCenter} onChange={e => setCreds(c => ({ ...c, dataCenter: e.target.value }))} className="w-full p-2 border border-slate-300 rounded-lg text-sm">
+                            <option value="com">Data center: .com (EE.UU. — usual en Venezuela)</option>
+                            <option value="eu">.eu (Europa)</option>
+                            <option value="in">.in (India)</option>
+                            <option value="com.au">.com.au (Australia)</option>
+                            <option value="jp">.jp (Japón)</option>
+                            <option value="ca">.ca (Canadá)</option>
+                            <option value="sa">.sa (Arabia Saudita)</option>
+                        </select>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                            <button onClick={guardarCreds} disabled={credSaving} className="flex items-center gap-1.5 bg-brand-blue text-white font-semibold text-xs px-3 py-2 rounded-lg disabled:opacity-60">
+                                <Save size={14} />{credSaving ? 'Guardando…' : 'Guardar credenciales'}
+                            </button>
+                            <button onClick={probarConexion} disabled={testing} className="flex items-center gap-1.5 bg-slate-100 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg disabled:opacity-60">
+                                {testing ? 'Probando…' : 'Probar conexión'}
+                            </button>
+                        </div>
+                        {credMsg && <p className="text-xs text-slate-600 mt-1">{credMsg}</p>}
+                    </div>
+                </details>
+            </div>
+
+            <SectionTitle n="3" title="Conciliación de facturas por vendedor" desc="Cruza lo que GK tiene contra Zoho y corrige facturas de prueba u huérfanas." />
 
             {!loadingAlert && sinVendedor !== null && sinVendedor > 0 && (
                 <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 mb-4 flex items-start gap-3">
@@ -3637,11 +3758,11 @@ const IntegracionesSection = () => {
 
             <FacturaManagementTool />
 
-            <SectionTitle n="3" title="Vinculación de clientes → Vendedor" desc="Asigna cada razón social de Zoho a su vendedor (atribución por cartera)." />
+            <SectionTitle n="4" title="Vinculación de clientes → Vendedor" desc="Asigna cada razón social de Zoho a su vendedor (atribución por cartera)." />
 
             <VinculacionRazonesSociales />
 
-            <SectionTitle n="4" title="Diagnóstico y referencia técnica" desc="Último payload recibido de Zoho y configuración de los endpoints." />
+            <SectionTitle n="5" title="Diagnóstico y referencia técnica" desc="Último payload recibido de Zoho y configuración de los endpoints." />
 
             <ZohoPayloadDiag />
 
