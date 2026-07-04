@@ -90,12 +90,18 @@ export default function LiquidacionDetalladaDoc({ desgloses, desglose, vendedorN
                     {/* Datos generales */}
                     <div className="px-8 pt-4 text-[12px]">
                         <div className="flex justify-between"><span className="text-slate-600">Titular:</span><span className="font-bold">{vendedorName}</span></div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-4">
                             <span className="text-slate-600">{multi ? 'Corte:' : 'Período:'}</span>
-                            <span>{multi
+                            <span className="text-right">{multi
                                 ? `${ordered.length} períodos · Mes ${ordered[0].mes} – Mes ${ordered[ordered.length - 1].mes}`
-                                : `Mes ${ordered[0].mes} · ${ordered[0].rango} · ${ordered[0].anio}`}</span>
+                                : `Mes ${ordered[0].mes} · ${ordered[0].enCurso ? ordered[0].rangoCorte : ordered[0].rango} · ${ordered[0].anio}`}</span>
                         </div>
+                        {!multi && ordered[0].enCurso && (
+                            <div className="flex justify-between gap-4">
+                                <span className="text-slate-600">Corte:</span>
+                                <span className="text-right font-bold" style={{ color: '#b45309' }}>PARCIAL · al día de hoy (período en curso, cierra el {(ordered[0].rango.split(/[–-]/).pop() || '').trim()})</span>
+                            </div>
+                        )}
                         <div className="flex justify-between"><span className="text-slate-600">Emitido:</span><span>{fechaHora}</span></div>
                     </div>
 
@@ -135,7 +141,7 @@ function PeriodoDetalle({ d, multi }) {
         <>
             {multi && (
                 <p className="px-8 mt-6 mb-1 font-black text-[13px]" style={{ color: NAVY }}>
-                    ▸ Mes {d.mes} · {d.rango} · {d.anio} <span className="font-normal text-slate-500 text-[11px]">({d.congelado ? 'congelado' : d.cerrado ? 'cerrado' : 'en curso'})</span>
+                    ▸ Mes {d.mes} · {d.enCurso ? d.rangoCorte : d.rango} · {d.anio} <span className="font-normal text-slate-500 text-[11px]">({d.congelado ? 'congelado' : d.cerrado ? 'cerrado' : 'parcial · en curso'})</span>
                 </p>
             )}
 
@@ -161,6 +167,7 @@ function PeriodoDetalle({ d, multi }) {
             <div className="px-8 gk-sec">
                 <SecTitle>FACTURACIÓN — DEFINE EL NIVEL</SecTitle>
                 <p className="text-[11px] text-slate-600 mb-1">Colocó <b>{uds(d.unidades)}</b> de <b>{uds(d.metaMensual)}</b> uds ({d.pct}% de la meta) → <b>Nivel {d.nivel}</b> (tasa {d.tasa}%).</p>
+                <p className="text-[11px] mb-1" style={{ color: '#334155' }}>Cobrado: <b style={{ color: '#127c3e' }}>{money(d.cobradoRegular)}</b> de <b>{money(d.facturadoMonto)}</b> facturado · <b>{d.nPagadas}</b> de <b>{d.nFacturas}</b> facturas pagadas. <span className="text-slate-500">La comisión se paga solo sobre lo cobrado.</span></p>
                 <FacturasTable rows={d.facturas} empty="Sin facturación en el período." />
             </div>
 

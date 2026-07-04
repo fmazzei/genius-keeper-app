@@ -427,6 +427,14 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const cobradoRegularATiempo = facturasATiempo.reduce((s, f) => s + f.monto, 0);
     const cobradoRecup = recuperadas.filter(f => f.pagada && !f.comisionAnulada).reduce((s, f) => s + f.monto, 0);
 
+    // Transparencia de cobranza: cuántas de las facturas del período están
+    // cobradas (pagadas) y cuánto $ se ha cobrado de lo facturado. Alimenta la
+    // línea de auditoría del comprobante — hace explícito que la comisión se
+    // paga SOLO sobre lo cobrado, y expone de un vistazo si falta marcar pagos.
+    const facturadoMonto = regulares.reduce((s, f) => s + f.monto, 0);
+    const nFacturas = regulares.length;
+    const nPagadas = regulares.filter(f => f.pagada).length;
+
     const pct = metaMensual > 0 ? unidades / metaMensual : 0;
     const tier = tierFor(pct);
     const bonoCobranzaMonto = cobradoRegularATiempo * bonoCobRate / 100;
@@ -482,15 +490,24 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
         .filter(l => l.periodKey === periodKey)
         .reduce((s, l) => s + (Number(l.monto) || 0), 0);
 
+    // Período PARCIAL: si está en curso (no cerrado), el corte va hasta HOY, no
+    // hasta el fin del mes de empleo. `rangoCorte` refleja el tramo transcurrido
+    // (15-jun → hoy) para que el comprobante no aparente cubrir días futuros.
+    const enCurso = !cerrado;
+    const rangoCorte = rangoLabel(start, enCurso ? new Date(ahora.getTime() + MS_DIA) : end);
+
     return {
         periodKey, mes,
         rango: rangoLabel(start, end),
+        rangoCorte, enCurso,
         anio: String(start.getFullYear()),
         cerrado, congelado,
         // Facturación
         metaMensual, unidades, pct: Math.round(pct * 100),
         nivel: tier.label, tasa: tier.rate,
         facturas: regulares,
+        // Transparencia de cobranza (auditoría)
+        facturadoMonto, nFacturas, nPagadas,
         // Cobranza
         cobradoRegular, cobradoRegularATiempo,
         facturasATiempo,

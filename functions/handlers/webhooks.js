@@ -314,8 +314,18 @@ exports.sincronizarFacturaDesdeZoho = withZohoSecret(async (req, res) => {
         }
 
         // invoice.paid (primera vez que se reporta como pagada): calcular comisión.
+        // ROBUSTEZ: el cálculo de comisión NO debe poder impedir que se persista
+        // el estado 'pagada'. Si `procesarPagoFactura` fallara, antes lanzaba y el
+        // handler devolvía 500 ANTES del set → la factura quedaba "pendiente/
+        // vencida" para siempre (un pago perdido). Ahora se aísla en try/catch: se
+        // registra el error pero el upsert de abajo igual marca la factura pagada;
+        // la comisión se puede recomputar luego (reasignar en la herramienta admin).
         if (estado === 'pagada' && existingData?.estado !== 'pagada') {
-            await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
+            try {
+                await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
+            } catch (e) {
+                functions.logger.error(`Factura #${invoice.invoice_number}: error calculando comisión al pagar (se persiste 'pagada' igual):`, e);
+            }
         }
 
         // Upsert idempotente (set-merge): crea o actualiza SIEMPRE el mismo doc.
