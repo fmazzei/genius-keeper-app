@@ -13,7 +13,7 @@
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const { getAccessToken, listAllInvoices } = require('./zohoApi');
+const { getAccessToken, listAllInvoices, exchangeCode } = require('./zohoApi');
 const { upsertFacturaFromZoho } = require('./facturaSync');
 const { revertirAcumulados } = require('./facturaCommissionOps');
 
@@ -84,6 +84,34 @@ exports.guardarCredencialesZoho = onCall({ region: "us-central1" }, async (reque
             dataCenter:   d.dataCenter || 'com',
         },
     };
+});
+
+/**
+ * Conecta con Zoho intercambiando el CÓDIGO del Self Client (Generate Code) por
+ * un refresh_token permanente, y guarda TODO (clientId, clientSecret, refreshToken,
+ * dataCenter) en `zoho_secure/creds`. Es el camino fácil desde el móvil: el dueño
+ * solo pega Client ID, Client Secret y el código — GK hace el intercambio.
+ */
+exports.intercambiarCodigoZoho = onCall({ region: "us-central1", timeoutSeconds: 60 }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
+    await requireRole(request.auth.uid, ["master"]);
+
+    const { clientId, clientSecret, code, dataCenter } = request.data || {};
+    if (!clientId || !clientSecret || !code) {
+        throw new HttpsError("invalid-argument", "Faltan Client ID, Client Secret o el código.");
+    }
+    const dc = (dataCenter && dataCenter.trim()) || 'com';
+    let refreshToken;
+    try {
+        refreshToken = await exchangeCode({ clientId: clientId.trim(), clientSecret: clientSecret.trim(), code: code.trim(), dataCenter: dc });
+    } catch (e) {
+        throw new HttpsError("internal", `Zoho: ${e.response?.data?.error || e.message}`);
+    }
+    await admin.firestore().doc('zoho_secure/creds').set({
+        clientId: clientId.trim(), clientSecret: clientSecret.trim(), refreshToken, dataCenter: dc,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: request.auth.uid,
+    }, { merge: true });
+    return { ok: true };
 });
 
 /**

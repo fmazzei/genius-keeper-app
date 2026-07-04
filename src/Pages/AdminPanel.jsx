@@ -3592,7 +3592,7 @@ const IntegracionesSection = () => {
     const [loadingAlert, setLoadingAlert] = useState(true);
 
     // Conciliación por API (GK consulta Zoho bajo demanda).
-    const [creds, setCreds]               = useState({ clientId: '', clientSecret: '', refreshToken: '', dataCenter: 'com' });
+    const [creds, setCreds]               = useState({ clientId: '', clientSecret: '', code: '', dataCenter: 'com' });
     const [credSaving, setCredSaving]     = useState(false);
     const [credMsg, setCredMsg]           = useState('');
     const [testing, setTesting]           = useState(false);
@@ -3601,16 +3601,18 @@ const IntegracionesSection = () => {
     const [reconError, setReconError]     = useState('');
     const [ultimaConcil, setUltimaConcil] = useState(null);
 
-    const guardarCreds = async () => {
+    // Camino fácil: pega Client ID + Secret + el CÓDIGO del Self Client; GK
+    // intercambia el código por el refresh_token y lo guarda todo.
+    const conectarZoho = async () => {
         setCredSaving(true); setCredMsg('');
         try {
-            const fn = httpsCallable(functions, 'guardarCredencialesZoho');
+            const fn = httpsCallable(functions, 'intercambiarCodigoZoho');
             await fn(creds);
-            setCredMsg('Credenciales guardadas.');
-            setCreds(c => ({ ...c, clientSecret: '', refreshToken: '' })); // no las conservamos en pantalla
-            setTimeout(() => setCredMsg(''), 3000);
+            setCredMsg('¡Conectado con Zoho! Ya puedes usar el botón de actualizar.');
+            setCreds(c => ({ ...c, clientSecret: '', code: '' })); // no conservar secretos en pantalla
+            setTimeout(() => setCredMsg(''), 6000);
         } catch (e) {
-            setCredMsg(e.message || 'Error al guardar credenciales.');
+            setCredMsg(e.message || 'Error al conectar con Zoho.');
         } finally { setCredSaving(false); }
     };
 
@@ -3792,11 +3794,11 @@ const IntegracionesSection = () => {
                     <summary className="cursor-pointer text-xs font-semibold text-slate-600 select-none">Credenciales de la API de Zoho (configurar una vez)</summary>
                     <div className="mt-3 space-y-2">
                         <p className="text-[11px] text-slate-400">
-                            Genera un <b>self-client</b> en el Zoho API Console (scope <code className="bg-slate-100 px-1 rounded">ZohoBooks.invoices.READ</code>) y pega aquí los datos. No se muestran de vuelta por seguridad; para actualizar uno, escríbelo de nuevo.
+                            En el Zoho API Console crea un <b>Self Client</b>. Pega aquí el <b>Client ID</b> y el <b>Client Secret</b>. Luego, en la pestaña <b>Generate Code</b> de Zoho, con scope <code className="bg-slate-100 px-1 rounded">ZohoBooks.invoices.READ</code> y duración 10 min, genera el <b>código</b> y pégalo abajo. GK lo canjea por el token permanente. El código dura solo 10 minutos — pégalo apenas lo generes.
                         </p>
                         <input type="text" value={creds.clientId} onChange={e => setCreds(c => ({ ...c, clientId: e.target.value }))} placeholder="Client ID" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
                         <input type="password" value={creds.clientSecret} onChange={e => setCreds(c => ({ ...c, clientSecret: e.target.value }))} placeholder="Client Secret" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
-                        <input type="password" value={creds.refreshToken} onChange={e => setCreds(c => ({ ...c, refreshToken: e.target.value }))} placeholder="Refresh Token" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        <input type="text" value={creds.code} onChange={e => setCreds(c => ({ ...c, code: e.target.value }))} placeholder="Código (Generate Code de Zoho)" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
                         <select value={creds.dataCenter} onChange={e => setCreds(c => ({ ...c, dataCenter: e.target.value }))} className="w-full p-2 border border-slate-300 rounded-lg text-sm">
                             <option value="com">Data center: .com (EE.UU. — usual en Venezuela)</option>
                             <option value="eu">.eu (Europa)</option>
@@ -3807,8 +3809,8 @@ const IntegracionesSection = () => {
                             <option value="sa">.sa (Arabia Saudita)</option>
                         </select>
                         <div className="flex flex-wrap gap-2 pt-1">
-                            <button onClick={guardarCreds} disabled={credSaving} className="flex items-center gap-1.5 bg-brand-blue text-white font-semibold text-xs px-3 py-2 rounded-lg disabled:opacity-60">
-                                <Save size={14} />{credSaving ? 'Guardando…' : 'Guardar credenciales'}
+                            <button onClick={conectarZoho} disabled={credSaving} className="flex items-center gap-1.5 bg-brand-blue text-white font-semibold text-xs px-3 py-2 rounded-lg disabled:opacity-60">
+                                <Save size={14} />{credSaving ? 'Conectando…' : 'Conectar con Zoho'}
                             </button>
                             <button onClick={probarConexion} disabled={testing} className="flex items-center gap-1.5 bg-slate-100 text-slate-700 font-semibold text-xs px-3 py-2 rounded-lg disabled:opacity-60">
                                 {testing ? 'Probando…' : 'Probar conexión'}

@@ -98,4 +98,31 @@ async function listAllInvoices({ accessToken, organizationId, dataCenter, maxPag
     return { invoices: all, complete };
 }
 
-module.exports = { getAccessToken, listInvoicesPage, listAllInvoices };
+/**
+ * Intercambia el CÓDIGO de autorización (Generate Code del Self Client) por un
+ * refresh_token permanente. Para Self Client no se requiere redirect_uri.
+ * @returns {Promise<string>} refresh_token
+ */
+async function exchangeCode({ clientId, clientSecret, code, dataCenter }) {
+    if (!clientId || !clientSecret || !code) {
+        throw new Error('Faltan clientId, clientSecret o code.');
+    }
+    const { accounts } = dcUrls(dataCenter);
+    const res = await axios.post(`${accounts}/oauth/v2/token`, null, {
+        params: {
+            grant_type:    'authorization_code',
+            client_id:     clientId,
+            client_secret: clientSecret,
+            code,
+        },
+        timeout: 20000,
+    });
+    const refreshToken = res.data?.refresh_token;
+    if (!refreshToken) {
+        const err = res.data?.error || 'Zoho no devolvió refresh_token (¿el código ya expiró o se usó?).';
+        throw new Error(err);
+    }
+    return refreshToken;
+}
+
+module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, exchangeCode };
