@@ -3299,7 +3299,29 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                             {syncError && <p className="text-red-500 text-xs mt-1">{syncError}</p>}
                             {syncResult && (
                                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-xs text-slate-700 mt-2">
-                                    <b className="text-emerald-800">Conciliado con Zoho.</b> Revisadas: <b>{syncResult.revisadas}</b> · Marcadas pagadas: <b className="text-emerald-700">{syncResult.marcadasPagadas}</b> · Anuladas: <b>{syncResult.anuladas}</b> · Creadas: <b>{syncResult.creadas}</b> · Ausentes en Zoho: <b className={syncResult.ausentes ? 'text-amber-600' : ''}>{syncResult.ausentes}</b>{syncResult.errores ? <> · Errores: <b className="text-red-600">{syncResult.errores}</b></> : null}
+                                    <b className="text-emerald-800">Conciliado con Zoho.</b> De este vendedor — Revisadas: <b>{syncResult.revisadas}</b> · Marcadas pagadas ahora: <b className="text-emerald-700">{syncResult.marcadasPagadas}</b> · Anuladas: <b>{syncResult.anuladas}</b> · Creadas: <b>{syncResult.creadas}</b> · Ausentes: <b className={syncResult.ausentes ? 'text-amber-600' : ''}>{syncResult.ausentes}</b>{syncResult.errores ? <> · Errores: <b className="text-red-600">{syncResult.errores}</b></> : null}
+                                    {syncResult.diag && (
+                                        <div className="mt-2 pt-2 border-t border-emerald-200">
+                                            <p className="font-bold text-slate-700">Lo que dice Zoho (toda la organización):</p>
+                                            <p className="mt-0.5">De <b>{syncResult.diag.zohoTotal}</b> facturas: <b className="text-emerald-700">{syncResult.diag.zohoPagadas}</b> pagadas · {syncResult.diag.zohoVencidas} vencidas · {syncResult.diag.zohoPendientes} pendientes · {syncResult.diag.zohoAnuladas} anuladas.</p>
+                                            <p className="mt-1 font-bold text-slate-700">De las pagadas, ¿a quién se atribuyen?</p>
+                                            <p className="mt-0.5">A <b>este vendedor</b>: <b className="text-emerald-700">{syncResult.diag.pagadasDelVendedor}</b> · A <b>otro</b> vendedor: {syncResult.diag.pagadasOtroVendedor} · <b className={syncResult.diag.pagadasSinVendedor ? 'text-red-600' : ''}>Sin vendedor (cliente sin vincular): {syncResult.diag.pagadasSinVendedor}</b></p>
+                                            {syncResult.diag.pagadasSinVendedor > 0 && (
+                                                <div className="mt-1.5 bg-red-50 border border-red-200 rounded p-2">
+                                                    <p className="text-red-700 font-semibold">⚠️ Hay {syncResult.diag.pagadasSinVendedor} factura(s) PAGADA(S) en Zoho que no están asignadas a ningún vendedor porque su cliente no está vinculado. Por eso no aparecen. Vincula esas razones sociales (sección 4) y vuelve a conciliar.</p>
+                                                    <div className="mt-1 max-h-32 overflow-auto">
+                                                        {syncResult.diag.ejemplosPagadasSinVendedor.map((e, i) => (
+                                                            <div key={i} className="flex justify-between gap-2 py-0.5 text-[11px]">
+                                                                <span className="font-mono">{e.numero}</span>
+                                                                <span className="flex-1 truncate text-slate-600">{e.cliente}</span>
+                                                                <span className="text-slate-400">{e.salesperson || '—'}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

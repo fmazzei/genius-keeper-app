@@ -14,7 +14,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { getAccessToken, listAllInvoices, exchangeCode } = require('./zohoApi');
-const { upsertFacturaFromZoho } = require('./facturaSync');
+const { upsertFacturaFromZoho, resolveVendedorFromPreload } = require('./facturaSync');
 const { revertirAcumulados } = require('./facturaCommissionOps');
 
 /**
@@ -186,14 +186,16 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
 
     const res = {
         ok: true,
-        revisadas: 0,        // facturas del alcance efectivamente conciliadas
+        vendedorIdRecibido: vendedorId,  // para confirmar que llegó el alcance
+        revisadas: 0,        // facturas del alcance (del vendedor) conciliadas
+        otrosVendedores: 0,  // saltadas por ser de otro vendedor / sin vincular
         creadas: 0,
         marcadasPagadas: 0,
         anuladas: 0,         // void en Zoho → anuladas en GK
         sinVendedor: 0,
         bloqueadas: 0,
         ajenas: 0,
-        omitidas: 0,         // borradores u otros vendedores
+        omitidas: 0,         // borradores
         ausentes: 0,         // en GK pero ya no en Zoho (posible eliminada)
         errores: 0,
         detalles: [],        // resumen de las que se marcaron pagadas
@@ -201,8 +203,39 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
 
     const seen = new Set(); // números vistos en Zoho (para detectar ausentes)
 
+    // DIAGNÓSTICO TRANSPARENTE: qué dice Zoho realmente, para no adivinar. Cuenta
+    // los estatus crudos de Zoho y, de las PAGADAS, a quién se atribuyen (al
+    // vendedor / a otro / a NADIE por cliente sin vincular). Así se ve de dónde
+    // salen las diferencias sin depender de los contadores de escritura.
+    const diag = {
+        zohoTotal: invoices.length,
+        zohoPagadas: 0, zohoVencidas: 0, zohoPendientes: 0, zohoAnuladas: 0, zohoBorradores: 0,
+        pagadasDelVendedor: 0, pagadasSinVendedor: 0, pagadasOtroVendedor: 0,
+        ejemplosPagadasSinVendedor: [], ejemplosPagadasDelVendedor: [],
+    };
+
     for (const inv of invoices) {
         if (inv.invoice_number) seen.add(String(inv.invoice_number).trim());
+
+        // Tally de estatus crudos de Zoho + atribución de las pagadas.
+        const st = inv.status;
+        if (st === 'paid') diag.zohoPagadas++;
+        else if (st === 'overdue') diag.zohoVencidas++;
+        else if (st === 'void') diag.zohoAnuladas++;
+        else if (st === 'draft') diag.zohoBorradores++;
+        else diag.zohoPendientes++;
+        if (st === 'paid') {
+            const v = resolveVendedorFromPreload(inv, preload);
+            if (!v) {
+                diag.pagadasSinVendedor++;
+                if (diag.ejemplosPagadasSinVendedor.length < 25) diag.ejemplosPagadasSinVendedor.push({ numero: inv.invoice_number, cliente: inv.customer_name || '', salesperson: inv.salesperson_name || '', monto: Number(inv.total) || 0 });
+            } else if (vendedorId && v.id !== vendedorId) {
+                diag.pagadasOtroVendedor++;
+            } else {
+                diag.pagadasDelVendedor++;
+                if (diag.ejemplosPagadasDelVendedor.length < 25) diag.ejemplosPagadasDelVendedor.push({ numero: inv.invoice_number, cliente: inv.customer_name || '', monto: Number(inv.total) || 0 });
+            }
+        }
 
         if (inv.status === 'draft') { res.omitidas++; continue; }
 
@@ -218,7 +251,7 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
 
         try {
             const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId, preload });
-            if (r.status === 'other_vendor') { continue; } // no es de este vendedor
+            if (r.status === 'other_vendor') { res.otrosVendedores++; continue; } // no es de este vendedor
             res.revisadas++;
             if (r.status === 'blocked') { res.bloqueadas++; continue; }
             if (r.status === 'foreign') { res.ajenas++; continue; }
@@ -277,5 +310,6 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         },
     }, { merge: true });
 
+    res.diag = diag;
     return res;
 });
