@@ -146,7 +146,7 @@ function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minU
         const we = ws + MS_SEMANA;
         const porCliente = {};
         facturas.forEach(f => {
-            if (f.estado === 'anulada' || f.recuperada) return;
+            if (f.estado === 'anulada' || f.recuperada || f.categoria === 'foodservice') return;
             const t = toDate(f.fecha);
             if (!t) return;
             const tm = t.getTime();
@@ -203,6 +203,7 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
     const bajaLabel     = cfg.bajaLabel || 'Baja';
     const bonoCobranza  = cfg.bonusPuntualidad ?? 0;
     const tasaRecup     = cfg.comisionRecuperadas ?? 5;
+    const tasaFood      = cfg.comisionFoodservice ?? 5;
     const baseMes       = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
 
     // Bono Activación (semanal, proporcional): base para saber cuántos clientes
@@ -244,11 +245,12 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
 
         // Modelo PROPORCIONAL de cobranza: el Bono Cobranza se paga sobre lo
         // COBRADO A TIEMPO (factura por factura), no por un umbral todo-o-nada.
-        let unidades = 0, cobradoRegular = 0, cobradoRegularATiempo = 0, cobradoRecup = 0, cobrDen = 0, cobrATiempo = 0;
+        let unidades = 0, cobradoRegular = 0, cobradoRegularATiempo = 0, cobradoRecup = 0, cobradoFood = 0, cobrDen = 0, cobrATiempo = 0;
         facturas.forEach(f => {
             if (f.estado === 'anulada') return;
             const pagada = f.estado === 'pagada';
             const esRecup = f.recuperada === true;
+            const esFood  = f.categoria === 'foodservice';
             // Atribución al período de empleo: las facturas NORMALES por su fecha
             // de factura; las RECUPERADAS por su fecha de COBRO (su fecha de factura
             // es previa al ingreso → caería fuera de todo período y se perdería).
@@ -260,14 +262,20 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             if (esRecup) {
                 if (pagada && !f.comisionAnulada) cobradoRecup += monto;
             } else {
+                // Foodservice cuenta a la meta (unidades) igual que retail, pero su
+                // cobrado paga FLAT (no nivel, no Bono Cobranza, no Activación).
                 unidades += Number(f.unidades) || 0;
-                if (pagada && !f.comisionAnulada) {
-                    cobradoRegular += monto;
-                    if (f.pagadaDentroDePlazo === true) cobradoRegularATiempo += monto;
+                if (esFood) {
+                    if (pagada && !f.comisionAnulada) cobradoFood += monto;
+                } else {
+                    if (pagada && !f.comisionAnulada) {
+                        cobradoRegular += monto;
+                        if (f.pagadaDentroDePlazo === true) cobradoRegularATiempo += monto;
+                    }
+                    const venc = toDate(f.vencimiento);
+                    const vencida = venc && venc <= ahora;
+                    if (vencida || pagada) { cobrDen++; if (pagada && f.pagadaDentroDePlazo === true) cobrATiempo++; }
                 }
-                const venc = toDate(f.vencimiento);
-                const vencida = venc && venc <= ahora;
-                if (vencida || pagada) { cobrDen++; if (pagada && f.pagadaDentroDePlazo === true) cobrATiempo++; }
             }
         });
 
@@ -285,7 +293,8 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
         const act = computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, actMinUnits, actThreshold);
         const bonoActivacionMonto = hasAnaquel ? 0 : cobradoRegular * (bonoActivacion / 100) * act.factor;
         const bonoAnaquelMonto    = (hasAnaquel && enCurso) ? cobradoRegular * (bonoAnaquel / 100) * anaquelFactor : 0;
-        let devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + bonoAnaquelMonto + cobradoRecup * tasaRecup / 100;
+        const comisionFoodMonto   = cobradoFood * tasaFood / 100;
+        let devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + bonoAnaquelMonto + cobradoRecup * tasaRecup / 100 + comisionFoodMonto;
         let devengadoTotal = devengadoComision + baseMes;
 
         const row = {
@@ -297,8 +306,9 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             nivel: tier.label, tasa: tier.rate,
             cobranzaTasa,
             cobrATiempo, cobrDen,                 // "X de Y facturas a tiempo"
-            cobrado: cobradoRegular + cobradoRecup,
+            cobrado: cobradoRegular + cobradoRecup + cobradoFood,
             cobradoRegular, cobradoRegularATiempo, cobradoRecup,  // desglose
+            cobradoFood, tasaFood, comisionFoodMonto,             // foodservice (flat)
             bonoCobranzaRate: bonoCobranza,       // % del Bono Cobranza (config)
             bonoCobranzaMonto,                    // $ ganado por cobrar a tiempo
             // Activación / Anaquel
@@ -373,6 +383,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const bonoCobRate  = cfg.bonusPuntualidad ?? 0;
     const graciaDias   = cfg.cobranzaGraciaDias ?? 5;
     const tasaRecup    = cfg.comisionRecuperadas ?? 5;
+    const tasaFood     = cfg.comisionFoodservice ?? 5;
     const baseMes      = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
     const bonoActRate  = cfg.bonusActivacion ?? 0;
     const actMinUnits  = cfg.activacionMinUnits ?? 24;
@@ -417,6 +428,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
         const attr = esRecup ? (toDate(f.fechaPago) || (pagada ? ingreso : null)) : t;
         if (!attr || attr < start || attr >= end) return;
         const comisionAnulada = f.comisionAnulada === true;
+        const esFood = f.categoria === 'foodservice';
         const item = {
             numero: f.numero || '—',
             cliente: clientName(f),
@@ -426,7 +438,8 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
             estado: f.estado || '—',
             pagada,
             comisionAnulada,
-            cobradaATiempo: pagada && f.pagadaDentroDePlazo === true && !comisionAnulada,
+            esFood,
+            cobradaATiempo: pagada && f.pagadaDentroDePlazo === true && !comisionAnulada && !esFood,
             key: clientKey(f),
         };
         if (esRecup) recuperadas.push(item);
@@ -434,8 +447,11 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     });
     regulares.sort((a, b) => a.fecha - b.fecha);
 
+    // Unidades (meta): retail + foodservice. Cobrado: retail paga nivel + bonos;
+    // foodservice paga FLAT (cobradoFood).
     const unidades = regulares.reduce((s, f) => s + f.unidades, 0);
-    const cobradoRegular = regulares.filter(f => f.pagada && !f.comisionAnulada).reduce((s, f) => s + f.monto, 0);
+    const cobradoRegular = regulares.filter(f => f.pagada && !f.comisionAnulada && !f.esFood).reduce((s, f) => s + f.monto, 0);
+    const cobradoFood = regulares.filter(f => f.pagada && !f.comisionAnulada && f.esFood).reduce((s, f) => s + f.monto, 0);
     const facturasATiempo = regulares.filter(f => f.cobradaATiempo);
     const cobradoRegularATiempo = facturasATiempo.reduce((s, f) => s + f.monto, 0);
     const cobradoRecup = recuperadas.filter(f => f.pagada && !f.comisionAnulada).reduce((s, f) => s + f.monto, 0);
@@ -463,6 +479,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
             const we = ws + MS_SEMANA;
             const porCliente = {};
             regulares.forEach(f => {
+                if (f.esFood) return; // foodservice no cuenta a la activación (canal aparte)
                 const tm = f.fecha.getTime();
                 if (tm < ws || tm >= we) return;
                 if (!porCliente[f.key]) porCliente[f.key] = { cliente: f.cliente, unidades: 0, facturas: [] };
@@ -486,8 +503,9 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const factor = semanasTotales > 0 ? semanasLogradas / semanasTotales : 0;
     const bonoActivacionMonto = cobradoRegular * (bonoActRate / 100) * factor;
     const bonoRecupMonto = cobradoRecup * tasaRecup / 100;
+    const comisionFoodMonto = cobradoFood * tasaFood / 100;
 
-    let devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + bonoRecupMonto;
+    let devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + bonoRecupMonto + comisionFoodMonto;
     let devengadoTotal = devengadoComision + baseMes;
     let congelado = false;
 
@@ -531,6 +549,8 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
         bonoActRate, bonoActivacionMonto,
         // Recuperadas
         recuperadas, cobradoRecup, tasaRecup, bonoRecupMonto,
+        // Foodservice (comisión flat)
+        cobradoFood, tasaFood, comisionFoodMonto,
         // Totales
         base: baseMes, devengadoComision, devengadoTotal,
         pagado: pagadoPorPeriodo, saldo: devengadoTotal - pagadoPorPeriodo,

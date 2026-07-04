@@ -110,6 +110,7 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     const facturaMaxDias = cfg.facturaMaxDias || DEFAULT_COMMISSION_CONFIG.facturaMaxDias;
     const cobranzaGraciaDias = cfg.cobranzaGraciaDias ?? DEFAULT_COMMISSION_CONFIG.cobranzaGraciaDias;
     const comisionRecuperadas = cfg.comisionRecuperadas ?? DEFAULT_COMMISSION_CONFIG.comisionRecuperadas;
+    const comisionFoodservice = cfg.comisionFoodservice ?? DEFAULT_COMMISSION_CONFIG.comisionFoodservice;
 
     // Fecha de pago: usamos el momento de recepción del webhook como proxy,
     // ya que Zoho dispara `invoice.paid` cuando el saldo de la factura llega
@@ -141,9 +142,13 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     // NO cuenta para su meta de facturación (ya se excluyó en 3.5: periodoCohorte
     // null). Para el resto: tasa-cohorte del nivel + Bono Cobranza PROPORCIONAL
     // (se suma solo si la factura se cobró a tiempo).
+    // Foodservice (canal aparte): comisión FLAT, sin Bono Cobranza ni tasa de nivel.
+    const esFoodservice = facturaData.categoria === 'foodservice';
     const bonoCobranza = cfg.bonusPuntualidad ?? 0;
-    const tasaBono     = (!esRecuperada && pagadaDentroDePlazo === true) ? bonoCobranza : 0;
-    const tasaAplicada = esRecuperada ? comisionRecuperadas : ((facturaData.tasaCohorte || 0) + tasaBono);
+    const tasaBono     = (!esRecuperada && !esFoodservice && pagadaDentroDePlazo === true) ? bonoCobranza : 0;
+    const tasaAplicada = esRecuperada ? comisionRecuperadas
+        : esFoodservice ? comisionFoodservice
+        : ((facturaData.tasaCohorte || 0) + tasaBono);
     // NOTA (modelo de cierre): esta comisión por factura es PROVISIONAL — el
     // devengado autoritativo se calcula al cerrar el período con el nivel FINAL
     // (Fase 3.7). Para recuperadas, la tasa flat sí es definitiva por factura.

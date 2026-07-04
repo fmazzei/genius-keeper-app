@@ -190,8 +190,9 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     const vendedores = vendSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const vendedorById = new Map(vendedores.map(v => [v.id, v]));
     const customerMap = new Map();
-    mapSnap.docs.forEach(d => { const x = d.data(); if (x.vendedorId) customerMap.set(d.id, x.vendedorId); });
-    const preload = { vendedores, vendedorById, customerMap };
+    const categoriaMap = new Map();
+    mapSnap.docs.forEach(d => { const x = d.data(); if (x.vendedorId) customerMap.set(d.id, x.vendedorId); if (x.categoria) categoriaMap.set(d.id, x.categoria); });
+    const preload = { vendedores, vendedorById, customerMap, categoriaMap };
 
     const res = {
         ok: true,

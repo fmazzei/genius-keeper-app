@@ -150,6 +150,17 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     const zohoCustomerId = invoice.customer_id != null ? String(invoice.customer_id)
         : (invoice.contact_id != null ? String(invoice.contact_id) : null);
 
+    // Categoría del cliente (retail/foodservice) — define si la comisión es flat.
+    // En masa viene pre-cargada; en el webhook se lee del mapa.
+    const custKey = normalizeCustomerKey(invoice.customer_name);
+    let categoria = 'retail';
+    if (opts.preload && opts.preload.categoriaMap) {
+        categoria = opts.preload.categoriaMap.get(custKey) || 'retail';
+    } else if (custKey) {
+        const cs = await admin.firestore().doc(`zoho_customer_map/${custKey}`).get();
+        categoria = (cs.exists && cs.data().categoria) || 'retail';
+    }
+
     const _diag = {
         bodyKeys:      Object.keys(opts.body || invoice || {}).join(', '),
         invoiceKeys:   Object.keys(invoice || {}).join(', '),
@@ -182,6 +193,7 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         numero:       invoice.invoice_number,
         clienteName:  invoice.customer_name || '',
         salespersonName: invoice.salesperson_name || '',
+        categoria,
         zohoCustomerId,
         _diag,
         monto:        Number(invoice.total) || 0,

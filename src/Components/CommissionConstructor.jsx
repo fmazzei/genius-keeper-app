@@ -38,6 +38,11 @@ export const DEFAULT_COMMISSION_CONFIG = {
     // Cuentas Recuperadas: facturas heredadas de la cartera que el vendedor cobra
     comisionRecuperadas: 5.0,   // % flat sobre lo cobrado de esas facturas adoptadas
     facturaMaxDias:      45,    // >45 días sin cobrar → la comisión se anula
+    // FOODSERVICE: canal aparte (clientes marcados 'foodservice'). Sus unidades
+    // CUENTAN a la meta (a su propio precio), pero la comisión es FLAT (no la del
+    // nivel). Precio y % editables aquí.
+    precioUnidadFoodservice: 4.8,  // precio de venta por unidad foodservice
+    comisionFoodservice:     5.0,  // % flat sobre lo cobrado de facturas foodservice
 };
 
 // ─── Inline number row ────────────────────────────────────────────────────────
@@ -556,6 +561,22 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             value={config.comisionRecuperadas}
                             step={0.5}
                             onChange={v => setConfig(p => ({ ...p, comisionRecuperadas: v }))}
+                        />
+                        <InlineRow
+                            label="Precio por unidad Foodservice"
+                            hint="Precio de la unidad foodservice (presentaciones 1–3 Kg → unidades). Sus unidades cuentan a la meta."
+                            suffix="$"
+                            value={config.precioUnidadFoodservice}
+                            step={0.1}
+                            onChange={v => setConfig(p => ({ ...p, precioUnidadFoodservice: v }))}
+                        />
+                        <InlineRow
+                            label="Comisión Foodservice"
+                            hint="Tasa flat sobre lo cobrado de clientes del canal Foodservice (no aplica la tasa del nivel)"
+                            suffix="%"
+                            value={config.comisionFoodservice}
+                            step={0.5}
+                            onChange={v => setConfig(p => ({ ...p, comisionFoodservice: v }))}
                         />
                     </div>
                 </section>

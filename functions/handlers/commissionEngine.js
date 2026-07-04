@@ -35,6 +35,9 @@ const DEFAULT_COMMISSION_CONFIG = {
     cobranzaGraciaDias: 5,
     comisionRecuperadas: 5.0,
     facturaMaxDias: 45,
+    // Foodservice: unidades cuentan a la meta (a su precio), comisión FLAT.
+    precioUnidadFoodservice: 4.8,
+    comisionFoodservice: 5.0,
 };
 
 /**
