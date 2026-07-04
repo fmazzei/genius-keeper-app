@@ -89,6 +89,13 @@ Referencia para verificar que la sincronización cuadre. El dueño asignó **19 
 - **Colocado por su cuenta DESDE el ingreso (15-jun-26, NO cuenta heredadas)**: $2.352/$5,6 = 420 uds + 12 uds Festejos a $4,8 ($57,60) = **432 uds** ($2.409,60). ⇒ Esta es su **facturación de meta** del período en curso (Mes 1). Las heredadas (≈516 uds) son Cuentas Recuperadas (5% flat, no cuentan a la meta).
 - **Nota de precio**: Festejos Elite factura a **$4,8/ud** (foodservice), no $5,6. El motor usa el `total` real de la factura y las `line_items.quantity`, así que ese precio distinto se maneja solo (no dividir monto entre $5,6 para las unidades).
 
+### Canal Foodservice (cliente aparte, comisión flat) ✅
+Foodservice es un **canal de cliente** de primera clase (no un tag):
+- **PDV**: `AddPosForm`/`EditPosModal` tienen selector **Canal Retail/Foodservice**. Foodservice ⇒ `canal:'foodservice'`, `sinMerchandising:true`, `visitInterval:0`, y campo **"Razón social en Zoho"**. `useMerchandiserData` excluye los foodservice de las rutas/visitas del merchandiser.
+- **Enlace canal ↔ comisión**: al guardar un PDV foodservice con su razón social, se llama `marcarCategoriaCliente({customerName, categoria:'foodservice'})` → escribe `zoho_customer_map.{clave}.categoria`. También se puede marcar directo en la Vinculación (Integraciones §4, toggle Retail/Foodservice).
+- **Comisión**: `commissionConfig` con `precioUnidadFoodservice` (4.8) y `comisionFoodservice` (% flat, editable) en el constructor. `facturaSync` guarda `categoria` en cada factura. El motor (`vendedorMeta` + `procesarPagoFactura`): las facturas foodservice **cuentan a la meta de unidades** (como retail) pero su cobrado paga la **comisión FLAT** (`comisionFoodservice`), **sin** tasa de nivel, **sin** Bono Cobranza y **sin** Activación. (Recuperadas: 5% flat y NO cuentan a la meta.)
+- **Recordatorio de negocio**: al vendedor se le asignan **clientes, no PDVs** — la atribución/comisión es por razón social.
+
 ## Rol `administrador` (perfil operativo de Lacteoca) ✅
 
 Rol nuevo `administrador`: usuario que **paga comisiones y concilia**, sin control total (no crea/borra usuarios ni toca config del sistema — eso es del `master`).
