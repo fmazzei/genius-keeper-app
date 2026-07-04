@@ -45,6 +45,15 @@ async function anularFacturaSiExiste(inv, onlyVendedorId) {
     return 'anulada';
 }
 
+// Parsea "YYYY-MM-DD" en local (sin corrimiento UTC).
+function parseFecha(v) {
+    if (!v) return null;
+    const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d;
+}
+
 async function requireRole(uid, roles) {
     const snap = await admin.firestore().doc(`users_metadata/${uid}`).get();
     const role = snap.data()?.role;
@@ -207,15 +216,57 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     // los estatus crudos de Zoho y, de las PAGADAS, a quién se atribuyen (al
     // vendedor / a otro / a NADIE por cliente sin vincular). Así se ve de dónde
     // salen las diferencias sin depender de los contadores de escritura.
+    // Datos del vendedor scoped, para categorizar SUS facturas.
+    const scoped = vendedorId ? vendedorById.get(vendedorId) : null;
+    const ingreso = scoped ? parseFecha(scoped.fechaIngreso) : null;
+    const nombresVendedor = scoped
+        ? [scoped.zohoSalespersonName, scoped.name].filter(Boolean).map(s => String(s).trim().toLowerCase())
+        : [];
+
     const diag = {
         zohoTotal: invoices.length,
+        zohoLeidoCompleto: complete,   // GK agotó el listado de Zoho (barrido total)
         zohoPagadas: 0, zohoVencidas: 0, zohoPendientes: 0, zohoAnuladas: 0, zohoBorradores: 0,
         pagadasDelVendedor: 0, pagadasSinVendedor: 0, pagadasOtroVendedor: 0,
         ejemplosPagadasSinVendedor: [], ejemplosPagadasDelVendedor: [],
+        // Facturas de ESTE vendedor, categorizadas (universo histórico).
+        delVendedor: {
+            total: 0, montoTotal: 0,
+            asignadas: 0,           // A. salesperson = su nombre en Zoho
+            carteraDesdeInicio: 0,  // B. cartera + fecha ≥ ingreso
+            heredadas: 0,           // C. fecha < ingreso (previas al ingreso)
+            anuladas: 0,            // void que resuelven a él
+        },
+        // Los mayores contribuyentes a "heredadas" (para detectar cartera mal
+        // asignada: un cliente que aporta cientos de facturas viejas).
+        topHeredadasPorCliente: {},
     };
 
     for (const inv of invoices) {
         if (inv.invoice_number) seen.add(String(inv.invoice_number).trim());
+
+        // Categorización de las facturas de ESTE vendedor (todo su universo).
+        if (vendedorId) {
+            const v = resolveVendedorFromPreload(inv, preload);
+            if (v && v.id === vendedorId) {
+                if (inv.status === 'void') {
+                    diag.delVendedor.anuladas++;
+                } else if (inv.status !== 'draft') {
+                    diag.delVendedor.total++;
+                    diag.delVendedor.montoTotal += Number(inv.total) || 0;
+                    const d = parseFecha(inv.date);
+                    if (ingreso && d && d < ingreso) {
+                        diag.delVendedor.heredadas++;
+                        const cli = inv.customer_name || '—';
+                        diag.topHeredadasPorCliente[cli] = (diag.topHeredadasPorCliente[cli] || 0) + 1;
+                    } else {
+                        const sp = (inv.salesperson_name || '').trim().toLowerCase();
+                        if (sp && nombresVendedor.includes(sp)) diag.delVendedor.asignadas++;
+                        else diag.delVendedor.carteraDesdeInicio++;
+                    }
+                }
+            }
+        }
 
         // Tally de estatus crudos de Zoho + atribución de las pagadas.
         const st = inv.status;
@@ -309,6 +360,12 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
             anuladas: res.anuladas, ausentes: res.ausentes, sinVendedor: res.sinVendedor, errores: res.errores,
         },
     }, { merge: true });
+
+    // Top clientes que aportan facturas heredadas (para ubicar cartera mal asignada).
+    diag.topHeredadas = Object.entries(diag.topHeredadasPorCliente)
+        .sort((a, b) => b[1] - a[1]).slice(0, 10)
+        .map(([cliente, n]) => ({ cliente, facturas: n }));
+    delete diag.topHeredadasPorCliente;
 
     res.diag = diag;
     return res;

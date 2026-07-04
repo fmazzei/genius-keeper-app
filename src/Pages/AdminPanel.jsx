@@ -3297,31 +3297,62 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                             </button>
                             <p className="text-slate-400 text-[11px] mt-1">Trae de Zoho el estado real de las facturas <b>de este vendedor</b> y las actualiza (pagadas, vencidas, pendientes, anuladas) y marca las que ya no existen en Zoho.</p>
                             {syncError && <p className="text-red-500 text-xs mt-1">{syncError}</p>}
-                            {syncResult && (
-                                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-xs text-slate-700 mt-2">
-                                    <b className="text-emerald-800">Conciliado con Zoho.</b> De este vendedor — Revisadas: <b>{syncResult.revisadas}</b> · Marcadas pagadas ahora: <b className="text-emerald-700">{syncResult.marcadasPagadas}</b> · Anuladas: <b>{syncResult.anuladas}</b> · Creadas: <b>{syncResult.creadas}</b> · Ausentes: <b className={syncResult.ausentes ? 'text-amber-600' : ''}>{syncResult.ausentes}</b>{syncResult.errores ? <> · Errores: <b className="text-red-600">{syncResult.errores}</b></> : null}
-                                    {syncResult.diag && (
-                                        <div className="mt-2 pt-2 border-t border-emerald-200">
-                                            <p className="font-bold text-slate-700">Lo que dice Zoho (toda la organización):</p>
-                                            <p className="mt-0.5">De <b>{syncResult.diag.zohoTotal}</b> facturas: <b className="text-emerald-700">{syncResult.diag.zohoPagadas}</b> pagadas · {syncResult.diag.zohoVencidas} vencidas · {syncResult.diag.zohoPendientes} pendientes · {syncResult.diag.zohoAnuladas} anuladas.</p>
-                                            <p className="mt-1 font-bold text-slate-700">De las pagadas, ¿a quién se atribuyen?</p>
-                                            <p className="mt-0.5">A <b>este vendedor</b>: <b className="text-emerald-700">{syncResult.diag.pagadasDelVendedor}</b> · A <b>otro</b> vendedor: {syncResult.diag.pagadasOtroVendedor} · <b className={syncResult.diag.pagadasSinVendedor ? 'text-red-600' : ''}>Sin vendedor (cliente sin vincular): {syncResult.diag.pagadasSinVendedor}</b></p>
-                                            {syncResult.diag.pagadasSinVendedor > 0 && (
-                                                <div className="mt-1.5 bg-red-50 border border-red-200 rounded p-2">
-                                                    <p className="text-red-700 font-semibold">⚠️ Hay {syncResult.diag.pagadasSinVendedor} factura(s) PAGADA(S) en Zoho que no están asignadas a ningún vendedor porque su cliente no está vinculado. Por eso no aparecen. Vincula esas razones sociales (sección 4) y vuelve a conciliar.</p>
-                                                    <div className="mt-1 max-h-32 overflow-auto">
-                                                        {syncResult.diag.ejemplosPagadasSinVendedor.map((e, i) => (
-                                                            <div key={i} className="flex justify-between gap-2 py-0.5 text-[11px]">
-                                                                <span className="font-mono">{e.numero}</span>
-                                                                <span className="flex-1 truncate text-slate-600">{e.cliente}</span>
-                                                                <span className="text-slate-400">{e.salesperson || '—'}</span>
-                                                            </div>
-                                                        ))}
+                            {syncResult && syncResult.diag && (
+                                <div className="bg-white border border-slate-200 rounded-lg p-3 text-xs text-slate-700 mt-2 space-y-3">
+                                    {/* 1. Barrido total de Zoho */}
+                                    <div>
+                                        <p className="font-bold text-slate-800">1 · Facturas revisadas (toda la base de Zoho)</p>
+                                        <p className="mt-0.5">GK leyó <b>{syncResult.diag.zohoTotal}</b> facturas {syncResult.diag.zohoLeidoCompleto ? <span className="text-emerald-600 font-semibold">✓ barrido completo</span> : <span className="text-amber-600 font-semibold">⚠ barrido parcial (cortado por tope)</span>}.</p>
+                                        <p className="text-slate-500 mt-0.5">Pagadas {syncResult.diag.zohoPagadas} · Vencidas {syncResult.diag.zohoVencidas} · Pendientes {syncResult.diag.zohoPendientes} · Anuladas {syncResult.diag.zohoAnuladas}.</p>
+                                    </div>
+
+                                    {/* 2. Facturas de este vendedor, categorizadas */}
+                                    <div className="border-t border-slate-100 pt-2">
+                                        <p className="font-bold text-slate-800">2 · Facturas de este vendedor: <b className="text-brand-blue">{syncResult.diag.delVendedor.total}</b> (monto ${Number(syncResult.diag.delVendedor.montoTotal).toLocaleString('es-VE', { minimumFractionDigits: 2 })})</p>
+                                        <div className="mt-1 pl-2 space-y-0.5">
+                                            <p>A · Asignadas (llevan su nombre): <b>{syncResult.diag.delVendedor.asignadas}</b></p>
+                                            <p>B · Cartera desde su ingreso: <b>{syncResult.diag.delVendedor.carteraDesdeInicio}</b></p>
+                                            <p>C · Heredadas (previas al ingreso): <b>{syncResult.diag.delVendedor.heredadas}</b></p>
+                                        </div>
+                                        {syncResult.diag.delVendedor.heredadas > 60 && (
+                                            <p className="mt-1 text-amber-700 bg-amber-50 border border-amber-200 rounded p-1.5">⚠ Hay muchas facturas <b>heredadas</b> — probablemente hay cartera mal asignada (un cliente grande con años de historial). Revisa los clientes de abajo y desvincula los que no le correspondan.</p>
+                                        )}
+                                        {Array.isArray(syncResult.diag.topHeredadas) && syncResult.diag.topHeredadas.length > 0 && (
+                                            <div className="mt-1">
+                                                <p className="text-slate-500 font-semibold">Clientes que más aportan heredadas:</p>
+                                                {syncResult.diag.topHeredadas.map((h, i) => (
+                                                    <div key={i} className="flex justify-between gap-2 py-0.5">
+                                                        <span className="flex-1 truncate">{h.cliente}</span>
+                                                        <span className="font-mono text-slate-500">{h.facturas} fact.</span>
                                                     </div>
-                                                </div>
-                                            )}
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* 4/5. Anuladas y ausentes */}
+                                    <div className="border-t border-slate-100 pt-2">
+                                        <p><b>4 · Anuladas</b> (de este vendedor): {syncResult.diag.delVendedor.anuladas}</p>
+                                        <p><b>5 · Eliminadas/ausentes en Zoho:</b> <b className={syncResult.ausentes ? 'text-amber-600' : ''}>{syncResult.ausentes}</b></p>
+                                    </div>
+
+                                    {/* Pagadas sin vincular (causa de facturas que "faltan") */}
+                                    {syncResult.diag.pagadasSinVendedor > 0 && (
+                                        <div className="bg-red-50 border border-red-200 rounded p-2">
+                                            <p className="text-red-700 font-semibold">⚠️ {syncResult.diag.pagadasSinVendedor} factura(s) PAGADA(S) en Zoho sin vendedor (cliente sin vincular). Si alguna es de este vendedor, vincula su razón social (sección 4) y reconcilia.</p>
+                                            <div className="mt-1 max-h-28 overflow-auto">
+                                                {syncResult.diag.ejemplosPagadasSinVendedor.map((e, i) => (
+                                                    <div key={i} className="flex justify-between gap-2 py-0.5 text-[11px]">
+                                                        <span className="font-mono">{e.numero}</span>
+                                                        <span className="flex-1 truncate text-slate-600">{e.cliente}</span>
+                                                        <span className="text-slate-400">{e.salesperson || '—'}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
+
+                                    <p className="text-slate-400 border-t border-slate-100 pt-2">Aplicado ahora — Marcadas pagadas: <b className="text-emerald-700">{syncResult.marcadasPagadas}</b> · Creadas: {syncResult.creadas} · Anuladas: {syncResult.anuladas} · Errores: {syncResult.errores}. <b>Informe parcial</b> si el período en curso no ha cerrado.</p>
                                 </div>
                             )}
                         </div>
