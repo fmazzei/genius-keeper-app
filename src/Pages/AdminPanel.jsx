@@ -2256,8 +2256,8 @@ const VinculacionRazonesSociales = () => {
                 getDocs(collection(db, 'zoho_customer_map')),
                 getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
             ]);
-            const mapByName = {};
-            mapSnap.docs.forEach(d => { const x = d.data(); if (x.customerName) mapByName[x.customerName] = x.vendedorId; });
+            const mapByName = {}; const catByName = {};
+            mapSnap.docs.forEach(d => { const x = d.data(); if (x.customerName) { mapByName[x.customerName] = x.vendedorId; catByName[x.customerName] = x.categoria || 'retail'; } });
             const agg = {};
             factSnap.docs.forEach(d => {
                 const f = d.data();
@@ -2266,7 +2266,7 @@ const VinculacionRazonesSociales = () => {
                 agg[name].count++;
                 if (!f.vendedorId) agg[name].sinAsignar++;
             });
-            const list = Object.values(agg).map(r => ({ ...r, mapVendedorId: mapByName[r.customerName] || '' }));
+            const list = Object.values(agg).map(r => ({ ...r, mapVendedorId: mapByName[r.customerName] || '', categoria: catByName[r.customerName] || 'retail' }));
             list.sort((a, b) => (a.mapVendedorId ? 1 : 0) - (b.mapVendedorId ? 1 : 0) || a.customerName.localeCompare(b.customerName));
             setRazones(list);
             setVendedores(vendSnap.docs.map(d => ({ id: d.id, name: d.data().name || d.data().email || d.id })));
@@ -2310,6 +2310,19 @@ const VinculacionRazonesSociales = () => {
         setSaving('');
     };
 
+    // Categoría del cliente: retail (default) ↔ foodservice. Afecta el desglose
+    // retail/foodservice del informe del vendedor.
+    const setCategoria = async (customerName, categoria) => {
+        setSaving(customerName + ':cat'); setMsg('');
+        try {
+            const fn = httpsCallable(functions, 'marcarCategoriaCliente');
+            await fn({ customerName, categoria });
+            setRazones(rs => rs.map(r => r.customerName === customerName ? { ...r, categoria } : r));
+            setMsg(`✓ "${customerName}" → ${categoria === 'foodservice' ? 'Foodservice' : 'Retail'}.`);
+        } catch (e) { setMsg('Error: ' + (e?.message || e)); }
+        setSaving('');
+    };
+
     const pendientes = razones.filter(r => !r.mapVendedorId).length;
 
     return (
@@ -2349,6 +2362,19 @@ const VinculacionRazonesSociales = () => {
                                 <option value="">{saving === r.customerName ? 'Guardando…' : 'Elegir vendedor…'}</option>
                                 {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                             </select>
+                            {/* Categoría retail / foodservice */}
+                            <div className="flex gap-1.5 mt-2">
+                                {['retail', 'foodservice'].map(cat => (
+                                    <button
+                                        key={cat}
+                                        onClick={() => setCategoria(r.customerName, cat)}
+                                        disabled={saving === r.customerName + ':cat'}
+                                        className={`flex-1 text-xs font-semibold px-2 py-1.5 rounded-lg border transition-colors ${(r.categoria || 'retail') === cat ? (cat === 'foodservice' ? 'bg-orange-500 text-white border-orange-500' : 'bg-brand-blue text-white border-brand-blue') : 'bg-white text-slate-500 border-slate-300'}`}
+                                    >
+                                        {cat === 'foodservice' ? 'Foodservice' : 'Retail'}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -3091,6 +3117,76 @@ const ESTADO_BADGE = {
     vigente:  'bg-blue-100 text-blue-700',
 };
 
+// Informe categorizado del vendedor (histórico total o de un período) — computado
+// desde SUS facturas_vendedor (única fuente con unidades) + el mapa de categorías.
+function buildInformeVendedor(facturas, metaVend, catMap) {
+    const nombres = [metaVend?.zohoSalespersonName, metaVend?.name].filter(Boolean).map(s => String(s).trim().toLowerCase());
+    const key = (f) => String(f.clienteName || f.customerName || '').toLowerCase().trim();
+    const catOf = (f) => catMap[key(f)] || 'retail';
+
+    const activas  = facturas.filter(f => f.estado !== 'anulada');
+    const anuladas = facturas.filter(f => f.estado === 'anulada').length;
+    const ausentes = facturas.filter(f => f.ausenteEnZoho === true && f.estado !== 'anulada').length;
+
+    let A = 0, B = 0, C = 0;
+    activas.forEach(f => {
+        const sp = String(f.salespersonName || '').trim().toLowerCase();
+        if (f.recuperada) C++;
+        else if (sp && nombres.includes(sp)) A++;
+        else B++;
+    });
+
+    const sec = { retail: { c: new Set(), f: 0, m: 0, u: 0 }, foodservice: { c: new Set(), f: 0, m: 0, u: 0 } };
+    activas.forEach(f => {
+        const s = sec[catOf(f)] || sec.retail;
+        s.c.add(key(f)); s.f++; s.m += Number(f.monto) || 0; s.u += Number(f.unidades) || 0;
+    });
+
+    return {
+        totalVendedor: activas.length, A, B, C, anuladas, ausentes,
+        udsTotal: activas.reduce((s, f) => s + (Number(f.unidades) || 0), 0),
+        montoTotal: activas.reduce((s, f) => s + (Number(f.monto) || 0), 0),
+        retail:      { clientes: sec.retail.c.size, facturas: sec.retail.f, monto: sec.retail.m, uds: sec.retail.u },
+        foodservice: { clientes: sec.foodservice.c.size, facturas: sec.foodservice.f, monto: sec.foodservice.m, uds: sec.foodservice.u },
+    };
+}
+
+function InformeVendedor({ titulo, parcial, info, zohoTotal }) {
+    const n = (v) => Number(v || 0).toLocaleString('es-VE');
+    const m = (v) => `$${Number(v || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const Sub = ({ children }) => <p className="text-slate-500 pl-3">{children}</p>;
+    return (
+        <div className="border border-slate-200 rounded-lg p-3 text-xs text-slate-700 space-y-2">
+            <p className="font-black text-slate-800 text-[13px]">{titulo}{parcial && <span className="ml-2 text-amber-600 font-bold">· INFORME PARCIAL</span>}</p>
+
+            {zohoTotal && (
+                <div>
+                    <p className="font-bold text-slate-700">1 · Facturas revisadas (base total de Zoho)</p>
+                    <Sub>{zohoTotal.total != null ? <>GK leyó <b>{n(zohoTotal.total)}</b> facturas {zohoTotal.completo ? <span className="text-emerald-600 font-semibold">✓ barrido completo</span> : <span className="text-amber-600">⚠ parcial</span>}</> : <span className="text-slate-400">Sincroniza para ver el barrido total.</span>}</Sub>
+                </div>
+            )}
+
+            <div>
+                <p className="font-bold text-slate-700">2 · Facturas de este vendedor: <b className="text-brand-blue">{n(info.totalVendedor)}</b></p>
+                <Sub>A · Asignadas (llevan su nombre): <b>{n(info.A)}</b></Sub>
+                <Sub>B · Cartera desde su ingreso: <b>{n(info.B)}</b></Sub>
+                <Sub>C · Heredadas (previas al ingreso): <b>{n(info.C)}</b></Sub>
+            </div>
+
+            <div>
+                <p className="font-bold text-slate-700">3 · Unidades totales: <b className="text-brand-blue">{n(info.udsTotal)}</b> uds · {m(info.montoTotal)}</p>
+                <Sub>Retail — Clientes: <b>{n(info.retail.clientes)}</b> · Facturas: <b>{n(info.retail.facturas)}</b> · Monto: <b>{m(info.retail.monto)}</b> · Unidades: <b>{n(info.retail.uds)}</b></Sub>
+                <Sub>Foodservice — Clientes: <b>{n(info.foodservice.clientes)}</b> · Facturas: <b>{n(info.foodservice.facturas)}</b> · Monto: <b>{m(info.foodservice.monto)}</b> · Unidades: <b>{n(info.foodservice.uds)}</b></Sub>
+            </div>
+
+            <div className="border-t border-slate-100 pt-1.5">
+                <p><b>4 · Anuladas:</b> {n(info.anuladas)}</p>
+                <p><b>5 · Eliminadas/ausentes en Zoho:</b> <b className={info.ausentes ? 'text-amber-600' : ''}>{n(info.ausentes)}</b></p>
+            </div>
+        </div>
+    );
+}
+
 export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const [vendedoresLocal, setVendedores] = useState([]);
     const vendedores = (vendedoresProp && vendedoresProp.length) ? vendedoresProp : vendedoresLocal;
@@ -3109,6 +3205,9 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const [sincronizando, setSincronizando] = useState(false);
     const [syncResult, setSyncResult] = useState(null);
     const [syncError, setSyncError]   = useState('');
+    const [metaVend, setMetaVend]     = useState(null);
+    const [catMap, setCatMap]         = useState(() => ({}));
+    const [zohoTotal, setZohoTotal]   = useState(null);
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return;
@@ -3136,12 +3235,17 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
             });
             setFacturas(rows);
             const meta = metaSnap && metaSnap.exists() ? metaSnap.data() : {};
+            setMetaVend(meta);
             const pers = isNone ? [] : listPeriodos(meta);
             setPeriodos(pers);
             setPeriodoSel(pers[0]?.periodKey || 'todas'); // por defecto, el período en curso
             const names = new Set();
-            if (mapSnap) mapSnap.docs.forEach(d => { const c = d.data(); if (c.customerName) names.add(String(c.customerName).toLowerCase().trim()); });
+            const cats = {};
+            if (mapSnap) mapSnap.docs.forEach(d => { const c = d.data(); if (c.customerName) { const k = String(c.customerName).toLowerCase().trim(); names.add(k); cats[k] = c.categoria || 'retail'; } });
             setCarteraNames(names);
+            setCatMap(cats);
+            // Universo total de Zoho de la última conciliación (categoría 1 del informe).
+            getDoc(doc(db, 'settings', 'appConfig')).then(s => { if (s.exists()) { const d = s.data(); setZohoTotal({ total: d.zohoTotalFacturas ?? null, completo: d.zohoBarridoCompleto ?? null }); } }).catch(() => {});
         } catch (e) {
             console.error(e);
             setError('No se pudieron cargar las facturas del vendedor.');
@@ -3407,6 +3511,19 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                         >
                             {limpiando ? 'Limpiando…' : `Limpiar ${dupTotal} documento${dupTotal === 1 ? '' : 's'} duplicado${dupTotal === 1 ? '' : 's'}`}
                         </button>
+                    )}
+
+                    {/* Informe completo del vendedor (histórico + período) */}
+                    {vendedorId !== '__none__' && metaVend && (
+                        <details className="mb-3">
+                            <summary className="cursor-pointer text-sm font-bold text-brand-blue select-none py-1">📋 Informe completo del vendedor (total + período)</summary>
+                            <div className="mt-2 space-y-3">
+                                <InformeVendedor titulo="Histórico total (todas sus facturas)" info={buildInformeVendedor(facturas, metaVend, catMap)} zohoTotal={zohoTotal} />
+                                {periodoActual && (
+                                    <InformeVendedor titulo={`Período · ${periodoLabel(periodoActual)}`} parcial={!periodoActual.cerrado} info={buildInformeVendedor(displayBase, metaVend, catMap)} />
+                                )}
+                            </div>
+                        </details>
                     )}
 
                     {/* Pills de estatus */}

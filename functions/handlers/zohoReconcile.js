@@ -355,6 +355,8 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     // Marca de tiempo de la última conciliación (visible en Integraciones).
     await admin.firestore().doc('settings/appConfig').set({
         zohoUltimaConciliacion: admin.firestore.FieldValue.serverTimestamp(),
+        zohoTotalFacturas: diag.zohoTotal,          // universo total de Zoho (barrido)
+        zohoBarridoCompleto: diag.zohoLeidoCompleto,
         zohoUltimaConciliacionResumen: {
             revisadas: res.revisadas, creadas: res.creadas, marcadasPagadas: res.marcadasPagadas,
             anuladas: res.anuladas, ausentes: res.ausentes, sinVendedor: res.sinVendedor, errores: res.errores,

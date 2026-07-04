@@ -22,6 +22,31 @@ const { periodoCohorteFromDate } = require('./commissionEngine');
  *                 nueva tasa-cohorte y, si la factura ya estaba pagada,
  *                 recalcula la comisión para el nuevo vendedor).
  */
+/**
+ * Marca la CATEGORÍA de un cliente (razón social de Zoho): 'retail' | 'foodservice'.
+ * Se guarda en `zoho_customer_map/{clave}` (el mismo doc que vincula razón social →
+ * vendedor). Crea el doc si no existe (una razón social se puede categorizar aunque
+ * aún no esté vinculada). Rol master / sales_manager / administrador.
+ */
+exports.marcarCategoriaCliente = onCall({ region: "us-central1" }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
+    const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
+    const role = userSnap.data()?.role;
+    if (!["master", "sales_manager", "administrador"].includes(role)) {
+        throw new HttpsError("permission-denied", "Permisos insuficientes");
+    }
+    const { customerName, categoria } = request.data || {};
+    if (!customerName || !['retail', 'foodservice'].includes(categoria)) {
+        throw new HttpsError("invalid-argument", "Falta customerName o categoría inválida.");
+    }
+    await admin.firestore().doc(`zoho_customer_map/${normalizeCustomerKey(customerName)}`).set({
+        customerName,
+        categoria,
+        categoriaUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return { ok: true, categoria };
+});
+
 exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (request) => {
     if (!request.auth) throw new Error("No autorizado");
 

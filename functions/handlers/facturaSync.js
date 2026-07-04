@@ -181,6 +181,7 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     const facturaData = {
         numero:       invoice.invoice_number,
         clienteName:  invoice.customer_name || '',
+        salespersonName: invoice.salesperson_name || '',
         zohoCustomerId,
         _diag,
         monto:        Number(invoice.total) || 0,
