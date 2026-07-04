@@ -3125,28 +3125,37 @@ function buildInformeVendedor(facturas, metaVend, catMap) {
     const key = (f) => String(f.clienteName || f.customerName || '').toLowerCase().trim();
     const catOf = (f) => catMap[key(f)] || 'retail';
 
-    const activas  = facturas.filter(f => f.estado !== 'anulada');
+    const noAnul   = facturas.filter(f => f.estado !== 'anulada');
     const anuladas = facturas.filter(f => f.estado === 'anulada').length;
     const ausentes = facturas.filter(f => f.ausenteEnZoho === true && f.estado !== 'anulada').length;
 
-    let A = 0, B = 0, C = 0;
-    activas.forEach(f => {
+    // Propiedad de la factura: A asignada (su nombre) · B cartera desde ingreso ·
+    // C heredada ABIERTA o que ÉL cobró. Se EXCLUYE la vieja ya pagada por otro
+    // (historial del cliente, no ventas del vendedor).
+    let A = 0, B = 0, C = 0, excluidas = 0;
+    const owned = [];
+    noAnul.forEach(f => {
         const sp = String(f.salespersonName || '').trim().toLowerCase();
-        if (f.recuperada) C++;
-        else if (sp && nombres.includes(sp)) A++;
-        else B++;
+        const esAsignada = sp && nombres.includes(sp);
+        const esVieja = f.recuperada === true;             // previa al ingreso
+        const abierta = f.estado !== 'pagada';
+        const cobradaVig = f.cobradaVigente === true;
+        if (esAsignada)            { A++; owned.push(f); }
+        else if (!esVieja)         { B++; owned.push(f); }
+        else if (abierta || cobradaVig) { C++; owned.push(f); }
+        else                       { excluidas++; }        // vieja pagada por otro
     });
 
     const sec = { retail: { c: new Set(), f: 0, m: 0, u: 0 }, foodservice: { c: new Set(), f: 0, m: 0, u: 0 } };
-    activas.forEach(f => {
+    owned.forEach(f => {
         const s = sec[catOf(f)] || sec.retail;
         s.c.add(key(f)); s.f++; s.m += Number(f.monto) || 0; s.u += Number(f.unidades) || 0;
     });
 
     return {
-        totalVendedor: activas.length, A, B, C, anuladas, ausentes,
-        udsTotal: activas.reduce((s, f) => s + (Number(f.unidades) || 0), 0),
-        montoTotal: activas.reduce((s, f) => s + (Number(f.monto) || 0), 0),
+        totalVendedor: owned.length, A, B, C, excluidas, anuladas, ausentes,
+        udsTotal: owned.reduce((s, f) => s + (Number(f.unidades) || 0), 0),
+        montoTotal: owned.reduce((s, f) => s + (Number(f.monto) || 0), 0),
         retail:      { clientes: sec.retail.c.size, facturas: sec.retail.f, monto: sec.retail.m, uds: sec.retail.u },
         foodservice: { clientes: sec.foodservice.c.size, facturas: sec.foodservice.f, monto: sec.foodservice.m, uds: sec.foodservice.u },
     };
@@ -3171,7 +3180,8 @@ function InformeVendedor({ titulo, parcial, info, zohoTotal }) {
                 <p className="font-bold text-slate-700">2 · Facturas de este vendedor: <b className="text-brand-blue">{n(info.totalVendedor)}</b></p>
                 <Sub>A · Asignadas (llevan su nombre): <b>{n(info.A)}</b></Sub>
                 <Sub>B · Cartera desde su ingreso: <b>{n(info.B)}</b></Sub>
-                <Sub>C · Heredadas (previas al ingreso): <b>{n(info.C)}</b></Sub>
+                <Sub>C · Heredadas (abiertas o que cobró): <b>{n(info.C)}</b></Sub>
+                {info.excluidas > 0 && <Sub><span className="text-slate-400">Excluidas: {n(info.excluidas)} viejas ya pagadas por otro (historial del cliente)</span></Sub>}
             </div>
 
             <div>
@@ -3417,14 +3427,14 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                                         <div className="mt-1 pl-2 space-y-0.5">
                                             <p>A · Asignadas (llevan su nombre): <b>{syncResult.diag.delVendedor.asignadas}</b></p>
                                             <p>B · Cartera desde su ingreso: <b>{syncResult.diag.delVendedor.carteraDesdeInicio}</b></p>
-                                            <p>C · Heredadas (previas al ingreso): <b>{syncResult.diag.delVendedor.heredadas}</b></p>
+                                            <p>C · Heredadas abiertas (por cobrar): <b>{syncResult.diag.delVendedor.heredadas}</b></p>
                                         </div>
-                                        {syncResult.diag.delVendedor.heredadas > 60 && (
-                                            <p className="mt-1 text-amber-700 bg-amber-50 border border-amber-200 rounded p-1.5">⚠ Hay muchas facturas <b>heredadas</b> — probablemente hay cartera mal asignada (un cliente grande con años de historial). Revisa los clientes de abajo y desvincula los que no le correspondan.</p>
+                                        {syncResult.diag.delVendedor.excluidasHistorial > 0 && (
+                                            <p className="mt-1 text-slate-500 bg-slate-50 border border-slate-200 rounded p-1.5">Se excluyeron <b>{syncResult.diag.delVendedor.excluidasHistorial}</b> facturas viejas ya pagadas de sus clientes (historial del cliente, NO ventas del vendedor).</p>
                                         )}
                                         {Array.isArray(syncResult.diag.topHeredadas) && syncResult.diag.topHeredadas.length > 0 && (
                                             <div className="mt-1">
-                                                <p className="text-slate-500 font-semibold">Clientes que más aportan heredadas:</p>
+                                                <p className="text-slate-500 font-semibold">Clientes con cuentas abiertas heredadas:</p>
                                                 {syncResult.diag.topHeredadas.map((h, i) => (
                                                     <div key={i} className="flex justify-between gap-2 py-0.5">
                                                         <span className="flex-1 truncate">{h.cliente}</span>

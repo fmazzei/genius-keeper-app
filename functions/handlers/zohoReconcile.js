@@ -234,9 +234,10 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         delVendedor: {
             total: 0, montoTotal: 0,
             asignadas: 0,           // A. salesperson = su nombre en Zoho
-            carteraDesdeInicio: 0,  // B. cartera + fecha ≥ ingreso
-            heredadas: 0,           // C. fecha < ingreso (previas al ingreso)
+            carteraDesdeInicio: 0,  // B. cartera + fecha ≥ ingreso (no asignada)
+            heredadas: 0,           // C. cuenta vieja ABIERTA que heredó para cobrar
             anuladas: 0,            // void que resuelven a él
+            excluidasHistorial: 0,  // viejas ya pagadas por otros: historial del cliente, NO del vendedor
         },
         // Los mayores contribuyentes a "heredadas" (para detectar cartera mal
         // asignada: un cliente que aporta cientos de facturas viejas).
@@ -253,17 +254,29 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
                 if (inv.status === 'void') {
                     diag.delVendedor.anuladas++;
                 } else if (inv.status !== 'draft') {
-                    diag.delVendedor.total++;
-                    diag.delVendedor.montoTotal += Number(inv.total) || 0;
                     const d = parseFecha(inv.date);
-                    if (ingreso && d && d < ingreso) {
+                    const sp = (inv.salesperson_name || '').trim().toLowerCase();
+                    const esAsignada = sp && nombresVendedor.includes(sp);
+                    const esVieja = ingreso && d && d < ingreso;   // previa al ingreso
+                    const abierta = inv.status !== 'paid';         // pendiente / vencida
+                    const monto = Number(inv.total) || 0;
+                    if (esAsignada) {
+                        // A. Lleva su nombre → es suya sin duda.
+                        diag.delVendedor.total++; diag.delVendedor.montoTotal += monto;
+                        diag.delVendedor.asignadas++;
+                    } else if (!esVieja) {
+                        // B. De su cartera, desde su ingreso.
+                        diag.delVendedor.total++; diag.delVendedor.montoTotal += monto;
+                        diag.delVendedor.carteraDesdeInicio++;
+                    } else if (abierta) {
+                        // C. Cuenta vieja ABIERTA que heredó para cobrar.
+                        diag.delVendedor.total++; diag.delVendedor.montoTotal += monto;
                         diag.delVendedor.heredadas++;
                         const cli = inv.customer_name || '—';
                         diag.topHeredadasPorCliente[cli] = (diag.topHeredadasPorCliente[cli] || 0) + 1;
                     } else {
-                        const sp = (inv.salesperson_name || '').trim().toLowerCase();
-                        if (sp && nombresVendedor.includes(sp)) diag.delVendedor.asignadas++;
-                        else diag.delVendedor.carteraDesdeInicio++;
+                        // Vieja + ya pagada por otro → historial del cliente, NO del vendedor.
+                        diag.delVendedor.excluidasHistorial++;
                     }
                 }
             }

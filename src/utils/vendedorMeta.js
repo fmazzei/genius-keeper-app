@@ -260,7 +260,10 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             if (!attr || attr < start || attr >= end) return;
             const monto  = Number(f.monto) || 0;
             if (esRecup) {
-                if (pagada && !f.comisionAnulada) cobradoRecup += monto;
+                // Recuperada paga SOLO si el vendedor la cobró en su gestión
+                // (cobradaVigente). Si entró ya pagada (historial viejo de la
+                // cartera, cobrado por otro), no cuenta.
+                if (pagada && !f.comisionAnulada && f.cobradaVigente === true) cobradoRecup += monto;
             } else {
                 // Foodservice cuenta a la meta (unidades) igual que retail, pero su
                 // cobrado paga FLAT (no nivel, no Bono Cobranza, no Activación).
@@ -439,6 +442,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
             pagada,
             comisionAnulada,
             esFood,
+            cobradaVigente: f.cobradaVigente === true,
             cobradaATiempo: pagada && f.pagadaDentroDePlazo === true && !comisionAnulada && !esFood,
             key: clientKey(f),
         };
@@ -454,7 +458,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const cobradoFood = regulares.filter(f => f.pagada && !f.comisionAnulada && f.esFood).reduce((s, f) => s + f.monto, 0);
     const facturasATiempo = regulares.filter(f => f.cobradaATiempo);
     const cobradoRegularATiempo = facturasATiempo.reduce((s, f) => s + f.monto, 0);
-    const cobradoRecup = recuperadas.filter(f => f.pagada && !f.comisionAnulada).reduce((s, f) => s + f.monto, 0);
+    const cobradoRecup = recuperadas.filter(f => f.pagada && !f.comisionAnulada && f.cobradaVigente).reduce((s, f) => s + f.monto, 0);
 
     // Transparencia de cobranza: cuántas de las facturas del período están
     // cobradas (pagadas) y cuánto $ se ha cobrado de lo facturado. Alimenta la

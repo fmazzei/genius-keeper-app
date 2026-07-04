@@ -222,6 +222,14 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         facturaData.unidadesContabilizadas = existingData.unidadesContabilizadas === true;
     }
 
+    // cobradaVigente: la factura estaba ABIERTA en GK (pendiente/vencida) y pasó a
+    // pagada → el vendedor la cobró en su gestión. Una que ENTRA ya pagada (nueva,
+    // sin historial abierto en GK) NO cuenta como cobrada por él (la cobró otro
+    // antes). Clave para NO pagar comisión de recuperada sobre el historial viejo
+    // ya pagado de sus clientes. Una vez true, se conserva.
+    const transicionoAPagada = !!existingData && existingData.estado && existingData.estado !== 'pagada' && estado === 'pagada';
+    facturaData.cobradaVigente = existingData?.cobradaVigente === true || transicionoAPagada;
+
     // Pasó a PAGADA (primera vez): calcular comisión. Aislado en try/catch para
     // que un fallo del cálculo NO impida persistir el estado 'pagada'.
     const becamePaid = estado === 'pagada' && existingData?.estado !== 'pagada';

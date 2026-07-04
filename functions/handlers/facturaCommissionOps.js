@@ -149,10 +149,14 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     const tasaAplicada = esRecuperada ? comisionRecuperadas
         : esFoodservice ? comisionFoodservice
         : ((facturaData.tasaCohorte || 0) + tasaBono);
+    // Una RECUPERADA solo paga si el vendedor la cobró en su gestión
+    // (cobradaVigente): estaba abierta y él la cobró. Si entró ya pagada (historial
+    // viejo de la cartera, cobrado por otro antes de su ingreso), NO paga.
+    const recupSinCredito = esRecuperada && facturaData.cobradaVigente !== true;
     // NOTA (modelo de cierre): esta comisión por factura es PROVISIONAL — el
     // devengado autoritativo se calcula al cerrar el período con el nivel FINAL
     // (Fase 3.7). Para recuperadas, la tasa flat sí es definitiva por factura.
-    const comisionGenerada = comisionAnulada ? 0 : facturaData.monto * (tasaAplicada / 100);
+    const comisionGenerada = (comisionAnulada || recupSinCredito) ? 0 : facturaData.monto * (tasaAplicada / 100);
 
     facturaData.comisionAnulada     = comisionAnulada;
     facturaData.comisionGenerada    = comisionGenerada;
