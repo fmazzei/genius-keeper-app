@@ -79,6 +79,15 @@ items.
   - **Barrido completo por estatus**: `paid→pagada`, `overdue→vencida`, resto→`pendiente`; **`void→anular` en GK** (revierte comisión, `anularFacturaSiExiste`); `draft` se omite. **Ausentes**: facturas en GK cuyo número ya NO aparece en Zoho se marcan `ausenteEnZoho: true` (NUNCA se borran solas; solo si el barrido fue COMPLETO — `listAllInvoices` devuelve `complete` para no marcar falsos ausentes si se cortó por el tope de páginas).
   - **POR VENDEDOR**: `reconciliarFacturasZoho({ vendedorId })` concilia SOLO las facturas de ese vendedor (`upsertFacturaFromZoho` con `opts.onlyVendedorId` corta las que no le pertenecen). Botón "Actualizar facturas desde Zoho" DENTRO de `ConciliacionFacturas` (scoped al vendedor seleccionado); el botón global de AdminPanel → Integraciones (sin vendedorId) hace el barrido de toda la organización.
   - **Pills de estatus** en `ConciliacionFacturas`: Todas / Pagadas / Por vencer / Pendientes / Vencidas / Anuladas / Ausentes (con contador; se ocultan las de 0). "Por vencer" = pendiente con vencimiento ≤3 días. La vista de despliegue incluye anuladas/ausentes (las métricas de unidades siguen sobre las activas).
+  - **Diagnóstico transparente** (`res.diag`): tras conciliar, devuelve lo que dice Zoho — cuántas facturas pagadas/vencidas/pendientes/anuladas, y de las PAGADAS a quién se atribuyen (al vendedor / a otro / SIN vendedor por cliente sin vincular, con ejemplos). La UI alerta en rojo si hay pagadas sin vendedor (causa raíz de "solo 1 pagada": clientes sin vincular). Contadores de alcance: `vendedorIdRecibido`, `revisadas` (del vendedor) vs `otrosVendedores` (saltadas).
+
+### Validación esperada — auditoría manual de Wilmer Casares (dueño, 2026-07-09)
+Referencia para verificar que la sincronización cuadre. El dueño asignó **19 facturas** que eran de Wilmer y estaban sin asignar (por eso "faltaban"). Cifras de su auditoría en Zoho:
+- **42 facturas** asignadas a Wilmer en total (incluye heredadas/recuperadas).
+- **Cobradas (pagadas): 6 facturas = $873,60** → 156 uds a $5,6.
+- **Colocado TOTAL (incluye heredadas)**: 936 uds a $5,6 + 12 uds a $4,8 (Agencia de Festejos Elite, categoría *foodservice*) = **948 uds**.
+- **Colocado por su cuenta DESDE el ingreso (15-jun-26, NO cuenta heredadas)**: $2.352/$5,6 = 420 uds + 12 uds Festejos a $4,8 ($57,60) = **432 uds** ($2.409,60). ⇒ Esta es su **facturación de meta** del período en curso (Mes 1). Las heredadas (≈516 uds) son Cuentas Recuperadas (5% flat, no cuentan a la meta).
+- **Nota de precio**: Festejos Elite factura a **$4,8/ud** (foodservice), no $5,6. El motor usa el `total` real de la factura y las `line_items.quantity`, así que ese precio distinto se maneja solo (no dividir monto entre $5,6 para las unidades).
 
 ## Rol `administrador` (perfil operativo de Lacteoca) ✅
 
