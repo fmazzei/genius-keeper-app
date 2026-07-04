@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, writeBatch, serverTimestamp, doc, addDoc, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-import { db } from '../Firebase/config.js';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../Firebase/config.js';
 import {
     MapPin, AlertTriangle, PlusCircle, Trash2, Building, Store,
     Search, CheckCircle, X, Loader2,
@@ -62,6 +63,8 @@ const IndividualForm = ({ onClose }) => {
     const [name, setName] = useState('');
     const [city, setCity] = useState('');
     const [zone, setZone] = useState('');
+    const [canal, setCanal] = useState('retail');
+    const [razonSocialZoho, setRazonSocialZoho] = useState('');
 
     // Search
     const [query, setQuery]         = useState('');
@@ -173,6 +176,7 @@ const IndividualForm = ({ onClose }) => {
         setIsSubmitting(true);
         setError('');
         try {
+            const esFood = canal === 'foodservice';
             await addDoc(collection(db, 'pos'), {
                 name:         name.trim(),
                 chain:        'Automercados Individuales',
@@ -181,11 +185,18 @@ const IndividualForm = ({ onClose }) => {
                 address:      place?.address || '',
                 coordinates:  place ? { lat: place.lat, lng: place.lng } : null,
                 gpsStatus:    place ? 'provisional' : 'pending',
-                visitInterval: 7,
+                canal,
+                razonSocialZoho: razonSocialZoho.trim(),
+                sinMerchandising: esFood,          // foodservice: fuera de rutas
+                visitInterval: esFood ? 0 : 7,
                 active:       true,
                 tipoDespacho: 'directo',
                 createdAt:    serverTimestamp(),
             });
+            // Enlaza el cliente foodservice con su comisión flat.
+            if (esFood && razonSocialZoho.trim()) {
+                try { await httpsCallable(functions, 'marcarCategoriaCliente')({ customerName: razonSocialZoho.trim(), categoria: 'foodservice' }); } catch (e) { /* no bloquear */ }
+            }
             onClose();
         } catch (err) {
             console.error(err);
@@ -234,6 +245,29 @@ const IndividualForm = ({ onClose }) => {
                         placeholder="Zona (opcional)"
                         className="w-full px-3 py-3 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
                     />
+                </div>
+
+                {/* Canal */}
+                <div>
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">Canal</p>
+                    <div className="flex gap-2">
+                        {[{ v: 'retail', label: 'Retail' }, { v: 'foodservice', label: 'Foodservice' }].map(({ v, label }) => (
+                            <button key={v} type="button" onClick={() => setCanal(v)}
+                                className={`flex-1 px-3 py-2 rounded-xl text-sm font-semibold transition-colors ${canal === v ? (v === 'foodservice' ? 'bg-orange-500 text-white' : 'bg-brand-blue text-white') : 'bg-slate-100 text-slate-600'}`}>
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                    {canal === 'foodservice' && (
+                        <>
+                            <p className="text-[11px] text-slate-400 mt-1.5">Foodservice: sin seguimiento de merchandiser, comisión flat. Indica su razón social en Zoho para enlazarlo a comisiones.</p>
+                            <input
+                                type="text" value={razonSocialZoho} onChange={e => setRazonSocialZoho(e.target.value)}
+                                placeholder="Razón social en Zoho"
+                                className="w-full mt-2 px-3 py-3 border border-orange-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400"
+                            />
+                        </>
+                    )}
                 </div>
             </div>
 

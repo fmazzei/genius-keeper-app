@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { doc, updateDoc, collection, getDocs } from 'firebase/firestore';
-import { db } from '../Firebase/config.js';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../Firebase/config.js';
 import {
     MapPin, AlertTriangle, Save, Lock, CheckCircle,
     Search, X, Loader2, Navigation, Pencil,
@@ -82,6 +83,8 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
         tipoDespacho:    pos.tipoDespacho    || 'directo',
         visitInterval:   pos.visitInterval   ?? 7,
         regimenComision: pos.regimenComision || 'estandar',
+        canal:           pos.canal           || 'retail',
+        razonSocialZoho: pos.razonSocialZoho || '',
     });
 
     // Map / location
@@ -214,6 +217,7 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
         setIsSaving(true);
         setError('');
         try {
+            const esFood = form.canal === 'foodservice';
             const update = {
                 name:          form.name.trim(),
                 chain:         form.chain.trim() || 'Automercados Individuales',
@@ -222,8 +226,12 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
                 address:       form.address.trim(),
                 tipoDespacho:    form.tipoDespacho,
                 regimenComision: form.tipoDespacho === 'centralizado' ? form.regimenComision : 'estandar',
-                visitInterval:   parseInt(form.visitInterval, 10) || 0,
-                active:        (parseInt(form.visitInterval, 10) || 0) > 0,
+                canal:           form.canal,
+                razonSocialZoho: form.razonSocialZoho.trim(),
+                // Foodservice NO lleva seguimiento de merchandiser: fuera de rutas.
+                sinMerchandising: esFood,
+                visitInterval:   esFood ? 0 : (parseInt(form.visitInterval, 10) || 0),
+                active:        esFood ? true : (parseInt(form.visitInterval, 10) || 0) > 0,
             };
             if (coordsChanged) {
                 update.coordinates = place ? { lat: place.lat, lng: place.lng } : null;
@@ -232,6 +240,11 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
                 }
             }
             await updateDoc(doc(db, 'pos', pos.id), update);
+            // Enlaza canal ↔ comisión: marca la razón social de Zoho como foodservice
+            // para que sus facturas paguen la comisión flat.
+            if (esFood && form.razonSocialZoho.trim()) {
+                try { await httpsCallable(functions, 'marcarCategoriaCliente')({ customerName: form.razonSocialZoho.trim(), categoria: 'foodservice' }); } catch (e) { /* no bloquear el guardado */ }
+            }
             onSaved({ ...pos, ...update });
             onClose();
         } catch (err) {
@@ -313,7 +326,33 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
                 <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Operación</p>
                     <div className="space-y-3">
+                        {/* Canal: Retail o Foodservice */}
                         <div className="flex items-center justify-between p-3 border border-slate-200 rounded-xl">
+                            <div>
+                                <span className="text-sm font-medium text-slate-700">Canal</span>
+                                <p className="text-xs text-slate-400">Foodservice: sin seguimiento de merchandiser, comisión flat.</p>
+                            </div>
+                            <div className="flex gap-2">
+                                {[{ v: 'retail', label: 'Retail' }, { v: 'foodservice', label: 'Foodservice' }].map(({ v, label }) => (
+                                    <button key={v} type="button" onClick={() => handleField('canal', v)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${form.canal === v ? (v === 'foodservice' ? 'bg-orange-500 text-white' : 'bg-brand-blue text-white') : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {form.canal === 'foodservice' && (
+                            <div className="p-3 border border-orange-200 bg-orange-50/50 rounded-xl">
+                                <span className="text-sm font-medium text-slate-700">Razón social en Zoho</span>
+                                <p className="text-xs text-slate-400 mb-2">Nombre exacto con que factura en Zoho. Enlaza este cliente foodservice con su comisión flat.</p>
+                                <input type="text" value={form.razonSocialZoho} onChange={e => handleField('razonSocialZoho', e.target.value)}
+                                    placeholder="Razón social (ej. Agencia de Festejos Elite, C.A)"
+                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                            </div>
+                        )}
+
+                        <div className={`flex items-center justify-between p-3 border border-slate-200 rounded-xl ${form.canal === 'foodservice' ? 'opacity-50 pointer-events-none' : ''}`}>
                             <span className="text-sm font-medium text-slate-700">Tipo de despacho</span>
                             <div className="flex gap-2">
                                 {['directo', 'centralizado'].map(t => (

@@ -32,7 +32,10 @@ export const useMerchandiserData = () => {
         
         const qPos = query(collection(db, "pos"), where("active", "==", true));
         const unsubscribePos = onSnapshot(qPos, (snapshot) => {
-            const allPos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'pos' }));
+            const allPos = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data(), type: 'pos' }))
+                // Foodservice: canal sin seguimiento de merchandiser → fuera de rutas/visitas.
+                .filter(p => p.canal !== 'foodservice' && p.sinMerchandising !== true);
             setPosList(allPos);
             setIsLoadingPos(false);
         }, (error) => {
