@@ -3161,6 +3161,22 @@ function buildInformeVendedor(facturas, metaVend, catMap) {
     };
 }
 
+// Facturas atribuidas a un período con la MISMA lógica de la comisión: las
+// normales por su fecha de factura; las recuperadas por su fecha de COBRO
+// (fechaPago; si falta pero está pagada, caen al Mes 1 = ingreso).
+function facturasDelPeriodo(facturas, per, ingreso) {
+    if (!per) return facturas;
+    const parse = (v) => (v?.toDate ? v.toDate() : (v ? new Date(v) : null));
+    return facturas.filter(f => {
+        if (f.recuperada) {
+            const fp = parse(f.fechaPago) || (f.estado === 'pagada' ? ingreso : null);
+            return fp && fp >= per.start && fp < per.end;
+        }
+        const t = parse(f.fecha);
+        return t && t >= per.start && t < per.end;
+    });
+}
+
 function InformeVendedor({ titulo, parcial, info, zohoTotal }) {
     const n = (v) => Number(v || 0).toLocaleString('es-VE');
     const m = (v) => `$${Number(v || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -3531,7 +3547,12 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                             <div className="mt-2 space-y-3">
                                 <InformeVendedor titulo="Histórico total (todas sus facturas)" info={buildInformeVendedor(facturas, metaVend, catMap)} zohoTotal={zohoTotal} />
                                 {periodoActual && (
-                                    <InformeVendedor titulo={`Período · ${periodoLabel(periodoActual)}`} parcial={!periodoActual.cerrado} info={buildInformeVendedor(displayBase, metaVend, catMap)} />
+                                    <InformeVendedor
+                                        titulo={`Período · ${periodoLabel(periodoActual)}`}
+                                        parcial={!periodoActual.cerrado}
+                                        info={buildInformeVendedor(facturasDelPeriodo(facturas, periodoActual, periodos.find(p => p.mes === 1)?.start || null), metaVend, catMap)}
+                                        zohoTotal={zohoTotal}
+                                    />
                                 )}
                             </div>
                         </details>
