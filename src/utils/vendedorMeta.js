@@ -246,11 +246,18 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
         // COBRADO A TIEMPO (factura por factura), no por un umbral todo-o-nada.
         let unidades = 0, cobradoRegular = 0, cobradoRegularATiempo = 0, cobradoRecup = 0, cobrDen = 0, cobrATiempo = 0;
         facturas.forEach(f => {
-            const t = toDate(f.fecha);
-            if (f.estado === 'anulada' || !t || t < start || t >= end) return;
+            if (f.estado === 'anulada') return;
             const pagada = f.estado === 'pagada';
+            const esRecup = f.recuperada === true;
+            // Atribución al período de empleo: las facturas NORMALES por su fecha
+            // de factura; las RECUPERADAS por su fecha de COBRO (su fecha de factura
+            // es previa al ingreso → caería fuera de todo período y se perdería).
+            // Se acredita la cuenta recuperada en el período donde el vendedor la
+            // cobró. Si falta fechaPago (dato viejo) pero está pagada, cae al Mes 1.
+            const attr = esRecup ? (toDate(f.fechaPago) || (pagada ? ingreso : null)) : toDate(f.fecha);
+            if (!attr || attr < start || attr >= end) return;
             const monto  = Number(f.monto) || 0;
-            if (f.recuperada) {
+            if (esRecup) {
                 if (pagada && !f.comisionAnulada) cobradoRecup += monto;
             } else {
                 unidades += Number(f.unidades) || 0;
@@ -400,14 +407,20 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const regulares = [];   // no recuperadas, no anuladas
     const recuperadas = [];
     facturas.forEach(f => {
+        if (f.estado === 'anulada') return;
         const t = toDate(f.fecha);
-        if (f.estado === 'anulada' || !t || t < start || t >= end) return;
         const pagada = f.estado === 'pagada';
+        const esRecup = f.recuperada === true;
+        // Atribución al período: normal por fecha de factura; recuperada por fecha
+        // de COBRO (su fecha de factura es previa al ingreso → fuera de todo
+        // período). Si falta fechaPago pero está pagada, cae al Mes 1 (ingreso).
+        const attr = esRecup ? (toDate(f.fechaPago) || (pagada ? ingreso : null)) : t;
+        if (!attr || attr < start || attr >= end) return;
         const comisionAnulada = f.comisionAnulada === true;
         const item = {
             numero: f.numero || '—',
             cliente: clientName(f),
-            fecha: t,
+            fecha: t || attr,
             unidades: Number(f.unidades) || 0,
             monto: Number(f.monto) || 0,
             estado: f.estado || '—',
@@ -416,7 +429,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
             cobradaATiempo: pagada && f.pagadaDentroDePlazo === true && !comisionAnulada,
             key: clientKey(f),
         };
-        if (f.recuperada) recuperadas.push(item);
+        if (esRecup) recuperadas.push(item);
         else regulares.push(item);
     });
     regulares.sort((a, b) => a.fecha - b.fecha);

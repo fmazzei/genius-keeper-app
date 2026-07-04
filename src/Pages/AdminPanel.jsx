@@ -2468,7 +2468,7 @@ const FacturaManagementTool = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
             <p className="font-bold text-slate-800 mb-1">Gestión de facturas Zoho</p>
             <p className="text-slate-400 text-xs mb-3">
-                Busca una factura sincronizada por su número para reasignarla a otro vendedor, anularla o eliminarla (p.ej. una factura de prueba).
+                Busca una factura sincronizada por su número para conciliar su cobro, reasignarla a otro vendedor, anularla o eliminarla (p.ej. una factura de prueba).
             </p>
             <div className="flex gap-2">
                 <input
@@ -2507,6 +2507,22 @@ const FacturaManagementTool = () => {
                             <p>Comisión generada: <span className="text-slate-700">${factura.comisionGenerada.toFixed(2)}</span></p>
                         )}
                     </div>
+
+                    {factura.estado !== 'pagada' && factura.estado !== 'anulada' && (
+                        <div className="border-t border-slate-100 pt-3 mb-3">
+                            <p className="text-xs font-semibold text-slate-700 mb-1">Conciliar cobro</p>
+                            <p className="text-[11px] text-slate-500 mb-2">
+                                Esta factura figura como <b>{factura.estado}</b> en GK. Si ya fue <b>cobrada en Zoho</b> pero el evento de pago no llegó, márcala como pagada aquí: GK calculará la comisión{factura.recuperada ? ' (cuenta recuperada, tasa flat)' : ''} y la tomará en cuenta en la liquidación.
+                            </p>
+                            <button
+                                onClick={() => ejecutar('conciliarPago')}
+                                disabled={actionLoading !== ''}
+                                className="w-full sm:w-auto px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                            >
+                                {actionLoading === 'conciliarPago' ? '...' : 'Marcar como pagada (conciliar)'}
+                            </button>
+                        </div>
+                    )}
 
                     <div className="border-t border-slate-100 pt-3 mb-3">
                         <p className="text-xs font-semibold text-slate-700 mb-1.5">Reasignar a otro vendedor</p>

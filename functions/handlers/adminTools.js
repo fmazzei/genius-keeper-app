@@ -30,7 +30,7 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
     if (!["master", "sales_manager", "administrador"].includes(role)) throw new Error("Permisos insuficientes");
 
     const { facturaId, action, nuevoVendedorId } = request.data || {};
-    if (!facturaId || !['eliminar', 'anular', 'reasignar'].includes(action)) {
+    if (!facturaId || !['eliminar', 'anular', 'reasignar', 'conciliarPago'].includes(action)) {
         throw new Error("Parámetros inválidos");
     }
 
@@ -72,6 +72,71 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
             tierCohorte: null,
             unidadesContabilizadas: false,
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { ok: true };
+    }
+
+    // action === 'conciliarPago' — marca la factura como PAGADA en GK y calcula
+    // la comisión, para el caso en que Zoho no entregó (o GK no guardó) el evento
+    // invoice.paid: la factura está cobrada en Zoho pero en GK sigue pendiente/
+    // vencida, así que no la toma en cuenta. Reusa exactamente la misma lógica del
+    // webhook (congelar tasa-cohorte + procesarPagoFactura). Idempotente: si ya
+    // está pagada, no vuelve a generar comisión (evita duplicar el pago).
+    if (action === 'conciliarPago') {
+        if (factura.estado === 'pagada') {
+            return { ok: true, yaPagada: true };
+        }
+        let vendedor = null;
+        if (factura.vendedorId) {
+            const vSnap = await admin.firestore().doc(`users_metadata/${factura.vendedorId}`).get();
+            if (vSnap.exists) vendedor = { id: factura.vendedorId, data: vSnap.data() };
+        }
+        const fechaFactura = factura.fecha?.toDate?.() || null;
+        const vencimiento  = factura.vencimiento?.toDate?.() || null;
+
+        // Recalcular recuperada/período desde la fecha de ingreso del vendedor —
+        // auto-sana el flag por si al sincronizar no se guardó bien (una factura
+        // previa al ingreso DEBE ser recuperada; si no, quedaría fuera de todo
+        // período por su fecha de factura y no se tomaría en cuenta).
+        let recuperada     = factura.recuperada === true;
+        let periodoCohorte = factura.periodoCohorte || null;
+        if (vendedor) {
+            const r = periodoCohorteFromDate(vendedor.data.fechaIngreso, fechaFactura);
+            recuperada     = r.recuperada;
+            periodoCohorte = r.periodKey;
+        }
+        const facturaData = { ...factura, estado: 'pagada', recuperada, periodoCohorte };
+
+        // Congelar tasa-cohorte solo para facturas NORMALES (las recuperadas se
+        // pagan a tasa flat, sin cohorte, y no cuentan a la meta).
+        if (vendedor && !recuperada && factura.mesCohorte && factura.unidades > 0 && factura.unidadesContabilizadas !== true) {
+            const tier = await congelarTasaCohorte(vendedor, factura.mesCohorte, factura.unidades, periodoCohorte);
+            facturaData.tasaCohorte = tier.rate * 100;
+            facturaData.tierCohorte = tier.label;
+            facturaData.unidadesContabilizadas = true;
+        }
+
+        try {
+            await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
+        } catch (e) {
+            console.error(`conciliarPago #${factura.numero}: error calculando comisión (se marca pagada igual):`, e);
+        }
+
+        await facturaRef.update({
+            estado:                 'pagada',
+            recuperada,
+            periodoCohorte,
+            tasaCohorte:            facturaData.tasaCohorte ?? factura.tasaCohorte ?? null,
+            tierCohorte:            facturaData.tierCohorte ?? factura.tierCohorte ?? null,
+            unidadesContabilizadas: facturaData.unidadesContabilizadas === true || factura.unidadesContabilizadas === true,
+            comisionGenerada:       facturaData.comisionGenerada ?? null,
+            comisionAnulada:        facturaData.comisionAnulada ?? false,
+            pagadaDentroDePlazo:    facturaData.pagadaDentroDePlazo ?? null,
+            fechaPago:              facturaData.fechaPago ?? admin.firestore.Timestamp.now(),
+            diasParaCobrar:         facturaData.diasParaCobrar ?? null,
+            conciliadaManualmente:  true,
+            conciliadaPor:          request.auth.uid,
+            updatedAt:              admin.firestore.FieldValue.serverTimestamp(),
         });
         return { ok: true };
     }

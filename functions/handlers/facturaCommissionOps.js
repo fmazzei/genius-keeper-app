@@ -116,11 +116,16 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     // a 0 (cobro 100%).
     const fechaPago = new Date();
     const diasParaCobrar = fechaFactura ? diffDias(fechaFactura, fechaPago) : null;
+    const esRecuperada = facturaData.recuperada === true;
 
     // Regla de 45 días (configurable vía "Días máx. sin cobrar"): si se
     // superó el plazo, la comisión queda anulada permanentemente aunque la
-    // factura termine cobrándose.
-    const comisionAnulada = diasParaCobrar !== null && diasParaCobrar > facturaMaxDias;
+    // factura termine cobrándose. NO aplica a Cuentas Recuperadas: una cuenta
+    // recuperada es, por definición, una factura vieja (previa al ingreso del
+    // vendedor) que se paga a tasa flat; el corte de 45 días es para la
+    // puntualidad de las ventas PROPIAS del vendedor, no para el rescate de
+    // cuentas heredadas de la cartera.
+    const comisionAnulada = !esRecuperada && diasParaCobrar !== null && diasParaCobrar > facturaMaxDias;
 
     // Cobranza "a tiempo" (Bono Cobranza por PUNTUALIDAD): cobrada dentro de
     // vencimiento + cobranzaGraciaDias. diasCredito = días de la factura al
@@ -136,7 +141,6 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     // NO cuenta para su meta de facturación (ya se excluyó en 3.5: periodoCohorte
     // null). Para el resto: tasa-cohorte del nivel + Bono Cobranza PROPORCIONAL
     // (se suma solo si la factura se cobró a tiempo).
-    const esRecuperada = facturaData.recuperada === true;
     const bonoCobranza = cfg.bonusPuntualidad ?? 0;
     const tasaBono     = (!esRecuperada && pagadaDentroDePlazo === true) ? bonoCobranza : 0;
     const tasaAplicada = esRecuperada ? comisionRecuperadas : ((facturaData.tasaCohorte || 0) + tasaBono);
