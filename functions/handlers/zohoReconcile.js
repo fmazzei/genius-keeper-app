@@ -15,6 +15,35 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { getAccessToken, listAllInvoices } = require('./zohoApi');
 const { upsertFacturaFromZoho } = require('./facturaSync');
+const { revertirAcumulados } = require('./facturaCommissionOps');
+
+/**
+ * Anula en GK una factura que Zoho reporta como VOID, si existe (y, en modo por
+ * vendedor, si le pertenece): revierte sus unidades/comisión y la marca anulada.
+ * No la crea si no existe (una anulada nueva no aporta nada).
+ */
+async function anularFacturaSiExiste(inv, onlyVendedorId) {
+    const facturasRef = admin.firestore().collection('facturas_vendedor');
+    const blockKey = String(inv.invoice_number).trim().replace(/\//g, '-');
+    let snap = await facturasRef.doc(blockKey).get();
+    let ref = snap.exists ? snap.ref : null;
+    let data = snap.exists ? snap.data() : null;
+    if (!ref) {
+        const legacy = await facturasRef.where('numero', '==', inv.invoice_number).limit(1).get();
+        if (!legacy.empty) { ref = legacy.docs[0].ref; data = legacy.docs[0].data(); }
+    }
+    if (!ref || !data) return 'noexiste';
+    if (onlyVendedorId && data.vendedorId !== onlyVendedorId) return 'other_vendor';
+    if (data.estado === 'anulada') return 'ya_anulada';
+    await revertirAcumulados({ id: ref.id, ...data });
+    await ref.update({
+        estado: 'anulada', comisionGenerada: 0, comisionAnulada: true,
+        pagadaDentroDePlazo: null, tasaCohorte: null, tierCohorte: null,
+        unidadesContabilizadas: false, anuladaEnZoho: true,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return 'anulada';
+}
 
 async function requireRole(uid, roles) {
     const snap = await admin.firestore().doc(`users_metadata/${uid}`).get();
@@ -75,7 +104,7 @@ exports.probarConexionZoho = onCall({ region: "us-central1", timeoutSeconds: 120
 
     try {
         const accessToken = await getAccessToken(creds);
-        const invoices = await listAllInvoices({ accessToken, organizationId, dataCenter: creds.dataCenter, maxPages: 1 });
+        const { invoices } = await listAllInvoices({ accessToken, organizationId, dataCenter: creds.dataCenter, maxPages: 1 });
         return { ok: true, muestra: invoices.length, ejemplo: invoices[0]?.invoice_number || null };
     } catch (e) {
         throw new HttpsError("internal", `Zoho: ${e.response?.data?.message || e.message}`);
@@ -94,6 +123,10 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
     await requireRole(request.auth.uid, ["master", "administrador"]);
 
+    // vendedorId (opcional): si viene, concilia SOLO las facturas de ese vendedor.
+    // Sin él, barrido general de toda la organización.
+    const vendedorId = (request.data && request.data.vendedorId) || null;
+
     const [credsSnap, cfgSnap] = await Promise.all([
         admin.firestore().doc('zoho_secure/creds').get(),
         admin.firestore().doc('settings/appConfig').get(),
@@ -103,33 +136,50 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     const organizationId = appConfig.zohoOrgIdLacteoca;
     if (!organizationId) throw new HttpsError("failed-precondition", "Falta el ID de organización Zoho (Integraciones).");
 
-    let accessToken, invoices;
+    let accessToken, invoices, complete;
     try {
         accessToken = await getAccessToken(creds);
-        invoices = await listAllInvoices({ accessToken, organizationId, dataCenter: creds.dataCenter });
+        ({ invoices, complete } = await listAllInvoices({ accessToken, organizationId, dataCenter: creds.dataCenter }));
     } catch (e) {
         throw new HttpsError("internal", `Zoho: ${e.response?.data?.message || e.message}`);
     }
 
     const res = {
         ok: true,
-        revisadas: 0,
+        revisadas: 0,        // facturas del alcance efectivamente conciliadas
         creadas: 0,
         marcadasPagadas: 0,
+        anuladas: 0,         // void en Zoho → anuladas en GK
         sinVendedor: 0,
         bloqueadas: 0,
         ajenas: 0,
-        omitidas: 0,       // draft / void — no se tocan
+        omitidas: 0,         // borradores u otros vendedores
+        ausentes: 0,         // en GK pero ya no en Zoho (posible eliminada)
         errores: 0,
-        detalles: [],      // resumen de las que se marcaron pagadas
+        detalles: [],        // resumen de las que se marcaron pagadas
     };
 
+    const seen = new Set(); // números vistos en Zoho (para detectar ausentes)
+
     for (const inv of invoices) {
-        // No resucitar borradores ni anuladas de Zoho.
-        if (inv.status === 'draft' || inv.status === 'void') { res.omitidas++; continue; }
-        res.revisadas++;
+        if (inv.invoice_number) seen.add(String(inv.invoice_number).trim());
+
+        if (inv.status === 'draft') { res.omitidas++; continue; }
+
+        // Anulada en Zoho → anular en GK (revierte comisión). No crea nuevas.
+        if (inv.status === 'void') {
+            try {
+                const a = await anularFacturaSiExiste(inv, vendedorId);
+                if (a === 'anulada') res.anuladas++;
+                else res.omitidas++;
+            } catch (e) { res.errores++; }
+            continue;
+        }
+
         try {
-            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv });
+            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId });
+            if (r.status === 'other_vendor') { continue; } // no es de este vendedor
+            res.revisadas++;
             if (r.status === 'blocked') { res.bloqueadas++; continue; }
             if (r.status === 'foreign') { res.ajenas++; continue; }
             if (r.status === 'invalid') { res.errores++; continue; }
@@ -146,12 +196,44 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         }
     }
 
+    // Detección de AUSENTES (posible eliminada en Zoho): facturas de GK cuyo número
+    // NO apareció en el barrido. Solo si el barrido fue COMPLETO (si se cortó por el
+    // tope de páginas, no se marca nada, para no señalar falsos ausentes). NUNCA se
+    // borra: solo se marca `ausenteEnZoho` para que el admin la revise y confirme.
+    res.ausentesEvaluado = complete;
+    if (complete) {
+        const gkQuery = vendedorId
+            ? admin.firestore().collection('facturas_vendedor').where('vendedorId', '==', vendedorId)
+            : admin.firestore().collection('facturas_vendedor');
+        const gkSnap = await gkQuery.get();
+        const updates = [];
+        gkSnap.docs.forEach(d => {
+            const f = d.data();
+            if (f.estado === 'anulada') return;
+            const num = String(f.numero || '').trim();
+            if (!num) return;
+            const ausente = !seen.has(num);
+            if (ausente && f.ausenteEnZoho !== true) {
+                updates.push({ ref: d.ref, data: { ausenteEnZoho: true, ausenteEnZohoEn: admin.firestore.FieldValue.serverTimestamp() } });
+                res.ausentes++;
+            } else if (!ausente && f.ausenteEnZoho === true) {
+                updates.push({ ref: d.ref, data: { ausenteEnZoho: false } }); // reapareció
+            }
+        });
+        // Commit en lotes de 400.
+        for (let i = 0; i < updates.length; i += 400) {
+            const batch = admin.firestore().batch();
+            updates.slice(i, i + 400).forEach(u => batch.update(u.ref, u.data));
+            await batch.commit();
+        }
+    }
+
     // Marca de tiempo de la última conciliación (visible en Integraciones).
     await admin.firestore().doc('settings/appConfig').set({
         zohoUltimaConciliacion: admin.firestore.FieldValue.serverTimestamp(),
         zohoUltimaConciliacionResumen: {
             revisadas: res.revisadas, creadas: res.creadas, marcadasPagadas: res.marcadasPagadas,
-            sinVendedor: res.sinVendedor, errores: res.errores,
+            anuladas: res.anuladas, ausentes: res.ausentes, sinVendedor: res.sinVendedor, errores: res.errores,
         },
     }, { merge: true });
 

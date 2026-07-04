@@ -3105,6 +3105,10 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const [actuando, setActuando]     = useState('');
     const [confirm, setConfirm]       = useState(null);
     const [limpiando, setLimpiando]   = useState(false);
+    const [statusPill, setStatusPill] = useState('todas');
+    const [sincronizando, setSincronizando] = useState(false);
+    const [syncResult, setSyncResult] = useState(null);
+    const [syncError, setSyncError]   = useState('');
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return;
@@ -3146,7 +3150,25 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
         }
     }, []);
 
-    const onSelect = (uid) => { setVendedorId(uid); setBusca(''); setConfirm(null); cargar(uid); };
+    const onSelect = (uid) => { setVendedorId(uid); setBusca(''); setConfirm(null); setStatusPill('todas'); setSyncResult(null); setSyncError(''); cargar(uid); };
+
+    // Conciliación bajo demanda POR VENDEDOR: GK consulta a Zoho el estado real y
+    // actualiza SOLO las facturas de este vendedor (pagadas, vencidas, pendientes,
+    // anuladas), y marca las que ya no existen en Zoho.
+    const sincronizarVendedor = async () => {
+        if (!vendedorId || vendedorId === '__none__') return;
+        setSincronizando(true); setSyncError(''); setSyncResult(null);
+        try {
+            const fn = httpsCallable(functions, 'reconciliarFacturasZoho');
+            const { data } = await fn({ vendedorId });
+            setSyncResult(data);
+            await cargar(vendedorId);
+        } catch (e) {
+            setSyncError(e.message || 'No se pudo actualizar desde Zoho.');
+        } finally {
+            setSincronizando(false);
+        }
+    };
 
     const ejecutar = async (facturaId, accion) => {
         setActuando(`${facturaId}:${accion}`);
@@ -3215,7 +3237,27 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const dupTotal = Object.values(countByNum).reduce((s, c) => s + (c - 1), 0);
 
     const term = busca.trim().toLowerCase();
-    const visibles = delPeriodo.filter(f => !term || `${f.numero || ''} ${f.clienteName || f.customerName || ''}`.toLowerCase().includes(term));
+
+    // ── Filtro por ESTATUS (pills) ──────────────────────────────────────────
+    // Base de despliegue: incluye anuladas y ausentes (para poder filtrarlas por
+    // pill). Las métricas de arriba siguen sobre las activas.
+    const PROX_VENCER = 3;
+    const facVenc = (f) => (f.vencimiento?.toDate ? f.vencimiento.toDate() : (f.vencimiento ? new Date(f.vencimiento) : null));
+    const esPorVencer = (f) => { const v = facVenc(f); if (!v) return false; const dias = (v - new Date()) / 86400000; return (f.estado || 'pendiente') === 'pendiente' && dias >= 0 && dias <= PROX_VENCER; };
+    const statusOf = (f) => f.estado || 'pendiente';
+    const displayBase = facturas.filter(enPeriodo);
+    const pillDefs = [
+        { key: 'todas',      label: 'Todas',      match: () => true },
+        { key: 'pagada',     label: 'Pagadas',    match: (f) => statusOf(f) === 'pagada' },
+        { key: 'por_vencer', label: 'Por vencer', match: esPorVencer },
+        { key: 'pendiente',  label: 'Pendientes', match: (f) => statusOf(f) === 'pendiente' },
+        { key: 'vencida',    label: 'Vencidas',   match: (f) => statusOf(f) === 'vencida' },
+        { key: 'anulada',    label: 'Anuladas',   match: (f) => statusOf(f) === 'anulada' },
+        { key: 'ausente',    label: 'Ausentes',   match: (f) => f.ausenteEnZoho === true },
+    ];
+    const pillCount = (def) => displayBase.filter(def.match).length;
+    const activePill = pillDefs.find(p => p.key === statusPill) || pillDefs[0];
+    const visibles = displayBase.filter(f => activePill.match(f) && (!term || `${f.numero || ''} ${f.clienteName || f.customerName || ''}`.toLowerCase().includes(term)));
 
     const periodoLabel = (p) => `Mes ${p.mes} · ${p.rango} · ${p.anio}`;
 
@@ -3242,6 +3284,27 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
 
             {!loading && vendedorId && (
                 <>
+                    {/* Actualizar desde Zoho — SOLO las facturas de este vendedor */}
+                    {vendedorId !== '__none__' && (
+                        <div className="mb-3">
+                            <button
+                                onClick={sincronizarVendedor}
+                                disabled={sincronizando}
+                                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2.5 rounded-lg disabled:opacity-60"
+                            >
+                                <RefreshCw size={15} className={sincronizando ? 'animate-spin' : ''} />
+                                {sincronizando ? 'Consultando Zoho…' : 'Actualizar facturas desde Zoho'}
+                            </button>
+                            <p className="text-slate-400 text-[11px] mt-1">Trae de Zoho el estado real de las facturas <b>de este vendedor</b> y las actualiza (pagadas, vencidas, pendientes, anuladas) y marca las que ya no existen en Zoho.</p>
+                            {syncError && <p className="text-red-500 text-xs mt-1">{syncError}</p>}
+                            {syncResult && (
+                                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-xs text-slate-700 mt-2">
+                                    <b className="text-emerald-800">Conciliado con Zoho.</b> Revisadas: <b>{syncResult.revisadas}</b> · Marcadas pagadas: <b className="text-emerald-700">{syncResult.marcadasPagadas}</b> · Anuladas: <b>{syncResult.anuladas}</b> · Creadas: <b>{syncResult.creadas}</b> · Ausentes en Zoho: <b className={syncResult.ausentes ? 'text-amber-600' : ''}>{syncResult.ausentes}</b>{syncResult.errores ? <> · Errores: <b className="text-red-600">{syncResult.errores}</b></> : null}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     {/* Selector de período */}
                     {vendedorId !== '__none__' && (
                         <select
@@ -3293,6 +3356,24 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                         </button>
                     )}
 
+                    {/* Pills de estatus */}
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                        {pillDefs.map(def => {
+                            const n = pillCount(def);
+                            if (def.key !== 'todas' && n === 0) return null;
+                            const active = statusPill === def.key;
+                            return (
+                                <button
+                                    key={def.key}
+                                    onClick={() => setStatusPill(def.key)}
+                                    className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors ${active ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+                                >
+                                    {def.label} <span className={active ? 'opacity-80' : 'text-slate-400'}>{n}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
                     <input
                         type="text"
                         value={busca}
@@ -3302,7 +3383,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                     />
 
                     {visibles.length === 0 ? (
-                        <p className="text-slate-400 text-sm py-4 text-center">No hay facturas en este período.</p>
+                        <p className="text-slate-400 text-sm py-4 text-center">No hay facturas {statusPill === 'todas' ? 'en este período' : `con el filtro «${activePill.label}»`}.</p>
                     ) : (
                         <div className="space-y-2">
                             {visibles.map(f => {
@@ -3319,11 +3400,12 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                                     </div>
 
                                     {/* Flags */}
-                                    {(dup || fuera || f.recuperada) && (
+                                    {(dup || fuera || f.recuperada || f.ausenteEnZoho) && (
                                         <div className="flex flex-wrap gap-1.5 mt-1.5">
                                             {dup && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-200 text-amber-800">duplicada</span>}
                                             {fuera && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700">fuera de cartera</span>}
                                             {f.recuperada && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">recuperada</span>}
+                                            {f.ausenteEnZoho && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-200 text-red-800">ausente en Zoho</span>}
                                         </div>
                                     )}
 
@@ -3347,7 +3429,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                                             </>
                                         ) : (
                                             <>
-                                                <button onClick={() => setConfirm({ id: f.id, accion: 'anular' })} className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200">Anular</button>
+                                                {f.estado !== 'anulada' && <button onClick={() => setConfirm({ id: f.id, accion: 'anular' })} className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 text-amber-700 hover:bg-amber-200">Anular</button>}
                                                 <button onClick={() => setConfirm({ id: f.id, accion: 'eliminar' })} className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-red-100 text-red-700 hover:bg-red-200">Eliminar</button>
                                             </>
                                         )}
@@ -3690,7 +3772,7 @@ const IntegracionesSection = () => {
                 {reconResult && (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-slate-700 mb-2">
                         <p className="font-bold text-emerald-800 mb-1">Conciliación lista</p>
-                        <p>Revisadas: <b>{reconResult.revisadas}</b> · Marcadas como pagadas: <b className="text-emerald-700">{reconResult.marcadasPagadas}</b> · Creadas: <b>{reconResult.creadas}</b> · Sin vendedor: <b>{reconResult.sinVendedor}</b>{reconResult.errores ? <> · Errores: <b className="text-red-600">{reconResult.errores}</b></> : null}</p>
+                        <p>Revisadas: <b>{reconResult.revisadas}</b> · Marcadas como pagadas: <b className="text-emerald-700">{reconResult.marcadasPagadas}</b> · Anuladas: <b>{reconResult.anuladas ?? 0}</b> · Creadas: <b>{reconResult.creadas}</b> · Sin vendedor: <b>{reconResult.sinVendedor}</b> · Ausentes en Zoho: <b className={reconResult.ausentes ? 'text-amber-600' : ''}>{reconResult.ausentes ?? 0}</b>{reconResult.errores ? <> · Errores: <b className="text-red-600">{reconResult.errores}</b></> : null}</p>
                         {Array.isArray(reconResult.detalles) && reconResult.detalles.length > 0 && (
                             <div className="mt-2 max-h-40 overflow-auto border-t border-emerald-200 pt-1">
                                 {reconResult.detalles.map((d, i) => (

@@ -81,16 +81,21 @@ async function listInvoicesPage({ accessToken, organizationId, dataCenter, page,
 
 /**
  * Trae TODAS las facturas de la organización, paginando hasta agotar o hasta
- * `maxPages` (tope de seguridad). Devuelve la lista cruda de Zoho.
+ * `maxPages` (tope de seguridad). `complete` indica si se agotó el listado (true)
+ * o se cortó por `maxPages` (false) — importante para NO marcar facturas como
+ * ausentes si el barrido quedó incompleto.
+ * @returns {Promise<{invoices: Array, complete: boolean}>}
  */
-async function listAllInvoices({ accessToken, organizationId, dataCenter, maxPages = 25, perPage = 200, modifiedAfter }) {
+async function listAllInvoices({ accessToken, organizationId, dataCenter, maxPages = 40, perPage = 200, modifiedAfter }) {
     const all = [];
+    let complete = true;
     for (let page = 1; page <= maxPages; page++) {
         const { invoices, hasMore } = await listInvoicesPage({ accessToken, organizationId, dataCenter, page, perPage, modifiedAfter });
         all.push(...invoices);
-        if (!hasMore || invoices.length === 0) break;
+        if (!hasMore || invoices.length === 0) { complete = true; break; }
+        if (page === maxPages && hasMore) complete = false; // se cortó por el tope
     }
-    return all;
+    return { invoices: all, complete };
 }
 
 module.exports = { getAccessToken, listInvoicesPage, listAllInvoices };

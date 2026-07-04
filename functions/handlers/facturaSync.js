@@ -98,6 +98,12 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     let vendedor = await resolveVendedorPorRazonSocial(invoice.customer_name);
     if (!vendedor) vendedor = await resolveVendedor(invoice.salesperson_name);
 
+    // Conciliación POR VENDEDOR: si se pide conciliar solo a un vendedor, se
+    // ignoran las facturas que no le pertenecen (según la atribución actual).
+    if (opts.onlyVendedorId && (vendedor?.id || null) !== opts.onlyVendedorId) {
+        return { status: 'other_vendor' };
+    }
+
     const estado = invoice.status === 'paid' ? 'pagada'
         : invoice.status === 'overdue' ? 'vencida'
         : 'pendiente';
