@@ -3167,10 +3167,18 @@ function buildInformeVendedor(facturas, metaVend, catMap) {
 function facturasDelPeriodo(facturas, per, ingreso) {
     if (!per) return facturas;
     const parse = (v) => (v?.toDate ? v.toDate() : (v ? new Date(v) : null));
+    const ahora = new Date();
+    const esPeriodoEnCurso = per.start <= ahora && ahora < per.end;  // el que contiene hoy
     return facturas.filter(f => {
         if (f.recuperada) {
-            const fp = parse(f.fechaPago) || (f.estado === 'pagada' ? ingreso : null);
-            return fp && fp >= per.start && fp < per.end;
+            if (f.estado === 'pagada') {
+                // heredada COBRADA → al período de su fecha de cobro.
+                const fp = parse(f.fechaPago) || ingreso;
+                return fp && fp >= per.start && fp < per.end;
+            }
+            // heredada ABIERTA (no cobrada) → cuenta que el vendedor gestiona HOY:
+            // pertenece al período EN CURSO.
+            return esPeriodoEnCurso;
         }
         const t = parse(f.fecha);
         return t && t >= per.start && t < per.end;
@@ -3504,7 +3512,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                     {/* INFORME COMPLETO DEL VENDEDOR — la vista principal (total + período). */}
                     {vendedorId !== '__none__' && metaVend && (
                         <div className="mb-3 space-y-3">
-                            <InformeVendedor titulo="Histórico total (todas sus facturas)" info={buildInformeVendedor(facturas, metaVend, catMap)} zohoTotal={zohoTotal} />
+                            <InformeVendedor titulo="Total a la fecha (todas sus facturas)" parcial={periodos.some(p => !p.cerrado)} info={buildInformeVendedor(facturas, metaVend, catMap)} zohoTotal={zohoTotal} />
                             {periodoActual && (
                                 <InformeVendedor
                                     titulo={`Período · ${periodoLabel(periodoActual)}`}
