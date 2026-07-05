@@ -2905,7 +2905,9 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
 
     // ── Asistente de pago por pasos ──────────────────────────────────────────
     const iniciarPago = (pk) => {
-        setPeriodKey(pk); setMonto(''); setFecha(''); setNota('');
+        const hoy = new Date();
+        const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+        setPeriodKey(pk); setMonto(''); setFecha(hoyStr); setNota('');
         setPendingComp(null); setCompFileName(''); setOkMsg(''); setError('');
         setPago({ paso: 2, periodKey: pk });
     };
@@ -3250,24 +3252,26 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
 
                                 {pago.paso === 2 ? (
                                     <>
-                                        <label className="text-xs font-semibold text-slate-600">Monto del pago (USD)</label>
-                                        <div className="flex gap-2 mt-1 mb-1">
-                                            <input type="number" min="0" step="0.01" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0.00" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" />
-                                            <button onClick={() => est && setMonto(String(Math.max(0, est.saldo).toFixed(2)))} className="text-xs font-semibold text-brand-blue border border-brand-blue/40 rounded-lg px-3 shrink-0">Pagar saldo completo</button>
-                                        </div>
-                                        {est && Number(monto) > est.saldo + 0.01 && <p className="text-amber-600 text-xs mb-1">El monto excede el saldo ({money(est.saldo)}). Puedes continuar, pero revísalo.</p>}
-                                        <label className="text-xs font-semibold text-slate-600 mt-2 block">Fecha del pago</label>
-                                        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
-                                        <label className="text-xs font-semibold text-slate-600 mt-2 block">Nota (opcional)</label>
-                                        <input type="text" value={nota} onChange={e => setNota(e.target.value)} placeholder="Ej. transferencia BNC" className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
+                                        <label className="text-xs font-semibold text-slate-600 block mb-1">Monto del pago (USD)</label>
+                                        <input type="number" min="0" step="0.01" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0.00" className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
+                                        <button onClick={() => est && setMonto(String(Math.max(0, est.saldo).toFixed(2)))} className="mt-1.5 text-xs font-bold text-brand-blue">Pagar saldo completo ({money(est?.saldo || 0)})</button>
+                                        {est && Number(monto) > est.saldo + 0.01 && <p className="text-amber-600 text-xs mt-1">El monto excede el saldo ({money(est.saldo)}). Puedes continuar, pero revísalo.</p>}
 
-                                        <div className="mt-3 flex items-center gap-2">
-                                            <label className="text-xs font-semibold text-brand-blue border border-brand-blue/40 rounded-lg px-3 py-2 cursor-pointer">
-                                                {pendingComp ? '✓ Comprobante listo' : '📎 Adjuntar comprobante'}
-                                                <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; adjuntarPendiente(f); }} />
-                                            </label>
-                                            {pendingComp && <span className="text-[11px] text-slate-500 truncate">{compFileName} <button onClick={() => { setPendingComp(null); setCompFileName(''); }} className="text-red-500 ml-1">quitar</button></span>}
-                                            <span className="text-[11px] text-slate-400 ml-auto">Opcional (se puede adjuntar luego)</span>
+                                        <label className="text-xs font-semibold text-slate-600 mt-3 block mb-1">Fecha del pago</label>
+                                        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm text-slate-700" />
+
+                                        <label className="text-xs font-semibold text-slate-600 mt-3 block mb-1">Nota (opcional)</label>
+                                        <input type="text" value={nota} onChange={e => setNota(e.target.value)} placeholder="Ej. transferencia BNC" className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
+
+                                        <div className="mt-3">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <label className="text-xs font-semibold text-brand-blue border border-brand-blue/40 rounded-lg px-3 py-2 cursor-pointer whitespace-nowrap">
+                                                    {pendingComp ? '✓ Comprobante listo' : '📎 Adjuntar comprobante'}
+                                                    <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; adjuntarPendiente(f); }} />
+                                                </label>
+                                                {pendingComp && <button onClick={() => { setPendingComp(null); setCompFileName(''); }} className="text-[11px] text-red-500 font-semibold">quitar</button>}
+                                            </div>
+                                            <p className="text-[11px] text-slate-400 mt-1">{pendingComp ? compFileName : 'Opcional — se puede adjuntar luego desde el Histórico.'}</p>
                                         </div>
 
                                         {Number(monto) > 0 && est && (
