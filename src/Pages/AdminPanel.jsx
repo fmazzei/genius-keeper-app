@@ -3497,10 +3497,29 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                             className="w-full p-2.5 border border-slate-300 rounded-lg text-sm mb-3"
                         >
                             {periodos.map(p => <option key={p.periodKey} value={p.periodKey}>{periodoLabel(p)}{p.cerrado ? '' : ' · en curso'}</option>)}
-                            <option value="recuperadas">Recuperadas (heredadas, previas al ingreso)</option>
                             <option value="todas">Todas las facturas</option>
                         </select>
                     )}
+
+                    {/* INFORME COMPLETO DEL VENDEDOR — la vista principal (total + período). */}
+                    {vendedorId !== '__none__' && metaVend && (
+                        <div className="mb-3 space-y-3">
+                            <InformeVendedor titulo="Histórico total (todas sus facturas)" info={buildInformeVendedor(facturas, metaVend, catMap)} zohoTotal={zohoTotal} />
+                            {periodoActual && (
+                                <InformeVendedor
+                                    titulo={`Período · ${periodoLabel(periodoActual)}`}
+                                    parcial={!periodoActual.cerrado}
+                                    info={buildInformeVendedor(facturasDelPeriodo(facturas, periodoActual, periodos.find(p => p.mes === 1)?.start || null), metaVend, catMap)}
+                                    zohoTotal={zohoTotal}
+                                />
+                            )}
+                        </div>
+                    )}
+
+                    {/* Detalle de inspección (tarjetas/pills/lista) — colapsable, secundario. */}
+                    <details className="mb-2">
+                        <summary className="cursor-pointer text-xs font-semibold text-slate-500 select-none py-1">Ver detalle de facturas (inspección y acciones)</summary>
+                        <div className="mt-2">
 
                     {/* Resultado de la conciliación del período */}
                     <div className="grid grid-cols-3 gap-2 mb-2">
@@ -3540,23 +3559,6 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                         </button>
                     )}
 
-                    {/* Informe completo del vendedor (histórico + período) */}
-                    {vendedorId !== '__none__' && metaVend && (
-                        <details className="mb-3">
-                            <summary className="cursor-pointer text-sm font-bold text-brand-blue select-none py-1">📋 Informe completo del vendedor (total + período)</summary>
-                            <div className="mt-2 space-y-3">
-                                <InformeVendedor titulo="Histórico total (todas sus facturas)" info={buildInformeVendedor(facturas, metaVend, catMap)} zohoTotal={zohoTotal} />
-                                {periodoActual && (
-                                    <InformeVendedor
-                                        titulo={`Período · ${periodoLabel(periodoActual)}`}
-                                        parcial={!periodoActual.cerrado}
-                                        info={buildInformeVendedor(facturasDelPeriodo(facturas, periodoActual, periodos.find(p => p.mes === 1)?.start || null), metaVend, catMap)}
-                                        zohoTotal={zohoTotal}
-                                    />
-                                )}
-                            </div>
-                        </details>
-                    )}
 
                     {/* Pills de estatus */}
                     <div className="flex flex-wrap gap-1.5 mb-3">
@@ -3644,6 +3646,8 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                     <p className="text-slate-400 text-[11px] mt-3">
                         <b>Duplicada</b>: mismo número repetido (usa "Limpiar duplicados"). <b>Fuera de cartera</b>: la razón social no está vinculada a este vendedor — revisa la vinculación. <b>Anular/Eliminar</b> revierten sus unidades y comisión (y la dejan sepultada).
                     </p>
+                        </div>
+                    </details>
                 </>
             )}
         </div>
