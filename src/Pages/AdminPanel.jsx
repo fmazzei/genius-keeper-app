@@ -3258,7 +3258,9 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                                         {est && Number(monto) > est.saldo + 0.01 && <p className="text-amber-600 text-xs mt-1">El monto excede el saldo ({money(est.saldo)}). Puedes continuar, pero revísalo.</p>}
 
                                         <label className="text-xs font-semibold text-slate-600 mt-3 block mb-1">Fecha del pago</label>
-                                        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="w-full p-2.5 border border-slate-300 rounded-lg text-sm text-slate-700" />
+                                        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
+                                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 appearance-none box-border block text-left"
+                                            style={{ WebkitAppearance: 'none', appearance: 'none', minWidth: 0, maxWidth: '100%' }} />
 
                                         <label className="text-xs font-semibold text-slate-600 mt-3 block mb-1">Nota (opcional)</label>
                                         <input type="text" value={nota} onChange={e => setNota(e.target.value)} placeholder="Ej. transferencia BNC" className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
