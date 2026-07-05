@@ -2760,6 +2760,11 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
     const [histPeriodo, setHistPeriodo] = useState('todos');     // filtro de período en el histórico
     const [verComprobante, setVerComprobante] = useState(null);  // {dataUrl} del comprobante a mostrar
     const [subiendoComp, setSubiendoComp]     = useState('');    // id de la liquidación cuyo comprobante se sube
+    // Asistente de pago por pasos: null | {paso:2|3, periodKey, ...resultado}
+    const [pago, setPago]               = useState(null);
+    const [pendingComp, setPendingComp] = useState(null);        // dataUrl del comprobante antes de confirmar
+    const [compFileName, setCompFileName] = useState('');
+    const [comprobantePago, setComprobantePago] = useState(null); // {liquidacion, estado, dataUrl} para el PDF del Paso 3
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return; // ya vienen del layout
@@ -2898,6 +2903,47 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
         } catch (e) { alert('No se pudo abrir el comprobante.'); }
     };
 
+    // ── Asistente de pago por pasos ──────────────────────────────────────────
+    const iniciarPago = (pk) => {
+        setPeriodKey(pk); setMonto(''); setFecha(''); setNota('');
+        setPendingComp(null); setCompFileName(''); setOkMsg(''); setError('');
+        setPago({ paso: 2, periodKey: pk });
+    };
+    const adjuntarPendiente = async (file) => {
+        if (!file) return;
+        setError('');
+        try {
+            const dataUrl = await comprimirImagen(file);
+            if (dataUrl.length > 950000) { setError('La imagen es muy grande. Toma la foto con menos resolución.'); return; }
+            setPendingComp(dataUrl); setCompFileName(file.name || 'comprobante.jpg');
+        } catch (e) { setError('No se pudo procesar la imagen.'); }
+    };
+    const confirmarPago = async () => {
+        if (!vendedorId || !periodKey || !(Number(monto) > 0)) return;
+        const estAntes = estados.find(e => e.periodKey === periodKey);
+        setSaving(true); setError('');
+        try {
+            const hoy = new Date();
+            const fechaVal = fecha || `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+            const ref = await addDoc(collection(db, 'liquidaciones'), {
+                vendedorId, periodKey, monto: Number(monto), fecha: fechaVal, nota: nota.trim(),
+                registradoPor: auth.currentUser?.uid || null, registradoPorEmail: auth.currentUser?.email || null,
+                comprobanteAdjunto: !!pendingComp, createdAt: serverTimestamp(),
+            });
+            if (pendingComp) {
+                await setDoc(doc(db, 'liquidacion_comprobantes', ref.id), { dataUrl: pendingComp, vendedorId, subidoPor: auth.currentUser?.uid || null, subidoEn: serverTimestamp() });
+            }
+            await cargar(vendedorId);
+            setPago({
+                paso: 3, periodKey, liqId: ref.id, monto: Number(monto), fecha: fechaVal,
+                dataUrl: pendingComp, saldoAntes: estAntes ? estAntes.saldo : null,
+            });
+        } catch (e) {
+            setError(e.message || 'No se pudo registrar el pago.');
+        } finally { setSaving(false); }
+    };
+    const cerrarWizard = () => { setPago(null); setPendingComp(null); setCompFileName(''); setPeriodKey(''); setMonto(''); setFecha(''); setNota(''); };
+
     // Cierre/freeze de período (Fase 3.10): congela el devengado de un período
     // cerrado para que cobros tardíos / notas de crédito posteriores no alteren
     // lo ya liquidado. `master`/`admin` congelan; `master` reabre.
@@ -2999,53 +3045,17 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                         </div>
                     </div>
 
-                    {/* Registrar pago */}
+                    {/* Ejecutar una liquidación — abre el asistente por pasos */}
                     <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
-                        <p className="font-bold text-slate-800 mb-3">Registrar liquidación</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <label className="text-xs font-semibold text-slate-600">Período</label>
-                                <select value={periodKey} onChange={e => setPeriodKey(e.target.value)} className={`${SELECT_CLS} mt-1`} style={SELECT_STYLE}>
-                                    <option value="">Selecciona…</option>
-                                    {estados.map(e => (
-                                        <option key={e.periodKey} value={e.periodKey}>
-                                            Mes {e.mes} · {e.rango} — saldo {money(e.saldo)}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="text-xs font-semibold text-slate-600">Monto (USD)</label>
-                                <input type="number" min="0" step="0.01" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0.00" className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-semibold text-slate-600">Fecha del pago</label>
-                                <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
-                            </div>
-                            <div>
-                                <label className="text-xs font-semibold text-slate-600">Nota (opcional)</label>
-                                <input type="text" value={nota} onChange={e => setNota(e.target.value)} placeholder="Ej. Semana 1, transferencia" className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
-                            </div>
+                        <p className="font-bold text-slate-800 mb-1">Ejecutar una liquidación</p>
+                        <p className="text-slate-500 text-xs mb-3">Elige el período y presiona <b>Registrar pago</b> para abrir el asistente (monto, fecha y comprobante).</p>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <select value={periodKey} onChange={e => setPeriodKey(e.target.value)} className={`${SELECT_CLS} sm:flex-1`} style={SELECT_STYLE}>
+                                <option value="">Selecciona el período…</option>
+                                {estados.map(e => <option key={e.periodKey} value={e.periodKey}>Mes {e.mes} · {e.rango} — saldo {money(e.saldo)}</option>)}
+                            </select>
+                            <button onClick={() => periodKey && iniciarPago(periodKey)} disabled={!periodKey} className="bg-brand-blue text-white font-bold text-sm px-5 py-2.5 rounded-xl disabled:opacity-50 shrink-0">Registrar pago →</button>
                         </div>
-                        {periodKey && (() => {
-                            const est = estados.find(e => e.periodKey === periodKey);
-                            if (est && Number(monto) > est.saldo + 0.01) {
-                                return <p className="text-amber-600 text-xs mt-2">El monto excede el saldo pendiente de ese período ({money(est.saldo)}). Puedes continuar, pero revisa el importe.</p>;
-                            }
-                            return null;
-                        })()}
-                        <div className="flex items-center gap-3 mt-3">
-                            <button onClick={registrar} disabled={saving || !periodKey || !(Number(monto) > 0)} className="bg-brand-blue text-white font-semibold text-sm px-4 py-2 rounded-lg disabled:opacity-50">
-                                {saving ? 'Registrando…' : 'Registrar pago'}
-                            </button>
-                            {okMsg && <span className="text-emerald-600 text-sm font-semibold">{okMsg}</span>}
-                        </div>
-
-                        {/* Revisa exactamente lo que vas a pagar ANTES de registrar */}
-                        {periodKey && raw && (() => {
-                            const desg = computeDesglosePeriodo(raw.meta, raw.facturas, periodKey, { carteraSize: raw.carteraSize, cerrados: raw.cerrados, liquidaciones: raw.liqs });
-                            return desg ? <DesgloseView d={desg} /> : null;
-                        })()}
                     </div>
 
                     {/* Estado de cuenta por período */}
@@ -3210,6 +3220,98 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                     vendedorName={vendedores.find(v => v.id === vendedorId)?.name || ''}
                     estado={estados.find(e => e.periodKey === comprobante.periodKey) || null}
                     onClose={() => setComprobante(null)}
+                />
+            )}
+
+            {/* ── ASISTENTE DE PAGO (Paso 2 y 3) ── */}
+            {pago && (() => {
+                const est = estados.find(e => e.periodKey === pago.periodKey);
+                const nombre = vendedores.find(v => v.id === vendedorId)?.name || 'Vendedor';
+                const saldoDespues = pago.paso === 3
+                    ? (pago.saldoAntes != null ? pago.saldoAntes - pago.monto : (est ? est.saldo : null))
+                    : (est ? est.saldo - (Number(monto) || 0) : null);
+                return (
+                    <div className="fixed inset-0 z-[100] bg-slate-900/70 flex flex-col overflow-auto">
+                        <div className="sticky top-0 bg-slate-900 px-4 py-3 flex items-center justify-between">
+                            <span className="text-white font-bold text-sm">{pago.paso === 2 ? 'Registrar pago · Paso 2 de 3' : 'Pago registrado · Paso 3 de 3'}</span>
+                            <button onClick={cerrarWizard} className="text-slate-300 text-sm font-semibold flex items-center gap-1"><X size={18} /> {pago.paso === 3 ? 'Cerrar' : 'Cancelar'}</button>
+                        </div>
+                        <div className="flex-1 p-4 flex justify-center">
+                            <div className="bg-white w-full max-w-[560px] rounded-xl p-5 self-start">
+                                <p className="font-black text-slate-800 text-lg">{nombre}</p>
+                                <p className="text-slate-500 text-sm mb-3">{est ? `Mes ${est.mes} · ${est.rango}` : pago.periodKey}</p>
+
+                                {/* Estado del período */}
+                                <div className="grid grid-cols-3 gap-2 mb-4">
+                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center"><p className="font-black text-slate-800">{money(est?.devengadoTotal)}</p><p className="text-slate-400 text-[10px]">Devengado</p></div>
+                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center"><p className="font-black text-emerald-600">{money(est?.pagado)}</p><p className="text-slate-400 text-[10px]">Pagado</p></div>
+                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center"><p className="font-black text-amber-600">{money(pago.paso === 3 ? saldoDespues : est?.saldo)}</p><p className="text-slate-400 text-[10px]">Saldo {pago.paso === 3 ? 'actual' : 'pendiente'}</p></div>
+                                </div>
+
+                                {pago.paso === 2 ? (
+                                    <>
+                                        <label className="text-xs font-semibold text-slate-600">Monto del pago (USD)</label>
+                                        <div className="flex gap-2 mt-1 mb-1">
+                                            <input type="number" min="0" step="0.01" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0.00" className="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm" />
+                                            <button onClick={() => est && setMonto(String(Math.max(0, est.saldo).toFixed(2)))} className="text-xs font-semibold text-brand-blue border border-brand-blue/40 rounded-lg px-3 shrink-0">Pagar saldo completo</button>
+                                        </div>
+                                        {est && Number(monto) > est.saldo + 0.01 && <p className="text-amber-600 text-xs mb-1">El monto excede el saldo ({money(est.saldo)}). Puedes continuar, pero revísalo.</p>}
+                                        <label className="text-xs font-semibold text-slate-600 mt-2 block">Fecha del pago</label>
+                                        <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
+                                        <label className="text-xs font-semibold text-slate-600 mt-2 block">Nota (opcional)</label>
+                                        <input type="text" value={nota} onChange={e => setNota(e.target.value)} placeholder="Ej. transferencia BNC" className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
+
+                                        <div className="mt-3 flex items-center gap-2">
+                                            <label className="text-xs font-semibold text-brand-blue border border-brand-blue/40 rounded-lg px-3 py-2 cursor-pointer">
+                                                {pendingComp ? '✓ Comprobante listo' : '📎 Adjuntar comprobante'}
+                                                <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; adjuntarPendiente(f); }} />
+                                            </label>
+                                            {pendingComp && <span className="text-[11px] text-slate-500 truncate">{compFileName} <button onClick={() => { setPendingComp(null); setCompFileName(''); }} className="text-red-500 ml-1">quitar</button></span>}
+                                            <span className="text-[11px] text-slate-400 ml-auto">Opcional (se puede adjuntar luego)</span>
+                                        </div>
+
+                                        {Number(monto) > 0 && est && (
+                                            <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-2.5 text-xs text-slate-700">
+                                                Vas a registrar <b>{money(Number(monto))}</b> al Mes {est.mes}. El saldo pasará de <b>{money(est.saldo)}</b> a <b>{money(saldoDespues)}</b>.
+                                            </div>
+                                        )}
+                                        {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
+
+                                        <div className="flex gap-2 mt-4">
+                                            <button onClick={cerrarWizard} className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-slate-100 text-slate-600">Cancelar</button>
+                                            <button onClick={confirmarPago} disabled={saving || !(Number(monto) > 0)} className="flex-1 py-2.5 rounded-lg text-sm font-bold bg-brand-blue text-white disabled:opacity-50">{saving ? 'Registrando…' : 'Confirmar pago'}</button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-3">
+                                            <p className="font-bold text-emerald-800 text-sm">✓ Pago registrado</p>
+                                            <p className="text-sm text-slate-700 mt-1">Monto: <b>{money(pago.monto)}</b> · Fecha: <b>{pago.fecha}</b></p>
+                                            <p className="text-sm text-slate-700">Saldo del período: <b>{money(pago.saldoAntes)}</b> → <b className="text-amber-600">{money(saldoDespues)}</b></p>
+                                            <p className="text-xs text-slate-500 mt-1">Comprobante del banco: {pago.dataUrl ? <b className="text-emerald-700">adjunto ✓</b> : 'pendiente (adjúntalo en el Histórico)'} · Total abonado al período: <b>{money(est?.pagado)}</b></p>
+                                        </div>
+                                        <button
+                                            onClick={() => setComprobantePago({ liquidacion: { periodKey: pago.periodKey, monto: pago.monto, fecha: pago.fecha, nota, registradoPorEmail: auth.currentUser?.email }, estado: est, dataUrl: pago.dataUrl })}
+                                            className="w-full py-2.5 rounded-lg text-sm font-bold bg-brand-blue text-white flex items-center justify-center gap-2"
+                                        >
+                                            <Receipt size={16} /> Descargar estado de cuenta (con comprobante)
+                                        </button>
+                                        <button onClick={cerrarWizard} className="w-full mt-2 py-2.5 rounded-lg text-sm font-semibold bg-slate-100 text-slate-600">Cerrar</button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {comprobantePago && (
+                <ComprobanteLiquidacionDoc
+                    liquidacion={comprobantePago.liquidacion}
+                    vendedorName={vendedores.find(v => v.id === vendedorId)?.name || ''}
+                    estado={comprobantePago.estado}
+                    comprobanteBanco={comprobantePago.dataUrl}
+                    onClose={() => setComprobantePago(null)}
                 />
             )}
         </div>

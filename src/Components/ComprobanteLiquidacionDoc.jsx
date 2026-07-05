@@ -36,7 +36,7 @@ function LeaderRow({ label, value, bold, valueColor, nowrap = true }) {
     );
 }
 
-export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorName = 'Vendedor', estado = null, onClose }) {
+export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorName = 'Vendedor', estado = null, comprobanteBanco = null, onClose }) {
     const ahora = new Date();
     const fechaHora = ahora.toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -126,6 +126,14 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
                         <div className="px-8">
                             <SecTitle>NOTA</SecTitle>
                             <p className="text-[12px] text-slate-600 break-words">{liquidacion.nota}</p>
+                        </div>
+                    )}
+
+                    {/* ── Comprobante del banco (imagen adjunta) ── */}
+                    {comprobanteBanco && (
+                        <div className="px-8" style={{ pageBreakInside: 'avoid' }}>
+                            <SecTitle>COMPROBANTE DE TRANSFERENCIA (BANCO)</SecTitle>
+                            <img src={comprobanteBanco} alt="Comprobante del banco" style={{ maxWidth: '100%', border: '1px solid #cbd5e1', borderRadius: 6 }} />
                         </div>
                     )}
 
