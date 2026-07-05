@@ -2626,6 +2626,16 @@ const SELECT_STYLE = {
     backgroundPosition: 'right 0.75rem center',
 };
 
+// Tarjeta de indicador reutilizable (todo el módulo). La etiqueta tiene altura
+// fija (alinea el monto abajo aunque el texto ocupe 1 o 2 líneas) y el monto se
+// ENCOGE para caber siempre en el ancho de la tarjeta, sin desbordarse.
+const StatCard = ({ label, value, color = 'text-slate-800', bg = 'bg-slate-50', border = 'border-slate-200' }) => (
+    <div className={`rounded-lg px-1.5 py-2.5 border ${bg} ${border} flex flex-col justify-between overflow-hidden`} style={{ containerType: 'inline-size' }}>
+        <p className="text-slate-400 text-[10px] leading-tight text-center min-h-[26px] flex items-end justify-center">{label}</p>
+        <p className={`font-black leading-none text-center whitespace-nowrap ${color} mt-1`} style={{ fontVariantNumeric: 'tabular-nums', fontSize: 'clamp(11px, 14cqw, 18px)' }}>{value}</p>
+    </div>
+);
+
 // Vista EN PANTALLA del desglose de un período — lo que el administrador va a
 // pagar, con la evidencia de facturas por cada bono. Se muestra ANTES de
 // registrar la liquidación para revisar de dónde sale cada dólar.
@@ -3033,18 +3043,9 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                     {vista === 'registrar' && (<>
                     {/* Resumen global */}
                     <div className="grid grid-cols-3 gap-3 mb-4">
-                        <div className="bg-white border border-slate-200 rounded-xl p-4">
-                            <p className="text-slate-400 text-xs">Devengado total</p>
-                            <p className="text-slate-800 font-black text-lg">{money(totales.devengado)}</p>
-                        </div>
-                        <div className="bg-white border border-slate-200 rounded-xl p-4">
-                            <p className="text-slate-400 text-xs">Pagado</p>
-                            <p className="text-emerald-600 font-black text-lg">{money(totales.pagado)}</p>
-                        </div>
-                        <div className="bg-white border border-slate-200 rounded-xl p-4">
-                            <p className="text-slate-400 text-xs">Saldo pendiente</p>
-                            <p className={`font-black text-lg ${totales.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>{money(totales.saldo)}</p>
-                        </div>
+                        <StatCard label="Devengado total" value={money(totales.devengado)} bg="bg-white" />
+                        <StatCard label="Pagado" value={money(totales.pagado)} color="text-emerald-600" bg="bg-white" />
+                        <StatCard label="Saldo pendiente" value={money(totales.saldo)} color={totales.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'} bg="bg-white" />
                     </div>
 
                     {/* Ejecutar una liquidación — abre el asistente por pasos */}
@@ -3245,9 +3246,9 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
 
                                 {/* Estado del período */}
                                 <div className="grid grid-cols-3 gap-2 mb-4">
-                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center"><p className="font-black text-slate-800">{money(est?.devengadoTotal)}</p><p className="text-slate-400 text-[10px]">Devengado</p></div>
-                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center"><p className="font-black text-emerald-600">{money(est?.pagado)}</p><p className="text-slate-400 text-[10px]">Pagado</p></div>
-                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center"><p className="font-black text-amber-600">{money(pago.paso === 3 ? saldoDespues : est?.saldo)}</p><p className="text-slate-400 text-[10px]">Saldo {pago.paso === 3 ? 'actual' : 'pendiente'}</p></div>
+                                    <StatCard label="Devengado" value={money(est?.devengadoTotal)} />
+                                    <StatCard label="Pagado" value={money(est?.pagado)} color="text-emerald-600" />
+                                    <StatCard label={`Saldo ${pago.paso === 3 ? 'actual' : 'pendiente'}`} value={money(pago.paso === 3 ? saldoDespues : est?.saldo)} color="text-amber-600" />
                                 </div>
 
                                 {pago.paso === 2 ? (
@@ -3720,17 +3721,14 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                         <div className="mb-3">
                             <div className="grid grid-cols-3 gap-2">
                                 {[
-                                    { v: infoPeriodo.totalVendedor, l: 'Facturas' },
-                                    { v: infoPeriodo.pagadas, l: 'Pagadas', hi: true },
-                                    { v: infoPeriodo.udsFacturacion, l: 'Uds facturadas (meta)' },
-                                    { v: infoPeriodo.retail.uds, l: 'Uds retail' },
-                                    { v: infoPeriodo.foodservice.uds, l: 'Uds foodservice' },
-                                    { v: money(infoPeriodo.cobrado), l: 'Cobrado', money: true },
+                                    { v: Number(infoPeriodo.totalVendedor).toLocaleString('es-VE'), l: 'Facturas' },
+                                    { v: Number(infoPeriodo.pagadas).toLocaleString('es-VE'), l: 'Pagadas', hi: true },
+                                    { v: Number(infoPeriodo.udsFacturacion).toLocaleString('es-VE'), l: 'Uds facturadas (meta)' },
+                                    { v: Number(infoPeriodo.retail.uds).toLocaleString('es-VE'), l: 'Uds retail' },
+                                    { v: Number(infoPeriodo.foodservice.uds).toLocaleString('es-VE'), l: 'Uds foodservice' },
+                                    { v: money(infoPeriodo.cobrado), l: 'Cobrado' },
                                 ].map((c, i) => (
-                                    <div key={i} className={`rounded-lg p-2.5 text-center border ${c.hi ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
-                                        <p className={`font-black leading-none ${c.money ? 'text-sm' : 'text-lg'} ${c.hi ? 'text-emerald-700' : 'text-slate-800'}`}>{c.money ? c.v : Number(c.v).toLocaleString('es-VE')}</p>
-                                        <p className="text-slate-400 text-[10px] mt-1 leading-tight">{c.l}</p>
-                                    </div>
+                                    <StatCard key={i} label={c.l} value={c.v} color={c.hi ? 'text-emerald-700' : 'text-slate-800'} bg={c.hi ? 'bg-emerald-50' : 'bg-slate-50'} border={c.hi ? 'border-emerald-200' : 'border-slate-200'} />
                                 ))}
                             </div>
                             <p className="text-slate-400 text-[10px] mt-1.5">Las <b>Pagadas</b> son las que generan comisión. Cuando estos indicadores y el informe cuadren, procede a la <b>liquidación</b>.</p>
@@ -3946,18 +3944,9 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp } = {}) => {
                 <>
                     {/* Totales generales */}
                     <div className="grid grid-cols-3 gap-3 mb-4">
-                        <div className="bg-white border border-slate-200 rounded-xl p-4">
-                            <p className="text-slate-400 text-xs">Devengado total</p>
-                            <p className="text-slate-800 font-black text-lg">{money(granDev)}</p>
-                        </div>
-                        <div className="bg-white border border-slate-200 rounded-xl p-4">
-                            <p className="text-slate-400 text-xs">Pagado</p>
-                            <p className="text-emerald-600 font-black text-lg">{money(granPag)}</p>
-                        </div>
-                        <div className="bg-white border-2 border-amber-300 rounded-xl p-4">
-                            <p className="text-amber-600 text-xs font-semibold">Total a pagar</p>
-                            <p className="text-amber-600 font-black text-lg">{money(granSaldo)}</p>
-                        </div>
+                        <StatCard label="Devengado total" value={money(granDev)} bg="bg-white" />
+                        <StatCard label="Pagado" value={money(granPag)} color="text-emerald-600" bg="bg-white" />
+                        <StatCard label="Total a pagar" value={money(granSaldo)} color="text-amber-600" bg="bg-white" border="border-2 border-amber-300" />
                     </div>
 
                     <label className="flex items-center gap-2 text-xs text-slate-500 mb-3 cursor-pointer">
