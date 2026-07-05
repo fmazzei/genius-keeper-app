@@ -2755,6 +2755,11 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
     const [docDesgloses, setDocDesgloses] = useState(null); // comprobante detallado (1+ períodos)
     const [corteDesde, setCorteDesde]   = useState('');
     const [corteHasta, setCorteHasta]   = useState('');
+    // Dos vistas: registrar liquidaciones / ver el histórico.
+    const [vista, setVista]             = useState('registrar'); // 'registrar' | 'historico'
+    const [histPeriodo, setHistPeriodo] = useState('todos');     // filtro de período en el histórico
+    const [verComprobante, setVerComprobante] = useState(null);  // {dataUrl} del comprobante a mostrar
+    const [subiendoComp, setSubiendoComp]     = useState('');    // id de la liquidación cuyo comprobante se sube
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return; // ya vienen del layout
@@ -2837,10 +2842,60 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
         if (!window.confirm('¿Eliminar esta liquidación? El saldo del período volverá a subir.')) return;
         try {
             await deleteDoc(doc(db, 'liquidaciones', id));
+            await deleteDoc(doc(db, 'liquidacion_comprobantes', id)).catch(() => {}); // limpia el comprobante si existe
             await cargar(vendedorId);
         } catch (e) {
             alert(e.message || 'No se pudo eliminar.');
         }
+    };
+
+    // Comprobante de pago del banco: la app comprime la imagen a ~1400px / JPEG y
+    // la guarda como data URL en `liquidacion_comprobantes/{liqId}` (doc aparte,
+    // no infla la liquidación ni el estado de cuenta). No requiere Storage.
+    const comprimirImagen = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                const max = 1400;
+                let { width, height } = img;
+                if (width > max || height > max) { const r = Math.min(max / width, max / height); width = Math.round(width * r); height = Math.round(height * r); }
+                const canvas = document.createElement('canvas');
+                canvas.width = width; canvas.height = height;
+                canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', 0.6));
+            };
+            img.onerror = reject;
+            img.src = reader.result;
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+
+    const adjuntarComprobante = async (liqId, file) => {
+        if (!file) return;
+        setSubiendoComp(liqId); setError('');
+        try {
+            const dataUrl = await comprimirImagen(file);
+            if (dataUrl.length > 950000) { setError('La imagen es muy grande incluso comprimida. Toma la foto con menos resolución.'); return; }
+            await setDoc(doc(db, 'liquidacion_comprobantes', liqId), {
+                dataUrl, vendedorId,
+                subidoPor: auth.currentUser?.uid || null,
+                subidoEn: serverTimestamp(),
+            });
+            await updateDoc(doc(db, 'liquidaciones', liqId), { comprobanteAdjunto: true });
+            await cargar(vendedorId);
+        } catch (e) {
+            setError(e.message || 'No se pudo adjuntar el comprobante.');
+        } finally { setSubiendoComp(''); }
+    };
+
+    const abrirComprobante = async (liqId) => {
+        try {
+            const snap = await getDoc(doc(db, 'liquidacion_comprobantes', liqId));
+            if (snap.exists()) setVerComprobante({ dataUrl: snap.data().dataUrl });
+            else alert('No se encontró el comprobante.');
+        } catch (e) { alert('No se pudo abrir el comprobante.'); }
     };
 
     // Cierre/freeze de período (Fase 3.10): congela el devengado de un período
@@ -2917,6 +2972,17 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
 
             {!loading && vendedorId && (
                 <>
+                    {/* Pestañas: Registrar / Histórico */}
+                    <div className="flex gap-2 mb-4">
+                        {[{ k: 'registrar', l: 'Registrar liquidación' }, { k: 'historico', l: 'Histórico de liquidaciones' }].map(t => (
+                            <button key={t.k} onClick={() => setVista(t.k)}
+                                className={`flex-1 text-sm font-bold px-4 py-2.5 rounded-xl border-2 transition-colors ${vista === t.k ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-200'}`}>
+                                {t.l}
+                            </button>
+                        ))}
+                    </div>
+
+                    {vista === 'registrar' && (<>
                     {/* Resumen global */}
                     <div className="grid grid-cols-3 gap-3 mb-4">
                         <div className="bg-white border border-slate-200 rounded-xl p-4">
@@ -3064,7 +3130,60 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                             </button>
                         </div>
                     )}
+                    </>)}
 
+                    {/* ── VISTA HISTÓRICO ── */}
+                    {vista === 'historico' && (
+                        <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                            <p className="font-bold text-slate-800 mb-1">Histórico de liquidaciones</p>
+                            <p className="text-slate-500 text-xs mb-3">Pagos registrados de este vendedor. Filtra por período y adjunta el comprobante del banco a cada uno.</p>
+                            <label className="text-xs font-semibold text-slate-600">Período</label>
+                            <select value={histPeriodo} onChange={e => setHistPeriodo(e.target.value)} className={`${SELECT_CLS} mt-1 mb-4`} style={SELECT_STYLE}>
+                                <option value="todos">Todos los períodos</option>
+                                {estados.map(e => <option key={e.periodKey} value={e.periodKey}>Mes {e.mes} · {e.rango}</option>)}
+                            </select>
+
+                            {(() => {
+                                const list = liquidaciones.filter(l => histPeriodo === 'todos' || l.periodKey === histPeriodo);
+                                if (list.length === 0) return <p className="text-slate-400 text-sm">No hay pagos registrados{histPeriodo !== 'todos' ? ' en este período' : ''}.</p>;
+                                const totalHist = list.reduce((s, l) => s + (Number(l.monto) || 0), 0);
+                                return (
+                                    <>
+                                        <p className="text-sm text-slate-600 mb-2">{list.length} pago{list.length === 1 ? '' : 's'} · <b>{money(totalHist)}</b> abonado en total.</p>
+                                        <div className="space-y-2">
+                                            {list.map(l => (
+                                                <div key={l.id} className="border border-slate-100 rounded-lg px-3 py-2.5 text-sm">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <div className="min-w-0">
+                                                            <p className="font-semibold text-slate-700">{money(l.monto)} <span className="text-slate-400 font-normal">· {l.fecha}</span></p>
+                                                            <p className="text-slate-400 text-xs truncate">{periodLabel(l.periodKey)}{l.nota ? ` · ${l.nota}` : ''}</p>
+                                                        </div>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            <button onClick={() => setComprobante(l)} className="p-1.5 text-slate-400 hover:text-brand-blue" title="Comprobante GK (PDF)"><Receipt size={16} /></button>
+                                                            <button onClick={() => eliminar(l.id)} className="p-1.5 text-slate-300 hover:text-red-500" title="Eliminar liquidación"><Trash2 size={16} /></button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="mt-2 pt-2 border-t border-slate-50 flex items-center gap-3">
+                                                        {l.comprobanteAdjunto ? (
+                                                            <button onClick={() => abrirComprobante(l.id)} className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">📎 Ver comprobante del banco</button>
+                                                        ) : (
+                                                            <span className="text-[11px] text-slate-400">Sin comprobante del banco</span>
+                                                        )}
+                                                        <label className="text-[11px] font-semibold text-brand-blue cursor-pointer ml-auto">
+                                                            {subiendoComp === l.id ? 'Subiendo…' : (l.comprobanteAdjunto ? 'Reemplazar' : 'Adjuntar comprobante')}
+                                                            <input type="file" accept="image/*" className="hidden" disabled={subiendoComp === l.id} onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; adjuntarComprobante(l.id, f); }} />
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                );
+                            })()}
+                        </div>
+                    )}
+
+                    {/* Documentos compartidos por ambas vistas */}
                     {docDesgloses && docDesgloses.length > 0 && (
                         <LiquidacionDetalladaDoc
                             desgloses={docDesgloses}
@@ -3072,34 +3191,17 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                             onClose={() => setDocDesgloses(null)}
                         />
                     )}
-
-                    {/* Historial de liquidaciones */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
-                        <p className="font-bold text-slate-800 mb-3">Liquidaciones registradas</p>
-                        {liquidaciones.length === 0 ? (
-                            <p className="text-slate-400 text-sm">Aún no hay pagos registrados para este vendedor.</p>
-                        ) : (
-                            <div className="space-y-2">
-                                {liquidaciones.map(l => (
-                                    <div key={l.id} className="flex items-center justify-between border border-slate-100 rounded-lg px-3 py-2 text-sm">
-                                        <div>
-                                            <p className="font-semibold text-slate-700">{money(l.monto)} <span className="text-slate-400 font-normal">· {l.fecha}</span></p>
-                                            <p className="text-slate-400 text-xs">{periodLabel(l.periodKey)}{l.nota ? ` · ${l.nota}` : ''}</p>
-                                        </div>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <button onClick={() => setComprobante(l)} className="p-1.5 text-slate-400 hover:text-brand-blue" title="Descargar comprobante">
-                                                <Receipt size={16} />
-                                            </button>
-                                            <button onClick={() => eliminar(l.id)} className="p-1.5 text-slate-300 hover:text-red-500" title="Eliminar liquidación">
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
                 </>
+            )}
+
+            {/* Visor del comprobante del banco (imagen adjunta) */}
+            {verComprobante && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/85 flex flex-col" onClick={() => setVerComprobante(null)}>
+                    <div className="flex justify-end p-3"><button className="text-white text-sm font-semibold flex items-center gap-1"><X size={18} /> Cerrar</button></div>
+                    <div className="flex-1 overflow-auto p-4 flex items-start justify-center">
+                        <img src={verComprobante.dataUrl} alt="Comprobante del banco" className="max-w-full rounded-lg shadow-2xl" onClick={e => e.stopPropagation()} />
+                    </div>
+                </div>
             )}
 
             {comprobante && (

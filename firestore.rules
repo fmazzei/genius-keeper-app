@@ -169,6 +169,14 @@ service cloud.firestore {
       allow delete: if isMaster() || isAdministrador();
     }
 
+    // Comprobante de pago del banco adjunto a una liquidación (imagen en data URL,
+    // doc aparte para no inflar la liquidación). Mismo acceso que liquidaciones.
+    match /liquidacion_comprobantes/{liqId} {
+      allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
+      allow create, update: if isAdmin() || isMaster();
+      allow delete: if isMaster() || isAdministrador();
+    }
+
     match /pos/{posId} {
       allow get, list: if isAuthenticated();
       allow create: if isMaster() || isAdmin() || isMerchandiser();
