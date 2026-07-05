@@ -2617,6 +2617,15 @@ const FacturaManagementTool = () => {
 // el mes vencido; cada registro rebaja el saldo del período correspondiente.
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// Estilo unificado de desplegables en todo el módulo de administración: borde
+// azul, esquinas redondeadas y chevron (de fondo, sin div envolvente).
+const SELECT_CLS = "w-full appearance-none bg-white border-2 border-brand-blue/30 text-slate-800 font-semibold rounded-xl pl-4 pr-10 py-2.5 text-sm focus:outline-none focus:border-brand-blue";
+const SELECT_STYLE = {
+    backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%2312386b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 0.75rem center',
+};
+
 // Vista EN PANTALLA del desglose de un período — lo que el administrador va a
 // pagar, con la evidencia de facturas por cada bono. Se muestra ANTES de
 // registrar la liquidación para revisar de dónde sale cada dólar.
@@ -2895,7 +2904,8 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                 <select
                     value={vendedorId}
                     onChange={e => onSelectVendedor(e.target.value)}
-                    className="mt-2 w-full p-2.5 border border-slate-300 rounded-lg text-sm"
+                    className={`${SELECT_CLS} mt-2`}
+                    style={SELECT_STYLE}
                 >
                     <option value="">Selecciona un vendedor…</option>
                     {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
@@ -2929,7 +2939,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                                 <label className="text-xs font-semibold text-slate-600">Período</label>
-                                <select value={periodKey} onChange={e => setPeriodKey(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm">
+                                <select value={periodKey} onChange={e => setPeriodKey(e.target.value)} className={`${SELECT_CLS} mt-1`} style={SELECT_STYLE}>
                                     <option value="">Selecciona…</option>
                                     {estados.map(e => (
                                         <option key={e.periodKey} value={e.periodKey}>
@@ -3022,14 +3032,14 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                                 <div>
                                     <label className="text-xs font-semibold text-slate-600">Desde el mes</label>
-                                    <select value={corteDesde} onChange={e => setCorteDesde(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm">
+                                    <select value={corteDesde} onChange={e => setCorteDesde(e.target.value)} className={`${SELECT_CLS} mt-1`} style={SELECT_STYLE}>
                                         <option value="">—</option>
                                         {estados.map(e => <option key={e.periodKey} value={e.periodKey}>Mes {e.mes} · {e.rango}</option>)}
                                     </select>
                                 </div>
                                 <div>
                                     <label className="text-xs font-semibold text-slate-600">Hasta el mes</label>
-                                    <select value={corteHasta} onChange={e => setCorteHasta(e.target.value)} className="mt-1 w-full p-2.5 border border-slate-300 rounded-lg text-sm">
+                                    <select value={corteHasta} onChange={e => setCorteHasta(e.target.value)} className={`${SELECT_CLS} mt-1`} style={SELECT_STYLE}>
                                         <option value="">—</option>
                                         {estados.map(e => <option key={e.periodKey} value={e.periodKey}>Mes {e.mes} · {e.rango}</option>)}
                                     </select>
@@ -3154,8 +3164,12 @@ function buildInformeVendedor(facturas, metaVend, catMap) {
         else                       { excluidas++; }        // vieja pagada por otro
     });
 
+    // FACTURACIÓN (meta): solo A+B (NO recuperadas). Las heredadas NO cuentan a la
+    // meta de unidades (pagan 5% aparte), por eso las unidades/retail/foodservice
+    // se miden sobre la facturación — así coincide con la liquidación y el perfil.
+    const facturacion = owned.filter(f => !f.recuperada);
     const sec = { retail: { c: new Set(), f: 0, m: 0, u: 0 }, foodservice: { c: new Set(), f: 0, m: 0, u: 0 } };
-    owned.forEach(f => {
+    facturacion.forEach(f => {
         const s = sec[catOf(f)] || sec.retail;
         s.c.add(key(f)); s.f++; s.m += Number(f.monto) || 0; s.u += Number(f.unidades) || 0;
     });
@@ -3165,6 +3179,7 @@ function buildInformeVendedor(facturas, metaVend, catMap) {
         totalVendedor: owned.length, A, B, C, excluidas, anuladas, ausentes,
         pagadas: pagadas.length,
         cobrado: pagadas.reduce((s, f) => s + (Number(f.monto) || 0), 0),
+        udsFacturacion: facturacion.reduce((s, f) => s + (Number(f.unidades) || 0), 0),
         udsTotal: owned.reduce((s, f) => s + (Number(f.unidades) || 0), 0),
         montoTotal: owned.reduce((s, f) => s + (Number(f.monto) || 0), 0),
         retail:      { clientes: sec.retail.c.size, facturas: sec.retail.f, monto: sec.retail.m, uds: sec.retail.u },
@@ -3220,7 +3235,7 @@ function InformeVendedor({ titulo, parcial, info, zohoTotal }) {
             </div>
 
             <div>
-                <p className="font-bold text-slate-700">3 · Unidades totales: <b className="text-brand-blue">{n(info.udsTotal)}</b> uds · {m(info.montoTotal)}</p>
+                <p className="font-bold text-slate-700">3 · Unidades facturadas (meta): <b className="text-brand-blue">{n(info.udsFacturacion)}</b> uds <span className="font-normal text-slate-400">(no incluye heredadas)</span></p>
                 <Sub>Retail — Clientes: <b>{n(info.retail.clientes)}</b> · Facturas: <b>{n(info.retail.facturas)}</b> · Monto: <b>{m(info.retail.monto)}</b> · Unidades: <b>{n(info.retail.uds)}</b></Sub>
                 <Sub>Foodservice — Clientes: <b>{n(info.foodservice.clientes)}</b> · Facturas: <b>{n(info.foodservice.facturas)}</b> · Monto: <b>{m(info.foodservice.monto)}</b> · Unidades: <b>{n(info.foodservice.uds)}</b></Sub>
             </div>
@@ -3428,18 +3443,16 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
             </p>
 
             <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Vendedor</p>
-            <div className="relative mb-3">
-                <select
-                    value={vendedorId}
-                    onChange={e => onSelect(e.target.value)}
-                    className="w-full appearance-none bg-white border-2 border-brand-blue/30 text-slate-800 font-semibold rounded-xl pl-4 pr-10 py-3 text-sm focus:outline-none focus:border-brand-blue"
-                >
-                    <option value="">Selecciona un vendedor…</option>
-                    {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    <option value="__none__">— Sin vendedor asignado —</option>
-                </select>
-                <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-blue pointer-events-none" />
-            </div>
+            <select
+                value={vendedorId}
+                onChange={e => onSelect(e.target.value)}
+                className={`${SELECT_CLS} mb-3`}
+                style={SELECT_STYLE}
+            >
+                <option value="">Selecciona un vendedor…</option>
+                {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                <option value="__none__">— Sin vendedor asignado —</option>
+            </select>
 
             {error && <p className="text-red-500 text-xs mb-2">{error}</p>}
             {loading && <LoadingSpinner />}
@@ -3480,17 +3493,15 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                     {vendedorId !== '__none__' && (
                         <div className="mb-3">
                             <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Paso 2 · Período a conciliar</p>
-                            <div className="relative">
-                                <select
-                                    value={periodoSel}
-                                    onChange={e => setPeriodoSel(e.target.value)}
-                                    className="w-full appearance-none bg-white border-2 border-brand-blue/30 text-slate-800 font-semibold rounded-xl pl-4 pr-10 py-3 text-sm focus:outline-none focus:border-brand-blue"
-                                >
-                                    {periodos.map(p => <option key={p.periodKey} value={p.periodKey}>{periodoLabel(p)}{p.cerrado ? '' : ' · en curso'}</option>)}
-                                    <option value="todas">Todas las facturas</option>
-                                </select>
-                                <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-blue pointer-events-none" />
-                            </div>
+                            <select
+                                value={periodoSel}
+                                onChange={e => setPeriodoSel(e.target.value)}
+                                className={SELECT_CLS}
+                                style={SELECT_STYLE}
+                            >
+                                {periodos.map(p => <option key={p.periodKey} value={p.periodKey}>{periodoLabel(p)}{p.cerrado ? '' : ' · en curso'}</option>)}
+                                <option value="todas">Todas las facturas</option>
+                            </select>
                         </div>
                     )}
 
@@ -3501,7 +3512,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                                 {[
                                     { v: infoPeriodo.totalVendedor, l: 'Facturas' },
                                     { v: infoPeriodo.pagadas, l: 'Pagadas', hi: true },
-                                    { v: infoPeriodo.udsTotal, l: 'Uds facturadas' },
+                                    { v: infoPeriodo.udsFacturacion, l: 'Uds facturadas (meta)' },
                                     { v: infoPeriodo.retail.uds, l: 'Uds retail' },
                                     { v: infoPeriodo.foodservice.uds, l: 'Uds foodservice' },
                                     { v: money(infoPeriodo.cobrado), l: 'Cobrado', money: true },
@@ -4007,7 +4018,7 @@ const IntegracionesSection = () => {
                         <input type="text" value={creds.clientId} onChange={e => setCreds(c => ({ ...c, clientId: e.target.value }))} placeholder="Client ID" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
                         <input type="password" value={creds.clientSecret} onChange={e => setCreds(c => ({ ...c, clientSecret: e.target.value }))} placeholder="Client Secret" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
                         <input type="text" value={creds.code} onChange={e => setCreds(c => ({ ...c, code: e.target.value }))} placeholder="Código (Generate Code de Zoho)" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
-                        <select value={creds.dataCenter} onChange={e => setCreds(c => ({ ...c, dataCenter: e.target.value }))} className="w-full p-2 border border-slate-300 rounded-lg text-sm">
+                        <select value={creds.dataCenter} onChange={e => setCreds(c => ({ ...c, dataCenter: e.target.value }))} className={SELECT_CLS} style={SELECT_STYLE}>
                             <option value="com">Data center: .com (EE.UU. — usual en Venezuela)</option>
                             <option value="eu">.eu (Europa)</option>
                             <option value="in">.in (India)</option>

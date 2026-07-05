@@ -39,7 +39,7 @@ function CatBloque({ info }) {
                 {info.excluidas > 0 && <p className="pl-3 text-slate-400">Excluidas: {n(info.excluidas)} viejas ya pagadas por otro (historial del cliente)</p>}
             </div>
             <div>
-                <p className="font-bold" style={{ color: NAVY }}>Unidades totales: {n(info.udsTotal)} uds · {m(info.montoTotal)}</p>
+                <p className="font-bold" style={{ color: NAVY }}>Unidades facturadas (meta): {n(info.udsFacturacion)} uds (no incluye heredadas)</p>
                 <p className="pl-3">Retail — Clientes: <b>{n(info.retail.clientes)}</b> · Facturas: <b>{n(info.retail.facturas)}</b> · Monto: <b>{m(info.retail.monto)}</b> · Unidades: <b>{n(info.retail.uds)}</b></p>
                 <p className="pl-3">Foodservice — Clientes: <b>{n(info.foodservice.clientes)}</b> · Facturas: <b>{n(info.foodservice.facturas)}</b> · Monto: <b>{m(info.foodservice.monto)}</b> · Unidades: <b>{n(info.foodservice.uds)}</b></p>
             </div>
