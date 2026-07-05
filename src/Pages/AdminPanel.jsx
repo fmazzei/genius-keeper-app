@@ -9,6 +9,7 @@ import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
+import InformeVerificacionDoc from '../Components/InformeVerificacionDoc.jsx';
 import CarteraManager from '../Components/CarteraManager.jsx';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
@@ -3152,8 +3153,11 @@ function buildInformeVendedor(facturas, metaVend, catMap) {
         s.c.add(key(f)); s.f++; s.m += Number(f.monto) || 0; s.u += Number(f.unidades) || 0;
     });
 
+    const pagadas = owned.filter(f => f.estado === 'pagada');
     return {
         totalVendedor: owned.length, A, B, C, excluidas, anuladas, ausentes,
+        pagadas: pagadas.length,
+        cobrado: pagadas.reduce((s, f) => s + (Number(f.monto) || 0), 0),
         udsTotal: owned.reduce((s, f) => s + (Number(f.unidades) || 0), 0),
         montoTotal: owned.reduce((s, f) => s + (Number(f.monto) || 0), 0),
         retail:      { clientes: sec.retail.c.size, facturas: sec.retail.f, monto: sec.retail.m, uds: sec.retail.u },
@@ -3243,6 +3247,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const [metaVend, setMetaVend]     = useState(null);
     const [catMap, setCatMap]         = useState(() => ({}));
     const [zohoTotal, setZohoTotal]   = useState(null);
+    const [showInformeDoc, setShowInformeDoc] = useState(false);
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return;
@@ -3400,6 +3405,13 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
 
     const periodoLabel = (p) => `Mes ${p.mes} · ${p.rango} · ${p.anio}`;
 
+    // Informe del vendedor (única fuente de los indicadores): total a la fecha
+    // (descargable) y del período seleccionado (la vista principal).
+    const ingresoDate = periodos.find(p => p.mes === 1)?.start || null;
+    const infoTotal    = (vendedorId !== '__none__' && metaVend) ? buildInformeVendedor(facturas, metaVend, catMap) : null;
+    const infoPeriodo  = (vendedorId !== '__none__' && metaVend && periodoActual) ? buildInformeVendedor(facturasDelPeriodo(facturas, periodoActual, ingresoDate), metaVend, catMap) : null;
+    const hayEnCurso   = periodos.some(p => !p.cerrado);
+
     return (
         <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
             <p className="font-bold text-slate-800 mb-1">Conciliación de facturas</p>
@@ -3408,120 +3420,115 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                 Una vez conciliado, procede a la <b>liquidación</b>.
             </p>
 
-            <select
-                value={vendedorId}
-                onChange={e => onSelect(e.target.value)}
-                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm mb-3"
-            >
-                <option value="">Selecciona un vendedor…</option>
-                {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                <option value="__none__">— Sin vendedor asignado —</option>
-            </select>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Vendedor</p>
+            <div className="relative mb-3">
+                <select
+                    value={vendedorId}
+                    onChange={e => onSelect(e.target.value)}
+                    className="w-full appearance-none bg-white border-2 border-brand-blue/30 text-slate-800 font-semibold rounded-xl pl-4 pr-10 py-3 text-sm focus:outline-none focus:border-brand-blue"
+                >
+                    <option value="">Selecciona un vendedor…</option>
+                    {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    <option value="__none__">— Sin vendedor asignado —</option>
+                </select>
+                <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-blue pointer-events-none" />
+            </div>
 
             {error && <p className="text-red-500 text-xs mb-2">{error}</p>}
             {loading && <LoadingSpinner />}
 
             {!loading && vendedorId && (
                 <>
-                    {/* Actualizar desde Zoho — SOLO las facturas de este vendedor */}
+                    {/* Paso 1 — Prueba diagnóstica (sincroniza con Zoho). Habilita la
+                        descarga de los informes de verificación (general + histórico). */}
                     {vendedorId !== '__none__' && (
-                        <div className="mb-3">
+                        <div className="mb-4">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Paso 1 · Prueba diagnóstica</p>
                             <button
                                 onClick={sincronizarVendedor}
                                 disabled={sincronizando}
                                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-2.5 rounded-lg disabled:opacity-60"
                             >
                                 <RefreshCw size={15} className={sincronizando ? 'animate-spin' : ''} />
-                                {sincronizando ? 'Consultando Zoho…' : 'Actualizar facturas desde Zoho'}
+                                {sincronizando ? 'Consultando Zoho…' : 'Prueba diagnóstica (sincronizar con Zoho)'}
                             </button>
-                            <p className="text-slate-400 text-[11px] mt-1">Trae de Zoho el estado real de las facturas <b>de este vendedor</b> y las actualiza (pagadas, vencidas, pendientes, anuladas) y marca las que ya no existen en Zoho.</p>
                             {syncError && <p className="text-red-500 text-xs mt-1">{syncError}</p>}
                             {syncResult && syncResult.diag && (
-                                <div className="bg-white border border-slate-200 rounded-lg p-3 text-xs text-slate-700 mt-2 space-y-3">
-                                    {/* 1. Barrido total de Zoho */}
-                                    <div>
-                                        <p className="font-bold text-slate-800">1 · Facturas revisadas (toda la base de Zoho)</p>
-                                        <p className="mt-0.5">GK leyó <b>{syncResult.diag.zohoTotal}</b> facturas {syncResult.diag.zohoLeidoCompleto ? <span className="text-emerald-600 font-semibold">✓ barrido completo</span> : <span className="text-amber-600 font-semibold">⚠ barrido parcial (cortado por tope)</span>}.</p>
-                                        <p className="text-slate-500 mt-0.5">Pagadas {syncResult.diag.zohoPagadas} · Vencidas {syncResult.diag.zohoVencidas} · Pendientes {syncResult.diag.zohoPendientes} · Anuladas {syncResult.diag.zohoAnuladas}.</p>
-                                    </div>
-
-                                    {/* 2. Facturas de este vendedor, categorizadas */}
-                                    <div className="border-t border-slate-100 pt-2">
-                                        <p className="font-bold text-slate-800">2 · Facturas de este vendedor: <b className="text-brand-blue">{syncResult.diag.delVendedor.total}</b> (monto ${Number(syncResult.diag.delVendedor.montoTotal).toLocaleString('es-VE', { minimumFractionDigits: 2 })})</p>
-                                        <div className="mt-1 pl-2 space-y-0.5">
-                                            <p>A · Asignadas (llevan su nombre): <b>{syncResult.diag.delVendedor.asignadas}</b></p>
-                                            <p>B · Cartera desde su ingreso: <b>{syncResult.diag.delVendedor.carteraDesdeInicio}</b></p>
-                                            <p>C · Heredadas abiertas (por cobrar): <b>{syncResult.diag.delVendedor.heredadas}</b></p>
-                                        </div>
-                                        {syncResult.diag.delVendedor.excluidasHistorial > 0 && (
-                                            <p className="mt-1 text-slate-500 bg-slate-50 border border-slate-200 rounded p-1.5">Se excluyeron <b>{syncResult.diag.delVendedor.excluidasHistorial}</b> facturas viejas ya pagadas de sus clientes (historial del cliente, NO ventas del vendedor).</p>
-                                        )}
-                                        {Array.isArray(syncResult.diag.topHeredadas) && syncResult.diag.topHeredadas.length > 0 && (
-                                            <div className="mt-1">
-                                                <p className="text-slate-500 font-semibold">Clientes con cuentas abiertas heredadas:</p>
-                                                {syncResult.diag.topHeredadas.map((h, i) => (
-                                                    <div key={i} className="flex justify-between gap-2 py-0.5">
-                                                        <span className="flex-1 truncate">{h.cliente}</span>
-                                                        <span className="font-mono text-slate-500">{h.facturas} fact.</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* 4/5. Anuladas y ausentes */}
-                                    <div className="border-t border-slate-100 pt-2">
-                                        <p><b>4 · Anuladas</b> (de este vendedor): {syncResult.diag.delVendedor.anuladas}</p>
-                                        <p><b>5 · Eliminadas/ausentes en Zoho:</b> <b className={syncResult.ausentes ? 'text-amber-600' : ''}>{syncResult.ausentes}</b></p>
-                                    </div>
-
-                                    {/* Pagadas sin vincular (causa de facturas que "faltan") */}
-                                    {syncResult.diag.pagadasSinVendedor > 0 && (
-                                        <div className="bg-red-50 border border-red-200 rounded p-2">
-                                            <p className="text-red-700 font-semibold">⚠️ {syncResult.diag.pagadasSinVendedor} factura(s) PAGADA(S) en Zoho sin vendedor (cliente sin vincular). Si alguna es de este vendedor, vincula su razón social (sección 4) y reconcilia.</p>
-                                            <div className="mt-1 max-h-28 overflow-auto">
-                                                {syncResult.diag.ejemplosPagadasSinVendedor.map((e, i) => (
-                                                    <div key={i} className="flex justify-between gap-2 py-0.5 text-[11px]">
-                                                        <span className="font-mono">{e.numero}</span>
-                                                        <span className="flex-1 truncate text-slate-600">{e.cliente}</span>
-                                                        <span className="text-slate-400">{e.salesperson || '—'}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <p className="text-slate-400 border-t border-slate-100 pt-2">Aplicado ahora — Marcadas pagadas: <b className="text-emerald-700">{syncResult.marcadasPagadas}</b> · Creadas: {syncResult.creadas} · Anuladas: {syncResult.anuladas} · Errores: {syncResult.errores}. <b>Informe parcial</b> si el período en curso no ha cerrado.</p>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                                        <CheckCircle size={15} /> GK leyó {Number(syncResult.diag.zohoTotal).toLocaleString('es-VE')} facturas {syncResult.diag.zohoLeidoCompleto ? '· barrido completo' : '· parcial'}
+                                    </span>
+                                    <button onClick={() => setShowInformeDoc(true)} className="text-xs font-bold text-brand-blue border border-brand-blue/40 rounded-lg px-3 py-1.5 hover:bg-blue-50">
+                                        ⬇ Descargar informes (general + histórico)
+                                    </button>
                                 </div>
                             )}
-                        </div>
-                    )}
-
-                    {/* Selector de período */}
-                    {vendedorId !== '__none__' && (
-                        <select
-                            value={periodoSel}
-                            onChange={e => setPeriodoSel(e.target.value)}
-                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm mb-3"
-                        >
-                            {periodos.map(p => <option key={p.periodKey} value={p.periodKey}>{periodoLabel(p)}{p.cerrado ? '' : ' · en curso'}</option>)}
-                            <option value="todas">Todas las facturas</option>
-                        </select>
-                    )}
-
-                    {/* INFORME COMPLETO DEL VENDEDOR — la vista principal (total + período). */}
-                    {vendedorId !== '__none__' && metaVend && (
-                        <div className="mb-3 space-y-3">
-                            <InformeVendedor titulo="Total a la fecha (todas sus facturas)" parcial={periodos.some(p => !p.cerrado)} info={buildInformeVendedor(facturas, metaVend, catMap)} zohoTotal={zohoTotal} />
-                            {periodoActual && (
-                                <InformeVendedor
-                                    titulo={`Período · ${periodoLabel(periodoActual)}`}
-                                    parcial={!periodoActual.cerrado}
-                                    info={buildInformeVendedor(facturasDelPeriodo(facturas, periodoActual, periodos.find(p => p.mes === 1)?.start || null), metaVend, catMap)}
-                                    zohoTotal={zohoTotal}
-                                />
+                            {syncResult && syncResult.diag && syncResult.diag.pagadasSinVendedor > 0 && (
+                                <p className="text-red-600 text-[11px] mt-1.5">⚠️ {syncResult.diag.pagadasSinVendedor} pagadas en Zoho sin vendedor (clientes sin vincular) — revísalas en la sección 4 por si alguna es de él.</p>
                             )}
                         </div>
+                    )}
+
+                    {/* Paso 2 — Período a conciliar */}
+                    {vendedorId !== '__none__' && (
+                        <div className="mb-3">
+                            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Paso 2 · Período a conciliar</p>
+                            <div className="relative">
+                                <select
+                                    value={periodoSel}
+                                    onChange={e => setPeriodoSel(e.target.value)}
+                                    className="w-full appearance-none bg-white border-2 border-brand-blue/30 text-slate-800 font-semibold rounded-xl pl-4 pr-10 py-3 text-sm focus:outline-none focus:border-brand-blue"
+                                >
+                                    {periodos.map(p => <option key={p.periodKey} value={p.periodKey}>{periodoLabel(p)}{p.cerrado ? '' : ' · en curso'}</option>)}
+                                    <option value="todas">Todas las facturas</option>
+                                </select>
+                                <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-brand-blue pointer-events-none" />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Indicadores del período conciliado (la vista principal). */}
+                    {infoPeriodo && periodoActual && (
+                        <div className="mb-3">
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    { v: infoPeriodo.totalVendedor, l: 'Facturas' },
+                                    { v: infoPeriodo.pagadas, l: 'Pagadas', hi: true },
+                                    { v: infoPeriodo.udsTotal, l: 'Uds facturadas' },
+                                    { v: infoPeriodo.retail.uds, l: 'Uds retail' },
+                                    { v: infoPeriodo.foodservice.uds, l: 'Uds foodservice' },
+                                    { v: money(infoPeriodo.cobrado), l: 'Cobrado', money: true },
+                                ].map((c, i) => (
+                                    <div key={i} className={`rounded-lg p-2.5 text-center border ${c.hi ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
+                                        <p className={`font-black leading-none ${c.money ? 'text-sm' : 'text-lg'} ${c.hi ? 'text-emerald-700' : 'text-slate-800'}`}>{c.money ? c.v : Number(c.v).toLocaleString('es-VE')}</p>
+                                        <p className="text-slate-400 text-[10px] mt-1 leading-tight">{c.l}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="text-slate-400 text-[10px] mt-1.5">Las <b>Pagadas</b> son las que generan comisión. Cuando estos indicadores y el informe cuadren, procede a la <b>liquidación</b>.</p>
+                        </div>
+                    )}
+
+                    {/* INFORME PARCIAL del período seleccionado — la vista principal. */}
+                    {infoPeriodo && periodoActual && (
+                        <div className="mb-3">
+                            <InformeVendedor
+                                titulo={`Período · ${periodoLabel(periodoActual)}`}
+                                parcial={!periodoActual.cerrado}
+                                info={infoPeriodo}
+                                zohoTotal={zohoTotal}
+                            />
+                        </div>
+                    )}
+
+                    {/* Doc descargable: informe general (barrido) + histórico del vendedor. */}
+                    {showInformeDoc && (
+                        <InformeVerificacionDoc
+                            vendedorName={vendedores.find(v => v.id === vendedorId)?.name || 'Vendedor'}
+                            diag={syncResult?.diag}
+                            infoTotal={infoTotal}
+                            onClose={() => setShowInformeDoc(false)}
+                        />
                     )}
 
                     {/* Detalle de inspección (tarjetas/pills/lista) — colapsable, secundario. */}
@@ -3529,33 +3536,13 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                         <summary className="cursor-pointer text-xs font-semibold text-slate-500 select-none py-1">Ver detalle de facturas (inspección y acciones)</summary>
                         <div className="mt-2">
 
-                    {/* Resultado de la conciliación del período */}
-                    <div className="grid grid-cols-3 gap-2 mb-2">
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-slate-800 font-black text-lg leading-none">{unicasP.length}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">Facturas</p>
-                        </div>
-                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-center">
-                            <p className="text-slate-800 font-black text-lg leading-none">{udsPeriodo.toLocaleString('es-VE')}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">{periodoSel === 'recuperadas' ? 'Unidades recuperadas' : 'Unidades facturadas'}</p>
-                        </div>
-                        <div className={`border rounded-lg p-2.5 text-center ${observaciones > 0 ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-200'}`}>
-                            <p className={`font-black text-lg leading-none ${observaciones > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{observaciones}</p>
-                            <p className="text-slate-400 text-[11px] mt-1">Observaciones</p>
-                        </div>
-                    </div>
-                    <p className="text-slate-400 text-[11px] mb-2">
-                        {periodoSel !== 'recuperadas' && periodoSel !== 'todas'
-                            ? <>Las <b>unidades facturadas</b> deben coincidir con las del perfil del vendedor para este período.</>
-                            : <>Vista global (todas las facturas del vendedor).</>}
-                        {observaciones > 0 && (
-                            <span className="text-amber-600 font-semibold">{' '}·{' '}
-                                {dupExtraPeriodo > 0 && `${dupExtraPeriodo} duplicado${dupExtraPeriodo === 1 ? '' : 's'}`}
-                                {dupExtraPeriodo > 0 && fueraCartera > 0 && ' · '}
-                                {fueraCartera > 0 && `${fueraCartera} fuera de cartera`}
-                            </span>
-                        )}
-                    </p>
+                    {observaciones > 0 && (
+                        <p className="text-amber-600 text-[11px] mb-2 font-semibold">
+                            {dupExtraPeriodo > 0 && `${dupExtraPeriodo} duplicado${dupExtraPeriodo === 1 ? '' : 's'}`}
+                            {dupExtraPeriodo > 0 && fueraCartera > 0 && ' · '}
+                            {fueraCartera > 0 && `${fueraCartera} fuera de cartera`}
+                        </p>
+                    )}
 
                     {dupTotal > 0 && (
                         <button
