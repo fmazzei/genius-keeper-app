@@ -2625,6 +2625,7 @@ function DesgloseView({ d }) {
     const m  = money;
     const fd = (v) => { const x = v?.toDate ? v.toDate() : (v instanceof Date ? v : (v ? new Date(v) : null)); return x && !isNaN(x) ? x.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'; };
     const comisionNivel = d.cobradoRegular * d.tasa / 100;
+    const cobradas = (d.facturas || []).filter(f => f.pagada && !f.comisionAnulada);
     const Row = ({ label, value, green, amber, navy, bold, sep }) => (
         <div className={`flex justify-between gap-3 ${sep ? 'border-t border-slate-200 pt-1 mt-1' : ''}`}>
             <span className={`text-slate-500 ${bold ? 'font-bold text-slate-700' : ''}`}>{label}</span>
@@ -2674,25 +2675,29 @@ function DesgloseView({ d }) {
                 <Row label="Saldo por pagar" value={m(d.saldo)} bold amber />
             </div>
 
-            <Bloque titulo={`Facturación → nivel · ${d.unidades}/${d.metaMensual} uds (${d.pct}%) → Nivel ${d.nivel}`}>
+            <Bloque titulo={`Facturación → Meta: ${d.metaMensual} · ${d.unidades}/${d.metaMensual} (${d.pct}%) → Nivel: ${d.nivel}`}>
+                <p className="text-slate-500 text-[11px] mb-1">Todas las facturas del período (pagadas y no pagadas) — definen el nivel de facturación.</p>
                 <Tabla rows={d.facturas} />
+                <Bloque titulo={`Facturas cobradas · ${cobradas.length} · ${m(d.cobradoRegular)} (de aquí sale la comisión)`} resaltado={cobradas.length > 0}>
+                    <Tabla rows={cobradas} />
+                </Bloque>
             </Bloque>
 
-            <Bloque titulo={`Bono Cobranza · ${d.facturasATiempo.length} factura${d.facturasATiempo.length === 1 ? '' : 's'} a tiempo → +${m(d.bonoCobranzaMonto)}`} resaltado={d.bonoCobranzaMonto > 0}>
+            <Bloque titulo={`Bono Cobranza (${d.bonoCobRate}%) · ${d.facturasATiempo.length} factura${d.facturasATiempo.length === 1 ? '' : 's'} a tiempo (+${m(d.bonoCobranzaMonto)})`} resaltado={d.bonoCobranzaMonto > 0}>
                 <Tabla rows={d.facturasATiempo} />
             </Bloque>
 
-            <Bloque titulo={`Bono Activación · ${d.semanasLogradas}/${d.semanasTotales} semanas logradas → +${m(d.bonoActivacionMonto)}`} resaltado={d.bonoActivacionMonto > 0}>
+            <Bloque titulo={`Bono de Activación (${d.bonoActRate}%) · ${d.semanasLogradas}/${d.semanasTotales} semanas logradas → +${m(d.bonoActivacionMonto)}`} resaltado={d.bonoActivacionMonto > 0}>
                 {d.carteraSize === 0 ? <p className="text-slate-400 text-xs">Sin cartera asignada.</p> : (
                     <>
                         <p className="text-slate-500 text-[11px] mb-1">Objetivo: activar ≥{d.actThreshold}% de la cartera ({d.objetivo}/{d.carteraSize} clientes) con ≥{d.actMinUnits} uds por semana.</p>
                         {d.semanas.map(w => (
-                            <div key={w.n} className="border border-slate-100 rounded mt-1.5">
-                                <div className={`flex justify-between px-2 py-1 text-[11px] ${w.lograda ? 'bg-emerald-50' : 'bg-slate-50'}`}>
+                            <details key={w.n} className="border border-slate-100 rounded mt-1.5">
+                                <summary className={`flex justify-between px-2 py-1 text-[11px] cursor-pointer select-none ${w.lograda ? 'bg-emerald-50' : 'bg-slate-50'}`}>
                                     <span className="font-semibold text-slate-700">Semana {w.n}</span>
-                                    <span className={w.lograda ? 'text-emerald-700 font-bold' : 'text-slate-500'}>{w.activados}/{w.objetivo} clientes {w.lograda ? '· lograda' : ''}</span>
-                                </div>
-                                {w.clientes.length > 0 && (
+                                    <span className={w.lograda ? 'text-emerald-700 font-bold' : 'text-slate-500'}>{w.activados} cliente{w.activados === 1 ? '' : 's'} con ≥{d.actMinUnits} uds {w.lograda ? '· LOGRADA' : '· no lograda'}</span>
+                                </summary>
+                                {w.lograda ? (
                                     <table className="w-full text-[10.5px]"><tbody>
                                         {w.clientes.map((c, i) => (
                                             <tr key={i} className="border-t border-slate-50">
@@ -2702,18 +2707,20 @@ function DesgloseView({ d }) {
                                             </tr>
                                         ))}
                                     </tbody></table>
+                                ) : (
+                                    <p className="px-2 py-1 text-[10.5px] text-slate-400">Semana no lograda — no genera bono, sin facturas.</p>
                                 )}
-                            </div>
+                            </details>
                         ))}
                     </>
                 )}
             </Bloque>
 
-            {d.recuperadas.length > 0 && (
-                <Bloque titulo={`Cuentas recuperadas · ${d.tasaRecup}% → +${m(d.bonoRecupMonto)}`}>
-                    <Tabla rows={d.recuperadas} />
-                </Bloque>
-            )}
+            <Bloque titulo={`Cuentas recuperadas (${d.tasaRecup}%) · ${d.recuperadas.length} cobrada${d.recuperadas.length === 1 ? '' : 's'} → +${m(d.bonoRecupMonto)}`} resaltado={d.bonoRecupMonto > 0}>
+                {d.recuperadas.length > 0
+                    ? <Tabla rows={d.recuperadas} />
+                    : <p className="text-slate-400 text-xs">No cobró ninguna cuenta recuperada en el período — $0,00.</p>}
+            </Bloque>
         </div>
     );
 }

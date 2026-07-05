@@ -446,7 +446,10 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
             cobradaATiempo: pagada && f.pagadaDentroDePlazo === true && !comisionAnulada && !esFood,
             key: clientKey(f),
         };
-        if (esRecup) recuperadas.push(item);
+        // Recuperadas: SOLO las que el vendedor efectivamente COBRÓ (cobradaVigente)
+        // aparecen — de esas se paga el 5%. El historial viejo ya pagado por otros
+        // no se muestra (pagaría $0 y solo confunde).
+        if (esRecup) { if (pagada && item.cobradaVigente && !comisionAnulada) recuperadas.push(item); }
         else regulares.push(item);
     });
     regulares.sort((a, b) => a.fecha - b.fecha);
