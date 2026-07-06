@@ -1,0 +1,67 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reglas de Firestore — KROMA standalone
+//
+// Modelo: aplicación de UN solo inquilino (una quesería). El inicio de sesión
+// con Firebase Auth autentica el acceso a la base; la autorización fina por
+// persona (rol operario/admin/gerencial/master y sus permisos) se maneja DENTRO
+// de la app mediante la colección `kroma_users`.
+//
+// Por eso, a nivel de reglas basta con exigir usuario autenticado sobre las
+// colecciones `kroma_*`. Si el equipo de desarrollo quiere endurecerlo (p.ej.
+// restringir borrados solo al rol master), puede añadir funciones getRole()
+// leyendo de kroma_users y condicionar allow delete.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Perfiles operativos Kroma + tokens FCM por usuario
+    match /kroma_users/{userId} {
+      allow read, write: if isAuth();
+      match /tokens/{tokenId} {
+        allow read, write: if isAuth();
+      }
+    }
+
+    // Configuración y costos
+    match /kroma_settings/{id}     { allow read, write: if isAuth(); }
+    match /kroma_config/{id}       { allow read, write: if isAuth(); }
+    match /kroma_fixed_costs/{id}  { allow read, write: if isAuth(); }
+
+    // Catálogos
+    match /kroma_products/{id}   { allow read, write: if isAuth(); }
+    match /kroma_suppliers/{id}  { allow read, write: if isAuth(); }
+    match /kroma_materials/{id}  { allow read, write: if isAuth(); }
+    match /kroma_recipes/{id}    { allow read, write: if isAuth(); }
+    match /kroma_processes/{id}  { allow read, write: if isAuth(); }
+    match /kroma_fichas/{id}     { allow read, write: if isAuth(); }
+
+    // Almacenes e inventarios
+    match /kroma_warehouses/{id}           { allow read, write: if isAuth(); }
+    match /kroma_warehouse_movements/{id}  { allow read, write: if isAuth(); }
+    match /kroma_inventory_materials/{id}  { allow read, write: if isAuth(); }
+    match /kroma_inventory_pt/{id}         { allow read, write: if isAuth(); }
+    match /kroma_milk_reception/{id}       { allow read, write: if isAuth(); }
+
+    // Depósito de destino interno (antes "puente" a un almacén externo; ahora
+    // es un almacén propio de la quesería al que se sincronizan los despachos).
+    match /kroma_almacenes_destino/{id}   { allow read, write: if isAuth(); }
+    match /kroma_inventario_destino/{id}  { allow read, write: if isAuth(); }
+
+    // Producción, despachos y trazabilidad
+    match /kroma_production_logs/{id}  { allow read, write: if isAuth(); }
+    match /kroma_despachos/{id}        { allow read, write: if isAuth(); }
+    match /kroma_edit_requests/{id}    { allow read, write: if isAuth(); }
+
+    // Notificaciones y alertas
+    match /kroma_notifications/{id}     { allow read, write: if isAuth(); }
+    match /kroma_alerts/{id}            { allow read, write: if isAuth(); }
+    match /kroma_scheduled_notifs/{id}  { allow read, write: if isAuth(); }
+  }
+}

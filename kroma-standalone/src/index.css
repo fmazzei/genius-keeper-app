@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+body {
+  background-color: #020617; /* bg-slate-950 */
+}
+
+/* Evita el auto-zoom de iOS Safari al enfocar un input (se dispara con font-size < 16px) */
+input, select, textarea {
+  font-size: 16px !important;
+}
+
+@keyframes kroma-shake {
+  0%,100% { transform: translateX(0); }
+  20%,60% { transform: translateX(-6px); }
+  40%,80% { transform: translateX(6px); }
+}
+.kroma-shake { animation: kroma-shake 0.55s ease; }
