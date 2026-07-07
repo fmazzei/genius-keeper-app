@@ -17,7 +17,13 @@ service cloud.firestore {
       return getRole(request.auth.uid) == 'administrador';
     }
     function isMaster() {
-      return request.auth.token.email == 'lacteoca@lacteoca.com';
+      // El máster puede ser la cuenta-correo original O cualquier usuario con
+      // rol 'master' en users_metadata (Etapa 2). getRole() lee el mismo doc que
+      // ya consultan isAdmin()/getRole() en la misma evaluación (cacheado), y el
+      // check de correo va primero (corto-circuito) para no leer de más.
+      return isAuthenticated()
+        && (request.auth.token.email == 'lacteoca@lacteoca.com'
+            || getRole(request.auth.uid) == 'master');
     }
     function isKromaMaster() {
       return isMaster() || getRole(request.auth.uid) == 'master';

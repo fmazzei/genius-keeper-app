@@ -838,10 +838,11 @@ const ROLE_META = {
     administrador: { label: 'Administración',color: 'bg-teal-100 text-teal-700',     desc: 'Comisiones y conciliación'      },
 };
 
-// readOnly: solo lista (sin crear/borrar/suspender) — usado por la sección Máster.
-// convertibleRoles: si se pasa, el botón "Convertir a <sección>" solo aparece para
-// esos roles legados (p.ej. ['director']); si es null, para cualquier rol distinto.
-const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc, badgeColor = 'bg-slate-100 text-slate-700', readOnly = false, convertibleRoles = null }) => {
+// canCreate: muestra el botón "Agregar". canManage: muestra borrar/suspender/convertir
+// (cuando es false, el acceso se muestra pero no es editable — evita autobloqueos, p.ej.
+// en la sección Máster). convertibleRoles: si se pasa, el botón "Convertir a <sección>"
+// solo aparece para esos roles legados (p.ej. ['director']).
+const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc, badgeColor = 'bg-slate-100 text-slate-700', canCreate = true, canManage = true, convertibleRoles = null }) => {
     const [users, setUsers]           = useState([]);
     const [loading, setLoading]       = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -922,7 +923,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                     <h3 className="text-xl font-semibold text-slate-700">{sectionLabel}</h3>
                     <p className="text-sm text-slate-500 mt-1">{sectionDesc}</p>
                 </div>
-                {!readOnly && (
+                {canCreate && (
                     <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm">
                         <UserPlus size={18} /><span className="hidden sm:inline">Agregar</span>
                     </button>
@@ -948,7 +949,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    {!readOnly && u.role !== createRole && (!convertibleRoles || convertibleRoles.includes(u.role)) && (
+                                    {canManage && u.role !== createRole && (!convertibleRoles || convertibleRoles.includes(u.role)) && (
                                         <button onClick={() => convertRole(u)} className="text-xs font-bold text-brand-blue border border-brand-blue/40 hover:bg-brand-blue/10 px-3 py-1.5 rounded-lg whitespace-nowrap">
                                             Convertir a {sectionLabel}
                                         </button>
@@ -958,14 +959,14 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                                             <p className="font-semibold text-slate-700 text-sm">Acceso</p>
                                             <p className={`text-xs font-medium ${u.active ? 'text-green-600' : 'text-red-500'}`}>{u.active ? 'Activo' : 'Suspendido'}</p>
                                         </div>
-                                        {!readOnly && <ToggleSwitch enabled={u.active} setEnabled={() => toggleActive(u.id, u.active)} />}
+                                        {canManage && <ToggleSwitch enabled={u.active} setEnabled={() => toggleActive(u.id, u.active)} />}
                                     </div>
-                                    {!readOnly && <button onClick={() => deleteUser(u)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={18} /></button>}
+                                    {canManage && <button onClick={() => deleteUser(u)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={18} /></button>}
                                 </div>
                             </li>
                         );
                     })}
-                    {users.length === 0 && <p className="text-center text-slate-500 py-8">{readOnly ? 'No hay usuarios registrados.' : 'No hay usuarios registrados. Agrega uno con el botón de arriba.'}</p>}
+                    {users.length === 0 && <p className="text-center text-slate-500 py-8">{canCreate ? 'No hay usuarios registrados. Agrega uno con el botón de arriba.' : 'No hay usuarios registrados.'}</p>}
                 </ul>
             </div>
 
@@ -4391,13 +4392,13 @@ const MasterManagement = () => (
             targetRoles={['master']}
             createRole="master"
             sectionLabel="Máster"
-            sectionDesc="Superusuario con acceso total. La gestión de claves y la creación de otros másters llegan en la Etapa 2."
-            readOnly
+            sectionDesc="Superusuario con acceso total. Puedes agregar másters; por seguridad, suspender o eliminar un máster se hace desde la consola (evita autobloqueos)."
+            canManage={false}
         />
         <UsernameSyncTool />
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
             <p className="font-bold text-amber-800 text-sm mb-1">Próximamente (Etapa 2)</p>
-            <p className="text-amber-700 text-xs">Cambio de contraseña propia, activación de FaceID/huella desde el teléfono, y llave maestra para entrar como cualquier usuario. Crear másters adicionales requiere ajustar los permisos del sistema (se hará en la Etapa 2).</p>
+            <p className="text-amber-700 text-xs">Cambio de contraseña propia, activación de FaceID/huella desde el teléfono, y llave maestra para entrar como cualquier usuario.</p>
         </div>
     </div>
 );
