@@ -1001,33 +1001,57 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
     );
 };
 
-// Toggles de acceso a módulos por rol. Merchandiser queda EXCLUIDO a propósito
-// (entra por acceso compartido "Equipo de Campo" y no se le gestionan módulos).
-// El rol 'director' se fusionó en 'gerencia'.
+// Toggles de acceso a módulos POR ROL — una sección por rol. Merchandiser queda
+// EXCLUIDO a propósito (entra por acceso compartido "Equipo de Campo"). El rol
+// 'director' se fusionó en 'gerencia'. El acceso del Máster a Configuraciones
+// no está gateado por ninguna clave, así que nunca puede autobloquearse.
 const MODULE_ROLE_CONFIG = [
     {
-        groupLabel: 'Módulos de Gerencia',
-        roles: ['gerencia', 'sales_manager'],
+        groupLabel: 'Máster',
+        roles: ['master'],
         items: [
-            { key: 'marketTrends',         label: 'Análisis de Tendencias',  icon: 'TrendingUp'    },
-            { key: 'plannerManager',       label: 'Planificador',            icon: 'MapIcon'       },
-            { key: 'rendimientoComercial', label: 'Rendimiento Comercial',   icon: 'Users'         },
+            { key: 'rendimientoComercial', label: 'Rendimiento Comercial',  icon: 'Users'      },
+            { key: 'marketTrends',         label: 'Análisis de Tendencias', icon: 'TrendingUp' },
+            { key: 'plannerManager',       label: 'Planificador',           icon: 'MapIcon'    },
+            { key: 'almacenComercial',     label: 'Almacén Comercial',      icon: 'Warehouse'  },
         ],
     },
     {
-        groupLabel: 'Módulos del Vendedor',
+        groupLabel: 'Gerencia',
+        roles: ['gerencia', 'sales_manager'],
+        items: [
+            { key: 'rendimientoComercial', label: 'Rendimiento Comercial', icon: 'Users'     },
+            { key: 'plannerManager',       label: 'Planificador',          icon: 'MapIcon'   },
+            { key: 'almacenComercial',     label: 'Almacén Comercial',     icon: 'Warehouse' },
+        ],
+    },
+    {
+        groupLabel: 'Vendedor',
         roles: ['vendedor'],
         items: [
             { key: 'pedidosVendedor',  label: 'Mis Pedidos',  icon: 'ClipboardList' },
             { key: 'facturasVendedor', label: 'Mis Facturas', icon: 'Receipt'       },
+            { key: 'almacenComercial', label: 'Almacén',      icon: 'Warehouse'     },
+        ],
+    },
+    {
+        groupLabel: 'Administrador',
+        roles: ['administrador'],
+        items: [
+            { key: 'dashboard',    label: 'Comisiones a pagar', icon: 'BarChart2' },
+            { key: 'liquidaciones',label: 'Liquidaciones',      icon: 'Wallet'    },
+            { key: 'conciliacion', label: 'Conciliación',       icon: 'Store'     },
+            { key: 'cartera',      label: 'Cartera',            icon: 'Briefcase' },
         ],
     },
 ];
 
 const ROLE_LABELS = {
+    master:        'Máster',
     gerencia:      'Gerencia',
     sales_manager: 'Sales Mgr',
     vendedor:      'Vendedor',
+    administrador: 'Administrador',
 };
 
 const MODULE_ICONS = {
@@ -1038,6 +1062,11 @@ const MODULE_ICONS = {
     Truck:         <Truck size={20} className="text-slate-600 flex-shrink-0" />,
     ClipboardList: <ClipboardList size={20} className="text-emerald-500 flex-shrink-0" />,
     Receipt:       <Receipt size={20} className="text-blue-500 flex-shrink-0" />,
+    Warehouse:     <Warehouse size={20} className="text-amber-600 flex-shrink-0" />,
+    BarChart2:     <BarChart2 size={20} className="text-indigo-500 flex-shrink-0" />,
+    Wallet:        <Wallet size={20} className="text-emerald-600 flex-shrink-0" />,
+    Store:         <Store size={20} className="text-sky-600 flex-shrink-0" />,
+    Briefcase:     <Briefcase size={20} className="text-slate-600 flex-shrink-0" />,
 };
 
 const ModuleManagement = () => {
@@ -1082,7 +1111,7 @@ const ModuleManagement = () => {
                                                 const currentValue = roleModules[role]?.[key] ?? true;
                                                 return (
                                                     <div key={role} className="flex flex-col items-center gap-1">
-                                                        <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{ROLE_LABELS[role]}</span>
+                                                        {roles.length > 1 && <span className="text-xs text-slate-500 font-medium whitespace-nowrap">{ROLE_LABELS[role]}</span>}
                                                         <div className="flex items-center gap-1.5">
                                                             {saving === savingKey ? (
                                                                 <span className="text-xs text-slate-400 w-11 flex justify-center">...</span>

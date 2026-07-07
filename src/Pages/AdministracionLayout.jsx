@@ -16,6 +16,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
+import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { LogOut, LayoutGrid, Wallet, Store, Briefcase, BarChart2 } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import CarteraManager from '@/Components/CarteraManager.jsx';
@@ -59,6 +60,7 @@ const MODULES = [
 
 export default function AdministracionLayout({ user, onLogout }) {
     const { user: authUser } = useAuth();
+    const { getModulesForRole } = useAppConfig();
     const uid = user?.uid || authUser?.uid;
     const [perfil, setPerfil] = useState(null); // null = cargando; {name, modulos}
     const [vendedores, setVendedores] = useState([]); // cargados UNA vez, compartidos
@@ -84,7 +86,10 @@ export default function AdministracionLayout({ user, onLogout }) {
     }
 
     const firstName = (perfil.name || 'Administración').split(' ')[0];
-    const visibles = MODULES.filter(m => perfil.modulos[m.id] !== false);
+    // Un módulo es visible si está activo TANTO a nivel de rol (Configuraciones →
+    // Módulos → Administrador) COMO a nivel de este usuario en particular.
+    const roleModulos = getModulesForRole('administrador');
+    const visibles = MODULES.filter(m => roleModulos[m.id] !== false && perfil.modulos[m.id] !== false);
     const current = visibles.find(m => m.id === active) || visibles[0];
     const CurrentComp = current?.Comp;
 
