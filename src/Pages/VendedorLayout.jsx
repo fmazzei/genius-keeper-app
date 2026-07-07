@@ -28,6 +28,7 @@ import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
 import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
+import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
 // ─── Tier style palette (by tier index, 0 = highest) ─────────────────────────
@@ -1629,6 +1630,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                             </span>
                         )}
                     </button>
+                    <ChangePasswordButton variant="dark" labelClass="hidden" className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400" />
                     <button
                         onClick={onLogout}
                         className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center"
