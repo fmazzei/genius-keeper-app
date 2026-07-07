@@ -1,12 +1,14 @@
 // RUTA: src/Pages/LoginScreen.jsx
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { db } from '@/Firebase/config.js';
+import { db, functions } from '@/Firebase/config.js';
 import { doc, getDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { startAuthentication } from '@simplewebauthn/browser';
 import {
     Users, Factory, Loader, TrendingUp, BarChart2,
-    Shield, ChevronRight, X, LayoutGrid,
+    Shield, ChevronRight, X, LayoutGrid, Fingerprint,
 } from 'lucide-react';
 
 const ROLE_DOORS = [
@@ -17,13 +19,27 @@ const ROLE_DOORS = [
 ];
 
 const LoginScreen = () => {
-    const { login } = useAuth();
+    const { login, signInWithCustomToken } = useAuth();
     const [showForm, setShowForm]       = useState(false);
     const [email, setEmail]             = useState('');
     const [password, setPassword]       = useState('');
     const [error, setError]             = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [bioAvailable, setBioAvailable] = useState(false);
+    const [bioBusy, setBioBusy]         = useState(false);
     const formRef = useRef(null);
+
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            try {
+                const ok = !!(window.PublicKeyCredential &&
+                    await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
+                if (alive) setBioAvailable(ok);
+            } catch { if (alive) setBioAvailable(false); }
+        })();
+        return () => { alive = false; };
+    }, []);
 
     const MERCHANDISER_PASS = import.meta.env.VITE_MERCHANDISER_PASSWORD || 'Password123!';
     const PRODUCCION_PASS   = import.meta.env.VITE_PRODUCCION_PASSWORD   || 'ProduccionPass123!';
@@ -57,6 +73,36 @@ const LoginScreen = () => {
         } catch {
             setError('Credenciales incorrectas o usuario no registrado.');
             setIsSubmitting(false);
+        }
+    };
+
+    // Login con huella/FaceID: identifica por nombre de usuario, valida la
+    // credencial WebAuthn en el servidor y entra con el custom token emitido.
+    const handleBiometricLogin = async () => {
+        const username = (email || '').trim();
+        if (!username) { setError('Escribe tu nombre de usuario para entrar con huella.'); return; }
+        if (username.includes('@')) { setError('Para la huella usa tu nombre de usuario, no el correo.'); return; }
+        setBioBusy(true); setError('');
+        try {
+            const origin = window.location.origin;
+            const genOpts = httpsCallable(functions, 'generateAuthenticationOptions');
+            const opts = await genOpts({ username, origin });
+            const asseResp = await startAuthentication(opts.data);
+            const verify = httpsCallable(functions, 'verifyAuthentication');
+            const res = await verify({ username, authenticationResponse: asseResp });
+            if (res.data?.verified && res.data?.token) {
+                await signInWithCustomToken(res.data.token);
+            } else {
+                setError('No se pudo validar la huella.');
+            }
+        } catch (err) {
+            const msg = err?.message || '';
+            if (err?.name === 'NotAllowedError') setError('Acceso con huella cancelado.');
+            else if (msg.includes('no tiene huella')) setError('Este usuario no tiene huella registrada. Actívala primero desde tu cuenta.');
+            else if (msg.includes('no encontrado')) setError('Usuario no encontrado.');
+            else setError('No se pudo entrar con huella. Usa tu contraseña.');
+        } finally {
+            setBioBusy(false);
         }
     };
 
@@ -152,6 +198,17 @@ const LoginScreen = () => {
                     >
                         {isSubmitting ? 'Ingresando…' : 'Ingresar'}
                     </button>
+
+                    {bioAvailable && (
+                        <button
+                            onClick={handleBiometricLogin}
+                            disabled={bioBusy || isSubmitting}
+                            className="w-full flex items-center justify-center gap-2 bg-white/10 border border-white/15 text-white/90 font-semibold py-3 rounded-xl disabled:opacity-40 active:scale-[0.98] transition-transform"
+                        >
+                            <Fingerprint size={18} className={bioBusy ? 'animate-pulse' : ''} />
+                            {bioBusy ? 'Validando…' : 'Entrar con huella'}
+                        </button>
+                    )}
                 </div>
             )}
 

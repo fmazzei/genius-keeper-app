@@ -29,6 +29,7 @@ import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.js
 import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
 import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
+import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
 // ─── Tier style palette (by tier index, 0 = highest) ─────────────────────────
@@ -1630,6 +1631,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                             </span>
                         )}
                     </button>
+                    <BiometricEnrollButton variant="dark" labelClass="hidden" className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400" />
                     <ChangePasswordButton variant="dark" labelClass="hidden" className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400" />
                     <button
                         onClick={onLogout}

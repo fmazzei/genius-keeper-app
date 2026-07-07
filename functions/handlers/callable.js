@@ -307,10 +307,171 @@ exports.fulfillSale = functions.https.onCall(async (data, context) => { /* ...c�
 // --- Funciones de Autenticación Biométrica (WebAuthn) ---
 // ==========================================================
 
-exports.generateRegistrationOptions = functions.runWith({ memory: '512MB' }).https.onCall(async (data, context) => { /* ...código original... */ });
-exports.verifyRegistration = functions.runWith({ memory: '512MB' }).https.onCall(async (data, context) => { /* ...código original... */ });
-exports.generateAuthenticationOptions = functions.runWith({ memory: '512MB' }).https.onCall(async (data) => { /* ...código original... */ });
-exports.verifyAuthentication = functions.runWith({ memory: '512MB' }).https.onCall(async (data) => { /* ...código original... */ });
+// Dominios permitidos para WebAuthn (rpID = hostname). El cliente envía su
+// `origin`; el servidor deriva y valida el rpID contra esta lista. Así funciona
+// tanto en el dominio .web.app como en .firebaseapp.com (y localhost en dev).
+const WEBAUTHN_ALLOWED_HOSTS = [
+    'geniuskeeper-36553.web.app',
+    'geniuskeeper-36553.firebaseapp.com',
+    'localhost',
+];
+const RP_NAME = 'Genius Keeper';
+
+function resolveRp(origin) {
+    let host;
+    try { host = new URL(origin).hostname; } catch { throw new functions.https.HttpsError('invalid-argument', 'Origin inválido.'); }
+    if (!WEBAUTHN_ALLOWED_HOSTS.includes(host)) throw new functions.https.HttpsError('permission-denied', 'Dominio no autorizado para biometría.');
+    return { rpID: host, origin };
+}
+const b64url = {
+    enc: (buf) => Buffer.from(buf).toString('base64url'),
+    dec: (str) => new Uint8Array(Buffer.from(str, 'base64url')),
+};
+
+// (1) Registro — el usuario ya está autenticado (activa la huella desde su cuenta).
+exports.generateRegistrationOptions = functions.runWith({ memory: '512MB' }).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'No autorizado');
+    const uid = context.auth.uid;
+    const { rpID, origin } = resolveRp(data?.origin);
+    const db = admin.firestore();
+
+    const userDoc = await db.doc(`users_metadata/${uid}`).get();
+    const userName = userDoc.data()?.username || userDoc.data()?.email || uid;
+
+    const authSnap = await db.collection(`users_metadata/${uid}/authenticators`).get();
+    const excludeCredentials = authSnap.docs.map((d) => ({ id: d.id, type: 'public-key' }));
+
+    const options = await generateRegistrationOptions({
+        rpName: RP_NAME,
+        rpID,
+        userID: Buffer.from(uid),
+        userName,
+        attestationType: 'none',
+        excludeCredentials,
+        authenticatorSelection: { residentKey: 'preferred', userVerification: 'preferred', authenticatorAttachment: 'platform' },
+    });
+
+    await db.doc(`users_metadata/${uid}/tokens/regChallenge`).set({
+        challenge: options.challenge, rpID, origin, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return options;
+});
+
+exports.verifyRegistration = functions.runWith({ memory: '512MB' }).https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'No autorizado');
+    const uid = context.auth.uid;
+    const db = admin.firestore();
+
+    const chalDoc = await db.doc(`users_metadata/${uid}/tokens/regChallenge`).get();
+    const chal = chalDoc.data();
+    if (!chal?.challenge) throw new functions.https.HttpsError('failed-precondition', 'No hay un registro en curso.');
+
+    let verification;
+    try {
+        verification = await verifyRegistrationResponse({
+            response: data.registrationResponse,
+            expectedChallenge: chal.challenge,
+            expectedOrigin: chal.origin,
+            expectedRPID: chal.rpID,
+        });
+    } catch (err) {
+        throw new functions.https.HttpsError('invalid-argument', 'La verificación falló: ' + (err?.message || 'error'));
+    }
+
+    if (!verification.verified || !verification.registrationInfo) return { verified: false };
+
+    const info = verification.registrationInfo;
+    // v10 trae credentialID/credentialPublicKey (Uint8Array); se guardan en base64url.
+    const rawId  = info.credentialID ?? info.credential?.id;
+    const rawKey = info.credentialPublicKey ?? info.credential?.publicKey;
+    const credId = typeof rawId === 'string' ? rawId : b64url.enc(rawId);
+    const pubKey = typeof rawKey === 'string' ? rawKey : b64url.enc(rawKey);
+
+    await db.doc(`users_metadata/${uid}/authenticators/${credId}`).set({
+        credentialPublicKey: pubKey,
+        counter: info.counter ?? info.credential?.counter ?? 0,
+        transports: data.registrationResponse?.response?.transports || [],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    await chalDoc.ref.delete().catch(() => {});
+    return { verified: true };
+});
+
+// (2) Autenticación (login) — el usuario NO está autenticado. Se identifica por
+// nombre de usuario (login_index) y, si verifica, se emite un custom token.
+exports.generateAuthenticationOptions = functions.runWith({ memory: '512MB' }).https.onCall(async (data) => {
+    const { rpID, origin } = resolveRp(data?.origin);
+    const db = admin.firestore();
+    const key = String(data?.username || '').trim().toLowerCase().replace(/\s+/g, '_');
+    if (!key) throw new functions.https.HttpsError('invalid-argument', 'Falta el nombre de usuario.');
+
+    const idx = await db.doc(`login_index/${key}`).get();
+    const uid = idx.data()?.uid;
+    if (!uid) throw new functions.https.HttpsError('not-found', 'Usuario no encontrado.');
+
+    const authSnap = await db.collection(`users_metadata/${uid}/authenticators`).get();
+    if (authSnap.empty) throw new functions.https.HttpsError('failed-precondition', 'Este usuario no tiene huella registrada.');
+
+    const options = await generateAuthenticationOptions({
+        rpID,
+        allowCredentials: authSnap.docs.map((d) => ({ id: d.id, type: 'public-key' })),
+        userVerification: 'preferred',
+    });
+
+    await db.doc(`users_metadata/${uid}/tokens/authChallenge`).set({
+        challenge: options.challenge, rpID, origin, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return options;
+});
+
+exports.verifyAuthentication = functions.runWith({ memory: '512MB' }).https.onCall(async (data) => {
+    const db = admin.firestore();
+    const key = String(data?.username || '').trim().toLowerCase().replace(/\s+/g, '_');
+    const idx = await db.doc(`login_index/${key}`).get();
+    const uid = idx.data()?.uid;
+    if (!uid) throw new functions.https.HttpsError('not-found', 'Usuario no encontrado.');
+
+    const chalDoc = await db.doc(`users_metadata/${uid}/tokens/authChallenge`).get();
+    const chal = chalDoc.data();
+    if (!chal?.challenge) throw new functions.https.HttpsError('failed-precondition', 'No hay un inicio de sesión en curso.');
+
+    const resp = data.authenticationResponse;
+    const credId = resp?.id;
+    const authDoc = await db.doc(`users_metadata/${uid}/authenticators/${credId}`).get();
+    if (!authDoc.exists) throw new functions.https.HttpsError('not-found', 'Credencial no reconocida.');
+    const stored = authDoc.data();
+
+    let verification;
+    try {
+        verification = await verifyAuthenticationResponse({
+            response: resp,
+            expectedChallenge: chal.challenge,
+            expectedOrigin: chal.origin,
+            expectedRPID: chal.rpID,
+            authenticator: {
+                credentialID: b64url.dec(credId),
+                credentialPublicKey: b64url.dec(stored.credentialPublicKey),
+                counter: stored.counter || 0,
+            },
+        });
+    } catch (err) {
+        throw new functions.https.HttpsError('invalid-argument', 'La verificación falló: ' + (err?.message || 'error'));
+    }
+
+    if (!verification.verified) return { verified: false };
+
+    await authDoc.ref.update({ counter: verification.authenticationInfo.newCounter });
+    await chalDoc.ref.delete().catch(() => {});
+
+    let token;
+    try {
+        token = await admin.auth().createCustomToken(uid, { biometric: true });
+    } catch (err) {
+        console.error('createCustomToken (biometría) falló:', err?.message || err);
+        throw new functions.https.HttpsError('internal', 'No se pudo emitir el acceso. Revisa el rol Service Account Token Creator del service account.');
+    }
+    return { verified: true, token };
+});
 
 
 // ==========================================================
