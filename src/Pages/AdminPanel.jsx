@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { db, functions, auth } from '../Firebase/config.js';
+import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
@@ -4383,9 +4384,66 @@ const UsernameSyncTool = () => {
     );
 };
 
-// Sección Máster — gestiona las cuentas con rol 'master' y la herramienta de
-// sincronización de nombres de usuario. La gestión de claves propias (cambio de
-// contraseña / FaceID / huella) y la llave maestra llegan en la Etapa 2.
+// Llave maestra: el máster elige un usuario y entra COMO él (impersonación).
+// Llama a la Cloud Function `crearTokenImpersonacion` y usa el custom token
+// para iniciar sesión. Un banner global recuerda la suplantación; salir cierra
+// sesión y vuelve al login para reingresar como máster.
+const ImpersonationTool = () => {
+    const [users, setUsers]     = useState([]);
+    const [targetUid, setTarget] = useState('');
+    const [busy, setBusy]       = useState(false);
+    const [error, setError]     = useState('');
+
+    useEffect(() => {
+        const myUid = auth.currentUser?.uid;
+        const unsub = onSnapshot(collection(db, 'users_metadata'), snap => {
+            const list = snap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(u => u.id !== myUid && u.active !== false && u.role && u.role !== 'no-role')
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            setUsers(list);
+        }, () => {});
+        return unsub;
+    }, []);
+
+    const entrarComo = async () => {
+        if (!targetUid) return;
+        setBusy(true); setError('');
+        try {
+            const fn = httpsCallable(functions, 'crearTokenImpersonacion');
+            const res = await fn({ targetUid });
+            await signInWithCustomToken(auth, res.data.token);
+            // onAuthStateChanged re-renderiza la app como el usuario objetivo.
+        } catch (err) {
+            setError(err?.message || 'No se pudo iniciar la sesión como ese usuario.');
+            setBusy(false);
+        }
+    };
+
+    const roleLabel = (r) => (ROLE_META[r]?.label || r);
+
+    return (
+        <div className="bg-white rounded-lg shadow p-4">
+            <p className="font-bold text-slate-800 mb-1 flex items-center gap-2"><KeyRound size={16} className="text-amber-500" /> Llave maestra</p>
+            <p className="text-slate-500 text-xs mb-3">Entra como cualquier usuario para ver su app tal cual la ve él. Un banner te recordará la suplantación; al salir volverás al login para reingresar como máster.</p>
+            <div className="flex flex-col sm:flex-row gap-2">
+                <select value={targetUid} onChange={e => setTarget(e.target.value)} className={SELECT_CLS} style={SELECT_STYLE}>
+                    <option value="">Selecciona un usuario…</option>
+                    {users.map(u => (
+                        <option key={u.id} value={u.id}>{u.name || u.email || u.id} · {roleLabel(u.role)}</option>
+                    ))}
+                </select>
+                <button onClick={entrarComo} disabled={!targetUid || busy} className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-black font-bold px-4 py-2 rounded-lg disabled:opacity-50 whitespace-nowrap">
+                    <KeyRound size={16} /> {busy ? 'Entrando…' : 'Entrar como'}
+                </button>
+            </div>
+            {error && <p className="text-red-600 text-xs mt-2">{error}</p>}
+        </div>
+    );
+};
+
+// Sección Máster — gestiona las cuentas con rol 'master', la herramienta de
+// sincronización de nombres de usuario y la llave maestra (impersonación).
 const MasterManagement = () => (
     <div className="space-y-6">
         <UserRoleManagement
@@ -4395,6 +4453,7 @@ const MasterManagement = () => (
             sectionDesc="Superusuario con acceso total. Puedes agregar másters; por seguridad, suspender o eliminar un máster se hace desde la consola (evita autobloqueos)."
             canManage={false}
         />
+        <ImpersonationTool />
         <UsernameSyncTool />
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
             <p className="font-bold text-amber-800 text-sm mb-1">Próximamente (Etapa 2)</p>

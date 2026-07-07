@@ -13,6 +13,7 @@ interface AuthContextType {
   role: string | null;
   loading: boolean;
   isAccountSuspended: boolean;
+  impersonatedBy: string | null;
   login: (email: string, password: string) => Promise<any>;
   signInWithCustomToken: (token: string) => Promise<any>;
 }
@@ -36,11 +37,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAccountSuspended, setIsAccountSuspended] = useState(false);
+  const [impersonatedBy, setImpersonatedBy] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        // Detecta si la sesión actual es una impersonación (llave maestra):
+        // el custom token lleva el claim `impersonatedBy` con el uid del máster.
+        try {
+          const tokenResult = await currentUser.getIdTokenResult();
+          setImpersonatedBy((tokenResult.claims.impersonatedBy as string) || null);
+        } catch {
+          setImpersonatedBy(null);
+        }
         try {
           const userDocRef = doc(db, 'users_metadata', currentUser.uid);
           const docSnap = await getDoc(userDocRef);
@@ -72,6 +82,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } else {
         setRole(null);
         setIsAccountSuspended(false);
+        setImpersonatedBy(null);
       }
       setLoading(false);
     });
@@ -109,6 +120,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     role,
     loading,
     isAccountSuspended,
+    impersonatedBy,
     login,
     signInWithCustomToken: signInWithCustomTokenHandler,
   };

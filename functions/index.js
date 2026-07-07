@@ -15,5 +15,6 @@ const reports        = require('./handlers/reports');
 const kromaNotifs    = require('./handlers/kromaNotifications');
 const adminTools     = require('./handlers/adminTools');
 const zohoReconcile  = require('./handlers/zohoReconcile');
+const masterTools    = require('./handlers/masterTools');
 
-Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools, zohoReconcile);
+Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools, zohoReconcile, masterTools);

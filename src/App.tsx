@@ -15,6 +15,7 @@ import InAppNotification from '@/Components/InAppNotification.jsx';
 import ReportDetailModalController from '@/Components/ReportDetailModalController.tsx';
 import RouteInviteModal from '@/Components/RouteInviteModal.tsx';
 import ErrorBoundary from '@/Components/ErrorBoundary.jsx';
+import ImpersonationBanner from '@/Components/ImpersonationBanner.jsx';
 import { LogOut, Lock } from 'lucide-react';
 
 // Cada rol usa EXACTAMENTE uno de estos layouts — cargarlos con lazy() evita
@@ -120,10 +121,11 @@ const AppLayout: React.FC = () => {
     
     return (
         <>
+            <ImpersonationBanner />
             {inviteId && (
-                <RouteInviteModal 
-                    inviteId={inviteId} 
-                    onClose={() => setInviteId(null)} 
+                <RouteInviteModal
+                    inviteId={inviteId}
+                    onClose={() => setInviteId(null)}
                 />
             )}
             <ErrorBoundary key={user?.uid || 'anon'}>
