@@ -51,12 +51,8 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     }, [user?.uid]);
 
     useEffect(() => {
-        // El módulo-gate solo aplica al master. El director siempre ve tendencias.
+        // Si un módulo activo se desactiva mientras se ve, redirige a una vista segura.
         if (role === 'master') {
-            if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
-            if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
-        }
-        if (role === 'director') {
             if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
         }
@@ -118,19 +114,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             </ul>
         );
 
-        const directorNav = (
-            <ul>
-                <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
-                <NavItem icon={<Target size={24} />} text="Ventas" active={currentView === 'ventas'} onClick={() => setCurrentView('ventas')} />
-                {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Rendimiento" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
-                {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
-                <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
-                <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
-                <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
-                {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
-            </ul>
-        );
-
         const gerenciaNav = (
             <ul>
                 <NavItem icon={<Target size={24} />} text="Ventas" active={currentView === 'ventas'} onClick={() => setCurrentView('ventas')} />
@@ -146,7 +129,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
 
         const roleLabels = {
             master:        { title: 'Máster',    color: 'bg-indigo-200 text-indigo-700' },
-            director:      { title: 'Dirección', color: 'bg-violet-200 text-violet-700' },
             sales_manager: { title: 'Gerencia',  color: 'bg-pink-200 text-pink-700'     },
             gerencia:      { title: 'Gerencia',  color: 'bg-pink-200 text-pink-700'     },
         };
@@ -154,7 +136,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         const rl = roleLabels[role] || { title: role, color: 'bg-slate-200 text-slate-700' };
         const userInfo = { initial: displayName[0]?.toUpperCase() || '?', name: displayName, ...rl };
 
-        const nav = role === 'master' ? masterNav : role === 'director' ? directorNav : gerenciaNav;
+        const nav = role === 'master' ? masterNav : gerenciaNav;
         return (<div className="flex flex-col h-full bg-white"><div className={`flex items-center justify-between p-4 h-16 border-b ${!desktopSidebarOpen && 'md:justify-center'}`}><h1 className={`text-xl font-bold text-brand-blue whitespace-nowrap overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}>Genius Keeper</h1><button onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)} className="p-2 rounded-lg hover:bg-slate-200 hidden md:block"><ChevronsRight className={`transition-transform duration-300 ${desktopSidebarOpen && 'rotate-180'}`} /></button></div><nav className="mt-4 px-2 flex-grow">{nav}</nav><div className="px-2 py-4 border-t"><div className="flex items-center p-3 my-2"><div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${userInfo.color}`}>{userInfo.initial}</div><div className={`ml-3 overflow-hidden ${!desktopSidebarOpen && 'md:hidden'}`}><p className="font-semibold text-sm truncate">{userInfo.name}</p><p className="text-xs text-gray-500">{userInfo.title}</p></div></div><button onClick={onLogout} className="w-full"><li className="flex items-center p-3 my-1 rounded-lg cursor-pointer text-slate-600 hover:bg-slate-100"><LogOut size={24} /><span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Cerrar Sesión</span></li></button></div></div>);
     };
 
@@ -250,9 +232,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                     {/* Role chip — always visible, especially useful on mobile */}
                     {role === 'master' && (
                         <span className="shrink-0 hidden sm:inline text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">Máster</span>
-                    )}
-                    {role === 'director' && (
-                        <span className="shrink-0 text-xs font-bold px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 border border-violet-200">Dirección · Solo lectura</span>
                     )}
                     {(role === 'gerencia' || role === 'sales_manager') && (
                         <span className="shrink-0 hidden sm:inline text-xs font-bold px-2.5 py-1 rounded-full bg-pink-100 text-pink-700 border border-pink-200">Gerencia</span>

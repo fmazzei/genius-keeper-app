@@ -834,11 +834,14 @@ const ROLE_META = {
     master:        { label: 'Máster',        color: 'bg-amber-100 text-amber-700',   desc: 'Superusuario — acceso total'    },
     director:      { label: 'Director',      color: 'bg-violet-100 text-violet-700', desc: 'Vista ejecutiva (legado)'       },
     gerencia:      { label: 'Gerencia',      color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
-    sales_manager: { label: 'Gerencia',      color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
+    sales_manager: { label: 'Gerente de Ventas', color: 'bg-pink-100 text-pink-700',  desc: 'Gestión comercial (legado)'     },
     administrador: { label: 'Administración',color: 'bg-teal-100 text-teal-700',     desc: 'Comisiones y conciliación'      },
 };
 
-const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc, badgeColor = 'bg-slate-100 text-slate-700' }) => {
+// readOnly: solo lista (sin crear/borrar/suspender) — usado por la sección Máster.
+// convertibleRoles: si se pasa, el botón "Convertir a <sección>" solo aparece para
+// esos roles legados (p.ej. ['director']); si es null, para cualquier rol distinto.
+const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc, badgeColor = 'bg-slate-100 text-slate-700', readOnly = false, convertibleRoles = null }) => {
     const [users, setUsers]           = useState([]);
     const [loading, setLoading]       = useState(true);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -919,9 +922,11 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                     <h3 className="text-xl font-semibold text-slate-700">{sectionLabel}</h3>
                     <p className="text-sm text-slate-500 mt-1">{sectionDesc}</p>
                 </div>
-                <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm">
-                    <UserPlus size={18} /><span className="hidden sm:inline">Agregar</span>
-                </button>
+                {!readOnly && (
+                    <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm">
+                        <UserPlus size={18} /><span className="hidden sm:inline">Agregar</span>
+                    </button>
+                )}
             </div>
 
             <div className="bg-white rounded-lg shadow overflow-hidden">
@@ -943,7 +948,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
-                                    {u.role !== createRole && (
+                                    {!readOnly && u.role !== createRole && (!convertibleRoles || convertibleRoles.includes(u.role)) && (
                                         <button onClick={() => convertRole(u)} className="text-xs font-bold text-brand-blue border border-brand-blue/40 hover:bg-brand-blue/10 px-3 py-1.5 rounded-lg whitespace-nowrap">
                                             Convertir a {sectionLabel}
                                         </button>
@@ -953,14 +958,14 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                                             <p className="font-semibold text-slate-700 text-sm">Acceso</p>
                                             <p className={`text-xs font-medium ${u.active ? 'text-green-600' : 'text-red-500'}`}>{u.active ? 'Activo' : 'Suspendido'}</p>
                                         </div>
-                                        <ToggleSwitch enabled={u.active} setEnabled={() => toggleActive(u.id, u.active)} />
+                                        {!readOnly && <ToggleSwitch enabled={u.active} setEnabled={() => toggleActive(u.id, u.active)} />}
                                     </div>
-                                    <button onClick={() => deleteUser(u)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={18} /></button>
+                                    {!readOnly && <button onClick={() => deleteUser(u)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"><Trash2 size={18} /></button>}
                                 </div>
                             </li>
                         );
                     })}
-                    {users.length === 0 && <p className="text-center text-slate-500 py-8">No hay usuarios registrados. Agrega uno con el botón de arriba.</p>}
+                    {users.length === 0 && <p className="text-center text-slate-500 py-8">{readOnly ? 'No hay usuarios registrados.' : 'No hay usuarios registrados. Agrega uno con el botón de arriba.'}</p>}
                 </ul>
             </div>
 
@@ -1018,7 +1023,10 @@ const MODULE_ROLE_CONFIG = [
     },
     {
         groupLabel: 'Gerencia',
-        roles: ['gerencia', 'sales_manager'],
+        // Solo 'gerencia': App.tsx enruta gerencia/sales_manager/director como
+        // role="gerencia", así que ManagerLayout lee getModulesForRole('gerencia')
+        // para todos ellos. Una columna 'sales_manager' aquí sería letra muerta.
+        roles: ['gerencia'],
         items: [
             { key: 'rendimientoComercial', label: 'Rendimiento Comercial', icon: 'Users'     },
             { key: 'plannerManager',       label: 'Planificador',          icon: 'MapIcon'   },
@@ -1091,7 +1099,7 @@ const ModuleManagement = () => {
         <div className="space-y-6">
             <div>
                 <h3 className="text-xl font-semibold text-slate-700 mb-1">Módulos Activos</h3>
-                <p className="text-sm text-slate-500 mb-4">Activa o desactiva funcionalidades por rol. Los cambios aplican en tiempo real para todos los usuarios. Los módulos del <b>Administrador</b> se gestionan por usuario en Usuarios → Administrador; el <b>Mercaderista</b> no gestiona módulos.</p>
+                <p className="text-sm text-slate-500 mb-4">Activa o desactiva funcionalidades por rol. Los cambios aplican en tiempo real. Para el <b>Administrador</b>, un módulo se ve si está activo aquí (por rol) <b>y</b> para ese usuario en Usuarios → Administrador. El <b>Mercaderista</b> no gestiona módulos.</p>
                 <div className="space-y-6">
                     {MODULE_ROLE_CONFIG.map(({ groupLabel, roles, items }) => (
                         <div key={groupLabel}>
@@ -4383,12 +4391,13 @@ const MasterManagement = () => (
             targetRoles={['master']}
             createRole="master"
             sectionLabel="Máster"
-            sectionDesc="Superusuario con acceso total. Gestiona sus propias claves de acceso desde aquí."
+            sectionDesc="Superusuario con acceso total. La gestión de claves y la creación de otros másters llegan en la Etapa 2."
+            readOnly
         />
         <UsernameSyncTool />
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
             <p className="font-bold text-amber-800 text-sm mb-1">Próximamente (Etapa 2)</p>
-            <p className="text-amber-700 text-xs">Cambio de contraseña propia, activación de FaceID/huella desde el teléfono, y llave maestra para entrar como cualquier usuario.</p>
+            <p className="text-amber-700 text-xs">Cambio de contraseña propia, activación de FaceID/huella desde el teléfono, y llave maestra para entrar como cualquier usuario. Crear másters adicionales requiere ajustar los permisos del sistema (se hará en la Etapa 2).</p>
         </div>
     </div>
 );
@@ -4518,7 +4527,8 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                     targetRoles={['gerencia', 'sales_manager', 'director']}
                     createRole="gerencia"
                     sectionLabel="Gerencia"
-                    sectionDesc="Gestión comercial: metas, ventas y rendimiento. Incluye a los antiguos usuarios de Dirección (convertibles a Gerencia)."
+                    sectionDesc="Gestión comercial: metas, ventas y rendimiento. Los antiguos usuarios de Dirección son convertibles a Gerencia."
+                    convertibleRoles={['director']}
                 />
             );
             case 'admin_mgmt':    return <AdministradoresManagement />;
