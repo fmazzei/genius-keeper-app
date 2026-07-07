@@ -81,7 +81,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             dashboard:        'Dashboard Gerencial',
             trends:           'Análisis de Tendencias',
             alerts:           'Centro de Notificaciones',
-            settings:         'Panel de Administración',
+            settings:         'Configuraciones',
             ventas:           'Ventas',
             planner:          'Centro de Planificación',
             reportesAnaquel:  'Reportes de Anaquel',
@@ -114,7 +114,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
-                <NavItem icon={<Settings size={24} />} text="Administración" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
+                <NavItem icon={<Settings size={24} />} text="Configuraciones" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
             </ul>
         );
 

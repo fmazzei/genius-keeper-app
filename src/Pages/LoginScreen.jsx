@@ -6,14 +6,13 @@ import { db } from '@/Firebase/config.js';
 import { doc, getDoc } from 'firebase/firestore';
 import {
     Users, Factory, Loader, TrendingUp, BarChart2,
-    Eye, Shield, ChevronRight, X, LayoutGrid,
+    Shield, ChevronRight, X, LayoutGrid,
 } from 'lucide-react';
 
 const ROLE_DOORS = [
     { id: 'vendedor',      label: 'Ventas',        Icon: TrendingUp, accent: 'text-emerald-400', bg: 'bg-emerald-500/20', desc: 'Portal de ventas y comisiones' },
     { id: 'administrador', label: 'Administración',Icon: LayoutGrid, accent: 'text-teal-400',    bg: 'bg-teal-500/20',    desc: 'Comisiones y conciliación'    },
     { id: 'gerencia',      label: 'Gerencia',      Icon: BarChart2,  accent: 'text-blue-400',    bg: 'bg-blue-500/20',    desc: 'Gestión comercial'           },
-    { id: 'director',      label: 'Dirección',     Icon: Eye,        accent: 'text-violet-400',  bg: 'bg-violet-500/20',  desc: 'Vista ejecutiva'             },
     { id: 'master',        label: 'Máster',        Icon: Shield,     accent: 'text-amber-400',   bg: 'bg-amber-500/20',   desc: 'Administración total'        },
 ];
 

@@ -83,11 +83,11 @@ const AppLayout: React.FC = () => {
         if (role === 'master') {
             return <ManagerLayout user={user} role={role} onLogout={() => signOut(auth)} />;
         }
-        if (role === 'director') {
-            return <ManagerLayout user={user} role={role} readOnly onLogout={() => signOut(auth)} />;
-        }
-        if (role === 'sales_manager' || role === 'gerencia') {
-            return <ManagerLayout user={user} role={role} onLogout={() => signOut(auth)} />;
+        // 'director' se fusionó en 'gerencia' (fusión total con edición). Cualquier
+        // usuario 'director' que aún no esté migrado entra con la experiencia de
+        // gerencia (acceso completo, ya no solo-lectura).
+        if (role === 'sales_manager' || role === 'gerencia' || role === 'director') {
+            return <ManagerLayout user={user} role="gerencia" onLogout={() => signOut(auth)} />;
         }
         if (role === 'vendedor') {
             return <VendedorLayout user={user} onLogout={() => signOut(auth)} />;

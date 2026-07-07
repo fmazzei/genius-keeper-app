@@ -4,7 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { db, functions, auth } from '../Firebase/config.js';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
@@ -124,7 +124,8 @@ const ReportersManagement = () => {
     return (
          <div className="space-y-6">
             <div>
-                <h3 className="text-xl font-semibold text-slate-700 mb-2">Agregar Nuevo Reporter</h3>
+                <h3 className="text-xl font-semibold text-slate-700 mb-2">Agregar Mercaderista</h3>
+                <p className="text-sm text-slate-500 mb-2">Los mercaderistas entran por “Equipo de Campo” (acceso compartido) y no requieren correo ni contraseña individual. Aquí se agregan y se les asigna su meta de visitas.</p>
                  <form onSubmit={handleAddReporter} className="bg-white p-4 sm:p-6 rounded-lg shadow flex flex-col sm:flex-row items-center gap-4">
                     <input 
                         type="text" 
@@ -136,15 +137,15 @@ const ReportersManagement = () => {
                     />
                     <button type="submit" disabled={isSaving} className="w-full sm:w-auto flex items-center justify-center gap-2 bg-brand-blue text-white font-bold py-3 px-6 rounded-lg hover:bg-opacity-90 disabled:bg-slate-400">
                         {isSaving ? <LoadingSpinner size="sm" /> : <UserPlus size={20} />}
-                        {isSaving ? 'Agregando...' : 'Agregar Reporter'}
+                        {isSaving ? 'Agregando...' : 'Agregar Mercaderista'}
                     </button>
                  </form>
             </div>
             <div>
-                <h3 className="text-xl font-semibold text-slate-700 mb-2">Reporters Existentes</h3>
+                <h3 className="text-xl font-semibold text-slate-700 mb-2">Mercaderistas</h3>
                 <p className="text-sm text-slate-500 mb-2">
                     Activa la meta de cobertura solo para quienes corresponda: define el % de PDV activos que ese
-                    reporter debe mantener visitados dentro de su frecuencia asignada. No genera comisiones — es
+                    mercaderista debe mantener visitados dentro de su frecuencia asignada. No genera comisiones — es
                     solo una meta de cobertura, y siempre se calcula contra el universo de PDV activos en cada momento.
                 </p>
                  <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-3">
@@ -181,7 +182,7 @@ const ReportersManagement = () => {
                             </div>
                         </div>
                     ))}
-                    {reporters.length === 0 && <p className="text-center text-slate-500 py-4">No hay reporters registrados.</p>}
+                    {reporters.length === 0 && <p className="text-center text-slate-500 py-4">No hay mercaderistas registrados.</p>}
                  </div>
             </div>
         </div>
@@ -830,7 +831,8 @@ const UserCleanup = () => {
 // ─── Generic user-role management (Director / Gerencia) ──────────────────────
 
 const ROLE_META = {
-    director:      { label: 'Director',      color: 'bg-violet-100 text-violet-700', desc: 'Vista ejecutiva — solo lectura' },
+    master:        { label: 'Máster',        color: 'bg-amber-100 text-amber-700',   desc: 'Superusuario — acceso total'    },
+    director:      { label: 'Director',      color: 'bg-violet-100 text-violet-700', desc: 'Vista ejecutiva (legado)'       },
     gerencia:      { label: 'Gerencia',      color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
     sales_manager: { label: 'Gerencia',      color: 'bg-pink-100 text-pink-700',     desc: 'Gestión comercial'              },
     administrador: { label: 'Administración',color: 'bg-teal-100 text-teal-700',     desc: 'Comisiones y conciliación'      },
@@ -855,6 +857,11 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
 
     const toggleActive = (uid, cur) => updateDoc(doc(db, 'users_metadata', uid), { active: !cur }).catch(() => alert('No se pudo actualizar.'));
     const deleteUser   = (u) => { if (!window.confirm(`¿Eliminar a "${u.name}"?`)) return; deleteDoc(doc(db, 'users_metadata', u.id)).catch(() => alert('No se pudo eliminar.')); };
+    // Migra un usuario de un rol legado (p.ej. 'director') al rol de esta sección.
+    const convertRole = (u) => {
+        if (!window.confirm(`¿Convertir a "${u.name}" en ${sectionLabel}?`)) return;
+        updateDoc(doc(db, 'users_metadata', u.id), { role: createRole }).catch(() => alert('No se pudo convertir el rol.'));
+    };
 
     const handleCreate = async (e) => {
         e.preventDefault();
@@ -928,11 +935,19 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                                         {u.name.charAt(0).toUpperCase()}
                                     </div>
                                     <div>
-                                        <p className="font-semibold text-slate-800">{u.name}</p>
+                                        <p className="font-semibold text-slate-800 flex items-center gap-2">
+                                            {u.name}
+                                            {u.role !== createRole && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${rm.color}`}>{rm.label}</span>}
+                                        </p>
                                         <p className="text-sm text-slate-500">{u.username ? `@${u.username}` : u.email}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
+                                    {u.role !== createRole && (
+                                        <button onClick={() => convertRole(u)} className="text-xs font-bold text-brand-blue border border-brand-blue/40 hover:bg-brand-blue/10 px-3 py-1.5 rounded-lg whitespace-nowrap">
+                                            Convertir a {sectionLabel}
+                                        </button>
+                                    )}
                                     <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-lg border">
                                         <div>
                                             <p className="font-semibold text-slate-700 text-sm">Acceso</p>
@@ -986,22 +1001,17 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
     );
 };
 
+// Toggles de acceso a módulos por rol. Merchandiser queda EXCLUIDO a propósito
+// (entra por acceso compartido "Equipo de Campo" y no se le gestionan módulos).
+// El rol 'director' se fusionó en 'gerencia'.
 const MODULE_ROLE_CONFIG = [
     {
-        groupLabel: 'Módulos del Manager (Director / Gerencia)',
-        roles: ['director', 'gerencia', 'sales_manager'],
+        groupLabel: 'Módulos de Gerencia',
+        roles: ['gerencia', 'sales_manager'],
         items: [
             { key: 'marketTrends',         label: 'Análisis de Tendencias',  icon: 'TrendingUp'    },
             { key: 'plannerManager',       label: 'Planificador',            icon: 'MapIcon'       },
             { key: 'rendimientoComercial', label: 'Rendimiento Comercial',   icon: 'Users'         },
-        ],
-    },
-    {
-        groupLabel: 'Módulos del Merchandiser',
-        roles: ['merchandiser'],
-        items: [
-            { key: 'plannerMerchandiser',   label: 'Planificador', icon: 'MapIcon' },
-            { key: 'logisticsMerchandiser', label: 'Logística',    icon: 'Truck'   },
         ],
     },
     {
@@ -1015,10 +1025,8 @@ const MODULE_ROLE_CONFIG = [
 ];
 
 const ROLE_LABELS = {
-    director:      'Dirección',
     gerencia:      'Gerencia',
     sales_manager: 'Sales Mgr',
-    merchandiser:  'Merchandiser',
     vendedor:      'Vendedor',
 };
 
@@ -1054,7 +1062,7 @@ const ModuleManagement = () => {
         <div className="space-y-6">
             <div>
                 <h3 className="text-xl font-semibold text-slate-700 mb-1">Módulos Activos</h3>
-                <p className="text-sm text-slate-500 mb-4">Activa o desactiva funcionalidades por rol. Los cambios aplican en tiempo real para todos los usuarios.</p>
+                <p className="text-sm text-slate-500 mb-4">Activa o desactiva funcionalidades por rol. Los cambios aplican en tiempo real para todos los usuarios. Los módulos del <b>Administrador</b> se gestionan por usuario en Usuarios → Administrador; el <b>Mercaderista</b> no gestiona módulos.</p>
                 <div className="space-y-6">
                     {MODULE_ROLE_CONFIG.map(({ groupLabel, roles, items }) => (
                         <div key={groupLabel}>
@@ -4301,22 +4309,14 @@ const ADMIN_MODULES = [
     { id: 'cartera',       label: 'Cartera' },
 ];
 
-const AdministradoresManagement = () => {
-    const [admins, setAdmins] = useState([]);
+// Herramienta general: sincroniza el índice de login por nombre de usuario
+// (login_index) para todos los usuarios existentes. Reutilizable — vive en la
+// sección Máster. Al crear/editar un usuario el índice se escribe solo; este
+// botón sirve para poner al día usuarios creados antes de esa lógica.
+const UsernameSyncTool = () => {
     const [syncing, setSyncing] = useState(false);
     const [syncMsg, setSyncMsg] = useState('');
-    useEffect(() => {
-        const unsub = onSnapshot(
-            query(collection(db, 'users_metadata'), where('role', '==', 'administrador')),
-            snap => setAdmins(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-            () => {},
-        );
-        return unsub;
-    }, []);
-
-    // Backfill del índice de login por usuario para todos los usuarios existentes
-    // (los creados antes de esta función no tenían entrada en login_index).
-    const backfillLoginIndex = async () => {
+    const syncUsernames = async () => {
         setSyncing(true); setSyncMsg('');
         try {
             const snap = await getDocs(collection(db, 'users_metadata'));
@@ -4325,13 +4325,55 @@ const AdministradoresManagement = () => {
                 const u = d.data();
                 if (u.username && u.email) { await writeLoginIndex(u.username, u.email, d.id); n++; }
             }
-            setSyncMsg(`Listo: ${n} usuario${n === 1 ? '' : 's'} habilitado${n === 1 ? '' : 's'} para login por nombre de usuario.`);
+            setSyncMsg(`Listo: ${n} nombre${n === 1 ? '' : 's'} de usuario sincronizado${n === 1 ? '' : 's'} para el acceso.`);
         } catch (e) {
             setSyncMsg('Error: ' + (e.message || 'no se pudo sincronizar.'));
         } finally {
             setSyncing(false);
         }
     };
+    return (
+        <div className="bg-white rounded-lg shadow p-4">
+            <p className="font-bold text-slate-800 mb-1">Sincronizar nombres de usuario</p>
+            <p className="text-slate-500 text-xs mb-3">Cada usuario entra con su nombre de usuario (o correo) + contraseña. Tras asignar un nombre de usuario, sincronízalo aquí para habilitar el acceso.</p>
+            <button onClick={syncUsernames} disabled={syncing} className="flex items-center gap-2 bg-slate-800 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-60">
+                <RefreshCw size={15} className={syncing ? 'animate-spin' : ''} />
+                {syncing ? 'Sincronizando…' : 'Sincronizar nombres de usuario'}
+            </button>
+            {syncMsg && <p className="text-emerald-600 text-xs mt-2">{syncMsg}</p>}
+        </div>
+    );
+};
+
+// Sección Máster — gestiona las cuentas con rol 'master' y la herramienta de
+// sincronización de nombres de usuario. La gestión de claves propias (cambio de
+// contraseña / FaceID / huella) y la llave maestra llegan en la Etapa 2.
+const MasterManagement = () => (
+    <div className="space-y-6">
+        <UserRoleManagement
+            targetRoles={['master']}
+            createRole="master"
+            sectionLabel="Máster"
+            sectionDesc="Superusuario con acceso total. Gestiona sus propias claves de acceso desde aquí."
+        />
+        <UsernameSyncTool />
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <p className="font-bold text-amber-800 text-sm mb-1">Próximamente (Etapa 2)</p>
+            <p className="text-amber-700 text-xs">Cambio de contraseña propia, activación de FaceID/huella desde el teléfono, y llave maestra para entrar como cualquier usuario.</p>
+        </div>
+    </div>
+);
+
+const AdministradoresManagement = () => {
+    const [admins, setAdmins] = useState([]);
+    useEffect(() => {
+        const unsub = onSnapshot(
+            query(collection(db, 'users_metadata'), where('role', '==', 'administrador')),
+            snap => setAdmins(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+            () => {},
+        );
+        return unsub;
+    }, []);
 
     const toggleModulo = (uid, modulos, modId) => {
         const currentlyOn = (modulos?.[modId]) !== false;
@@ -4344,18 +4386,9 @@ const AdministradoresManagement = () => {
             <UserRoleManagement
                 targetRoles={['administrador']}
                 createRole="administrador"
-                sectionLabel="Administración"
+                sectionLabel="Administrador"
                 sectionDesc="Usuarios operativos de Lacteoca: pagan comisiones, concilian facturas y gestionan cartera. Sin control del sistema ni gestión de metas."
             />
-
-            <div className="bg-white rounded-lg shadow p-4">
-                <p className="font-bold text-slate-800 mb-1">Login por nombre de usuario</p>
-                <p className="text-slate-500 text-xs mb-3">Todos pueden entrar con su usuario (o correo) + contraseña. Los usuarios creados antes de esta función necesitan sincronizarse una vez.</p>
-                <button onClick={backfillLoginIndex} disabled={syncing} className="bg-slate-800 text-white text-sm font-semibold px-4 py-2 rounded-lg disabled:opacity-60">
-                    {syncing ? 'Sincronizando…' : 'Sincronizar usuarios para login por nombre'}
-                </button>
-                {syncMsg && <p className="text-emerald-600 text-xs mt-2">{syncMsg}</p>}
-            </div>
 
             {admins.length > 0 && (
                 <div className="bg-white rounded-lg shadow p-4">
@@ -4394,13 +4427,13 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
     // ── Navigation groups ──────────────────────────────────────────────────────
     const GROUPS = [
         {
-            id: 'personas', label: 'Personas', Icon: Users,
+            id: 'personas', label: 'Usuarios', Icon: Users,
             items: [
-                { id: 'director_mgmt',label: 'Dirección',         Icon: Eye                          },
-                { id: 'gerencia_mgmt',label: 'Gerencia',          Icon: BarChart2                    },
-                { id: 'admin_mgmt',   label: 'Administración',    Icon: LayoutGrid,   badge: 'Nuevo' },
-                { id: 'vendedores',   label: 'Vendedores',        Icon: TrendingUp                   },
-                { id: 'campo',        label: 'Personal de Campo', Icon: Users                        },
+                { id: 'master_mgmt',  label: 'Máster',        Icon: Shield                       },
+                { id: 'gerencia_mgmt',label: 'Gerencia',      Icon: BarChart2                    },
+                { id: 'vendedores',   label: 'Vendedores',    Icon: TrendingUp                   },
+                { id: 'mercaderistas',label: 'Mercaderistas', Icon: Users                        },
+                { id: 'admin_mgmt',   label: 'Administrador', Icon: LayoutGrid                   },
             ],
         },
         {
@@ -4449,25 +4482,18 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
     // ── Content renderer ───────────────────────────────────────────────────────
     const renderContent = () => {
         switch (activeSection) {
+            case 'master_mgmt':   return <MasterManagement />;
             case 'vendedores':    return <VendedoresManagement />;
             case 'gerencia_mgmt': return (
                 <UserRoleManagement
-                    targetRoles={['gerencia', 'sales_manager']}
+                    targetRoles={['gerencia', 'sales_manager', 'director']}
                     createRole="gerencia"
                     sectionLabel="Gerencia"
-                    sectionDesc="Usuarios con acceso al panel de gestión comercial, metas y ventas."
-                />
-            );
-            case 'director_mgmt': return (
-                <UserRoleManagement
-                    targetRoles={['director']}
-                    createRole="director"
-                    sectionLabel="Dirección"
-                    sectionDesc="Usuarios con vista ejecutiva completa — solo lectura, sin administración."
+                    sectionDesc="Gestión comercial: metas, ventas y rendimiento. Incluye a los antiguos usuarios de Dirección (convertibles a Gerencia)."
                 />
             );
             case 'admin_mgmt':    return <AdministradoresManagement />;
-            case 'campo':         return <ReportersManagement />;
+            case 'mercaderistas': return <ReportersManagement />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
             case 'comisiones_dash': return <ComisionesDashboard />;
