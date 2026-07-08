@@ -5,13 +5,12 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { Users, Trophy, RefreshCw, ChevronDown, ChevronUp, FileText, AlertTriangle } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
-import { computeMetaMensual } from '@/utils/vendedorMeta.js';
+import { computeMetaMensual, tierParaPct } from '@/utils/vendedorMeta.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
-// Estilos visuales por nombre de nivel — el nivel/tasa real de cada
-// vendedor viene congelado en `comisiones_mensuales` (puede variar si su
-// commissionConfig fue personalizado), así que esto es solo apariencia,
-// con un estilo neutro de respaldo para nombres de nivel no reconocidos.
+// Estilos visuales por nombre de nivel — el nivel/tasa se derivan del % del
+// período de empleo del vendedor (tierParaPct, mismo cálculo que su Home), así
+// que esto es solo apariencia, con un estilo neutro de respaldo.
 const TIER_STYLE_BY_LABEL = {
     'Plus':    { color: 'text-emerald-600', bg: 'bg-emerald-100', bar: 'bg-emerald-500' },
     'Óptima':  { color: 'text-blue-600',    bg: 'bg-blue-100',    bar: 'bg-blue-500'    },
@@ -57,87 +56,69 @@ const RendimientoComercialView = () => {
         setLoading(true);
         setError('');
         try {
-            const mes = mesActual();
+            // Se mide a cada vendedor por su MES DE EMPLEO (igual que el propio
+            // vendedor se ve): no por calendario. Como el período de empleo vigente
+            // abarca a lo sumo el mes calendario actual y el anterior, cargamos las
+            // facturas de esos dos meses (una sola lectura, no una por vendedor).
+            const cur = mesActual();
+            const prev = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; })();
 
-            // Todo lo que mide ventas reales viene de lo que Zoho Books ya
-            // facturó (no de despachos/pedidos, que son actividad previa a
-            // la factura y pueden no llegar a concretarse). Las 4 lecturas
-            // son independientes entre sí, así que corren en paralelo —
-            // con 50 vendedores sigue siendo una sola lectura por
-            // colección, no una por vendedor.
-            const [vendSnap, comisionesSnap, pagosSnap, facturasSnap] = await Promise.all([
+            const [vendSnap, facturasSnap] = await Promise.all([
                 getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
-                getDocs(query(collection(db, 'comisiones_mensuales'), where('mes', '==', mes))),
-                getDocs(query(collection(db, 'pagos_registrados'), where('mesCohorte', '==', mes))),
-                getDocs(query(collection(db, 'facturas_vendedor'), where('mesCohorte', '==', mes))),
+                getDocs(query(collection(db, 'facturas_vendedor'), where('mesCohorte', 'in', [prev, cur]))),
             ]);
 
             const vends = vendSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(v => v.active !== false);
 
-            // Unidades facturadas + nivel/tasa-cohorte del mes, congelados por
-            // sincronizarFacturaDesdeZoho (uno por vendedor, no por reporter).
-            const comisionByVendedor = {};
-            comisionesSnap.docs.forEach(d => {
-                const data = d.data();
-                if (data.vendedorId) comisionByVendedor[data.vendedorId] = data;
-            });
-
-            // Comisión del mes: calculatedCommission ya viene calculado con
-            // la tasa-cohorte de cada factura (procesarPagoFactura), solo se suma.
-            const comisionMesByVendedor = {};
-            pagosSnap.docs.forEach(d => {
-                const { vendedorId, calculatedCommission } = d.data();
-                if (vendedorId) comisionMesByVendedor[vendedorId] = (comisionMesByVendedor[vendedorId] || 0) + (Number(calculatedCommission) || 0);
-            });
-
-            // Detalle de facturas del mes: por vendedor para el desplegable de
-            // cada tarjeta, y aparte un balde de facturas SIN vendedor
-            // resuelto (salesperson_name de Zoho sin mapear a ningún
-            // zohoSalespersonName en Administración → Vendedores). Esas
-            // facturas son ventas reales de Lacteoca — no deben perderse del
-            // total de la empresa solo porque no están atribuidas a nadie.
-            // Las anuladas (eliminadas/anuladas desde la herramienta de
-            // Integraciones) ya tienen sus unidades revertidas del acumulado
-            // del vendedor, así que se excluyen de los totales (se siguen
-            // listando en el detalle, para auditoría).
+            // Facturas por vendedor (para el desglose de cada tarjeta) + balde de
+            // facturas SIN vendedor resuelto (para la alerta de mapeo). Las
+            // anuladas se listan pero no cuentan en totales/unidades.
             const facturasByVendedor = {};
             const sinAsignarList = [];
-            let unitsCompany = 0;
-            let montoCompany = 0;
             facturasSnap.docs.forEach(d => {
-                const data = d.data();
-                const f = { id: d.id, ...data };
-                if (data.estado !== 'anulada') {
-                    unitsCompany += Number(data.unidades) || 0;
-                    montoCompany += Number(data.monto) || 0;
-                }
-                if (data.vendedorId) {
-                    (facturasByVendedor[data.vendedorId] ||= []).push(f);
-                } else {
-                    sinAsignarList.push(f);
-                }
+                const f = { id: d.id, ...d.data() };
+                if (f.vendedorId) (facturasByVendedor[f.vendedorId] ||= []).push(f);
+                else sinAsignarList.push(f);
             });
             const porFechaDesc = (a, b) => (b.fecha?.toMillis?.() || 0) - (a.fecha?.toMillis?.() || 0);
             Object.values(facturasByVendedor).forEach(list => list.sort(porFechaDesc));
             sinAsignarList.sort(porFechaDesc);
-            setCompanyTotals({ units: unitsCompany, monto: montoCompany });
             setSinAsignar(sinAsignarList);
 
-            if (vends.length === 0) { setVendedores([]); setLoading(false); return; }
+            if (vends.length === 0) { setVendedores([]); setCompanyTotals({ units: 0, monto: 0 }); setLoading(false); return; }
 
+            let unitsCompany = 0;
+            let montoCompany = 0;
             const enriched = vends.map(v => {
-                const cm = comisionByVendedor[v.id];
-                const units = cm?.unidadesFacturadas || 0;
-                const { metaMensual: goal } = computeMetaMensual(v);
-                const ratio = goal > 0 ? units / goal : 0;
-                const tierLabel = cm?.nivel || 'Baja';
-                const tierRate  = cm?.tasaActual != null ? cm.tasaActual / 100 : 0;
-                const tier = { label: tierLabel, rate: tierRate, ...(TIER_STYLE_BY_LABEL[tierLabel] || FALLBACK_TIER_STYLE) };
-                const comision = comisionMesByVendedor[v.id] || 0;
+                const { metaMensual: goal, periodStart, periodEnd } = computeMetaMensual(v);
                 const facturas = facturasByVendedor[v.id] || [];
-                return { ...v, units, goal, ratio, tier, comision, facturas };
+                // Unidades del PERÍODO DE EMPLEO vigente — idéntico a unidadesDelMes
+                // del Home del vendedor: facturas cuya fecha cae en [start, end),
+                // excluyendo anuladas.
+                const enPeriodo = (f) => {
+                    const t = f.fecha?.toDate?.() || (f.fecha ? new Date(f.fecha) : null);
+                    return t && t >= periodStart && t < periodEnd;
+                };
+                const facturasPeriodo = facturas.filter(enPeriodo);              // incl. anuladas, para el detalle
+                const delPeriodo = facturasPeriodo.filter(f => f.estado !== 'anulada'); // cuenta a unidades/monto
+                const units  = delPeriodo.reduce((s, f) => s + (Number(f.unidades) || 0), 0);
+                const monto  = delPeriodo.reduce((s, f) => s + (Number(f.monto) || 0), 0);
+                const ratio  = goal > 0 ? units / goal : 0;
+                // Nivel/tasa derivados del % del período — mismo cálculo que ve el vendedor.
+                const t = tierParaPct(v.commissionConfig || {}, ratio);
+                const tier = { label: t.label, rate: t.rate, ...(TIER_STYLE_BY_LABEL[t.label] || FALLBACK_TIER_STYLE) };
+                // Comisión del período: comisión ya generada de las facturas cobradas del período.
+                const comision = delPeriodo
+                    .filter(f => f.estado === 'pagada' && !f.comisionAnulada)
+                    .reduce((s, f) => s + (Number(f.comisionGenerada) || 0), 0);
+                unitsCompany += units;
+                montoCompany += monto;
+                return { ...v, units, goal, ratio, tier, comision, facturas: facturasPeriodo };
             }).sort((a, b) => b.ratio - a.ratio);
 
+            // Meta global = suma de las metas de vendedores; progreso = suma de lo
+            // facturado por cada uno EN SU PERÍODO (coherente con el denominador).
+            setCompanyTotals({ units: unitsCompany, monto: montoCompany });
             setVendedores(enriched);
         } catch (e) {
             setError('No se pudo cargar el rendimiento. ' + e.message);
@@ -148,11 +129,10 @@ const RendimientoComercialView = () => {
 
     useEffect(() => { load(); }, []);
 
-    // Meta Global usa el total FACTURADO de toda la empresa (companyTotals,
-    // incluye facturas sin vendedor resuelto) — no la suma de lo atribuido a
-    // vendedores, que subestimaría el desempeño real si hay facturas sin
-    // mapear. El denominador es la meta general de la empresa (Configuraciones →
-    // Metas); si no se fijó, la suma de metas individuales de vendedores.
+    // Meta Global: numerador = suma de lo facturado por cada vendedor EN SU
+    // PERÍODO de empleo; denominador = meta general de la empresa (Configuraciones
+    // → Metas) o, si no se fijó, la suma de las metas de los vendedores. Ambos
+    // en el mismo reloj (período de empleo), sin quiebre por calendario.
     const totalUnits = companyTotals.units;
     const sumaVendedores = vendedores.reduce((s, v) => s + v.goal,  0);
     const totalGoal  = metaVentasGeneral > 0 ? metaVentasGeneral : sumaVendedores;
@@ -202,7 +182,7 @@ const RendimientoComercialView = () => {
                         </span>
                         <span className="text-white/40 text-xs">{vendedores.length} vendedores activos</span>
                     </div>
-                    <p className="text-white/40 text-xs mt-2">${companyTotals.monto.toLocaleString()} facturado este mes (Lacteoca, todas las cuentas)</p>
+                    <p className="text-white/40 text-xs mt-2">${companyTotals.monto.toLocaleString()} facturado por los vendedores en su período de empleo vigente</p>
                 </div>
 
                 {/* Facturas sin vendedor asignado — ventas reales que no se
@@ -319,14 +299,14 @@ const RendimientoComercialView = () => {
                                         className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-600 pt-3 mt-1 border-t border-slate-50"
                                     >
                                         <FileText size={13} />
-                                        {v.facturas.length} factura{v.facturas.length !== 1 ? 's' : ''} este mes
+                                        {v.facturas.length} factura{v.facturas.length !== 1 ? 's' : ''} en el período
                                         {expandedId === v.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                                     </button>
 
                                     {expandedId === v.id && (
                                         <div className="mt-2 space-y-1.5">
                                             {v.facturas.length === 0 ? (
-                                                <p className="text-xs text-slate-400 text-center py-2">Sin facturas registradas este mes.</p>
+                                                <p className="text-xs text-slate-400 text-center py-2">Sin facturas en el período de empleo vigente.</p>
                                             ) : v.facturas.map(f => (
                                                 <div key={f.id} className="flex items-center justify-between gap-2 bg-slate-50 rounded-lg px-3 py-2">
                                                     <div className="min-w-0">

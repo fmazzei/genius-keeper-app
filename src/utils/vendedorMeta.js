@@ -88,6 +88,24 @@ const rangoLabel = (start, end) => {
  * límites de fecha — para el selector de período de la Conciliación.
  * @returns {Array<{periodKey, mes, rango, anio, start:Date, end:Date, cerrado:boolean}>}
  */
+// Nivel (tier) de comisión para un % de meta — MISMA lógica que usa el Home del
+// vendedor (buildTiers/getTierFromConfig en VendedorLayout): tiers ordenados de
+// mayor a menor minPct, se elige el primero cuyo umbral se alcanza; por debajo
+// del más bajo, paga bajaRate. Devuelve { label, rate } (rate en fracción 0–1).
+// Sirve para que las vistas del gerente muestren el MISMO nivel que ve el vendedor.
+export function tierParaPct(commissionConfig = {}, pct = 0) {
+    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(commissionConfig || {}) };
+    const tiers = [...(cfg.tiers || DEFAULT_COMMISSION_CONFIG.tiers)]
+        .map(t => ({ label: t.label, min: (t.minPct || 0) / 100, rate: (t.rate || 0) / 100 }))
+        .sort((a, b) => b.min - a.min);
+    for (const t of tiers) {
+        if (pct >= t.min) return { label: t.label, rate: t.rate };
+    }
+    const lowest = tiers[tiers.length - 1];
+    const rate = (cfg.bajaRate !== undefined && cfg.bajaRate !== null) ? cfg.bajaRate / 100 : (lowest?.rate ?? 0);
+    return { label: cfg.bajaLabel || 'Baja', rate };
+}
+
 export function listPeriodos(meta = {}) {
     const ingreso = toDate(meta.fechaIngreso);
     if (!ingreso) return [];
