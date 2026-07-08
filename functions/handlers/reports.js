@@ -43,14 +43,23 @@ async function getVisitReports(start, end) {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// Meta general de la empresa para el reporte mensual: el número fijado en
+// settings/appConfig.metaVentasGeneral; si es 0, se aproxima con la suma de las
+// metas de los vendedores activos (misma regla que Ventas / Rendimiento).
 async function getSalesGoal() {
-    const snap = await admin.firestore()
-        .collection("users_metadata")
-        .where("role", "==", "sales_manager")
-        .limit(1)
-        .get();
-    if (snap.empty) return 0;
-    return snap.docs[0].data().salesGoal || 0;
+    const db = admin.firestore();
+    const cfg = await db.doc("settings/appConfig").get();
+    const manual = Number(cfg.data()?.metaVentasGeneral) || 0;
+    if (manual > 0) return manual;
+
+    const vends = await db.collection("users_metadata").where("role", "==", "vendedor").get();
+    let sum = 0;
+    vends.forEach((d) => {
+        const v = d.data();
+        if (v.active === false) return;
+        sum += Number(v.metaMensual ?? v.commissionConfig?.metaMensual ?? 0) || 0;
+    });
+    return sum;
 }
 
 function fmtDate(d) {

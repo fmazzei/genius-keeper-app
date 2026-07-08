@@ -9,8 +9,8 @@ import {
 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line } from 'recharts';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
-import { useSalesGoal } from '@/hooks/useSalesGoal.js';
 import { useTeamMetaMensual } from '@/hooks/useTeamMetaMensual.js';
+import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { useAuth } from '@/context/AuthContext';
 import { usePendingSales } from '@/hooks/usePendingSales.js';
 import Modal from '@/Components/Modal.jsx';
@@ -60,15 +60,15 @@ const AlertRow = ({ alert, onNavigate }) => {
 const VentasView = ({ reports, posList, loading, onNavigate, allAlerts }) => {
     const { user } = useAuth();
     const { pendingSales, loading: pendingLoading }  = usePendingSales();
-    const { salesGoal: manualGoal, loading: manualGoalLoading } = useSalesGoal(user?.uid);
+    const { metaVentasGeneral, configLoading } = useAppConfig();
     const { teamGoal, loading: teamGoalLoading } = useTeamMetaMensual();
     const [activeModal, setActiveModal] = useState(null);
 
-    // Si el gerente tiene una meta configurada manualmente (AdminPanel) se
-    // respeta esa; si no, se usa la suma de las metas mensuales efectivas
-    // de los vendedores activos (igual a "Meta Global del Equipo").
-    const unitGoal    = manualGoal > 0 ? manualGoal : teamGoal;
-    const goalLoading = manualGoalLoading || teamGoalLoading;
+    // Meta general de la empresa (Configuraciones → Comercial → Metas). Si no se
+    // fijó manualmente (0), se usa la suma de las metas mensuales efectivas de
+    // los vendedores activos. Misma regla en Rendimiento Comercial y el correo.
+    const unitGoal    = metaVentasGeneral > 0 ? metaVentasGeneral : teamGoal;
+    const goalLoading = configLoading || teamGoalLoading;
 
     // ── Computed metrics ──────────────────────────────────────────────────────
     const metrics = useMemo(() => {

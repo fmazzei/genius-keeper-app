@@ -6,6 +6,7 @@ import { db } from '@/Firebase/config.js';
 import { Users, Trophy, RefreshCw, ChevronDown, ChevronUp, FileText, AlertTriangle } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import { computeMetaMensual } from '@/utils/vendedorMeta.js';
+import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
 // Estilos visuales por nombre de nivel — el nivel/tasa real de cada
 // vendedor viene congelado en `comisiones_mensuales` (puede variar si su
@@ -44,6 +45,7 @@ function getTeamTier(ratio) {
 }
 
 const RendimientoComercialView = () => {
+    const { metaVentasGeneral } = useAppConfig();
     const [vendedores, setVendedores] = useState([]);
     const [companyTotals, setCompanyTotals] = useState({ units: 0, monto: 0 });
     const [sinAsignar, setSinAsignar] = useState([]);
@@ -149,9 +151,11 @@ const RendimientoComercialView = () => {
     // Meta Global usa el total FACTURADO de toda la empresa (companyTotals,
     // incluye facturas sin vendedor resuelto) — no la suma de lo atribuido a
     // vendedores, que subestimaría el desempeño real si hay facturas sin
-    // mapear. La meta (denominador) sigue siendo la suma de metas individuales.
+    // mapear. El denominador es la meta general de la empresa (Configuraciones →
+    // Metas); si no se fijó, la suma de metas individuales de vendedores.
     const totalUnits = companyTotals.units;
-    const totalGoal  = vendedores.reduce((s, v) => s + v.goal,  0);
+    const sumaVendedores = vendedores.reduce((s, v) => s + v.goal,  0);
+    const totalGoal  = metaVentasGeneral > 0 ? metaVentasGeneral : sumaVendedores;
     const teamRatio  = totalGoal > 0 ? totalUnits / totalGoal : 0;
     const teamTier   = getTeamTier(teamRatio);
     const teamPct    = Math.round(teamRatio * 100);

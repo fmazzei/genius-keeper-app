@@ -25,9 +25,11 @@ interface AppConfigContextType {
   roleModules: { [role: string]: Partial<ModulesConfig> };
   ourProductWeight_g: number;
   competitorFrequencyDays: number;
+  metaVentasGeneral: number;
   configLoading: boolean;
   updateModule: (moduleName: keyof ModulesConfig, enabled: boolean) => Promise<void>;
   updateRoleModule: (role: string, moduleName: keyof ModulesConfig, enabled: boolean) => Promise<void>;
+  updateMetaVentasGeneral: (unidades: number) => Promise<void>;
   getModulesForRole: (role: string) => ModulesConfig;
 }
 
@@ -60,6 +62,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [roleModules, setRoleModules] = useState<{ [role: string]: Partial<ModulesConfig> }>({});
   const [ourProductWeight_g, setOurProductWeight_g] = useState<number>(250);
   const [competitorFrequencyDays, setCompetitorFrequencyDays] = useState<number>(15);
+  const [metaVentasGeneral, setMetaVentasGeneral] = useState<number>(0);
   const [configLoading, setConfigLoading] = useState(true);
 
   useEffect(() => {
@@ -90,8 +93,10 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
               if (typeof data.ourProductWeight_g === 'number') {
                 setOurProductWeight_g(data.ourProductWeight_g);
               }
+              setMetaVentasGeneral(typeof data.metaVentasGeneral === 'number' ? data.metaVentasGeneral : 0);
             } else {
               setModules(defaultModules);
+              setMetaVentasGeneral(0);
             }
             setConfigLoading(false);
           },
@@ -122,12 +127,17 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
     await setDoc(configRef, { roleModules: { [role]: { [moduleName]: enabled } } }, { merge: true });
   };
 
+  const updateMetaVentasGeneral = async (unidades: number) => {
+    const configRef = doc(db, 'settings', 'appConfig');
+    await setDoc(configRef, { metaVentasGeneral: Number(unidades) || 0 }, { merge: true });
+  };
+
   const getModulesForRole = (role: string): ModulesConfig => {
     return { ...defaultModules, ...roleModules[role] };
   };
 
   return (
-    <AppConfigContext.Provider value={{ modules, roleModules, ourProductWeight_g, competitorFrequencyDays, configLoading, updateModule, updateRoleModule, getModulesForRole }}>
+    <AppConfigContext.Provider value={{ modules, roleModules, ourProductWeight_g, competitorFrequencyDays, metaVentasGeneral, configLoading, updateModule, updateRoleModule, updateMetaVentasGeneral, getModulesForRole }}>
       {children}
     </AppConfigContext.Provider>
   );
