@@ -518,7 +518,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                     }
                     // Notify admins when new entrants are detected
                     if (finalReportData.newEntrants?.length > 0) {
-                        const adminSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', 'in', ['master', 'sales_manager', 'director'])));
+                        const adminSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', 'in', ['master', 'sales_manager', 'gerencia', 'director'])));
                         const entrantNames = finalReportData.newEntrants.map(e => `${e.brand} ${e.presentation}`).join(', ');
                         await Promise.all(adminSnap.docs.map(adminDoc =>
                             addDoc(collection(db, 'notifications'), {

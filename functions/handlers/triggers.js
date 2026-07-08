@@ -62,7 +62,7 @@ const sendKromaNotif = async ({ tipo, mensaje, logId, lote, productoNombre, dest
 // Routes notification to GK push OR Kroma internal depending on destination roles
 const notifyByDestinations = async (destinations, notifPayload, dataPayload) => {
     const db = admin.firestore();
-    const GK_ROLES    = ["master", "sales_manager", "merchandiser"];
+    const GK_ROLES    = ["master", "sales_manager", "gerencia", "merchandiser"];
     const KROMA_ROLES = ["kroma_admin", "kroma_gerencial"];
 
     const gkDests    = destinations.filter(d => GK_ROLES.includes(d));
@@ -310,7 +310,7 @@ exports.onPedidoCreated = functions.firestore
         // 1. Notificaciones push a master y sales_manager (nunca a merchandiser/produccion)
         try {
             const usersSnap = await db.collection("users_metadata")
-                .where("role", "in", ["master", "sales_manager"])
+                .where("role", "in", ["master", "sales_manager", "gerencia"])
                 .get();
 
             const activeUsers = usersSnap.docs.filter(d => d.data().active !== false);
@@ -416,7 +416,7 @@ exports.onDespachoCreated = functions.firestore
         if (eventConfig && eventConfig.enabled === false) return null;
 
         const destinations = (eventConfig && eventConfig.destinations) ||
-            ["master", "sales_manager", "kroma_gerencial", "kroma_admin"];
+            ["master", "sales_manager", "gerencia", "kroma_gerencial", "kroma_admin"];
 
         const lineas     = despacho.lineas || [];
         const totalItems = lineas.reduce((s, l) => s + (l.cantidad || 0), 0);
@@ -464,7 +464,7 @@ exports.onDespachoUpdated = functions.firestore
         if (eventConfig && eventConfig.enabled === false) return null;
 
         const destinations = (eventConfig && eventConfig.destinations) ||
-            ["master", "sales_manager", "kroma_gerencial", "kroma_admin"];
+            ["master", "sales_manager", "gerencia", "kroma_gerencial", "kroma_admin"];
 
         const lineas     = after.lineas || [];
         const totalItems = lineas.reduce((s, l) => s + (l.cantidad || 0), 0);
@@ -547,7 +547,7 @@ exports.onTransferReceived = functions.firestore
         if (eventConfig && eventConfig.enabled === false) return null;
 
         const destinations = (eventConfig && eventConfig.destinations) ||
-            ["master", "sales_manager"];
+            ["master", "sales_manager", "gerencia"];
 
         await notifyByDestinations(destinations, {
             title: "Mercancía Recibida en Caracas",

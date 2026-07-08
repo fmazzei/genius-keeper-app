@@ -32,7 +32,7 @@ exports.marcarCategoriaCliente = onCall({ region: "us-central1" }, async (reques
     if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
     const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
     const role = userSnap.data()?.role;
-    if (!["master", "sales_manager", "administrador"].includes(role)) {
+    if (!["master", "sales_manager", "gerencia", "administrador"].includes(role)) {
         throw new HttpsError("permission-denied", "Permisos insuficientes");
     }
     const { customerName, categoria } = request.data || {};
@@ -52,7 +52,7 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
 
     const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
     const role = userSnap.data()?.role;
-    if (!["master", "sales_manager", "administrador"].includes(role)) throw new Error("Permisos insuficientes");
+    if (!["master", "sales_manager", "gerencia", "administrador"].includes(role)) throw new Error("Permisos insuficientes");
 
     const { facturaId, action, nuevoVendedorId } = request.data || {};
     if (!facturaId || !['eliminar', 'anular', 'reasignar', 'conciliarPago'].includes(action)) {
@@ -225,7 +225,7 @@ exports.limpiarDuplicadosFacturas = onCall({ region: "us-central1" }, async (req
     if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
     const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
     const role = userSnap.data()?.role;
-    if (!["master", "sales_manager", "administrador"].includes(role)) {
+    if (!["master", "sales_manager", "gerencia", "administrador"].includes(role)) {
         throw new HttpsError("permission-denied", "Permisos insuficientes");
     }
     const { vendedorId } = request.data || {};
@@ -274,7 +274,7 @@ exports.vincularRazonSocial = onCall({ region: "us-central1" }, async (request) 
 
     const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
     const role = userSnap.data()?.role;
-    if (!["master", "sales_manager"].includes(role)) {
+    if (!["master", "sales_manager", "gerencia"].includes(role)) {
         throw new HttpsError("permission-denied", `Permisos insuficientes (rol: ${role || 'sin rol'})`);
     }
 

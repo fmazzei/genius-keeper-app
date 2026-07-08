@@ -461,7 +461,7 @@ exports.sendManualReport = onCall({ region: "us-central1" }, async (request) => 
 
     const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
     const role = userSnap.data()?.role;
-    if (!["master", "sales_manager"].includes(role)) throw new Error("Permisos insuficientes");
+    if (!["master", "sales_manager", "gerencia"].includes(role)) throw new Error("Permisos insuficientes");
 
     const { type, recipients: customRecipients } = request.data || {};
     if (!["daily", "weekly", "monthly"].includes(type)) throw new Error("Tipo inválido");
