@@ -1,6 +1,6 @@
 // RUTA: src/Pages/VentasView.jsx
 // Vista unificada de Ventas para el Sales Manager.
-// Combina la Brújula de Ventas (meta, alertas) con la proyección de SalesDashboard.
+// Combina la Brújula de Ventas (meta, alertas) con la proyección de ventas.
 
 import React, { useMemo, useState } from 'react';
 import {
