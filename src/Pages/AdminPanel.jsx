@@ -471,14 +471,10 @@ const GeneralSettings = () => {
 
     useEffect(() => {
         const loadSettings = async () => {
-            const notificationsRef = doc(db, 'settings', 'notifications');
             const appConfigRef = doc(db, 'settings', 'appConfig');
             try {
-                const [notificationsSnap, appConfigSnap] = await Promise.all([ getDoc(notificationsRef), getDoc(appConfigRef) ]);
-                let loadedSettings = {};
-                if (notificationsSnap.exists()) loadedSettings = { ...loadedSettings, ...notificationsSnap.data() };
-                if (appConfigSnap.exists()) loadedSettings = { ...loadedSettings, ...appConfigSnap.data() };
-                setSettings(prev => ({...prev, ...loadedSettings}));
+                const appConfigSnap = await getDoc(appConfigRef);
+                if (appConfigSnap.exists()) setSettings(prev => ({ ...prev, ...appConfigSnap.data() }));
             } catch (error) {
                 console.error("Error loading settings:", error);
             } finally {
@@ -1123,9 +1119,12 @@ const EmailManagement = () => {
 
 // ─── Dashboard Management ─────────────────────────────────────────────────────
 
+// 'gerencia' es el rol vivo del gerente (App enruta gerencia/sales_manager/
+// director como role="gerencia"). El hook useDashboardConfig cae al legado
+// roles.sales_manager si aún no hay config guardada bajo 'gerencia'.
 const DASH_ROLES = [
-    { id: 'master',        label: 'Master' },
-    { id: 'sales_manager', label: 'Gerente de Ventas' },
+    { id: 'master',   label: 'Master' },
+    { id: 'gerencia', label: 'Gerencia' },
 ];
 
 const DashboardManagement = () => {
@@ -1140,7 +1139,11 @@ const DashboardManagement = () => {
         if (configLoading) return;
         const next = {};
         DASH_ROLES.forEach(({ id: role }) => {
-            const saved = config?.roles?.[role]?.widgets || [];
+            // Para 'gerencia', si aún no hay config propia, parte de la legada
+            // de 'sales_manager' (lo que el gerente ya tenía configurado).
+            const saved = config?.roles?.[role]?.widgets
+                || (role === 'gerencia' ? config?.roles?.sales_manager?.widgets : null)
+                || [];
             const savedMap = Object.fromEntries(saved.map(w => [w.id, w]));
             next[role] = WIDGET_REGISTRY.map((w, idx) => ({
                 id:      w.id,

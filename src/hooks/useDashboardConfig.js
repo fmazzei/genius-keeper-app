@@ -23,8 +23,11 @@ export function useDashboardConfig() {
     // Returns ordered list of enabled widget IDs for a given role.
     // Master defaults to ALL widgets if no config saved yet.
     // Other roles default to empty (blank canvas).
+    // 'gerencia' cae a la config legada de 'sales_manager' mientras no tenga
+    // config propia (sales_manager/director hoy entran como gerencia — App.tsx).
     const getEnabledWidgets = (role) => {
-        const saved = config?.roles?.[role]?.widgets;
+        const saved = config?.roles?.[role]?.widgets
+            || (role === 'gerencia' ? config?.roles?.sales_manager?.widgets : undefined);
         if (!saved) return role === 'master' ? ALL_IDS : [];
         return saved
             .filter(w => w.enabled)
