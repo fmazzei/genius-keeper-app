@@ -239,37 +239,20 @@ exports.onReportCreated = functions.firestore
         const reporterName = reportData.userName || "un reporter";
         const posName = reportData.posName || "un PDV";
 
-        functions.logger.log(`Nuevo reporte creado por ${reporterName}. Buscando usuarios 'master' para notificar.`);
-
         try {
-            const mastersQuery = admin.firestore().collection('users_metadata').where('role', '==', 'master');
-            const mastersSnapshot = await mastersQuery.get();
+            // Respeta la configuración de Alertas (settings/notificationsConfig).
+            const config = await getNotifConfig();
+            const eventConfig = (config.events || {}).nuevo_reporte;
+            if (eventConfig && eventConfig.enabled === false) return null;
 
-            if (mastersSnapshot.empty) {
-                functions.logger.warn("No se encontraron usuarios 'master' para notificar.");
-                return null;
-            }
-
-            const notificationPayload = {
-                title: 'Nuevo Reporte de Visita',
-                body: `${reporterName} ha enviado un nuevo reporte desde ${posName}.`
-            };
-
-            const dataPayload = {
-                link: `/reports/${reportId}` // Enlace para abrir el detalle del reporte en la app
-            };
-
-            const promises = mastersSnapshot.docs.map(doc => {
-                const masterUserId = doc.id;
-                return sendNotificationToUser(masterUserId, notificationPayload, dataPayload);
-            });
-
-            await Promise.all(promises);
-            functions.logger.log(`Notificaciones enviadas a ${mastersSnapshot.size} usuario(s) master.`);
+            const destinations = (eventConfig && eventConfig.destinations) || ["master"];
+            await notifyByDestinations(destinations, {
+                title: "Nuevo Reporte de Visita",
+                body: `${reporterName} ha enviado un nuevo reporte desde ${posName}.`,
+            }, { link: `/reports/${reportId}`, tipo: "nuevo_reporte" });
             return null;
-
         } catch (error) {
-            functions.logger.error("Error al buscar usuarios master o enviar notificaciones:", error);
+            functions.logger.error("Error al notificar nuevo reporte:", error);
             return null;
         }
     });
@@ -307,23 +290,17 @@ exports.onPedidoCreated = functions.firestore
         const pedido = snap.data();
         const db = admin.firestore();
 
-        // 1. Notificaciones push a master y sales_manager (nunca a merchandiser/produccion)
+        // 1. Notificaciones push — respeta la configuración de Alertas.
         try {
-            const usersSnap = await db.collection("users_metadata")
-                .where("role", "in", ["master", "sales_manager", "gerencia"])
-                .get();
-
-            const activeUsers = usersSnap.docs.filter(d => d.data().active !== false);
-
-            const notifPayload = {
-                title: "Nuevo Pedido Registrado",
-                body: `${pedido.reporterName || "Un merchandiser"} tomó un pedido de ${pedido.cantidad} uds. para ${pedido.posName || "un cliente"}${pedido.sucursal ? ` (${pedido.sucursal})` : ""}`,
-            };
-
-            await Promise.all(activeUsers.map(d =>
-                sendNotificationToUser(d.id, notifPayload, { link: "/pedidos" })
-            ));
-            functions.logger.log(`Notificaciones de pedido enviadas a ${activeUsers.length} usuario(s).`);
+            const config = await getNotifConfig();
+            const eventConfig = (config.events || {}).nuevo_pedido;
+            if (!(eventConfig && eventConfig.enabled === false)) {
+                const destinations = (eventConfig && eventConfig.destinations) || ["master", "sales_manager", "gerencia"];
+                await notifyByDestinations(destinations, {
+                    title: "Nuevo Pedido Registrado",
+                    body: `${pedido.reporterName || "Un merchandiser"} tomó un pedido de ${pedido.cantidad} uds. para ${pedido.posName || "un cliente"}${pedido.sucursal ? ` (${pedido.sucursal})` : ""}`,
+                }, { link: "/pedidos", tipo: "nuevo_pedido" });
+            }
         } catch (err) {
             functions.logger.error("Error enviando notificaciones de pedido:", err);
         }

@@ -463,7 +463,6 @@ const DepotManagement = () => {
 
 const GeneralSettings = () => {
     const [settings, setSettings] = useState({
-        newReportNotifications: false,
         gpsRequired: true,
         competitorFrequencyDays: 15,
         ourProductWeight_g: 250,
@@ -510,7 +509,6 @@ const GeneralSettings = () => {
         <div className="space-y-6">
              <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
                 <h3 className="text-xl font-semibold text-slate-700">Parámetros de la Aplicación</h3>
-                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Bell/> Notificar al Master sobre nuevos reportes</label><p className="text-sm text-slate-500 mt-1">Si está activo, se enviará una notificación push cada vez que un vendedor envíe un reporte.</p></div><ToggleSwitch enabled={settings.newReportNotifications} setEnabled={(value) => handleSettingChange('notifications', 'newReportNotifications', value)} /></div>
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Lock/> Requerir GPS para enviar reporte</label><p className="text-sm text-slate-500 mt-1">Si está activo, el merchandiser no podrá enviar un reporte si está fuera del rango del PDV.</p></div><ToggleSwitch enabled={settings.gpsRequired} setEnabled={(value) => handleSettingChange('appConfig', 'gpsRequired', value)} /></div>
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
                     <div className="w-full text-center sm:text-left">
@@ -1250,21 +1248,22 @@ const DashboardManagement = () => {
 
 const ALL_ROLES = [
     { id: 'master',          label: 'Master' },
-    { id: 'sales_manager',   label: 'Gerente de Ventas' },
+    { id: 'gerencia',        label: 'Gerencia' },
+    { id: 'sales_manager',   label: 'Gerente de Ventas (legado)' },
     { id: 'kroma_admin',     label: 'Admin Kroma' },
     { id: 'kroma_gerencial', label: 'Gerencial Kroma' },
     { id: 'merchandiser',    label: 'Merchandiser' },
 ];
 
+// Solo eventos con un trigger emisor REAL en el backend (functions/handlers/
+// triggers.js). Los que no tienen emisor (visita_vencida, produccion_completada,
+// solicitud_edicion) se retiraron para no ofrecer toggles sin efecto.
 const ALL_EVENTS = [
     { id: 'nuevo_reporte',        label: 'Nuevo Reporte de Visita',            desc: 'Cuando un merchandiser envía un nuevo reporte desde un PDV',        Icon: FileText,      defaultDests: ['master'] },
-    { id: 'nuevo_pedido',         label: 'Nuevo Despacho a PDV (GK)',          desc: 'Cuando un merchandiser registra unidades entregadas a un cliente',   Icon: ShoppingCart,  defaultDests: ['master', 'sales_manager'] },
-    { id: 'nuevo_despacho',       label: 'Despacho desde Barinas (Kroma)',     desc: 'Cuando Kroma declara mercancía en tránsito hacia Caracas',           Icon: Truck,         defaultDests: ['master', 'sales_manager', 'kroma_gerencial', 'kroma_admin'] },
-    { id: 'despacho_entregado',   label: 'Despacho Entregado en Destino',      desc: 'Cuando se confirma que el despacho de Kroma llegó a su destino',     Icon: CheckCircle,   defaultDests: ['master', 'sales_manager', 'kroma_gerencial', 'kroma_admin'] },
-    { id: 'transfer_recibida',    label: 'Mercancía Recibida en Caracas',      desc: 'Cuando se confirma recepción en el almacén de Caracas (GK)',         Icon: Package,       defaultDests: ['master', 'sales_manager'] },
-    { id: 'visita_vencida',       label: 'Visita Vencida',                     desc: 'Cuando una visita programada no fue completada a tiempo',            Icon: AlertCircle,   defaultDests: ['master'] },
-    { id: 'produccion_completada',label: 'Producción Completada (Kroma)',      desc: 'Cuando se finaliza una planilla de producción en Kroma',             Icon: TrendingUp,    defaultDests: ['kroma_gerencial', 'kroma_admin'] },
-    { id: 'solicitud_edicion',    label: 'Solicitud de Edición (Kroma)',       desc: 'Cuando el operario solicita editar un registro en Kroma',            Icon: ClipboardList, defaultDests: ['kroma_admin', 'master'] },
+    { id: 'nuevo_pedido',         label: 'Nuevo Despacho a PDV (GK)',          desc: 'Cuando un merchandiser registra unidades entregadas a un cliente',   Icon: ShoppingCart,  defaultDests: ['master', 'sales_manager', 'gerencia'] },
+    { id: 'nuevo_despacho',       label: 'Despacho desde Barinas (Kroma)',     desc: 'Cuando Kroma declara mercancía en tránsito hacia Caracas',           Icon: Truck,         defaultDests: ['master', 'sales_manager', 'gerencia', 'kroma_gerencial', 'kroma_admin'] },
+    { id: 'despacho_entregado',   label: 'Despacho Entregado en Destino',      desc: 'Cuando se confirma que el despacho de Kroma llegó a su destino',     Icon: CheckCircle,   defaultDests: ['master', 'sales_manager', 'gerencia', 'kroma_gerencial', 'kroma_admin'] },
+    { id: 'transfer_recibida',    label: 'Mercancía Recibida en Caracas',      desc: 'Cuando se confirma recepción en el almacén de Caracas (GK)',         Icon: Package,       defaultDests: ['master', 'sales_manager', 'gerencia'] },
 ];
 
 const AlertsManagement = () => {
@@ -1915,15 +1914,16 @@ const VendedoresManagement = () => {
 
 
 const NotificacionesSection = () => {
-    const [tab, setTab] = useState('correos');
+    const [tab, setTab] = useState('alertas');
     return (
         <div>
             <div className="mb-5">
                 <h3 className="text-lg font-bold text-slate-800">Notificaciones</h3>
-                <p className="text-sm text-slate-500 mt-1">Destinatarios de correo, alertas automáticas y reportes programados.</p>
+                <p className="text-sm text-slate-500 mt-1">Alertas push por evento, destinatarios de correo y reportes programados — todo en un solo lugar.</p>
             </div>
             <div className="flex gap-2 border-b border-slate-200 mb-6">
                 {[
+                    { id: 'alertas',       label: 'Alertas' },
                     { id: 'correos',       label: 'Correos' },
                     { id: 'auto_reports',  label: 'Auto-Reportes' },
                 ].map(({ id, label }) => (
@@ -1936,6 +1936,7 @@ const NotificacionesSection = () => {
                     </button>
                 ))}
             </div>
+            {tab === 'alertas'      && <AlertsManagement />}
             {tab === 'correos'      && <EmailManagement />}
             {tab === 'auto_reports' && <ReportsAutoManagement />}
         </div>
@@ -4343,8 +4344,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             items: [
                 { id: 'modules',        label: 'Módulos',        Icon: LayoutGrid },
                 { id: 'dashboard',      label: 'Dashboard',      Icon: BarChart2  },
-                { id: 'alerts',         label: 'Alertas',        Icon: Bell       },
-                { id: 'notificaciones', label: 'Notificaciones', Icon: Mail       },
+                { id: 'notificaciones', label: 'Notificaciones', Icon: Bell       },
             ],
         },
         {
@@ -4394,7 +4394,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'competitors':    return <CompetitorManagement />;
             case 'modules':        return <ModuleManagement />;
             case 'dashboard':      return <DashboardManagement />;
-            case 'alerts':         return <AlertsManagement />;
             case 'notificaciones': return <NotificacionesSection />;
             case 'settings':       return <GeneralSettings />;
             case 'integraciones':  return <IntegracionesSection />;
