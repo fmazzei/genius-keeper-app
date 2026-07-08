@@ -36,11 +36,12 @@ export function useDashboardConfig() {
     };
 
     // Persist widget config for a role. widgets = [{ id, enabled, order }]
+    // merge:true escribe SOLO roles.<role> — sin spread del estado local, que
+    // podía estar viejo y revertía en silencio la config de los otros roles
+    // (guardar Master y luego Gerencia en el mismo clic pisaba a Master).
     const saveRoleConfig = async (role, widgets) => {
         const ref = doc(db, 'settings', 'dashboardConfig');
-        await setDoc(ref, {
-            roles: { ...(config?.roles || {}), [role]: { widgets } },
-        });
+        await setDoc(ref, { roles: { [role]: { widgets } } }, { merge: true });
     };
 
     return { config, loading, getEnabledWidgets, saveRoleConfig };

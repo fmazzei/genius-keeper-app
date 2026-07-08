@@ -11,7 +11,9 @@ const nodemailer     = require("nodemailer");
 
 async function getSmtpTransporter() {
     const snap = await admin.firestore().doc("settings/smtpConfig").get();
-    if (!snap.exists()) throw new Error("SMTP no configurado en settings/smtpConfig");
+    // Admin SDK: `exists` es PROPIEDAD, no método (llamarlo lanza TypeError y
+    // mataba todos los reportes por correo — mismo bug histórico de webhooks.js).
+    if (!snap.exists) throw new Error("SMTP no configurado en settings/smtpConfig");
     const c = snap.data();
     return {
         transporter: nodemailer.createTransport({
@@ -24,7 +26,7 @@ async function getSmtpTransporter() {
 
 async function getReportsConfig() {
     const snap = await admin.firestore().doc("settings/reportsConfig").get();
-    return snap.exists() ? snap.data() : null;
+    return snap.exists ? snap.data() : null;
 }
 
 async function getActiveRecipients(config) {
@@ -43,9 +45,41 @@ async function getVisitReports(start, end) {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// ── Meta efectiva del vendedor — espejo de computeMetaMensual (src/utils/
+// vendedorMeta.js): meta plena con fallback a defaults, reducida por el
+// período de ARRANQUE según los meses de empleo (fechaIngreso). Mantener en
+// sync con el frontend para que el % de meta del correo mensual cuadre con
+// Ventas / Rendimiento Comercial.
+const { DEFAULT_COMMISSION_CONFIG } = require("./commissionEngine");
+
+function parseFechaLocal(v) {
+    if (!v) return null;
+    if (typeof v === "string") {
+        const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+    const d = v?.toDate ? v.toDate() : new Date(v);
+    return isNaN(d?.getTime?.()) ? null : d;
+}
+
+function metaEfectivaVendedor(v) {
+    const cfg = v.commissionConfig
+        ? { ...DEFAULT_COMMISSION_CONFIG, ...v.commissionConfig }
+        : DEFAULT_COMMISSION_CONFIG;
+    const metaPlena = v.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+    const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
+    const ingreso = parseFechaLocal(v.fechaIngreso);
+    if (!ingreso || arranque.length === 0) return metaPlena;
+    const hoy = new Date();
+    let meses = (hoy.getFullYear() - ingreso.getFullYear()) * 12 + (hoy.getMonth() - ingreso.getMonth());
+    if (hoy.getDate() < ingreso.getDate()) meses -= 1;
+    meses = Math.max(0, meses);
+    return meses < arranque.length ? (arranque[meses].meta || metaPlena) : metaPlena;
+}
+
 // Meta general de la empresa para el reporte mensual: el número fijado en
-// settings/appConfig.metaVentasGeneral; si es 0, se aproxima con la suma de las
-// metas de los vendedores activos (misma regla que Ventas / Rendimiento).
+// settings/appConfig.metaVentasGeneral; si es 0, la suma de las metas
+// EFECTIVAS de los vendedores activos (misma regla que Ventas / Rendimiento).
 async function getSalesGoal() {
     const db = admin.firestore();
     const cfg = await db.doc("settings/appConfig").get();
@@ -57,7 +91,7 @@ async function getSalesGoal() {
     vends.forEach((d) => {
         const v = d.data();
         if (v.active === false) return;
-        sum += Number(v.metaMensual ?? v.commissionConfig?.metaMensual ?? 0) || 0;
+        sum += Number(metaEfectivaVendedor(v)) || 0;
     });
     return sum;
 }

@@ -20,7 +20,6 @@ import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 import EditPosModal from '../Components/EditPosModal.jsx';
-import EditReportForm from '../Components/EditReportForm.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 
 // Índice público usuario→correo para permitir login por NOMBRE DE USUARIO.
@@ -574,7 +573,12 @@ const UserCleanup = () => {
         setDeleting(true);
         try {
             const batch = writeBatch(db);
-            users.forEach(u => batch.delete(doc(db, 'users_metadata', u.id)));
+            users.forEach(u => {
+                batch.delete(doc(db, 'users_metadata', u.id));
+                // Purga también su entrada de login por nombre de usuario: si no,
+                // login_index queda apuntando a un UID borrado (índice fantasma).
+                if (u.username) batch.delete(doc(db, 'login_index', u.username));
+            });
             await batch.commit();
             setUsers([]);
             setDone(true);
@@ -647,7 +651,12 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
     }, []);
 
     const toggleActive = (uid, cur) => updateDoc(doc(db, 'users_metadata', uid), { active: !cur }).catch(() => alert('No se pudo actualizar.'));
-    const deleteUser   = (u) => { if (!window.confirm(`¿Eliminar a "${u.name}"?`)) return; deleteDoc(doc(db, 'users_metadata', u.id)).catch(() => alert('No se pudo eliminar.')); };
+    const deleteUser   = (u) => {
+        if (!window.confirm(`¿Eliminar a "${u.name}"?`)) return;
+        deleteDoc(doc(db, 'users_metadata', u.id)).catch(() => alert('No se pudo eliminar.'));
+        // Purga su entrada de login por nombre de usuario (evita índice fantasma).
+        if (u.username) deleteDoc(doc(db, 'login_index', u.username)).catch(() => {});
+    };
     // Migra un usuario de un rol legado (p.ej. 'director') al rol de esta sección.
     const convertRole = (u) => {
         if (!window.confirm(`¿Convertir a "${u.name}" en ${sectionLabel}?`)) return;
@@ -947,6 +956,7 @@ const EmailManagement = () => {
     const [newEmail, setNewEmail] = useState('');
     const [newName, setNewName]   = useState('');
     const [loading, setLoading]   = useState(true);
+    const [loadFailed, setLoadFailed] = useState(false);
     const [saving, setSaving]     = useState(false);
 
     const [smtp, setSmtp] = useState({ host: 'smtp.gmail.com', port: 587, secure: false, user: '', password: '', fromName: 'Genius Keeper' });
@@ -962,24 +972,32 @@ const EmailManagement = () => {
         const loadData = async () => {
             try {
                 const [recSnap, repSnap, smtpSnap] = await Promise.all([getDoc(recipientsRef), getDoc(reportsRef), getDoc(smtpRef)]);
-                // Fusiona las dos listas históricas por correo en una sola fila con dos flags.
+                // Fusiona las dos listas históricas por correo (normalizado a
+                // minúsculas) en una sola fila con dos flags.
                 const pedidosList  = recSnap.exists() ? (recSnap.data().recipients || []) : [];
                 const reportesList = repSnap.exists() ? (repSnap.data().recipients || []) : [];
                 const map = new Map();
-                pedidosList.forEach(r => { if (r?.email) map.set(r.email, { email: r.email, name: r.name || r.email, pedidos: r.enabled !== false, reportes: false }); });
+                const keyOf = (r) => String(r?.email || '').trim().toLowerCase();
+                pedidosList.forEach(r => { const k = keyOf(r); if (k) map.set(k, { email: k, name: r.name || k, pedidos: r.enabled !== false, reportes: false }); });
                 reportesList.forEach(r => {
-                    if (!r?.email) return;
-                    const prev = map.get(r.email);
+                    const k = keyOf(r);
+                    if (!k) return;
+                    const prev = map.get(k);
                     if (prev) {
                         prev.reportes = r.enabled !== false;
                         if ((!prev.name || prev.name === prev.email) && r.name) prev.name = r.name;
                     } else {
-                        map.set(r.email, { email: r.email, name: r.name || r.email, pedidos: false, reportes: r.enabled !== false });
+                        map.set(k, { email: k, name: r.name || k, pedidos: false, reportes: r.enabled !== false });
                     }
                 });
                 setRows([...map.values()]);
                 if (smtpSnap.exists()) setSmtp(prev => ({ ...prev, ...smtpSnap.data() }));
-            } catch (e) { console.error(e); }
+            } catch (e) {
+                console.error(e);
+                // Sin la lista real NO se permite editar: guardar sobre rows=[]
+                // pisaría los destinatarios existentes con una lista vacía.
+                setLoadFailed(true);
+            }
             finally { setLoading(false); }
         };
         loadData();
@@ -987,6 +1005,7 @@ const EmailManagement = () => {
 
     // Persiste la lista única en los dos docs que consume el backend.
     const saveRows = async (updated) => {
+        if (loadFailed) { alert('No se pudo cargar la lista actual. Recarga la página antes de editar.'); return; }
         setSaving(true);
         try {
             await Promise.all([
@@ -1036,6 +1055,9 @@ const EmailManagement = () => {
             <div className="bg-white rounded-lg shadow p-5">
                 <h3 className="text-xl font-semibold text-slate-700 mb-1">Destinatarios de Correo</h3>
                 <p className="text-sm text-slate-500 mb-5">Una sola lista para todos los correos del sistema. Marca qué recibe cada persona: <b>Pedidos</b> (aviso por cada pedido registrado) y/o <b>Reportes</b> (reportes automáticos diario/semanal/mensual).</p>
+                {loadFailed && (
+                    <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">No se pudo cargar la lista actual de destinatarios. La edición está bloqueada para no perder datos — recarga la página.</p>
+                )}
 
                 <form onSubmit={handleAdd} className="flex flex-col sm:flex-row gap-3 mb-6">
                     <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="correo@ejemplo.com" required className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
@@ -1293,7 +1315,7 @@ const ALL_ROLES = [
 // solicitud_edicion) se retiraron para no ofrecer toggles sin efecto.
 const ALL_EVENTS = [
     { id: 'nuevo_reporte',        label: 'Nuevo Reporte de Visita',            desc: 'Cuando un merchandiser envía un nuevo reporte desde un PDV',        Icon: FileText,      defaultDests: ['master'] },
-    { id: 'nuevo_pedido',         label: 'Nuevo Despacho a PDV (GK)',          desc: 'Cuando un merchandiser registra unidades entregadas a un cliente',   Icon: ShoppingCart,  defaultDests: ['master', 'sales_manager', 'gerencia'] },
+    { id: 'nuevo_pedido',         label: 'Nuevo Pedido (GK)',                  desc: 'Cuando se registra un pedido de un cliente (también dispara el correo de pedidos)', Icon: ShoppingCart, defaultDests: ['master', 'sales_manager', 'gerencia'] },
     { id: 'nuevo_despacho',       label: 'Despacho desde Barinas (Kroma)',     desc: 'Cuando Kroma declara mercancía en tránsito hacia Caracas',           Icon: Truck,         defaultDests: ['master', 'sales_manager', 'gerencia', 'kroma_gerencial', 'kroma_admin'] },
     { id: 'despacho_entregado',   label: 'Despacho Entregado en Destino',      desc: 'Cuando se confirma que el despacho de Kroma llegó a su destino',     Icon: CheckCircle,   defaultDests: ['master', 'sales_manager', 'gerencia', 'kroma_gerencial', 'kroma_admin'] },
     { id: 'transfer_recibida',    label: 'Mercancía Recibida en Caracas',      desc: 'Cuando se confirma recepción en el almacén de Caracas (GK)',         Icon: Package,       defaultDests: ['master', 'sales_manager', 'gerencia'] },
@@ -1331,10 +1353,13 @@ const AlertsManagement = () => {
         });
     };
 
-    const toggleDest = (eventId, roleId) => {
+    // defaultDests: mismos defaults que muestra la UI. Sin este fallback, quitar
+    // un rol en un evento aún sin guardar partía de [] y dejaba como destino
+    // justo el rol que se quiso quitar (vaciando a todos los demás en silencio).
+    const toggleDest = (eventId, roleId, defaultDests = []) => {
         setConfig(prev => {
             const cur   = (prev.events || {})[eventId] || {};
-            const dests = cur.destinations || [];
+            const dests = cur.destinations || defaultDests;
             return {
                 ...prev,
                 events: {
@@ -1351,7 +1376,9 @@ const AlertsManagement = () => {
     const handleSave = async () => {
         setSaving(true);
         try {
-            await setDoc(configRef, config);
+            // merge + solo `events`: no pisar otros campos que este doc pueda
+            // ganar en el futuro (este guardado reescribía el doc completo).
+            await setDoc(configRef, { events: config.events || {} }, { merge: true });
             setSaved(true);
             setTimeout(() => setSaved(false), 3000);
         } catch (e) { alert('Error al guardar. Intenta de nuevo.'); }
@@ -1399,7 +1426,7 @@ const AlertsManagement = () => {
                                                     {ALL_ROLES.map(role => (
                                                         <button
                                                             key={role.id}
-                                                            onClick={() => toggleDest(id, role.id)}
+                                                            onClick={() => toggleDest(id, role.id, defaultDests)}
                                                             className={`text-xs px-2.5 py-1 rounded-full border font-medium transition-colors ${
                                                                 dests.includes(role.id)
                                                                     ? 'bg-brand-blue text-white border-brand-blue'
@@ -1719,6 +1746,8 @@ const VendedoresManagement = () => {
     const handleDelete = (v) => {
         if (!window.confirm(`¿Eliminar a "${v.name}"? Perderá el acceso de inmediato.`)) return;
         deleteDoc(doc(db, 'users_metadata', v.id)).catch(() => alert('No se pudo eliminar.'));
+        // Purga su entrada de login por nombre de usuario (evita índice fantasma).
+        if (v.username) deleteDoc(doc(db, 'login_index', v.username)).catch(() => {});
     };
 
     if (loading) return <LoadingSpinner />;
@@ -2503,115 +2532,6 @@ const StatCard = ({ label, value, color = 'text-slate-800', bg = 'bg-slate-50', 
         <p className={`font-black leading-none text-center whitespace-nowrap ${color} mt-1`} style={{ fontVariantNumeric: 'tabular-nums', fontSize: 'clamp(11px, 14cqw, 18px)' }}>{value}</p>
     </div>
 );
-
-// Vista EN PANTALLA del desglose de un período — lo que el administrador va a
-// pagar, con la evidencia de facturas por cada bono. Se muestra ANTES de
-// registrar la liquidación para revisar de dónde sale cada dólar.
-function DesgloseView({ d }) {
-    if (!d) return null;
-    const m  = money;
-    const fd = (v) => { const x = v?.toDate ? v.toDate() : (v instanceof Date ? v : (v ? new Date(v) : null)); return x && !isNaN(x) ? x.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'; };
-    const comisionNivel = d.cobradoRegular * d.tasa / 100;
-    const cobradas = (d.facturas || []).filter(f => f.pagada && !f.comisionAnulada);
-    const Row = ({ label, value, green, amber, navy, bold, sep }) => (
-        <div className={`flex justify-between gap-3 ${sep ? 'border-t border-slate-200 pt-1 mt-1' : ''}`}>
-            <span className={`text-slate-500 ${bold ? 'font-bold text-slate-700' : ''}`}>{label}</span>
-            <span className={`font-mono ${bold ? 'font-black' : ''} ${green ? 'text-emerald-600' : amber ? 'text-amber-600' : navy ? 'text-brand-blue' : 'text-slate-800'}`}>{value}</span>
-        </div>
-    );
-    const Tabla = ({ rows }) => (rows && rows.length ? (
-        <div className="overflow-x-auto mt-1">
-            <table className="w-full text-[11px]">
-                <thead><tr className="text-slate-400 text-left border-b border-slate-200">
-                    <th className="py-1 pr-2">Factura</th><th className="py-1 pr-2">Cliente</th>
-                    <th className="py-1 pr-2 text-right">Fecha</th><th className="py-1 pr-2 text-right">Uds</th><th className="py-1 text-right">Monto</th>
-                </tr></thead>
-                <tbody>{rows.map((f, i) => (
-                    <tr key={i} className="border-b border-slate-50">
-                        <td className="py-1 pr-2 font-mono text-slate-700">{f.numero}</td>
-                        <td className="py-1 pr-2 text-slate-600 truncate max-w-[140px]">{f.cliente}</td>
-                        <td className="py-1 pr-2 text-right text-slate-500">{fd(f.fecha)}</td>
-                        <td className="py-1 pr-2 text-right text-slate-500">{f.unidades}</td>
-                        <td className="py-1 text-right text-slate-700">${Number(f.monto || 0).toLocaleString('es-VE')}</td>
-                    </tr>
-                ))}</tbody>
-            </table>
-        </div>
-    ) : <p className="text-slate-400 text-xs mt-1">Sin facturas.</p>);
-    const Bloque = ({ titulo, children, resaltado }) => (
-        <details className="bg-white border border-slate-200 rounded-lg p-3 mt-2">
-            <summary className={`cursor-pointer text-sm font-semibold ${resaltado ? 'text-emerald-700' : 'text-slate-700'}`}>{titulo}</summary>
-            <div className="mt-1">{children}</div>
-        </details>
-    );
-
-    return (
-        <div className="mt-4 border border-slate-200 rounded-xl p-4 bg-slate-50/60">
-            <p className="font-bold text-slate-800 mb-2">Qué se paga · Mes {d.mes} <span className="text-slate-400 font-normal">· {d.rango} · {d.anio}</span></p>
-
-            {/* De dónde sale cada dólar */}
-            <div className="bg-white border border-slate-200 rounded-lg p-3 text-sm space-y-1">
-                <Row label={`Comisión nivel ${d.nivel} (${d.tasa}% sobre lo cobrado)`} value={m(comisionNivel)} />
-                {d.bonoCobranzaMonto > 0 && <Row label={`Bono Cobranza (${d.bonoCobRate}% de lo cobrado a tiempo)`} value={`+${m(d.bonoCobranzaMonto)}`} green />}
-                {d.bonoActivacionMonto > 0 && <Row label={`Bono Activación (${d.bonoActRate}% × ${d.semanasLogradas}/${d.semanasTotales} sem.)`} value={`+${m(d.bonoActivacionMonto)}`} green />}
-                {d.bonoRecupMonto > 0 && <Row label={`Cuentas recuperadas (${d.tasaRecup}%)`} value={`+${m(d.bonoRecupMonto)}`} />}
-                <Row label="Comisión devengada" value={m(d.devengadoComision)} bold sep />
-                <Row label="Base (fijo + viáticos)" value={m(d.base)} />
-                <Row label="Devengado total" value={m(d.devengadoTotal)} bold navy sep />
-                <Row label="Pagado (liquidado)" value={m(d.pagado)} green />
-                <Row label="Saldo por pagar" value={m(d.saldo)} bold amber />
-            </div>
-
-            <Bloque titulo={`Facturación → Meta: ${d.metaMensual} · ${d.unidades}/${d.metaMensual} (${d.pct}%) → Nivel: ${d.nivel}`}>
-                <p className="text-slate-500 text-[11px] mb-1">Todas las facturas del período (pagadas y no pagadas) — definen el nivel de facturación.</p>
-                <Tabla rows={d.facturas} />
-                <Bloque titulo={`Facturas cobradas · ${cobradas.length} · ${m(d.cobradoRegular)} (de aquí sale la comisión)`} resaltado={cobradas.length > 0}>
-                    <Tabla rows={cobradas} />
-                </Bloque>
-            </Bloque>
-
-            <Bloque titulo={`Bono Cobranza (${d.bonoCobRate}%) · ${d.facturasATiempo.length} factura${d.facturasATiempo.length === 1 ? '' : 's'} a tiempo (+${m(d.bonoCobranzaMonto)})`} resaltado={d.bonoCobranzaMonto > 0}>
-                <Tabla rows={d.facturasATiempo} />
-            </Bloque>
-
-            <Bloque titulo={`Bono de Activación (${d.bonoActRate}%) · ${d.semanasLogradas}/${d.semanasTotales} semanas logradas → +${m(d.bonoActivacionMonto)}`} resaltado={d.bonoActivacionMonto > 0}>
-                {d.carteraSize === 0 ? <p className="text-slate-400 text-xs">Sin cartera asignada.</p> : (
-                    <>
-                        <p className="text-slate-500 text-[11px] mb-1">Objetivo: activar ≥{d.actThreshold}% de la cartera ({d.objetivo}/{d.carteraSize} clientes) con ≥{d.actMinUnits} uds por semana.</p>
-                        {d.semanas.map(w => (
-                            <details key={w.n} className="border border-slate-100 rounded mt-1.5">
-                                <summary className={`flex justify-between px-2 py-1 text-[11px] cursor-pointer select-none ${w.lograda ? 'bg-emerald-50' : 'bg-slate-50'}`}>
-                                    <span className="font-semibold text-slate-700">Semana {w.n}</span>
-                                    <span className={w.lograda ? 'text-emerald-700 font-bold' : 'text-slate-500'}>{w.activados} cliente{w.activados === 1 ? '' : 's'} con ≥{d.actMinUnits} uds {w.lograda ? '· LOGRADA' : '· no lograda'}</span>
-                                </summary>
-                                {w.lograda ? (
-                                    <table className="w-full text-[10.5px]"><tbody>
-                                        {w.clientes.map((c, i) => (
-                                            <tr key={i} className="border-t border-slate-50">
-                                                <td className="px-2 py-0.5 text-slate-600">{c.cliente}</td>
-                                                <td className="px-2 py-0.5 text-right text-slate-500">{c.unidades} uds</td>
-                                                <td className="px-2 py-0.5 text-right text-slate-400">{c.facturas.join(', ')}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody></table>
-                                ) : (
-                                    <p className="px-2 py-1 text-[10.5px] text-slate-400">Semana no lograda — no genera bono, sin facturas.</p>
-                                )}
-                            </details>
-                        ))}
-                    </>
-                )}
-            </Bloque>
-
-            <Bloque titulo={`Cuentas recuperadas (${d.tasaRecup}%) · ${d.recuperadas.length} cobrada${d.recuperadas.length === 1 ? '' : 's'} → +${m(d.bonoRecupMonto)}`} resaltado={d.bonoRecupMonto > 0}>
-                {d.recuperadas.length > 0
-                    ? <Tabla rows={d.recuperadas} />
-                    : <p className="text-slate-400 text-xs">No cobró ninguna cuenta recuperada en el período — $0,00.</p>}
-            </Bloque>
-        </div>
-    );
-}
-
 export const LiquidacionesManagement = ({ vendedores: vendedoresProp } = {}) => {
     const [vendedoresLocal, setVendedores] = useState([]);
     const vendedores = (vendedoresProp && vendedoresProp.length) ? vendedoresProp : vendedoresLocal;
@@ -3449,14 +3369,16 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
 
     // ── Verificación por período de empleo ──────────────────────────────────
     const periodoActual = periodos.find(p => p.periodKey === periodoSel);
-    const facFecha = (f) => (f.fecha?.toDate ? f.fecha.toDate() : (f.fecha ? new Date(f.fecha) : null));
+    const ingresoDate = periodos.find(p => p.mes === 1)?.start || null;
     const enPeriodo = (f) => {
         if (periodoSel === 'todas') return true;
         if (periodoSel === 'recuperadas') return !!f.recuperada;
         if (!periodoActual) return true;
-        if (f.recuperada) return false;
-        const t = facFecha(f);
-        return t && t >= periodoActual.start && t < periodoActual.end;
+        // MISMA atribución que el informe (facturasDelPeriodo): recuperadas
+        // cobradas por su fecha de COBRO, abiertas al período en curso, y
+        // normales por su fecha de factura. Antes las recuperadas se excluían
+        // aquí y el detalle no cuadraba con los indicadores del período.
+        return facturasDelPeriodo([f], periodoActual, ingresoDate).length > 0;
     };
 
     const activas = facturas.filter(f => f.estado !== 'anulada');
@@ -3508,7 +3430,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
 
     // Informe del vendedor (única fuente de los indicadores): total a la fecha
     // (descargable) y del período seleccionado (la vista principal).
-    const ingresoDate = periodos.find(p => p.mes === 1)?.start || null;
+    // (ingresoDate se define arriba, junto a enPeriodo.)
     const infoTotal    = (vendedorId !== '__none__' && metaVend) ? buildInformeVendedor(facturas, metaVend, catMap) : null;
     const infoPeriodo  = (vendedorId !== '__none__' && metaVend && periodoActual) ? buildInformeVendedor(facturasDelPeriodo(facturas, periodoActual, ingresoDate), metaVend, catMap) : null;
     const hayEnCurso   = periodos.some(p => !p.cerrado);
@@ -4117,7 +4039,7 @@ const IntegracionesSection = () => {
                         </p>
                         <p className="text-amber-700 text-xs mt-1">
                             Estas facturas no generan comisión para nadie. Revisa que el campo "Salesperson" en Zoho Books
-                            coincida exactamente con el "Nombre en Zoho" configurado en Vendedores → Editar (o víncula su razón social en la sección 3).
+                            coincida exactamente con el "Nombre en Zoho" configurado en Vendedores → Editar (o vincula su razón social en la sección 4, "Vinculación de clientes").
                         </p>
                     </div>
                 </div>
