@@ -644,7 +644,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
     useEffect(() => {
         const q = query(collection(db, 'users_metadata'), where('role', 'in', targetRoles));
         const unsub = onSnapshot(q,
-            snap => { setUsers(snap.docs.map(d => ({ id: d.id, name: d.data().name || d.id, email: d.data().email || '—', username: d.data().username || '', role: d.data().role, active: d.data().active !== false }))); setLoading(false); },
+            snap => { setUsers(snap.docs.map(d => { const u = d.data(); return { id: d.id, name: u.name || u.username || u.email || 'Usuario', email: u.email || '—', username: u.username || '', role: u.role, active: u.active !== false }; })); setLoading(false); },
             err  => { console.error(err); setLoading(false); }
         );
         return unsub;

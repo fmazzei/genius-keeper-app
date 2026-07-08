@@ -58,17 +58,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const data = docSnap.data();
             setRole(data.role);
             setIsAccountSuspended(data.active === false);
+            // Backfill de nombre para cuentas compartidas creadas sin `name`
+            // (evita que aparezca el UID crudo en los listados).
+            if (!data.name) {
+              const sharedNames: Record<string, string> = {
+                'lacteoca@lacteoca.com': 'Máster',
+                'anaquel@lacteoca.com': 'Equipo de Campo',
+                'produccion@lacteoca.com': 'Producción',
+              };
+              const nm = sharedNames[currentUser.email || ''];
+              if (nm) setDoc(userDocRef, { name: nm }, { merge: true }).catch(() => {});
+            }
           } else {
             // Cuentas con perfil auto-recreable si el doc fue eliminado
-            const sharedAccounts: Record<string, string> = {
-              'lacteoca@lacteoca.com':   'master',
-              'anaquel@lacteoca.com':    'merchandiser',
-              'produccion@lacteoca.com': 'produccion',
+            const sharedAccounts: Record<string, { role: string; name: string }> = {
+              'lacteoca@lacteoca.com':   { role: 'master',       name: 'Máster' },
+              'anaquel@lacteoca.com':    { role: 'merchandiser', name: 'Equipo de Campo' },
+              'produccion@lacteoca.com': { role: 'produccion',   name: 'Producción' },
             };
             const email = currentUser.email || '';
             if (sharedAccounts[email]) {
-              await setDoc(userDocRef, { role: sharedAccounts[email], email });
-              setRole(sharedAccounts[email]);
+              // Incluye `name` para que no aparezca el UID crudo en los listados.
+              await setDoc(userDocRef, { role: sharedAccounts[email].role, email, name: sharedAccounts[email].name });
+              setRole(sharedAccounts[email].role);
             } else {
               setRole('no-role');
             }
