@@ -941,12 +941,17 @@ const ModuleManagement = () => {
 // =========================================================================================
 // GESTIÓN DE CORREOS — Destinatarios de Pedidos + Configuración SMTP
 // =========================================================================================
+// Pestaña "Correos" — UNA sola lista de destinatarios para todos los correos
+// del sistema. Cada persona tiene dos casillas: Pedidos (aviso por cada pedido)
+// y Reportes (reportes automáticos/manuales). Por dentro se persiste en los dos
+// docs que ya leen las Cloud Functions (settings/emailRecipients → pedidos;
+// settings/reportsConfig.recipients → reportes), así el backend no cambia.
 const EmailManagement = () => {
-    const [recipients, setRecipients] = useState([]);
+    const [rows, setRows]         = useState([]); // { email, name, pedidos, reportes }
     const [newEmail, setNewEmail] = useState('');
-    const [newName, setNewName] = useState('');
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
+    const [newName, setNewName]   = useState('');
+    const [loading, setLoading]   = useState(true);
+    const [saving, setSaving]     = useState(false);
 
     const [smtp, setSmtp] = useState({ host: 'smtp.gmail.com', port: 587, secure: false, user: '', password: '', fromName: 'Genius Keeper' });
     const [showPassword, setShowPassword] = useState(false);
@@ -954,13 +959,29 @@ const EmailManagement = () => {
     const [smtpSaved, setSmtpSaved] = useState(false);
 
     const recipientsRef = doc(db, 'settings', 'emailRecipients');
-    const smtpRef = doc(db, 'settings', 'smtpConfig');
+    const reportsRef    = doc(db, 'settings', 'reportsConfig');
+    const smtpRef       = doc(db, 'settings', 'smtpConfig');
 
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [recSnap, smtpSnap] = await Promise.all([getDoc(recipientsRef), getDoc(smtpRef)]);
-                if (recSnap.exists()) setRecipients(recSnap.data().recipients || []);
+                const [recSnap, repSnap, smtpSnap] = await Promise.all([getDoc(recipientsRef), getDoc(reportsRef), getDoc(smtpRef)]);
+                // Fusiona las dos listas históricas por correo en una sola fila con dos flags.
+                const pedidosList  = recSnap.exists() ? (recSnap.data().recipients || []) : [];
+                const reportesList = repSnap.exists() ? (repSnap.data().recipients || []) : [];
+                const map = new Map();
+                pedidosList.forEach(r => { if (r?.email) map.set(r.email, { email: r.email, name: r.name || r.email, pedidos: r.enabled !== false, reportes: false }); });
+                reportesList.forEach(r => {
+                    if (!r?.email) return;
+                    const prev = map.get(r.email);
+                    if (prev) {
+                        prev.reportes = r.enabled !== false;
+                        if ((!prev.name || prev.name === prev.email) && r.name) prev.name = r.name;
+                    } else {
+                        map.set(r.email, { email: r.email, name: r.name || r.email, pedidos: false, reportes: r.enabled !== false });
+                    }
+                });
+                setRows([...map.values()]);
                 if (smtpSnap.exists()) setSmtp(prev => ({ ...prev, ...smtpSnap.data() }));
             } catch (e) { console.error(e); }
             finally { setLoading(false); }
@@ -968,9 +989,16 @@ const EmailManagement = () => {
         loadData();
     }, []);
 
-    const saveRecipients = async (updated) => {
+    // Persiste la lista única en los dos docs que consume el backend.
+    const saveRows = async (updated) => {
         setSaving(true);
-        try { await setDoc(recipientsRef, { recipients: updated }, { merge: true }); setRecipients(updated); }
+        try {
+            await Promise.all([
+                setDoc(recipientsRef, { recipients: updated.map(r => ({ email: r.email, name: r.name, enabled: r.pedidos })) }, { merge: true }),
+                setDoc(reportsRef,    { recipients: updated.map(r => ({ email: r.email, name: r.name, enabled: r.reportes })) }, { merge: true }),
+            ]);
+            setRows(updated);
+        }
         catch (e) { alert('Error al guardar. Intenta de nuevo.'); }
         finally { setSaving(false); }
     };
@@ -979,20 +1007,18 @@ const EmailManagement = () => {
         e.preventDefault();
         const email = newEmail.trim().toLowerCase();
         if (!email) return;
-        if (recipients.some(r => r.email === email)) { alert('Este correo ya está en la lista.'); return; }
-        const updated = [...recipients, { email, name: newName.trim() || email, enabled: true }];
-        await saveRecipients(updated);
+        if (rows.some(r => r.email === email)) { alert('Este correo ya está en la lista.'); return; }
+        await saveRows([...rows, { email, name: newName.trim() || email, pedidos: true, reportes: true }]);
         setNewEmail(''); setNewName('');
     };
 
-    const handleToggle = (email) => {
-        const updated = recipients.map(r => r.email === email ? { ...r, enabled: !r.enabled } : r);
-        saveRecipients(updated);
+    const toggleFlag = (email, flag) => {
+        saveRows(rows.map(r => r.email === email ? { ...r, [flag]: !r[flag] } : r));
     };
 
     const handleDelete = (email) => {
         if (!window.confirm(`¿Eliminar ${email} de la lista?`)) return;
-        saveRecipients(recipients.filter(r => r.email !== email));
+        saveRows(rows.filter(r => r.email !== email));
     };
 
     const handleSaveSmtp = async (e) => {
@@ -1010,10 +1036,10 @@ const EmailManagement = () => {
 
     return (
         <div className="space-y-8">
-            {/* --- Destinatarios --- */}
+            {/* --- Destinatarios (lista única) --- */}
             <div className="bg-white rounded-lg shadow p-5">
                 <h3 className="text-xl font-semibold text-slate-700 mb-1">Destinatarios de Correo</h3>
-                <p className="text-sm text-slate-500 mb-5">Estos correos recibirán un email automático cada vez que un mercaderista registre un pedido.</p>
+                <p className="text-sm text-slate-500 mb-5">Una sola lista para todos los correos del sistema. Marca qué recibe cada persona: <b>Pedidos</b> (aviso por cada pedido registrado) y/o <b>Reportes</b> (reportes automáticos diario/semanal/mensual).</p>
 
                 <form onSubmit={handleAdd} className="flex flex-col sm:flex-row gap-3 mb-6">
                     <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="correo@ejemplo.com" required className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
@@ -1023,22 +1049,26 @@ const EmailManagement = () => {
                     </button>
                 </form>
 
-                {recipients.length === 0 ? (
+                {rows.length === 0 ? (
                     <p className="text-slate-400 text-center py-6">No hay destinatarios configurados todavía.</p>
                 ) : (
                     <ul className="divide-y divide-slate-100">
-                        {recipients.map(r => (
-                            <li key={r.email} className="flex items-center justify-between py-3 gap-4">
+                        {rows.map(r => (
+                            <li key={r.email} className="flex flex-col sm:flex-row sm:items-center justify-between py-3 gap-3">
                                 <div className="min-w-0">
                                     <p className="font-semibold text-slate-800 truncate">{r.name || r.email}</p>
                                     {r.name && r.name !== r.email && <p className="text-sm text-slate-500 truncate">{r.email}</p>}
                                 </div>
-                                <div className="flex items-center gap-3 flex-shrink-0">
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${r.enabled !== false ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                                        {r.enabled !== false ? 'Activo' : 'Inactivo'}
-                                    </span>
-                                    <ToggleSwitch enabled={r.enabled !== false} setEnabled={() => handleToggle(r.email)} />
-                                    <button onClick={() => handleDelete(r.email)} className="text-red-400 hover:text-red-600"><Trash2 size={18} /></button>
+                                <div className="flex items-center gap-4 flex-shrink-0">
+                                    <div className="flex flex-col items-center gap-1">
+                                        <span className="text-[11px] font-semibold text-slate-500">Pedidos</span>
+                                        <ToggleSwitch enabled={r.pedidos} setEnabled={() => toggleFlag(r.email, 'pedidos')} disabled={saving} />
+                                    </div>
+                                    <div className="flex flex-col items-center gap-1">
+                                        <span className="text-[11px] font-semibold text-slate-500">Reportes</span>
+                                        <ToggleSwitch enabled={r.reportes} setEnabled={() => toggleFlag(r.email, 'reportes')} disabled={saving} />
+                                    </div>
+                                    <button onClick={() => handleDelete(r.email)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={18} /></button>
                                 </div>
                             </li>
                         ))}
@@ -1406,8 +1436,6 @@ const ReportsAutoManagement = () => {
     const [saved, setSaved]     = useState(false);
     const [sending, setSending] = useState(null);
     const [sendResult, setSendResult] = useState({});
-    const [newName, setNewName]   = useState('');
-    const [newEmail, setNewEmail] = useState('');
 
     const configRef = doc(db, 'settings', 'reportsConfig');
 
@@ -1422,26 +1450,22 @@ const ReportsAutoManagement = () => {
         load();
     }, []);
 
+    // Guarda SOLO los toggles de tipo de reporte (merge). Los destinatarios se
+    // gestionan en la pestaña Correos (lista única) — escribir aquí el doc
+    // completo pisaría esa lista con una copia vieja.
     const handleSave = async () => {
         setSaving(true);
         try {
-            await setDoc(configRef, config);
+            await setDoc(configRef, {
+                daily:   { enabled: config.daily?.enabled   ?? false },
+                weekly:  { enabled: config.weekly?.enabled  ?? false },
+                monthly: { enabled: config.monthly?.enabled ?? false },
+            }, { merge: true });
             setSaved(true); setTimeout(() => setSaved(false), 3000);
         } catch (e) { alert('Error al guardar. Intenta de nuevo.'); }
         finally { setSaving(false); }
     };
 
-    const handleAddRecipient = (e) => {
-        e.preventDefault();
-        const email = newEmail.trim().toLowerCase();
-        if (!email) return;
-        if (config.recipients.some(r => r.email === email)) { alert('Este correo ya está en la lista.'); return; }
-        setConfig(prev => ({ ...prev, recipients: [...prev.recipients, { name: newName.trim() || email, email, enabled: true }] }));
-        setNewName(''); setNewEmail('');
-    };
-
-    const toggleRecipient  = (email) => setConfig(prev => ({ ...prev, recipients: prev.recipients.map(r => r.email === email ? { ...r, enabled: !r.enabled } : r) }));
-    const deleteRecipient  = (email) => { if (window.confirm(`¿Eliminar ${email}?`)) setConfig(prev => ({ ...prev, recipients: prev.recipients.filter(r => r.email !== email) })); };
     const toggleReportType = (id, val) => setConfig(prev => ({ ...prev, [id]: { ...(prev[id] || {}), enabled: val } }));
 
     const handleSendNow = async (type) => {
@@ -1462,46 +1486,16 @@ const ReportsAutoManagement = () => {
 
     return (
         <div className="space-y-8">
-            {/* Destinatarios */}
+            {/* Tipos de reporte */}
             <div className="bg-white rounded-lg shadow p-5">
-                <div className="flex items-start justify-between mb-4 gap-4">
-                    <div>
-                        <h3 className="text-xl font-semibold text-slate-700">Destinatarios de Reportes</h3>
-                        <p className="text-sm text-slate-500 mt-1">Personas que recibirán los reportes automáticos y manuales por correo.</p>
-                    </div>
+                <div className="flex items-start justify-between mb-1 gap-4">
+                    <h3 className="text-xl font-semibold text-slate-700">Reportes Automáticos por Email</h3>
                     <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-5 rounded-lg hover:bg-opacity-90 disabled:opacity-60 shrink-0">
                         <Save size={16} />{saving ? 'Guardando...' : saved ? '¡Guardado!' : 'Guardar Cambios'}
                     </button>
                 </div>
-                <form onSubmit={handleAddRecipient} className="flex flex-col sm:flex-row gap-3 mb-5">
-                    <input type="text"  value={newName}  onChange={e => setNewName(e.target.value)}  placeholder="Nombre (ej: Francisco Mazzei)" className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
-                    <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="correo@empresa.com" required   className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue" />
-                    <button type="submit" className="flex items-center justify-center gap-2 bg-brand-blue text-white font-bold py-3 px-5 rounded-lg whitespace-nowrap"><PlusCircle size={18} /> Agregar</button>
-                </form>
-                {config.recipients.length === 0
-                    ? <p className="text-slate-400 text-center py-6">No hay destinatarios. Agrega al menos uno para activar el envío.</p>
-                    : <ul className="divide-y divide-slate-100">
-                        {config.recipients.map(r => (
-                            <li key={r.email} className="flex items-center justify-between py-3 gap-4">
-                                <div className="min-w-0">
-                                    <p className="font-semibold text-slate-800 truncate">{r.name}</p>
-                                    <p className="text-sm text-slate-500 truncate">{r.email}</p>
-                                </div>
-                                <div className="flex items-center gap-3 shrink-0">
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${r.enabled !== false ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{r.enabled !== false ? 'Activo' : 'Inactivo'}</span>
-                                    <ToggleSwitch enabled={r.enabled !== false} setEnabled={() => toggleRecipient(r.email)} />
-                                    <button onClick={() => deleteRecipient(r.email)} className="text-red-400 hover:text-red-600"><Trash2 size={18} /></button>
-                                </div>
-                            </li>
-                        ))}
-                    </ul>
-                }
-            </div>
-
-            {/* Tipos de reporte */}
-            <div className="bg-white rounded-lg shadow p-5">
-                <h3 className="text-xl font-semibold text-slate-700 mb-1">Reportes Automáticos por Email</h3>
-                <p className="text-sm text-slate-500 mb-5">Activa cada tipo. El sistema los genera y envía automáticamente según el horario indicado.</p>
+                <p className="text-sm text-slate-500 mb-2">Activa cada tipo. El sistema los genera y envía automáticamente según el horario indicado.</p>
+                <p className="text-xs text-slate-400 mb-5">Destinatarios: {activeRecipients} activo{activeRecipients === 1 ? '' : 's'} — se gestionan en la pestaña <b>Correos</b> (casilla "Reportes").</p>
                 <div className="space-y-4">
                     {REPORT_TYPES_META.map(({ id, label, Icon, schedule, desc }) => {
                         const enabled   = config[id]?.enabled ?? false;
@@ -1939,6 +1933,37 @@ const NotificacionesSection = () => {
             {tab === 'alertas'      && <AlertsManagement />}
             {tab === 'correos'      && <EmailManagement />}
             {tab === 'auto_reports' && <ReportsAutoManagement />}
+        </div>
+    );
+};
+
+// ─── Visibilidad por rol (Módulos + Widgets del dashboard) ────────────────────
+// Misma metáfora ("qué ve cada rol") que antes vivía en dos pantallas separadas.
+// Los datos siguen en sus docs de siempre (appConfig.roleModules / dashboardConfig).
+const VisibilidadSection = () => {
+    const [tab, setTab] = useState('modulos');
+    return (
+        <div>
+            <div className="mb-5">
+                <h3 className="text-lg font-bold text-slate-800">Visibilidad por rol</h3>
+                <p className="text-sm text-slate-500 mt-1">Qué módulos de navegación y qué widgets del dashboard ve cada rol.</p>
+            </div>
+            <div className="flex gap-2 border-b border-slate-200 mb-6">
+                {[
+                    { id: 'modulos', label: 'Módulos' },
+                    { id: 'widgets', label: 'Dashboard' },
+                ].map(({ id, label }) => (
+                    <button
+                        key={id}
+                        onClick={() => setTab(id)}
+                        className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === id ? 'border-brand-blue text-brand-blue' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+            {tab === 'modulos' && <ModuleManagement />}
+            {tab === 'widgets' && <DashboardManagement />}
         </div>
     );
 };
@@ -3841,7 +3866,6 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp } = {}) => {
 
 const IntegracionesSection = () => {
     const [zohoSales, setZohoSales]       = useState(false);
-    const [zohoComis, setZohoComis]       = useState(false);
     const [zohoOrgId, setZohoOrgId]       = useState('');
     const [loading, setLoading]           = useState(true);
     const [saving, setSaving]             = useState(false);
@@ -3902,7 +3926,6 @@ const IntegracionesSection = () => {
             if (snap.exists()) {
                 const d = snap.data();
                 setZohoSales(d.zohoSalesWebhookActive === true);
-                setZohoComis(d.zohoCommissionsWebhookActive === true);
                 setZohoOrgId(d.zohoOrgIdLacteoca || '');
                 setUltimaConcil(d.zohoUltimaConciliacion || null);
             }
@@ -3918,10 +3941,11 @@ const IntegracionesSection = () => {
     const save = async () => {
         setSaving(true);
         try {
+            // zohoCommissionsWebhookActive (webhook legacy de comisiones) se retiró:
+            // procesarComisionesDesdeZoho es un no-op y el flag no tenía UI ni efecto.
             await setDoc(doc(db, 'settings', 'appConfig'), {
-                zohoSalesWebhookActive:       zohoSales,
-                zohoCommissionsWebhookActive: zohoComis,
-                zohoOrgIdLacteoca:            zohoOrgId.trim(),
+                zohoSalesWebhookActive: zohoSales,
+                zohoOrgIdLacteoca:      zohoOrgId.trim(),
             }, { merge: true });
             setSaved(true);
             setTimeout(() => setSaved(false), 2500);
@@ -4342,9 +4366,8 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
         {
             id: 'sistema', label: 'Sistema', Icon: LayoutGrid,
             items: [
-                { id: 'modules',        label: 'Módulos',        Icon: LayoutGrid },
-                { id: 'dashboard',      label: 'Dashboard',      Icon: BarChart2  },
-                { id: 'notificaciones', label: 'Notificaciones', Icon: Bell       },
+                { id: 'visibilidad',    label: 'Visibilidad por rol', Icon: LayoutGrid },
+                { id: 'notificaciones', label: 'Notificaciones',      Icon: Bell       },
             ],
         },
         {
@@ -4392,8 +4415,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'depots':         return <DepotManagement />;
             case 'almacen_comercial': return <AlmacenComercialPage />;
             case 'competitors':    return <CompetitorManagement />;
-            case 'modules':        return <ModuleManagement />;
-            case 'dashboard':      return <DashboardManagement />;
+            case 'visibilidad':    return <VisibilidadSection />;
             case 'notificaciones': return <NotificacionesSection />;
             case 'settings':       return <GeneralSettings />;
             case 'integraciones':  return <IntegracionesSection />;

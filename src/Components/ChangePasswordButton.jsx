@@ -12,7 +12,7 @@ import { auth } from '@/Firebase/config.js';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { KeyRound, Loader2, CheckCircle, X, Eye, EyeOff } from 'lucide-react';
 
-export default function ChangePasswordButton({ variant = 'light', className = '', labelClass = '' }) {
+export default function ChangePasswordButton({ variant = 'light', className = '', labelClass = '', iconSize = null }) {
     const [open, setOpen]       = useState(false);
     const [actual, setActual]   = useState('');
     const [nueva, setNueva]     = useState('');
@@ -112,7 +112,7 @@ export default function ChangePasswordButton({ variant = 'light', className = ''
     return (
         <>
             <button type="button" onClick={() => setOpen(true)} className={triggerCls}>
-                <KeyRound size={dark ? 18 : 16} /> <span className={labelClass}>Cambiar contraseña</span>
+                <KeyRound size={iconSize || (dark ? 18 : 16)} /> <span className={labelClass}>Cambiar contraseña</span>
             </button>
             {modal}
         </>

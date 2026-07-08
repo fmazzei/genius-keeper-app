@@ -11,7 +11,7 @@ import { functions } from '@/Firebase/config.js';
 import { startRegistration } from '@simplewebauthn/browser';
 import { Fingerprint } from 'lucide-react';
 
-export default function BiometricEnrollButton({ variant = 'light', className = '', labelClass = '' }) {
+export default function BiometricEnrollButton({ variant = 'light', className = '', labelClass = '', iconSize = null }) {
     const [available, setAvailable] = useState(false);
     const [busy, setBusy]           = useState(false);
     const [toast, setToast]         = useState(null); // { ok, msg }
@@ -59,7 +59,7 @@ export default function BiometricEnrollButton({ variant = 'light', className = '
     return (
         <>
             <button type="button" onClick={enroll} disabled={busy} className={triggerCls} aria-label="Activar acceso con huella">
-                <Fingerprint size={dark ? 18 : 16} className={busy ? 'animate-pulse' : ''} />
+                <Fingerprint size={iconSize || (dark ? 18 : 16)} className={busy ? 'animate-pulse' : ''} />
                 <span className={labelClass}>{busy ? 'Activando…' : 'Activar huella'}</span>
             </button>
             {toast && (
