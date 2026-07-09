@@ -10,6 +10,7 @@ import {
 import { ResponsiveContainer, LineChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Line } from 'recharts';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import { useTeamMetaMensual } from '@/hooks/useTeamMetaMensual.js';
+import { useTeamFacturado } from '@/hooks/useTeamFacturado.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { useAuth } from '@/context/AuthContext';
 import { usePendingSales } from '@/hooks/usePendingSales.js';
@@ -62,50 +63,35 @@ const VentasView = ({ reports, posList, loading, onNavigate, allAlerts }) => {
     const { pendingSales, loading: pendingLoading }  = usePendingSales();
     const { metaVentasGeneral, configLoading } = useAppConfig();
     const { teamGoal, loading: teamGoalLoading } = useTeamMetaMensual();
+    const { teamUnits, facturas: facturasFacturado, loading: facturadoLoading } = useTeamFacturado();
     const [activeModal, setActiveModal] = useState(null);
 
     // Meta general de la empresa (Configuraciones → Comercial → Metas). Si no se
     // fijó manualmente (0), se usa la suma de las metas mensuales efectivas de
     // los vendedores activos. Misma regla en Rendimiento Comercial y el correo.
     const unitGoal    = metaVentasGeneral > 0 ? metaVentasGeneral : teamGoal;
-    const goalLoading = configLoading || teamGoalLoading;
+    const goalLoading = configLoading || teamGoalLoading || facturadoLoading;
 
-    // ── Computed metrics ──────────────────────────────────────────────────────
-    const metrics = useMemo(() => {
-        if (!reports) return { totalUnits: 0, progress: 0, doi: 0, runRateActual: 0, runRateNeeded: 0, diasRestantes: 0, chartData: [] };
-
+    // ── Métricas de VENTA (facturado) — lo que Zoho ya facturó, medido por el
+    //    mes de empleo de cada vendedor (misma verdad que Rendimiento Comercial).
+    const salesMetrics = useMemo(() => {
         const today        = new Date();
-        const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
         const diasTotales  = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
         const diasPasados  = today.getDate();
         const diasRestantes = diasTotales - diasPasados;
 
-        const monthly = reports.filter(r =>
-            r.createdAt?.seconds && new Date(r.createdAt.seconds * 1000) >= firstOfMonth
-        );
-
-        const totalUnits = monthly.reduce((s, r) => s + (r.orderQuantity || 0), 0);
+        const totalUnits = teamUnits;
         const progress   = unitGoal > 0 ? (totalUnits / unitGoal) * 100 : 0;
-
-        // DOI
-        const latestByStore = monthly.reduce((acc, r) => {
-            if (!acc[r.posId] || r.createdAt.seconds > acc[r.posId].createdAt.seconds) acc[r.posId] = r;
-            return acc;
-        }, {});
-        const totalInv  = Object.values(latestByStore).reduce((s, r) => s + (Number(r.inventoryLevel) || 0), 0);
-        const dailyAvg  = diasPasados > 0 ? totalUnits / diasPasados : 0;
-        const doi       = dailyAvg > 0 ? totalInv / dailyAvg : 0;
-
         const runRateActual = diasPasados > 0 ? totalUnits / diasPasados : 0;
         const ventaRestante = Math.max(0, unitGoal - totalUnits);
         const runRateNeeded = diasRestantes > 0 && ventaRestante > 0 ? ventaRestante / diasRestantes : 0;
 
-        // Daily cumulative chart
+        // Proyección: facturado acumulado por día del mes calendario en curso.
+        const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
         const byDay = {};
         for (let i = 1; i <= diasTotales; i++) byDay[i] = 0;
-        monthly.forEach(r => {
-            const d = new Date(r.createdAt.seconds * 1000).getDate();
-            if (byDay[d] !== undefined) byDay[d] += r.orderQuantity || 0;
+        facturasFacturado.forEach(f => {
+            if (f.fecha >= firstOfMonth) byDay[f.fecha.getDate()] = (byDay[f.fecha.getDate()] || 0) + f.unidades;
         });
         let cum = 0;
         const chartData = Object.keys(byDay).map(d => {
@@ -113,8 +99,27 @@ const VentasView = ({ reports, posList, loading, onNavigate, allAlerts }) => {
             return { day: Number(d), ventas: Number(d) <= diasPasados ? cum : null };
         });
 
-        return { totalUnits, progress, doi, runRateActual, runRateNeeded, diasRestantes, chartData };
-    }, [reports, unitGoal]);
+        return { totalUnits, progress, runRateActual, runRateNeeded, diasRestantes, chartData };
+    }, [teamUnits, facturasFacturado, unitGoal]);
+
+    // ── Métricas de CAMPO (reportes de visita) — actividad e inventario en
+    //    anaquel; NO son ventas facturadas. Alimentan la sección "Actividad de Campo".
+    const campoMetrics = useMemo(() => {
+        if (!reports) return { rotacion: 0, doi: 0 };
+        const today        = new Date();
+        const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const diasPasados  = today.getDate();
+        const monthly = reports.filter(r => r.createdAt?.seconds && new Date(r.createdAt.seconds * 1000) >= firstOfMonth);
+        const unidadesRepuestas = monthly.reduce((s, r) => s + (r.orderQuantity || 0), 0);
+        const latestByStore = monthly.reduce((acc, r) => {
+            if (!acc[r.posId] || r.createdAt.seconds > acc[r.posId].createdAt.seconds) acc[r.posId] = r;
+            return acc;
+        }, {});
+        const totalInv = Object.values(latestByStore).reduce((s, r) => s + (Number(r.inventoryLevel) || 0), 0);
+        const rotacion = diasPasados > 0 ? unidadesRepuestas / diasPasados : 0;
+        const doi = rotacion > 0 ? totalInv / rotacion : 0;
+        return { rotacion, doi };
+    }, [reports]);
 
     const highAlerts = useMemo(() =>
         (allAlerts || [])
@@ -163,19 +168,19 @@ const VentasView = ({ reports, posList, loading, onNavigate, allAlerts }) => {
                     <div className="lg:col-span-2 bg-gradient-to-br from-brand-blue to-slate-800 text-white p-6 rounded-xl shadow-lg">
                         <div className="flex justify-between items-center mb-1">
                             <h3 className="font-bold text-xl">Meta de Ventas del Mes</h3>
-                            <span className="font-black text-2xl text-brand-yellow">{metrics.progress.toFixed(0)}%</span>
+                            <span className="font-black text-2xl text-brand-yellow">{salesMetrics.progress.toFixed(0)}%</span>
                         </div>
                         <div className="w-full bg-black/20 rounded-full h-5 my-3 overflow-hidden">
                             <div
                                 className="bg-brand-yellow h-5 rounded-full transition-all duration-700"
-                                style={{ width: `${Math.min(metrics.progress, 100)}%` }}
+                                style={{ width: `${Math.min(salesMetrics.progress, 100)}%` }}
                             />
                         </div>
                         <div className="flex justify-between items-center text-sm">
                             <span className="text-white/80">
-                                {metrics.totalUnits.toLocaleString()} / {unitGoal.toLocaleString()} unidades
+                                {salesMetrics.totalUnits.toLocaleString()} / {unitGoal.toLocaleString()} unidades facturadas
                             </span>
-                            {metrics.progress < 85 && (
+                            {salesMetrics.progress < 85 && (
                                 <span className="text-yellow-300 font-semibold flex items-center gap-1">
                                     <AlertTriangle size={14} /> ¡Foco en el cierre!
                                 </span>
@@ -190,13 +195,13 @@ const VentasView = ({ reports, posList, loading, onNavigate, allAlerts }) => {
                             <div>
                                 <p className="text-xs text-slate-500 font-semibold">Velocidad de Venta</p>
                                 <p className="text-2xl font-bold text-slate-800">
-                                    {metrics.runRateActual.toFixed(0)} <span className="text-base font-normal text-slate-500">unid/día</span>
+                                    {salesMetrics.runRateActual.toFixed(0)} <span className="text-base font-normal text-slate-500">unid/día</span>
                                 </p>
                             </div>
                         </div>
                         <p className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
-                            Necesitas <span className="font-bold text-brand-blue">{metrics.runRateNeeded.toFixed(0)} unid/día</span> los
-                            próximos <span className="font-bold">{metrics.diasRestantes}</span> días para alcanzar la meta.
+                            Necesitas <span className="font-bold text-brand-blue">{salesMetrics.runRateNeeded.toFixed(0)} unid/día</span> los
+                            próximos <span className="font-bold">{salesMetrics.diasRestantes}</span> días para alcanzar la meta.
                         </p>
                     </div>
                 </div>
@@ -219,6 +224,7 @@ const VentasView = ({ reports, posList, loading, onNavigate, allAlerts }) => {
                     </div>
 
                     <div className="space-y-3">
+                        <p className="text-xs font-bold uppercase tracking-widest text-slate-400 px-1">Actividad de Campo</p>
                         <MiniKpi
                             icon={<Package size={22} />}
                             title="Quiebres de Stock"
@@ -228,15 +234,15 @@ const VentasView = ({ reports, posList, loading, onNavigate, allAlerts }) => {
                         />
                         <MiniKpi
                             icon={<TrendingUp size={22} />}
-                            title="Rotación Promedio"
-                            value={metrics.runRateActual.toFixed(1)}
+                            title="Rotación en Anaquel"
+                            value={campoMetrics.rotacion.toFixed(1)}
                             unit="unid/día"
                             onClick={() => setActiveModal({ title: 'Análisis de Rotación', type: 'rotation' })}
                         />
                         <MiniKpi
                             icon={<AlertTriangle size={22} />}
                             title="Días de Inventario"
-                            value={metrics.doi.toFixed(1)}
+                            value={campoMetrics.doi.toFixed(1)}
                             unit="días"
                             onClick={() => setActiveModal({ title: 'Análisis de Inventario', type: 'inventory' })}
                         />
@@ -248,7 +254,7 @@ const VentasView = ({ reports, posList, loading, onNavigate, allAlerts }) => {
                     <h3 className="font-bold text-xl text-slate-800 mb-4">Proyección de Ventas del Mes</h3>
                     <div className="h-72">
                         <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={metrics.chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                            <LineChart data={salesMetrics.chartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis dataKey="day" label={{ value: 'Día del Mes', position: 'insideBottom', offset: -5 }} />
                                 <YAxis />
