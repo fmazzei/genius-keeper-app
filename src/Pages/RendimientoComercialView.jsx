@@ -139,6 +139,9 @@ const RendimientoComercialView = () => {
     const teamRatio  = totalGoal > 0 ? totalUnits / totalGoal : 0;
     const teamTier   = getTeamTier(teamRatio);
     const teamPct    = Math.round(teamRatio * 100);
+    // Unidades de las facturas sin vendedor (para transparencia en la alerta):
+    // NO cuentan en la Meta Global hasta que se vinculen a un vendedor.
+    const sinAsignarUds = sinAsignar.filter(f => f.estado !== 'anulada').reduce((s, f) => s + (Number(f.unidades) || 0), 0);
 
     if (loading) return <div className="flex items-center justify-center h-full"><LoadingSpinner /></div>;
 
@@ -185,11 +188,11 @@ const RendimientoComercialView = () => {
                     <p className="text-white/40 text-xs mt-2">${companyTotals.monto.toLocaleString()} facturado por los vendedores en su período de empleo vigente</p>
                 </div>
 
-                {/* Facturas sin vendedor asignado — ventas reales que no se
-                    reflejan en ninguna tarjeta de abajo porque su
-                    salesperson_name de Zoho no coincide con ningún
-                    zohoSalespersonName configurado en Administración →
-                    Vendedores. Ya están sumadas en "Meta Global" arriba. */}
+                {/* Facturas sin vendedor asignado — ventas reales cuya razón social
+                    (customer_name de Zoho) no está vinculada a ningún vendedor en el
+                    mapa de clientes. NO cuentan en la Meta Global (que es la suma de
+                    lo facturado por cada vendedor en su período); se atribuirán al
+                    vincular su razón social. */}
                 {sinAsignar.length > 0 && (
                     <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
                         <button
@@ -199,10 +202,10 @@ const RendimientoComercialView = () => {
                             <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
                             <div className="flex-1 min-w-0">
                                 <p className="text-sm font-bold text-amber-800">
-                                    {sinAsignar.length} factura{sinAsignar.length !== 1 ? 's' : ''} sin vendedor asignado
+                                    {sinAsignar.length} factura{sinAsignar.length !== 1 ? 's' : ''} sin vendedor asignado{sinAsignarUds > 0 ? ` · ${sinAsignarUds.toLocaleString()} uds` : ''}
                                 </p>
                                 <p className="text-xs text-amber-700 mt-0.5">
-                                    Cuentan en el total de la empresa, pero no en la cartera de ningún vendedor. Configura el "Nombre en Zoho" en Administración → Vendedores para mapearlas.
+                                    <b>No</b> cuentan en la Meta Global hasta asignarlas. Vincula la razón social de cada cliente a su vendedor en <b>Configuraciones → Integraciones → Vinculación de clientes</b>; al vincular, sus facturas se atribuyen solas.
                                 </p>
                             </div>
                             {expandedId === 'sin-asignar' ? <ChevronUp size={16} className="text-amber-500 shrink-0" /> : <ChevronDown size={16} className="text-amber-500 shrink-0" />}
