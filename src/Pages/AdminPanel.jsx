@@ -5,7 +5,7 @@ import { db, functions, auth } from '../Firebase/config.js';
 import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound } from 'lucide-react';
+import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
@@ -2159,6 +2159,64 @@ const scoreRazon = (pdvName, razon) => {
     return inter / Math.max(a.size, b.size);
 };
 
+// Selector de razón social CON BÚSQUEDA (combobox). La lista es larga (80+
+// razones), así que un <select> nativo es inmanejable. Muestra el valor actual
+// como botón; al abrir, un input filtra en vivo.
+const RazonSocialPicker = ({ value, options, onChange, currentVendedorId }) => {
+    const [open, setOpen] = useState(false);
+    const [q, setQ]       = useState('');
+    const filtered = useMemo(() => {
+        const t = q.trim().toLowerCase();
+        const list = t ? options.filter(o => o.name.toLowerCase().includes(t)) : options;
+        return list.slice(0, 80);
+    }, [q, options]);
+    const cerrar = () => { setOpen(false); setQ(''); };
+    return (
+        <div className="relative flex-1 min-w-0">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className="w-full text-left p-2 border border-slate-300 rounded-lg text-xs bg-white truncate flex items-center justify-between gap-1"
+            >
+                <span className={`truncate ${value ? 'text-slate-800' : 'text-slate-400'}`}>{value || '— elegir razón social —'}</span>
+                <Search size={12} className="text-slate-400 shrink-0" />
+            </button>
+            {open && (
+                <>
+                    <div className="fixed inset-0 z-10" onClick={cerrar} />
+                    <div className="absolute z-20 mt-1 w-full bg-white border border-slate-300 rounded-lg shadow-lg max-h-64 overflow-auto">
+                        <div className="p-1.5 sticky top-0 bg-white border-b border-slate-100">
+                            <input
+                                autoFocus
+                                value={q}
+                                onChange={e => setQ(e.target.value)}
+                                placeholder="Buscar razón social…"
+                                className="w-full p-1.5 border border-slate-200 rounded text-xs"
+                            />
+                        </div>
+                        {value && (
+                            <button onClick={() => { onChange(''); cerrar(); }} className="w-full text-left px-2 py-1.5 text-xs text-slate-400 hover:bg-slate-50">— quitar —</button>
+                        )}
+                        {filtered.length === 0 && <p className="px-2 py-2 text-xs text-slate-400">Sin resultados.</p>}
+                        {filtered.map(o => {
+                            const tomada = o.mapVendedorId && o.mapVendedorId !== currentVendedorId;
+                            return (
+                                <button
+                                    key={o.name}
+                                    onClick={() => { onChange(o.name); cerrar(); }}
+                                    className={`w-full text-left px-2 py-1.5 text-xs hover:bg-blue-50 ${o.name === value ? 'bg-blue-50 font-semibold' : ''}`}
+                                >
+                                    {o.name}{tomada ? <span className="text-amber-600"> · (otro vendedor)</span> : ''}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
 const EmparejadorRazonesSociales = () => {
     const [vendedores, setVendedores] = useState([]);
     const [vendedorId, setVendedorId] = useState('');
@@ -2166,6 +2224,8 @@ const EmparejadorRazonesSociales = () => {
     const [clients, setClients]       = useState([]);
     const [razonesUniverso, setRazonesUniverso] = useState([]); // [{name, mapVendedorId}]
     const [sel, setSel]               = useState({});   // posId -> razón social elegida
+    const [soloFaltan, setSoloFaltan] = useState(false);
+    const [filtroPdv, setFiltroPdv]   = useState('');
     const [loading, setLoading]       = useState(true);
     const [saving, setSaving]         = useState('');
     const [msg, setMsg]               = useState('');
@@ -2197,7 +2257,6 @@ const EmparejadorRazonesSociales = () => {
         })();
     }, []);
 
-    // PDV de la cartera del vendedor seleccionado que NO tienen razón social.
     const posById = useMemo(() => new Map(allPos.map(p => [p.id, p])), [allPos]);
     const posByChain = useMemo(() => {
         const m = new Map();
@@ -2205,10 +2264,12 @@ const EmparejadorRazonesSociales = () => {
         return m;
     }, [allPos]);
 
-    const pdvPorLlenar = useMemo(() => {
+    // TODOS los PDV de la cartera del vendedor (con o sin razón social) — la lista
+    // es editable para poder corregir una razón social ya asignada.
+    const pdvCartera = useMemo(() => {
         if (!vendedorId) return [];
         const mine = clients.filter(c => c.vendedorId === vendedorId);
-        const out = new Map(); // posId -> pos
+        const out = new Map();
         mine.forEach(c => {
             const esCadena = c.tipoDespacho === 'centralizado' || (c.branchCount || 0) > 1;
             if (esCadena && c.chain && posByChain.has(c.chain)) {
@@ -2217,20 +2278,37 @@ const EmparejadorRazonesSociales = () => {
                 out.set(c.posId, posById.get(c.posId));
             }
         });
-        return [...out.values()].filter(p => !String(p.razonSocialZoho || '').trim());
+        return [...out.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
     }, [vendedorId, clients, posById, posByChain]);
 
-    // Sugerencia automática al elegir vendedor / cargar PDV.
+    const faltan = useMemo(() => pdvCartera.filter(p => !String(p.razonSocialZoho || '').trim()).length, [pdvCartera]);
+
+    // Precarga cada fila (solo si aún no tiene valor en `sel`, para no pisar ediciones
+    // en curso al guardar otra fila): razón social YA guardada, o la sugerida.
     useEffect(() => {
-        if (!pdvPorLlenar.length) { setSel({}); return; }
-        const next = {};
-        pdvPorLlenar.forEach(p => {
-            let best = '', bestScore = 0;
-            razonesUniverso.forEach(r => { const s = scoreRazon(p.name, r.name); if (s > bestScore) { bestScore = s; best = r.name; } });
-            if (bestScore >= 0.4) next[p.id] = best;
+        setSel(prev => {
+            const next = { ...prev };
+            pdvCartera.forEach(p => {
+                if (next[p.id] !== undefined) return;
+                const existing = String(p.razonSocialZoho || '').trim();
+                if (existing) { next[p.id] = existing; return; }
+                let best = '', bestScore = 0;
+                razonesUniverso.forEach(r => { const s = scoreRazon(p.name, r.name); if (s > bestScore) { bestScore = s; best = r.name; } });
+                if (bestScore >= 0.4) next[p.id] = best;
+            });
+            return next;
         });
-        setSel(next);
-    }, [pdvPorLlenar, razonesUniverso]);
+    }, [pdvCartera, razonesUniverso]);
+
+    const visibles = useMemo(() => {
+        let list = pdvCartera;
+        if (soloFaltan) list = list.filter(p => !String(p.razonSocialZoho || '').trim());
+        const t = filtroPdv.trim().toLowerCase();
+        if (t) list = list.filter(p => (p.name || '').toLowerCase().includes(t));
+        return list;
+    }, [pdvCartera, soloFaltan, filtroPdv]);
+
+    const esDirty = (pos) => (sel[pos.id] || '') !== String(pos.razonSocialZoho || '').trim();
 
     const guardar = async (pos) => {
         const rs = sel[pos.id];
@@ -2245,86 +2323,101 @@ const EmparejadorRazonesSociales = () => {
         setSaving('');
     };
 
-    const guardarAltaConfianza = async () => {
-        const altos = pdvPorLlenar.filter(p => sel[p.id] && scoreRazon(p.name, sel[p.id]) >= 0.6);
-        if (!altos.length) { setMsg('No hay sugerencias de alta confianza para guardar.'); return; }
+    const guardarCambios = async () => {
+        const dirty = visibles.filter(p => (sel[p.id] || '') && esDirty(p));
+        if (!dirty.length) { setMsg('No hay cambios sin guardar.'); return; }
         setSaving('__all__'); setMsg('');
         let ok = 0, back = 0;
         try {
             const fn = httpsCallable(functions, 'emparejarRazonSocialPDV', { timeout: 300000 });
-            for (const p of altos) {
+            for (const p of dirty) {
                 try { const { data } = await fn({ posId: p.id, razonSocialZoho: sel[p.id] }); ok++; back += (data.backfilled || 0); setAllPos(ps => ps.map(x => x.id === p.id ? { ...x, razonSocialZoho: sel[p.id] } : x)); } catch { /* sigue con los demás */ }
             }
-            setMsg(`✓ ${ok} PDV emparejados · ${back} factura(s) atribuida(s).`);
+            setMsg(`✓ ${ok} PDV guardados · ${back} factura(s) atribuida(s).`);
         } catch (e) { setMsg('Error: ' + (e?.message || e)); }
         setSaving('');
     };
 
-    const razonTomada = (name) => {
-        const r = razonesUniverso.find(x => x.name === name);
-        return r && r.mapVendedorId && r.mapVendedorId !== vendedorId;
-    };
+    const dirtyCount = visibles.filter(p => (sel[p.id] || '') && esDirty(p)).length;
 
     return (
         <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
             <p className="font-bold text-slate-800 text-sm mb-1">Emparejar PDV ↔ razón social de Zoho</p>
             <p className="text-xs text-slate-400 mb-3">
-                Llena la "Razón social en Zoho" que le falta a los PDV de la cartera. GK sugiere la razón social por nombre; confírmala y sus facturas se atribuyen solas.
+                Cada PDV de la cartera con su "Razón social en Zoho". GK sugiere la que falta por nombre; puedes editar cualquiera. Al guardar, sus facturas se atribuyen solas.
             </p>
             {loading ? <LoadingSpinner /> : (
                 <>
-                    <select value={vendedorId} onChange={e => { setVendedorId(e.target.value); setMsg(''); }} className={`${SELECT_CLS} mb-3`} style={SELECT_STYLE}>
+                    <select value={vendedorId} onChange={e => { setVendedorId(e.target.value); setSel({}); setSoloFaltan(false); setFiltroPdv(''); setMsg(''); }} className={`${SELECT_CLS} mb-3`} style={SELECT_STYLE}>
                         <option value="">Selecciona un vendedor…</option>
                         {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                     </select>
 
-                    {vendedorId && pdvPorLlenar.length === 0 && (
-                        <p className="text-emerald-700 text-sm">✓ Todos los PDV de esta cartera ya tienen su razón social de Zoho.</p>
+                    {vendedorId && pdvCartera.length === 0 && (
+                        <p className="text-slate-400 text-sm">Este vendedor no tiene PDV en su cartera.</p>
                     )}
 
-                    {pdvPorLlenar.length > 0 && (
+                    {pdvCartera.length > 0 && (
                         <>
-                            <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs text-slate-500">{pdvPorLlenar.length} PDV sin razón social</p>
-                                <button onClick={guardarAltaConfianza} disabled={saving === '__all__'} className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg disabled:opacity-60">
-                                    {saving === '__all__' ? 'Guardando…' : 'Guardar sugerencias seguras'}
-                                </button>
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                <p className="text-xs text-slate-500">
+                                    {pdvCartera.length} PDV · <span className={faltan ? 'text-amber-600 font-semibold' : 'text-emerald-600'}>{faltan} sin razón social</span>
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <label className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer">
+                                        <input type="checkbox" checked={soloFaltan} onChange={e => setSoloFaltan(e.target.checked)} /> Solo los que faltan
+                                    </label>
+                                    <button onClick={guardarCambios} disabled={saving === '__all__' || dirtyCount === 0} className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg disabled:opacity-40">
+                                        {saving === '__all__' ? 'Guardando…' : `Guardar cambios${dirtyCount ? ` (${dirtyCount})` : ''}`}
+                                    </button>
+                                </div>
                             </div>
+
+                            <div className="relative mb-2">
+                                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                <input value={filtroPdv} onChange={e => setFiltroPdv(e.target.value)} placeholder="Filtrar PDV por nombre…" className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-lg text-xs" />
+                            </div>
+
                             <div className="space-y-2 max-h-[28rem] overflow-auto">
-                                {pdvPorLlenar.map(pos => {
+                                {visibles.map(pos => {
                                     const chosen = sel[pos.id] || '';
                                     const conf = chosen ? scoreRazon(pos.name, chosen) : 0;
+                                    const guardada = String(pos.razonSocialZoho || '').trim();
+                                    const dirty = esDirty(pos);
+                                    const tomada = (() => { const r = razonesUniverso.find(x => x.name === chosen); return r && r.mapVendedorId && r.mapVendedorId !== vendedorId; })();
                                     return (
                                         <div key={pos.id} className="border border-slate-200 rounded-lg p-2.5">
-                                            <p className="text-sm font-semibold text-slate-800 truncate">{pos.name}</p>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-sm font-semibold text-slate-800 truncate">{pos.name}</p>
+                                                {guardada
+                                                    ? <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 shrink-0">Asignada</span>
+                                                    : <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 shrink-0">Falta</span>}
+                                            </div>
                                             <div className="flex items-center gap-2 mt-1.5">
-                                                <select
+                                                <RazonSocialPicker
                                                     value={chosen}
-                                                    onChange={e => setSel(s => ({ ...s, [pos.id]: e.target.value }))}
-                                                    className="flex-1 p-2 border border-slate-300 rounded-lg text-xs min-w-0"
-                                                >
-                                                    <option value="">— elegir razón social —</option>
-                                                    {razonesUniverso.map(r => (
-                                                        <option key={r.name} value={r.name}>{r.name}{razonTomada(r.name) ? '  · (otro vendedor)' : ''}</option>
-                                                    ))}
-                                                </select>
+                                                    options={razonesUniverso}
+                                                    currentVendedorId={vendedorId}
+                                                    onChange={(name) => setSel(s => ({ ...s, [pos.id]: name }))}
+                                                />
                                                 <button
                                                     onClick={() => guardar(pos)}
-                                                    disabled={!chosen || saving === pos.id}
+                                                    disabled={!chosen || !dirty || saving === pos.id}
                                                     className="text-xs font-bold text-white bg-brand-blue hover:opacity-90 px-3 py-2 rounded-lg disabled:opacity-40 shrink-0"
                                                 >
                                                     {saving === pos.id ? '…' : 'Guardar'}
                                                 </button>
                                             </div>
                                             {chosen && (
-                                                <p className={`text-[11px] mt-1 ${conf >= 0.6 ? 'text-emerald-600' : conf >= 0.4 ? 'text-amber-600' : 'text-slate-400'}`}>
-                                                    {conf >= 0.6 ? 'Coincidencia alta' : conf >= 0.4 ? 'Coincidencia media — verifica' : 'Coincidencia baja — verifica'}
-                                                    {razonTomada(chosen) ? ' · ⚠️ ya asignada a otro vendedor' : ''}
+                                                <p className={`text-[11px] mt-1 ${dirty ? (conf >= 0.6 ? 'text-emerald-600' : conf >= 0.4 ? 'text-amber-600' : 'text-slate-400') : 'text-slate-400'}`}>
+                                                    {!dirty ? 'Guardada' : (conf >= 0.6 ? 'Coincidencia alta' : conf >= 0.4 ? 'Coincidencia media — verifica' : 'Coincidencia baja — verifica')}
+                                                    {tomada ? ' · ⚠️ ya asignada a otro vendedor' : ''}
                                                 </p>
                                             )}
                                         </div>
                                     );
                                 })}
+                                {visibles.length === 0 && <p className="text-xs text-slate-400 py-2 text-center">Sin PDV con ese filtro.</p>}
                             </div>
                         </>
                     )}
