@@ -198,13 +198,23 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     // El listado de Zoho no incluye line_items, así que sin esto una factura que
     // entra por conciliación queda en 0 uds (aparece en la lista pero no cuenta a
     // la meta). Con tope para no exceder el timeout de la función.
-    let detalleFetches = 0;
-    const MAX_DETALLE_FETCHES = 120;
+    const zstats = { detalleConsultados: 0, detalleErrores: 0, detalleRellenadas: 0, derivadasDeMonto: 0, detalleTope: false, ultimoErrorDetalle: null };
+    const MAX_DETALLE_FETCHES = 150;
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const fetchLineItems = async (invoiceId) => {
-        if (detalleFetches >= MAX_DETALLE_FETCHES) return null;
-        detalleFetches++;
-        const inv = await getInvoiceDetail({ accessToken, organizationId, dataCenter: creds.dataCenter, invoiceId });
-        return inv?.line_items || null;
+        if (zstats.detalleConsultados >= MAX_DETALLE_FETCHES) { zstats.detalleTope = true; return null; }
+        zstats.detalleConsultados++;
+        try {
+            const inv = await getInvoiceDetail({ accessToken, organizationId, dataCenter: creds.dataCenter, invoiceId });
+            return inv?.line_items || null;
+        } catch (e) {
+            zstats.detalleErrores++;
+            // Guarda el primer error real (p.ej. rate limit de Zoho) para diagnóstico.
+            if (!zstats.ultimoErrorDetalle) zstats.ultimoErrorDetalle = String(e.response?.data?.message || e.response?.status || e.message).slice(0, 140);
+            // Pausa breve ante errores (típico rate-limit de Zoho) para no encadenar fallos.
+            await sleep(500);
+            return null;
+        }
     };
 
     const res = {
@@ -328,7 +338,7 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         }
 
         try {
-            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId, preload, fetchLineItems });
+            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId, preload, fetchLineItems, stats: zstats });
             if (r.status === 'other_vendor') { res.otrosVendedores++; continue; } // no es de este vendedor
             res.revisadas++;
             if (r.status === 'blocked') { res.bloqueadas++; continue; }
@@ -397,5 +407,6 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     delete diag.topHeredadasPorCliente;
 
     res.diag = diag;
+    res.unidades = zstats; // detalleConsultados / detalleRellenadas / detalleErrores / detalleTope / ultimoErrorDetalle
     return res;
 });

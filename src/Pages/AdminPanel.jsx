@@ -3487,6 +3487,13 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                             {syncResult && syncResult.diag && syncResult.diag.pagadasSinVendedor > 0 && (
                                 <p className="text-red-600 text-[11px] mt-1.5">⚠️ {syncResult.diag.pagadasSinVendedor} pagadas en Zoho sin vendedor (clientes sin vincular) — revísalas en la sección 4 por si alguna es de él.</p>
                             )}
+                            {syncResult && syncResult.unidades && (
+                                <p className="text-[11px] text-slate-500 mt-1.5">
+                                    Unidades: detalle consultado <b>{syncResult.unidades.detalleConsultados ?? 0}</b> · rellenadas <b className="text-emerald-700">{syncResult.unidades.detalleRellenadas ?? 0}</b> · derivadas del monto <b className="text-emerald-700">{syncResult.unidades.derivadasDeMonto ?? 0}</b>
+                                    {syncResult.unidades.detalleErrores ? <> · fallos <b className="text-red-600">{syncResult.unidades.detalleErrores}</b></> : null}
+                                    {syncResult.unidades.ultimoErrorDetalle ? <> · <span className="text-red-600">{syncResult.unidades.ultimoErrorDetalle}</span></> : null}
+                                </p>
+                            )}
                         </div>
                     )}
 
@@ -3982,6 +3989,14 @@ const IntegracionesSection = () => {
                     <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-slate-700 mb-2">
                         <p className="font-bold text-emerald-800 mb-1">Conciliación lista</p>
                         <p>Revisadas: <b>{reconResult.revisadas}</b> · Marcadas como pagadas: <b className="text-emerald-700">{reconResult.marcadasPagadas}</b> · Anuladas: <b>{reconResult.anuladas ?? 0}</b> · Creadas: <b>{reconResult.creadas}</b> · Sin vendedor: <b>{reconResult.sinVendedor}</b> · Ausentes en Zoho: <b className={reconResult.ausentes ? 'text-amber-600' : ''}>{reconResult.ausentes ?? 0}</b>{reconResult.errores ? <> · Errores: <b className="text-red-600">{reconResult.errores}</b></> : null}</p>
+                        {reconResult.unidades && (
+                            <p className="mt-1 pt-1 border-t border-emerald-200">
+                                Unidades: detalle consultado <b>{reconResult.unidades.detalleConsultados ?? 0}</b> · rellenadas <b className="text-emerald-700">{reconResult.unidades.detalleRellenadas ?? 0}</b> · derivadas del monto <b className="text-emerald-700">{reconResult.unidades.derivadasDeMonto ?? 0}</b>
+                                {reconResult.unidades.detalleErrores ? <> · fallos <b className="text-red-600">{reconResult.unidades.detalleErrores}</b></> : null}
+                                {reconResult.unidades.detalleTope ? <> · <b className="text-amber-600">tope alcanzado (corre de nuevo)</b></> : null}
+                                {reconResult.unidades.ultimoErrorDetalle ? <><br/><span className="text-red-600 break-words">Error Zoho: {reconResult.unidades.ultimoErrorDetalle}</span></> : null}
+                            </p>
+                        )}
                         {Array.isArray(reconResult.detalles) && reconResult.detalles.length > 0 && (
                             <div className="mt-2 max-h-40 overflow-auto border-t border-emerald-200 pt-1">
                                 {reconResult.detalles.map((d, i) => (

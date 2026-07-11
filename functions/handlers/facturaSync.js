@@ -16,7 +16,7 @@
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const { mesCohorteFromDate, periodoCohorteFromDate, diffDias } = require('./commissionEngine');
+const { mesCohorteFromDate, periodoCohorteFromDate, diffDias, DEFAULT_COMMISSION_CONFIG } = require('./commissionEngine');
 const { congelarTasaCohorte, procesarPagoFactura, normalizeCustomerKey } = require('./facturaCommissionOps');
 
 const toDate = (value) => {
@@ -200,10 +200,27 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
                 const items = await opts.fetchLineItems(invoice.invoice_id);
                 if (Array.isArray(items)) {
                     const u = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-                    if (u > 0) unidades = u;
+                    if (u > 0) { unidades = u; if (opts.stats) opts.stats.detalleRellenadas++; }
                 }
             } catch (e) {
                 // No abortar la conciliación por un detalle que falle.
+            }
+        }
+        // Respaldo: si aún no hay unidades (el detalle no vino o el fetch falló por
+        // rate-limit de Zoho) las DERIVAMOS del monto ÷ precio por unidad del canal
+        // (retail 5.6 / foodservice 4.8, o el precio configurado del vendedor). Es
+        // el mismo método que usó el dueño en su auditoría manual ($2.352/$5,6=420
+        // uds). Aproximado, pero mejor que 0 (la factura contaría 0 a la meta). Si
+        // luego llega el line_items real por webhook, se sobreescribe con el exacto.
+        if ((!unidades || unidades <= 0) && estado !== 'draft') {
+            const total = Number(invoice.total) || 0;
+            const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor?.data?.commissionConfig || {}) };
+            const precio = categoria === 'foodservice'
+                ? (cfg.precioUnidadFoodservice || DEFAULT_COMMISSION_CONFIG.precioUnidadFoodservice)
+                : (cfg.precioUnidad || DEFAULT_COMMISSION_CONFIG.precioUnidad);
+            if (total > 0 && precio > 0) {
+                const u = Math.round(total / precio);
+                if (u > 0) { unidades = u; if (opts.stats) opts.stats.derivadasDeMonto = (opts.stats.derivadasDeMonto || 0) + 1; }
             }
         }
     }
