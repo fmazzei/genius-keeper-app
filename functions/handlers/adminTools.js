@@ -399,3 +399,55 @@ exports.repararCarteraAtribucion = onCall({ region: "us-central1", timeoutSecond
 
     return { ok: true, ...report };
 });
+
+/**
+ * EMPAREJAMIENTO PDV ↔ razón social de Zoho. Escribe `razonSocialZoho` en el PDV
+ * (maestro, fuente única) y, si ese PDV pertenece a la cartera de algún vendedor,
+ * enlaza la razón social a ese vendedor en `zoho_customer_map` (+ backfill del
+ * histórico) — dejando la factura de ese cliente atribuida. Lo usa la herramienta
+ * de emparejamiento masivo y también EditPosModal al fijar la razón social de un
+ * PDV. Idempotente. Rol master / administrador / sales_manager / gerencia.
+ */
+exports.emparejarRazonSocialPDV = onCall({ region: "us-central1", timeoutSeconds: 300 }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
+    const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
+    const role = userSnap.data()?.role;
+    if (!["master", "administrador", "sales_manager", "gerencia"].includes(role)) {
+        throw new HttpsError("permission-denied", `Permisos insuficientes (rol: ${role || 'sin rol'})`);
+    }
+
+    const { posId, razonSocialZoho } = request.data || {};
+    const rs = String(razonSocialZoho || '').trim();
+    if (!posId || !rs) throw new HttpsError("invalid-argument", "Faltan posId o razonSocialZoho");
+
+    const db = admin.firestore();
+    const posRef = db.doc(`pos/${posId}`);
+    const posSnap = await posRef.get();
+    if (!posSnap.exists) throw new HttpsError("not-found", "PDV no encontrado");
+    const pos = posSnap.data();
+
+    // 1. Escribe la razón social en el PDV maestro (fuente única).
+    await posRef.update({ razonSocialZoho: rs, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+
+    // 2. ¿Qué vendedor(es) tienen este PDV en su cartera? (directo por posId, o
+    //    centralizado/cadena por chain).
+    const vcSnap = await db.collection('vendor_clients')
+        .where('active', '==', true).where('estado', '==', 'activo').get();
+    const owners = new Set();
+    vcSnap.docs.forEach(d => {
+        const c = d.data();
+        const cubre = (c.posId === posId) || (c.chain && pos.chain && c.chain === pos.chain);
+        if (cubre && c.vendedorId) owners.add(c.vendedorId);
+    });
+
+    // 3. Enlaza la razón social a cada dueño (+ backfill). Normalmente uno solo.
+    let linked = 0, backfilled = 0;
+    for (const vId of owners) {
+        const vendedor = await loadVendedor(vId);
+        if (!vendedor) continue;
+        const r = await linkRazonSocialToVendedor({ customerName: rs, vendedor, mappedBy: 'emparejamiento' });
+        linked++; backfilled += (r.backfilled || 0);
+    }
+
+    return { ok: true, owners: owners.size, linked, backfilled, sinCartera: owners.size === 0 };
+});

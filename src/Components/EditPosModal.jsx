@@ -245,6 +245,12 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
             if (esFood && form.razonSocialZoho.trim()) {
                 try { await httpsCallable(functions, 'marcarCategoriaCliente')({ customerName: form.razonSocialZoho.trim(), categoria: 'foodservice' }); } catch (e) { /* no bloquear el guardado */ }
             }
+            // Fuente única: si el PDV tiene razón social de Zoho y pertenece a la
+            // cartera de un vendedor, atribuye sus facturas a ese vendedor (+
+            // backfill). Editar el PDV = atribuir sus facturas, sin pasos aparte.
+            if (form.razonSocialZoho.trim()) {
+                try { await httpsCallable(functions, 'emparejarRazonSocialPDV')({ posId: pos.id, razonSocialZoho: form.razonSocialZoho.trim() }); } catch (e) { /* no bloquear el guardado */ }
+            }
             onSaved({ ...pos, ...update });
             onClose();
         } catch (err) {

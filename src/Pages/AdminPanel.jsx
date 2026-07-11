@@ -2140,6 +2140,201 @@ const CompetitorManagement = () => {
 // Carga inicial en lote de todas las razones sociales ya vistas en facturas;
 // un clic por cliente nuevo. Al vincular, el backend re-atribuye las facturas
 // ya recibidas de esa razón social (ver vincularRazonSocial en adminTools.js).
+// ── Emparejador PDV ↔ razón social de Zoho ──────────────────────────────────
+// Llena la "Razón social en Zoho" que le falta a los PDV de una cartera,
+// sugiriéndola automáticamente por nombre contra las razones sociales vistas en
+// las facturas. Al guardar, el PDV queda con su razón social (fuente única) y sus
+// facturas se atribuyen solas (callable emparejarRazonSocialPDV). Es la vía para
+// que el puente cartera↔atribución tenga con qué trabajar.
+const PALABRAS_RUIDO = new Set(['ca','sa','rl','srl','compania','anonima','hipermercado','supermercado','automercado','automercados','mercado','mercados','fruteria','abasto','abastos','comercial','inversiones','distribuidora','grupo','tienda','panaderia','charcuteria','de','del','la','el','los','las','y','en','con']);
+const tokensRazon = (s) => String(s || '')
+    .toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[().,\-_/]/g, ' ')
+    .split(/\s+/).filter(w => w && w.length > 1 && !PALABRAS_RUIDO.has(w));
+const scoreRazon = (pdvName, razon) => {
+    const a = new Set(tokensRazon(pdvName));
+    const b = new Set(tokensRazon(razon));
+    if (!a.size || !b.size) return 0;
+    let inter = 0; a.forEach(w => { if (b.has(w)) inter++; });
+    return inter / Math.max(a.size, b.size);
+};
+
+const EmparejadorRazonesSociales = () => {
+    const [vendedores, setVendedores] = useState([]);
+    const [vendedorId, setVendedorId] = useState('');
+    const [allPos, setAllPos]         = useState([]);
+    const [clients, setClients]       = useState([]);
+    const [razonesUniverso, setRazonesUniverso] = useState([]); // [{name, mapVendedorId}]
+    const [sel, setSel]               = useState({});   // posId -> razón social elegida
+    const [loading, setLoading]       = useState(true);
+    const [saving, setSaving]         = useState('');
+    const [msg, setMsg]               = useState('');
+
+    useEffect(() => {
+        (async () => {
+            setLoading(true); setMsg('');
+            try {
+                const [vendSnap, posSnap, vcSnap, factSnap, mapSnap] = await Promise.all([
+                    getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
+                    getDocs(query(collection(db, 'pos'), where('active', '==', true))),
+                    getDocs(query(collection(db, 'vendor_clients'), where('active', '==', true))),
+                    getDocs(collection(db, 'facturas_vendedor')),
+                    getDocs(collection(db, 'zoho_customer_map')),
+                ]);
+                setVendedores(vendSnap.docs.map(d => ({ id: d.id, name: d.data().name || d.data().email || d.id })));
+                setAllPos(posSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                setClients(vcSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => c.estado === 'activo'));
+                const mapByName = {};
+                mapSnap.docs.forEach(d => { const x = d.data(); if (x.customerName) mapByName[x.customerName] = x.vendedorId || ''; });
+                const seen = new Set();
+                const uni = [];
+                factSnap.docs.forEach(d => { const n = d.data().clienteName; if (n && !seen.has(n)) { seen.add(n); uni.push({ name: n, mapVendedorId: mapByName[n] || '' }); } });
+                Object.keys(mapByName).forEach(n => { if (!seen.has(n)) { seen.add(n); uni.push({ name: n, mapVendedorId: mapByName[n] }); } });
+                uni.sort((a, b) => a.name.localeCompare(b.name));
+                setRazonesUniverso(uni);
+            } catch (e) { setMsg('Error al cargar: ' + (e?.message || e)); }
+            setLoading(false);
+        })();
+    }, []);
+
+    // PDV de la cartera del vendedor seleccionado que NO tienen razón social.
+    const posById = useMemo(() => new Map(allPos.map(p => [p.id, p])), [allPos]);
+    const posByChain = useMemo(() => {
+        const m = new Map();
+        allPos.forEach(p => { const ch = p.chain || ''; if (ch) { if (!m.has(ch)) m.set(ch, []); m.get(ch).push(p); } });
+        return m;
+    }, [allPos]);
+
+    const pdvPorLlenar = useMemo(() => {
+        if (!vendedorId) return [];
+        const mine = clients.filter(c => c.vendedorId === vendedorId);
+        const out = new Map(); // posId -> pos
+        mine.forEach(c => {
+            const esCadena = c.tipoDespacho === 'centralizado' || (c.branchCount || 0) > 1;
+            if (esCadena && c.chain && posByChain.has(c.chain)) {
+                posByChain.get(c.chain).forEach(p => out.set(p.id, p));
+            } else if (c.posId && posById.has(c.posId)) {
+                out.set(c.posId, posById.get(c.posId));
+            }
+        });
+        return [...out.values()].filter(p => !String(p.razonSocialZoho || '').trim());
+    }, [vendedorId, clients, posById, posByChain]);
+
+    // Sugerencia automática al elegir vendedor / cargar PDV.
+    useEffect(() => {
+        if (!pdvPorLlenar.length) { setSel({}); return; }
+        const next = {};
+        pdvPorLlenar.forEach(p => {
+            let best = '', bestScore = 0;
+            razonesUniverso.forEach(r => { const s = scoreRazon(p.name, r.name); if (s > bestScore) { bestScore = s; best = r.name; } });
+            if (bestScore >= 0.4) next[p.id] = best;
+        });
+        setSel(next);
+    }, [pdvPorLlenar, razonesUniverso]);
+
+    const guardar = async (pos) => {
+        const rs = sel[pos.id];
+        if (!rs) return;
+        setSaving(pos.id); setMsg('');
+        try {
+            const fn = httpsCallable(functions, 'emparejarRazonSocialPDV', { timeout: 300000 });
+            const { data } = await fn({ posId: pos.id, razonSocialZoho: rs });
+            setAllPos(ps => ps.map(p => p.id === pos.id ? { ...p, razonSocialZoho: rs } : p));
+            setMsg(`✓ "${pos.name}" → "${rs}" · ${data.backfilled || 0} factura(s) atribuida(s)${data.sinCartera ? ' (PDV sin cartera activa)' : ''}.`);
+        } catch (e) { setMsg('Error: ' + (e?.message || e)); }
+        setSaving('');
+    };
+
+    const guardarAltaConfianza = async () => {
+        const altos = pdvPorLlenar.filter(p => sel[p.id] && scoreRazon(p.name, sel[p.id]) >= 0.6);
+        if (!altos.length) { setMsg('No hay sugerencias de alta confianza para guardar.'); return; }
+        setSaving('__all__'); setMsg('');
+        let ok = 0, back = 0;
+        try {
+            const fn = httpsCallable(functions, 'emparejarRazonSocialPDV', { timeout: 300000 });
+            for (const p of altos) {
+                try { const { data } = await fn({ posId: p.id, razonSocialZoho: sel[p.id] }); ok++; back += (data.backfilled || 0); setAllPos(ps => ps.map(x => x.id === p.id ? { ...x, razonSocialZoho: sel[p.id] } : x)); } catch { /* sigue con los demás */ }
+            }
+            setMsg(`✓ ${ok} PDV emparejados · ${back} factura(s) atribuida(s).`);
+        } catch (e) { setMsg('Error: ' + (e?.message || e)); }
+        setSaving('');
+    };
+
+    const razonTomada = (name) => {
+        const r = razonesUniverso.find(x => x.name === name);
+        return r && r.mapVendedorId && r.mapVendedorId !== vendedorId;
+    };
+
+    return (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+            <p className="font-bold text-slate-800 text-sm mb-1">Emparejar PDV ↔ razón social de Zoho</p>
+            <p className="text-xs text-slate-400 mb-3">
+                Llena la "Razón social en Zoho" que le falta a los PDV de la cartera. GK sugiere la razón social por nombre; confírmala y sus facturas se atribuyen solas.
+            </p>
+            {loading ? <LoadingSpinner /> : (
+                <>
+                    <select value={vendedorId} onChange={e => { setVendedorId(e.target.value); setMsg(''); }} className={`${SELECT_CLS} mb-3`} style={SELECT_STYLE}>
+                        <option value="">Selecciona un vendedor…</option>
+                        {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+
+                    {vendedorId && pdvPorLlenar.length === 0 && (
+                        <p className="text-emerald-700 text-sm">✓ Todos los PDV de esta cartera ya tienen su razón social de Zoho.</p>
+                    )}
+
+                    {pdvPorLlenar.length > 0 && (
+                        <>
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs text-slate-500">{pdvPorLlenar.length} PDV sin razón social</p>
+                                <button onClick={guardarAltaConfianza} disabled={saving === '__all__'} className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg disabled:opacity-60">
+                                    {saving === '__all__' ? 'Guardando…' : 'Guardar sugerencias seguras'}
+                                </button>
+                            </div>
+                            <div className="space-y-2 max-h-[28rem] overflow-auto">
+                                {pdvPorLlenar.map(pos => {
+                                    const chosen = sel[pos.id] || '';
+                                    const conf = chosen ? scoreRazon(pos.name, chosen) : 0;
+                                    return (
+                                        <div key={pos.id} className="border border-slate-200 rounded-lg p-2.5">
+                                            <p className="text-sm font-semibold text-slate-800 truncate">{pos.name}</p>
+                                            <div className="flex items-center gap-2 mt-1.5">
+                                                <select
+                                                    value={chosen}
+                                                    onChange={e => setSel(s => ({ ...s, [pos.id]: e.target.value }))}
+                                                    className="flex-1 p-2 border border-slate-300 rounded-lg text-xs min-w-0"
+                                                >
+                                                    <option value="">— elegir razón social —</option>
+                                                    {razonesUniverso.map(r => (
+                                                        <option key={r.name} value={r.name}>{r.name}{razonTomada(r.name) ? '  · (otro vendedor)' : ''}</option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    onClick={() => guardar(pos)}
+                                                    disabled={!chosen || saving === pos.id}
+                                                    className="text-xs font-bold text-white bg-brand-blue hover:opacity-90 px-3 py-2 rounded-lg disabled:opacity-40 shrink-0"
+                                                >
+                                                    {saving === pos.id ? '…' : 'Guardar'}
+                                                </button>
+                                            </div>
+                                            {chosen && (
+                                                <p className={`text-[11px] mt-1 ${conf >= 0.6 ? 'text-emerald-600' : conf >= 0.4 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                                    {conf >= 0.6 ? 'Coincidencia alta' : conf >= 0.4 ? 'Coincidencia media — verifica' : 'Coincidencia baja — verifica'}
+                                                    {razonTomada(chosen) ? ' · ⚠️ ya asignada a otro vendedor' : ''}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+                    {msg && <p className="text-xs text-slate-600 mt-2 break-words">{msg}</p>}
+                </>
+            )}
+        </div>
+    );
+};
+
 const VinculacionRazonesSociales = () => {
     const [razones, setRazones]       = useState([]);
     const [vendedores, setVendedores] = useState([]);
@@ -4146,6 +4341,8 @@ const IntegracionesSection = () => {
                     </div>
                 )}
             </div>
+
+            <EmparejadorRazonesSociales />
 
             <details className="mb-4">
                 <summary className="cursor-pointer text-xs font-semibold text-slate-500 select-none">Vinculación manual (razón social por razón social) — respaldo</summary>
