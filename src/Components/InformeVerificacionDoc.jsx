@@ -51,7 +51,27 @@ function CatBloque({ info }) {
     );
 }
 
-export default function InformeVerificacionDoc({ vendedorName = 'Vendedor', diag, infoTotal, onClose }) {
+function PerfilBloque({ perfil }) {
+    const F = ({ label, value, hint }) => (
+        <div className="flex items-baseline justify-between gap-3 py-1 border-b border-slate-100">
+            <span className="text-[12px] text-slate-500">{label}</span>
+            <span className="text-[12px] font-semibold text-slate-800 text-right">{value}{hint && <span className="font-normal text-slate-400"> {hint}</span>}</span>
+        </div>
+    );
+    return (
+        <div className="text-[12px]">
+            <F label="Vendedor" value={perfil.vendedor} />
+            <F label="Fecha de ingreso" value={perfil.fechaIngreso} />
+            <F label="Cartera" value={`${n(perfil.razonesSociales)} razones sociales · ${n(perfil.pdvActivos)} PDV activos`} />
+            <F label="Facturas heredadas (abiertas)" value={n(perfil.heredadasAbiertas)} />
+            <F label="Facturas" value={`${n(perfil.vigentes)} vigentes · ${n(perfil.vencidas)} vencidas · ${n(perfil.porVencer)} por vencer`} />
+            <F label="Modificación de cartera (retirados)" value={n(perfil.retirados)} hint={perfil.retiradosNombres && perfil.retiradosNombres.length ? `(${perfil.retiradosNombres.join(', ')}${perfil.retirados > perfil.retiradosNombres.length ? '…' : ''})` : ''} />
+            <F label="% de cartera de la empresa" value={`${perfil.pctCartera.toLocaleString('es-VE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`} hint={`de ${n(perfil.pdvEmpresa)} PDV`} />
+        </div>
+    );
+}
+
+export default function InformeVerificacionDoc({ vendedorName = 'Vendedor', perfil, diag, infoTotal, onClose }) {
     const fecha = new Date().toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     return createPortal((
         <div id="gk-inf-portal" className="fixed inset-0 z-[100] bg-slate-900/80 flex flex-col overflow-auto">
@@ -70,6 +90,14 @@ export default function InformeVerificacionDoc({ vendedorName = 'Vendedor', diag
                         </div>
                     </div>
                     <p className="text-[11px] text-slate-400 mb-4">Emitido: {fecha} · Documento de auditoría, no fiscal.</p>
+
+                    {/* Perfil del vendedor */}
+                    {perfil && (
+                        <div className="gk-sec mb-6">
+                            <p className="font-black text-[14px] mb-2 pb-1 border-b-2" style={{ color: NAVY, borderColor: NAVY }}>Perfil del vendedor</p>
+                            <PerfilBloque perfil={perfil} />
+                        </div>
+                    )}
 
                     {/* Informe GENERAL: barrido de Zoho */}
                     {diag && (

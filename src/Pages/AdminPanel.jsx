@@ -3557,6 +3557,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const [catMap, setCatMap]         = useState(() => ({}));
     const [zohoTotal, setZohoTotal]   = useState(null);
     const [showInformeDoc, setShowInformeDoc] = useState(false);
+    const [allVc, setAllVc]           = useState([]);   // toda la cartera (para perfil + % empresa)
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return;
@@ -3564,6 +3565,14 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
             .then(snap => setVendedores(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
             .catch(() => {});
     }, [vendedoresProp]);
+
+    // Cartera completa (todos los vendedores) — para el perfil del vendedor y el
+    // % de cartera de la empresa que maneja.
+    useEffect(() => {
+        getDocs(collection(db, 'vendor_clients'))
+            .then(snap => setAllVc(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+            .catch(() => {});
+    }, []);
 
     const cargar = useCallback(async (uid) => {
         if (!uid) { setFacturas([]); setPeriodos([]); return; }
@@ -3739,6 +3748,40 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const infoPeriodo  = (vendedorId !== '__none__' && metaVend && periodoActual) ? buildInformeVendedor(facturasDelPeriodo(facturas, periodoActual, ingresoDate), metaVend, catMap) : null;
     const hayEnCurso   = periodos.some(p => !p.cerrado);
 
+    // Perfil del vendedor (encabezado del informe de verificación): identidad,
+    // cartera, heredadas abiertas, estado de facturas, retiros y % de cartera.
+    const perfil = useMemo(() => {
+        if (!vendedorId || vendedorId === '__none__' || !metaVend) return null;
+        const cuentaPdv = (list) => list.reduce((s, c) => s + (((c.branchCount || 0) > 1) ? c.branchCount : 1), 0);
+        const vcActivos = allVc.filter(c => c.active && c.estado === 'activo');
+        const vcMios    = vcActivos.filter(c => c.vendedorId === vendedorId);
+        const pdvActivos = cuentaPdv(vcMios);
+        const pdvEmpresa = cuentaPdv(vcActivos);
+        const retirados  = allVc.filter(c => c.vendedorId === vendedorId && c.active === false);
+        const activasF   = facturas.filter(f => f.estado !== 'anulada');
+        const heredadasAbiertas = activasF.filter(f => f.recuperada === true && f.estado !== 'pagada').length;
+        const vencidas   = activasF.filter(f => (f.estado || 'pendiente') === 'vencida').length;
+        const porVencer  = activasF.filter(esPorVencer).length;
+        const vigentes   = activasF.filter(f => (f.estado || 'pendiente') === 'pendiente' && !esPorVencer(f)).length;
+        // Fecha de ingreso: parseo local para no correr un día por UTC.
+        let ingresoTxt = '—';
+        const fi = metaVend.fechaIngreso;
+        const di = fi?.toDate ? fi.toDate() : (typeof fi === 'string' && /^\d{4}-\d{2}-\d{2}/.test(fi) ? new Date(fi.slice(0, 4), Number(fi.slice(5, 7)) - 1, fi.slice(8, 10)) : (fi ? new Date(fi) : null));
+        if (di && !isNaN(di.getTime())) ingresoTxt = di.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        return {
+            vendedor: vendedores.find(v => v.id === vendedorId)?.name || metaVend.name || 'Vendedor',
+            fechaIngreso: ingresoTxt,
+            razonesSociales: carteraNames.size,
+            pdvActivos,
+            heredadasAbiertas,
+            vigentes, vencidas, porVencer,
+            retirados: retirados.length,
+            retiradosNombres: retirados.map(c => c.clientName || c.chain).filter(Boolean).slice(0, 6),
+            pctCartera: pdvEmpresa ? (pdvActivos / pdvEmpresa) * 100 : 0,
+            pdvEmpresa,
+        };
+    }, [vendedorId, metaVend, allVc, facturas, carteraNames, vendedores]);
+
     return (
         <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
             <p className="font-bold text-slate-800 mb-1">Conciliación de facturas</p>
@@ -3852,6 +3895,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                     {showInformeDoc && (
                         <InformeVerificacionDoc
                             vendedorName={vendedores.find(v => v.id === vendedorId)?.name || 'Vendedor'}
+                            perfil={perfil}
                             diag={syncResult?.diag}
                             infoTotal={infoTotal}
                             onClose={() => setShowInformeDoc(false)}
