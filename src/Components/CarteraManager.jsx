@@ -408,6 +408,11 @@ const CarteraManager = ({ vendedor }) => {
     const [rejectingId, setRejectingId] = useState(null);
     const [actioning, setActioning]     = useState(null);
     const [error, setError]             = useState('');
+    // Maestro de PDV en vivo — la cartera muestra el despacho REAL del PDV (fuente
+    // única de la verdad), no la copia congelada del doc de cartera (que quedaba
+    // desactualizada, p.ej. Río Supermarket marcado "Centralizado" con PDV directos).
+    const [posById, setPosById]         = useState(() => new Map());
+    const [posByChain, setPosByChain]   = useState(() => new Map());
 
     useEffect(() => {
         if (!vendedor?.id) return;
@@ -422,6 +427,44 @@ const CarteraManager = ({ vendedor }) => {
         }, () => setLoading(false));
         return unsub;
     }, [vendedor?.id]);
+
+    // Carga el maestro de PDV activos una vez (para reflejar el despacho real).
+    useEffect(() => {
+        getDocs(query(collection(db, 'pos'), where('active', '==', true)))
+            .then(snap => {
+                const byId = new Map(), byChain = new Map();
+                snap.docs.forEach(d => {
+                    const p = { id: d.id, ...d.data() };
+                    byId.set(d.id, p);
+                    const ch = p.chain || '';
+                    if (ch) { if (!byChain.has(ch)) byChain.set(ch, []); byChain.get(ch).push(p); }
+                });
+                setPosById(byId); setPosByChain(byChain);
+            })
+            .catch(() => {});
+    }, []);
+
+    // Despacho REAL de un cliente, leído del maestro de PDV. Cadena (varias
+    // sucursales) → cuenta las sucursales activas y resume su despacho; PDV único
+    // → el despacho de ese PDV. Si no hay PDV en vivo, cae a la copia congelada.
+    const liveDespacho = (client) => {
+        const esCadena = client.tipoDespacho === 'centralizado' || (client.branchCount || 0) > 1;
+        if (esCadena && client.chain && posByChain.has(client.chain)) {
+            const branches = posByChain.get(client.chain);
+            const tipos = new Set(branches.map(b => b.tipoDespacho === 'centralizado' ? 'centralizado' : 'directo'));
+            const label = tipos.size > 1 ? 'Mixto' : (tipos.has('centralizado') ? 'Centralizado' : 'Directo');
+            return { esCadena: true, count: branches.length, label };
+        }
+        if (client.posId && posById.has(client.posId)) {
+            const td = posById.get(client.posId).tipoDespacho === 'centralizado' ? 'Centralizado' : 'Directo';
+            return { esCadena: false, count: 1, label: td };
+        }
+        // Fallback: copia congelada.
+        if (client.tipoDespacho === 'centralizado' && client.branchCount > 1) {
+            return { esCadena: true, count: client.branchCount, label: 'Centralizado' };
+        }
+        return null;
+    };
 
     const approve = async (client) => {
         setActioning(client.id);
@@ -544,9 +587,16 @@ const CarteraManager = ({ vendedor }) => {
                             <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1 min-w-0">
                                     <p className="font-bold text-slate-800 text-sm leading-tight truncate">{client.clientName}</p>
-                                    {client.tipoDespacho === 'centralizado' && client.branchCount > 1 && (
-                                        <p className="text-xs text-blue-600 font-medium mt-0.5">{client.branchCount} sucursales · Centralizado</p>
-                                    )}
+                                    {(() => {
+                                        const d = liveDespacho(client);
+                                        if (!d || (!d.esCadena && d.count <= 1 && d.label === 'Directo')) return null;
+                                        const color = d.label === 'Centralizado' ? 'text-blue-600' : d.label === 'Mixto' ? 'text-amber-600' : 'text-emerald-600';
+                                        return (
+                                            <p className={`text-xs font-medium mt-0.5 ${color}`}>
+                                                {d.esCadena ? `${d.count} sucursal${d.count !== 1 ? 'es' : ''} · ` : ''}{d.label}
+                                            </p>
+                                        );
+                                    })()}
                                     {client.address && (
                                         <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                                             <MapPin size={11} className="shrink-0" />

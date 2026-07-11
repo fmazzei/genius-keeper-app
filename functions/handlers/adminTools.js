@@ -375,9 +375,13 @@ exports.repararCarteraAtribucion = onCall({ region: "us-central1", timeoutSecond
                     const patch = {};
                     if (pos.name && client.clientName !== pos.name) patch.clientName = pos.name;
                     const td = pos.tipoDespacho || 'directo';
-                    if (client.tipoDespacho !== td) {
+                    // Sincroniza el despacho desde el PDV maestro. Solo se REPORTA
+                    // si ambos estaban definidos y en conflicto real (no un simple
+                    // campo faltante, que se llena en silencio).
+                    if (client.tipoDespacho && client.tipoDespacho !== td) {
                         report.inconsistencias.push(`"${pos.name || client.clientName}": la cartera dice ${client.tipoDespacho} pero el PDV es ${td} — revísalo en Cartera.`);
                     }
+                    if (client.tipoDespacho !== td) patch.tipoDespacho = td;
                     if (Object.keys(patch).length) { patch.updatedAt = admin.firestore.FieldValue.serverTimestamp(); await cSnap.ref.update(patch); report.denormReparados++; }
                 }
             }
