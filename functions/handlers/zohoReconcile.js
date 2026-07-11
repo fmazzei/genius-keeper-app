@@ -13,7 +13,7 @@
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const { getAccessToken, listAllInvoices, exchangeCode } = require('./zohoApi');
+const { getAccessToken, listAllInvoices, getInvoiceDetail, exchangeCode } = require('./zohoApi');
 const { upsertFacturaFromZoho, resolveVendedorFromPreload } = require('./facturaSync');
 const { revertirAcumulados } = require('./facturaCommissionOps');
 
@@ -194,6 +194,19 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     mapSnap.docs.forEach(d => { const x = d.data(); if (x.vendedorId) customerMap.set(d.id, x.vendedorId); if (x.categoria) categoriaMap.set(d.id, x.categoria); });
     const preload = { vendedores, vendedorById, customerMap, categoriaMap };
 
+    // Trae line_items (unidades) SOLO para las facturas que aún no tienen unidades.
+    // El listado de Zoho no incluye line_items, así que sin esto una factura que
+    // entra por conciliación queda en 0 uds (aparece en la lista pero no cuenta a
+    // la meta). Con tope para no exceder el timeout de la función.
+    let detalleFetches = 0;
+    const MAX_DETALLE_FETCHES = 120;
+    const fetchLineItems = async (invoiceId) => {
+        if (detalleFetches >= MAX_DETALLE_FETCHES) return null;
+        detalleFetches++;
+        const inv = await getInvoiceDetail({ accessToken, organizationId, dataCenter: creds.dataCenter, invoiceId });
+        return inv?.line_items || null;
+    };
+
     const res = {
         ok: true,
         vendedorIdRecibido: vendedorId,  // para confirmar que llegó el alcance
@@ -315,7 +328,7 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         }
 
         try {
-            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId, preload });
+            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId, preload, fetchLineItems });
             if (r.status === 'other_vendor') { res.otrosVendedores++; continue; } // no es de este vendedor
             res.revisadas++;
             if (r.status === 'blocked') { res.bloqueadas++; continue; }

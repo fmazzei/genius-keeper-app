@@ -2,7 +2,7 @@
 
 import { initializeApp } from "firebase/app";
 import { initializeAuth, browserLocalPersistence } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore } from "firebase/firestore";
 import { getMessaging } from "firebase/messaging";
 import { getFunctions } from "firebase/functions";
 // ✅ SE ELIMINA LA IMPORTACIÓN DE DYNAMIC LINKS
@@ -22,7 +22,14 @@ const app = initializeApp(firebaseConfig);
 export const auth = initializeAuth(app, {
   persistence: browserLocalPersistence
 });
-export const db = getFirestore(app);
+// experimentalAutoDetectLongPolling: en redes que bloquean el canal de streaming
+// de Firestore (WiFi corporativo, algunos operadores móviles, ciertos modos de
+// iOS/PWA) la conexión se colgaba y la app quedaba en spinner hasta pedir
+// "restablecer conexión". Con la autodetección, Firestore cae a long-polling
+// automáticamente y la carga deja de trabarse.
+export const db = initializeFirestore(app, {
+  experimentalAutoDetectLongPolling: true,
+});
 /** @type {import('firebase/messaging').Messaging | null} */
 let messaging = null;
 try {

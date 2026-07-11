@@ -99,6 +99,21 @@ async function listAllInvoices({ accessToken, organizationId, dataCenter, maxPag
 }
 
 /**
+ * Trae el DETALLE de una factura (incluye line_items, que el listado NO trae).
+ * Se usa para rellenar las unidades de facturas que entraron por conciliación.
+ * @returns {Promise<object|null>} el objeto invoice con line_items, o null.
+ */
+async function getInvoiceDetail({ accessToken, organizationId, dataCenter, invoiceId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/invoices/${invoiceId}`, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+        timeout: 20000,
+    });
+    return res.data?.invoice || null;
+}
+
+/**
  * Intercambia el CÓDIGO de autorización (Generate Code del Self Client) por un
  * refresh_token permanente. Para Self Client no se requiere redirect_uri.
  * @returns {Promise<string>} refresh_token
@@ -125,4 +140,4 @@ async function exchangeCode({ clientId, clientSecret, code, dataCenter }) {
     return refreshToken;
 }
 
-module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, exchangeCode };
+module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, getInvoiceDetail, exchangeCode };

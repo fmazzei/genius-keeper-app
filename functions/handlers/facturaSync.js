@@ -185,9 +185,28 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     // entrado antes por webhook con sus unidades). Así conciliar el estado nunca
     // borra las unidades. La comisión al pagar se calcula sobre el MONTO, no sobre
     // las unidades, así que se computa bien aunque falten.
-    const unidades = Array.isArray(invoice.line_items)
-        ? invoice.line_items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
-        : (existingData?.unidades ?? 0);
+    let unidades;
+    if (Array.isArray(invoice.line_items)) {
+        unidades = invoice.line_items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+    } else {
+        unidades = existingData?.unidades ?? 0;
+        // La factura no trae line_items (viene del listado de la conciliación) y
+        // aún NO tenemos unidades (factura nueva creada por la conciliación, o
+        // quedó en 0). Pedimos su DETALLE a Zoho para obtener las unidades — si no,
+        // aparece en la lista pero no cuenta a la meta del vendedor. Acotado por el
+        // llamador (opts.fetchLineItems trae un tope para no exceder el timeout).
+        if ((!unidades || unidades <= 0) && estado !== 'draft' && invoice.invoice_id && typeof opts.fetchLineItems === 'function') {
+            try {
+                const items = await opts.fetchLineItems(invoice.invoice_id);
+                if (Array.isArray(items)) {
+                    const u = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+                    if (u > 0) unidades = u;
+                }
+            } catch (e) {
+                // No abortar la conciliación por un detalle que falle.
+            }
+        }
+    }
 
     const facturaData = {
         numero:       invoice.invoice_number,
