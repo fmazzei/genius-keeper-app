@@ -9,6 +9,9 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { congelarTasaCohorte, procesarPagoFactura, revertirAcumulados, normalizeCustomerKey } = require('./facturaCommissionOps');
 const { periodoCohorteFromDate } = require('./commissionEngine');
+const {
+    loadVendedor, linkRazonSocialToVendedor, resolveRazonesSociales,
+} = require('./carteraBridge');
 
 /**
  * Acciones soportadas sobre un documento de `facturas_vendedor`:
@@ -286,67 +289,109 @@ exports.vincularRazonSocial = onCall({ region: "us-central1" }, async (request) 
     const vendedor = { id: vendedorId, data: vendedorSnap.data() };
 
     try {
-        // 1. Guardar/actualizar el mapa razón social → vendedor.
-        const key = normalizeCustomerKey(customerName);
-        await admin.firestore().doc(`zoho_customer_map/${key}`).set({
-            customerName,
-            vendedorId,
-            vendedorName: vendedor.data.name || null,
-            reporterId:   vendedor.data.reporterId || null,
-            updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
-            mappedBy:     request.auth.uid,
-        }, { merge: true });
-
-        // 2. Backfill: re-atribuir las facturas ya recibidas de esa razón social.
-        const snap = await admin.firestore().collection('facturas_vendedor')
-            .where('clienteName', '==', customerName).get();
-
-        let backfilled = 0;
-        for (const docSnap of snap.docs) {
-            const factura = { id: docSnap.id, ...docSnap.data() };
-            if (factura.vendedorId === vendedorId) continue; // ya está bien
-            if (factura.estado === 'anulada') continue;
-
-            // Si estaba asignada a OTRO vendedor, revertir sus acumulados primero.
-            if (factura.vendedorId) await revertirAcumulados(factura);
-
-            const { periodKey: periodoCohorte, recuperada } =
-                periodoCohorteFromDate(vendedor.data.fechaIngreso, factura.fecha?.toDate?.() || null);
-
-            const updateData = {
-                vendedorId,
-                reporterId: vendedor.data.reporterId || null,
-                periodoCohorte, recuperada,
-                tasaCohorte: null, tierCohorte: null, unidadesContabilizadas: false,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            };
-
-            if (factura.mesCohorte && factura.unidades > 0) {
-                const tier = await congelarTasaCohorte(vendedor, factura.mesCohorte, factura.unidades, periodoCohorte);
-                updateData.tasaCohorte = tier.rate * 100;
-                updateData.tierCohorte = tier.label;
-                updateData.unidadesContabilizadas = true;
-            }
-
-            if (factura.estado === 'pagada') {
-                const facturaData = { ...factura, ...updateData };
-                const fechaFactura = factura.fecha?.toDate?.() || null;
-                const vencimiento  = factura.vencimiento?.toDate?.() || null;
-                await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
-                updateData.comisionAnulada     = facturaData.comisionAnulada;
-                updateData.comisionGenerada    = facturaData.comisionGenerada;
-                updateData.pagadaDentroDePlazo = facturaData.pagadaDentroDePlazo;
-                updateData.fechaPago           = facturaData.fechaPago;
-                updateData.diasParaCobrar      = facturaData.diasParaCobrar;
-            }
-
-            await docSnap.ref.update(updateData);
-            backfilled++;
-        }
-
+        // Enlaza la razón social → vendedor en el mapa Y hace backfill del
+        // histórico (lógica compartida con el trigger auto-puente y la
+        // reparación de cartera, para no duplicar ni divergir).
+        const { backfilled } = await linkRazonSocialToVendedor({
+            customerName, vendedor, mappedBy: request.auth.uid,
+        });
         return { ok: true, backfilled };
     } catch (err) {
         console.error("vincularRazonSocial falló:", err);
         throw new HttpsError("internal", `Error al vincular/backfill: ${err.message}`);
     }
+});
+
+/**
+ * REPARACIÓN cartera ↔ atribución (una sola fuente de la verdad). Para CADA
+ * cliente activo de `vendor_clients`, resuelve las razones sociales de sus PDV
+ * (del maestro `pos`) y las enlaza a su vendedor en `zoho_customer_map` (+
+ * backfill del histórico). Además re-sincroniza los campos DENORMALIZADOS
+ * SEGUROS del doc de cartera (`branchCount`, `clientName`) desde el PDV maestro,
+ * y REPORTA las inconsistencias de `tipoDespacho` (p.ej. Río Supermarket marcado
+ * centralizado pero con PDV directos) sin auto-corregirlas — esa decisión es
+ * humana. Reporta también los clientes sin razón social. Idempotente y seguro
+ * de correr N veces.
+ * Rol master / administrador / sales_manager / gerencia.
+ */
+exports.repararCarteraAtribucion = onCall({ region: "us-central1", timeoutSeconds: 540 }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
+    const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
+    const role = userSnap.data()?.role;
+    if (!["master", "administrador", "sales_manager", "gerencia"].includes(role)) {
+        throw new HttpsError("permission-denied", `Permisos insuficientes (rol: ${role || 'sin rol'})`);
+    }
+
+    const db = admin.firestore();
+    const report = {
+        clientesRevisados: 0,
+        razonesVinculadas: 0,
+        facturasReatribuidas: 0,
+        denormReparados: 0,
+        sinRazonSocial: [],     // clientes cuyo PDV no tiene razón social Zoho
+        inconsistencias: [],    // p.ej. cadena "centralizado" con PDV directos
+    };
+
+    // Cachés en memoria para no releer usuarios/PDV por cada cliente.
+    const vendCache = new Map();
+    const getVend = async (id) => {
+        if (!id) return null;
+        if (vendCache.has(id)) return vendCache.get(id);
+        const v = await loadVendedor(id);
+        vendCache.set(id, v);
+        return v;
+    };
+
+    const clientsSnap = await db.collection('vendor_clients')
+        .where('active', '==', true).where('estado', '==', 'activo').get();
+
+    for (const cSnap of clientsSnap.docs) {
+        const client = { id: cSnap.id, ...cSnap.data() };
+        report.clientesRevisados++;
+        const vendedor = await getVend(client.vendedorId);
+        if (!vendedor) continue;
+
+        // 1. Re-sincronizar los campos denormalizados desde el PDV maestro.
+        try {
+            // NOTA: NO auto-cambiamos `tipoDespacho` — cambiar centralizado→directo
+            // haría que el trigger resuelva luego solo el PDV cabecera (perdiendo
+            // las demás sucursales). Solo sincronizamos los campos SEGUROS
+            // (branchCount / clientName) y REPORTAMOS el desajuste para decisión.
+            if (client.tipoDespacho === 'centralizado' && client.chain) {
+                const branchSnap = await db.collection('pos')
+                    .where('chain', '==', client.chain).where('active', '==', true).get();
+                const branches = branchSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const directos = branches.filter(b => (b.tipoDespacho || 'directo') !== 'centralizado');
+                const patch = {};
+                if (branches.length && client.branchCount !== branches.length) patch.branchCount = branches.length;
+                if (branches.length && directos.length === branches.length) {
+                    report.inconsistencias.push(`"${client.chain}": la cartera la marca centralizada pero sus ${branches.length} PDV son de despacho directo — decide en Cartera cuál es el correcto.`);
+                }
+                if (Object.keys(patch).length) { patch.updatedAt = admin.firestore.FieldValue.serverTimestamp(); await cSnap.ref.update(patch); report.denormReparados++; }
+            } else if (client.posId) {
+                const p = await db.doc(`pos/${client.posId}`).get();
+                if (p.exists) {
+                    const pos = p.data();
+                    const patch = {};
+                    if (pos.name && client.clientName !== pos.name) patch.clientName = pos.name;
+                    const td = pos.tipoDespacho || 'directo';
+                    if (client.tipoDespacho !== td) {
+                        report.inconsistencias.push(`"${pos.name || client.clientName}": la cartera dice ${client.tipoDespacho} pero el PDV es ${td} — revísalo en Cartera.`);
+                    }
+                    if (Object.keys(patch).length) { patch.updatedAt = admin.firestore.FieldValue.serverTimestamp(); await cSnap.ref.update(patch); report.denormReparados++; }
+                }
+            }
+        } catch (e) { /* no bloquear la reparación por un denorm que falle */ }
+
+        // 2. Resolver razones sociales del PDV maestro y enlazarlas + backfill.
+        const razones = await resolveRazonesSociales(client);
+        if (!razones.length) { report.sinRazonSocial.push(client.clientName || client.chain || client.id); continue; }
+        for (const rs of razones) {
+            const { backfilled } = await linkRazonSocialToVendedor({ customerName: rs, vendedor, mappedBy: 'repair' });
+            report.razonesVinculadas++;
+            report.facturasReatribuidas += backfilled;
+        }
+    }
+
+    return { ok: true, ...report };
 });

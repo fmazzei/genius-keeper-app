@@ -2,6 +2,9 @@
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+const {
+    loadVendedor, resolveRazonesSociales, linkRazonSocialToVendedor, unlinkRazonSocial,
+} = require('./carteraBridge');
 
 // --- Helper de Notificaciones ---
 const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
@@ -506,6 +509,45 @@ exports.onVendorClientRequested = functions.firestore
             ));
         } catch (err) {
             functions.logger.error("Error enviando notificación de solicitud de cartera:", err);
+        }
+        return null;
+    });
+
+// TRIGGER: Puente cartera → atribución (una sola fuente de la verdad).
+// =========================================================================================
+// Cuando un PDV se activa en la cartera (`vendor_clients` activo), enlaza
+// AUTOMÁTICAMENTE la(s) razón(es) social(es) de sus PDV (del maestro `pos`) a su
+// vendedor en `zoho_customer_map` y hace backfill del histórico — así sus
+// facturas de Zoho quedan atribuidas sin vincular nada a mano. Al quitarlo de la
+// cartera, desenlaza (deja de atribuir facturas nuevas; no toca el histórico).
+// Reemplaza el paso manual de "Vinculación de clientes Zoho".
+exports.onVendorClientBridge = functions.firestore
+    .document("vendor_clients/{docId}")
+    .onWrite(async (change) => {
+        try {
+            const before = change.before.exists ? change.before.data() : null;
+            const after  = change.after.exists  ? change.after.data()  : null;
+            const isActive = (d) => !!d && d.active === true && d.estado === 'activo';
+            const wasActive = isActive(before);
+            const nowActive = isActive(after);
+
+            if (nowActive) {
+                // (Re)enlazar — idempotente. Razones sociales desde el PDV maestro.
+                const vendedor = await loadVendedor(after.vendedorId);
+                if (!vendedor) return null;
+                const razones = await resolveRazonesSociales(after);
+                for (const rs of razones) {
+                    await linkRazonSocialToVendedor({ customerName: rs, vendedor, mappedBy: 'auto-bridge' });
+                }
+            } else if (wasActive && !nowActive) {
+                // Quitado/desactivado — desenlazar lo que este doc cubría.
+                const razones = await resolveRazonesSociales(before);
+                for (const rs of razones) {
+                    await unlinkRazonSocial(rs, before.vendedorId);
+                }
+            }
+        } catch (err) {
+            functions.logger.error("onVendorClientBridge falló:", err);
         }
         return null;
     });

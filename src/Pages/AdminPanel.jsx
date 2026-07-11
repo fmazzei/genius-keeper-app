@@ -3381,7 +3381,23 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
         return facturasDelPeriodo([f], periodoActual, ingresoDate).length > 0;
     };
 
-    const activas = facturas.filter(f => f.estado !== 'anulada');
+    // "Heredadas" que SÍ le pertenecen = facturas previas a su ingreso que
+    // estaban ABIERTAS cuando entró (vencidas/por vencer) o que él cobró
+    // (fechaPago ≥ ingreso). Se OCULTA el histórico ajeno: recuperadas ya
+    // PAGADAS antes de su ingreso (las cobró otro; no son suyas) — eran el ruido
+    // que inflaba el detalle (923 pagadas / 947 totales).
+    const esHistoricoAjeno = (f) => {
+        if (!ingresoDate) return false;
+        if (!f.recuperada) return false;            // solo aplica a previas al ingreso
+        if (f.estado !== 'pagada') return false;    // abiertas SÍ se muestran (heredadas)
+        const fp = f.fechaPago?.toDate ? f.fechaPago.toDate() : (f.fechaPago ? new Date(f.fechaPago) : null);
+        if (!fp) return true;                        // pagada sin fecha de cobro → histórico previo
+        return fp < ingresoDate;                     // cobrada ANTES de su ingreso → no es suya
+    };
+    const facturasVis = facturas.filter(f => !esHistoricoAjeno(f));
+    const ocultasHistoricas = facturas.length - facturasVis.length;
+
+    const activas = facturasVis.filter(f => f.estado !== 'anulada');
     // Duplicados: número repetido en TODO el set activo del vendedor.
     const countByNum = {};
     activas.forEach(f => { if (f.numero) countByNum[f.numero] = (countByNum[f.numero] || 0) + 1; });
@@ -3412,7 +3428,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const facVenc = (f) => (f.vencimiento?.toDate ? f.vencimiento.toDate() : (f.vencimiento ? new Date(f.vencimiento) : null));
     const esPorVencer = (f) => { const v = facVenc(f); if (!v) return false; const dias = (v - new Date()) / 86400000; return (f.estado || 'pendiente') === 'pendiente' && dias >= 0 && dias <= PROX_VENCER; };
     const statusOf = (f) => f.estado || 'pendiente';
-    const displayBase = facturas.filter(enPeriodo);
+    const displayBase = facturasVis.filter(enPeriodo);
     const pillDefs = [
         { key: 'todas',      label: 'Todas',      match: () => true },
         { key: 'pagada',     label: 'Pagadas',    match: (f) => statusOf(f) === 'pagada' },
@@ -3564,6 +3580,12 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                             {dupExtraPeriodo > 0 && `${dupExtraPeriodo} duplicado${dupExtraPeriodo === 1 ? '' : 's'}`}
                             {dupExtraPeriodo > 0 && fueraCartera > 0 && ' · '}
                             {fueraCartera > 0 && `${fueraCartera} fuera de cartera`}
+                        </p>
+                    )}
+
+                    {ocultasHistoricas > 0 && (
+                        <p className="text-slate-400 text-[11px] mb-2">
+                            {ocultasHistoricas} factura{ocultasHistoricas === 1 ? '' : 's'} histórica{ocultasHistoricas === 1 ? '' : 's'} oculta{ocultasHistoricas === 1 ? '' : 's'} (pagadas antes de su ingreso — no son de su gestión).
                         </p>
                     )}
 
@@ -3814,6 +3836,22 @@ const IntegracionesSection = () => {
     const [reconResult, setReconResult]   = useState(null);
     const [reconError, setReconError]     = useState('');
     const [ultimaConcil, setUltimaConcil] = useState(null);
+
+    // Reparación cartera ↔ atribución (una sola fuente de la verdad).
+    const [reparando, setReparando]       = useState(false);
+    const [repResult, setRepResult]       = useState(null);
+    const [repError, setRepError]         = useState('');
+
+    const repararCartera = async () => {
+        setReparando(true); setRepError(''); setRepResult(null);
+        try {
+            const fn = httpsCallable(functions, 'repararCarteraAtribucion', { timeout: 540000 });
+            const { data } = await fn({});
+            setRepResult(data);
+        } catch (e) {
+            setRepError(e.message || 'No se pudo reparar la cartera.');
+        } finally { setReparando(false); }
+    };
 
     // Camino fácil: pega Client ID + Secret + el CÓDIGO del Self Client; GK
     // intercambia el código por el refresh_token y lo guarda todo.
@@ -4066,7 +4104,53 @@ const IntegracionesSection = () => {
 
             <SectionTitle n="4" title="Vinculación de clientes → Vendedor" desc="Asigna cada razón social de Zoho a su vendedor (atribución por cartera)." />
 
-            <VinculacionRazonesSociales />
+            {/* Reparación cartera ↔ atribución — una sola fuente de la verdad.
+                Al asignar un PDV a la cartera de un vendedor, sus facturas ahora
+                se atribuyen SOLAS (trigger). Este botón pone al día TODO lo ya
+                existente de una vez: recorre cada PDV de cada cartera, vincula su
+                razón social y re-atribuye el histórico. Úsalo tras asignar PDV
+                masivamente o si ves facturas "fuera de cartera". */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+                <p className="font-bold text-blue-900 text-sm mb-1">Reparar cartera ↔ atribución</p>
+                <p className="text-xs text-blue-800/80 mb-3">
+                    Al asignar un PDV a la cartera de un vendedor, sus facturas ahora se atribuyen automáticamente.
+                    Este botón sincroniza de una vez <b>todo lo ya existente</b>: recorre cada PDV de cada cartera,
+                    vincula su razón social de Zoho a su vendedor y re-atribuye el histórico. Corrige las facturas
+                    "fuera de cartera". Es seguro correrlo las veces que necesites.
+                </p>
+                <button
+                    onClick={repararCartera}
+                    disabled={reparando}
+                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-2.5 rounded-lg disabled:opacity-60"
+                >
+                    <RefreshCw size={15} className={reparando ? 'animate-spin' : ''} />
+                    {reparando ? 'Reparando…' : 'Reparar cartera ↔ atribución'}
+                </button>
+                {repError && <p className="text-red-500 text-xs mt-2">{repError}</p>}
+                {repResult && (
+                    <div className="bg-white border border-blue-200 rounded-lg p-3 text-xs text-slate-700 mt-3">
+                        <p className="font-bold text-blue-900 mb-1">Reparación lista</p>
+                        <p>
+                            Clientes revisados: <b>{repResult.clientesRevisados ?? 0}</b> · Razones sociales vinculadas: <b className="text-emerald-700">{repResult.razonesVinculadas ?? 0}</b> · Facturas re-atribuidas: <b className="text-emerald-700">{repResult.facturasReatribuidas ?? 0}</b> · Datos de cartera corregidos: <b>{repResult.denormReparados ?? 0}</b>
+                        </p>
+                        {Array.isArray(repResult.sinRazonSocial) && repResult.sinRazonSocial.length > 0 && (
+                            <p className="mt-1.5 text-amber-700">
+                                ⚠️ {repResult.sinRazonSocial.length} cliente(s) sin "Razón social en Zoho" en su PDV (no se pueden atribuir hasta llenarla): {repResult.sinRazonSocial.slice(0, 8).join(', ')}{repResult.sinRazonSocial.length > 8 ? '…' : ''}
+                            </p>
+                        )}
+                        {Array.isArray(repResult.inconsistencias) && repResult.inconsistencias.length > 0 && (
+                            <ul className="mt-1.5 list-disc pl-4 text-amber-700 space-y-0.5">
+                                {repResult.inconsistencias.map((s, i) => <li key={i}>{s}</li>)}
+                            </ul>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            <details className="mb-4">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-500 select-none">Vinculación manual (razón social por razón social) — respaldo</summary>
+                <div className="mt-3"><VinculacionRazonesSociales /></div>
+            </details>
 
             <SectionTitle n="5" title="Diagnóstico y referencia técnica" desc="Último payload recibido de Zoho y configuración de los endpoints." />
 
