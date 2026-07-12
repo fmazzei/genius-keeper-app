@@ -168,7 +168,7 @@ function PeriodoDetalle({ d, multi }) {
                 <SecTitle>FACTURACIÓN — DEFINE EL NIVEL</SecTitle>
                 <p className="text-[11px] text-slate-600 mb-1">Colocó <b>{uds(d.unidades)}</b> de <b>{uds(d.metaMensual)}</b> uds ({d.pct}% de la meta) → <b>Nivel {d.nivel}</b> (tasa {d.tasa}%).</p>
                 <p className="text-[11px] mb-1" style={{ color: '#334155' }}>Cobrado: <b style={{ color: '#127c3e' }}>{money(d.cobradoRegular)}</b> de <b>{money(d.facturadoMonto)}</b> facturado · <b>{d.nPagadas}</b> de <b>{d.nFacturas}</b> facturas pagadas. <span className="text-slate-500">La comisión se paga solo sobre lo cobrado.</span></p>
-                <FacturasTable rows={d.facturas} empty="Sin facturación en el período." />
+                <FacturasTable rows={d.facturas} rateFn={f => f.esFood ? d.tasaFood : d.tasa} empty="Sin facturación en el período." />
             </div>
 
             {/* Bono Cobranza */}
@@ -178,7 +178,7 @@ function PeriodoDetalle({ d, multi }) {
                     <p className="text-[11px] text-slate-500">Sin facturas cobradas a tiempo en este período.</p>
                 ) : (
                     <>
-                        <FacturasTable rows={d.facturasATiempo} />
+                        <FacturasTable rows={d.facturasATiempo} rateFn={() => d.bonoCobRate} />
                         <p className="text-[11px] text-slate-600 mt-1 text-right">{d.bonoCobRate}% sobre {money(d.cobradoRegularATiempo)} cobrado a tiempo = <b style={{ color: '#127c3e' }}>+{money(d.bonoCobranzaMonto)}</b></p>
                     </>
                 )}
@@ -229,7 +229,7 @@ function PeriodoDetalle({ d, multi }) {
             {d.recuperadas.length > 0 && (
                 <div className="px-8 gk-sec">
                     <SecTitle>CUENTAS RECUPERADAS ({d.tasaRecup}%)</SecTitle>
-                    <FacturasTable rows={d.recuperadas} />
+                    <FacturasTable rows={d.recuperadas} rateFn={() => d.tasaRecup} />
                     <p className="text-[11px] text-slate-600 mt-1 text-right">{d.tasaRecup}% sobre {money(d.cobradoRecup)} recuperado = <b>+{money(d.bonoRecupMonto)}</b></p>
                 </div>
             )}
@@ -242,20 +242,43 @@ const clip = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap
 // Números tabulares en sans (más angostos que el monoespaciado → no chocan entre columnas).
 const numCell = { fontVariantNumeric: 'tabular-nums', ...clip };
 
-function FacturasTable({ rows, empty }) {
+// `rateFn(row)` → tasa % aplicable a esa factura. Si se pasa, se muestran las
+// columnas TASA y COMISIÓN (la comisión se paga SOLO sobre lo cobrado, así que
+// una factura no pagada aporta 0). Es el "de dónde sale cada número".
+function FacturasTable({ rows, empty, rateFn }) {
     if (!rows || rows.length === 0) return <p className="text-[11px] text-slate-500">{empty || '—'}</p>;
+    const conCom = typeof rateFn === 'function';
+    const comOf = (f) => {
+        if (!conCom) return 0;
+        const rate = rateFn(f) || 0;
+        return f.pagada ? (Number(f.monto) || 0) * rate / 100 : 0;
+    };
     return (
         <table
             className="w-full"
             style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: SANS, fontSize: '9px' }}
         >
             <colgroup>
-                <col style={{ width: '19%' }} />
-                <col style={{ width: '26%' }} />
-                <col style={{ width: '14%' }} />
-                <col style={{ width: '9%' }} />
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '17%' }} />
+                {conCom ? (
+                    <>
+                        <col style={{ width: '15%' }} />
+                        <col style={{ width: '23%' }} />
+                        <col style={{ width: '11%' }} />
+                        <col style={{ width: '8%' }} />
+                        <col style={{ width: '14%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '20%' }} />
+                    </>
+                ) : (
+                    <>
+                        <col style={{ width: '19%' }} />
+                        <col style={{ width: '26%' }} />
+                        <col style={{ width: '14%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '15%' }} />
+                        <col style={{ width: '17%' }} />
+                    </>
+                )}
             </colgroup>
             <thead>
                 <tr className="text-white" style={{ background: NAVY, fontSize: '8px', letterSpacing: '.02em' }}>
@@ -263,8 +286,11 @@ function FacturasTable({ rows, empty }) {
                     <th className="py-1 px-1 text-left">CLIENTE</th>
                     <th className="py-1 px-1 text-center">FECHA</th>
                     <th className="py-1 px-1 text-right">UDS</th>
-                    <th className="py-1 px-1 text-right">MONTO</th>
-                    <th className="py-1 px-1 text-center">ESTADO</th>
+                    <th className="py-1 px-1 text-right">{conCom ? 'COBRADO' : 'MONTO'}</th>
+                    {conCom
+                        ? <th className="py-1 px-1 text-right">TASA</th>
+                        : <th className="py-1 px-1 text-center">ESTADO</th>}
+                    {conCom && <th className="py-1 px-1 text-right">COMISIÓN</th>}
                 </tr>
             </thead>
             <tbody>
@@ -275,7 +301,14 @@ function FacturasTable({ rows, empty }) {
                         <td className="py-1 px-1 text-center" style={numCell}>{fdateShort(f.fecha)}</td>
                         <td className="py-1 px-1 text-right" style={numCell}>{uds(f.unidades)}</td>
                         <td className="py-1 px-1 text-right" style={numCell}>{money(f.monto)}</td>
-                        <td className="py-1 px-1 text-center" style={{ ...clip, fontWeight: 700, textTransform: 'capitalize', color: estadoColor(f.estado) }} title={f.estado}>{f.estado}</td>
+                        {conCom ? (
+                            <td className="py-1 px-1 text-right" style={numCell}>{f.pagada ? `${(rateFn(f) || 0)}%` : '—'}</td>
+                        ) : (
+                            <td className="py-1 px-1 text-center" style={{ ...clip, fontWeight: 700, textTransform: 'capitalize', color: estadoColor(f.estado) }} title={f.estado}>{f.estado}</td>
+                        )}
+                        {conCom && (
+                            <td className="py-1 px-1 text-right" style={{ ...numCell, fontWeight: 700, color: comOf(f) > 0 ? '#127c3e' : '#94a3b8' }}>{f.pagada ? money(comOf(f)) : '—'}</td>
+                        )}
                     </tr>
                 ))}
             </tbody>

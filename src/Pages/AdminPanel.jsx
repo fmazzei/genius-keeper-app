@@ -3734,6 +3734,10 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const [showInformeDoc, setShowInformeDoc] = useState(false);
     const [allVc, setAllVc]           = useState([]);   // toda la cartera (para perfil + % empresa)
     const [allPos, setAllPos]         = useState([]);   // maestro de PDV activos (conteo real de tiendas)
+    const [liqVend, setLiqVend]       = useState([]);   // liquidaciones del vendedor (para el devengado)
+    const [carteraSizeVend, setCarteraSizeVend] = useState(0);
+    const [cerradosVend, setCerradosVend]       = useState({});
+    const [showComprobante, setShowComprobante] = useState(false);
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return;
@@ -3760,10 +3764,13 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
         setError('');
         try {
             const isNone = uid === '__none__';
-            const [facSnap, metaSnap, mapSnap] = await Promise.all([
+            const [facSnap, metaSnap, mapSnap, liqSnap, cartSnap, cerrSnap] = await Promise.all([
                 getDocs(query(collection(db, 'facturas_vendedor'), isNone ? where('vendedorId', '==', null) : where('vendedorId', '==', uid))),
                 isNone ? Promise.resolve(null) : getDoc(doc(db, 'users_metadata', uid)),
                 isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'zoho_customer_map'), where('vendedorId', '==', uid))).catch(() => null),
+                isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', uid))).catch(() => null),
+                isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'vendor_clients'), where('vendedorId', '==', uid), where('active', '==', true))).catch(() => null),
+                isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', uid))).catch(() => null),
             ]);
             const rows = facSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             rows.sort((a, b) => {
@@ -3782,6 +3789,13 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
             if (mapSnap) mapSnap.docs.forEach(d => { const c = d.data(); if (c.customerName) { const k = String(c.customerName).toLowerCase().trim(); names.add(k); cats[k] = c.categoria || 'retail'; } });
             setCarteraNames(names);
             setCatMap(cats);
+            // Insumos de comisión (para mostrar el devengado y el comprobante de
+            // liquidación aquí mismo — la conciliación es para conocer la comisión).
+            setLiqVend(liqSnap ? liqSnap.docs.map(d => ({ id: d.id, ...d.data() })) : []);
+            setCarteraSizeVend(cartSnap ? cartSnap.docs.filter(d => (d.data().estado || 'activo') === 'activo').length : 0);
+            const cer = {};
+            if (cerrSnap) cerrSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cer[c.periodKey] = c; });
+            setCerradosVend(cer);
             // Universo total de Zoho de la última conciliación (categoría 1 del informe).
             getDoc(doc(db, 'settings', 'appConfig')).then(s => { if (s.exists()) { const d = s.data(); setZohoTotal({ total: d.zohoTotalFacturas ?? null, completo: d.zohoBarridoCompleto ?? null }); } }).catch(() => {});
         } catch (e) {
@@ -3927,6 +3941,11 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const infoTotal    = (vendedorId !== '__none__' && metaVend) ? buildInformeVendedor(facturas, metaVend, catMap) : null;
     const infoPeriodo  = (vendedorId !== '__none__' && metaVend && periodoActual) ? buildInformeVendedor(facturasDelPeriodo(facturas, periodoActual, ingresoDate), metaVend, catMap) : null;
     const hayEnCurso   = periodos.some(p => !p.cerrado);
+    // Comisión del período (devengado/pagado/saldo) + comprobante factura por
+    // factura — la conciliación es para CONOCER la comisión y poder liquidar.
+    const desgloseActual = (vendedorId !== '__none__' && metaVend && periodoActual)
+        ? computeDesglosePeriodo(metaVend, facturas, periodoActual.periodKey, { carteraSize: carteraSizeVend, cerrados: cerradosVend, liquidaciones: liqVend })
+        : null;
 
     // Perfil del vendedor (encabezado del informe de verificación): identidad,
     // cartera, heredadas abiertas, estado de facturas, retiros y % de cartera.
@@ -4027,7 +4046,10 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                                 </div>
                             )}
                             {syncResult && syncResult.diag && syncResult.diag.pagadasSinVendedor > 0 && (
-                                <p className="text-red-600 text-[11px] mt-1.5">⚠️ {syncResult.diag.pagadasSinVendedor} pagadas en Zoho sin vendedor (clientes sin vincular) — revísalas en la sección 4 por si alguna es de él.</p>
+                                <p className="text-red-600 text-[11px] mt-1.5">⚠️ {syncResult.diag.pagadasSinVendedor} pagadas en Zoho <b>pendientes de asignar</b> (clientes sin dueño) — asígnalas en <b>"Clientes de Zoho → Vendedor"</b> (§4).</p>
+                            )}
+                            {syncResult && syncResult.diag && syncResult.diag.pagadasOficina > 0 && (
+                                <p className="text-slate-400 text-[11px] mt-1">{syncResult.diag.pagadasOficina} pagadas de clientes de <b>Oficina</b> (sin comisión, a propósito).</p>
                             )}
                             {syncResult && syncResult.unidades && (
                                 <p className="text-[11px] text-slate-500 mt-1.5">
@@ -4080,6 +4102,35 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                             </div>
                             <p className="text-slate-400 text-[10px] mt-1.5">Las <b>Pagadas</b> son las que generan comisión. Cuando estos indicadores y el informe cuadren, procede a la <b>liquidación</b>.</p>
                         </div>
+                    )}
+
+                    {/* Comisión del período (devengado/pagado/saldo) + comprobante
+                        factura por factura — el número para liquidar y de dónde sale. */}
+                    {desgloseActual && periodoActual && (
+                        <div className="bg-brand-blue/5 border border-brand-blue/20 rounded-xl p-4 mb-3">
+                            <div className="flex items-center justify-between gap-2 mb-2">
+                                <p className="font-bold text-slate-800 text-sm">Comisión del período {periodoActual.cerrado ? '· cerrado' : '· en curso (parcial)'}</p>
+                                <button onClick={() => setShowComprobante(true)} className="flex items-center gap-1.5 text-xs font-bold text-white bg-brand-blue hover:opacity-90 px-3 py-2 rounded-lg">
+                                    <Receipt size={14} /> Comprobante de liquidación
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                                <StatCard label="Devengado" value={money(desgloseActual.devengadoTotal)} color="text-brand-blue" bg="bg-white" border="border-brand-blue/20" />
+                                <StatCard label="Pagado" value={money(desgloseActual.pagado)} color="text-emerald-700" bg="bg-white" border="border-slate-200" />
+                                <StatCard label="Saldo por pagar" value={money(desgloseActual.saldo)} color={desgloseActual.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-700'} bg="bg-white" border="border-slate-200" />
+                            </div>
+                            <p className="text-slate-400 text-[10px] mt-1.5">
+                                Comisión nivel {desgloseActual.nivel} ({desgloseActual.tasa}%) sobre lo cobrado + bonos. El comprobante detalla el número factura por factura.
+                            </p>
+                        </div>
+                    )}
+
+                    {showComprobante && desgloseActual && (
+                        <LiquidacionDetalladaDoc
+                            vendedorName={vendedores.find(v => v.id === vendedorId)?.name || 'Vendedor'}
+                            desglose={desgloseActual}
+                            onClose={() => setShowComprobante(false)}
+                        />
                     )}
 
                     {/* INFORME PARCIAL del período seleccionado — la vista principal. */}
