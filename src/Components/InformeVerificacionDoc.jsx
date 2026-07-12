@@ -62,11 +62,12 @@ function PerfilBloque({ perfil }) {
         <div className="text-[12px]">
             <F label="Vendedor" value={perfil.vendedor} />
             <F label="Fecha de ingreso" value={perfil.fechaIngreso} />
-            <F label="Cartera" value={`${n(perfil.razonesSociales)} razones sociales · ${n(perfil.pdvActivos)} PDV activos`} />
+            <F label="Cartera" value={`${n(perfil.clientes)} clientes · ${n(perfil.pdvActivos)} PDV`} />
+            <F label="Razones sociales de Zoho" value={n(perfil.razonesSociales)} hint="(vinculadas)" />
             <F label="Facturas heredadas (abiertas)" value={n(perfil.heredadasAbiertas)} />
             <F label="Facturas" value={`${n(perfil.vigentes)} vigentes · ${n(perfil.vencidas)} vencidas · ${n(perfil.porVencer)} por vencer`} />
             <F label="Modificación de cartera (retirados)" value={n(perfil.retirados)} hint={perfil.retiradosNombres && perfil.retiradosNombres.length ? `(${perfil.retiradosNombres.join(', ')}${perfil.retirados > perfil.retiradosNombres.length ? '…' : ''})` : ''} />
-            <F label="% de cartera de la empresa" value={`${perfil.pctCartera.toLocaleString('es-VE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`} hint={`de ${n(perfil.pdvEmpresa)} PDV`} />
+            <F label="% de cartera de la empresa" value={`${perfil.pctCartera.toLocaleString('es-VE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`} hint={`(${n(perfil.pdvActivos)} de ${n(perfil.universoPdv)} PDV de Lacteoca)`} />
         </div>
     );
 }

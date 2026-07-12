@@ -3558,6 +3558,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     const [zohoTotal, setZohoTotal]   = useState(null);
     const [showInformeDoc, setShowInformeDoc] = useState(false);
     const [allVc, setAllVc]           = useState([]);   // toda la cartera (para perfil + % empresa)
+    const [allPos, setAllPos]         = useState([]);   // maestro de PDV activos (conteo real de tiendas)
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return;
@@ -3566,11 +3567,15 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
             .catch(() => {});
     }, [vendedoresProp]);
 
-    // Cartera completa (todos los vendedores) — para el perfil del vendedor y el
-    // % de cartera de la empresa que maneja.
+    // Cartera completa (todos los vendedores) + maestro de PDV — para el perfil del
+    // vendedor: conteo REAL de tiendas (resolviendo cadenas) y % contra TODO el
+    // universo de PDV de la empresa (no solo lo ya asignado).
     useEffect(() => {
         getDocs(collection(db, 'vendor_clients'))
             .then(snap => setAllVc(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
+            .catch(() => {});
+        getDocs(query(collection(db, 'pos'), where('active', '==', true)))
+            .then(snap => setAllPos(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
             .catch(() => {});
     }, []);
 
@@ -3752,11 +3757,25 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
     // cartera, heredadas abiertas, estado de facturas, retiros y % de cartera.
     const perfil = useMemo(() => {
         if (!vendedorId || vendedorId === '__none__' || !metaVend) return null;
-        const cuentaPdv = (list) => list.reduce((s, c) => s + (((c.branchCount || 0) > 1) ? c.branchCount : 1), 0);
+        const posById   = new Map(allPos.map(p => [p.id, p]));
+        const posByChain = new Map();
+        allPos.forEach(p => { const ch = p.chain || ''; if (ch) { if (!posByChain.has(ch)) posByChain.set(ch, []); posByChain.get(ch).push(p); } });
+
+        // PDV REALES (tiendas) de un cliente de cartera, resueltos contra el maestro
+        // `pos`: directo → 1 (su posId); cadena → todas las sucursales activas.
+        const tiendasDeCliente = (c) => {
+            const esCadena = c.tipoDespacho === 'centralizado' || (c.branchCount || 0) > 1;
+            if (esCadena && c.chain && posByChain.has(c.chain)) return posByChain.get(c.chain).map(p => p.id);
+            if (c.posId && posById.has(c.posId)) return [c.posId];
+            return c.posId ? [c.posId] : [];
+        };
+
         const vcActivos = allVc.filter(c => c.active && c.estado === 'activo');
         const vcMios    = vcActivos.filter(c => c.vendedorId === vendedorId);
-        const pdvActivos = cuentaPdv(vcMios);
-        const pdvEmpresa = cuentaPdv(vcActivos);
+        const tiendasVendedor = new Set(); vcMios.forEach(c => tiendasDeCliente(c).forEach(id => tiendasVendedor.add(id)));
+        const clientes   = vcMios.length;                 // = tarjetas de la cartera
+        const pdvActivos = tiendasVendedor.size;          // tiendas reales (Río = 4)
+        const universoPdv = allPos.length;                // TODAS las tiendas de Lacteoca (asignadas o no)
         const retirados  = allVc.filter(c => c.vendedorId === vendedorId && c.active === false);
         const activasF   = facturas.filter(f => f.estado !== 'anulada');
         const heredadasAbiertas = activasF.filter(f => f.recuperada === true && f.estado !== 'pagada').length;
@@ -3772,15 +3791,16 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
             vendedor: vendedores.find(v => v.id === vendedorId)?.name || metaVend.name || 'Vendedor',
             fechaIngreso: ingresoTxt,
             razonesSociales: carteraNames.size,
+            clientes,
             pdvActivos,
             heredadasAbiertas,
             vigentes, vencidas, porVencer,
             retirados: retirados.length,
             retiradosNombres: retirados.map(c => c.clientName || c.chain).filter(Boolean).slice(0, 6),
-            pctCartera: pdvEmpresa ? (pdvActivos / pdvEmpresa) * 100 : 0,
-            pdvEmpresa,
+            pctCartera: universoPdv ? (pdvActivos / universoPdv) * 100 : 0,
+            universoPdv,
         };
-    }, [vendedorId, metaVend, allVc, facturas, carteraNames, vendedores]);
+    }, [vendedorId, metaVend, allVc, allPos, facturas, carteraNames, vendedores]);
 
     return (
         <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
