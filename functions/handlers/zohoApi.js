@@ -114,6 +114,23 @@ async function getInvoiceDetail({ accessToken, organizationId, dataCenter, invoi
 }
 
 /**
+ * Trae el DETALLE de un CONTACTO (cliente) de Zoho Books — incluye company_name,
+ * tax_reg_no, custom_fields y la dirección fiscal, de donde se extrae el RIF.
+ * El RIF es la identidad REAL de la razón social (varias sucursales = varios
+ * contactos con el MISMO RIF). Se cachea por contactId en el llamador.
+ * @returns {Promise<object|null>} el objeto contact, o null.
+ */
+async function getContactDetail({ accessToken, organizationId, dataCenter, contactId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/contacts/${contactId}`, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+        timeout: 20000,
+    });
+    return res.data?.contact || null;
+}
+
+/**
  * Intercambia el CÓDIGO de autorización (Generate Code del Self Client) por un
  * refresh_token permanente. Para Self Client no se requiere redirect_uri.
  * @returns {Promise<string>} refresh_token

@@ -13,8 +13,8 @@
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const { getAccessToken, listAllInvoices, getInvoiceDetail, exchangeCode } = require('./zohoApi');
-const { upsertFacturaFromZoho, resolveVendedorFromPreload } = require('./facturaSync');
+const { getAccessToken, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
+const { upsertFacturaFromZoho, resolveVendedorFromPreload, extraerRif, stripSucursal } = require('./facturaSync');
 const { revertirAcumulados } = require('./facturaCommissionOps');
 
 /**
@@ -217,6 +217,38 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         }
     };
 
+    // RIF del cliente (identidad REAL de la razón social): varias sucursales de
+    // Zoho comparten el mismo RIF. El listado no lo trae; se pide el CONTACTO por
+    // customer_id (cacheado por cliente para no repetir llamadas) y se extrae el
+    // RIF de sus campos. Fase 1: capturar y medir cobertura antes de re-llavear.
+    const rstats = { conRif: 0, sinRif: 0, contactosConsultados: 0, contactosErrores: 0, contactosTope: false, ultimoErrorContacto: null, fuenteFactura: 0, fuenteContacto: 0 };
+    const MAX_CONTACT_FETCHES = 400;
+    const rifCache = new Map(); // customer_id -> rif|null
+    const getRifCliente = async (invoice) => {
+        // 1) ¿el propio invoice trae el RIF? (campos personalizados / fiscales)
+        const delInv = extraerRif(invoice.cf_rif, invoice.tax_reg_no, invoice.custom_fields, invoice.billing_address);
+        if (delInv) { rstats.fuenteFactura++; return delInv; }
+        const cid = invoice.customer_id != null ? String(invoice.customer_id)
+            : (invoice.contact_id != null ? String(invoice.contact_id) : null);
+        if (!cid) return null;
+        if (rifCache.has(cid)) return rifCache.get(cid);
+        if (rstats.contactosConsultados >= MAX_CONTACT_FETCHES) { rstats.contactosTope = true; return null; }
+        rstats.contactosConsultados++;
+        try {
+            const contact = await getContactDetail({ accessToken, organizationId, dataCenter: creds.dataCenter, contactId: cid });
+            const rif = extraerRif(contact);
+            if (rif) rstats.fuenteContacto++;
+            rifCache.set(cid, rif);
+            return rif;
+        } catch (e) {
+            rstats.contactosErrores++;
+            if (!rstats.ultimoErrorContacto) rstats.ultimoErrorContacto = String(e.response?.data?.message || e.response?.status || e.message).slice(0, 140);
+            await sleep(500);
+            rifCache.set(cid, null);
+            return null;
+        }
+    };
+
     const res = {
         ok: true,
         vendedorIdRecibido: vendedorId,  // para confirmar que llegó el alcance
@@ -337,8 +369,17 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
             continue;
         }
 
+        // RIF del cliente: en modo por vendedor solo lo pedimos para SUS facturas
+        // (evita consultar contactos de otros); en modo global, para todas.
+        let rif = null;
+        const releVendedor = vendedorId ? (resolveVendedorFromPreload(inv, preload)?.id === vendedorId) : true;
+        if (releVendedor) {
+            rif = await getRifCliente(inv);
+            if (rif) rstats.conRif++; else rstats.sinRif++;
+        }
+
         try {
-            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId, preload, fetchLineItems, stats: zstats });
+            const r = await upsertFacturaFromZoho(inv, appConfig, { body: inv, onlyVendedorId: vendedorId, preload, fetchLineItems, stats: zstats, rif });
             if (r.status === 'other_vendor') { res.otrosVendedores++; continue; } // no es de este vendedor
             res.revisadas++;
             if (r.status === 'blocked') { res.bloqueadas++; continue; }
@@ -408,5 +449,6 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
 
     res.diag = diag;
     res.unidades = zstats; // detalleConsultados / detalleRellenadas / detalleErrores / detalleTope / ultimoErrorDetalle
+    res.rif = rstats;      // Fase 1: cobertura de RIF (conRif/sinRif/fuente/errores)
     return res;
 });

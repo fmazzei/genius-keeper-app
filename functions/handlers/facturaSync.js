@@ -25,6 +25,33 @@ const toDate = (value) => {
     return isNaN(d.getTime()) ? null : d;
 };
 
+// Razón social CANÓNICA: el customer_name de Zoho SIN el paréntesis final de
+// sucursal. "Central Madeirense, C.A. (Santa Marta)" → "Central Madeirense, C.A.".
+// Agrupa las sucursales de una misma razón social por nombre (respaldo cuando no
+// hay RIF).
+function stripSucursal(name) {
+    return String(name || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+}
+
+// RIF venezolano: letra (J/G/V/E/P/C) + 7-9 dígitos + dígito verificador, con o
+// sin guiones/espacios. Es la identidad REAL de la razón social. Se busca en
+// cualquier campo de texto del contacto/factura (dirección fiscal, campos
+// personalizados, tax_reg_no). Devuelve el RIF normalizado "J-00006275-7" o null.
+const RIF_RE = /\b([JGVEPCjgvepc])[-\s]?(\d{7,9})[-\s]?(\d)\b/;
+function extraerRif(...fuentes) {
+    for (const f of fuentes) {
+        if (!f) continue;
+        const s = typeof f === 'string' ? f : JSON.stringify(f);
+        const m = s.match(RIF_RE);
+        if (m) return `${m[1].toUpperCase()}-${m[2]}-${m[3]}`;
+    }
+    return null;
+}
+// Clave estable del RIF para docId / índice (sin guiones, mayúsculas).
+function rifKey(rif) {
+    return String(rif || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
 /**
  * Resuelve el vendedor por CARTERA: mapea la razón social de la factura
  * (`customer_name`) al vendedor dueño de ese cliente (`zoho_customer_map`).
@@ -225,9 +252,17 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         }
     }
 
+    // Identidad del CLIENTE (razón social): el RIF es la llave real (varias
+    // sucursales = mismo RIF). Se captura en la conciliación (opts.rif). La razón
+    // social canónica (nombre sin sucursal) es respaldo cuando aún no hay RIF.
+    const rifCliente = opts.rif || existingData?.rifCliente || null;
+    const razonSocialCanonica = stripSucursal(invoice.customer_name);
+
     const facturaData = {
         numero:       invoice.invoice_number,
         clienteName:  invoice.customer_name || '',
+        razonSocialCanonica,
+        rifCliente,
         salespersonName: invoice.salesperson_name || '',
         categoria,
         zohoCustomerId,
@@ -294,6 +329,9 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
 
 module.exports = {
     toDate,
+    stripSucursal,
+    extraerRif,
+    rifKey,
     resolveVendedor,
     resolveVendedorPorRazonSocial,
     resolveVendedorFromPreload,

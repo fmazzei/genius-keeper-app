@@ -3861,6 +3861,14 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp } = {}) => {
                                     {syncResult.unidades.ultimoErrorDetalle ? <> · <span className="text-red-600">{syncResult.unidades.ultimoErrorDetalle}</span></> : null}
                                 </p>
                             )}
+                            {syncResult && syncResult.rif && (
+                                <p className="text-[11px] text-slate-500 mt-1">
+                                    RIF: con RIF <b className="text-emerald-700">{syncResult.rif.conRif ?? 0}</b> · sin RIF <b className={syncResult.rif.sinRif ? 'text-amber-600' : ''}>{syncResult.rif.sinRif ?? 0}</b> · contactos consultados <b>{syncResult.rif.contactosConsultados ?? 0}</b>
+                                    {syncResult.rif.contactosErrores ? <> · fallos <b className="text-red-600">{syncResult.rif.contactosErrores}</b></> : null}
+                                    {syncResult.rif.contactosTope ? <> · <b className="text-amber-600">tope alcanzado</b></> : null}
+                                    {syncResult.rif.ultimoErrorContacto ? <> · <span className="text-red-600">{syncResult.rif.ultimoErrorContacto}</span></> : null}
+                                </p>
+                            )}
                         </div>
                     )}
 
@@ -4385,6 +4393,14 @@ const IntegracionesSection = () => {
                                 {reconResult.unidades.detalleErrores ? <> · fallos <b className="text-red-600">{reconResult.unidades.detalleErrores}</b></> : null}
                                 {reconResult.unidades.detalleTope ? <> · <b className="text-amber-600">tope alcanzado (corre de nuevo)</b></> : null}
                                 {reconResult.unidades.ultimoErrorDetalle ? <><br/><span className="text-red-600 break-words">Error Zoho: {reconResult.unidades.ultimoErrorDetalle}</span></> : null}
+                            </p>
+                        )}
+                        {reconResult.rif && (
+                            <p className="mt-1 pt-1 border-t border-emerald-200">
+                                RIF (razón social real): con RIF <b className="text-emerald-700">{reconResult.rif.conRif ?? 0}</b> · sin RIF <b className={reconResult.rif.sinRif ? 'text-amber-600' : ''}>{reconResult.rif.sinRif ?? 0}</b> · contactos consultados <b>{reconResult.rif.contactosConsultados ?? 0}</b> (de factura <b>{reconResult.rif.fuenteFactura ?? 0}</b> · de contacto <b>{reconResult.rif.fuenteContacto ?? 0}</b>)
+                                {reconResult.rif.contactosErrores ? <> · fallos <b className="text-red-600">{reconResult.rif.contactosErrores}</b></> : null}
+                                {reconResult.rif.contactosTope ? <> · <b className="text-amber-600">tope de contactos alcanzado (corre de nuevo)</b></> : null}
+                                {reconResult.rif.ultimoErrorContacto ? <><br/><span className="text-red-600 break-words">Error contacto: {reconResult.rif.ultimoErrorContacto}</span></> : null}
                             </p>
                         )}
                         {Array.isArray(reconResult.detalles) && reconResult.detalles.length > 0 && (
