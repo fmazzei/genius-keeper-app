@@ -53,21 +53,16 @@ const CarteraAdmin = ({ vendedores = [] }) => {
     );
 };
 
-const MODULES = [
-    { id: 'dashboard',    label: 'Comisiones a pagar', Icon: BarChart2,  Comp: ComisionesDashboard },
-    { id: 'liquidaciones',label: 'Liquidaciones',      Icon: Wallet,     Comp: LiquidacionesManagement },
-    { id: 'conciliacion', label: 'Conciliación',       Icon: Store,      Comp: ConciliacionFacturas },
-    { id: 'clientes',     label: 'Clientes',           Icon: Briefcase,  Comp: GestionClientesZoho },
-    { id: 'cartera',      label: 'Cartera',            Icon: Briefcase,  Comp: CarteraAdmin },
-];
-
 export default function AdministracionLayout({ user, onLogout }) {
     const { user: authUser } = useAuth();
     const { getModulesForRole } = useAppConfig();
     const uid = user?.uid || authUser?.uid;
     const [perfil, setPerfil] = useState(null); // null = cargando; {name, modulos}
     const [vendedores, setVendedores] = useState([]); // cargados UNA vez, compartidos
-    const [active, setActive] = useState('dashboard');
+    const [active, setActive] = useState('pagar'); // pagar | clientes | cartera
+    // Flujo guiado de pago: vendedor elegido + paso (conciliar → liquidar).
+    const [payVendedorId, setPayVendedorId] = useState(null);
+    const [payStep, setPayStep] = useState('conciliar'); // conciliar | liquidar
 
     useEffect(() => {
         if (!uid) return;
@@ -92,9 +87,20 @@ export default function AdministracionLayout({ user, onLogout }) {
     // Un módulo es visible si está activo TANTO a nivel de rol (Configuraciones →
     // Módulos → Administrador) COMO a nivel de este usuario en particular.
     const roleModulos = getModulesForRole('administrador');
-    const visibles = MODULES.filter(m => roleModulos[m.id] !== false && perfil.modulos[m.id] !== false);
-    const current = visibles.find(m => m.id === active) || visibles[0];
-    const CurrentComp = current?.Comp;
+    const modOn = (id) => roleModulos[id] !== false && perfil.modulos[id] !== false;
+
+    // Navegación reorganizada como RECORRIDO: "Pagar comisiones" (el flujo
+    // conciliar → liquidar, centrado en el vendedor) + preparación (Clientes,
+    // Cartera). El flujo agrupa dashboard/conciliación/liquidaciones.
+    const pagarOn = modOn('dashboard') || modOn('conciliacion') || modOn('liquidaciones');
+    const tabs = [
+        ...(pagarOn ? [{ id: 'pagar', label: 'Pagar comisiones', Icon: Wallet }] : []),
+        ...(modOn('clientes') ? [{ id: 'clientes', label: 'Clientes', Icon: Briefcase }] : []),
+        ...(modOn('cartera') ? [{ id: 'cartera', label: 'Cartera', Icon: Store }] : []),
+    ];
+    const activeTab = tabs.find(t => t.id === active) || tabs[0];
+    const payVendedorName = vendedores.find(v => v.id === payVendedorId)?.name || 'Vendedor';
+    const salirDelPago = () => { setPayVendedorId(null); setPayStep('conciliar'); };
 
     return (
         <div className="h-screen flex flex-col bg-slate-100 overflow-hidden">
@@ -124,12 +130,12 @@ export default function AdministracionLayout({ user, onLogout }) {
 
             {/* ── Tabs (scroll horizontal en móvil) ── */}
             <nav className="shrink-0 bg-white border-b border-slate-200 px-2 sm:px-4 flex gap-1 overflow-x-auto">
-                {visibles.map(({ id, label, Icon }) => {
-                    const on = current?.id === id;
+                {tabs.map(({ id, label, Icon }) => {
+                    const on = activeTab?.id === id;
                     return (
                         <button
                             key={id}
-                            onClick={() => setActive(id)}
+                            onClick={() => { setActive(id); if (id !== 'pagar') salirDelPago(); }}
                             className={`shrink-0 flex items-center gap-2 px-3 sm:px-4 py-3 text-sm font-semibold border-b-2 transition-colors ${
                                 on ? 'border-[#0D2B4C] text-[#0D2B4C]' : 'border-transparent text-slate-500 hover:text-slate-700'
                             }`}
@@ -142,9 +148,64 @@ export default function AdministracionLayout({ user, onLogout }) {
 
             {/* ── Contenido (scrollable) ── */}
             <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
-                {visibles.length === 0 ? (
+                {tabs.length === 0 ? (
                     <p className="text-slate-400 text-sm">No tienes módulos asignados. Contacta al administrador del sistema.</p>
-                ) : CurrentComp ? <CurrentComp vendedores={vendedores} /> : null}
+                ) : activeTab?.id === 'clientes' ? (
+                    <GestionClientesZoho />
+                ) : activeTab?.id === 'cartera' ? (
+                    <CarteraAdmin vendedores={vendedores} />
+                ) : (
+                    /* ── Flujo "Pagar comisiones": panorama → ① Conciliar → ② Liquidar ── */
+                    !payVendedorId ? (
+                        <ComisionesDashboard
+                            vendedores={vendedores}
+                            onPagar={(id) => { setPayVendedorId(id); setPayStep('conciliar'); }}
+                        />
+                    ) : (
+                        <div className="max-w-3xl mx-auto">
+                            {/* Encabezado del flujo: volver + vendedor + stepper */}
+                            <div className="mb-4">
+                                <button onClick={salirDelPago} className="text-sm font-semibold text-slate-500 hover:text-slate-800 mb-2">← Volver a comisiones a pagar</button>
+                                <h3 className="text-lg font-bold text-slate-800">Pagar comisión · {payVendedorName}</h3>
+                                <div className="flex items-center gap-2 mt-3">
+                                    {[{ k: 'conciliar', n: 1, l: 'Conciliar' }, { k: 'liquidar', n: 2, l: 'Liquidar' }].map((s, i) => {
+                                        const on = payStep === s.k;
+                                        const done = s.k === 'conciliar' && payStep === 'liquidar';
+                                        return (
+                                            <React.Fragment key={s.k}>
+                                                {i > 0 && <div className="flex-1 h-0.5 bg-slate-200" />}
+                                                <button
+                                                    onClick={() => setPayStep(s.k)}
+                                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-bold border transition-colors ${
+                                                        on ? 'bg-[#0D2B4C] text-white border-[#0D2B4C]'
+                                                           : done ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                  : 'bg-white text-slate-500 border-slate-200'
+                                                    }`}
+                                                >
+                                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] ${on ? 'bg-white/20' : done ? 'bg-emerald-200 text-emerald-800' : 'bg-slate-100'}`}>{done ? '✓' : s.n}</span>
+                                                    {s.l}
+                                                </button>
+                                            </React.Fragment>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {payStep === 'conciliar' ? (
+                                <ConciliacionFacturas
+                                    vendedores={vendedores}
+                                    lockedVendedorId={payVendedorId}
+                                    onLiquidar={() => setPayStep('liquidar')}
+                                />
+                            ) : (
+                                <LiquidacionesManagement
+                                    vendedores={vendedores}
+                                    lockedVendedorId={payVendedorId}
+                                />
+                            )}
+                        </div>
+                    )
+                )}
             </main>
         </div>
     );
