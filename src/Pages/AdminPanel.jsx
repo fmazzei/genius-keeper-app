@@ -4403,6 +4403,33 @@ const IntegracionesSection = () => {
                                 {reconResult.rif.ultimoErrorContacto ? <><br/><span className="text-red-600 break-words">Error contacto: {reconResult.rif.ultimoErrorContacto}</span></> : null}
                             </p>
                         )}
+                        {reconResult.campos && (
+                            <details className="mt-2 pt-1 border-t border-emerald-200">
+                                <summary className="cursor-pointer font-semibold text-slate-600">🔎 Diagnóstico de campos de Zoho (para decidir la llave del cliente)</summary>
+                                <div className="mt-1.5 space-y-1.5">
+                                    <p>
+                                        customer_id presente en <b className={reconResult.campos.conCustomerId ? 'text-emerald-700' : 'text-red-600'}>{reconResult.campos.conCustomerId ?? 0}</b> · ausente en <b className={reconResult.campos.sinCustomerId ? 'text-amber-600' : ''}>{reconResult.campos.sinCustomerId ?? 0}</b>
+                                    </p>
+                                    <p>
+                                        Agrupando por nombre (sin sucursal): <b className="text-emerald-700">{reconResult.campos.razonesSocialesCanon ?? 0}</b> razones sociales · <b>{reconResult.campos.multiSucursal ?? 0}</b> con varias sucursales
+                                    </p>
+                                    {Array.isArray(reconResult.campos.customFieldLabels) && (
+                                        <p>Campos personalizados: {reconResult.campos.customFieldLabels.length ? <b>{reconResult.campos.customFieldLabels.join(', ')}</b> : <span className="text-slate-400">ninguno</span>}</p>
+                                    )}
+                                    {Array.isArray(reconResult.campos.topCadenas) && reconResult.campos.topCadenas.length > 0 && (
+                                        <div>
+                                            <p className="text-slate-500">Top razones sociales por nº de sucursales:</p>
+                                            {reconResult.campos.topCadenas.map((c, i) => (
+                                                <div key={i} className="flex justify-between gap-2"><span className="truncate">{c.canon}</span><span className="font-mono shrink-0">{c.sucursales} suc · {c.facturas} fact</span></div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {Array.isArray(reconResult.campos.keys) && (
+                                        <p className="text-[10px] text-slate-400 break-words">Campos crudos: {reconResult.campos.keys.join(', ')}</p>
+                                    )}
+                                </div>
+                            </details>
+                        )}
                         {Array.isArray(reconResult.detalles) && reconResult.detalles.length > 0 && (
                             <div className="mt-2 max-h-40 overflow-auto border-t border-emerald-200 pt-1">
                                 {reconResult.detalles.map((d, i) => (

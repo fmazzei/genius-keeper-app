@@ -225,28 +225,13 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     const MAX_CONTACT_FETCHES = 400;
     const rifCache = new Map(); // customer_id -> rif|null
     const getRifCliente = async (invoice) => {
-        // 1) ¿el propio invoice trae el RIF? (campos personalizados / fiscales)
+        // El RIF se toma SOLO del propio invoice (dirección fiscal / campos
+        // personalizados). La consulta al CONTACTO está desactivada: el self-client
+        // de Zoho solo tiene scope de facturas, no de contactos ("You are not
+        // authorized"), y de todos modos el contacto trae la misma dirección.
         const delInv = extraerRif(invoice.cf_rif, invoice.tax_reg_no, invoice.custom_fields, invoice.billing_address);
         if (delInv) { rstats.fuenteFactura++; return delInv; }
-        const cid = invoice.customer_id != null ? String(invoice.customer_id)
-            : (invoice.contact_id != null ? String(invoice.contact_id) : null);
-        if (!cid) return null;
-        if (rifCache.has(cid)) return rifCache.get(cid);
-        if (rstats.contactosConsultados >= MAX_CONTACT_FETCHES) { rstats.contactosTope = true; return null; }
-        rstats.contactosConsultados++;
-        try {
-            const contact = await getContactDetail({ accessToken, organizationId, dataCenter: creds.dataCenter, contactId: cid });
-            const rif = extraerRif(contact);
-            if (rif) rstats.fuenteContacto++;
-            rifCache.set(cid, rif);
-            return rif;
-        } catch (e) {
-            rstats.contactosErrores++;
-            if (!rstats.ultimoErrorContacto) rstats.ultimoErrorContacto = String(e.response?.data?.message || e.response?.status || e.message).slice(0, 140);
-            await sleep(500);
-            rifCache.set(cid, null);
-            return null;
-        }
+        return null;
     };
 
     const res = {
@@ -299,8 +284,46 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         topHeredadasPorCliente: {},
     };
 
+    // DIAGNÓSTICO DE CAMPOS: qué manda REALMENTE Zoho en cada factura, para
+    // decidir la mejor llave de identidad del cliente sin adivinar. Recolecta la
+    // unión de claves, etiquetas de campos personalizados, si viene customer_id,
+    // y — clave — si algún campo AGRUPA las sucursales de una razón social
+    // (mismo valor dentro de un mismo nombre canónico y distinto entre razones).
+    const campos = {
+        keys: new Set(),
+        customFieldLabels: new Set(),
+        conCustomerId: 0, sinCustomerId: 0,
+        ejemplos: [],
+        // Análisis de agrupación: por nombre canónico, ¿cuántos customer_id
+        // distintos? (si 1 por razón social → customer_id agrupa; si varios →
+        // fragmenta como el nombre completo).
+        _porCanon: {}, // canon -> { customerIds:Set, accountIds:Set, cuenta }
+    };
+
     for (const inv of invoices) {
         if (inv.invoice_number) seen.add(String(inv.invoice_number).trim());
+
+        // Recolección de campos (de todas las facturas del alcance).
+        Object.keys(inv || {}).forEach(k => campos.keys.add(k));
+        const cf = Array.isArray(inv.custom_fields) ? inv.custom_fields : [];
+        cf.forEach(c => { if (c && (c.label || c.api_name)) campos.customFieldLabels.add(c.label || c.api_name); });
+        Object.keys(inv || {}).filter(k => /^cf_/.test(k)).forEach(k => campos.customFieldLabels.add(k));
+        if (inv.customer_id != null && inv.customer_id !== '') campos.conCustomerId++; else campos.sinCustomerId++;
+        const canon = stripSucursal(inv.customer_name);
+        if (canon) {
+            const g = campos._porCanon[canon] || (campos._porCanon[canon] = { customerIds: new Set(), accountIds: new Set(), cuenta: 0 });
+            g.cuenta++;
+            if (inv.customer_id != null) g.customerIds.add(String(inv.customer_id));
+            if (inv.account_id != null) g.accountIds.add(String(inv.account_id));
+        }
+        if (campos.ejemplos.length < 10) {
+            campos.ejemplos.push({
+                cliente: inv.customer_name || '',
+                customer_id: inv.customer_id ?? null,
+                account_id: inv.account_id ?? null,
+                salesperson: inv.salesperson_name || '',
+            });
+        }
 
         // Categorización de las facturas de ESTE vendedor (todo su universo).
         if (vendedorId) {
@@ -450,5 +473,21 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     res.diag = diag;
     res.unidades = zstats; // detalleConsultados / detalleRellenadas / detalleErrores / detalleTope / ultimoErrorDetalle
     res.rif = rstats;      // Fase 1: cobertura de RIF (conRif/sinRif/fuente/errores)
+
+    // Diagnóstico de campos: qué manda Zoho + análisis de agrupación por nombre
+    // canónico (cuántas razones sociales, cuántas multi-sucursal, top cadenas).
+    const canonEntries = Object.entries(campos._porCanon);
+    res.campos = {
+        keys: [...campos.keys].sort(),
+        customFieldLabels: [...campos.customFieldLabels],
+        conCustomerId: campos.conCustomerId,
+        sinCustomerId: campos.sinCustomerId,
+        razonesSocialesCanon: canonEntries.length,
+        multiSucursal: canonEntries.filter(([, g]) => (g.customerIds.size || g.cuenta) > 1).length,
+        topCadenas: canonEntries
+            .map(([canon, g]) => ({ canon, sucursales: g.customerIds.size || g.cuenta, facturas: g.cuenta }))
+            .sort((a, b) => b.sucursales - a.sucursales).slice(0, 12),
+        ejemplos: campos.ejemplos,
+    };
     return res;
 });
