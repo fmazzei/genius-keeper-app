@@ -2159,6 +2159,181 @@ const scoreRazon = (pdvName, razon) => {
     return inter / Math.max(a.size, b.size);
 };
 
+// ─── Gestión de Clientes de Zoho (por CARNET = customer_id) ─────────────────
+// La pantalla PRINCIPAL del administrador para atribuir la comisión: lista TODOS
+// los clientes de Zoho (por su carnet estable), agrupados por razón social, y
+// permite asignarlos a un vendedor, marcarlos "Oficina" (sin comisión, a
+// propósito) o quitarlos. La atribución queda por carnet — no se rompe si el
+// nombre cambia. Accesible a admin y máster. Espaciosa, buscable, editable.
+export const GestionClientesZoho = () => {
+    const [clientes, setClientes]     = useState([]);
+    const [vendedores, setVendedores] = useState([]);
+    const [loading, setLoading]       = useState(true);
+    const [busca, setBusca]           = useState('');
+    const [filtro, setFiltro]         = useState('todos'); // todos|pendientes|oficina|asignados
+    const [saving, setSaving]         = useState('');
+    const [msg, setMsg]               = useState('');
+
+    const cargar = async () => {
+        setLoading(true); setMsg('');
+        try {
+            const [cSnap, vSnap] = await Promise.all([
+                getDocs(collection(db, 'clientes_zoho')),
+                getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
+            ]);
+            setClientes(cSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setVendedores(vSnap.docs.map(d => ({ id: d.id, name: d.data().name || d.data().email || d.id })));
+        } catch (e) { setMsg('Error al cargar: ' + (e?.message || e)); }
+        setLoading(false);
+    };
+    useEffect(() => { cargar(); }, []);
+
+    const vendName = (id) => vendedores.find(v => v.id === id)?.name || '—';
+
+    // Agrupa los carnets por razón social canónica (una fila por razón social,
+    // aunque tenga varias sucursales). Así asignas el CLIENTE una vez.
+    const grupos = useMemo(() => {
+        const g = new Map();
+        clientes.forEach(c => {
+            const key = (c.razonSocialCanonica || c.customerName || '(sin nombre)').trim();
+            const cur = g.get(key) || { canon: key, carnets: [], facturas: 0, vendedorIds: new Set(), oficina: 0 };
+            cur.carnets.push(c);
+            cur.facturas += Number(c.facturas) || 0;
+            if (c.esOficina) cur.oficina++;
+            else if (c.vendedorId) cur.vendedorIds.add(c.vendedorId);
+            g.set(key, cur);
+        });
+        return [...g.values()].map(x => {
+            const total = x.carnets.length;
+            let estado = 'pendiente';
+            if (x.oficina === total) estado = 'oficina';
+            else if (x.vendedorIds.size === 1 && x.oficina === 0 && x.carnets.every(c => c.vendedorId)) estado = 'asignado';
+            else if (x.vendedorIds.size >= 1 || x.oficina > 0) estado = 'mixto';
+            return { ...x, sucursales: total, estado, vendedorId: x.vendedorIds.size === 1 ? [...x.vendedorIds][0] : null };
+        }).sort((a, b) => {
+            // pendientes primero, luego por nº de facturas desc
+            const rank = (e) => e === 'pendiente' ? 0 : e === 'mixto' ? 1 : 2;
+            return rank(a.estado) - rank(b.estado) || b.facturas - a.facturas;
+        });
+    }, [clientes]);
+
+    const resumen = useMemo(() => ({
+        total: grupos.length,
+        asignados: grupos.filter(g => g.estado === 'asignado').length,
+        oficina: grupos.filter(g => g.estado === 'oficina').length,
+        pendientes: grupos.filter(g => g.estado === 'pendiente' || g.estado === 'mixto').length,
+    }), [grupos]);
+
+    const term = busca.trim().toLowerCase();
+    const visibles = grupos.filter(g => {
+        if (filtro === 'pendientes' && !(g.estado === 'pendiente' || g.estado === 'mixto')) return false;
+        if (filtro === 'oficina' && g.estado !== 'oficina') return false;
+        if (filtro === 'asignados' && g.estado !== 'asignado') return false;
+        if (term && !g.canon.toLowerCase().includes(term) && !g.carnets.some(c => (c.customerName || '').toLowerCase().includes(term))) return false;
+        return true;
+    });
+
+    const aplicar = async (grupo, accion, vendedorId) => {
+        setSaving(grupo.canon); setMsg('');
+        try {
+            const fn = httpsCallable(functions, 'asignarClienteVendedor', { timeout: 540000 });
+            const customerIds = grupo.carnets.map(c => c.customerId).filter(Boolean);
+            const payload = { customerIds };
+            if (accion === 'oficina') payload.esOficina = true;
+            else if (accion === 'quitar') { payload.vendedorId = null; }
+            else { payload.vendedorId = vendedorId; }
+            const { data } = await fn(payload);
+            // refresco local optimista
+            setClientes(cs => cs.map(c => customerIds.includes(c.customerId)
+                ? { ...c, vendedorId: accion === 'asignar' ? vendedorId : null, esOficina: accion === 'oficina' }
+                : c));
+            const etiqueta = accion === 'oficina' ? 'Oficina' : accion === 'quitar' ? 'sin vendedor' : vendName(vendedorId);
+            setMsg(`✓ "${grupo.canon}" → ${etiqueta} · ${data.backfilled || 0} factura(s) re-atribuida(s).`);
+        } catch (e) { setMsg('Error: ' + (e?.message || e)); }
+        setSaving('');
+    };
+
+    const Badge = ({ estado, vendedorId }) => {
+        if (estado === 'asignado') return <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{vendName(vendedorId)}</span>;
+        if (estado === 'oficina')  return <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Oficina</span>;
+        if (estado === 'mixto')    return <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Mixto</span>;
+        return <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-600">Pendiente</span>;
+    };
+
+    return (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mb-4">
+            <p className="font-bold text-slate-800 text-base mb-1">Clientes de Zoho → Vendedor</p>
+            <p className="text-xs text-slate-400 mb-3">
+                Cada cliente se atribuye por su <b>carnet</b> (id estable de Zoho) — no importa cómo escriban el nombre. Asigna su vendedor, o márcalo <b>Oficina</b> (atención directa, sin comisión). Al asignar, sus facturas se re-atribuyen solas.
+            </p>
+
+            {loading ? <LoadingSpinner /> : (
+                <>
+                    {/* Resumen */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                        {[
+                            { k: 'todos', label: 'Razones sociales', val: resumen.total, cls: 'text-slate-800' },
+                            { k: 'asignados', label: 'Con vendedor', val: resumen.asignados, cls: 'text-emerald-700' },
+                            { k: 'oficina', label: 'Oficina', val: resumen.oficina, cls: 'text-slate-500' },
+                            { k: 'pendientes', label: 'Pendientes', val: resumen.pendientes, cls: 'text-red-600' },
+                        ].map(s => (
+                            <button key={s.k} onClick={() => setFiltro(s.k)} className={`text-left border rounded-xl px-3 py-2 transition-colors ${filtro === s.k ? 'border-brand-blue bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                                <p className={`text-2xl font-black ${s.cls}`}>{s.val}</p>
+                                <p className="text-[11px] text-slate-500">{s.label}</p>
+                            </button>
+                        ))}
+                    </div>
+
+                    {resumen.pendientes > 0 && filtro !== 'pendientes' && (
+                        <p className="text-[11px] text-amber-700 mb-2">Hay <b>{resumen.pendientes}</b> por asignar — toca "Pendientes" para verlas.</p>
+                    )}
+
+                    <div className="relative mb-3">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar cliente por nombre…" className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm" />
+                    </div>
+
+                    {msg && <p className="text-xs text-slate-600 mb-2 break-words">{msg}</p>}
+
+                    <div className="space-y-2.5">
+                        {visibles.length === 0 && <p className="text-sm text-slate-400 py-6 text-center">Sin clientes con ese filtro.</p>}
+                        {visibles.slice(0, 200).map(g => (
+                            <div key={g.canon} className="border border-slate-200 rounded-xl p-3.5">
+                                <div className="flex items-start justify-between gap-3 mb-2.5">
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-slate-800 text-sm leading-snug">{g.canon}</p>
+                                        <p className="text-[11px] text-slate-400 mt-0.5">
+                                            {g.sucursales > 1 ? `${g.sucursales} sucursales · ` : ''}{g.facturas} factura{g.facturas === 1 ? '' : 's'}
+                                        </p>
+                                    </div>
+                                    <Badge estado={g.estado} vendedorId={g.vendedorId} />
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <select
+                                        value={g.estado === 'asignado' ? g.vendedorId : ''}
+                                        onChange={e => e.target.value && aplicar(g, 'asignar', e.target.value)}
+                                        disabled={saving === g.canon}
+                                        className="flex-1 min-w-[160px] p-2 border border-slate-300 rounded-lg text-xs bg-white"
+                                    >
+                                        <option value="">Asignar a vendedor…</option>
+                                        {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                                    </select>
+                                    <button onClick={() => aplicar(g, 'oficina')} disabled={saving === g.canon} className={`text-xs font-semibold px-3 py-2 rounded-lg border ${g.estado === 'oficina' ? 'bg-slate-200 border-slate-300 text-slate-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>Oficina</button>
+                                    {(g.estado !== 'pendiente') && (
+                                        <button onClick={() => aplicar(g, 'quitar')} disabled={saving === g.canon} className="text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 text-red-500 hover:bg-red-50">Quitar</button>
+                                    )}
+                                    {saving === g.canon && <RefreshCw size={14} className="animate-spin text-slate-400" />}
+                                </div>
+                            </div>
+                        ))}
+                        {visibles.length > 200 && <p className="text-[11px] text-slate-400 text-center pt-1">Mostrando 200 de {visibles.length}. Usa el buscador para acotar.</p>}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+};
+
 // Selector de razón social CON BÚSQUEDA (combobox). La lista es larga (80+
 // razones), así que un <select> nativo es inmanejable. Muestra el valor actual
 // como botón; al abrir, un input filtra en vivo.
@@ -4497,7 +4672,13 @@ const IntegracionesSection = () => {
 
             <FacturaManagementTool />
 
-            <SectionTitle n="4" title="Vinculación de clientes → Vendedor" desc="Asigna cada razón social de Zoho a su vendedor (atribución por cartera)." />
+            <SectionTitle n="4" title="Clientes de Zoho → Vendedor" desc="Atribución por carnet (id estable de Zoho). Asigna cada cliente a su vendedor o márcalo Oficina." />
+
+            <GestionClientesZoho />
+
+            <details className="mb-4">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-500 select-none">Herramientas anteriores (por nombre de razón social) — respaldo</summary>
+                <div className="mt-3">
 
             {/* Reparación cartera ↔ atribución — una sola fuente de la verdad.
                 Al asignar un PDV a la cartera de un vendedor, sus facturas ahora
@@ -4545,8 +4726,11 @@ const IntegracionesSection = () => {
             <EmparejadorRazonesSociales />
 
             <details className="mb-4">
-                <summary className="cursor-pointer text-xs font-semibold text-slate-500 select-none">Vinculación manual (razón social por razón social) — respaldo</summary>
+                <summary className="cursor-pointer text-xs font-semibold text-slate-500 select-none">Vinculación manual (razón social por razón social)</summary>
                 <div className="mt-3"><VinculacionRazonesSociales /></div>
+            </details>
+
+                </div>
             </details>
 
             <SectionTitle n="5" title="Diagnóstico y referencia técnica" desc="Último payload recibido de Zoho y configuración de los endpoints." />

@@ -149,6 +149,15 @@ service cloud.firestore {
       allow write: if isAdmin() || isMaster();
     }
 
+    match /clientes_zoho/{carnet} {
+      // Registro de clientes por CARNET (customer_id de Zoho) — llave estable de
+      // atribución. Lo construye la conciliación y lo asigna la callable
+      // asignarClienteVendedor (Admin SDK). El cliente (admin/master) solo lo LEE
+      // para la pantalla de gestión de clientes.
+      allow get, list: if isAuthenticated() && (isAdmin() || isMaster());
+      allow write: if false; // solo Admin SDK (Cloud Functions)
+    }
+
     match /facturas_bloqueadas/{numero} {
       // Tombstone de facturas eliminadas/anuladas por admin: el webhook (Admin
       // SDK) las consulta para NO resucitarlas. Escritura solo vía Cloud Function.

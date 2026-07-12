@@ -22,7 +22,7 @@ import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import CarteraManager from '@/Components/CarteraManager.jsx';
-import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas } from '@/Pages/AdminPanel.jsx';
+import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas, GestionClientesZoho } from '@/Pages/AdminPanel.jsx';
 
 const saludoDelDia = () => {
     const h = new Date().getHours();
@@ -57,6 +57,7 @@ const MODULES = [
     { id: 'dashboard',    label: 'Comisiones a pagar', Icon: BarChart2,  Comp: ComisionesDashboard },
     { id: 'liquidaciones',label: 'Liquidaciones',      Icon: Wallet,     Comp: LiquidacionesManagement },
     { id: 'conciliacion', label: 'Conciliación',       Icon: Store,      Comp: ConciliacionFacturas },
+    { id: 'clientes',     label: 'Clientes',           Icon: Briefcase,  Comp: GestionClientesZoho },
     { id: 'cartera',      label: 'Cartera',            Icon: Briefcase,  Comp: CarteraAdmin },
 ];
 

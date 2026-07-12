@@ -14,8 +14,9 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { getAccessToken, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
-const { upsertFacturaFromZoho, resolveVendedorFromPreload, extraerRif, stripSucursal } = require('./facturaSync');
+const { upsertFacturaFromZoho, resolveVendedorFromPreload, esClienteOficina, extraerRif, stripSucursal } = require('./facturaSync');
 const { revertirAcumulados } = require('./facturaCommissionOps');
+const { upsertClientesRegistry, loadClienteMap } = require('./clientesRegistry');
 
 /**
  * Anula en GK una factura que Zoho reporta como VOID, si existe (y, en modo por
@@ -181,18 +182,25 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         throw new HttpsError("internal", `Zoho: ${e.response?.data?.message || e.message}`);
     }
 
+    // Registro de clientes por CARNET: se reconstruye/actualiza desde el barrido
+    // (nombre/canónica/conteo), preservando lo que puso el admin (vendedor/oficina).
+    let clientesActualizados = 0;
+    try { clientesActualizados = await upsertClientesRegistry(invoices, admin.firestore()); } catch (e) { /* no bloquear la conciliación */ }
+
     // PRE-CARGA (una sola vez) para resolver el vendedor en memoria por cada
     // factura, sin consultar la BD en cada iteración (evita el timeout).
-    const [vendSnap, mapSnap] = await Promise.all([
+    const [vendSnap, mapSnap, clienteMap] = await Promise.all([
         admin.firestore().collection('users_metadata').where('role', '==', 'vendedor').get(),
         admin.firestore().collection('zoho_customer_map').get(),
+        loadClienteMap(admin.firestore()),
     ]);
     const vendedores = vendSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     const vendedorById = new Map(vendedores.map(v => [v.id, v]));
     const customerMap = new Map();
     const categoriaMap = new Map();
     mapSnap.docs.forEach(d => { const x = d.data(); if (x.vendedorId) customerMap.set(d.id, x.vendedorId); if (x.categoria) categoriaMap.set(d.id, x.categoria); });
-    const preload = { vendedores, vendedorById, customerMap, categoriaMap };
+    // clienteMap: carnet → { vendedorId, esOficina, categoria } — vía PRINCIPAL.
+    const preload = { vendedores, vendedorById, customerMap, categoriaMap, clienteMap };
 
     // Trae line_items (unidades) SOLO para las facturas que aún no tienen unidades.
     // El listado de Zoho no incluye line_items, así que sin esto una factura que
@@ -268,7 +276,7 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         zohoTotal: invoices.length,
         zohoLeidoCompleto: complete,   // GK agotó el listado de Zoho (barrido total)
         zohoPagadas: 0, zohoVencidas: 0, zohoPendientes: 0, zohoAnuladas: 0, zohoBorradores: 0,
-        pagadasDelVendedor: 0, pagadasSinVendedor: 0, pagadasOtroVendedor: 0,
+        pagadasDelVendedor: 0, pagadasSinVendedor: 0, pagadasOtroVendedor: 0, pagadasOficina: 0,
         ejemplosPagadasSinVendedor: [], ejemplosPagadasDelVendedor: [],
         // Facturas de ESTE vendedor, categorizadas (universo histórico).
         delVendedor: {
@@ -370,8 +378,13 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         if (st === 'paid') {
             const v = resolveVendedorFromPreload(inv, preload);
             if (!v) {
-                diag.pagadasSinVendedor++;
-                if (diag.ejemplosPagadasSinVendedor.length < 25) diag.ejemplosPagadasSinVendedor.push({ numero: inv.invoice_number, cliente: inv.customer_name || '', salesperson: inv.salesperson_name || '', monto: Number(inv.total) || 0 });
+                // Cliente de OFICINA (sin comisión, a propósito) → no es problema.
+                if (esClienteOficina(inv, preload)) {
+                    diag.pagadasOficina++;
+                } else {
+                    diag.pagadasSinVendedor++;
+                    if (diag.ejemplosPagadasSinVendedor.length < 25) diag.ejemplosPagadasSinVendedor.push({ numero: inv.invoice_number, cliente: inv.customer_name || '', salesperson: inv.salesperson_name || '', monto: Number(inv.total) || 0 });
+                }
             } else if (vendedorId && v.id !== vendedorId) {
                 diag.pagadasOtroVendedor++;
             } else {
@@ -471,6 +484,7 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     delete diag.topHeredadasPorCliente;
 
     res.diag = diag;
+    res.clientesActualizados = clientesActualizados; // registro clientes_zoho por carnet
     res.unidades = zstats; // detalleConsultados / detalleRellenadas / detalleErrores / detalleTope / ultimoErrorDetalle
     res.rif = rstats;      // Fase 1: cobertura de RIF (conRif/sinRif/fuente/errores)
 

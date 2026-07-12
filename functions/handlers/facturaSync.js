@@ -74,11 +74,24 @@ async function resolveVendedorPorRazonSocial(customerName) {
  * → vendedorId), vendedorById: Map(id → data), vendedores: [{id, ...data}] }.
  */
 function resolveVendedorFromPreload(invoice, preload) {
+    // 1) POR CARNET (customer_id) — llave ESTABLE, vía principal. No depende de
+    //    cómo esté escrito el nombre. Si el cliente está marcado "oficina" (sin
+    //    comisión, a propósito), se resuelve como SIN vendedor sin advertir.
+    const cid = invoice.customer_id != null && invoice.customer_id !== '' ? String(invoice.customer_id) : null;
+    if (cid && preload.clienteMap && preload.clienteMap.has(cid)) {
+        const c = preload.clienteMap.get(cid);
+        if (c.esOficina) return null; // oficina: sin vendedor, intencional
+        if (c.vendedorId && preload.vendedorById.has(c.vendedorId)) {
+            return { id: c.vendedorId, data: preload.vendedorById.get(c.vendedorId) };
+        }
+    }
+    // 2) Respaldo: por razón social (nombre) — webhook / transición.
     const key = normalizeCustomerKey(invoice.customer_name);
     const vid = key ? preload.customerMap.get(key) : null;
     if (vid && preload.vendedorById.has(vid)) {
         return { id: vid, data: preload.vendedorById.get(vid) };
     }
+    // 3) Respaldo: salesperson de Zoho.
     const name = (invoice.salesperson_name || '').trim().toLowerCase();
     if (name) {
         const m = preload.vendedores.find(v => {
@@ -88,6 +101,12 @@ function resolveVendedorFromPreload(invoice, preload) {
         if (m) return { id: m.id, data: m };
     }
     return null;
+}
+
+/** ¿El cliente (por carnet) está marcado "oficina" (sin comisión, a propósito)? */
+function esClienteOficina(invoice, preload) {
+    const cid = invoice.customer_id != null && invoice.customer_id !== '' ? String(invoice.customer_id) : null;
+    return !!(cid && preload.clienteMap && preload.clienteMap.get(cid)?.esOficina);
 }
 
 /** Resuelve el vendedor por `salesperson_name` de Zoho (respaldo). */
@@ -335,6 +354,7 @@ module.exports = {
     resolveVendedor,
     resolveVendedorPorRazonSocial,
     resolveVendedorFromPreload,
+    esClienteOficina,
     esOrganizacionLacteoca,
     upsertFacturaFromZoho,
 };

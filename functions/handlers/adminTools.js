@@ -12,6 +12,7 @@ const { periodoCohorteFromDate } = require('./commissionEngine');
 const {
     loadVendedor, linkRazonSocialToVendedor, resolveRazonesSociales,
 } = require('./carteraBridge');
+const { clienteIdKey, backfillFacturasPorCustomerId } = require('./clientesRegistry');
 
 /**
  * Acciones soportadas sobre un documento de `facturas_vendedor`:
@@ -450,4 +451,47 @@ exports.emparejarRazonSocialPDV = onCall({ region: "us-central1", timeoutSeconds
     }
 
     return { ok: true, owners: owners.size, linked, backfilled, sinCartera: owners.size === 0 };
+});
+
+/**
+ * ASIGNA uno o varios CLIENTES (por carnet = customer_id de Zoho) a un vendedor,
+ * o los marca "oficina" (sin comisión, a propósito), o los libera. Es la llave
+ * ESTABLE de atribución. Escribe `clientes_zoho/{carnet}` y hace backfill de las
+ * facturas de ese carnet (`zohoCustomerId`). Rol master/administrador/
+ * sales_manager/gerencia.
+ *   data: { customerIds: string[], vendedorId?: string|null, esOficina?: bool,
+ *           categoria?: 'retail'|'foodservice' }
+ */
+exports.asignarClienteVendedor = onCall({ region: "us-central1", timeoutSeconds: 540 }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
+    const userSnap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
+    const role = userSnap.data()?.role;
+    if (!["master", "administrador", "sales_manager", "gerencia"].includes(role)) {
+        throw new HttpsError("permission-denied", `Permisos insuficientes (rol: ${role || 'sin rol'})`);
+    }
+
+    const { customerIds, vendedorId, esOficina, categoria } = request.data || {};
+    const ids = Array.isArray(customerIds) ? customerIds.filter(Boolean).map(String) : (customerIds ? [String(customerIds)] : []);
+    if (!ids.length) throw new HttpsError("invalid-argument", "Faltan customerIds");
+
+    const db = admin.firestore();
+    // Vendedor destino (si se asigna a uno). Oficina/liberar → sin vendedor.
+    const vendedor = (!esOficina && vendedorId) ? await loadVendedor(vendedorId) : null;
+    if (!esOficina && vendedorId && !vendedor) throw new HttpsError("not-found", "Vendedor no encontrado");
+
+    let procesados = 0, backfilled = 0;
+    for (const cid of ids) {
+        const patch = {
+            vendedorId:   esOficina ? null : (vendedorId || null),
+            vendedorName: vendedor?.data?.name || null,
+            esOficina:    esOficina === true,
+            updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
+            asignadoPor:  request.auth.uid,
+        };
+        if (categoria === 'retail' || categoria === 'foodservice') patch.categoria = categoria;
+        await db.doc(`clientes_zoho/${clienteIdKey(cid)}`).set(patch, { merge: true });
+        backfilled += await backfillFacturasPorCustomerId(cid, vendedor, db);
+        procesados++;
+    }
+    return { ok: true, procesados, backfilled };
 });
