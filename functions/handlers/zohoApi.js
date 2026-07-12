@@ -157,4 +157,4 @@ async function exchangeCode({ clientId, clientSecret, code, dataCenter }) {
     return refreshToken;
 }
 
-module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, getInvoiceDetail, exchangeCode };
+module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode };
