@@ -1668,13 +1668,15 @@ const VendedoresManagement = () => {
             const tempAuth = getAuth(tempApp);
             const { user } = await createUserWithEmailAndPassword(tempAuth, form.email.trim(), form.password);
             await setDoc(doc(db, 'users_metadata', user.uid), {
-                name:         form.name.trim(),
-                email:        form.email.trim(),
+                name:                form.name.trim(),
+                email:               form.email.trim(),
                 username,
-                role:         'vendedor',
-                active:       true,
-                reporterId:   form.reporterId,
-                reporterName: form.reporterName,
+                role:                'vendedor',
+                active:              true,
+                reporterId:          form.reporterId,
+                reporterName:        form.reporterName,
+                fechaIngreso:        form.fechaIngreso || null,
+                zohoSalespersonName: form.zohoSalespersonName.trim(),
             });
             await writeLoginIndex(username, form.email.trim(), user.uid);
             await tempAuth.signOut();
@@ -1693,6 +1695,8 @@ const VendedoresManagement = () => {
                         name: form.name.trim(), email: form.email.trim(), username,
                         role: 'vendedor', active: true,
                         reporterId: form.reporterId, reporterName: form.reporterName,
+                        fechaIngreso: form.fechaIngreso || null,
+                        zohoSalespersonName: form.zohoSalespersonName.trim(),
                     });
                     await writeLoginIndex(username, form.email.trim(), user.uid);
                     await tempAuth2.signOut();
