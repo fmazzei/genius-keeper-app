@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Genius Keeper · Guía del Vendedor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  :root {
+    --navy: #0d2b4c; --blue: #1a56db; --yellow: #ffd21e;
+    --emerald: #0f9d6b; --emerald-soft: #e3f6ee;
+    --red: #dc2626; --amber: #d97706; --amber-soft: #fdf1dd;
+    --teal: #0e7c86; --teal-soft: #e4f2f3;
+    --ink: #17233a; --ink-soft: #4c5a72; --ink-faint: #8390a6;
+    --paper: #f1f4f8; --card: #ffffff; --line: #e3e8f0;
+    /* app (dark) mockup */
+    --app-bg: #0a111e; --app-card: #131d2e; --app-card2: #0f1826;
+    --app-line: #263349; --app-text: #eaf0f8; --app-muted: #93a1b8;
+    --app-green: #34d399; --app-amber: #fbbf24; --app-red: #f87171; --app-blue: #60a5fa;
+    --shadow: 0 2px 14px rgba(13,43,76,.09); --shadow-lg: 0 14px 40px rgba(13,43,76,.16);
+    --r: 16px; --r-sm: 10px;
+    --maxw: 780px;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--paper); color: var(--ink); line-height: 1.62; font-size: 16.5px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 18px 80px; }
+  h1,h2,h3,h4 { line-height: 1.15; text-wrap: balance; }
+  p { margin: 0; }
+  strong { font-weight: 700; color: var(--ink); }
+  .eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint); }
+
+  /* ── Cover ── */
+  .cover {
+    background:
+      radial-gradient(130% 120% at 90% -10%, rgba(255,210,30,.18), transparent 50%),
+      linear-gradient(150deg, #0d2b4c 0%, #163a6b 60%, #1a56db 130%);
+    color: #fff; border-radius: 0 0 34px 34px; padding: 58px 26px 52px; text-align: center;
+    position: relative; overflow: hidden;
+  }
+  .cover::after { content:""; position:absolute; left:-70px; bottom:-90px; width:260px; height:260px; background:rgba(255,255,255,.05); border-radius:50%; }
+  .cover .inner { max-width: var(--maxw); margin: 0 auto; position: relative; }
+  .logo { display:inline-flex; align-items:center; gap:9px; margin-bottom:26px; }
+  .logo .chip { width:32px; height:32px; border-radius:8px; background:var(--yellow); color:var(--navy); font-weight:900; display:grid; place-items:center; font-size:14px; }
+  .logo span { font-weight:800; font-size:14px; letter-spacing:.02em; }
+  .cover .kicker { color: rgba(255,255,255,.6); margin-bottom: 14px; }
+  .cover h1 { font-size: clamp(30px, 8vw, 50px); font-weight: 850; letter-spacing:-.02em; }
+  .cover h1 em { font-style: normal; color: var(--yellow); }
+  .cover .sub { margin: 16px auto 0; max-width: 42ch; color: rgba(255,255,255,.82); font-size: clamp(15px,2.6vw,18px); }
+
+  .intro { margin: 40px auto 0; max-width: 60ch; font-size: 18px; color: var(--ink-soft); }
+  .intro b { color: var(--ink); }
+
+  section { margin-top: 48px; }
+  .sec-head { display:flex; align-items:center; gap:14px; margin-bottom: 22px; }
+  .sec-head h2 { font-size: clamp(19px,3.4vw,24px); font-weight: 800; letter-spacing:-.01em; white-space: nowrap; }
+  .sec-head .rule { flex:1; height:2px; background: linear-gradient(90deg, var(--line), transparent); }
+  .lead { color: var(--ink-soft); max-width: 62ch; margin-bottom: 8px; }
+
+  /* ── Phone mockup (dark app) ── */
+  .phone { background:#05080f; border-radius:26px; padding:9px; box-shadow: var(--shadow-lg); border:1px solid #1c2740; }
+  .phone .scr { background: var(--app-bg); border-radius:18px; overflow:hidden; padding:14px; color: var(--app-text); }
+  .app-top { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .app-top .ic { width:26px; height:26px; border-radius:7px; background:#152034; display:grid; place-items:center; }
+  .app-top .ic svg { width:15px; height:15px; }
+  .app-top .nm { font-weight:800; font-size:13px; line-height:1.1; }
+  .app-top .wal { margin-left:auto; font-weight:800; font-size:12px; color:var(--app-green); background:rgba(52,211,153,.12); border:1px solid rgba(52,211,153,.3); padding:4px 9px; border-radius:8px; }
+
+  .acard { background: var(--app-card); border:1px solid var(--app-line); border-radius:16px; padding:15px; }
+  .acard + .acard { margin-top: 11px; }
+  .a-lbl { font-size:10.5px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color:var(--app-muted); }
+  .hero { background: linear-gradient(160deg, rgba(15,157,107,.16), rgba(19,29,46,.2)); border-color: rgba(52,211,153,.25); }
+  .hero .a-lbl { color: var(--app-green); }
+  .hero .big { font-size:40px; font-weight:900; color: var(--app-green); letter-spacing:-.02em; line-height:1; margin:6px 0 2px; }
+  .hero .big small { font-size:15px; color:var(--app-muted); font-weight:600; }
+  .hero .deveng { font-size:12.5px; color:var(--app-muted); }
+  .hero .nudge { margin-top:12px; background:rgba(255,255,255,.04); border-radius:10px; padding:10px 12px; font-size:12.5px; color:#c9d5e6; }
+  .hero .nudge b { color: var(--app-green); }
+
+  .row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .pill-lvl { font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; background:#2a2033; color:#e0b1ff; }
+  .meterN { font-size:34px; font-weight:900; letter-spacing:-.02em; }
+  .meterN small { font-size:15px; color:var(--app-muted); font-weight:600; }
+  .bar { height:9px; background:#1e293b; border-radius:99px; overflow:hidden; margin:10px 0 8px; }
+  .bar > i { display:block; height:100%; border-radius:99px; background: linear-gradient(90deg,#a78bfa,#818cf8); }
+  .mini { font-size:11.5px; color:var(--app-muted); }
+  .velo .n { font-size:26px; font-weight:900; }
+  .velo .n small { font-size:13px; color:var(--app-muted); font-weight:600; }
+  .need { margin-top:8px; background:rgba(96,165,250,.08); border-radius:9px; padding:9px 11px; font-size:12px; color:#bcd3f5; }
+  .need b { color: var(--app-blue); }
+  .cob .stats { display:flex; gap:9px; margin-top:10px; }
+  .cob .stat { flex:1; background:var(--app-card2); border:1px solid var(--app-line); border-radius:11px; padding:9px; text-align:center; }
+  .cob .stat b { display:block; font-size:19px; font-weight:900; }
+  .cob .stat.r b { color:var(--app-red); } .cob .stat.a b { color:var(--app-amber); }
+  .cob .stat span { font-size:10px; color:var(--app-muted); }
+  .tag-bono { font-size:10.5px; font-weight:800; color:var(--app-green); background:rgba(52,211,153,.12); border:1px solid rgba(52,211,153,.28); padding:3px 8px; border-radius:999px; }
+
+  /* callouts next to mockups */
+  .showcase { display:grid; grid-template-columns: 300px 1fr; gap:26px; align-items:center; }
+  @media (max-width:640px){ .showcase { grid-template-columns:1fr; gap:18px; } .phone{ max-width:300px; margin:0 auto; } }
+  .notes { display:flex; flex-direction:column; gap:14px; }
+  .note { position:relative; padding-left:18px; }
+  .note::before { content:""; position:absolute; left:0; top:7px; bottom:7px; width:4px; border-radius:4px; background:var(--blue); }
+  .note h4 { font-size:16px; font-weight:800; margin-bottom:2px; }
+  .note p { font-size:14.5px; color:var(--ink-soft); }
+  .note.g::before{ background:var(--emerald);} .note.v::before{ background:var(--teal);} .note.am::before{ background:var(--amber);}
+
+  /* ── Action cards ── */
+  .acts { display:flex; flex-direction:column; gap:16px; }
+  .actx { background:var(--card); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); padding:20px 22px; }
+  .actx .tag { display:inline-flex; align-items:center; gap:8px; font-size:11.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; padding:5px 11px; border-radius:999px; }
+  .actx .tag .dot{ width:7px; height:7px; border-radius:50%; background:currentColor; }
+  .actx h3 { font-size:20px; font-weight:800; margin:11px 0 3px; }
+  .actx .who { font-size:13px; color:var(--ink-faint); font-weight:600; margin-bottom:9px; }
+  .actx .desc { color:var(--ink-soft); font-size:15px; }
+  .fx { margin-top:14px; border-radius:12px; padding:13px 15px; }
+  .fx .h { font-size:11px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; display:flex; align-items:center; gap:7px; margin-bottom:5px; }
+  .fx .h::before{ content:"→"; font-weight:900; }
+  .fx ul{ margin:0; padding-left:18px; } .fx li{ font-size:14.5px; margin:2px 0; }
+  .fx .note2{ font-size:13px; color:var(--ink-soft); font-style:italic; margin-top:6px; }
+  .t-v .tag{ color:var(--teal); background:var(--teal-soft);} .t-v .fx{ background:var(--teal-soft);} .t-v .fx .h{ color:var(--teal);}
+  .t-d .tag{ color:var(--amber); background:var(--amber-soft);} .t-d .fx{ background:var(--amber-soft);} .t-d .fx .h{ color:var(--amber);}
+  .t-p .tag{ color:var(--emerald); background:var(--emerald-soft);} .t-p .fx{ background:var(--emerald-soft);} .t-p .fx .h{ color:var(--emerald);} .t-p{ border-color: color-mix(in srgb, var(--emerald) 35%, var(--line)); }
+
+  /* ── Money path spine ── */
+  .path { display:flex; flex-direction:column; gap:0; }
+  .step { display:grid; grid-template-columns:44px 1fr; gap:16px; }
+  .rail { display:flex; flex-direction:column; align-items:center; }
+  .num { width:38px; height:38px; border-radius:50%; background:var(--navy); color:#fff; font-weight:900; display:grid; place-items:center; font-variant-numeric:tabular-nums; box-shadow: 0 3px 10px rgba(13,43,76,.25); }
+  .step.pay .num{ background:var(--emerald); box-shadow:0 3px 12px rgba(15,157,107,.35);}
+  .line { width:3px; flex:1; min-height:26px; background:linear-gradient(var(--line-strong,#cfd8e6), var(--line)); margin:5px 0; }
+  .step:last-child .line{ display:none; }
+  .stbody { padding-bottom:26px; }
+  .stbody h3 { font-size:18px; font-weight:800; margin:4px 0 4px; }
+  .stbody p { font-size:15px; color:var(--ink-soft); }
+  .moves { display:inline-flex; align-items:center; gap:7px; margin-top:9px; font-size:12px; font-weight:800; color:var(--emerald); background:var(--emerald-soft); padding:4px 11px; border-radius:999px; }
+  .moves.blue{ color:var(--blue); background:#e5edfd; }
+  .chipcard { margin-top:12px; background:var(--app-bg); border:1px solid var(--app-line); border-radius:12px; padding:12px; color:var(--app-text); }
+
+  .gold { margin-top:14px; background: linear-gradient(150deg,#0d2b4c,#163a6b); color:#fff; border-radius:var(--r); padding:24px; border-left:5px solid var(--yellow); }
+  .gold .b { font-size:11px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; color:var(--yellow); margin-bottom:8px; }
+  .gold .k { font-family: Georgia,"Times New Roman",serif; font-style:italic; font-size:21px; line-height:1.45; }
+  .gold .k b{ color:var(--yellow); font-style:normal; }
+
+  .bonos { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }
+  .bono { background:var(--card); border:1px solid var(--line); border-radius:var(--r-sm); box-shadow:var(--shadow); padding:16px 17px; }
+  .bono h4 { font-size:15.5px; font-weight:800; display:flex; align-items:center; gap:8px; margin-bottom:5px; }
+  .bono h4 .t{ color:var(--emerald); font-weight:900; }
+  .bono p { font-size:13.5px; color:var(--ink-soft); }
+  .bono .src { display:inline-block; margin-top:8px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; padding:3px 9px; border-radius:999px; }
+  .bono .src.p{ color:var(--emerald); background:var(--emerald-soft);} .bono .src.v{ color:var(--teal); background:var(--teal-soft);}
+
+  /* map table */
+  .tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); background:var(--card); }
+  table { width:100%; border-collapse:collapse; min-width:520px; }
+  thead th { text-align:left; font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:rgba(255,255,255,.9); background:var(--navy); padding:13px 16px; }
+  tbody td { padding:13px 16px; font-size:14px; border-top:1px solid var(--line); color:var(--ink-soft); vertical-align:top; }
+  tbody td:first-child { font-weight:700; color:var(--ink); white-space:nowrap; }
+  .pill { display:inline-block; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:3px 9px; border-radius:999px; }
+  .pill.v{ color:var(--teal); background:var(--teal-soft);} .pill.d{ color:var(--amber); background:var(--amber-soft);} .pill.p{ color:var(--emerald); background:var(--emerald-soft);}
+
+  footer { margin-top:56px; padding-top:22px; border-top:1px solid var(--line); color:var(--ink-faint); font-size:12.5px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+
+  @media (prefers-reduced-motion:no-preference){
+    .actx,.bono,.step,.tablewrap,.showcase{ animation:rise .5s cubic-bezier(.2,.7,.3,1) both; }
+    @keyframes rise{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:none;} }
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="inner">
+    <div class="logo"><span class="chip">GK</span><span>Genius Keeper · Lacteoca</span></div>
+    <div class="eyebrow kicker">Guía del vendedor</div>
+    <h1>De la calle a tu <em>comisión</em></h1>
+    <p class="sub">Tu perfil no inventa números: es el espejo de tu trabajo. Aquí ves cada pantalla y cómo tus acciones la encienden.</p>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <p class="intro">Cada tarjeta de tu perfil —<b>comisión</b>, <b>meta</b>, <b>nivel</b>, <b>bonos</b>— se mueve por algo que haces en la calle. Vamos a leer tu pantalla, conocer las tres acciones del día, y seguir <b>el camino del dinero</b> paso a paso.</p>
+
+  <!-- ── 1. Read your screen ── -->
+  <section>
+    <div class="sec-head"><h2>Tu perfil de un vistazo</h2><div class="rule"></div></div>
+    <p class="lead">Esto es lo que ves al abrir la app. Cuatro tarjetas te dicen cómo vas —y todas se alimentan de tus ventas cobradas.</p>
+
+    <div class="showcase">
+      <div class="phone">
+        <div class="scr">
+          <div class="app-top">
+            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="2.5"><path d="M3 17l6-6 4 4 8-8"/></svg></div>
+            <div><div class="nm">GK Vendedor</div></div>
+            <div class="wal">$ 1.312</div>
+          </div>
+
+          <div class="acard hero">
+            <div class="a-lbl">Tu comisión este período</div>
+            <div class="big">$912 <small>y subiendo</small></div>
+            <div class="deveng">+ base $400 = <b style="color:#eaf0f8">$1.312</b> devengado</div>
+            <div class="nudge">Cobra <b>380 uds</b> más → subes a <b>Nivel Óptima (4%)</b> y tu tasa mejora.</div>
+          </div>
+
+          <div class="acard">
+            <div class="row"><div class="a-lbl">Meta · Mes 3</div><div class="pill-lvl">Nivel Básica</div></div>
+            <div class="meterN" style="margin-top:6px">1.480 <small>/ 2.000 uds</small></div>
+            <div class="bar"><i style="width:74%"></i></div>
+            <div class="mini">74% del objetivo · 520 uds → Nivel Óptima (4%)</div>
+          </div>
+
+          <div class="acard velo">
+            <div class="a-lbl">Velocidad de venta</div>
+            <div class="n" style="margin-top:4px">86,4 <small>uds/día</small></div>
+            <div class="need">Necesitas <b>52 uds/día</b> los próximos 10 días para llegar a la meta.</div>
+          </div>
+
+          <div class="acard cob">
+            <div class="row"><div class="a-lbl">Cobranza a tiempo</div><div class="tag-bono">Bono Cobranza +1.5%</div></div>
+            <div class="meterN" style="font-size:26px; margin-top:6px">88% <small style="font-size:13px">cobrado a tiempo</small></div>
+            <div class="stats">
+              <div class="stat r"><b>2</b><span>Vencidas</span></div>
+              <div class="stat a"><b>3</b><span>Por vencer</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="notes">
+        <div class="note g"><h4>Tu comisión, en vivo</h4><p>Crece con lo que <strong>cobras</strong> este período, a la tasa de tu nivel. Arriba, tu piso seguro (base) siempre está.</p></div>
+        <div class="note"><h4>Meta y nivel</h4><p>Cada factura suma unidades aquí. Mientras más unidades, más alto tu <strong>nivel</strong> y mejor tu tasa.</p></div>
+        <div class="note"><h4>Velocidad</h4><p>Tu ritmo real contra lo que falta. Te dice cuánto vender por día para llegar.</p></div>
+        <div class="note am"><h4>Cobranza a tiempo</h4><p>Cobrar dentro del plazo te da el <strong>Bono Cobranza</strong>. Ojo con las vencidas y las por vencer.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 2. Three actions ── -->
+  <section>
+    <div class="sec-head"><h2>Las tres acciones de campo</h2><div class="rule"></div></div>
+    <div class="acts">
+      <article class="actx t-v">
+        <span class="tag"><span class="dot"></span>Reporte de visita</span>
+        <h3>Reportar la visita al punto de venta</h3>
+        <div class="who">La hace el mercaderista (equipo de campo)</div>
+        <p class="desc">Al visitar un PDV, se registra cómo está el producto: cuántas unidades hay en anaquel, si hay <strong>quiebre de stock</strong>, precio y exhibición.</p>
+        <div class="fx"><div class="h">En tu perfil mueve</div>
+          <ul><li><strong>Radar de Acción Operativa</strong> (visita vencida / quiebre de stock)</li><li><strong>Bono Anaquel</strong> en cuentas de anaquel</li></ul>
+          <p class="note2">No suma unidades ni comisión directo — pero mantiene tus cuentas sanas y es lo único que activa el Bono Anaquel.</p>
+        </div>
+      </article>
+
+      <article class="actx t-d">
+        <span class="tag"><span class="dot"></span>Despacho</span>
+        <h3>Registrar un despacho</h3>
+        <div class="who">La hace el vendedor o el mercaderista</div>
+        <p class="desc">Cuando se entrega producto al punto de venta, se registra: cuántas unidades, a qué PDV y de qué lote. Eso descuenta el inventario comercial.</p>
+        <div class="fx"><div class="h">En tu perfil mueve</div>
+          <ul><li><strong>Despachos hoy</strong></li><li>Señal de que tus cuentas están movidas esta semana</li></ul>
+          <p class="note2">Es logística e inventario. No cuenta para tu meta ni tu comisión — la venta se cuenta al facturar.</p>
+        </div>
+      </article>
+
+      <article class="actx t-p">
+        <span class="tag"><span class="dot"></span>Pedido · La venta</span>
+        <h3>Tomar un pedido</h3>
+        <div class="who">La haces tú (el mercaderista también puede, y te llega a ti)</div>
+        <p class="desc">Aquí nace la venta. Tomas el pedido y lo confirmas; eso avisa a ventas para que <strong>emita la factura en Zoho</strong>. Es el corazón de tu comisión.</p>
+        <div class="fx"><div class="h">En tu perfil mueve</div>
+          <ul><li><strong>Meta del mes y Nivel</strong> (al facturarse)</li><li><strong>Comisión del período</strong> (cuando el cliente paga)</li></ul>
+          <p class="note2">El pedido es la semilla. Se vuelve dinero solo cuando se factura y esa factura se cobra.</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── 3. Money path ── -->
+  <section>
+    <div class="sec-head"><h2>El camino del dinero</h2><div class="rule"></div></div>
+    <p class="lead">Un pedido tuyo recorre cuatro pasos hasta convertirse en comisión. Sigue la ruta:</p>
+
+    <div class="path">
+      <div class="step">
+        <div class="rail"><div class="num">1</div><div class="line"></div></div>
+        <div class="stbody">
+          <h3>Tomas el pedido</h3>
+          <p>Cierras la venta con el cliente y la confirmas en la app. Le llega el aviso a ventas.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="rail"><div class="num">2</div><div class="line"></div></div>
+        <div class="stbody">
+          <h3>Ventas emite la factura en Zoho</h3>
+          <p>El pedido confirmado se convierte en la factura del cliente en Zoho Books. Esa factura es la que "cuenta".</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="rail"><div class="num">3</div><div class="line"></div></div>
+        <div class="stbody">
+          <h3>Suma a tu meta y sube tu nivel</h3>
+          <p>Las unidades de esa factura entran a <strong>Unidades facturadas</strong>. Tu meta avanza y tu nivel mejora.</p>
+          <div class="chipcard">
+            <div class="row"><div class="a-lbl">Meta · Mes 3</div><div class="pill-lvl">Nivel Básica</div></div>
+            <div class="meterN" style="font-size:24px; margin-top:5px">1.480 <small style="font-size:13px">/ 2.000 uds</small></div>
+            <div class="bar"><i style="width:74%"></i></div>
+            <div class="mini">+120 uds de tu último pedido facturado</div>
+          </div>
+          <span class="moves blue">Mueve: Meta · Nivel · Velocidad</span>
+        </div>
+      </div>
+      <div class="step pay">
+        <div class="rail"><div class="num">4</div><div class="line"></div></div>
+        <div class="stbody">
+          <h3>El cliente paga → nace tu comisión</h3>
+          <p>Cuando la factura se <strong>cobra</strong>, se calcula tu comisión sobre lo cobrado, con la tasa de tu nivel. Recién ahí sube tu comisión.</p>
+          <div class="chipcard hero" style="border-color:rgba(52,211,153,.3)">
+            <div class="a-lbl" style="color:var(--app-green)">Tu comisión este período</div>
+            <div class="big" style="font-size:30px; margin:4px 0 2px">$912 <small style="font-size:13px">y subiendo</small></div>
+            <div class="deveng">+$54 de la factura que acabas de cobrar</div>
+          </div>
+          <span class="moves">Mueve: Comisión del período · Estado de cuenta</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="gold">
+      <div class="b">Regla de oro</div>
+      <div class="k">Una unidad solo vale cuando se <b>cobra</b>. Vender es media venta; cobrar a tiempo es la otra media —y es donde están tus bonos.</div>
+    </div>
+  </section>
+
+  <!-- ── 4. Bonos ── -->
+  <section>
+    <div class="sec-head"><h2>Los tres bonos que suben tu comisión</h2><div class="rule"></div></div>
+    <div class="bonos">
+      <div class="bono">
+        <h4><span class="t">✓</span> Bono Cobranza</h4>
+        <p>Cobra cada factura a tiempo (vencimiento + tus días de gracia) y suma un extra sobre ese monto.</p>
+        <span class="src p">Nace de: Pedido</span>
+      </div>
+      <div class="bono">
+        <h4><span class="t">✓</span> Bono Activación</h4>
+        <p>Factura suficientes unidades en buena parte de tu cartera <strong>cada semana</strong>. Se paga proporcional a las semanas que lo logras.</p>
+        <span class="src p">Nace de: Pedido</span>
+      </div>
+      <div class="bono">
+        <h4><span class="t">✓</span> Bono Anaquel</h4>
+        <p>En cuentas de anaquel, mantén el producto disponible: buenas visitas de martes y viernes con inventario alto.</p>
+        <span class="src v">Nace de: Visita</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 5. Map ── -->
+  <section>
+    <div class="sec-head"><h2>El mapa — qué mueve cada tarjeta</h2><div class="rule"></div></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Tarjeta del perfil</th><th>La mueve</th><th>Cómo</th></tr></thead>
+        <tbody>
+          <tr><td>Comisión del período</td><td><span class="pill p">Pedido</span></td><td>Cuando la factura de tu venta se <strong>cobra</strong>, sobre lo cobrado × la tasa de tu nivel.</td></tr>
+          <tr><td>Meta del mes · Nivel</td><td><span class="pill p">Pedido</span></td><td>Las unidades de tus facturas del período. Más unidades → mejor nivel.</td></tr>
+          <tr><td>Velocidad de venta</td><td><span class="pill p">Pedido</span></td><td>El ritmo de tus unidades facturadas frente a lo que falta.</td></tr>
+          <tr><td>Cobranza · Bono Puntualidad</td><td><span class="pill p">Pedido</span></td><td>Cobrar la factura dentro del plazo (vencimiento + días de gracia).</td></tr>
+          <tr><td>Bono Activación</td><td><span class="pill p">Pedido</span></td><td>Facturar unidades en buena parte de tu cartera cada semana.</td></tr>
+          <tr><td>Bono Anaquel</td><td><span class="pill v">Visita</span></td><td>Visitas de martes/viernes con inventario alto en cuentas de anaquel.</td></tr>
+          <tr><td>Radar de Acción Operativa</td><td><span class="pill v">Visita</span></td><td>Visitar al día evita "vencida"; el quiebre lo enciende el reporte.</td></tr>
+          <tr><td>Despachos hoy</td><td><span class="pill d">Despacho</span></td><td>Las unidades que registras como despachadas en el día.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><h2>En una frase</h2><div class="rule"></div></div>
+    <p class="intro" style="margin-top:2px"><b>Visitas</b> mantienen tus cuentas sanas y encienden el Bono Anaquel. <b>Despachos</b> mueven el producto. Pero es el <b>pedido</b> —convertido en factura y luego <b>cobrado</b>— el que llena tu comisión, sube tu nivel y desbloquea tus bonos. Toma pedidos, cuida que se facturen, y <b>cobra a tiempo</b>.</p>
+  </section>
+
+  <footer>
+    <span>Genius Keeper · Lacteoca — Guía interna del equipo comercial</span>
+    <span>Tu perfil = tu trabajo en la calle</span>
+  </footer>
+</div>
+</body>
+</html>
