@@ -153,19 +153,20 @@
   .bono .src { display:inline-block; margin-top:8px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; padding:3px 9px; border-radius:999px; }
   .bono .src.p{ color:var(--emerald); background:var(--emerald-soft);} .bono .src.v{ color:var(--teal); background:var(--teal-soft);}
 
-  /* map table */
-  .tablewrap { overflow-x:auto; border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow); background:var(--card); }
-  table { width:100%; border-collapse:collapse; min-width:520px; }
-  thead th { text-align:left; font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:rgba(255,255,255,.9); background:var(--navy); padding:13px 16px; }
-  tbody td { padding:13px 16px; font-size:14px; border-top:1px solid var(--line); color:var(--ink-soft); vertical-align:top; }
-  tbody td:first-child { font-weight:700; color:var(--ink); white-space:nowrap; }
-  .pill { display:inline-block; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:3px 9px; border-radius:999px; }
+  /* map — tarjetas responsivas (nunca se desbordan: apilan en móvil, 2 columnas en ancho/impresión) */
+  .mapgrid { display:grid; grid-template-columns:1fr; gap:11px; }
+  @media (min-width:640px){ .mapgrid { grid-template-columns:1fr 1fr; } }
+  .maprow { border:1px solid var(--line); border-radius:14px; background:var(--card); box-shadow:var(--shadow); padding:14px 16px; }
+  .maprow .mh { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:7px; }
+  .maprow .mt { font-weight:800; color:var(--ink); font-size:14px; line-height:1.25; }
+  .maprow .mc { font-size:13.5px; color:var(--ink-soft); line-height:1.5; }
+  .pill { flex:none; display:inline-block; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; padding:3px 9px; border-radius:999px; white-space:nowrap; }
   .pill.v{ color:var(--teal); background:var(--teal-soft);} .pill.d{ color:var(--amber); background:var(--amber-soft);} .pill.p{ color:var(--emerald); background:var(--emerald-soft);}
 
   footer { margin-top:56px; padding-top:22px; border-top:1px solid var(--line); color:var(--ink-faint); font-size:12.5px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
 
   @media (prefers-reduced-motion:no-preference){
-    .actx,.bono,.step,.tablewrap,.showcase{ animation:rise .5s cubic-bezier(.2,.7,.3,1) both; }
+    .actx,.bono,.step,.maprow,.showcase{ animation:rise .5s cubic-bezier(.2,.7,.3,1) both; }
     @keyframes rise{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:none;} }
   }
   /* Exportación a PDF (tamaño Carta): condensar para que el contenido llene cada
@@ -174,7 +175,7 @@
   @media print {
     @page { size: Letter; margin: 11mm; }
     html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background:#fff; }
-    .actx, .bono, .step, .tablewrap, .showcase { animation: none !important; opacity: 1 !important; transform: none !important; }
+    .actx, .bono, .step, .maprow, .showcase { animation: none !important; opacity: 1 !important; transform: none !important; }
     /* condensar espaciados y tamaños */
     .wrap { padding: 0 !important; }
     .cover { padding: 26px 26px !important; border-radius: 16px !important; margin-bottom: 4px; }
@@ -193,8 +194,8 @@
     .velo .n { font-size: 21px !important; }
     /* piezas pequeñas SIEMPRE enteras (no se cortan); contenedores altos fluyen y,
        si hace falta, parten ENTRE tarjetas (nunca dentro de una) → sin huecos. */
-    .actx, .bono, .gold, .note, .step, .acard, thead, tr { break-inside: avoid; }
-    .showcase, .path, .tablewrap, section, .phone, .phone .scr { break-inside: auto; }
+    .actx, .bono, .gold, .note, .step, .acard, .maprow { break-inside: avoid; }
+    .showcase, .path, .mapgrid, section, .phone, .phone .scr { break-inside: auto; }
     /* al imprimir quitamos el bisel del teléfono, pero mantenemos el PANEL OSCURO
        de la pantalla para que las tarjetas (con fondos semitransparentes) se vean
        bien; si fluye entre páginas, parte limpio entre tarjetas. */
@@ -391,20 +392,15 @@
   <!-- ── 5. Map ── -->
   <section>
     <div class="sec-head"><h2>El mapa — qué mueve cada tarjeta</h2><div class="rule"></div></div>
-    <div class="tablewrap">
-      <table>
-        <thead><tr><th>Tarjeta del perfil</th><th>La mueve</th><th>Cómo</th></tr></thead>
-        <tbody>
-          <tr><td>Comisión del período</td><td><span class="pill p">Pedido</span></td><td>Cuando la factura de tu venta se <strong>cobra</strong>, sobre lo cobrado × la tasa de tu nivel.</td></tr>
-          <tr><td>Meta del mes · Nivel</td><td><span class="pill p">Pedido</span></td><td>Las unidades de tus facturas del período. Más unidades → mejor nivel.</td></tr>
-          <tr><td>Velocidad de venta</td><td><span class="pill p">Pedido</span></td><td>El ritmo de tus unidades facturadas frente a lo que falta.</td></tr>
-          <tr><td>Cobranza · Bono Puntualidad</td><td><span class="pill p">Pedido</span></td><td>Cobrar la factura dentro del plazo (vencimiento + días de gracia).</td></tr>
-          <tr><td>Bono Activación</td><td><span class="pill p">Pedido</span></td><td>Facturar unidades en buena parte de tu cartera cada semana.</td></tr>
-          <tr><td>Bono Anaquel</td><td><span class="pill v">Visita</span></td><td>Visitas de martes/viernes con inventario alto en cuentas de anaquel.</td></tr>
-          <tr><td>Radar de Acción Operativa</td><td><span class="pill v">Visita</span></td><td>Visitar al día evita "vencida"; el quiebre lo enciende el reporte.</td></tr>
-          <tr><td>Despachos hoy</td><td><span class="pill d">Despacho</span></td><td>Las unidades que registras como despachadas en el día.</td></tr>
-        </tbody>
-      </table>
+    <div class="mapgrid">
+      <div class="maprow"><div class="mh"><span class="mt">Comisión del período</span><span class="pill p">Pedido</span></div><p class="mc">Cuando la factura de tu venta se <strong>cobra</strong>, sobre lo cobrado × la tasa de tu nivel.</p></div>
+      <div class="maprow"><div class="mh"><span class="mt">Meta del mes · Nivel</span><span class="pill p">Pedido</span></div><p class="mc">Las unidades de tus facturas del período. Más unidades → mejor nivel.</p></div>
+      <div class="maprow"><div class="mh"><span class="mt">Velocidad de venta</span><span class="pill p">Pedido</span></div><p class="mc">El ritmo de tus unidades facturadas frente a lo que falta.</p></div>
+      <div class="maprow"><div class="mh"><span class="mt">Cobranza · Bono Puntualidad</span><span class="pill p">Pedido</span></div><p class="mc">Cobrar la factura dentro del plazo (vencimiento + días de gracia).</p></div>
+      <div class="maprow"><div class="mh"><span class="mt">Bono Activación</span><span class="pill p">Pedido</span></div><p class="mc">Facturar unidades en buena parte de tu cartera cada semana.</p></div>
+      <div class="maprow"><div class="mh"><span class="mt">Bono Anaquel</span><span class="pill v">Visita</span></div><p class="mc">Visitas de martes/viernes con inventario alto en cuentas de anaquel.</p></div>
+      <div class="maprow"><div class="mh"><span class="mt">Radar de Acción Operativa</span><span class="pill v">Visita</span></div><p class="mc">Visitar al día evita "vencida"; el quiebre lo enciende el reporte.</p></div>
+      <div class="maprow"><div class="mh"><span class="mt">Despachos hoy</span><span class="pill d">Despacho</span></div><p class="mc">Las unidades que registras como despachadas en el día.</p></div>
     </div>
   </section>
 
