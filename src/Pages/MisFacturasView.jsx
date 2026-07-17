@@ -242,6 +242,11 @@ const MisFacturasView = ({ vendedorId }) => {
                                         <p className="text-slate-400 text-xs mt-0.5">
                                             {f.clienteName || '—'} · {dateStr}
                                         </p>
+                                        {f.recuperada && (
+                                            <span className="inline-flex items-center mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-violet-500/15 text-violet-300 border-violet-500/30">
+                                                Heredada
+                                            </span>
+                                        )}
                                     </div>
                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 border ${estadoStyle}`}>
                                         {estadoLabel}
@@ -262,6 +267,11 @@ const MisFacturasView = ({ vendedorId }) => {
                                         </div>
                                     )}
                                 </div>
+                                {f.recuperada && (
+                                    <p className="text-violet-300/70 text-[10px] leading-relaxed mt-3 pt-2.5 border-t border-slate-700/50">
+                                        Cuenta heredada de la cartera — no suma a tu meta del mes. Al cobrarla te paga 5% de comisión (sin límite de 45 días).
+                                    </p>
+                                )}
                             </div>
                         );
                     })}
