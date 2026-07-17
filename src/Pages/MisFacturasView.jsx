@@ -2,10 +2,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDocsFromCache } from 'firebase/firestore';
 import { Receipt, RefreshCw, Link2, AlertCircle, Search } from 'lucide-react';
 
 const PROXIMO_A_VENCER_DIAS = 3;
+
+// Fecha de una factura como Date (soporta Timestamp de Firestore o string).
+const facturaDate = (f) => f?.fecha?.toDate?.() || (f?.fecha ? new Date(f.fecha) : null);
 
 const TABS = [
     { id: 'vencidas', label: 'Vencidas' },
@@ -15,35 +18,47 @@ const TABS = [
     { id: 'anuladas', label: 'Anuladas' },
 ];
 
-const MisFacturasView = ({ vendedorId }) => {
+const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
     const [facturas, setFacturas] = useState([]);
     const [loading, setLoading]   = useState(true);
     const [error, setError]       = useState('');
     const [activeTab, setActiveTab] = useState('vencidas');
     const [search, setSearch]     = useState('');
 
+    // Carga cache-primero (relámpago): pinta al instante las facturas que ya
+    // estén en la caché local de Firestore (IndexedDB) y en paralelo pide la
+    // versión autoritativa al servidor. `getDocs` es "servidor primero" online,
+    // así que sin esta lectura de caché la vista se quedaba en spinner esperando
+    // el round-trip de red — lento en 3G y hasta en WiFi. El error solo se
+    // muestra si NO se logró pintar nada (ni caché ni servidor).
     useEffect(() => {
         if (!vendedorId) return;
-        const load = async () => {
-            setLoading(true);
-            setError('');
-            try {
-                const snap = await getDocs(
-                    query(
-                        collection(db, 'facturas_vendedor'),
-                        where('vendedorId', '==', vendedorId),
-                    )
-                );
-                const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                setFacturas(items);
-            } catch (e) {
-                console.error(e);
-                setError('No se pudieron cargar las facturas.');
-            } finally {
-                setLoading(false);
-            }
-        };
-        load();
+        let alive = true;
+        let painted = false;
+        const q = query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', vendedorId));
+        setLoading(true);
+        setError('');
+
+        getDocsFromCache(q).then(snap => {
+            if (!alive || snap.empty) return;
+            painted = true;
+            setFacturas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setLoading(false);
+        }).catch(() => {});
+
+        getDocs(q).then(snap => {
+            if (!alive) return;
+            painted = true;
+            setFacturas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setLoading(false);
+        }).catch(e => {
+            if (!alive) return;
+            console.error(e);
+            if (!painted) setError('No se pudieron cargar las facturas.');
+            setLoading(false);
+        });
+
+        return () => { alive = false; };
     }, [vendedorId]);
 
     const now = new Date();
@@ -205,6 +220,14 @@ const MisFacturasView = ({ vendedorId }) => {
                         const dateStr = fecha
                             ? fecha.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })
                             : '—';
+                        // Heredada = factura previa al ingreso del vendedor (no la
+                        // vendió él; cuenta como Cuenta Recuperada, 5% al cobrar, no
+                        // suma a meta). Se honra el flag `recuperada` del motor y,
+                        // como respaldo robusto, se calcula por fecha vs fechaIngreso
+                        // (por si el flag no se estampó aún — p.ej. facturas
+                        // atribuidas antes de fijar la fecha de ingreso).
+                        const heredada = f.recuperada === true
+                            || (fechaIngreso instanceof Date && facturaDate(f) && facturaDate(f) < fechaIngreso);
                         const vencimiento = f.vencimiento?.toDate?.();
                         const vencStr = vencimiento
                             ? vencimiento.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -242,7 +265,7 @@ const MisFacturasView = ({ vendedorId }) => {
                                         <p className="text-slate-400 text-xs mt-0.5">
                                             {f.clienteName || '—'} · {dateStr}
                                         </p>
-                                        {f.recuperada && (
+                                        {heredada && (
                                             <span className="inline-flex items-center mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border bg-violet-500/15 text-violet-300 border-violet-500/30">
                                                 Heredada
                                             </span>
@@ -267,7 +290,7 @@ const MisFacturasView = ({ vendedorId }) => {
                                         </div>
                                     )}
                                 </div>
-                                {f.recuperada && (
+                                {heredada && (
                                     <p className="text-violet-300/70 text-[10px] leading-relaxed mt-3 pt-2.5 border-t border-slate-700/50">
                                         Cuenta heredada de la cartera — no suma a tu meta del mes. Al cobrarla te paga 5% de comisión (sin límite de 45 días).
                                     </p>

@@ -1598,7 +1598,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         if (currentView === 'facturas') {
-            return <MisFacturasView vendedorId={user.uid} />;
+            return <MisFacturasView vendedorId={user.uid} fechaIngreso={vendedor.ingreso || null} />;
         }
 
         if (currentView === 'estado_cuenta') {
