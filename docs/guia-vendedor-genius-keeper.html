@@ -168,11 +168,38 @@
     .actx,.bono,.step,.tablewrap,.showcase{ animation:rise .5s cubic-bezier(.2,.7,.3,1) both; }
     @keyframes rise{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:none;} }
   }
-  /* Al imprimir/exportar a PDF la animación de entrada no corre: forzar visibles. */
+  /* Exportación a PDF (tamaño Carta): condensar para que el contenido llene cada
+     hoja sin dejar huecos, y mantener las tarjetas enteras para que no se corten.
+     La animación de entrada no corre al imprimir → forzar todo visible. */
   @media print {
-    html,body{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
-    .actx,.bono,.step,.tablewrap,.showcase{ animation:none !important; opacity:1 !important; transform:none !important; }
-    .actx,.bono,.step,.phone,.tablewrap,.gold,.showcase{ break-inside:avoid; }
+    @page { size: Letter; margin: 11mm; }
+    html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background:#fff; }
+    .actx, .bono, .step, .tablewrap, .showcase { animation: none !important; opacity: 1 !important; transform: none !important; }
+    /* condensar espaciados y tamaños */
+    .wrap { padding: 0 !important; }
+    .cover { padding: 26px 26px !important; border-radius: 16px !important; margin-bottom: 4px; }
+    .cover h1 { font-size: 30px !important; }
+    .cover .sub { font-size: 14px !important; margin-top: 9px !important; }
+    .intro { margin-top: 16px !important; font-size: 14.5px !important; }
+    section { margin-top: 18px !important; }
+    .sec-head { margin-bottom: 13px !important; }
+    .lead { font-size: 13.5px !important; margin-bottom: 6px !important; }
+    /* mockup del teléfono más compacto para que quepa sin partirse */
+    .showcase { grid-template-columns: 240px 1fr !important; gap: 18px !important; align-items: start !important; }
+    .acard { padding: 11px !important; border-radius: 12px !important; }
+    .acard + .acard { margin-top: 8px !important; }
+    .hero .big { font-size: 30px !important; }
+    .meterN { font-size: 25px !important; }
+    .velo .n { font-size: 21px !important; }
+    /* piezas pequeñas SIEMPRE enteras (no se cortan); contenedores altos fluyen y,
+       si hace falta, parten ENTRE tarjetas (nunca dentro de una) → sin huecos. */
+    .actx, .bono, .gold, .note, .step, .acard, thead, tr { break-inside: avoid; }
+    .showcase, .path, .tablewrap, section, .phone, .phone .scr { break-inside: auto; }
+    /* al imprimir quitamos el bisel del teléfono, pero mantenemos el PANEL OSCURO
+       de la pantalla para que las tarjetas (con fondos semitransparentes) se vean
+       bien; si fluye entre páginas, parte limpio entre tarjetas. */
+    .phone { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; }
+    .phone .scr { background: var(--app-bg) !important; padding: 13px !important; border-radius: 14px !important; }
   }
 </style>
 </head>
