@@ -9,6 +9,8 @@ const PROXIMO_A_VENCER_DIAS = 3;
 
 // Fecha de una factura como Date (soporta Timestamp de Firestore o string).
 const facturaDate = (f) => f?.fecha?.toDate?.() || (f?.fecha ? new Date(f.fecha) : null);
+// Fecha de COBRO (pago) de una factura como Date.
+const pagoDate = (f) => f?.fechaPago?.toDate?.() || (f?.fechaPago ? new Date(f.fechaPago) : null);
 
 const TABS = [
     { id: 'vencidas', label: 'Vencidas' },
@@ -63,7 +65,24 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
 
     const now = new Date();
 
+    // Fecha de ingreso normalizada a Date (llega como Date o null desde el Home).
+    const ingresoDate = fechaIngreso instanceof Date
+        ? fechaIngreso
+        : (fechaIngreso ? new Date(fechaIngreso) : null);
+
     const categorized = useMemo(() => {
+        // "Pagadas" del VENDEDOR = las que él cobró dentro de su período de empleo
+        // (fechaPago >= fechaIngreso). Las cobradas antes de su ingreso son
+        // histórico de la empresa (las cobró otro / la oficina): aunque la
+        // reconciliación les puso su vendedorId al asignarle la cartera, NO le
+        // pertenecen y no debe ver el histórico completo de sus clientes. Sin
+        // fecha de ingreso configurada, no se filtra (comportamiento legacy).
+        const cobradaEnSuPeriodo = (f) => {
+            if (!ingresoDate) return true;
+            const cobro = pagoDate(f);
+            return cobro ? cobro >= ingresoDate : false;
+        };
+
         const groups = { vencidas: [], porVencer: [], vigentes: [], pagadas: [], anuladas: [] };
         for (const f of facturas) {
             const vencimiento = f.vencimiento?.toDate?.();
@@ -72,7 +91,7 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
                 continue;
             }
             if (f.estado === 'pagada') {
-                groups.pagadas.push(f);
+                if (cobradaEnSuPeriodo(f)) groups.pagadas.push(f);
                 continue;
             }
             if (vencimiento && vencimiento < now) {
@@ -107,7 +126,7 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
         groups.anuladas.sort(byFechaDesc);
 
         return groups;
-    }, [facturas, now]);
+    }, [facturas, now, ingresoDate]);
 
     const totalPorCobrar = facturas
         .filter(f => f.estado !== 'pagada' && f.estado !== 'anulada')
@@ -227,7 +246,7 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
                         // (por si el flag no se estampó aún — p.ej. facturas
                         // atribuidas antes de fijar la fecha de ingreso).
                         const heredada = f.recuperada === true
-                            || (fechaIngreso instanceof Date && facturaDate(f) && facturaDate(f) < fechaIngreso);
+                            || (ingresoDate && facturaDate(f) && facturaDate(f) < ingresoDate);
                         const vencimiento = f.vencimiento?.toDate?.();
                         const vencStr = vencimiento
                             ? vencimiento.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })
