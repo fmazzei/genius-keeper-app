@@ -476,6 +476,9 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                         {stats.periodoLabel && (
                             <p className="text-slate-500 text-[11px] mt-0.5">{stats.periodoLabel}</p>
                         )}
+                        {vendedor.antesDeIngreso && vendedor.ingreso && (
+                            <p className="text-amber-400 text-[11px] mt-0.5 font-semibold">Comienzas el {vendedor.ingreso.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })} · aún no ingresas</p>
+                        )}
                     </div>
                     <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tier.bg} ${tier.color} shrink-0`}>
                         Nivel {tier.label}
@@ -668,7 +671,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                                 </p>
                                 <p className="text-slate-400 text-xs">
                                     {stats.puntualidadPct !== null && (
-                                        <>{stats.puntualidadPct.toFixed(0)}% de tus facturas cobradas este mes, a tiempo (+5 días de margen). </>
+                                        <>{stats.puntualidadPct.toFixed(0)}% de tus facturas cobradas este mes, a tiempo (+{commConfig.cobranzaGraciaDias} días de margen). </>
                                     )}
                                     {stats.facturasPorVencer === 0
                                         ? 'Sin facturas próximas a vencer'
@@ -1081,10 +1084,10 @@ const VendedorLayout = ({ user, onLogout }) => {
                 // Meta y PERÍODO efectivos. El período corre por mes de empleo
                 // (anclado a fechaIngreso), no por mes de calendario — ver
                 // vendedorMeta.js.
-                const { metaMensual, mesArranque, periodStart, periodEnd, periodoLabel } = computeMetaMensual(meta);
+                const { metaMensual, mesArranque, periodStart, periodEnd, periodoLabel, antesDeIngreso, sinIngreso, ingreso } = computeMetaMensual(meta);
 
                 setCommConfig(cfg);
-                setVendedor({ uid: user.uid, nombre, metaMensual, reporterId, mesArranque });
+                setVendedor({ uid: user.uid, nombre, metaMensual, reporterId, mesArranque, antesDeIngreso, sinIngreso, ingreso });
 
                 const now       = new Date();
                 const hoy       = new Date(now.getFullYear(), now.getMonth(), now.getDate());

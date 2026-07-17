@@ -51,9 +51,14 @@ export function computeMetaMensual(meta = {}) {
     const ingreso = toDate(meta.fechaIngreso);
 
     let periodStart, periodEnd, periodIndex, mesArranque, metaMensual;
+    // Ingreso en el FUTURO: el vendedor aún no comienza. Su Mes 1 arranca en la
+    // fecha de ingreso (no antes), con la meta reducida del Mes 1. `antesDeIngreso`
+    // permite al Home mostrar un estado "comienza el DD/MM" en vez de un período
+    // en curso con velocidad/porcentajes engañosos.
+    const antesDeIngreso = !!(ingreso && ahora < ingreso);
 
     if (ingreso) {
-        periodIndex = mesesCompletos(ingreso, ahora);   // 0-based
+        periodIndex = mesesCompletos(ingreso, ahora);   // 0-based (0 si aún no ingresa)
         periodStart = addMonths(ingreso, periodIndex);
         periodEnd   = addMonths(ingreso, periodIndex + 1);
         if (periodIndex < arranque.length) {
@@ -75,7 +80,7 @@ export function computeMetaMensual(meta = {}) {
     const fmt = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
     const periodoLabel = `${fmt(periodStart)} – ${fmt(new Date(periodEnd.getTime() - MS_DIA))}`;
 
-    return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel };
+    return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
 }
 
 const rangoLabel = (start, end) => {
