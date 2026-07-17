@@ -8,8 +8,9 @@ import {
 import { db } from '@/Firebase/config.js';
 import {
     Building2, MapPin, Phone, User, Plus, Clock, Check,
-    X, AlertCircle, ChevronLeft, Loader, Store,
+    X, AlertCircle, ChevronLeft, Loader, Store, FileDown,
 } from 'lucide-react';
+import CarteraDoc, { buildCarteraListas } from '@/Components/CarteraDoc.jsx';
 
 // ─── Status pill (dark theme) ─────────────────────────────────────────────────
 const StatusPill = ({ estado }) => {
@@ -231,6 +232,7 @@ function VendedorCartera({ vendedor, radarAlertsByPosId = {} }) {
     const [allPos, setAllPos]     = useState([]);
     const [loading, setLoading]   = useState(true);
     const [showForm, setShowForm] = useState(false);
+    const [showDoc, setShowDoc]   = useState(false); // PDF de la cartera
     const [filter, setFilter]     = useState('todos');
 
     useEffect(() => {
@@ -303,13 +305,37 @@ function VendedorCartera({ vendedor, radarAlertsByPosId = {} }) {
                         )}
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowForm(true)}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold active:scale-95 transition-transform"
-                >
-                    <Plus size={15} /> Agregar
-                </button>
+                <div className="flex items-center gap-2">
+                    {activos.length > 0 && (
+                        <button
+                            onClick={() => setShowDoc(true)}
+                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-700 text-slate-100 rounded-xl text-sm font-bold active:scale-95 transition-transform"
+                            title="Exportar mi cartera a PDF"
+                        >
+                            <FileDown size={15} /> PDF
+                        </button>
+                    )}
+                    <button
+                        onClick={() => setShowForm(true)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-sm font-bold active:scale-95 transition-transform"
+                    >
+                        <Plus size={15} /> Agregar
+                    </button>
+                </div>
             </div>
+
+            {showDoc && (() => {
+                const { clientes, pdvs } = buildCarteraListas(activos, allPos);
+                return (
+                    <CarteraDoc
+                        titulo="Mi cartera"
+                        subtitulo={vendedor?.nombre || ''}
+                        clientes={clientes}
+                        pdvs={pdvs}
+                        onClose={() => setShowDoc(false)}
+                    />
+                );
+            })()}
 
             {/* ── Filter pills ── */}
             <div className="flex gap-2 flex-wrap">

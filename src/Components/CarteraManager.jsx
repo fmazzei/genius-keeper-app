@@ -9,9 +9,10 @@ import {
 import { db } from '@/Firebase/config.js';
 import {
     Plus, Trash2, Check, X, Search, MapPin, Phone, User,
-    AlertCircle, Loader, Building2, Clock, Store,
+    AlertCircle, Loader, Building2, Clock, Store, FileDown,
 } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
+import CarteraDoc, { buildCarteraListas } from '@/Components/CarteraDoc.jsx';
 
 // ─── Status pill ─────────────────────────────────────────────────────────────
 const StatusPill = ({ estado }) => {
@@ -408,6 +409,7 @@ const CarteraManager = ({ vendedor }) => {
     const [rejectingId, setRejectingId] = useState(null);
     const [actioning, setActioning]     = useState(null);
     const [error, setError]             = useState('');
+    const [showDoc, setShowDoc]         = useState(false); // PDF de la cartera
     // Maestro de PDV en vivo — la cartera muestra el despacho REAL del PDV (fuente
     // única de la verdad), no la copia congelada del doc de cartera (que quedaba
     // desactualizada, p.ej. Río Supermarket marcado "Centralizado" con PDV directos).
@@ -555,13 +557,37 @@ const CarteraManager = ({ vendedor }) => {
             <div className="px-4 py-4 space-y-3">
 
                 {tab === 'activos' && !showAssign && (
-                    <button
-                        onClick={() => setShowAssign(true)}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-slate-300 rounded-xl text-sm font-semibold text-slate-500 hover:border-brand-blue hover:text-brand-blue transition-colors"
-                    >
-                        <Plus size={16} /> Asignar PDV existente
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setShowAssign(true)}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 border-2 border-dashed border-slate-300 rounded-xl text-sm font-semibold text-slate-500 hover:border-brand-blue hover:text-brand-blue transition-colors"
+                        >
+                            <Plus size={16} /> Asignar PDV existente
+                        </button>
+                        {filtered.activos.length > 0 && (
+                            <button
+                                onClick={() => setShowDoc(true)}
+                                className="flex items-center justify-center gap-2 px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                title="Exportar clientes y puntos de venta a PDF"
+                            >
+                                <FileDown size={16} /> PDF
+                            </button>
+                        )}
+                    </div>
                 )}
+
+                {showDoc && (() => {
+                    const { clientes, pdvs } = buildCarteraListas(filtered.activos, [...posById.values()]);
+                    return (
+                        <CarteraDoc
+                            titulo="Cartera de clientes"
+                            subtitulo={vendedor?.name || ''}
+                            clientes={clientes}
+                            pdvs={pdvs}
+                            onClose={() => setShowDoc(false)}
+                        />
+                    );
+                })()}
 
                 {showAssign && (
                     <AssignPosForm
