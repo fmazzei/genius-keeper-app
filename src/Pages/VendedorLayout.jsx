@@ -32,6 +32,42 @@ import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
+// ─── Caché del Home (stale-while-revalidate) ─────────────────────────────────
+// Firestore `getDocs` es "servidor primero" estando online (la caché de
+// IndexedDB solo entra como respaldo si no hay red), así que por sí sola no hace
+// que la carga online se sienta instantánea. Para que el Home abra RELÁMPAGO en
+// 3G, guardamos en localStorage el último Home ya calculado (vendedor + stats +
+// commConfig) y en la siguiente apertura lo pintamos AL INSTANTE, mientras la
+// lectura real de Firestore refresca en segundo plano. `ingreso` es un Date →
+// se serializa a ms y se revive, para no romper `.toLocaleDateString`.
+const HOME_CACHE_PREFIX = 'gk_vend_home_';
+
+function readHomeCache(uid) {
+    try {
+        const raw = localStorage.getItem(HOME_CACHE_PREFIX + uid);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        const { v, commConfig, stats } = parsed || {};
+        if (!v || !stats) return null;
+        const vendedor = { ...v, ingreso: (v.ingresoMs != null ? new Date(v.ingresoMs) : null) };
+        delete vendedor.ingresoMs;
+        return { vendedor, commConfig, stats };
+    } catch {
+        return null;
+    }
+}
+
+function writeHomeCache(uid, { vendedor, commConfig, stats }) {
+    try {
+        const v = { ...vendedor };
+        if (v.ingreso instanceof Date) v.ingresoMs = v.ingreso.getTime();
+        delete v.ingreso;
+        localStorage.setItem(HOME_CACHE_PREFIX + uid, JSON.stringify({ v, commConfig, stats, cachedAt: Date.now() }));
+    } catch {
+        // localStorage lleno/no disponible (modo privado): la caché es opcional.
+    }
+}
+
 // ─── Tier style palette (by tier index, 0 = highest) ─────────────────────────
 
 const TIER_STYLES = [
@@ -1050,7 +1086,20 @@ const VendedorLayout = ({ user, onLogout }) => {
     useEffect(() => {
         if (!user?.uid) return;
 
-        setLoading(true);
+        // Stale-while-revalidate: si hay un Home en caché (localStorage), lo
+        // pintamos AL INSTANTE y NO mostramos spinner — la lectura de Firestore
+        // de abajo refresca los números en segundo plano. Sin caché (primer
+        // login del vendedor) sí mostramos el spinner normal.
+        const cached = readHomeCache(user.uid);
+        const hadCache = !!cached;
+        if (cached) {
+            setVendedor(cached.vendedor);
+            if (cached.commConfig) setCommConfig(cached.commConfig);
+            setStats(cached.stats);
+            setLoading(false);
+        } else {
+            setLoading(true);
+        }
         setLoadError('');
 
         // Request FCM permission in background on login
@@ -1060,10 +1109,11 @@ const VendedorLayout = ({ user, onLogout }) => {
         // (conexión móvil pobre, etc.) el spinner de "Meta del Mes" no debe
         // girar para siempre. A los 20s liberamos el loading con un aviso
         // y botón de reintentar, aunque load() siga corriendo en segundo
-        // plano y termine de poblar los datos más tarde.
+        // plano y termine de poblar los datos más tarde. Si ya había caché
+        // pintada, no mostramos error: el vendedor ya está viendo su Home.
         let settled = false;
         const timeoutId = setTimeout(() => {
-            if (!settled) {
+            if (!settled && !hadCache) {
                 console.warn('VendedorLayout: load() excedió 20s, liberando spinner.');
                 setLoadError('La conexión está lenta y no terminó de cargar. Reintenta.');
                 setLoading(false);
@@ -1087,7 +1137,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const { metaMensual, mesArranque, periodStart, periodEnd, periodoLabel, antesDeIngreso, sinIngreso, ingreso } = computeMetaMensual(meta);
 
                 setCommConfig(cfg);
-                setVendedor({ uid: user.uid, nombre, metaMensual, reporterId, mesArranque, antesDeIngreso, sinIngreso, ingreso });
+                const vendedorObj = { uid: user.uid, nombre, metaMensual, reporterId, mesArranque, antesDeIngreso, sinIngreso, ingreso };
+                setVendedor(vendedorObj);
 
                 const now       = new Date();
                 const hoy       = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1199,140 +1250,12 @@ const VendedorLayout = ({ user, onLogout }) => {
 
                 const activacionOk = puntosTotal > 0 && puntosActivacion / puntosTotal >= (cfg.activacionThreshold / 100);
 
-                // 4b. PDV docs de la cartera (para detectar régimen 'anaquel' y,
-                //     más abajo, armar la lista de despacho por cadena).
-                const posDocsMap = {};
-                if (carteraPosIds.size > 0) {
-                    const snaps = await Promise.all(
-                        [...carteraPosIds].map(id => getDoc(doc(db, 'pos', id)))
-                    );
-                    snaps.forEach(snap => { if (snap.exists()) posDocsMap[snap.id] = snap.data(); });
-                }
-
-                // 4c. Bono "Disponibilidad en Anaquel" — sustituye al Bono
-                //     Activación para cuentas con `pos.regimenComision ===
-                //     'anaquel'` (despacho centralizado/consignación, p.ej.
-                //     Excelsior Gama): se cumple si al menos
-                //     `cfg.anaquelThreshold`% de esas sucursales activas
-                //     promedian más de `cfg.anaquelMinUnits` unidades en
-                //     `visit_reports` de martes/viernes DEL MES en curso
-                //     (a diferencia del Bono Activación, que se evalúa por
-                //     semana — ver propuesta de esquema de remuneración).
-                const anaquelPosIds = cartera
-                    .filter(c => c.posId && posDocsMap[c.posId]?.regimenComision === 'anaquel' && posDocsMap[c.posId]?.active !== false)
-                    .map(c => c.posId);
-                const hasAnaquel = anaquelPosIds.length > 0;
-                let anaquelCubiertos = 0;
-                let anaquelOk = false;
-
-                // 4c-bis. Visitas de TODA la cartera (no solo anaquel) — una sola
-                //     lectura, reusada para el bono Anaquel (filtrado a
-                //     anaquelPosIds + mar/vie + mes en curso, abajo) y para el
-                //     Radar de Acción Operativa / Quiebres de Stock (todo el
-                //     historial, sin filtro de fecha — necesita la ÚLTIMA visita
-                //     de cada PDV, sea de este mes o no).
-                let visitasCartera = [];
-                if (carteraPosIds.size > 0) {
-                    try {
-                        const idsArr = [...carteraPosIds];
-                        for (let i = 0; i < idsArr.length; i += 10) {
-                            const chunk = idsArr.slice(i, i + 10);
-                            const visitasSnap = await getDocs(
-                                query(collection(db, 'visit_reports'), where('posId', 'in', chunk))
-                            );
-                            visitasCartera.push(...visitasSnap.docs.map(d => d.data()));
-                        }
-                    } catch (e) {
-                        console.warn('visit_reports (cartera) load error:', e);
-                    }
-                }
-
-                if (hasAnaquel) {
-                    const visitasMarVie = visitasCartera.filter(v => {
-                        if (!anaquelPosIds.includes(v.posId)) return false;
-                        const t = v.createdAt?.toDate?.() || new Date(v.createdAt);
-                        if (t < inicioMes) return false;
-                        const dia = t.getDay(); // 2 = martes, 5 = viernes
-                        return dia === 2 || dia === 5;
-                    });
-                    const inventarioPorPos = {};
-                    visitasMarVie.forEach(v => {
-                        if (!inventarioPorPos[v.posId]) inventarioPorPos[v.posId] = [];
-                        inventarioPorPos[v.posId].push(v.inventoryLevel || 0);
-                    });
-                    anaquelCubiertos = anaquelPosIds.filter(posId => {
-                        const niveles = inventarioPorPos[posId];
-                        if (!niveles || niveles.length === 0) return false;
-                        const promedio = niveles.reduce((a, b) => a + b, 0) / niveles.length;
-                        return promedio > cfg.anaquelMinUnits;
-                    }).length;
-                    anaquelOk = (anaquelCubiertos / anaquelPosIds.length) >= (cfg.anaquelThreshold / 100);
-                }
-
-                // 4d. Radar de Acción Operativa — misma lógica que useAlerts.js
-                //     (Visita Vencida / Nunca Visitado / Quiebre de Stock) pero
-                //     acotada a la cartera de ESTE vendedor y emparejada por
-                //     `posId` (más confiable que `posName`, ya disponible en
-                //     posDocsMap/cartera sin lecturas extra).
-                const latestVisitByPos = {};
-                visitasCartera.forEach(v => {
-                    const t = v.createdAt?.toDate?.() || new Date(v.createdAt);
-                    if (!latestVisitByPos[v.posId] || t > latestVisitByPos[v.posId]._t) {
-                        latestVisitByPos[v.posId] = { ...v, _t: t };
-                    }
-                });
-                const radarAlerts = [];
-                cartera.forEach(c => {
-                    if (!c.posId) return;
-                    const posData = posDocsMap[c.posId];
-                    if (posData && posData.active === false) return;
-                    const visitInterval = posData?.visitInterval || 7;
-                    const lastVisit = latestVisitByPos[c.posId];
-                    if (lastVisit) {
-                        const lastVisitDate = new Date(lastVisit._t);
-                        lastVisitDate.setHours(0, 0, 0, 0);
-                        const daysSinceLastVisit = (hoy - lastVisitDate) / (1000 * 60 * 60 * 24);
-                        if (daysSinceLastVisit > visitInterval) {
-                            radarAlerts.push({
-                                id: `ovd-${c.posId}`, posId: c.posId, type: 'Visita Vencida', posName: c.clientName,
-                                details: `Han pasado ${Math.floor(daysSinceLastVisit)} días (intervalo: ${visitInterval}).`,
-                                priorityScore: 2,
-                            });
-                        }
-                        if (lastVisit.stockout) {
-                            radarAlerts.push({
-                                id: `stk-${c.posId}`, posId: c.posId, type: 'Quiebre de Stock', posName: c.clientName,
-                                details: 'El último reporte indicó 0 unidades.', priorityScore: 1,
-                            });
-                        }
-                    } else {
-                        radarAlerts.push({
-                            id: `nvr-${c.posId}`, posId: c.posId, type: 'Nunca Visitado', posName: c.clientName,
-                            details: 'Este PDV activo nunca ha registrado una visita.', priorityScore: 2,
-                        });
-                    }
-                });
-                radarAlerts.sort((a, b) => a.priorityScore - b.priorityScore);
-                const stockoutsCount = radarAlerts.filter(a => a.type === 'Quiebre de Stock').length;
-
-                // Mapa posId → alertas, para que la Cartera resalte qué PDV
-                // están generando el radar (botón "+N alertas más").
-                const radarAlertsByPosId = {};
-                radarAlerts.forEach(a => {
-                    if (!radarAlertsByPosId[a.posId]) radarAlertsByPosId[a.posId] = [];
-                    radarAlertsByPosId[a.posId].push(a);
-                });
-
-                // 5. Facturas por vencer (próximos 3 días, no pagadas) y % de
-                //    facturas cobradas dentro de plazo este mes (Bono
-                //    Puntualidad proporcional: pagadaDentroDePlazo viene de
-                //    procesarPagoFactura, con +5 días de margen sobre el
-                //    vencimiento heredado de Zoho).
+                // 5. Cobranza / puntualidad (solo usa facturas_vendedor, ya cargado
+                //    en el batch). Se calcula ANTES del primer pintado porque
+                //    alimenta el hero (contadores por vencer / vencidas / % a tiempo).
                 // Fase 3.6 — Cobranza por PUNTUALIDAD (no por volumen). Se mide
                 // sobre las facturas de la cartera que ya "debían cobrarse"
-                // (vencidas o pagadas): qué % se cobró a tiempo (pagadaDentroDePlazo)
-                // — solo informativo, el Bono Cobranza se paga proporcional por
-                // factura. Además, contadores accionables: por vencer / vencidas.
+                // (vencidas o pagadas): qué % se cobró a tiempo (pagadaDentroDePlazo).
                 let facturasPorVencer = 0;
                 let facturasVencidas = 0;
                 let montoVencido = 0;
@@ -1353,8 +1276,6 @@ const VendedorLayout = ({ user, onLogout }) => {
                             if (vencida) { facturasVencidas++; montoVencido += Number(f.monto) || 0; }
                             else if (venc <= tresDias) { facturasPorVencer++; }
                         }
-                        // Puntualidad: entran las que ya debían cobrarse (vencidas
-                        // o ya pagadas). A tiempo = pagada dentro de vencimiento+gracia.
                         if (vencida || pagada) {
                             cobranzaDenominador++;
                             if (pagada && f.pagadaDentroDePlazo === true) cobranzaATiempo++;
@@ -1365,82 +1286,229 @@ const VendedorLayout = ({ user, onLogout }) => {
                 }
                 const cobranzaTasa = cobranzaDenominador > 0 ? (cobranzaATiempo / cobranzaDenominador) * 100 : null;
 
-                const newStats = {
+                // ── PRIMER PINTADO (relámpago) ──────────────────────────────────
+                //    Todos los números del hero (meta, nivel, comisión de la semana,
+                //    despachos, velocidad, bonos de pedido y cobranza) ya están
+                //    calculados con el batch de lecturas de arriba. Los pintamos y
+                //    LIBERAMOS el spinner AHORA. El Radar de Acción y el Bono Anaquel
+                //    dependen de lecturas extra (pos + visit_reports); corren en
+                //    segundo plano (abajo) y se mezclan sin bloquear la vista. En 3G
+                //    esto es la diferencia entre "abre al instante" y "spinner de
+                //    varios segundos".
+                const heroStats = {
                     unidadesDelMes, comisionSemana, despachoHoy,
                     activacionOk, puntosActivacion, puntosTotal,
                     facturasPorVencer, puntualidadPct,
-                    hasAnaquel, anaquelOk, anaquelCubiertos, anaquelTotal: anaquelPosIds.length,
+                    hasAnaquel: false, anaquelOk: false, anaquelCubiertos: 0, anaquelTotal: 0,
                     runRateActual, runRateNeeded, diasRestantes,
-                    radarAlerts, stockoutsCount, radarAlertsByPosId,
+                    radarAlerts: [], stockoutsCount: 0, radarAlertsByPosId: {},
                     periodoLabel, mesArranque,
                     cobranzaTasa, facturasVencidas, montoVencido,
                 };
-                setStats(newStats);
+                setStats(heroStats);
+                // Cachea el hero ya (aunque falte el Radar/Anaquel de la fase 2):
+                // la próxima apertura pinta al instante lo esencial.
+                writeHomeCache(user.uid, { vendedor: vendedorObj, commConfig: cfg, stats: heroStats });
 
-                // Estado de Cuenta por período (Fase 3.7/3.8) — histórico devengado
-                // vs. pagado (liquidaciones registradas por administración).
+                // Estado de Cuenta por período (Fase 3.7/3.8) — se puede pintar ya
+                // (solo depende de facturas + liquidaciones + cartera). El factor de
+                // anaquel del período en curso se corrige abajo si aplica.
                 const liquidaciones = liquidacionesSnap ? liquidacionesSnap.docs.map(d => d.data()) : [];
-                // Períodos congelados (snapshot al cierre) → mapa por periodKey.
                 const cerradosMap = {};
                 if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerradosMap[c.periodKey] = c; });
-                // Factor de anaquel del período en curso (proxy v1: logrado=1 / no=0).
-                const anaquelOpts = hasAnaquel ? { hasAnaquel: true, factor: anaquelOk ? 1 : 0 } : { hasAnaquel: false, factor: 0 };
                 const facturasArr = facturasSnap ? facturasSnap.docs.map(d => d.data()) : [];
                 setEstados(computeEstadosDeCuenta(
-                    meta,
-                    facturasArr,
-                    liquidaciones,
-                    { carteraSize: puntosTotal, cerrados: cerradosMap, anaquel: anaquelOpts },
+                    meta, facturasArr, liquidaciones,
+                    { carteraSize: puntosTotal, cerrados: cerradosMap, anaquel: { hasAnaquel: false, factor: 0 } },
                 ));
-                // Insumos para el comprobante detallado por período (desglose con evidencia).
                 setDesgloseInputs({ meta, facturas: facturasArr, carteraSize: puntosTotal, cerrados: cerradosMap, liquidaciones });
 
-                // 6. PDV list for dispatch — collapse centralizado chains to a single entry per chain
-                //    (posDocsMap fue cargado arriba, en 4b).
-                const centralizadoByChain = {};
-                const vendorPosList = [];
-                cartera.forEach(c => {
-                    if (!c.posId) return;
-                    const posData  = posDocsMap[c.posId] || {};
-                    const chain    = posData.chain || '';
-                    const isCentralizado =
-                        posData.tipoDespacho === 'centralizado' ||
-                        (!posData.tipoDespacho && chain && chain !== 'Automercados Individuales');
-                    if (!isCentralizado) {
-                        vendorPosList.push({ id: c.posId, name: c.clientName, chain });
-                    } else {
-                        if (!centralizadoByChain[chain]) centralizadoByChain[chain] = [];
-                        centralizadoByChain[chain].push({
-                            id: c.posId,
-                            name: c.clientName,
-                            chain,
-                            isChainHead: posData.isChainHead === true,
-                        });
-                    }
-                });
-                Object.entries(centralizadoByChain).forEach(([chain, members]) => {
-                    const head = members.find(p => p.isChainHead) ?? members[0];
-                    if (head) vendorPosList.push({ id: head.id, name: chain, chain });
-                });
-                setPosList(vendorPosList);
-
-                // Lista para "Tomar Pedido": todos los clientes activos de la
-                // cartera, tengan o no un PDV vinculado en la colección `pos`.
+                // Lista para "Tomar Pedido": clientes activos de la cartera (no
+                // requiere lecturas extra de `pos`).
                 setClientesPosList(cartera.map(c => ({
                     id:    c.posId || c.id,
                     name:  c.clientName,
                     chain: c.chain || '',
                 })));
 
-                // 7. Sync alert conditions to Firestore y cargarlas — en
-                //    segundo plano: el Home ya tiene todo lo que necesita
-                //    (stats, posList, clientesPosList) y no debe esperar
-                //    a esto para liberar el spinner de "Meta del Mes".
-                syncAlertas(user.uid, newStats).then(() => loadAlertas(user.uid));
+                // Spinner liberado: el hero ya está completo.
+                settled = true;
+                clearTimeout(timeoutId);
+                setLoading(false);
+
+                if (carteraPosIds.size === 0) {
+                    setPosList([]);
+                    syncAlertas(user.uid, heroStats).then(() => loadAlertas(user.uid));
+                    return;
+                }
+
+                // ── SEGUNDO PINTADO (segundo plano) ─────────────────────────────
+                //    PDV + visitas de la cartera en UNA sola tanda paralela. Antes:
+                //    un getDoc por cada PDV y LUEGO un bucle SECUENCIAL de visitas
+                //    por chunks de 10 (un round-trip de Firestore tras otro). Ahora
+                //    los PDV y TODOS los chunks de visitas van en un solo Promise.all
+                //    → un único tramo de red en vez de varios encadenados. Alimenta
+                //    el Bono Anaquel, el Radar y la lista de despacho por cadena.
+                try {
+                    const idsArr = [...carteraPosIds];
+                    const posChunks = [];
+                    for (let i = 0; i < idsArr.length; i += 10) posChunks.push(idsArr.slice(i, i + 10));
+
+                    const [posSnaps, ...visitasSnaps] = await Promise.all([
+                        Promise.all(idsArr.map(id => getDoc(doc(db, 'pos', id)))),
+                        ...posChunks.map(chunk =>
+                            getDocs(query(collection(db, 'visit_reports'), where('posId', 'in', chunk)))
+                                .catch(e => { console.warn('visit_reports (cartera) load error:', e); return null; })
+                        ),
+                    ]);
+
+                    const posDocsMap = {};
+                    posSnaps.forEach(snap => { if (snap.exists()) posDocsMap[snap.id] = snap.data(); });
+
+                    const visitasCartera = [];
+                    visitasSnaps.forEach(snap => { if (snap) visitasCartera.push(...snap.docs.map(d => d.data())); });
+
+                    // Bono "Disponibilidad en Anaquel" — sustituye al Bono Activación
+                    // para cuentas con `pos.regimenComision === 'anaquel'` (despacho
+                    // centralizado/consignación, p.ej. Excelsior Gama): se cumple si
+                    // al menos `cfg.anaquelThreshold`% de esas sucursales activas
+                    // promedian más de `cfg.anaquelMinUnits` unidades en
+                    // `visit_reports` de martes/viernes DEL MES en curso.
+                    const anaquelPosIds = cartera
+                        .filter(c => c.posId && posDocsMap[c.posId]?.regimenComision === 'anaquel' && posDocsMap[c.posId]?.active !== false)
+                        .map(c => c.posId);
+                    const hasAnaquel = anaquelPosIds.length > 0;
+                    let anaquelCubiertos = 0;
+                    let anaquelOk = false;
+                    if (hasAnaquel) {
+                        const visitasMarVie = visitasCartera.filter(v => {
+                            if (!anaquelPosIds.includes(v.posId)) return false;
+                            const t = v.createdAt?.toDate?.() || new Date(v.createdAt);
+                            if (t < inicioMes) return false;
+                            const dia = t.getDay(); // 2 = martes, 5 = viernes
+                            return dia === 2 || dia === 5;
+                        });
+                        const inventarioPorPos = {};
+                        visitasMarVie.forEach(v => {
+                            if (!inventarioPorPos[v.posId]) inventarioPorPos[v.posId] = [];
+                            inventarioPorPos[v.posId].push(v.inventoryLevel || 0);
+                        });
+                        anaquelCubiertos = anaquelPosIds.filter(posId => {
+                            const niveles = inventarioPorPos[posId];
+                            if (!niveles || niveles.length === 0) return false;
+                            const promedio = niveles.reduce((a, b) => a + b, 0) / niveles.length;
+                            return promedio > cfg.anaquelMinUnits;
+                        }).length;
+                        anaquelOk = (anaquelCubiertos / anaquelPosIds.length) >= (cfg.anaquelThreshold / 100);
+                    }
+
+                    // Radar de Acción Operativa — Visita Vencida / Nunca Visitado /
+                    // Quiebre de Stock, acotado a la cartera de ESTE vendedor.
+                    const latestVisitByPos = {};
+                    visitasCartera.forEach(v => {
+                        const t = v.createdAt?.toDate?.() || new Date(v.createdAt);
+                        if (!latestVisitByPos[v.posId] || t > latestVisitByPos[v.posId]._t) {
+                            latestVisitByPos[v.posId] = { ...v, _t: t };
+                        }
+                    });
+                    const radarAlerts = [];
+                    cartera.forEach(c => {
+                        if (!c.posId) return;
+                        const posData = posDocsMap[c.posId];
+                        if (posData && posData.active === false) return;
+                        const visitInterval = posData?.visitInterval || 7;
+                        const lastVisit = latestVisitByPos[c.posId];
+                        if (lastVisit) {
+                            const lastVisitDate = new Date(lastVisit._t);
+                            lastVisitDate.setHours(0, 0, 0, 0);
+                            const daysSinceLastVisit = (hoy - lastVisitDate) / (1000 * 60 * 60 * 24);
+                            if (daysSinceLastVisit > visitInterval) {
+                                radarAlerts.push({
+                                    id: `ovd-${c.posId}`, posId: c.posId, type: 'Visita Vencida', posName: c.clientName,
+                                    details: `Han pasado ${Math.floor(daysSinceLastVisit)} días (intervalo: ${visitInterval}).`,
+                                    priorityScore: 2,
+                                });
+                            }
+                            if (lastVisit.stockout) {
+                                radarAlerts.push({
+                                    id: `stk-${c.posId}`, posId: c.posId, type: 'Quiebre de Stock', posName: c.clientName,
+                                    details: 'El último reporte indicó 0 unidades.', priorityScore: 1,
+                                });
+                            }
+                        } else {
+                            radarAlerts.push({
+                                id: `nvr-${c.posId}`, posId: c.posId, type: 'Nunca Visitado', posName: c.clientName,
+                                details: 'Este PDV activo nunca ha registrado una visita.', priorityScore: 2,
+                            });
+                        }
+                    });
+                    radarAlerts.sort((a, b) => a.priorityScore - b.priorityScore);
+                    const stockoutsCount = radarAlerts.filter(a => a.type === 'Quiebre de Stock').length;
+                    const radarAlertsByPosId = {};
+                    radarAlerts.forEach(a => {
+                        if (!radarAlertsByPosId[a.posId]) radarAlertsByPosId[a.posId] = [];
+                        radarAlertsByPosId[a.posId].push(a);
+                    });
+
+                    // Mezcla el Radar + Anaquel en el hero ya pintado.
+                    const fullStats = {
+                        ...heroStats,
+                        hasAnaquel, anaquelOk, anaquelCubiertos, anaquelTotal: anaquelPosIds.length,
+                        radarAlerts, stockoutsCount, radarAlertsByPosId,
+                    };
+                    setStats(fullStats);
+                    // Actualiza la caché con el Home completo (Radar + Anaquel).
+                    writeHomeCache(user.uid, { vendedor: vendedorObj, commConfig: cfg, stats: fullStats });
+
+                    // Corrige el Estado de Cuenta con el factor de anaquel real
+                    // (solo si el vendedor tiene cuentas de régimen anaquel).
+                    if (hasAnaquel) {
+                        setEstados(computeEstadosDeCuenta(
+                            meta, facturasArr, liquidaciones,
+                            { carteraSize: puntosTotal, cerrados: cerradosMap, anaquel: { hasAnaquel: true, factor: anaquelOk ? 1 : 0 } },
+                        ));
+                    }
+
+                    // Lista de despacho — colapsa cadenas centralizadas a una entrada.
+                    const centralizadoByChain = {};
+                    const vendorPosList = [];
+                    cartera.forEach(c => {
+                        if (!c.posId) return;
+                        const posData  = posDocsMap[c.posId] || {};
+                        const chain    = posData.chain || '';
+                        const isCentralizado =
+                            posData.tipoDespacho === 'centralizado' ||
+                            (!posData.tipoDespacho && chain && chain !== 'Automercados Individuales');
+                        if (!isCentralizado) {
+                            vendorPosList.push({ id: c.posId, name: c.clientName, chain });
+                        } else {
+                            if (!centralizadoByChain[chain]) centralizadoByChain[chain] = [];
+                            centralizadoByChain[chain].push({
+                                id: c.posId, name: c.clientName, chain,
+                                isChainHead: posData.isChainHead === true,
+                            });
+                        }
+                    });
+                    Object.entries(centralizadoByChain).forEach(([chain, members]) => {
+                        const head = members.find(p => p.isChainHead) ?? members[0];
+                        if (head) vendorPosList.push({ id: head.id, name: chain, chain });
+                    });
+                    setPosList(vendorPosList);
+
+                    // Sincroniza condiciones de alerta con el stats completo.
+                    syncAlertas(user.uid, fullStats).then(() => loadAlertas(user.uid));
+                } catch (e2) {
+                    // El hero ya está pintado; un fallo aquí (Radar/Anaquel/lista de
+                    // despacho) NO debe mostrar error ni bloquear la vista.
+                    console.warn('VendedorLayout fase 2 (radar/anaquel/pos) error:', e2);
+                    syncAlertas(user.uid, heroStats).then(() => loadAlertas(user.uid));
+                }
 
             } catch (e) {
                 console.warn('VendedorLayout load error:', e);
-                setLoadError(e?.message || 'Error cargando datos del vendedor.');
+                // Si ya hay caché pintada, un fallo del refresco en segundo plano
+                // no debe romper la vista con un banner de error.
+                if (!hadCache) setLoadError(e?.message || 'Error cargando datos del vendedor.');
             } finally {
                 settled = true;
                 clearTimeout(timeoutId);

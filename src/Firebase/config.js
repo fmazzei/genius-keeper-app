@@ -2,7 +2,7 @@
 
 import { initializeApp } from "firebase/app";
 import { initializeAuth, browserLocalPersistence } from "firebase/auth";
-import { initializeFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { getMessaging } from "firebase/messaging";
 import { getFunctions } from "firebase/functions";
 // ✅ SE ELIMINA LA IMPORTACIÓN DE DYNAMIC LINKS
@@ -27,8 +27,17 @@ export const auth = initializeAuth(app, {
 // iOS/PWA) la conexión se colgaba y la app quedaba en spinner hasta pedir
 // "restablecer conexión". Con la autodetección, Firestore cae a long-polling
 // automáticamente y la carga deja de trabarse.
+//
+// localCache (persistentLocalCache): caché offline en IndexedDB. Es la clave de
+// una carga "relámpago" para un vendedor en la calle con señal 3G: en cada
+// apertura posterior el Home se pinta AL INSTANTE con los últimos datos en caché
+// y Firestore revalida contra el servidor en segundo plano (no se espera al
+// round-trip de red para ver la pantalla). persistentMultipleTabManager permite
+// varias pestañas/instancias sin romper la caché. Si el navegador no soporta
+// IndexedDB, Firestore cae solo a memoria sin fallar.
 export const db = initializeFirestore(app, {
   experimentalAutoDetectLongPolling: true,
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
 /** @type {import('firebase/messaging').Messaging | null} */
 let messaging = null;
