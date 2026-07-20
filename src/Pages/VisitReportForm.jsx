@@ -233,9 +233,9 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
 const Step2_Sales = ({ report, setReport, isReadOnly }) => (
     <FormSection title="PVP y Reposición" icon={<DollarSign className="text-brand-blue mr-3"/>}>
         <div className="space-y-4">
-            <FormInput label="Precio de Venta al Público (PVP)" type="number" value={report.price} onChange={e => setReport(prev => ({...prev, price: e.target.value}))} placeholder="Ej: 10.25" disabled={isReadOnly} />
+            <FormInput label="Precio de Venta al Público (PVP) *" type="number" value={report.price} onChange={e => setReport(prev => ({...prev, price: e.target.value}))} placeholder="Ej: 10.25" disabled={isReadOnly} />
             <div>
-                <label className="block text-sm font-medium text-slate-700">Reposición de inventario en punto de venta</label>
+                <label className="block text-sm font-medium text-slate-700">Reposición de inventario en punto de venta *</label>
                 <p className="text-xs text-slate-500 mb-1">¿Cuántas unidades vas a despachar en esta visita?</p>
                 <input
                     type="number"
@@ -246,6 +246,7 @@ const Step2_Sales = ({ report, setReport, isReadOnly }) => (
                     className="w-full p-3 border border-slate-300 rounded-md focus:ring-brand-yellow focus:border-brand-yellow disabled:bg-slate-100 disabled:text-slate-500"
                 />
             </div>
+            {!isReadOnly && <p className="text-xs text-slate-400">* Ambos campos son obligatorios para continuar.</p>}
         </div>
     </FormSection>
 );
@@ -482,7 +483,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         let isValid = false;
         switch (currentStep) {
             case 1: isValid = report.batches.length > 0 || report.stockout; break;
-            case 2: isValid = report.price !== ''; break;
+            case 2: isValid = report.price !== '' && report.orderQuantity !== ''; break;
             case 3: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
             case 4:
                 isValid = competitorMode === 'preloaded' || report.competition.length > 0;
