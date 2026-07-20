@@ -9,6 +9,7 @@ const NewEntrantModal = ({ isOpen, onClose, onSave }) => {
         brand: '',
         presentation: '',
         price: '',
+        weight_g: '',
         manufacturer: '',
         hasPop: null,
         hasTasting: null,
@@ -28,12 +29,15 @@ const NewEntrantModal = ({ isOpen, onClose, onSave }) => {
         const finalEntrantData = {
             ...entrant,
             price: Number(entrant.price) || 0,
+            // Gramaje real (si el mercaderista lo aporta) para que el
+            // posicionamiento por precio/100g no asuma 200g fijo.
+            weight_g: Number(entrant.weight_g) || null,
             competitorType: isDirect ? 'directo' : 'indirecto'
         };
         onSave(finalEntrantData);
-        
+
         // Resetea el estado para la próxima vez que se abra
-        setEntrant({ brand: '', presentation: '', price: '', manufacturer: '', hasPop: null, hasTasting: null });
+        setEntrant({ brand: '', presentation: '', price: '', weight_g: '', manufacturer: '', hasPop: null, hasTasting: null });
         setIsDirect(null);
         onClose();
     };
@@ -46,6 +50,7 @@ const NewEntrantModal = ({ isOpen, onClose, onSave }) => {
                 <FormInput label="Marca" value={entrant.brand} onChange={e => setEntrant({...entrant, brand: e.target.value})} placeholder="Ej: Quesos La Pradera" />
                 <FormInput label="Presentación" value={entrant.presentation} onChange={e => setEntrant({...entrant, presentation: e.target.value})} placeholder="Ej: Natural Untable 200g" />
                 <FormInput label="Precio (PVP)" type="number" value={entrant.price} onChange={e => setEntrant({...entrant, price: e.target.value})} placeholder="Ej: 9.50" />
+                <FormInput label="Gramaje (g)" type="number" value={entrant.weight_g} onChange={e => setEntrant({...entrant, weight_g: e.target.value})} placeholder="Ej: 200 (para comparar por precio/100g)" />
                 <FormInput label="Fabricante (si es visible)" value={entrant.manufacturer} onChange={e => setEntrant({...entrant, manufacturer: e.target.value})} placeholder="Ej: Lácteos Del Sur C.A." />
                 
                 <div>

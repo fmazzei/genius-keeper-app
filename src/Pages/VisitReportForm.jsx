@@ -56,7 +56,10 @@ const useCompetitorProducts = () => {
     const [products, setProducts] = useState([]);
     useEffect(() => {
         getDocs(query(collection(db, 'competitors'), where('active', '==', true)))
-            .then(snap => setProducts(snap.docs.map(d => ({ id: d.id, weight_g: d.data().weight_g, text: `${d.data().brand} ${d.data().name} ${d.data().weight_g}g` }))))
+            .then(snap => setProducts(snap.docs.map(d => {
+                const data = d.data();
+                return { id: d.id, brand: data.brand || '', name: data.name || '', weight_g: data.weight_g, text: `${data.brand} ${data.name} ${data.weight_g}g` };
+            })))
             .catch(() => {});
     }, []);
     return products;
@@ -269,19 +272,22 @@ const Step3_Execution = ({ report, setReport, isReadOnly }) => {
 
 const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince }) => {
     const competitorProducts = useCompetitorProducts();
-    const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
+    // `brand` y `productName` se guardan por separado (además del texto `product`)
+    // porque el Índice de Precios y Tendencias de Mercado los necesitan
+    // estructurados; sin ellos esos tableros quedan vacíos con datos reales.
+    const [comp, setComp] = useState({ product: '', brand: '', productName: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
     const [isEntrantModalOpen, setIsEntrantModalOpen] = useState(false);
 
     const handleProductSelect = (e) => {
         const selected = competitorProducts.find(p => p.text === e.target.value);
-        setComp(prev => ({ ...prev, product: e.target.value, weight_g: selected?.weight_g || null }));
+        setComp(prev => ({ ...prev, product: e.target.value, brand: selected?.brand || '', productName: selected?.name || '', weight_g: selected?.weight_g || null }));
     };
 
     const handleAddCompetitor = () => {
         if (isReadOnly) return;
         if (comp.product && comp.price) {
             setReport(prev => ({ ...prev, competition: [...prev.competition, comp] }));
-            setComp({ product: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
+            setComp({ product: '', brand: '', productName: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
         } else {
             alert("Por favor, selecciona un producto y añade su precio.");
         }

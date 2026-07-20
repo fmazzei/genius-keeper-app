@@ -13,7 +13,10 @@ const useCompetitorProducts = () => {
     const [products, setProducts] = useState([]);
     useEffect(() => {
         getDocs(query(collection(db, 'competitors'), where('active', '==', true)))
-            .then(snap => setProducts(snap.docs.map(d => ({ id: d.id, weight_g: d.data().weight_g, text: `${d.data().brand} ${d.data().name} ${d.data().weight_g}g` }))))
+            .then(snap => setProducts(snap.docs.map(d => {
+                const data = d.data();
+                return { id: d.id, brand: data.brand || '', name: data.name || '', weight_g: data.weight_g, text: `${data.brand} ${data.name} ${data.weight_g}g` };
+            })))
             .catch(() => {});
     }, []);
     return products;
@@ -23,7 +26,7 @@ const EditReportForm = ({ report, onSave, onClose }) => {
     const competitorProducts = useCompetitorProducts();
     const [editedData, setEditedData] = useState(report);
     const [isProcessing, setIsProcessing] = useState(false);
-    const [comp, setComp] = useState({ product: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
+    const [comp, setComp] = useState({ product: '', brand: '', productName: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
     const [isEntrantModalOpen, setIsEntrantModalOpen] = useState(false);
 
     useEffect(() => { setEditedData(report); }, [report]);
@@ -33,13 +36,15 @@ const EditReportForm = ({ report, onSave, onClose }) => {
 
     const handleProductSelect = (e) => {
         const selected = competitorProducts.find(p => p.text === e.target.value);
-        setComp(prev => ({ ...prev, product: e.target.value, weight_g: selected?.weight_g || null }));
+        // brand/productName por separado: el Índice de Precios y Tendencias los
+        // necesitan estructurados (ver VisitReportForm).
+        setComp(prev => ({ ...prev, product: e.target.value, brand: selected?.brand || '', productName: selected?.name || '', weight_g: selected?.weight_g || null }));
     };
 
     const handleAddCompetitor = () => {
         if (comp.product && comp.price) {
             handleChange('competition', [...(editedData.competition || []), comp]);
-            setComp({ product: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
+            setComp({ product: '', brand: '', productName: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
         }
     };
     const handleRemoveCompetitor = (index) => handleChange('competition', editedData.competition.filter((_, i) => i !== index));
