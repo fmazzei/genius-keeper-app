@@ -234,7 +234,18 @@ const Step2_Sales = ({ report, setReport, isReadOnly }) => (
     <FormSection title="PVP y Reposición" icon={<DollarSign className="text-brand-blue mr-3"/>}>
         <div className="space-y-4">
             <FormInput label="Precio de Venta al Público (PVP)" type="number" value={report.price} onChange={e => setReport(prev => ({...prev, price: e.target.value}))} placeholder="Ej: 10.25" disabled={isReadOnly} />
-            <FormInput label="Unidades Pedidas (Reposición)" type="number" value={report.orderQuantity} onChange={e => setReport(prev => ({...prev, orderQuantity: e.target.value}))} placeholder="Ej: 12" disabled={isReadOnly} />
+            <div>
+                <label className="block text-sm font-medium text-slate-700">Reposición de inventario en punto de venta</label>
+                <p className="text-xs text-slate-500 mb-1">¿Cuántas unidades vas a despachar en esta visita?</p>
+                <input
+                    type="number"
+                    value={report.orderQuantity}
+                    onChange={e => setReport(prev => ({...prev, orderQuantity: e.target.value}))}
+                    placeholder="Ej: 12"
+                    disabled={isReadOnly}
+                    className="w-full p-3 border border-slate-300 rounded-md focus:ring-brand-yellow focus:border-brand-yellow disabled:bg-slate-100 disabled:text-slate-500"
+                />
+            </div>
         </div>
     </FormSection>
 );
@@ -393,15 +404,22 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
     // documento) para poder detectar/depurar reportes duplicados.
     const reportId = useRef(crypto.randomUUID()).current;
     const [currentStep, setCurrentStep] = useState(1);
-    // Asistente guiado del mercaderista: se abre la primera vez (recordado por
-    // usuario en localStorage) y se reabre con el botón de ayuda del encabezado.
-    const [guideOpen, setGuideOpen] = useState(() => {
+    // Asistente guiado del mercaderista. `guideEnabled` se activa la primera vez
+    // (recordado por usuario en localStorage) o con el botón de ayuda. La guía
+    // debe aparecer AUTOMÁTICAMENTE en CADA sección del reporte: por eso el
+    // cierre (X) solo oculta la del paso actual (`guideDismissedSteps`) y al
+    // avanzar de paso vuelve a salir sola. "No mostrar de nuevo" la apaga del
+    // todo y lo recuerda.
+    const [guideEnabled, setGuideEnabled] = useState(() => {
         if (isReadOnly) return false;
         try { return !localStorage.getItem(GUIDE_SEEN_KEY); } catch { return false; }
     });
+    const [guideDismissedSteps, setGuideDismissedSteps] = useState({});
+    const openGuide = () => { setGuideDismissedSteps({}); setGuideEnabled(true); };
+    const closeGuideStep = () => setGuideDismissedSteps(prev => ({ ...prev, [currentStep]: true }));
     const dismissGuideForever = () => {
         try { localStorage.setItem(GUIDE_SEEN_KEY, '1'); } catch { /* modo privado */ }
-        setGuideOpen(false);
+        setGuideEnabled(false);
     };
     const [submissionState, setSubmissionState] = useState('form');
     const [isOfflineSave, setIsOfflineSave] = useState(false);
@@ -604,7 +622,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                 </div>
                 {!isReadOnly && (
                     <button
-                        onClick={() => setGuideOpen(true)}
+                        onClick={openGuide}
                         className="shrink-0 flex items-center gap-1.5 text-brand-blue bg-blue-50 border border-blue-100 rounded-full px-3 py-1.5 text-xs font-bold hover:bg-blue-100"
                     >
                         <HelpCircle size={15} />
@@ -641,10 +659,10 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                 </footer>
             )}
 
-            {!isReadOnly && guideOpen && (
+            {!isReadOnly && guideEnabled && !guideDismissedSteps[currentStep] && (
                 <ReporterGuideCoach
                     currentStep={currentStep}
-                    onClose={() => setGuideOpen(false)}
+                    onClose={closeGuideStep}
                     onDismissForever={dismissGuideForever}
                 />
             )}

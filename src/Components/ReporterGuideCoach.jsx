@@ -31,7 +31,7 @@ const STEP_GUIDE = {
         intro: 'El precio manda: sin PVP no avanzas.',
         points: [
             'Anota el precio al público (PVP) de nuestro producto en ese PDV.',
-            'Indica cuántas unidades pediste de reposición (si aplica).',
+            'Indica cuántas unidades vas a despachar en esta visita (reposición).',
         ],
     },
     3: {
