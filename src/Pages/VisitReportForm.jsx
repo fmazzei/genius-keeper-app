@@ -162,15 +162,15 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
             <div className="space-y-4">
                 {!isReadOnly && <p className="text-sm text-slate-600">Registra cada lote del anaquel: primero su <b>fecha de vencimiento</b>, luego <b>cuántas unidades</b> hay.</p>}
                 {!isReadOnly && (
-                <div className="bg-slate-50 p-4 rounded-xl border space-y-4">
+                <div className="bg-slate-50 p-4 rounded-xl border space-y-4 overflow-hidden">
                     {/* Paso 1 — Fecha */}
                     <div>
                         <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-1.5">
                             <span className="w-5 h-5 rounded-full bg-brand-blue text-white text-xs flex items-center justify-center shrink-0">1</span>
                             Fecha de vencimiento del lote
                         </label>
-                        <div className="relative">
-                            <Calendar size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        <div className="relative w-full">
+                            <Calendar size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" />
                             <input
                                 type="date"
                                 value={currentDate}
@@ -179,7 +179,9 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                                     setCurrentDate(val);
                                     if (!isReadOnly && val && /^\d{4}-\d{2}-\d{2}$/.test(val)) setNumpadOpen(true);
                                 }}
-                                className="w-full pl-11 pr-3 py-3 border-2 border-slate-300 rounded-lg font-semibold text-slate-800 bg-white focus:border-brand-blue focus:ring-0"
+                                // block + w-full + min-w-0 + appearance-none: iOS Safari NO respeta
+                                // width:100% en <input type="date"> sin esto → se desbordaba la tarjeta.
+                                className="block w-full min-w-0 max-w-full appearance-none box-border pl-11 pr-3 py-3 border-2 border-slate-300 rounded-lg font-semibold text-slate-800 bg-white focus:border-brand-blue focus:ring-0"
                                 disabled={isReadOnly}
                             />
                         </div>
