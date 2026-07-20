@@ -7,7 +7,8 @@ import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { useSwipeable } from 'react-swipeable';
 // ✅ CORRECCIÓN: Se añade 'Check' a la lista de importaciones para solucionar el error.
-import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, AlertTriangle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check } from 'lucide-react';
+import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, AlertTriangle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check, HelpCircle } from 'lucide-react';
+import ReporterGuideCoach, { GUIDE_SEEN_KEY } from '@/Components/ReporterGuideCoach.jsx';
 import { FormInput, ToggleButton, FormSection } from '@/Components/FormControls.jsx';
 import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
@@ -392,6 +393,16 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
     // documento) para poder detectar/depurar reportes duplicados.
     const reportId = useRef(crypto.randomUUID()).current;
     const [currentStep, setCurrentStep] = useState(1);
+    // Asistente guiado del mercaderista: se abre la primera vez (recordado por
+    // usuario en localStorage) y se reabre con el botón de ayuda del encabezado.
+    const [guideOpen, setGuideOpen] = useState(() => {
+        if (isReadOnly) return false;
+        try { return !localStorage.getItem(GUIDE_SEEN_KEY); } catch { return false; }
+    });
+    const dismissGuideForever = () => {
+        try { localStorage.setItem(GUIDE_SEEN_KEY, '1'); } catch { /* modo privado */ }
+        setGuideOpen(false);
+    };
     const [submissionState, setSubmissionState] = useState('form');
     const [isOfflineSave, setIsOfflineSave] = useState(false);
     const [report, setReport] = useState({ reporterName: '', price: '', orderQuantity: '', stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
@@ -591,6 +602,16 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                         <p className="text-sm text-slate-500">{(selectedReporter && selectedReporter.name) || (initialData && initialData.userName) || ''} - {reportDate}</p>
                     </div>
                 </div>
+                {!isReadOnly && (
+                    <button
+                        onClick={() => setGuideOpen(true)}
+                        className="shrink-0 flex items-center gap-1.5 text-brand-blue bg-blue-50 border border-blue-100 rounded-full px-3 py-1.5 text-xs font-bold hover:bg-blue-100"
+                    >
+                        <HelpCircle size={15} />
+                        <span className="sm:hidden">Guía</span>
+                        <span className="hidden sm:inline">¿Cómo hago un reporte?</span>
+                    </button>
+                )}
             </header>
             
             {!isReadOnly && <ProgressBar currentStep={currentStep} totalSteps={TOTAL_STEPS} />}
@@ -618,6 +639,14 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                         )}
                     </div>
                 </footer>
+            )}
+
+            {!isReadOnly && guideOpen && (
+                <ReporterGuideCoach
+                    currentStep={currentStep}
+                    onClose={() => setGuideOpen(false)}
+                    onDismissForever={dismissGuideForever}
+                />
             )}
         </div>
     );
