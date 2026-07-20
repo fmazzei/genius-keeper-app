@@ -21,9 +21,9 @@ const STEP_GUIDE = {
         title: 'Inventario y frescura',
         intro: 'Cuenta lo que hay en el anaquel hoy.',
         points: [
-            'Si el anaquel está vacío, activa «¿Quiebre de Stock?».',
-            'Si hay producto, escanea o elige la fecha de vencimiento del lote.',
+            'Elige la fecha de vencimiento del lote (o escanéala con la cámara).',
             'Ingresa cuántas unidades hay de ese lote. Repite por cada fecha distinta.',
+            'Si el anaquel está vacío, usa el botón rojo «Quiebre de Stock» de abajo.',
         ],
     },
     2: {

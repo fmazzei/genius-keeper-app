@@ -158,13 +158,19 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
     
     return (
         <FormSection title="Inventario y Frescura" icon={<Calendar className="text-brand-blue mr-3"/>}>
+            {!report.stockout ? (
             <div className="space-y-4">
-                <ToggleButton label="¿Quiebre de Stock? (Anaquel Vacío)" isSelected={report.stockout} onClick={handleStockoutToggle} disabled={isReadOnly} />
-                <div className={`transition-opacity duration-300 ${report.stockout ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-                    {!isReadOnly && <p className="text-sm text-slate-600 my-4">Escanea o elige una fecha, luego ingresa la cantidad de unidades para ese lote.</p>}
-                    <div className="bg-slate-50 p-4 rounded-lg border space-y-4">
-                        <div className="w-full p-3 border-2 rounded-lg text-center">
-                            <label className="text-sm font-semibold text-slate-600">Fecha del Lote a Añadir</label>
+                {!isReadOnly && <p className="text-sm text-slate-600">Registra cada lote del anaquel: primero su <b>fecha de vencimiento</b>, luego <b>cuántas unidades</b> hay.</p>}
+                {!isReadOnly && (
+                <div className="bg-slate-50 p-4 rounded-xl border space-y-4">
+                    {/* Paso 1 — Fecha */}
+                    <div>
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-1.5">
+                            <span className="w-5 h-5 rounded-full bg-brand-blue text-white text-xs flex items-center justify-center shrink-0">1</span>
+                            Fecha de vencimiento del lote
+                        </label>
+                        <div className="relative">
+                            <Calendar size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                             <input
                                 type="date"
                                 value={currentDate}
@@ -173,23 +179,31 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                                     setCurrentDate(val);
                                     if (!isReadOnly && val && /^\d{4}-\d{2}-\d{2}$/.test(val)) setNumpadOpen(true);
                                 }}
-                                className="w-full text-center font-bold text-xl bg-transparent border-none focus:ring-0 p-0 mt-1 disabled:bg-slate-100 disabled:cursor-not-allowed"
+                                className="w-full pl-11 pr-3 py-3 border-2 border-slate-300 rounded-lg font-semibold text-slate-800 bg-white focus:border-brand-blue focus:ring-0"
                                 disabled={isReadOnly}
                             />
                         </div>
-                        {!isReadOnly && <button type="button" onClick={() => setScannerOpen(true)} className="w-full flex items-center justify-center gap-3 bg-brand-blue text-white font-bold py-3 px-4 rounded-lg text-lg active:scale-95 transition-transform"><Camera size={24}/> Escanear Fecha</button>}
-                        {!isReadOnly && currentDate && (
-                            <button type="button" onClick={openNumpad} className="w-full bg-brand-yellow text-black font-bold py-3 px-4 rounded-lg text-lg active:scale-95 transition-transform">
-                                Ingresar Cantidad para {currentDate}
-                            </button>
-                        )}
+                        <button type="button" onClick={() => setScannerOpen(true)} className="mt-2 w-full flex items-center justify-center gap-2 border-2 border-brand-blue text-brand-blue font-bold py-2.5 px-4 rounded-lg active:scale-95 transition-transform">
+                            <Camera size={20}/> o escanear la fecha con la cámara
+                        </button>
+                    </div>
+                    {/* Paso 2 — Cantidad */}
+                    <div>
+                        <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-1.5">
+                            <span className={`w-5 h-5 rounded-full text-white text-xs flex items-center justify-center shrink-0 ${currentDate ? 'bg-brand-blue' : 'bg-slate-300'}`}>2</span>
+                            Cantidad de unidades del lote
+                        </label>
+                        <button type="button" onClick={openNumpad} disabled={!currentDate} className={`w-full flex items-center justify-between py-3 px-4 rounded-lg font-bold border-2 transition-colors ${currentDate ? 'bg-brand-yellow text-black border-brand-yellow active:scale-95' : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'}`}>
+                            <span>{currentDate ? 'Toca para ingresar la cantidad' : 'Primero elige la fecha ↑'}</span>
+                            {currentDate && <ChevronRight size={20} />}
+                        </button>
                     </div>
                 </div>
+                )}
                 <div>
                     <h4 className="font-semibold text-slate-700 mb-2 mt-4">Lotes Registrados:</h4>
                     <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                        {report.batches.length === 0 && !report.stockout && <p className="text-sm text-slate-400 text-center p-4">Aún no has añadido ningún lote.</p>}
-                        {report.stockout && <p className="text-sm font-semibold text-red-600 text-center p-4 bg-red-50 rounded-lg">Quiebre de Stock reportado.</p>}
+                        {report.batches.length === 0 && <p className="text-sm text-slate-400 text-center p-4">Aún no has añadido ningún lote.</p>}
                         {[...report.batches]
                             .map((b, originalIdx) => ({ ...b, originalIdx }))
                             .sort((a, b) => daysUntilExpiry(a.expiryDate) - daysUntilExpiry(b.expiryDate))
@@ -223,6 +237,30 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                     })()}
                 </div>
             </div>
+            ) : (
+                <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl text-center">
+                    <AlertTriangle size={28} className="mx-auto text-red-500 mb-2" />
+                    <p className="font-bold text-red-700">Quiebre de Stock reportado</p>
+                    <p className="text-sm text-red-600 mt-0.5">El anaquel está vacío. Si te equivocaste, toca el botón rojo de abajo para deshacer.</p>
+                </div>
+            )}
+
+            {/* Pista de fluidez: cuando el paso ya está listo, invita a avanzar. */}
+            {!isReadOnly && (report.batches.length > 0 || report.stockout) && (
+                <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                    <CheckCircle size={16} className="shrink-0" /> Listo. Toca «Siguiente» abajo para continuar.
+                </div>
+            )}
+
+            {/* Botón de emergencia (quiebre de stock) — al final, en rojo. */}
+            {!isReadOnly && (
+                <div className="mt-6 pt-4 border-t border-slate-200">
+                    <button type="button" onClick={handleStockoutToggle} className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold border-2 transition-colors ${report.stockout ? 'bg-red-600 text-white border-red-600' : 'bg-red-50 text-red-700 border-red-300 active:scale-95'}`}>
+                        <AlertTriangle size={18} />
+                        {report.stockout ? 'Deshacer quiebre de stock' : 'El anaquel está VACÍO (Quiebre de Stock)'}
+                    </button>
+                </div>
+            )}
             {!isReadOnly && <CameraScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onCapture={handleScanComplete} onStatusChange={setScannerStatus}/>}
             {(isProcessing || isOptimizing) && <div className="fixed inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50"><Loader className="animate-spin h-12 w-12 text-brand-blue"/> <p className="mt-4 font-semibold">{scannerStatus || "Procesando..."}</p></div>}
             {!isReadOnly && <NumericKeypadModal isOpen={isNumpadOpen} onClose={() => setNumpadOpen(false)} onConfirm={handleNumpadConfirm} title={`Cantidad para lote ${currentDate}`}/>}
