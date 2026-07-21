@@ -211,6 +211,75 @@ const MetricCard = ({ def, data, onOpen }) => {
     );
 };
 
+// ── Bandas (formato "Tablero de 4 Preguntas") ──────────────────────────────────
+const STRIPE = { good: 'before:bg-emerald-500', warn: 'before:bg-amber-500', bad: 'before:bg-red-500', neutral: 'before:bg-slate-300' };
+const PILL = {
+    good: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+    warn: 'text-amber-700 bg-amber-50 border-amber-200',
+    bad:  'text-red-700 bg-red-50 border-red-200',
+    neutral: 'text-slate-600 bg-slate-50 border-slate-200',
+};
+const TILE_VALUE = { good: 'text-emerald-700', bad: 'text-red-700', neutral: 'text-slate-800' };
+
+const Banda = ({ num, title, status, statusLabel, children }) => (
+    <section className={`relative bg-white border border-slate-200 rounded-2xl shadow-sm p-5 pl-6 overflow-hidden
+        before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[5px] ${STRIPE[status]}`}>
+        <div className="flex items-center gap-3 mb-4">
+            <span className="text-xs font-extrabold text-slate-300">{num}</span>
+            <h3 className="text-lg font-black text-slate-800 tracking-tight">{title}</h3>
+            <span className={`text-[11px] font-extrabold uppercase tracking-wide px-2.5 py-1 rounded-full border ${PILL[status]}`}>{statusLabel}</span>
+        </div>
+        {children}
+    </section>
+);
+
+const KpiTile = ({ def, data, onOpen }) => {
+    const clickable = !!data.modalType;
+    const color = TILE_VALUE[data.sentiment] || TILE_VALUE.neutral;
+    return (
+        <button
+            type="button"
+            onClick={clickable ? () => onOpen(data.modalTitle, data.modalType) : undefined}
+            className={`text-left bg-slate-50 border border-slate-200 rounded-xl p-4 transition-shadow ${clickable ? 'hover:shadow-md cursor-pointer' : 'cursor-default'}`}
+        >
+            <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">{def.label}</p>
+            <p className={`text-2xl font-black tabular-nums mt-1 ${color}`}>
+                {data.value} {data.unit && <span className="text-xs font-bold text-slate-400">{data.unit}</span>}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-1 leading-snug line-clamp-2">{def.description}</p>
+        </button>
+    );
+};
+
+const GeniusBandHero = ({ score, onOpen }) => {
+    const s = Math.round(score || 0);
+    const color = s >= 80 ? '#16a34a' : s >= 50 ? '#d97706' : '#dc2626';
+    const r = 34, c = 2 * Math.PI * r;
+    const label = s >= 80 ? 'Presencia fuerte' : s >= 50 ? 'En desarrollo' : 'Requiere atención';
+    return (
+        <button type="button" onClick={onOpen}
+            className="w-full text-left bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 rounded-xl p-4 flex items-center gap-4 hover:shadow-md transition-shadow">
+            <div className="relative shrink-0 w-[84px] h-[84px]">
+                <svg width="84" height="84" viewBox="0 0 84 84">
+                    <circle cx="42" cy="42" r={r} fill="none" stroke="#e2e8f0" strokeWidth="8" />
+                    <circle cx="42" cy="42" r={r} fill="none" stroke={color} strokeWidth="8" strokeLinecap="round"
+                        strokeDasharray={`${c * Math.min(s, 100) / 100} ${c}`} transform="rotate(-90 42 42)" />
+                </svg>
+                <div className="absolute inset-0 grid place-items-center"><span className="text-xl font-black text-slate-800">{s}</span></div>
+            </div>
+            <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Índice Genius</p>
+                <p className="text-lg font-black text-slate-800">{label} <span className="text-slate-400 font-bold text-sm">/ 100</span></p>
+                <p className="text-xs text-slate-500">Puntaje global de ejecución. Toca para el diagnóstico →</p>
+            </div>
+        </button>
+    );
+};
+
+// Mapeo de widgets a las bandas de las 4 preguntas.
+const BAND_EJECUCION   = ['visit_count', 'pdv_coverage', 'reporter_count', 'compliance', 'pop', 'visit_duration', 'shelf', 'stockouts', 'freshness'];
+const BAND_COMPETENCIA = ['price_index', 'new_entrants', 'promo_activity'];
+
 // ── Main dashboard ─────────────────────────────────────────────────────────────
 const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => {
     const { getEnabledWidgets, loading: configLoading } = useDashboardConfig();
@@ -287,11 +356,22 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
         return fn ? fn(modalProps) : null;
     };
 
-    // Category rendering order (Índice Global always goes to hero slot)
-    const categoryOrder = WIDGET_CATEGORIES.filter(c => c !== 'Índice Global');
+    // ── Agrupación por banda (4 preguntas) según los widgets habilitados ──
+    const enabledSet = new Set(enabledIds);
+    const ejecIds = BAND_EJECUCION.filter(id => enabledSet.has(id));
+    const compIds = BAND_COMPETENCIA.filter(id => enabledSet.has(id));
+
+    const gScore = kpis.geniusIndex?.score || 0;
+    const ejecStatus = gScore >= 80 ? 'good' : gScore >= 50 ? 'warn' : 'bad';
+    const ejecLabel  = gScore >= 80 ? 'Sólido' : gScore >= 50 ? 'En desarrollo' : 'Requiere atención';
+
+    const pi = Math.abs(kpis.priceIndex?.difference || 0);
+    const ne = kpis.newEntrantsCount || 0;
+    const compStatus = (ne > 0 || pi > 15) ? 'bad' : pi > 10 ? 'warn' : 'good';
+    const compLabel  = compStatus === 'bad' ? 'Vigilar' : compStatus === 'warn' ? 'Atención al precio' : 'Estable';
 
     return (
-        <div className="w-full max-w-7xl mx-auto space-y-8">
+        <div className="w-full max-w-5xl mx-auto space-y-4 pb-10">
 
             {/* ── Header row ── */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -314,58 +394,39 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
                 </div>
             </div>
 
-            {/* ── Bandas financieras (¿Vendemos? / ¿Cobramos?) — datos reales de
-                 facturas_vendedor (Zoho). El dinero primero, arriba de la ejecución. ── */}
-            <BandasFinancieras />
+            {/* ── 01 ¿Vendemos? · 02 ¿Cobramos? — datos reales de facturas_vendedor.
+                 Rotación estimada y Mapa de Calor van dentro de ¿Vendemos? (trade). ── */}
+            <BandasFinancieras
+                rotacion={enabledSet.has('rotation') ? (kpis.productRotation?.averageDaily ?? null) : null}
+                onMapa={enabledSet.has('geo') ? () => openModal('Inteligencia Geográfica', 'geoDemand') : null}
+            />
 
-            {widgetGroups['Índice Global']?.includes('genius_index') && (() => {
-                const def  = WIDGET_MAP['genius_index'];
-                const data = def.getData(kpis, extra);
-                return (
-                    <GeniusHero
-                        def={def}
-                        data={data}
-                        onOpen={() => openModal(data.modalTitle, data.modalType)}
-                    />
-                );
-            })()}
+            {/* ── 03 · ¿Ejecutamos en campo? ── */}
+            {(enabledSet.has('genius_index') || ejecIds.length > 0) && (
+                <Banda num="03" title="¿Ejecutamos en campo?" status={ejecStatus} statusLabel={ejecLabel}>
+                    {enabledSet.has('genius_index') && (
+                        <GeniusBandHero score={kpis.geniusIndex?.score || 0} onOpen={() => openModal('Diagnóstico del Índice Genius', 'geniusIndex')} />
+                    )}
+                    {ejecIds.length > 0 && (
+                        <div className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-3 ${enabledSet.has('genius_index') ? 'mt-4' : ''}`}>
+                            {ejecIds.map(id => (
+                                <KpiTile key={id} def={WIDGET_MAP[id]} data={WIDGET_MAP[id].getData(kpis, extra)} onOpen={openModal} />
+                            ))}
+                        </div>
+                    )}
+                </Banda>
+            )}
 
-            {/* ── Category sections ── */}
-            {categoryOrder
-                .filter(cat => widgetGroups[cat]?.length > 0)
-                .map(cat => {
-                    const meta = CAT_META[cat] || { bar: 'bg-slate-400', text: 'text-slate-600' };
-                    const ids  = widgetGroups[cat];
-
-                    return (
-                        <section key={cat}>
-                            {/* Section header */}
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className={`h-5 w-1.5 rounded-full ${meta.bg}`} />
-                                <h3 className={`text-xs font-black uppercase tracking-widest ${meta.text}`}>{cat}</h3>
-                                <div className="flex-1 h-px bg-slate-100" />
-                            </div>
-
-                            {/* Grid */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                {ids.map(id => {
-                                    const def  = WIDGET_MAP[id];
-                                    if (!def) return null;
-                                    const data = def.getData(kpis, extra);
-                                    return (
-                                        <MetricCard
-                                            key={id}
-                                            def={def}
-                                            data={data}
-                                            onOpen={data.modalType ? () => openModal(data.modalTitle, data.modalType) : undefined}
-                                        />
-                                    );
-                                })}
-                            </div>
-                        </section>
-                    );
-                })
-            }
+            {/* ── 04 · ¿Qué hace la competencia? ── */}
+            {compIds.length > 0 && (
+                <Banda num="04" title="¿Qué hace la competencia?" status={compStatus} statusLabel={compLabel}>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {compIds.map(id => (
+                            <KpiTile key={id} def={WIDGET_MAP[id]} data={WIDGET_MAP[id].getData(kpis, extra)} onOpen={openModal} />
+                        ))}
+                    </div>
+                </Banda>
+            )}
 
             {/* ── Modal ── */}
             <Modal

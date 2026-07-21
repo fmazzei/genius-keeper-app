@@ -63,7 +63,7 @@ const Tile = ({ label, children, className = '' }) => (
     </div>
 );
 
-export default function BandasFinancieras() {
+export default function BandasFinancieras({ rotacion = null, onMapa = null }) {
     const fin = useFinancialKpis();
     const { metaVentasGeneral } = useAppConfig();
 
@@ -148,6 +148,23 @@ export default function BandasFinancieras() {
                         </div>
                     </Tile>
                 </div>
+                {(rotacion !== null || onMapa) && (
+                    <div className="grid gap-4 md:grid-cols-2 mt-4">
+                        {rotacion !== null && (
+                            <Tile label="Rotación estimada por PDV">
+                                <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{Number(rotacion).toFixed(1)} <span className="text-sm font-bold text-slate-400">uds/día aprox.</span></p>
+                                <p className="text-xs text-slate-400 mt-1">Estimado por caída de inventario entre visitas (no venta de caja).</p>
+                            </Tile>
+                        )}
+                        {onMapa && (
+                            <button onClick={onMapa} className="text-left bg-slate-50 border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+                                <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Mapa de Calor</p>
+                                <p className="text-lg font-black text-brand-blue mt-1 flex items-center gap-1">Ver mapa <span aria-hidden>→</span></p>
+                                <p className="text-xs text-slate-400 mt-1">Distribución geográfica de la actividad y demanda (trade marketing).</p>
+                            </button>
+                        )}
+                    </div>
+                )}
             </Band>
 
             {/* 2 · ¿Cobramos? */}

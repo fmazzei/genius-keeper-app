@@ -42,20 +42,9 @@ export const WIDGET_REGISTRY = [
             modalTitle: 'Análisis de Rotación (estimada)',
         }),
     },
-    {
-        id: 'doi',
-        category: 'Salud del Producto',
-        label: 'Días de Inventario (estimado)',
-        description: 'Estimado de días que dura el stock (inventario ÷ rotación estimada por tienda)',
-        Icon: AlertTriangle,
-        getData: (kpis) => ({
-            value: kpis.daysOfInventory.toFixed(1),
-            unit: 'días aprox.',
-            sentiment: kpis.daysOfInventory > 14 || kpis.daysOfInventory < 4 ? 'bad' : 'good',
-            modalType: 'inventory',
-            modalTitle: 'Análisis de Inventario',
-        }),
-    },
+    // NOTA: "Días de Inventario" (doi) se eliminó — era un estimado poco acertado
+    // y muy volátil (inventario ÷ rotación estimada por tienda). Se descartó por
+    // decisión de negocio; la rotación estimada por PDV se conserva.
     {
         id: 'freshness',
         category: 'Salud del Producto',
