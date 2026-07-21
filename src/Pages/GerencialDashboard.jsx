@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useKpiCalculations } from '@/hooks/useKpiCalculations';
 import { useDashboardConfig } from '@/hooks/useDashboardConfig';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
+import BandasFinancieras from '@/Components/BandasFinancieras.jsx';
 import { LayoutGrid, Settings, ChevronRight, Info, X } from 'lucide-react';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import Modal from '@/Components/Modal';
@@ -255,11 +256,13 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
 
     if (enabledIds.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center py-28 text-center px-4">
+            <div className="w-full max-w-7xl mx-auto space-y-6">
+            <BandasFinancieras />
+            <div className="flex flex-col items-center justify-center py-20 text-center px-4">
                 <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mb-6">
                     <LayoutGrid size={40} className="text-slate-300" />
                 </div>
-                <h3 className="text-xl font-bold text-slate-700 mb-2">Dashboard sin configurar</h3>
+                <h3 className="text-xl font-bold text-slate-700 mb-2">Ejecución en campo sin configurar</h3>
                 <p className="text-slate-400 max-w-sm mb-7 text-sm leading-relaxed">
                     El lienzo está en blanco. Ve a <strong>Administración → Dashboard</strong> y activa los indicadores que quieres ver aquí.
                 </p>
@@ -271,6 +274,7 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
                         <Settings size={16} /> Configurar Dashboard
                     </button>
                 )}
+            </div>
             </div>
         );
     }
@@ -310,7 +314,10 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
                 </div>
             </div>
 
-            {/* ── Genius Index hero (if enabled) ── */}
+            {/* ── Bandas financieras (¿Vendemos? / ¿Cobramos?) — datos reales de
+                 facturas_vendedor (Zoho). El dinero primero, arriba de la ejecución. ── */}
+            <BandasFinancieras />
+
             {widgetGroups['Índice Global']?.includes('genius_index') && (() => {
                 const def  = WIDGET_MAP['genius_index'];
                 const data = def.getData(kpis, extra);
