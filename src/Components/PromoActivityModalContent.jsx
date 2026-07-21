@@ -16,7 +16,7 @@ const PromoActivityModalContent = ({ reports }) => {
 
                 r.competition.forEach((c, index) => {
                     const brandName = c.brand || c.product?.split(' - ')[0] || 'Competidor';
-                    if (c.hasPop) {
+                    if (c.hasPop === true) {
                         activities.push({
                             id: `${r.id}-pop-${index}`,
                             type: 'POP',
@@ -26,7 +26,7 @@ const PromoActivityModalContent = ({ reports }) => {
                         });
                         brandsWithActivity.add(brandName);
                     }
-                    if (c.hasTasting) {
+                    if (c.hasTasting === true) {
                          activities.push({
                             id: `${r.id}-tasting-${index}`,
                             type: 'Degustación',

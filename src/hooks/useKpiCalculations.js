@@ -4,13 +4,15 @@ import { useMemo } from 'react';
 const safeAvg = (sum, count) => (count > 0 ? sum / count : 0);
 
 // Función de ayuda para determinar el estado de frescura de un lote.
-const getFreshnessStatus = (expiryDateStr) => {
+const getFreshnessStatus = (expiryDateStr, referenceDate) => {
     if (!expiryDateStr) return 'Indefinido';
-    const today = new Date();
+    // Se evalúa contra la fecha de OBSERVACIÓN del reporte (no contra hoy), para
+    // no marcar como vencido un lote que estaba fresco cuando se vio.
+    const ref = referenceDate ? new Date(referenceDate) : new Date();
     const expiryDate = new Date(expiryDateStr);
-    today.setHours(0, 0, 0, 0);
+    ref.setHours(0, 0, 0, 0);
     expiryDate.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
+    const diffDays = Math.ceil((expiryDate - ref) / (1000 * 60 * 60 * 24));
     if (diffDays <= 0) return 'Vencido';
     if (diffDays <= 30) return 'Próximo a Vencer';
     if (diffDays <= 60) return 'Fresco';
@@ -125,24 +127,38 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         const averageDailySales = safeAvg(totalUnitsSold, totalStoreDays);
         const productRotation   = { total: totalUnitsSold, averageDaily: averageDailySales };
 
-        const stockoutCount = reports.filter(r => r.stockout === true).length;
-
-        const allBatches        = reports.flatMap(r => r.batches || []);
-        const batchesWithStatus = allBatches.map(b => ({ ...b, status: getFreshnessStatus(b.expiryDate) }));
-        const optimalFresh      = batchesWithStatus.filter(b => b.status === 'Fresco' || b.status === 'Óptimo').length;
-        const freshnessIndex    = safeAvg(optimalFresh, batchesWithStatus.length) * 100;
-
-        const reportsWithDuration  = reports.filter(r => r.startTime && r.endTime);
-        const totalDurationMinutes = reportsWithDuration.reduce((sum, r) => {
-            const d = (new Date(r.endTime).getTime() - new Date(r.startTime).getTime()) / 60000;
-            return sum + (isNaN(d) ? 0 : d);
-        }, 0);
-        const averageVisitDuration = safeAvg(totalDurationMinutes, reportsWithDuration.length);
-
+        // Última visita por PDV (posId, o posName de respaldo). Reusada por Quiebres
+        // de Stock, Índice de Frescura y Días de Inventario para NO doble-contar
+        // visitas repetidas al mismo PDV.
+        const storeKey = (r) => r.posId || r.posName;
         const latestByStore = reports.reduce((acc, r) => {
-            if (!acc[r.posId] || r.createdAt?.seconds > acc[r.posId].createdAt?.seconds) acc[r.posId] = r;
+            const k = storeKey(r);
+            if (!k) return acc;
+            if (!acc[k] || (r.createdAt?.seconds || 0) > (acc[k].createdAt?.seconds || 0)) acc[k] = r;
             return acc;
         }, {});
+
+        // Quiebres de Stock: PDV DISTINTOS cuya ÚLTIMA visita reporta quiebre
+        // (antes contaba cada reporte con quiebre → inflaba el nº de "tiendas").
+        const stockoutCount = Object.values(latestByStore).filter(r => r.stockout === true).length;
+
+        // Índice de Frescura: lotes de la ÚLTIMA visita de cada PDV, evaluados
+        // contra la fecha de observación del reporte.
+        const freshnessBatches = Object.values(latestByStore).flatMap(r => {
+            const ref = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000) : new Date();
+            return (r.batches || []).map(b => getFreshnessStatus(b.expiryDate, ref));
+        });
+        const optimalFresh   = freshnessBatches.filter(s => s === 'Fresco' || s === 'Óptimo').length;
+        const freshnessIndex = safeAvg(optimalFresh, freshnessBatches.length) * 100;
+
+        // Solo duraciones VÁLIDAS (finitas y > 0): se descartan NaN, negativas
+        // (relojes desfasados / ediciones) y ceros, del numerador Y del denominador
+        // — antes sumaban 0 pero seguían en el divisor, deflactando el promedio.
+        const durationsMin = reports
+            .map(r => (r.startTime && r.endTime) ? (new Date(r.endTime).getTime() - new Date(r.startTime).getTime()) / 60000 : NaN)
+            .filter(d => Number.isFinite(d) && d > 0);
+        const averageVisitDuration = safeAvg(durationsMin.reduce((a, b) => a + b, 0), durationsMin.length);
+
         const totalInventory  = Object.values(latestByStore).reduce((sum, r) => sum + (Number(r.inventoryLevel) || 0), 0);
         // Unidades consistentes: `averageDailySales` es una tasa POR TIENDA por día,
         // así que el numerador también debe ser POR TIENDA. Dividir el inventario de
@@ -153,7 +169,11 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         const daysOfInventory = averageDailySales > 0 ? avgInventoryPerStore / averageDailySales : 0;
 
         const newEntrantsCount   = reports.flatMap(r => r.newEntrants || []).length;
-        const promoActivityCount = reports.flatMap(r => r.competition || []).filter(c => c.hasPop || c.hasTasting).length;
+        // Cada acción cuenta como un evento: un POP y una degustación en la misma
+        // fila = 2 eventos (igual que el modal). "No Sabe" (hasTasting==='unknown')
+        // NO cuenta como promoción activa.
+        const promoActivityCount = reports.flatMap(r => r.competition || []).reduce(
+            (n, c) => n + (c.hasPop === true ? 1 : 0) + (c.hasTasting === true ? 1 : 0), 0);
 
         const popOptimalCount      = reports.filter(r => r.popStatus === 'Exhibido correctamente').length;
         const popQualityPercentage = safeAvg(popOptimalCount, totalVisits) * 100;

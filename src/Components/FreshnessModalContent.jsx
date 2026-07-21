@@ -4,12 +4,13 @@ import React, { useState, useMemo } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { Droplet, HelpCircle, Store, ChevronDown, Search } from 'lucide-react';
 
-const getFreshnessStatus = (expiryDateStr) => {
-    const today = new Date();
+const getFreshnessStatus = (expiryDateStr, referenceDate) => {
+    // Evaluado contra la fecha de observación del reporte (igual que la portada).
+    const ref = referenceDate ? new Date(referenceDate) : new Date();
     const expiryDate = new Date(expiryDateStr);
-    today.setHours(0, 0, 0, 0);
+    ref.setHours(0, 0, 0, 0);
     expiryDate.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil((expiryDate - today) / (1000 * 60 * 60 * 24));
+    const diffDays = Math.ceil((expiryDate - ref) / (1000 * 60 * 60 * 24));
     if (diffDays <= 0) return 'Vencido';
     if (diffDays <= 30) return 'Próximo a Vencer';
     if (diffDays <= 60) return 'Fresco';
@@ -59,10 +60,19 @@ const FreshnessModalContent = ({ reports }) => {
     const [statusFilter, setStatusFilter] = useState('Todos');
 
     const analysis = useMemo(() => {
-        const allBatches = (reports || []).flatMap(r => r.batches ? r.batches.map(b => ({ ...b, posName: r.posName })) : []);
-        if (allBatches.length === 0) return { hasData: false };
-
-        const batchesWithStatus = allBatches.map(b => ({ ...b, status: getFreshnessStatus(b.expiryDate) }));
+        // Última visita por PDV (no doble-contar visitas repetidas); frescura
+        // evaluada contra la fecha de observación de ese reporte. Cuadra con la portada.
+        const latestByStore = {};
+        (reports || []).forEach(r => {
+            const k = r.posId || r.posName;
+            if (!k) return;
+            if (!latestByStore[k] || (r.createdAt?.seconds || 0) > (latestByStore[k].createdAt?.seconds || 0)) latestByStore[k] = r;
+        });
+        const batchesWithStatus = Object.values(latestByStore).flatMap(r => {
+            const ref = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000) : new Date();
+            return (r.batches || []).map(b => ({ ...b, posName: r.posName, status: getFreshnessStatus(b.expiryDate, ref) }));
+        });
+        if (batchesWithStatus.length === 0) return { hasData: false };
         const statusCount = {};
         batchesWithStatus.forEach(b => { statusCount[b.status] = (statusCount[b.status] || 0) + 1; });
         const pieData = Object.keys(statusCount).map(name => ({ name, value: statusCount[name] }));

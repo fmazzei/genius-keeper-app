@@ -7,8 +7,16 @@ const StockoutModalContent = ({ reports }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const stockoutReports = useMemo(() => {
-    return (reports || [])
-      .filter(r => r.stockout)
+    // PDV DISTINTOS cuya ÚLTIMA visita reporta quiebre (no cada reporte), para
+    // cuadrar con la portada del KPI.
+    const latest = {};
+    (reports || []).forEach(r => {
+      const k = r.posId || r.posName;
+      if (!k) return;
+      if (!latest[k] || (r.createdAt?.seconds || 0) > (latest[k].createdAt?.seconds || 0)) latest[k] = r;
+    });
+    return Object.values(latest)
+      .filter(r => r.stockout === true)
       .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
   }, [reports]);
 
