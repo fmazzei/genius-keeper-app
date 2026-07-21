@@ -29,6 +29,7 @@ import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.js
 import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
 import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
+import PositioningModalContent from '@/Components/PositioningModalContent.jsx';
 import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
@@ -983,6 +984,8 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [commConfig, setCommConfig]                 = useState(DEFAULT_COMMISSION_CONFIG);
     const { getEnabled: getVendorKpis }               = useVendorKpiConfig();
     const [homePage, setHomePage]                     = useState(0); // 0 = inicio, 1 = KPIs
+    const [anaquelReports, setAnaquelReports]         = useState([]); // visit_reports de su cartera (mapa de anaquel)
+    const [showAnaquelMap, setShowAnaquelMap]         = useState(false);
     const [stats, setStats]                           = useState({
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
@@ -1371,6 +1374,9 @@ const VendedorLayout = ({ user, onLogout }) => {
 
                     const visitasCartera = [];
                     visitasSnaps.forEach(snap => { if (snap) visitasCartera.push(...snap.docs.map(d => d.data())); });
+                    // Para el Mapa de Calor del Anaquel del vendedor (no se cachea en
+                    // localStorage: puede ser voluminoso). Solo lo que el heatmap usa.
+                    setAnaquelReports(visitasCartera.map(v => ({ shelfLocation: v.shelfLocation, adjacentCategory: v.adjacentCategory, orderQuantity: v.orderQuantity })));
 
                     // Bono "Disponibilidad en Anaquel" — sustituye al Bono Activación
                     // para cuentas con `pos.regimenComision === 'anaquel'` (despacho
@@ -1681,6 +1687,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                             tier={tier}
                             pct={pct}
                             onNavigate={navigate}
+                            hasAnaquelData={anaquelReports.length > 0}
+                            onOpenAnaquelMap={() => setShowAnaquelMap(true)}
                         />
                     </div>
                 </div>
@@ -1768,6 +1776,19 @@ const VendedorLayout = ({ user, onLogout }) => {
             <div className="flex-1 overflow-hidden flex flex-col">
                 {renderContent()}
             </div>
+
+            {/* ── Mapa de Calor del Anaquel (trade) — heatmap de posición×categoría ── */}
+            {showAnaquelMap && (
+                <div className="fixed inset-0 z-[90] bg-slate-900/80 flex flex-col">
+                    <div className="flex items-center justify-between bg-slate-900 px-4 py-3 shrink-0">
+                        <span className="text-white font-bold text-sm">Mapa de Calor del Anaquel 👑</span>
+                        <button onClick={() => setShowAnaquelMap(false)} className="text-slate-300 text-sm font-semibold hover:text-white">Cerrar</button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto bg-white">
+                        <PositioningModalContent reports={anaquelReports} />
+                    </div>
+                </div>
+            )}
 
             {/* ── FAB: Nuevo Pedido (acción #1 del vendedor, siempre a la mano) ── */}
             {!subView && currentView !== 'despacho' && (

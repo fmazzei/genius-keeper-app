@@ -55,7 +55,7 @@ function buildKpi(id, ctx) {
     }
 }
 
-export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate }) {
+export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, hasAnaquelData = false, onOpenAnaquelMap }) {
     const ctx = { stats, vendedor, estadoActual, tier, pct };
     const items = enabledIds.map(id => ({ id, def: VENDOR_KPI_MAP[id], kpi: buildKpi(id, ctx) }))
                             .filter(x => x.def && x.kpi);
@@ -68,6 +68,21 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                     <p className="text-slate-400 text-xs">{vendedor?.nombre} · {stats?.periodoLabel || 'período en curso'}</p>
                 </div>
             </div>
+
+            {/* Mapa de Calor del Anaquel (trade marketing) — la "ubicación dorada" */}
+            {onOpenAnaquelMap && (
+                <button onClick={onOpenAnaquelMap}
+                    className="w-full text-left rounded-2xl p-4 flex items-center gap-3 bg-gradient-to-br from-amber-500/15 to-amber-400/5 border border-amber-500/30 active:scale-[0.99] transition-transform">
+                    <div className="w-11 h-11 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0 text-2xl">👑</div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-amber-300 font-black text-sm">Mapa de Calor del Anaquel</p>
+                        <p className="text-slate-400 text-xs">
+                            {hasAnaquelData ? 'La “ubicación dorada”: dónde rota más tu producto en el estante.' : 'Aún sin datos de anaquel en tu cartera.'}
+                        </p>
+                    </div>
+                    <span className="text-amber-300 text-lg shrink-0" aria-hidden>→</span>
+                </button>
+            )}
 
             {items.length === 0 ? (
                 <p className="text-slate-500 text-sm text-center py-16">Aún no hay indicadores activados para ti.</p>

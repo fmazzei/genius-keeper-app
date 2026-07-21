@@ -63,7 +63,7 @@ const Tile = ({ label, children, className = '' }) => (
     </div>
 );
 
-export default function BandasFinancieras({ rotacion = null, onMapa = null }) {
+export default function BandasFinancieras({ rotacion = null, onMapa = null, onAnaquel = null }) {
     const fin = useFinancialKpis();
     const { metaVentasGeneral } = useAppConfig();
 
@@ -148,19 +148,26 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null }) {
                         </div>
                     </Tile>
                 </div>
-                {(rotacion !== null || onMapa) && (
-                    <div className="grid gap-4 md:grid-cols-2 mt-4">
+                {(rotacion !== null || onMapa || onAnaquel) && (
+                    <div className="grid gap-4 md:grid-cols-3 mt-4">
                         {rotacion !== null && (
                             <Tile label="Rotación estimada por PDV">
                                 <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{Number(rotacion).toFixed(1)} <span className="text-sm font-bold text-slate-400">uds/día aprox.</span></p>
                                 <p className="text-xs text-slate-400 mt-1">Estimado por caída de inventario entre visitas (no venta de caja).</p>
                             </Tile>
                         )}
+                        {onAnaquel && (
+                            <button onClick={onAnaquel} className="text-left bg-amber-50 border border-amber-200 rounded-xl p-4 hover:shadow-md transition-shadow">
+                                <p className="text-[11px] font-extrabold uppercase tracking-wider text-amber-700">Mapa de Calor del Anaquel 👑</p>
+                                <p className="text-lg font-black text-amber-800 mt-1 flex items-center gap-1">Ver mapa <span aria-hidden>→</span></p>
+                                <p className="text-xs text-amber-700/80 mt-1">La "ubicación dorada": rotación por posición en el estante (trade marketing).</p>
+                            </button>
+                        )}
                         {onMapa && (
                             <button onClick={onMapa} className="text-left bg-slate-50 border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow">
-                                <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Mapa de Calor</p>
+                                <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Mapa de Zonas</p>
                                 <p className="text-lg font-black text-brand-blue mt-1 flex items-center gap-1">Ver mapa <span aria-hidden>→</span></p>
-                                <p className="text-xs text-slate-400 mt-1">Distribución geográfica de la actividad y demanda (trade marketing).</p>
+                                <p className="text-xs text-slate-400 mt-1">Distribución geográfica de la actividad por zonas.</p>
                             </button>
                         )}
                     </div>

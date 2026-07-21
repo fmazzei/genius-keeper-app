@@ -120,15 +120,15 @@ export const WIDGET_REGISTRY = [
     {
         id: 'geo',
         category: 'Eficiencia Operativa',
-        label: 'Mapa de Calor',
-        description: 'Distribución geográfica de la actividad de campo',
+        label: 'Mapa de Zonas',
+        description: 'Distribución geográfica de la actividad por zonas (no es el mapa de anaquel)',
         Icon: MapPin,
         getData: () => ({
             value: 'Ver Mapa',
             unit: '',
             sentiment: 'neutral',
             modalType: 'geoDemand',
-            modalTitle: 'Inteligencia Geográfica',
+            modalTitle: 'Mapa de Zonas (geográfico)',
         }),
     },
 

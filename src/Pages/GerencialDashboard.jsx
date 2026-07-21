@@ -398,7 +398,8 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
                  Rotación estimada y Mapa de Calor van dentro de ¿Vendemos? (trade). ── */}
             <BandasFinancieras
                 rotacion={enabledSet.has('rotation') ? (kpis.productRotation?.averageDaily ?? null) : null}
-                onMapa={enabledSet.has('geo') ? () => openModal('Inteligencia Geográfica', 'geoDemand') : null}
+                onAnaquel={enabledSet.has('shelf') ? () => openModal('Mapa de Calor del Anaquel', 'positioning') : null}
+                onMapa={enabledSet.has('geo') ? () => openModal('Mapa de Zonas (geográfico)', 'geoDemand') : null}
             />
 
             {/* ── 03 · ¿Ejecutamos en campo? ── */}
