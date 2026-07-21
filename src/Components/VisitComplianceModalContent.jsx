@@ -3,13 +3,16 @@
 import React, { useMemo } from 'react';
 import { CheckCircle, Clock, HelpCircle } from 'lucide-react';
 
-const VisitComplianceModalContent = ({ reports, posList }) => {
+const VisitComplianceModalContent = ({ reports, posList, allReports }) => {
     const analysis = useMemo(() => {
         const activePdvs = (posList || []).filter(p => p.active && Number(p.visitInterval) > 0);
         if (activePdvs.length === 0) return { hasData: false };
 
         const now = new Date();
-        const lastVisitByPos = (reports || []).reduce((acc, r) => {
+        // Última visita sobre TODO el historial (igual que la portada), no solo la
+        // ventana del dashboard, para no marcar como atrasados PDV con frecuencia
+        // mayor que la ventana. Cae a `reports` si no llega `allReports`.
+        const lastVisitByPos = ((allReports && allReports.length ? allReports : reports) || []).reduce((acc, r) => {
             if (!r.posId || !r.createdAt?.seconds) return acc;
             const reportDate = new Date(r.createdAt.seconds * 1000);
             if (!acc[r.posId] || reportDate > acc[r.posId]) acc[r.posId] = reportDate;
@@ -44,7 +47,7 @@ const VisitComplianceModalContent = ({ reports, posList }) => {
         delayedVisits.sort((a, b) => (b.delay ?? Infinity) - (a.delay ?? Infinity));
 
         return { hasData: true, compliancePercentage, delayedVisits };
-    }, [reports, posList]);
+    }, [reports, posList, allReports]);
 
     if (!analysis.hasData) {
         return (

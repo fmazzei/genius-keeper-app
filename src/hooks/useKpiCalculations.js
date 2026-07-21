@@ -144,7 +144,13 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
             return acc;
         }, {});
         const totalInventory  = Object.values(latestByStore).reduce((sum, r) => sum + (Number(r.inventoryLevel) || 0), 0);
-        const daysOfInventory = averageDailySales > 0 ? totalInventory / averageDailySales : 0;
+        // Unidades consistentes: `averageDailySales` es una tasa POR TIENDA por día,
+        // así que el numerador también debe ser POR TIENDA. Dividir el inventario de
+        // TODA la red entre una tasa por-tienda inflaba los Días de Inventario ~N
+        // veces (N = nº de tiendas). Se usa el inventario PROMEDIO por tienda.
+        const storesConInventario = Object.keys(latestByStore).length;
+        const avgInventoryPerStore = safeAvg(totalInventory, storesConInventario);
+        const daysOfInventory = averageDailySales > 0 ? avgInventoryPerStore / averageDailySales : 0;
 
         const newEntrantsCount   = reports.flatMap(r => r.newEntrants || []).length;
         const promoActivityCount = reports.flatMap(r => r.competition || []).filter(c => c.hasPop || c.hasTasting).length;
@@ -155,11 +161,14 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         const validPriceReports = reports.filter(r => r.price && Array.isArray(r.competition) && r.competition.length > 0);
         const priceDifferences  = validPriceReports.flatMap(r => {
             const ourPricePer100g = (r.price / ourProductWeight_g) * 100;
-            return r.competition.map(c => {
-                if (!c.price || !c.weight_g) return 0;
-                const compPricePer100g = (c.price / c.weight_g) * 100;
-                return ((compPricePer100g - ourPricePer100g) / ourPricePer100g) * 100;
-            });
+            // Se DESCARTAN las filas sin precio/gramaje (no se promedian como 0):
+            // inyectar ceros arrastraba el índice hacia 0% y falseaba el número.
+            return r.competition
+                .filter(c => Number(c.price) > 0 && Number(c.weight_g) > 0)
+                .map(c => {
+                    const compPricePer100g = (Number(c.price) / Number(c.weight_g)) * 100;
+                    return ((compPricePer100g - ourPricePer100g) / ourPricePer100g) * 100;
+                });
         });
         const priceIndexDifference = safeAvg(priceDifferences.reduce((a, b) => a + b, 0), priceDifferences.length);
 
@@ -168,7 +177,11 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         // registrada contra esa frecuencia. No depende del planificador de rutas.
         const now = new Date();
         const activePdvsWithFrequency = (posList || []).filter(p => p.active && Number(p.visitInterval) > 0);
-        const lastVisitByPos = reports.reduce((acc, r) => {
+        // La ÚLTIMA visita se calcula sobre TODO el historial (`allReports`), no sobre
+        // la ventana de tiempo del dashboard: un PDV con frecuencia de 30 días
+        // visitado hace 20 (a tiempo) se marcaba como "nunca visitado" si la ventana
+        // era de 15 días → cumplimiento falso hacia 0%.
+        const lastVisitByPos = (allReports || []).reduce((acc, r) => {
             if (!r.posId || !r.createdAt?.seconds) return acc;
             const reportDate = new Date(r.createdAt.seconds * 1000);
             if (!acc[r.posId] || reportDate > acc[r.posId]) acc[r.posId] = reportDate;

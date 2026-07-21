@@ -4,7 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts';
 import { TrendingDown, TrendingUp, Sparkles, Loader } from 'lucide-react';
 
-const InventoryModalContent = ({ reports, posList = [] }) => {
+const InventoryModalContent = ({ reports, posList = [], kpis }) => {
     const [chainFilter, setChainFilter] = useState('Todas');
     const [alertFilter, setAlertFilter] = useState('Todos');
     const [aiAnalysis, setAiAnalysis] = useState('');
@@ -20,13 +20,17 @@ const InventoryModalContent = ({ reports, posList = [] }) => {
         return { chains: [...chains].sort() };
     }, [posList]);
 
+    // Misma tasa de rotación que la portada (caída real de inventario entre
+    // visitas), no `orderQuantity/30` — ese proxy contradecía el número de la
+    // tarjeta y estaba documentado como "subestima brutalmente" en useKpiCalculations.
+    const dailyRotation = Number(kpis?.productRotation?.averageDaily) || 0;
+
     const analysis = useMemo(() => {
         const storesData = {};
         (reports || []).forEach((r, index) => {
-            const dailyRotation = (Number(r.orderQuantity) || 0) / 30;
             const doi = dailyRotation > 0 ? (Number(r.inventoryLevel) || 0) / dailyRotation : Infinity;
             const uniqueKey = r.id || `${r.posName}-${index}`;
-            
+
             if (!storesData[r.posName] || (r.createdAt?.seconds && storesData[r.posName].createdAt?.seconds && r.createdAt.seconds > storesData[r.posName].createdAt.seconds)) {
                 storesData[r.posName] = { name: r.posName, doi, id: uniqueKey, createdAt: r.createdAt };
             }
@@ -38,7 +42,7 @@ const InventoryModalContent = ({ reports, posList = [] }) => {
             optimal: storesList.filter(s => s.doi >= 4 && s.doi <= 7),
             healthy: storesList.filter(s => s.doi > 7 && s.doi <= 14),
         };
-    }, [reports]);
+    }, [reports, dailyRotation]);
 
     const filteredData = useMemo(() => {
         const posMap = new Map((posList || []).map(p => [p.name, p]));

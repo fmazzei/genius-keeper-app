@@ -220,11 +220,19 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
     const kpis  = useKpiCalculations(reports, posList, timeRange, ourProductWeight_g);
     const extra = useMemo(() => {
         const r = kpis.reports || [];
-        const uniquePdvs = new Set(r.map(x => x.posId)).size;
+        // Denominador de cobertura: solo PDV reales (type 'pos'); EXCLUYE depósitos
+        // (type 'depot'), que antes inflaban el total y subestimaban el %.
+        const activePos = (posList || []).filter(p => p.type === 'pos');
+        const activePosIds = new Set(activePos.map(p => p.id));
+        // Numerador: PDV distintos con visita, contando solo posId válidos que existan
+        // en el universo de PDV activos (evita posId nulos o de PDV eliminados).
+        const visitedPdvs = new Set(r.map(x => x.posId).filter(id => id && activePosIds.has(id))).size;
         return {
             visitCount:    r.length,
-            coverage:      posList.length > 0 ? (uniquePdvs / posList.length) * 100 : 0,
-            reporterCount: new Set(r.map(x => x.userId)).size,
+            coverage:      activePos.length > 0 ? (visitedPdvs / activePos.length) * 100 : 0,
+            // Reporters por PERSONA (reporterId/userName), no por cuenta de login
+            // (userId): los mercaderistas comparten dispositivo → userId colapsa a 1.
+            reporterCount: new Set(r.map(x => x.reporterId || x.userName).filter(Boolean)).size,
         };
     }, [kpis.reports, posList]);
 
@@ -268,7 +276,7 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
     }
 
     const openModal = (title, type) => setActiveModal({ title, type });
-    const modalProps = { reports: kpis.reports, posList: posList || [], kpis };
+    const modalProps = { reports: kpis.reports, allReports: reports || [], posList: posList || [], kpis, ourProductWeight_g };
     const renderModal = () => {
         if (!activeModal) return null;
         const fn = MODAL_COMPONENTS[activeModal.type];

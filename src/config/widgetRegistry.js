@@ -104,11 +104,11 @@ export const WIDGET_REGISTRY = [
         id: 'compliance',
         category: 'Eficiencia Operativa',
         label: 'Cumplimiento de Visitas',
-        description: '% de visitas completadas según agenda',
+        description: '% de PDV activos visitados dentro de su frecuencia',
         Icon: CheckCircle,
         getData: (kpis) => ({
             value: `${kpis.visitCompliance.toFixed(1)}%`,
-            unit: '(plan)',
+            unit: '(frecuencia)',
             sentiment: kpis.visitCompliance > 90 ? 'good' : 'bad',
             modalType: 'visitCompliance',
             modalTitle: 'Cumplimiento de Visitas',

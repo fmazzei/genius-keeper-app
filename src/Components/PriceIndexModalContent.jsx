@@ -3,8 +3,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { HelpCircle, ChevronDown, TrendingUp, TrendingDown, Store, AlertTriangle } from 'lucide-react';
 
-const OUR_PRODUCT_WEIGHT_G = 250;
-
 const PriceChangeIndicator = ({ change }) => {
     if (change === 0 || !change) return null;
     const isUp = change > 0;
@@ -65,7 +63,9 @@ const CompetitorSummaryCard = ({ brand, data }) => {
     );
 };
 
-const PriceIndexModalContent = ({ reports }) => {
+// ourProductWeight_g llega desde el dashboard (settings/appConfig) para usar el
+// MISMO peso de referencia que la portada; antes estaba fijo en 250g y divergía.
+const PriceIndexModalContent = ({ reports, ourProductWeight_g = 250 }) => {
     const [storeFilter, setStoreFilter] = useState('Todos');
     const [brandFilter, setBrandFilter] = useState('Todos');
     const [productFilter, setProductFilter] = useState('Todos');
@@ -78,7 +78,7 @@ const PriceIndexModalContent = ({ reports }) => {
 
         (reports || []).forEach(r => {
             if (r.price && Array.isArray(r.competition)) {
-                const ourPricePer100g = (Number(r.price) / OUR_PRODUCT_WEIGHT_G) * 100;
+                const ourPricePer100g = (Number(r.price) / ourProductWeight_g) * 100;
                 stores.add(r.posName);
                 r.competition.forEach(c => {
                     if (c.brand && c.price && c.weight_g && c.productName) {
@@ -103,7 +103,7 @@ const PriceIndexModalContent = ({ reports }) => {
             brands: [...brands].sort(),
             productsByBrand: Object.fromEntries(Object.entries(productsByBrand).map(([brand, productSet]) => [brand, [...productSet].sort()]))
         };
-    }, [reports]);
+    }, [reports, ourProductWeight_g]);
 
     const availableProducts = analysis.productsByBrand[brandFilter] || ['Todos'];
 
