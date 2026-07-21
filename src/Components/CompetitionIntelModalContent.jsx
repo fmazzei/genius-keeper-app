@@ -13,26 +13,37 @@ const CompetitionIntelModalContent = ({ reports }) => {
         reports.forEach(r => {
             if (Array.isArray(r.newEntrants) && r.newEntrants.length > 0) {
                 const reportDate = new Date(r.createdAt?.seconds * 1000 || Date.now());
-                
+
                 r.newEntrants.forEach((ne, index) => {
-                    const weight = ne.weight_g || 200;
-                    const pricePer100g = (ne.price / weight) * 100;
-                    const pricePosition = pricePer100g < OUR_PRODUCT_PRICE_PER_100G ? 'Agresivo' : 'Premium';
-                    
-                    events.push({ 
+                    // Sin asumir 200g: si no hay gramaje, no se calcula precio/100g
+                    // (evita un posicionamiento "Agresivo/Premium" inventado).
+                    const weight = Number(ne.weight_g) > 0 ? Number(ne.weight_g) : null;
+                    const price  = Number(ne.price) || 0;
+                    const pricePer100g = weight ? (price / weight) * 100 : null;
+                    const pricePosition = pricePer100g == null ? null : (pricePer100g < OUR_PRODUCT_PRICE_PER_100G ? 'Agresivo' : 'Premium');
+                    const key = `${(ne.brand || '').trim().toLowerCase()}|${(ne.presentation || '').trim().toLowerCase()}`;
+
+                    events.push({
                         id: `${r.id}-entrant-${index}`,
-                        date: reportDate, 
-                        title: `Nuevo Entrante: ${ne.brand}`, 
-                        description: `${ne.presentation || 'Producto sin descripción'} visto en ${r.posName}.`, 
-                        priceAnalysis: `Detectado a $${pricePer100g.toFixed(2)}/100g (${pricePosition})`, 
-                        brand: ne.brand 
+                        key,
+                        date: reportDate,
+                        title: `Nuevo Entrante: ${ne.brand}`,
+                        description: `${ne.presentation || 'Producto sin descripción'} visto en ${r.posName}.`,
+                        priceAnalysis: pricePer100g == null
+                            ? (price ? `Precio $${price.toFixed(2)} · gramaje no informado` : 'Sin datos de precio')
+                            : `Detectado a $${pricePer100g.toFixed(2)}/100g (${pricePosition})`,
+                        brand: ne.brand
                     });
                 });
             }
         });
-        
+
         events.sort((a, b) => b.date - a.date);
-        return { hasData: events.length > 0, events };
+        // Un producto = una tarjeta (dedupe por marca+presentación, conservando el
+        // avistamiento más reciente); cuadra con el contador de la portada.
+        const seen = new Set();
+        const deduped = events.filter(e => (seen.has(e.key) ? false : seen.add(e.key)));
+        return { hasData: deduped.length > 0, events: deduped };
     }, [reports]);
 
     if (!analysis.hasData) {

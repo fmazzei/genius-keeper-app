@@ -168,15 +168,32 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         const avgInventoryPerStore = safeAvg(totalInventory, storesConInventario);
         const daysOfInventory = averageDailySales > 0 ? avgInventoryPerStore / averageDailySales : 0;
 
-        const newEntrantsCount   = reports.flatMap(r => r.newEntrants || []).length;
+        // Nuevos entrantes = PRODUCTOS distintos (dedupe por marca+presentación),
+        // no cada avistamiento; cuadra con el modal.
+        const newEntrantKeys = new Set();
+        reports.forEach(r => (r.newEntrants || []).forEach(ne => {
+            newEntrantKeys.add(`${(ne.brand || '').trim().toLowerCase()}|${(ne.presentation || '').trim().toLowerCase()}`);
+        }));
+        const newEntrantsCount   = newEntrantKeys.size;
         // Cada acción cuenta como un evento: un POP y una degustación en la misma
         // fila = 2 eventos (igual que el modal). "No Sabe" (hasTasting==='unknown')
         // NO cuenta como promoción activa.
         const promoActivityCount = reports.flatMap(r => r.competition || []).reduce(
             (n, c) => n + (c.hasPop === true ? 1 : 0) + (c.hasTasting === true ? 1 : 0), 0);
 
-        const popOptimalCount      = reports.filter(r => r.popStatus === 'Exhibido correctamente').length;
-        const popQualityPercentage = safeAvg(popOptimalCount, totalVisits) * 100;
+        // Calidad POP: denominador = reportes CON popStatus (no todas las visitas),
+        // para cuadrar con el modal (que ignora los reportes sin popStatus).
+        const popReports           = reports.filter(r => r.popStatus);
+        const popOptimalCount      = popReports.filter(r => r.popStatus === 'Exhibido correctamente').length;
+        const popQualityPercentage = safeAvg(popOptimalCount, popReports.length) * 100;
+
+        // Efectividad en anaquel (tarjeta): razón AGRUPADA ojos/manos sobre todos
+        // los reportes con `shelfLocation` — misma base que el modal de posición
+        // (antes era un promedio NO ponderado de porcentajes por tienda que no
+        // reconciliaba con el conteo agrupado del modal).
+        const shelfReports         = reports.filter(r => r.shelfLocation);
+        const shelfOptimalCount    = shelfReports.filter(r => r.shelfLocation === 'ojos' || r.shelfLocation === 'manos').length;
+        const shelfPositioningPct  = safeAvg(shelfOptimalCount, shelfReports.length) * 100;
 
         const validPriceReports = reports.filter(r => r.price && Array.isArray(r.competition) && r.competition.length > 0);
         const priceDifferences  = validPriceReports.flatMap(r => {
@@ -245,7 +262,7 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         return {
             totalVisits,
             stockouts: { count: stockoutCount, percentage: safeAvg(stockoutCount, totalVisits) * 100 },
-            shelfPositioning: { percentage: globalShelf },
+            shelfPositioning: { percentage: shelfPositioningPct },
             priceIndex: { difference: priceIndexDifference },
             freshnessIndex,
             popQuality: { percentage: popQualityPercentage },

@@ -5,6 +5,14 @@ import { HelpCircle, Sparkles, Loader, Calendar, Play, Pause } from 'lucide-reac
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 
+// Los PDV reales guardan el GPS en `coordinates` ({lat,lng}); solo los datos de
+// simulación/semilla usan `location`. Se aceptan ambos para que el mapa funcione
+// con datos reales (antes filtraba solo por `location` → mapa vacío en producción).
+const getCoords = (p) => {
+    const c = p?.coordinates || p?.location;
+    return (c && typeof c.lat === 'number' && typeof c.lng === 'number') ? c : null;
+};
+
 const groupByMonth = (reports) => {
     const grouped = {};
     (reports || []).forEach(r => {
@@ -27,7 +35,7 @@ const GeographicDemandModalContent = ({ reports, posList }) => {
     const monthlyData = useMemo(() => groupByMonth(reports), [reports]);
     const allActivePos = useMemo(() => {
         if (!Array.isArray(posList)) return [];
-        return posList.filter(p => p.active && p.location && p.location.lat && p.location.lng);
+        return posList.filter(p => p.active && getCoords(p));
     }, [posList]);
 
     useEffect(() => {
@@ -60,7 +68,7 @@ const GeographicDemandModalContent = ({ reports, posList }) => {
         
         const dataByPdv = {};
         allActivePos.forEach(pos => {
-            dataByPdv[pos.name] = { rotation: 0, location: pos.location, zone: pos.zone, name: pos.name };
+            dataByPdv[pos.name] = { rotation: 0, location: getCoords(pos), zone: pos.zone, name: pos.name };
         });
 
         monthReports.forEach(r => {
