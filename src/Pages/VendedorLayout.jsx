@@ -27,6 +27,8 @@ import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
+import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
+import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
@@ -979,6 +981,8 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [desgloseInputs, setDesgloseInputs]         = useState(null);
     const [vendedor, setVendedor]                     = useState({ uid: null, nombre: '', metaMensual: 2400, reporterId: null, mesArranque: 0 });
     const [commConfig, setCommConfig]                 = useState(DEFAULT_COMMISSION_CONFIG);
+    const { getEnabled: getVendorKpis }               = useVendorKpiConfig();
+    const [homePage, setHomePage]                     = useState(0); // 0 = inicio, 1 = KPIs
     const [stats, setStats]                           = useState({
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
@@ -1632,19 +1636,65 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         const tiers = buildTiers(commConfig);
+        const pct   = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
+        const tier  = getTierFromConfig(pct, tiers, commConfig.bajaRate, commConfig.bajaLabel);
+        const kpiIds = getVendorKpis();
+
+        // Home deslizable: página 0 = inicio actual · página 1 = tus KPIs.
+        // Scroll-snap horizontal (robusto en webview, sin librería de gestos).
+        const go = (p) => {
+            setHomePage(p);
+            const el = document.getElementById('gk-home-swipe');
+            if (el) el.scrollTo({ left: p * el.clientWidth, behavior: 'smooth' });
+        };
+        const onScroll = (e) => {
+            const el = e.currentTarget;
+            const p = Math.round(el.scrollLeft / el.clientWidth);
+            if (p !== homePage) setHomePage(p);
+        };
+
         return (
-            <HomeView
-                vendedor={vendedor}
-                stats={stats}
-                loading={loading}
-                onNavigate={navigate}
-                tiers={tiers}
-                commConfig={commConfig}
-                estadoActual={estados[0] || null}
-                ultimoCerrado={estados.find(e => e.cerrado) || null}
-                loadError={loadError}
-                onRetry={() => setReloadKey(k => k + 1)}
-            />
+            <div className="flex-1 flex flex-col overflow-hidden">
+                <div id="gk-home-swipe" onScroll={onScroll}
+                     className="flex-1 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory"
+                     style={{ scrollbarWidth: 'none' }}>
+                    <div className="snap-center shrink-0 w-full h-full flex flex-col">
+                        <HomeView
+                            vendedor={vendedor}
+                            stats={stats}
+                            loading={loading}
+                            onNavigate={navigate}
+                            tiers={tiers}
+                            commConfig={commConfig}
+                            estadoActual={estados[0] || null}
+                            ultimoCerrado={estados.find(e => e.cerrado) || null}
+                            loadError={loadError}
+                            onRetry={() => setReloadKey(k => k + 1)}
+                        />
+                    </div>
+                    <div className="snap-center shrink-0 w-full h-full flex flex-col">
+                        <VendedorKpisView
+                            enabledIds={kpiIds}
+                            stats={stats}
+                            vendedor={vendedor}
+                            estadoActual={estados[0] || null}
+                            tier={tier}
+                            pct={pct}
+                            onNavigate={navigate}
+                        />
+                    </div>
+                </div>
+                {/* Paginación (puntos) — también permite tocar para cambiar de página */}
+                <div className="shrink-0 flex items-center justify-center gap-2 py-2 bg-slate-950">
+                    {['Inicio', 'KPIs'].map((lbl, i) => (
+                        <button key={i} onClick={() => go(i)}
+                            className={`flex items-center gap-1.5 text-[11px] font-bold rounded-full px-2.5 py-1 transition-colors ${homePage === i ? 'text-white' : 'text-slate-500'}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${homePage === i ? 'bg-[#FFD600]' : 'bg-slate-600'}`} />
+                            {lbl}
+                        </button>
+                    ))}
+                </div>
+            </div>
         );
     };
 
