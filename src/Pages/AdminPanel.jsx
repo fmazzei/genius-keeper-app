@@ -21,6 +21,7 @@ import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 import EditPosModal from '../Components/EditPosModal.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
+import FacturacionClientes from './FacturacionClientes.jsx';
 
 // Índice público usuario→correo para permitir login por NOMBRE DE USUARIO.
 // Se escribe al crear/editar cualquier usuario con username.
@@ -5051,6 +5052,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
                 { id: 'comisiones_dash', label: 'Comisiones a pagar', Icon: BarChart2, badge: 'Nuevo' },
+                { id: 'facturacion', label: 'Facturación', Icon: Receipt, badge: 'Nuevo' },
                 { id: 'liquidaciones', label: 'Liquidaciones', Icon: Wallet },
                 { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
                 { id: 'almacen_comercial', label: 'Almacén Comercial', Icon: Truck },
@@ -5105,6 +5107,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'sales_goals':    return <SalesGoalsManagement />;
             case 'comisiones_dash': return <ComisionesDashboard />;
+            case 'facturacion':    return <FacturacionClientes />;
             case 'liquidaciones':  return <LiquidacionesManagement />;
             case 'depots':         return <DepotManagement />;
             case 'almacen_comercial': return <AlmacenComercialPage />;
