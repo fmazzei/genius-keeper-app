@@ -5,7 +5,7 @@
 // valores se derivan del `stats`/`estadoActual`/`tier` que el Home ya calcula.
 
 import React from 'react';
-import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar } from 'lucide-react';
+import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp } from 'lucide-react';
 import { VENDOR_KPI_MAP } from '@/config/vendorKpiRegistry.js';
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
@@ -55,7 +55,7 @@ function buildKpi(id, ctx) {
     }
 }
 
-export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, hasAnaquelData = false, onOpenAnaquelMap }) {
+export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas }) {
     const ctx = { stats, vendedor, estadoActual, tier, pct };
     const items = enabledIds.map(id => ({ id, def: VENDOR_KPI_MAP[id], kpi: buildKpi(id, ctx) }))
                             .filter(x => x.def && x.kpi);
@@ -68,6 +68,19 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                     <p className="text-slate-400 text-xs">{vendedor?.nombre} · {stats?.periodoLabel || 'período en curso'}</p>
                 </div>
             </div>
+
+            {/* Ventas por cliente/PDV de tu cartera — el indicador que mueve tu comisión */}
+            {onOpenVentas && (
+                <button onClick={onOpenVentas}
+                    className="w-full text-left rounded-2xl p-4 flex items-center gap-3 bg-gradient-to-br from-emerald-500/15 to-teal-500/5 border border-emerald-500/30 active:scale-[0.99] transition-transform">
+                    <div className="w-11 h-11 rounded-xl bg-emerald-500/20 flex items-center justify-center shrink-0"><TrendingUp size={20} className="text-emerald-300" /></div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-emerald-300 font-black text-sm">Ventas de tu cartera</p>
+                        <p className="text-slate-400 text-xs">{hasVentasData ? 'Clientes y PDV que más facturan (unidades y $). Exportable a PDF.' : 'Aún sin facturación en tu cartera.'}</p>
+                    </div>
+                    <span className="text-emerald-300 text-lg shrink-0" aria-hidden>→</span>
+                </button>
+            )}
 
             {(() => {
                 const CAT_ORDER = ['Dinero', 'Cobranza', 'Bonos', 'Operación'];

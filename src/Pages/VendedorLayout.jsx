@@ -30,6 +30,7 @@ import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } fr
 import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import VendedorAnaquelMap from '@/Components/VendedorAnaquelMap.jsx';
+import VendedorVentasCartera from '@/Components/VendedorVentasCartera.jsx';
 import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
@@ -986,6 +987,8 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [homePage, setHomePage]                     = useState(0); // 0 = inicio, 1 = KPIs
     const [anaquelReports, setAnaquelReports]         = useState([]); // visit_reports de su cartera (mapa de anaquel)
     const [showAnaquelMap, setShowAnaquelMap]         = useState(false);
+    const [carteraFacturas, setCarteraFacturas]       = useState([]); // facturas de su cartera (ventas por cliente/PDV)
+    const [showVentas, setShowVentas]                 = useState(false);
     const [stats, setStats]                           = useState({
         unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
@@ -1207,6 +1210,12 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //     calendario `comisiones_mensuales`) para respetar el mes de
                 //     empleo del vendedor, no el mes de calendario.
                 const facturasVend = facturasSnap ? facturasSnap.docs.map(d => d.data()) : [];
+                // Facturas de la cartera para el modal "Ventas por cliente/PDV" (no se
+                // cachea en localStorage; solo los campos que el modal necesita).
+                setCarteraFacturas(facturasVend.map(f => ({
+                    clienteName: f.clienteName, razonSocialCanonica: f.razonSocialCanonica,
+                    unidades: f.unidades, monto: f.monto, estado: f.estado, categoria: f.categoria, vencimiento: f.vencimiento,
+                })));
                 const enPeriodo = (f) => {
                     const t = f.fecha?.toDate?.() || (f.fecha ? new Date(f.fecha) : null);
                     return t && t >= periodStart && t < periodEnd;
@@ -1700,6 +1709,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                             onNavigate={navigate}
                             hasAnaquelData={anaquelReports.length > 0}
                             onOpenAnaquelMap={() => setShowAnaquelMap(true)}
+                            hasVentasData={carteraFacturas.length > 0}
+                            onOpenVentas={() => setShowVentas(true)}
                         />
                     </div>
                 </div>
@@ -1781,6 +1792,11 @@ const VendedorLayout = ({ user, onLogout }) => {
             {/* ── Mapa de Calor del Anaquel (oscuro, coherente con la app) ── */}
             {showAnaquelMap && (
                 <VendedorAnaquelMap reports={anaquelReports} onClose={() => setShowAnaquelMap(false)} />
+            )}
+
+            {/* ── Ventas por cliente/PDV de tu cartera (real, Zoho) ── */}
+            {showVentas && (
+                <VendedorVentasCartera facturas={carteraFacturas} onClose={() => setShowVentas(false)} />
             )}
 
             {/* ── FAB: Nuevo Pedido — se oculta en la 2ª vista del Home (KPIs), donde estorba ── */}
