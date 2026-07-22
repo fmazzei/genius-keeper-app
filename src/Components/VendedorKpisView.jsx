@@ -4,9 +4,10 @@
 // KPIs aparecen lo decide el máster (config por rol, useVendorKpiConfig). Los
 // valores se derivan del `stats`/`estadoActual`/`tier` que el Home ya calcula.
 
-import React from 'react';
+import React, { useState } from 'react';
 import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp, CheckCircle, Eye, Droplets, BarChart3, Package, Info } from 'lucide-react';
 import { VENDOR_KPI_MAP } from '@/config/vendorKpiRegistry.js';
+import VendedorKpiDetalle from '@/Components/VendedorKpiDetalle.jsx';
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
@@ -87,6 +88,7 @@ function buildKpi(id, ctx) {
 
 export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, execKpis, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas }) {
     const ctx = { stats, vendedor, estadoActual, tier, pct, execKpis };
+    const [detalle, setDetalle] = useState(null); // { id, def, kpi } del KPI expandido
     const items = enabledIds.map(id => ({ id, def: VENDOR_KPI_MAP[id], kpi: buildKpi(id, ctx) }))
                             .filter(x => x.def && x.kpi);
 
@@ -123,7 +125,8 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                 const KpiCard = ({ id, def, kpi }) => {
                     const Icon = ICON[id] || Target;
                     return (
-                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                        <button type="button" onClick={() => setDetalle({ id, def, kpi })}
+                            className="text-left bg-slate-900 border border-slate-800 rounded-2xl p-4 active:scale-[0.98] transition-transform">
                             <div className="flex items-center gap-2 mb-2">
                                 <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
                                     <Icon size={15} className="text-slate-300" />
@@ -139,7 +142,7 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                                 </div>
                             )}
                             {kpi.sub && <p className="text-[11px] text-slate-500 mt-1 leading-snug">{kpi.sub}</p>}
-                        </div>
+                        </button>
                     );
                 };
                 return cats.map(cat => (
@@ -161,6 +164,10 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                     </section>
                 ));
             })()}
+
+            {detalle && (
+                <VendedorKpiDetalle id={detalle.id} def={detalle.def} kpi={detalle.kpi} ctx={ctx} onClose={() => setDetalle(null)} />
+            )}
         </div>
     );
 }
