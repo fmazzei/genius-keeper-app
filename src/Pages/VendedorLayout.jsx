@@ -29,7 +29,7 @@ import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.js
 import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
 import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
-import PositioningModalContent from '@/Components/PositioningModalContent.jsx';
+import VendedorAnaquelMap from '@/Components/VendedorAnaquelMap.jsx';
 import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
@@ -1661,6 +1661,17 @@ const VendedorLayout = ({ user, onLogout }) => {
 
         return (
             <div className="flex-1 flex flex-col overflow-hidden">
+                {/* Selector de vista (arriba, siempre visible) — deja claro que hay 2 vistas */}
+                <div className="shrink-0 px-4 pt-3 pb-2 bg-slate-950">
+                    <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1">
+                        {['Inicio', 'Mis KPIs'].map((lbl, i) => (
+                            <button key={i} onClick={() => go(i)}
+                                className={`flex-1 text-sm font-bold py-2 rounded-lg transition-colors ${homePage === i ? 'bg-slate-800 text-white shadow' : 'text-slate-400'}`}>
+                                {lbl}
+                            </button>
+                        ))}
+                    </div>
+                </div>
                 <div id="gk-home-swipe" onScroll={onScroll}
                      className="flex-1 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory"
                      style={{ scrollbarWidth: 'none' }}>
@@ -1691,16 +1702,6 @@ const VendedorLayout = ({ user, onLogout }) => {
                             onOpenAnaquelMap={() => setShowAnaquelMap(true)}
                         />
                     </div>
-                </div>
-                {/* Paginación (puntos) — también permite tocar para cambiar de página */}
-                <div className="shrink-0 flex items-center justify-center gap-2 py-2 bg-slate-950">
-                    {['Inicio', 'KPIs'].map((lbl, i) => (
-                        <button key={i} onClick={() => go(i)}
-                            className={`flex items-center gap-1.5 text-[11px] font-bold rounded-full px-2.5 py-1 transition-colors ${homePage === i ? 'text-white' : 'text-slate-500'}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${homePage === i ? 'bg-[#FFD600]' : 'bg-slate-600'}`} />
-                            {lbl}
-                        </button>
-                    ))}
                 </div>
             </div>
         );
@@ -1777,21 +1778,13 @@ const VendedorLayout = ({ user, onLogout }) => {
                 {renderContent()}
             </div>
 
-            {/* ── Mapa de Calor del Anaquel (trade) — heatmap de posición×categoría ── */}
+            {/* ── Mapa de Calor del Anaquel (oscuro, coherente con la app) ── */}
             {showAnaquelMap && (
-                <div className="fixed inset-0 z-[90] bg-slate-900/80 flex flex-col">
-                    <div className="flex items-center justify-between bg-slate-900 px-4 py-3 shrink-0">
-                        <span className="text-white font-bold text-sm">Mapa de Calor del Anaquel 👑</span>
-                        <button onClick={() => setShowAnaquelMap(false)} className="text-slate-300 text-sm font-semibold hover:text-white">Cerrar</button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto bg-white">
-                        <PositioningModalContent reports={anaquelReports} />
-                    </div>
-                </div>
+                <VendedorAnaquelMap reports={anaquelReports} onClose={() => setShowAnaquelMap(false)} />
             )}
 
-            {/* ── FAB: Nuevo Pedido (acción #1 del vendedor, siempre a la mano) ── */}
-            {!subView && currentView !== 'despacho' && (
+            {/* ── FAB: Nuevo Pedido — se oculta en la 2ª vista del Home (KPIs), donde estorba ── */}
+            {!subView && currentView !== 'despacho' && !(currentView === 'home' && homePage === 1) && (
                 <button
                     onClick={() => navigate('pedido')}
                     className="absolute bottom-20 right-4 z-40 flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black pl-4 pr-5 py-3.5 rounded-full shadow-xl shadow-emerald-900/50 transition-all"

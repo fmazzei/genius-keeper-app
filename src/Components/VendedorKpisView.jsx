@@ -69,51 +69,55 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                 </div>
             </div>
 
-            {/* Mapa de Calor del Anaquel (trade marketing) — la "ubicación dorada" */}
-            {onOpenAnaquelMap && (
-                <button onClick={onOpenAnaquelMap}
-                    className="w-full text-left rounded-2xl p-4 flex items-center gap-3 bg-gradient-to-br from-amber-500/15 to-amber-400/5 border border-amber-500/30 active:scale-[0.99] transition-transform">
-                    <div className="w-11 h-11 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0 text-2xl">👑</div>
-                    <div className="flex-1 min-w-0">
-                        <p className="text-amber-300 font-black text-sm">Mapa de Calor del Anaquel</p>
-                        <p className="text-slate-400 text-xs">
-                            {hasAnaquelData ? 'La “ubicación dorada”: dónde rota más tu producto en el estante.' : 'Aún sin datos de anaquel en tu cartera.'}
-                        </p>
-                    </div>
-                    <span className="text-amber-300 text-lg shrink-0" aria-hidden>→</span>
-                </button>
-            )}
-
-            {items.length === 0 ? (
-                <p className="text-slate-500 text-sm text-center py-16">Aún no hay indicadores activados para ti.</p>
-            ) : (
-                <div className="grid grid-cols-2 gap-3">
-                    {items.map(({ id, def, kpi }) => {
-                        const Icon = ICON[id] || Target;
-                        return (
-                            <div key={id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
-                                        <Icon size={15} className="text-slate-300" />
-                                    </div>
-                                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 leading-tight">{def.label}</p>
+            {(() => {
+                const CAT_ORDER = ['Dinero', 'Cobranza', 'Bonos', 'Operación'];
+                const groups = {};
+                items.forEach(x => { (groups[x.def.cat] ||= []).push(x); });
+                const cats = CAT_ORDER.filter(c => (groups[c] && groups[c].length) || (c === 'Operación' && onOpenAnaquelMap));
+                if (cats.length === 0) {
+                    return <p className="text-slate-500 text-sm text-center py-16">Aún no hay indicadores activados para ti.</p>;
+                }
+                const KpiCard = ({ id, def, kpi }) => {
+                    const Icon = ICON[id] || Target;
+                    return (
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                                    <Icon size={15} className="text-slate-300" />
                                 </div>
-                                <p className={`text-2xl font-black tracking-tight ${TONE[kpi.tone] || 'text-white'}`}>
-                                    {kpi.value} {kpi.unit && <span className="text-xs font-bold text-slate-500">{kpi.unit}</span>}
-                                </p>
-                                {kpi.bar != null && (
-                                    <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden my-2">
-                                        <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${kpi.bar * 100}%` }} />
-                                    </div>
-                                )}
-                                {kpi.sub && <p className="text-[11px] text-slate-500 mt-1 leading-snug">{kpi.sub}</p>}
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 leading-tight">{def.label}</p>
                             </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            <p className="text-center text-[11px] text-slate-600 pt-2">Desliza ← para volver a tu inicio.</p>
+                            <p className={`text-2xl font-black tracking-tight ${TONE[kpi.tone] || 'text-white'}`}>
+                                {kpi.value} {kpi.unit && <span className="text-xs font-bold text-slate-500">{kpi.unit}</span>}
+                            </p>
+                            {kpi.bar != null && (
+                                <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden my-2">
+                                    <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${kpi.bar * 100}%` }} />
+                                </div>
+                            )}
+                            {kpi.sub && <p className="text-[11px] text-slate-500 mt-1 leading-snug">{kpi.sub}</p>}
+                        </div>
+                    );
+                };
+                return cats.map(cat => (
+                    <section key={cat} className="space-y-2">
+                        <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">{cat}</p>
+                        <div className="grid grid-cols-2 gap-3">
+                            {(groups[cat] || []).map(x => <KpiCard key={x.id} {...x} />)}
+                            {cat === 'Operación' && onOpenAnaquelMap && (
+                                <button onClick={onOpenAnaquelMap} className="text-left bg-slate-900 border border-slate-800 rounded-2xl p-4 active:scale-[0.99] transition-transform">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-base leading-none">👑</div>
+                                        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 leading-tight">Mapa de Anaquel</p>
+                                    </div>
+                                    <p className="text-lg font-black text-amber-300">Ver mapa <span aria-hidden>→</span></p>
+                                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">{hasAnaquelData ? 'Tu ubicación dorada en el estante.' : 'Aún sin datos de anaquel.'}</p>
+                                </button>
+                            )}
+                        </div>
+                    </section>
+                ));
+            })()}
         </div>
     );
 }
