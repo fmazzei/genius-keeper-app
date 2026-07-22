@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs } from 'firebase/firestore';
-import { RefreshCw, FileDown, Search, Store, Building2, AlertCircle } from 'lucide-react';
+import { RefreshCw, FileDown, Search, Store, Building2, AlertCircle, Calendar } from 'lucide-react';
 import FacturacionDoc from '@/Components/FacturacionDoc.jsx';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -30,6 +30,10 @@ export default function FacturacionClientes() {
     const [groupBy, setGroupBy]   = useState('razon'); // 'razon' | 'pdv'
     const [search, setSearch]     = useState('');
     const [showDoc, setShowDoc]   = useState(false);
+    // Período: por defecto el AÑO EN CURSO. Filtros año / semestre / trimestre.
+    const [year, setYear]         = useState(new Date().getFullYear());
+    const [gran, setGran]         = useState('year'); // 'year' | 'sem' | 'tri'
+    const [sub, setSub]           = useState(1);       // semestre 1-2 · trimestre 1-4
 
     useEffect(() => {
         let alive = true;
@@ -49,10 +53,33 @@ export default function FacturacionClientes() {
     }, []);
 
     const now = new Date();
+
+    // Años disponibles: desde el actual hasta el año de la primera factura.
+    const years = useMemo(() => {
+        const cur = new Date().getFullYear();
+        let min = cur;
+        facturas.forEach(f => { const t = toDate(f.fecha); if (t && t.getFullYear() < min) min = t.getFullYear(); });
+        const arr = []; for (let y = cur; y >= min; y--) arr.push(y);
+        return arr;
+    }, [facturas]);
+
+    // Ventana [inicio, fin) del período seleccionado.
+    const [winStart, winEnd] = useMemo(() => {
+        if (gran === 'sem') { const m = sub === 1 ? 0 : 6; return [new Date(year, m, 1), new Date(year, m + 6, 1)]; }
+        if (gran === 'tri') { const m = (sub - 1) * 3; return [new Date(year, m, 1), new Date(year, m + 3, 1)]; }
+        return [new Date(year, 0, 1), new Date(year + 1, 0, 1)];
+    }, [year, gran, sub]);
+
+    const periodoLabel = gran === 'year' ? `Año ${year}`
+        : gran === 'sem' ? `${sub === 1 ? '1.er' : '2.º'} semestre ${year}`
+        : `${sub}.º trimestre ${year}`;
+
     const grupos = useMemo(() => {
         const map = new Map();
         for (const f of facturas) {
             if (f.estado === 'anulada') continue;
+            const t = toDate(f.fecha);
+            if (!t || t < winStart || t >= winEnd) continue; // ← filtro de período
             const key = groupBy === 'razon'
                 ? (f.razonSocialCanonica || f.clienteName || '—')
                 : (f.clienteName || f.razonSocialCanonica || '—');
@@ -74,7 +101,7 @@ export default function FacturacionClientes() {
         const term = search.trim().toLowerCase();
         if (term) arr = arr.filter(g => (g.nombre || '').toLowerCase().includes(term));
         return arr;
-    }, [facturas, groupBy, search]); // eslint-disable-line
+    }, [facturas, groupBy, search, winStart, winEnd]); // eslint-disable-line
 
     const totales = useMemo(() => grupos.reduce((t, g) => ({
         facturas: t.facturas + g.facturas, unidades: t.unidades + g.unidades, facturado: t.facturado + g.facturado,
@@ -99,7 +126,7 @@ export default function FacturacionClientes() {
         <div className="p-1">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div>
-                    <h2 className="text-xl font-black text-slate-800">Facturación</h2>
+                    <h2 className="text-xl font-black text-slate-800">Facturación · <span className="text-brand-blue">{periodoLabel}</span></h2>
                     <p className="text-slate-400 text-xs">Colocación y cobranza por cliente, desde Zoho Books (excluye anuladas).</p>
                 </div>
                 <button
@@ -109,6 +136,31 @@ export default function FacturacionClientes() {
                 >
                     <FileDown size={16} /> PDF
                 </button>
+            </div>
+
+            {/* Filtro de período: año + semestre/trimestre */}
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+                <div className="flex items-center gap-1.5 text-slate-500 text-xs font-bold"><Calendar size={14} /> Período</div>
+                <select value={year} onChange={e => setYear(Number(e.target.value))}
+                    className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-bold text-slate-700 focus:outline-none focus:border-brand-blue">
+                    {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+                <div className="rounded-lg bg-slate-100 p-1 flex">
+                    {[['year', 'Año'], ['sem', 'Semestre'], ['tri', 'Trimestre']].map(([v, l]) => (
+                        <button key={v} onClick={() => { setGran(v); setSub(1); }}
+                            className={`text-xs py-1.5 px-2.5 rounded-md font-semibold ${gran === v ? 'bg-white shadow text-brand-blue' : 'text-slate-500'}`}>{l}</button>
+                    ))}
+                </div>
+                {gran === 'sem' && (
+                    <div className="rounded-lg bg-slate-100 p-1 flex">
+                        {[1, 2].map(s => <button key={s} onClick={() => setSub(s)} className={`text-xs py-1.5 px-3 rounded-md font-semibold ${sub === s ? 'bg-white shadow text-brand-blue' : 'text-slate-500'}`}>S{s}</button>)}
+                    </div>
+                )}
+                {gran === 'tri' && (
+                    <div className="rounded-lg bg-slate-100 p-1 flex">
+                        {[1, 2, 3, 4].map(s => <button key={s} onClick={() => setSub(s)} className={`text-xs py-1.5 px-2.5 rounded-md font-semibold ${sub === s ? 'bg-white shadow text-brand-blue' : 'text-slate-500'}`}>T{s}</button>)}
+                    </div>
+                )}
             </div>
 
             {/* Resumen */}
@@ -174,7 +226,7 @@ export default function FacturacionClientes() {
             </div>
 
             {showDoc && (
-                <FacturacionDoc modo={groupBy} grupos={grupos} totales={totales} onClose={() => setShowDoc(false)} />
+                <FacturacionDoc modo={groupBy} grupos={grupos} totales={totales} periodoLabel={periodoLabel} onClose={() => setShowDoc(false)} />
             )}
         </div>
     );

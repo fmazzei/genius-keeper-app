@@ -33,7 +33,7 @@ const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDig
 
 const Th = ({ children, right }) => <th className={`py-1.5 px-2 ${right ? 'text-right' : 'text-left'}`}>{children}</th>;
 
-export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, onClose }) {
+export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, periodoLabel = '', onClose }) {
     const fecha = new Date().toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     const etiquetaGrupo = modo === 'razon' ? 'Razón social' : 'Punto de venta';
     const t = totales || grupos.reduce((a, g) => ({
@@ -54,7 +54,7 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, o
                         <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: NAVY }}><span className="text-[#FFD600] font-black text-lg">GK</span></div>
                         <div>
                             <p className="font-black text-[17px]" style={{ color: NAVY }}>Genius Keeper</p>
-                            <p className="text-[12px] text-slate-500">Facturación por {etiquetaGrupo.toLowerCase()}</p>
+                            <p className="text-[12px] text-slate-500">Facturación por {etiquetaGrupo.toLowerCase()}{periodoLabel ? ` · ${periodoLabel}` : ''}</p>
                         </div>
                     </div>
                     <p className="text-[11px] text-slate-400 mb-4">
