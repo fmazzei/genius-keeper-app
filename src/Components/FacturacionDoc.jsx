@@ -19,7 +19,9 @@ const PRINT_CSS = `
   body > *:not(#gk-fact-portal) { display: none !important; }
   #gk-fact-portal { position: static !important; inset: auto !important; height: auto !important; overflow: visible !important; background: #fff !important; }
   #gk-fact-portal .gk-no-print { display: none !important; }
-  #gk-fact-sheet { box-shadow: none !important; max-width: 100% !important; }
+  #gk-fact-sheet { box-shadow: none !important; max-width: 100% !important; padding: 0 !important; }
+  .gk-scroll { overflow: visible !important; }
+  #gk-fact-sheet table { min-width: 0 !important; font-size: 10px !important; }
   .gk-row { break-inside: avoid; }
   thead { display: table-header-group; }
 }
@@ -60,7 +62,7 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, o
                     </p>
 
                     {/* Resumen */}
-                    <div className="grid grid-cols-4 gap-2 mb-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
                         {[
                             { l: 'Facturado', v: money(t.facturado), c: NAVY },
                             { l: 'Cobrado', v: money(t.cobrado), c: '#0f9d6b' },
@@ -69,45 +71,50 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, o
                         ].map((k, i) => (
                             <div key={i} className="border border-slate-200 rounded-lg px-3 py-2">
                                 <p className="text-[9px] font-bold uppercase tracking-wide text-slate-400">{k.l}</p>
-                                <p className="font-black text-[15px]" style={{ color: k.c }}>{k.v}</p>
+                                <p className="font-black text-[13px] whitespace-nowrap" style={{ color: k.c, fontVariantNumeric: 'tabular-nums' }}>{k.v}</p>
                             </div>
                         ))}
                     </div>
 
                     {grupos.length === 0 ? <p className="text-[12px] text-slate-400">Sin facturación en el filtro actual.</p> : (
-                        <table className="w-full text-[11px]" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                            <colgroup><col style={{ width: '5%' }} /><col style={{ width: '31%' }} /><col style={{ width: '8%' }} /><col style={{ width: '9%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} /><col style={{ width: '11%' }} /></colgroup>
+                        <div className="gk-scroll" style={{ overflowX: 'auto' }}>
+                        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '660px', fontSize: '11px', fontVariantNumeric: 'tabular-nums' }}>
+                            <colgroup>
+                                <col style={{ width: '30px' }} /><col /><col style={{ width: '48px' }} /><col style={{ width: '54px' }} />
+                                <col style={{ width: '92px' }} /><col style={{ width: '92px' }} /><col style={{ width: '92px' }} /><col style={{ width: '84px' }} />
+                            </colgroup>
                             <thead>
                                 <tr className="text-white" style={{ background: NAVY, fontSize: '9px' }}>
-                                    <Th>#</Th><Th>{etiquetaGrupo.toUpperCase()}</Th><Th right>FACT.</Th><Th right>UNID.</Th><Th right>FACTURADO</Th><Th right>COBRADO</Th><Th right>POR COBRAR</Th><Th right>VENCIDO</Th>
+                                    <Th>#</Th><Th>{etiquetaGrupo.toUpperCase()}</Th><Th right>FACT.</Th><Th right>UNID.</Th><Th right>FACTURADO</Th><Th right>COBRADO</Th><Th right>POR&nbsp;COBRAR</Th><Th right>VENCIDO</Th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {grupos.map((g, i) => (
                                     <tr key={i} className="gk-row" style={{ background: i % 2 ? '#f6f7f9' : '#fff' }}>
                                         <td className="py-1 px-2 text-slate-400">{i + 1}</td>
-                                        <td className="py-1 px-2 font-semibold" style={clip} title={g.nombre}>{g.nombre}{g.categoria === 'foodservice' ? <span className="text-amber-600 font-normal"> · FS</span> : ''}</td>
-                                        <td className="py-1 px-2 text-right">{num(g.facturas)}</td>
-                                        <td className="py-1 px-2 text-right">{num(g.unidades)}</td>
-                                        <td className="py-1 px-2 text-right font-semibold">{money(g.facturado)}</td>
-                                        <td className="py-1 px-2 text-right" style={{ color: '#0f9d6b' }}>{money(g.cobrado)}</td>
-                                        <td className="py-1 px-2 text-right" style={{ color: '#d97706' }}>{money(g.porCobrar)}</td>
-                                        <td className="py-1 px-2 text-right" style={{ color: g.vencido > 0 ? '#dc2626' : '#94a3b8' }}>{money(g.vencido)}</td>
+                                        <td className="py-1 px-2 font-semibold" style={{ maxWidth: '210px', ...clip }} title={g.nombre}>{g.nombre}{g.categoria === 'foodservice' ? <span className="text-amber-600 font-normal"> · FS</span> : ''}</td>
+                                        <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{num(g.facturas)}</td>
+                                        <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{num(g.unidades)}</td>
+                                        <td className="py-1 px-2 text-right font-semibold" style={{ whiteSpace: 'nowrap' }}>{money(g.facturado)}</td>
+                                        <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#0f9d6b' }}>{money(g.cobrado)}</td>
+                                        <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#d97706' }}>{money(g.porCobrar)}</td>
+                                        <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap', color: g.vencido > 0 ? '#dc2626' : '#94a3b8' }}>{money(g.vencido)}</td>
                                     </tr>
                                 ))}
                             </tbody>
                             <tfoot>
                                 <tr className="font-black" style={{ borderTop: `2px solid ${NAVY}` }}>
                                     <td className="py-1.5 px-2" colSpan={2} style={{ color: NAVY }}>TOTAL</td>
-                                    <td className="py-1.5 px-2 text-right">{num(t.facturas)}</td>
-                                    <td className="py-1.5 px-2 text-right">{num(t.unidades)}</td>
-                                    <td className="py-1.5 px-2 text-right">{money(t.facturado)}</td>
-                                    <td className="py-1.5 px-2 text-right" style={{ color: '#0f9d6b' }}>{money(t.cobrado)}</td>
-                                    <td className="py-1.5 px-2 text-right" style={{ color: '#d97706' }}>{money(t.porCobrar)}</td>
-                                    <td className="py-1.5 px-2 text-right" style={{ color: '#dc2626' }}>{money(t.vencido)}</td>
+                                    <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{num(t.facturas)}</td>
+                                    <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{num(t.unidades)}</td>
+                                    <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{money(t.facturado)}</td>
+                                    <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#0f9d6b' }}>{money(t.cobrado)}</td>
+                                    <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#d97706' }}>{money(t.porCobrar)}</td>
+                                    <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#dc2626' }}>{money(t.vencido)}</td>
                                 </tr>
                             </tfoot>
                         </table>
+                        </div>
                     )}
 
                     <p className="text-[10px] text-slate-400 mt-6 pt-3 border-t border-slate-200">Genius Keeper · Lacteoca — Documento interno de facturación. FS = Foodservice. Montos según Zoho Books (excluye anuladas).</p>

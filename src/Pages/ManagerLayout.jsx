@@ -21,6 +21,7 @@ import RendimientoComercialView from './RendimientoComercialView.jsx';
 import ReportesAnaquelView from './ReportesAnaquelView.jsx';
 import ExportesView from './ExportesView.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
+import FacturacionClientes from './FacturacionClientes.jsx';
 
 // ✅ Se importan ambos componentes del planificador
 import MonthlyPlanner from './Planner/MonthlyPlanner.jsx';
@@ -41,6 +42,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         (role === 'sales_manager' || role === 'gerencia') ? 'ventas' : 'dashboard'
     );
     const [userMetadata, setUserMetadata] = useState({ name: '', email: '' });
+    const [dashPage, setDashPage] = useState(0); // 0 = KPIs, 1 = Ventas por cliente/PDV
 
     useEffect(() => {
         if (!user?.uid) return;
@@ -172,8 +174,42 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                     <ExportesView />
                 </div>
 
-                <div className={currentView === 'dashboard' ? 'block h-full' : 'hidden'}>
-                    <GerencialDashboard {...commonProps} role={role} readOnly={readOnly} />
+                <div className={currentView === 'dashboard' ? 'flex flex-col h-full' : 'hidden'}>
+                    {/* Dashboard deslizable: página 0 = KPIs (4 preguntas) ·
+                        página 1 = Ventas por cliente y punto de venta. */}
+                    <div
+                        id="gk-dash-swipe"
+                        onScroll={(e) => {
+                            const el = e.currentTarget;
+                            const p = Math.round(el.scrollLeft / el.clientWidth);
+                            if (p !== dashPage) setDashPage(p);
+                        }}
+                        className="flex-1 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory"
+                        style={{ scrollbarWidth: 'none' }}
+                    >
+                        <div className="snap-center shrink-0 w-full h-full overflow-y-auto">
+                            <GerencialDashboard {...commonProps} role={role} readOnly={readOnly} onNavigate={setCurrentView} />
+                        </div>
+                        <div className="snap-center shrink-0 w-full h-full overflow-y-auto">
+                            <div className="w-full max-w-5xl mx-auto">
+                                <FacturacionClientes />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="shrink-0 flex items-center justify-center gap-2 py-2 bg-white border-t border-slate-100">
+                        {['Indicadores', 'Ventas por cliente/PDV'].map((lbl, i) => (
+                            <button key={i}
+                                onClick={() => {
+                                    setDashPage(i);
+                                    const el = document.getElementById('gk-dash-swipe');
+                                    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' });
+                                }}
+                                className={`flex items-center gap-1.5 text-[11px] font-bold rounded-full px-2.5 py-1 transition-colors ${dashPage === i ? 'text-brand-blue' : 'text-slate-400'}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${dashPage === i ? 'bg-brand-blue' : 'bg-slate-300'}`} />
+                                {lbl}
+                            </button>
+                        ))}
+                    </div>
                 </div>
                 <div className={currentView === 'trends' ? 'block h-full' : 'hidden'}>
                     <MarketTrendsView {...commonProps} />
