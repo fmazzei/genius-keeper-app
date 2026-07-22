@@ -5,7 +5,7 @@
 // valores se derivan del `stats`/`estadoActual`/`tier` que el Home ya calcula.
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp, CheckCircle, Eye, Droplets, BarChart3, Package, Info, Star } from 'lucide-react';
+import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp, CheckCircle, Eye, Droplets, BarChart3, Package, Info, Star, ChevronDown } from 'lucide-react';
 import { VENDOR_KPI_MAP } from '@/config/vendorKpiRegistry.js';
 import VendedorKpiDetalle from '@/Components/VendedorKpiDetalle.jsx';
 
@@ -89,6 +89,7 @@ function buildKpi(id, ctx) {
 export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, execKpis, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas }) {
     const ctx = { stats, vendedor, estadoActual, tier, pct, execKpis };
     const [detalle, setDetalle] = useState(null); // { id, def, kpi } del KPI expandido
+    const [openCats, setOpenCats] = useState({}); // categorías colapsadas por defecto
 
     // Destacados: el vendedor fija (⭐) los KPIs que más le interesan → tira
     // compacta arriba. Se recuerda por vendedor en localStorage.
@@ -192,24 +193,35 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                         </div>
                     );
                 };
-                return cats.map(cat => (
-                    <section key={cat} className="space-y-2">
-                        <p className="text-[11px] font-black uppercase tracking-widest text-slate-500">{cat}</p>
-                        <div className="grid grid-cols-2 gap-3">
-                            {(groups[cat] || []).map(x => <KpiCard key={x.id} {...x} />)}
-                            {cat === 'Operación' && onOpenAnaquelMap && (
-                                <button onClick={onOpenAnaquelMap} className="text-left bg-slate-900 border border-slate-800 rounded-2xl p-4 active:scale-[0.99] transition-transform">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-base leading-none">👑</div>
-                                        <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 leading-tight">Mapa de Anaquel</p>
-                                    </div>
-                                    <p className="text-lg font-black text-amber-300">Ver mapa <span aria-hidden>→</span></p>
-                                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">{hasAnaquelData ? 'Tu ubicación dorada en el estante.' : 'Aún sin datos de anaquel.'}</p>
-                                </button>
+                return cats.map(cat => {
+                    const open = !!openCats[cat];
+                    const count = (groups[cat] || []).length + (cat === 'Operación' && onOpenAnaquelMap ? 1 : 0);
+                    return (
+                        <section key={cat}>
+                            <button onClick={() => setOpenCats(o => ({ ...o, [cat]: !o[cat] }))}
+                                className="w-full flex items-center gap-2 py-2.5">
+                                <p className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex-1 text-left">{cat}</p>
+                                <span className="text-[10px] font-bold text-slate-400 bg-slate-800 rounded-full px-2 py-0.5">{count}</span>
+                                <ChevronDown size={16} className={`text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+                            </button>
+                            {open && (
+                                <div className="grid grid-cols-2 gap-3 mt-1">
+                                    {(groups[cat] || []).map(x => <KpiCard key={x.id} {...x} />)}
+                                    {cat === 'Operación' && onOpenAnaquelMap && (
+                                        <button onClick={onOpenAnaquelMap} className="text-left bg-slate-900 border border-slate-800 rounded-2xl p-4 active:scale-[0.99] transition-transform">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0 text-base leading-none">👑</div>
+                                                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 leading-tight">Mapa de Anaquel</p>
+                                            </div>
+                                            <p className="text-lg font-black text-amber-300">Ver mapa <span aria-hidden>→</span></p>
+                                            <p className="text-[11px] text-slate-500 mt-1 leading-snug">{hasAnaquelData ? 'Tu ubicación dorada en el estante.' : 'Aún sin datos de anaquel.'}</p>
+                                        </button>
+                                    )}
+                                </div>
                             )}
-                        </div>
-                    </section>
-                ));
+                        </section>
+                    );
+                });
             })()}
 
             {detalle && (
