@@ -5,7 +5,7 @@
 // valores se derivan del `stats`/`estadoActual`/`tier` que el Home ya calcula.
 
 import React from 'react';
-import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp } from 'lucide-react';
+import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp, CheckCircle, Eye, Droplets, BarChart3, Package, Info } from 'lucide-react';
 import { VENDOR_KPI_MAP } from '@/config/vendorKpiRegistry.js';
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
@@ -17,10 +17,11 @@ const TONE = {
 const ICON = {
     comision_periodo: DollarSign, meta_nivel: Target, velocidad: Gauge, por_cobrar: Clock,
     cobranza: Clock, vencidas: AlertTriangle, despachos: Truck, activacion: Award, anaquel: Store, radar: Radar,
+    genius: Target, cumplimiento: CheckCircle, quiebres: Package, frescura: Droplets, anaquel_efec: BarChart3, pop: Info, visitas: Eye,
 };
 
 function buildKpi(id, ctx) {
-    const { stats, vendedor, estadoActual, tier, pct } = ctx;
+    const { stats, vendedor, estadoActual, tier, pct, execKpis } = ctx;
     switch (id) {
         case 'comision_periodo':
             return { value: money(estadoActual?.devengado || 0), unit: 'devengado', sub: `Saldo por cobrar: ${money(estadoActual?.saldo || 0)}`, tone: 'good' };
@@ -51,12 +52,41 @@ function buildKpi(id, ctx) {
             const n = (stats.radarAlerts || []).length;
             return { value: num(n), unit: n === 1 ? 'alerta' : 'alertas', sub: `${num(stats.stockoutsCount || 0)} quiebre(s) de stock`, tone: n > 0 ? 'warn' : 'good' };
         }
+        // ── Ejecución en campo (motor useKpiCalculations sobre su cartera) ──
+        case 'genius': {
+            const s = Math.round(execKpis?.geniusIndex?.score || 0);
+            return { value: `${s}`, unit: '/100', sub: 'Ejecución de tu cartera', tone: s >= 80 ? 'good' : s >= 50 ? 'warn' : 'bad' };
+        }
+        case 'cumplimiento': {
+            const v = execKpis?.visitCompliance;
+            return { value: v == null ? '—' : `${Math.round(v)}%`, sub: 'PDV visitados dentro de su frecuencia', tone: v == null ? 'neutral' : v >= 90 ? 'good' : v >= 60 ? 'warn' : 'bad' };
+        }
+        case 'quiebres': {
+            const n = execKpis?.stockouts?.count || 0;
+            return { value: num(n), unit: n === 1 ? 'tienda' : 'tiendas', sub: 'PDV sin producto (última visita)', tone: n > 0 ? 'bad' : 'good' };
+        }
+        case 'frescura': {
+            const v = execKpis?.freshnessIndex || 0;
+            return { value: `${Math.round(v)}%`, unit: 'óptimo', sub: 'Lotes óptimos o frescos', tone: v >= 80 ? 'good' : v >= 50 ? 'warn' : 'bad' };
+        }
+        case 'anaquel_efec': {
+            const v = execKpis?.shelfPositioning?.percentage || 0;
+            return { value: `${Math.round(v)}%`, unit: 'óptimo', sub: 'Posición ojos/manos', tone: v >= 75 ? 'good' : 'warn' };
+        }
+        case 'pop': {
+            const v = execKpis?.popQuality?.percentage || 0;
+            return { value: `${Math.round(v)}%`, sub: 'Material POP exhibido OK', tone: v >= 85 ? 'good' : v >= 50 ? 'warn' : 'bad' };
+        }
+        case 'visitas': {
+            const n = execKpis?.totalVisits || 0;
+            return { value: num(n), unit: n === 1 ? 'visita' : 'visitas', sub: 'Reportes de tu cartera (30 días)', tone: 'neutral' };
+        }
         default: return null;
     }
 }
 
-export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas }) {
-    const ctx = { stats, vendedor, estadoActual, tier, pct };
+export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, execKpis, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas }) {
+    const ctx = { stats, vendedor, estadoActual, tier, pct, execKpis };
     const items = enabledIds.map(id => ({ id, def: VENDOR_KPI_MAP[id], kpi: buildKpi(id, ctx) }))
                             .filter(x => x.def && x.kpi);
 
@@ -83,7 +113,7 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
             )}
 
             {(() => {
-                const CAT_ORDER = ['Dinero', 'Cobranza', 'Bonos', 'Operación'];
+                const CAT_ORDER = ['Dinero', 'Cobranza', 'Bonos', 'Operación', 'Ejecución en campo'];
                 const groups = {};
                 items.forEach(x => { (groups[x.def.cat] ||= []).push(x); });
                 const cats = CAT_ORDER.filter(c => (groups[c] && groups[c].length) || (c === 'Operación' && onOpenAnaquelMap));

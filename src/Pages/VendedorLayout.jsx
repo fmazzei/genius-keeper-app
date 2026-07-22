@@ -31,6 +31,7 @@ import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import VendedorAnaquelMap from '@/Components/VendedorAnaquelMap.jsx';
 import VendedorVentasCartera from '@/Components/VendedorVentasCartera.jsx';
+import { useKpiCalculations } from '@/hooks/useKpiCalculations';
 import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
@@ -974,7 +975,7 @@ function AlertasView({ alertas, loadingAlertas, onDelete }) {
 
 const VendedorLayout = ({ user, onLogout }) => {
     const { role } = useAuth();
-    const { getModulesForRole } = useAppConfig();
+    const { getModulesForRole, ourProductWeight_g } = useAppConfig();
     const modules = getModulesForRole('vendedor');
     const [currentView, setCurrentView]               = useState('home');
     const [selectedPos, setSelectedPos]               = useState(null);
@@ -985,8 +986,12 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [commConfig, setCommConfig]                 = useState(DEFAULT_COMMISSION_CONFIG);
     const { getEnabled: getVendorKpis }               = useVendorKpiConfig();
     const [homePage, setHomePage]                     = useState(0); // 0 = inicio, 1 = KPIs
-    const [anaquelReports, setAnaquelReports]         = useState([]); // visit_reports de su cartera (mapa de anaquel)
+    const [carteraVisitas, setCarteraVisitas]         = useState([]); // visit_reports completos de su cartera
+    const [carteraPosList, setCarteraPosList]         = useState([]); // PDV de su cartera (para KPIs de ejecución)
     const [showAnaquelMap, setShowAnaquelMap]         = useState(false);
+    // KPIs de ejecución en campo acotados a SU cartera (mismo motor saneado que
+    // el gerencial). El vendedor hace de gerente de ventas de su cartera.
+    const execKpis = useKpiCalculations(carteraVisitas, carteraPosList, '30d', ourProductWeight_g);
     const [carteraFacturas, setCarteraFacturas]       = useState([]); // facturas de su cartera (ventas por cliente/PDV)
     const [showVentas, setShowVentas]                 = useState(false);
     const [stats, setStats]                           = useState({
@@ -1383,9 +1388,10 @@ const VendedorLayout = ({ user, onLogout }) => {
 
                     const visitasCartera = [];
                     visitasSnaps.forEach(snap => { if (snap) visitasCartera.push(...snap.docs.map(d => d.data())); });
-                    // Para el Mapa de Calor del Anaquel del vendedor (no se cachea en
-                    // localStorage: puede ser voluminoso). Solo lo que el heatmap usa.
-                    setAnaquelReports(visitasCartera.map(v => ({ shelfLocation: v.shelfLocation, adjacentCategory: v.adjacentCategory, orderQuantity: v.orderQuantity })));
+                    // Reportes y PDV de su cartera para el Mapa de Anaquel y los KPIs
+                    // de ejecución (no se cachean en localStorage: pueden ser grandes).
+                    setCarteraVisitas(visitasCartera);
+                    setCarteraPosList(Object.entries(posDocsMap).map(([id, d]) => ({ id, ...d, type: 'pos' })));
 
                     // Bono "Disponibilidad en Anaquel" — sustituye al Bono Activación
                     // para cuentas con `pos.regimenComision === 'anaquel'` (despacho
@@ -1707,7 +1713,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                             tier={tier}
                             pct={pct}
                             onNavigate={navigate}
-                            hasAnaquelData={anaquelReports.length > 0}
+                            execKpis={execKpis}
+                            hasAnaquelData={carteraVisitas.length > 0}
                             onOpenAnaquelMap={() => setShowAnaquelMap(true)}
                             hasVentasData={carteraFacturas.length > 0}
                             onOpenVentas={() => setShowVentas(true)}
@@ -1791,7 +1798,7 @@ const VendedorLayout = ({ user, onLogout }) => {
 
             {/* ── Mapa de Calor del Anaquel (oscuro, coherente con la app) ── */}
             {showAnaquelMap && (
-                <VendedorAnaquelMap reports={anaquelReports} onClose={() => setShowAnaquelMap(false)} />
+                <VendedorAnaquelMap reports={carteraVisitas} onClose={() => setShowAnaquelMap(false)} />
             )}
 
             {/* ── Ventas por cliente/PDV de tu cartera (real, Zoho) ── */}
