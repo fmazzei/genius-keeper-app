@@ -78,14 +78,27 @@ export function useFinancialKpis() {
                     .map(f => f.razonSocialCanonica || f.clienteName)
         ).size;
 
-        // DSO y % a tiempo sobre pagos de los últimos 90 días
-        const pagadas = activas.filter(f => f.estado === 'pagada' && toDate(f.fechaPago) && toDate(f.fecha));
-        const recientes = pagadas.filter(f => (now - toDate(f.fechaPago)) / 86400000 <= 90);
-        const dso = recientes.length
-            ? recientes.reduce((s, f) => s + ((toDate(f.fechaPago) - toDate(f.fecha)) / 86400000), 0) / recientes.length
-            : null;
-        const aTiempoPct = recientes.length
-            ? (recientes.filter(f => f.pagadaDentroDePlazo === true).length / recientes.length) * 100
+        // DSO y % a tiempo sobre pagos de los últimos 90 días.
+        // Se EXCLUYEN las recuperadas (heredadas): son facturas viejas cobradas
+        // hoy → días de cobro de cientos de días que no reflejan la velocidad de
+        // cobro de las ventas propias (era la causa del "666 días"). Además el DSO
+        // se calcula con la MEDIANA (robusta a outliers), no el promedio.
+        const median = (arr) => {
+            if (!arr.length) return null;
+            const s = [...arr].sort((a, b) => a - b);
+            const m = Math.floor(s.length / 2);
+            return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+        };
+        const pagadasPropias = activas.filter(f =>
+            f.estado === 'pagada' && !f.recuperada && toDate(f.fechaPago) && toDate(f.fecha)
+            && (now - toDate(f.fechaPago)) / 86400000 <= 90
+        );
+        const deltas = pagadasPropias
+            .map(f => (toDate(f.fechaPago) - toDate(f.fecha)) / 86400000)
+            .filter(d => d >= 0 && d <= 365); // descarta negativos y outliers de datos
+        const dso = median(deltas);
+        const aTiempoPct = pagadasPropias.length
+            ? (pagadasPropias.filter(f => f.pagadaDentroDePlazo === true).length / pagadasPropias.length) * 100
             : null;
 
         return {

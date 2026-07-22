@@ -193,7 +193,7 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
                     </Tile>
                     <Tile label="Días de cobro (DSO)">
                         <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{fin.dso !== null ? `${Math.round(fin.dso)}` : '—'} <span className="text-sm font-bold text-slate-400">días</span></p>
-                        <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><Clock size={12} /> promedio de los últimos 90 días</p>
+                        <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><Clock size={12} /> mediana, ventas propias (90 días)</p>
                     </Tile>
                     <Tile label="Cobrado a tiempo">
                         <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{fin.aTiempoPct !== null ? `${Math.round(fin.aTiempoPct)}%` : '—'}</p>
