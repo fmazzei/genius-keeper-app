@@ -6,15 +6,15 @@
 // valores se derivan del `stats`/`estados` que el Home del vendedor ya calcula.
 
 export const VENDOR_KPI_REGISTRY = [
-    { id: 'comision_periodo', label: 'Comisión del período', cat: 'Dinero',    desc: 'Devengado del período en curso' },
-    { id: 'meta_nivel',       label: 'Meta del mes y Nivel', cat: 'Dinero',    desc: 'Unidades facturadas vs meta + nivel de comisión' },
-    { id: 'velocidad',        label: 'Velocidad de venta',   cat: 'Dinero',    desc: 'Ritmo actual vs el necesario para la meta' },
+    { id: 'comision_periodo', label: 'Comisión del período', cat: 'Comisiones', desc: 'Devengado del período en curso' },
+    { id: 'meta_nivel',       label: 'Meta del mes y Nivel', cat: 'Comisiones', desc: 'Unidades facturadas vs meta + nivel de comisión' },
+    { id: 'velocidad',        label: 'Velocidad de venta',   cat: 'Comisiones', desc: 'Ritmo actual vs el necesario para la meta' },
+    { id: 'activacion',       label: 'Bono Activación',      cat: 'Comisiones', desc: 'Cobertura de cartera facturada por semana' },
+    { id: 'anaquel',          label: 'Bono Anaquel',         cat: 'Comisiones', desc: 'Disponibilidad en anaquel (cuentas de régimen anaquel)' },
     { id: 'por_cobrar',       label: 'Por cobrar',           cat: 'Cobranza',  desc: 'Facturas por vencer y monto abierto' },
     { id: 'cobranza',         label: 'Cobranza a tiempo',    cat: 'Cobranza',  desc: '% de facturas cobradas dentro de plazo' },
     { id: 'vencidas',         label: 'Facturas vencidas',    cat: 'Cobranza',  desc: 'Nº y monto vencido de la cartera' },
     { id: 'despachos',        label: 'Despachos hoy',        cat: 'Operación', desc: 'Unidades despachadas en el día' },
-    { id: 'activacion',       label: 'Bono Activación',      cat: 'Bonos',     desc: 'Cobertura de cartera facturada por semana' },
-    { id: 'anaquel',          label: 'Bono Anaquel',         cat: 'Bonos',     desc: 'Disponibilidad en anaquel (cuentas de régimen anaquel)' },
     { id: 'radar',            label: 'Radar de acción',      cat: 'Operación', desc: 'Alertas de visita/quiebre de tu cartera' },
 
     // Ejecución en campo — el vendedor hace de gerente de ventas de su cartera

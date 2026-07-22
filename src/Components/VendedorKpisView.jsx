@@ -4,8 +4,8 @@
 // KPIs aparecen lo decide el máster (config por rol, useVendorKpiConfig). Los
 // valores se derivan del `stats`/`estadoActual`/`tier` que el Home ya calcula.
 
-import React, { useState } from 'react';
-import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp, CheckCircle, Eye, Droplets, BarChart3, Package, Info } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp, CheckCircle, Eye, Droplets, BarChart3, Package, Info, Star } from 'lucide-react';
 import { VENDOR_KPI_MAP } from '@/config/vendorKpiRegistry.js';
 import VendedorKpiDetalle from '@/Components/VendedorKpiDetalle.jsx';
 
@@ -89,6 +89,21 @@ function buildKpi(id, ctx) {
 export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, execKpis, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas }) {
     const ctx = { stats, vendedor, estadoActual, tier, pct, execKpis };
     const [detalle, setDetalle] = useState(null); // { id, def, kpi } del KPI expandido
+
+    // Destacados: el vendedor fija (⭐) los KPIs que más le interesan → tira
+    // compacta arriba. Se recuerda por vendedor en localStorage.
+    const PIN_KEY = vendedor?.uid ? `gk_vend_pins_${vendedor.uid}` : null;
+    const [pins, setPins] = useState([]);
+    useEffect(() => {
+        if (!PIN_KEY) return;
+        try { const raw = localStorage.getItem(PIN_KEY); if (raw) setPins(JSON.parse(raw)); } catch { /* modo privado */ }
+    }, [PIN_KEY]);
+    const isPinned = (id) => pins.includes(id);
+    const togglePin = (id) => setPins(prev => {
+        const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+        try { if (PIN_KEY) localStorage.setItem(PIN_KEY, JSON.stringify(next)); } catch { /* modo privado */ }
+        return next;
+    });
     const items = enabledIds.map(id => ({ id, def: VENDOR_KPI_MAP[id], kpi: buildKpi(id, ctx) }))
                             .filter(x => x.def && x.kpi);
 
@@ -100,6 +115,32 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                     <p className="text-slate-400 text-xs">{vendedor?.nombre} · {stats?.periodoLabel || 'período en curso'}</p>
                 </div>
             </div>
+
+            {/* Destacados — tira compacta con los KPIs que el vendedor fija (⭐) */}
+            {(() => {
+                const pinned = items.filter(x => isPinned(x.id));
+                if (pinned.length === 0) {
+                    return <p className="text-[11px] text-slate-500 -mt-1">Toca la <Star size={11} className="inline text-slate-500 -mt-0.5" /> de cualquier indicador para fijarlo aquí arriba.</p>;
+                }
+                return (
+                    <div className="space-y-1.5">
+                        <p className="text-[11px] font-black uppercase tracking-widest text-amber-400/80 flex items-center gap-1"><Star size={11} fill="currentColor" /> Destacados</p>
+                        {pinned.map(({ id, def, kpi }) => {
+                            const Icon = ICON[id] || Target;
+                            return (
+                                <div key={id} className="flex items-center bg-slate-900 border border-slate-800 rounded-xl">
+                                    <button onClick={() => setDetalle({ id, def, kpi })} className="flex-1 flex items-center gap-2.5 px-3 py-2.5 min-w-0 text-left">
+                                        <Icon size={16} className="text-slate-400 shrink-0" />
+                                        <span className="text-sm font-semibold text-slate-300 flex-1 truncate">{def.label}</span>
+                                        <span className={`text-base font-black tabular-nums ${TONE[kpi.tone] || 'text-white'}`}>{kpi.value}{kpi.unit && <span className="text-[11px] font-bold text-slate-500"> {kpi.unit}</span>}</span>
+                                    </button>
+                                    <button onClick={() => togglePin(id)} className="px-2.5 py-2.5 text-amber-400 shrink-0" aria-label="Quitar de destacados"><Star size={15} fill="currentColor" /></button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                );
+            })()}
 
             {/* Ventas por cliente/PDV de tu cartera — el indicador que mueve tu comisión */}
             {onOpenVentas && (
@@ -115,7 +156,7 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
             )}
 
             {(() => {
-                const CAT_ORDER = ['Dinero', 'Cobranza', 'Bonos', 'Operación', 'Ejecución en campo'];
+                const CAT_ORDER = ['Comisiones', 'Cobranza', 'Operación', 'Ejecución en campo'];
                 const groups = {};
                 items.forEach(x => { (groups[x.def.cat] ||= []).push(x); });
                 const cats = CAT_ORDER.filter(c => (groups[c] && groups[c].length) || (c === 'Operación' && onOpenAnaquelMap));
@@ -124,10 +165,16 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                 }
                 const KpiCard = ({ id, def, kpi }) => {
                     const Icon = ICON[id] || Target;
+                    const pinned = isPinned(id);
                     return (
-                        <button type="button" onClick={() => setDetalle({ id, def, kpi })}
-                            className="text-left bg-slate-900 border border-slate-800 rounded-2xl p-4 active:scale-[0.98] transition-transform">
-                            <div className="flex items-center gap-2 mb-2">
+                        <div role="button" tabIndex={0} onClick={() => setDetalle({ id, def, kpi })}
+                            className="relative text-left bg-slate-900 border border-slate-800 rounded-2xl p-4 active:scale-[0.98] transition-transform cursor-pointer">
+                            <button onClick={(e) => { e.stopPropagation(); togglePin(id); }}
+                                className={`absolute top-2.5 right-2.5 p-1 ${pinned ? 'text-amber-400' : 'text-slate-600'}`}
+                                aria-label={pinned ? 'Quitar de destacados' : 'Fijar en destacados'}>
+                                <Star size={15} fill={pinned ? 'currentColor' : 'none'} />
+                            </button>
+                            <div className="flex items-center gap-2 mb-2 pr-6">
                                 <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
                                     <Icon size={15} className="text-slate-300" />
                                 </div>
@@ -142,7 +189,7 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                                 </div>
                             )}
                             {kpi.sub && <p className="text-[11px] text-slate-500 mt-1 leading-snug">{kpi.sub}</p>}
-                        </button>
+                        </div>
                     );
                 };
                 return cats.map(cat => (
