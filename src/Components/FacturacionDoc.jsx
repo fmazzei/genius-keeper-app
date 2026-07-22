@@ -58,7 +58,7 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, p
                         </div>
                     </div>
                     <p className="text-[11px] text-slate-400 mb-4">
-                        Emitido: {fecha} · {grupos.length} {etiquetaGrupo.toLowerCase()}{grupos.length === 1 ? '' : 's'} · {num(t.facturas)} factura{t.facturas === 1 ? '' : 's'}.
+                        Emitido: {fecha} · {grupos.length} {etiquetaGrupo.toLowerCase()}{grupos.length === 1 ? '' : 's'} · {num(t.facturas)} factura{t.facturas === 1 ? '' : 's'} · {num(t.unidades)} unidades.
                     </p>
 
                     {/* Resumen */}
@@ -78,24 +78,25 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, p
 
                     {grupos.length === 0 ? <p className="text-[12px] text-slate-400">Sin facturación en el filtro actual.</p> : (
                         <div className="gk-scroll" style={{ overflowX: 'auto' }}>
-                        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '660px', fontSize: '11px', fontVariantNumeric: 'tabular-nums' }}>
+                        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '740px', fontSize: '11px', fontVariantNumeric: 'tabular-nums' }}>
                             <colgroup>
-                                <col style={{ width: '30px' }} /><col /><col style={{ width: '48px' }} /><col style={{ width: '54px' }} />
-                                <col style={{ width: '92px' }} /><col style={{ width: '92px' }} /><col style={{ width: '92px' }} /><col style={{ width: '84px' }} />
+                                <col style={{ width: '30px' }} /><col /><col style={{ width: '46px' }} /><col style={{ width: '54px' }} />
+                                <col style={{ width: '90px' }} /><col style={{ width: '74px' }} /><col style={{ width: '90px' }} /><col style={{ width: '90px' }} /><col style={{ width: '82px' }} />
                             </colgroup>
                             <thead>
                                 <tr className="text-white" style={{ background: NAVY, fontSize: '9px' }}>
-                                    <Th>#</Th><Th>{etiquetaGrupo.toUpperCase()}</Th><Th right>FACT.</Th><Th right>UNID.</Th><Th right>FACTURADO</Th><Th right>COBRADO</Th><Th right>POR&nbsp;COBRAR</Th><Th right>VENCIDO</Th>
+                                    <Th>#</Th><Th>{etiquetaGrupo.toUpperCase()}</Th><Th right>FACT.</Th><Th right>UNID.</Th><Th right>FACTURADO</Th><Th right>P.&nbsp;PROM</Th><Th right>COBRADO</Th><Th right>POR&nbsp;COBRAR</Th><Th right>VENCIDO</Th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {grupos.map((g, i) => (
                                     <tr key={i} className="gk-row" style={{ background: i % 2 ? '#f6f7f9' : '#fff' }}>
                                         <td className="py-1 px-2 text-slate-400">{i + 1}</td>
-                                        <td className="py-1 px-2 font-semibold" style={{ maxWidth: '210px', ...clip }} title={g.nombre}>{g.nombre}{g.categoria === 'foodservice' ? <span className="text-amber-600 font-normal"> · FS</span> : ''}</td>
+                                        <td className="py-1 px-2 font-semibold" style={{ maxWidth: '200px', ...clip }} title={g.nombre}>{g.nombre}{g.categoria === 'foodservice' ? <span className="text-amber-600 font-normal"> · FS</span> : ''}</td>
                                         <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{num(g.facturas)}</td>
                                         <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{num(g.unidades)}</td>
                                         <td className="py-1 px-2 text-right font-semibold" style={{ whiteSpace: 'nowrap' }}>{money(g.facturado)}</td>
+                                        <td className="py-1 px-2 text-right text-slate-500" style={{ whiteSpace: 'nowrap' }}>{g.unidades > 0 ? money(g.facturado / g.unidades) : '—'}</td>
                                         <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#0f9d6b' }}>{money(g.cobrado)}</td>
                                         <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#d97706' }}>{money(g.porCobrar)}</td>
                                         <td className="py-1 px-2 text-right" style={{ whiteSpace: 'nowrap', color: g.vencido > 0 ? '#dc2626' : '#94a3b8' }}>{money(g.vencido)}</td>
@@ -108,6 +109,7 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, p
                                     <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{num(t.facturas)}</td>
                                     <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{num(t.unidades)}</td>
                                     <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap' }}>{money(t.facturado)}</td>
+                                    <td className="py-1.5 px-2 text-right text-slate-500" style={{ whiteSpace: 'nowrap' }}>{t.unidades > 0 ? money(t.facturado / t.unidades) : '—'}</td>
                                     <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#0f9d6b' }}>{money(t.cobrado)}</td>
                                     <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#d97706' }}>{money(t.porCobrar)}</td>
                                     <td className="py-1.5 px-2 text-right" style={{ whiteSpace: 'nowrap', color: '#dc2626' }}>{money(t.vencido)}</td>

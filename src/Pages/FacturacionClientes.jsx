@@ -164,12 +164,16 @@ export default function FacturacionClientes() {
             </div>
 
             {/* Resumen */}
-            <div className="flex flex-wrap gap-2 mb-4">
+            <div className="flex flex-wrap gap-2 mb-2">
                 <StatChip label="Facturado" value={money(totales.facturado)} color="text-slate-800" />
+                <StatChip label="Unidades" value={num(totales.unidades)} color="text-brand-blue" />
                 <StatChip label="Cobrado" value={money(totales.cobrado)} color="text-emerald-600" />
                 <StatChip label="Por cobrar" value={money(totales.porCobrar)} color="text-amber-600" />
                 <StatChip label="Vencido" value={money(totales.vencido)} color="text-red-600" />
             </div>
+            <p className="text-[11px] text-slate-400 mb-4">
+                Las <b className="text-slate-500">unidades</b> son la cantidad real facturada (líneas de Zoho), no derivada del precio. El <b className="text-slate-500">precio prom.</b> refleja precios distintos por cliente o época.
+            </p>
 
             {/* Controles: agrupar + buscar */}
             <div className="flex flex-wrap items-center gap-3 mb-3">
@@ -190,7 +194,7 @@ export default function FacturacionClientes() {
 
             {/* Tabla */}
             <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-                <table className="w-full text-sm min-w-[720px]">
+                <table className="w-full text-sm min-w-[820px]">
                     <thead>
                         <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-200">
                             <th className="py-2.5 px-3 w-8">#</th>
@@ -198,6 +202,7 @@ export default function FacturacionClientes() {
                             <th className="py-2.5 px-3 text-right">Fact.</th>
                             <th className="py-2.5 px-3 text-right">Unid.</th>
                             <th className="py-2.5 px-3 text-right">Facturado</th>
+                            <th className="py-2.5 px-3 text-right">Precio prom.</th>
                             <th className="py-2.5 px-3 text-right">Cobrado</th>
                             <th className="py-2.5 px-3 text-right">Por cobrar</th>
                             <th className="py-2.5 px-3 text-right">Vencido</th>
@@ -205,7 +210,7 @@ export default function FacturacionClientes() {
                     </thead>
                     <tbody>
                         {grupos.length === 0 ? (
-                            <tr><td colSpan={8} className="py-8 text-center text-slate-400 text-sm">Sin facturación en el filtro actual.</td></tr>
+                            <tr><td colSpan={9} className="py-8 text-center text-slate-400 text-sm">Sin facturación en el filtro actual.</td></tr>
                         ) : grupos.map((g, i) => (
                             <tr key={i} className="border-b border-slate-100 last:border-0">
                                 <td className="py-2 px-3 text-slate-400">{i + 1}</td>
@@ -216,6 +221,7 @@ export default function FacturacionClientes() {
                                 <td className="py-2 px-3 text-right text-slate-500">{num(g.facturas)}</td>
                                 <td className="py-2 px-3 text-right text-slate-500">{num(g.unidades)}</td>
                                 <td className="py-2 px-3 text-right font-semibold text-slate-800">{money(g.facturado)}</td>
+                                <td className="py-2 px-3 text-right text-slate-500">{g.unidades > 0 ? money(g.facturado / g.unidades) : '—'}</td>
                                 <td className="py-2 px-3 text-right text-emerald-600">{money(g.cobrado)}</td>
                                 <td className="py-2 px-3 text-right text-amber-600">{money(g.porCobrar)}</td>
                                 <td className={`py-2 px-3 text-right ${g.vencido > 0 ? 'text-red-600 font-semibold' : 'text-slate-300'}`}>{money(g.vencido)}</td>
