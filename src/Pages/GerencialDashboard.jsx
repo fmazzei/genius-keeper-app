@@ -323,31 +323,6 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
         return <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>;
     }
 
-    if (enabledIds.length === 0) {
-        return (
-            <div className="w-full max-w-7xl mx-auto space-y-6">
-            <BandasFinancieras />
-            <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-                <div className="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mb-6">
-                    <LayoutGrid size={40} className="text-slate-300" />
-                </div>
-                <h3 className="text-xl font-bold text-slate-700 mb-2">Ejecución en campo sin configurar</h3>
-                <p className="text-slate-400 max-w-sm mb-7 text-sm leading-relaxed">
-                    El lienzo está en blanco. Ve a <strong>Administración → Dashboard</strong> y activa los indicadores que quieres ver aquí.
-                </p>
-                {onNavigate && (
-                    <button
-                        onClick={() => onNavigate('settings')}
-                        className="flex items-center gap-2 bg-brand-blue text-white font-semibold px-5 py-2.5 rounded-lg hover:bg-opacity-90"
-                    >
-                        <Settings size={16} /> Configurar Dashboard
-                    </button>
-                )}
-            </div>
-            </div>
-        );
-    }
-
     const openModal = (title, type) => setActiveModal({ title, type });
     const modalProps = { reports: kpis.reports, allReports: reports || [], posList: posList || [], kpis, ourProductWeight_g };
     const renderModal = () => {
@@ -398,7 +373,9 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
                  Rotación estimada y Mapa de Calor van dentro de ¿Vendemos? (trade). ── */}
             <BandasFinancieras
                 rotacion={enabledSet.has('rotation') ? (kpis.productRotation?.averageDaily ?? null) : null}
-                onAnaquel={enabledSet.has('shelf') ? () => openModal('Mapa de Calor del Anaquel', 'positioning') : null}
+                /* Mapa de Calor del Anaquel: SIEMPRE disponible para máster y gerencia
+                   (no depende de que el widget "Efectividad en Anaquel" esté activado). */
+                onAnaquel={() => openModal('Mapa de Calor del Anaquel', 'positioning')}
                 onMapa={enabledSet.has('geo') ? () => openModal('Mapa de Zonas (geográfico)', 'geoDemand') : null}
             />
 
@@ -427,6 +404,22 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
                         ))}
                     </div>
                 </Banda>
+            )}
+
+            {/* Aviso si no hay indicadores de ejecución/competencia configurados
+                (las bandas financieras y el mapa de anaquel sí están siempre). */}
+            {!enabledSet.has('genius_index') && ejecIds.length === 0 && compIds.length === 0 && (
+                <div className="rounded-2xl bg-white border border-dashed border-slate-300 p-6 text-center">
+                    <LayoutGrid size={28} className="mx-auto text-slate-300 mb-2" />
+                    <p className="text-slate-600 font-semibold">Indicadores de ejecución sin configurar</p>
+                    <p className="text-slate-400 text-sm mt-1 mb-4">Activa los KPIs de campo y competencia en Administración → Dashboard.</p>
+                    {onNavigate && (
+                        <button onClick={() => onNavigate('settings')}
+                            className="inline-flex items-center gap-2 bg-brand-blue text-white font-semibold px-4 py-2 rounded-lg hover:bg-opacity-90 text-sm">
+                            <Settings size={15} /> Configurar
+                        </button>
+                    )}
+                </div>
             )}
 
             {/* ── Modal ── */}
