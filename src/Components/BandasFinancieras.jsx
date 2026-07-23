@@ -191,8 +191,21 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
                             <span><i className="inline-block w-2 h-2 rounded-sm bg-red-500 mr-1 align-middle" />+45 d · {money0(d45p)}</span>
                         </div>
                     </Tile>
-                    <Tile label="Días de cobro (DSO)">
-                        <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{fin.dso !== null ? `${Math.round(fin.dso)}` : '—'} <span className="text-sm font-bold text-slate-400">días</span></p>
+                    <Tile label="Días de pago tras vencimiento">
+                        {(() => {
+                            const d = fin.diasTrasVencimiento;
+                            if (d === null || d === undefined) return <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">— <span className="text-sm font-bold text-slate-400">días</span></p>;
+                            const r = Math.round(d);
+                            const tarde = r > 0;
+                            const puntual = r === 0;
+                            const color = puntual ? 'text-emerald-600' : tarde ? (r > 15 ? 'text-red-600' : 'text-amber-600') : 'text-emerald-600';
+                            return (
+                                <>
+                                    <p className={`text-2xl font-black tabular-nums mt-1 ${color}`}>{r > 0 ? `+${r}` : r} <span className="text-sm font-bold text-slate-400">días</span></p>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">{puntual ? 'pagan justo al vencer' : tarde ? `pagan ${r} días TARDE` : `pagan ${Math.abs(r)} días antes`}</p>
+                                </>
+                            );
+                        })()}
                         <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><Clock size={12} /> mediana, ventas propias (90 días)</p>
                     </Tile>
                     <Tile label="Cobrado a tiempo">

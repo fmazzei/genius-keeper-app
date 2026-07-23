@@ -12,6 +12,15 @@ import { db } from '@/Firebase/config.js';
 const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 const sum = (arr, sel) => arr.reduce((s, f) => s + (Number(sel(f)) || 0), 0);
 
+// Saldo REAL por cobrar de una factura abierta. Zoho reporta `balance` (lo que
+// falta cobrar tras abonos parciales); si aún no se ha conciliado y no existe,
+// cae al monto total. Esto evita sobre-contar "Por Cobrar" cuando hay pagos
+// parciales (GK marcaba el total mientras Zoho ya mostraba el saldo restante).
+const saldoAbierto = (f) => {
+    const b = Number(f.balance);
+    return (f.balance != null && Number.isFinite(b)) ? b : (Number(f.monto) || 0);
+};
+
 export function useFinancialKpis() {
     const [facturas, setFacturas] = useState([]);
     const [loading, setLoading]   = useState(true);
@@ -63,13 +72,16 @@ export function useFinancialKpis() {
             .slice(0, 5);
 
         // ── Cobranza (snapshot de cartera ABIERTA, no ventana de tiempo)
+        // Se usa el SALDO real (balance de Zoho) por factura, no el monto total,
+        // para cuadrar con "Total de cuentas por cobrar" de Zoho Books cuando hay
+        // abonos parciales.
         const abiertas = activas.filter(f => f.estado !== 'pagada');
-        const porCobrar = sum(abiertas, f => f.monto);
+        const porCobrar = sum(abiertas, saldoAbierto);
         // Antigüedad por DÍAS DESDE LA FACTURA (ventanas de cobro del negocio:
         // 0–30 a tiempo · 31–45 sin bono · >45 en riesgo de anularse la comisión).
         let a0 = 0, a1 = 0, a2 = 0;
         abiertas.forEach(f => {
-            const t = toDate(f.fecha); const monto = Number(f.monto) || 0;
+            const t = toDate(f.fecha); const monto = saldoAbierto(f);
             const age = t ? (now - t) / 86400000 : 0;
             if (age <= 30) a0 += monto; else if (age <= 45) a1 += monto; else a2 += monto;
         });
@@ -78,11 +90,12 @@ export function useFinancialKpis() {
                     .map(f => f.razonSocialCanonica || f.clienteName)
         ).size;
 
-        // DSO y % a tiempo sobre pagos de los últimos 90 días.
-        // Se EXCLUYEN las recuperadas (heredadas): son facturas viejas cobradas
-        // hoy → días de cobro de cientos de días que no reflejan la velocidad de
-        // cobro de las ventas propias (era la causa del "666 días"). Además el DSO
-        // se calcula con la MEDIANA (robusta a outliers), no el promedio.
+        // "Días tras vencimiento" — la MEDIANA de días que los clientes se toman
+        // ENTRE el vencimiento de la factura y su pago, sobre los pagos de los
+        // últimos 90 días. Positivo = pagaron N días TARDE; negativo = N días
+        // ANTES del vencimiento. Se EXCLUYEN las recuperadas (heredadas): son
+        // facturas viejas cobradas hoy → outliers de cientos de días que no
+        // reflejan el comportamiento de pago real (era la causa del número absurdo).
         const median = (arr) => {
             if (!arr.length) return null;
             const s = [...arr].sort((a, b) => a - b);
@@ -90,13 +103,13 @@ export function useFinancialKpis() {
             return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
         };
         const pagadasPropias = activas.filter(f =>
-            f.estado === 'pagada' && !f.recuperada && toDate(f.fechaPago) && toDate(f.fecha)
+            f.estado === 'pagada' && !f.recuperada && toDate(f.fechaPago) && toDate(f.vencimiento)
             && (now - toDate(f.fechaPago)) / 86400000 <= 90
         );
         const deltas = pagadasPropias
-            .map(f => (toDate(f.fechaPago) - toDate(f.fecha)) / 86400000)
-            .filter(d => d >= 0 && d <= 365); // descarta negativos y outliers de datos
-        const dso = median(deltas);
+            .map(f => (toDate(f.fechaPago) - toDate(f.vencimiento)) / 86400000)
+            .filter(d => d >= -60 && d <= 365); // permite pago anticipado; descarta outliers
+        const diasTrasVencimiento = median(deltas);
         const aTiempoPct = pagadasPropias.length
             ? (pagadasPropias.filter(f => f.pagadaDentroDePlazo === true).length / pagadasPropias.length) * 100
             : null;
@@ -104,7 +117,7 @@ export function useFinancialKpis() {
         return {
             facturadoMes, unidadesMes, facturadoPrev, unidadesPrev, topClientes,
             porCobrar, aging: { d0_30: a0, d31_45: a1, d45p: a2 }, clientesMas45,
-            dso, aTiempoPct,
+            diasTrasVencimiento, dso: diasTrasVencimiento, aTiempoPct,
             tieneFacturas: facturas.length > 0,
         };
     }, [facturas]);

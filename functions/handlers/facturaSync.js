@@ -287,6 +287,11 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         zohoCustomerId,
         _diag,
         monto:        Number(invoice.total) || 0,
+        // Saldo pendiente REAL de Zoho (total − abonado). Clave para que "Por
+        // Cobrar" cuadre con Zoho cuando hay pagos PARCIALES: Zoho muestra el
+        // saldo, no el total. Si el payload no lo trae, se conserva el previo o
+        // cae al total (factura abierta sin abonos).
+        balance:      invoice.balance != null ? Number(invoice.balance) : (existingData?.balance ?? (Number(invoice.total) || 0)),
         fecha:        fechaFactura ? admin.firestore.Timestamp.fromDate(fechaFactura) : null,
         vencimiento:  vencimiento ? admin.firestore.Timestamp.fromDate(vencimiento) : null,
         diasCredito,
