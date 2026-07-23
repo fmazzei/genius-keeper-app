@@ -46,15 +46,23 @@ const LoginScreen = () => {
 
     // Resuelve un identificador a correo: si trae '@' ya es correo; si no, se
     // busca el nombre de usuario en el índice público `login_index`.
+    // Con TIMEOUT de 12s: en red móvil mala el getDoc puede colgarse sin
+    // rechazar y el botón quedaba congelado en "Ingresando…" para siempre
+    // (vendedores entran por usuario, así que siempre pasan por aquí).
     const resolveEmail = async (idf) => {
         const v = (idf || '').trim();
         if (!v) return null;
         if (v.includes('@')) return v;
         const key = v.toLowerCase().replace(/\s+/g, '_');
         try {
-            const snap = await getDoc(doc(db, 'login_index', key));
+            const snap = await Promise.race([
+                getDoc(doc(db, 'login_index', key)),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 12000)),
+            ]);
             if (snap.exists() && snap.data().email) return snap.data().email;
-        } catch { /* índice inaccesible → tratar como no encontrado */ }
+        } catch (e) {
+            if (e?.message === 'timeout') throw e; // red lenta ≠ usuario inexistente
+        }
         return null;
     };
 
@@ -70,8 +78,10 @@ const LoginScreen = () => {
                 return;
             }
             await login(resolvedEmail, loginPassword);
-        } catch {
-            setError('Credenciales incorrectas o usuario no registrado.');
+        } catch (e) {
+            setError(e?.message === 'timeout'
+                ? 'La conexión está lenta y no respondió. Revisa tu señal e intenta de nuevo.'
+                : 'Credenciales incorrectas o usuario no registrado.');
             setIsSubmitting(false);
         }
     };

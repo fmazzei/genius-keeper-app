@@ -10,8 +10,19 @@ export const useSimulation = () => {
     return useContext(SimulationContext);
 };
 
+// Lectura SEGURA de localStorage: en webviews de Android con DOM storage
+// deshabilitado (default de WebView crudo, algunos navegadores embebidos),
+// acceder a localStorage LANZA SecurityError. Este provider envuelve toda la
+// app POR ENCIMA del ErrorBoundary: un throw aquí ocurre en el primer render,
+// React nunca monta y el splash de index.html gira para siempre (el "spinner
+// infinito" reportado en Android; iOS no bloquea storage igual). Nunca acceder
+// a localStorage sin try/catch en el camino de arranque.
+const safeGetSimulationMode = () => {
+    try { return localStorage.getItem('simulationMode') === 'true'; } catch { return false; }
+};
+
 export const SimulationProvider = ({ children }) => {
-    const [simulationMode, setSimulationMode] = useState(() => localStorage.getItem('simulationMode') === 'true');
+    const [simulationMode, setSimulationMode] = useState(safeGetSimulationMode);
     
     // ✅ 2. CREAMOS UN ESTADO PARA LOS DATOS INTERACTIVOS DE LA SIMULACIÓN
     // Lo inicializamos con el estado actual del motor.
@@ -31,8 +42,7 @@ export const SimulationProvider = ({ children }) => {
     // Escuchamos cambios en el localStorage para activar/desactivar el modo simulación
     useEffect(() => {
         const handleModeChange = () => {
-            const newMode = localStorage.getItem('simulationMode') === 'true';
-            setSimulationMode(newMode);
+            setSimulationMode(safeGetSimulationMode());
         };
         window.addEventListener('simulationModeChange', handleModeChange);
         return () => window.removeEventListener('simulationModeChange', handleModeChange);

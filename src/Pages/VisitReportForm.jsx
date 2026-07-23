@@ -5,6 +5,7 @@ import { addDoc, collection, serverTimestamp, updateDoc, doc, getDocs, query, wh
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
+import { safeUUID } from '@/utils/safeId.js';
 import { useSwipeable } from 'react-swipeable';
 // ✅ CORRECCIÓN: Se añade 'Check' a la lista de importaciones para solucionar el error.
 import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, AlertTriangle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check, HelpCircle } from 'lucide-react';
@@ -443,7 +444,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
     const formOpenTime = useRef(new Date().toISOString());
     // ID estable por intento de envío — se guarda como campo (no como ID de
     // documento) para poder detectar/depurar reportes duplicados.
-    const reportId = useRef(crypto.randomUUID()).current;
+    const reportId = useRef(safeUUID()).current;
     const [currentStep, setCurrentStep] = useState(1);
     // Asistente guiado del mercaderista. `guideEnabled` se activa la primera vez
     // (recordado por usuario en localStorage) o con el botón de ayuda. La guía

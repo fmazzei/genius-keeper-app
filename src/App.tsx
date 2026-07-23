@@ -51,7 +51,7 @@ const AppLayout: React.FC = () => {
 
 
     if (loading) {
-        return <div className="flex justify-center items-center h-screen"><LoadingSpinner /></div>;
+        return <div className="flex justify-center items-center h-screen bg-slate-100"><LoadingSpinner /></div>;
     }
 
     if (!user) {
@@ -129,7 +129,7 @@ const AppLayout: React.FC = () => {
                 />
             )}
             <ErrorBoundary key={user?.uid || 'anon'}>
-                <Suspense fallback={<div className="flex justify-center items-center h-screen bg-slate-950"><LoadingSpinner /></div>}>
+                <Suspense fallback={<SuspenseFallbackConEscape />}>
                     {renderAppContent()}
                 </Suspense>
             </ErrorBoundary>
@@ -137,6 +137,34 @@ const AppLayout: React.FC = () => {
     );
 };
 
+
+// Fallback de Suspense con ESCAPE: si la descarga del módulo (chunk lazy) se
+// cuelga en red móvil (nunca rechaza → el ErrorBoundary no se entera), a los
+// 20s se ofrece "Reintentar" que recarga la app. Evita el spinner oscuro
+// eterno reportado en Android.
+const SuspenseFallbackConEscape: React.FC = () => {
+    const [stuck, setStuck] = useState(false);
+    useEffect(() => {
+        const t = setTimeout(() => setStuck(true), 20000);
+        return () => clearTimeout(t);
+    }, []);
+    return (
+        <div className="flex flex-col justify-center items-center gap-5 h-screen bg-slate-950">
+            <LoadingSpinner />
+            {stuck && (
+                <div className="text-center px-6">
+                    <p className="text-slate-400 text-sm mb-3">La conexión está lenta y no terminó de cargar.</p>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="bg-emerald-500 text-white font-bold px-5 py-2.5 rounded-lg"
+                    >
+                        Reintentar
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
 
 const GlobalReportModal: React.FC = () => {
     const { viewedReportId, setViewedReportId } = useReportView();
