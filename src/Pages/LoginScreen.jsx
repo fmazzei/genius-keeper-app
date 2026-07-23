@@ -52,7 +52,9 @@ const LoginScreen = () => {
     const resolveEmail = async (idf) => {
         const v = (idf || '').trim();
         if (!v) return null;
-        if (v.includes('@')) return v;
+        // Correo: quita CUALQUIER espacio (iOS a veces mete uno con el teclado
+        // predictivo) y baja a minúsculas — un correo nunca lleva espacios.
+        if (v.includes('@')) return v.replace(/\s/g, '').toLowerCase();
         const key = v.toLowerCase().replace(/\s+/g, '_');
         try {
             const snap = await Promise.race([
@@ -191,6 +193,9 @@ const LoginScreen = () => {
                         placeholder="Usuario o correo"
                         autoComplete="username"
                         autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        inputMode="email"
                     />
                     <input
                         type="password"
@@ -200,6 +205,9 @@ const LoginScreen = () => {
                         className="w-full bg-white/10 border border-white/20 rounded-xl py-3.5 px-4 text-white placeholder-white/35 focus:outline-none focus:ring-2 focus:ring-[#FFD600] focus:border-transparent"
                         placeholder="Contraseña"
                         autoComplete="current-password"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
                     />
                     <button
                         onClick={() => handleLogin(email, password)}
