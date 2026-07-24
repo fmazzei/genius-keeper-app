@@ -188,6 +188,12 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     const vencimiento   = toDate(invoice.due_date);
     const diasCredito   = diffDias(fechaFactura, vencimiento);
     const mesCohorte    = mesCohorteFromDate(fechaFactura);
+    // Fecha de pago REAL de Zoho (día en que el cliente realmente pagó), NO el
+    // momento en que GK procesa/concilia. Sin esto, una factura de 2025
+    // conciliada en 2026 quedaba con fechaPago = "hoy" → días de pago inflados a
+    // cientos de días (bug del "+77/+221 días"). `last_payment_date` viene en el
+    // listado de facturas de Zoho cuando están pagadas.
+    const fechaPagoZoho = toDate(invoice.last_payment_date) || toDate(invoice.payment_date) || null;
 
     const { periodKey: periodoCohorte, recuperada } = vendedor
         ? periodoCohorteFromDate(vendedor.data.fechaIngreso, fechaFactura)
@@ -330,10 +336,17 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     const becamePaid = estado === 'pagada' && existingData?.estado !== 'pagada';
     if (becamePaid) {
         try {
-            await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento });
+            await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento, fechaPagoZoho });
         } catch (e) {
             functions.logger.error(`Factura #${invoice.invoice_number}: error calculando comisión al pagar (se persiste 'pagada' igual):`, e);
         }
+    } else if (estado === 'pagada' && fechaPagoZoho) {
+        // Corrección histórica: factura YA pagada (no transiciona ahora) cuyo
+        // `fechaPago` viejo se puso como la fecha de conciliación ("hoy") →
+        // inflaba los días de pago. Re-estampamos la fecha de pago REAL de Zoho.
+        // NO recalcula la comisión (ya congelada); solo corrige el dato para el
+        // KPI de días de pago. Idempotente: cada conciliación deja el valor real.
+        facturaData.fechaPago = admin.firestore.Timestamp.fromDate(fechaPagoZoho);
     }
 
     await targetRef.set(

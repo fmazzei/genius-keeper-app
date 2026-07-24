@@ -100,7 +100,7 @@ async function congelarTasaCohorte(vendedor, mesCohorte, unidades, periodoCohort
  * Muta `facturaData` con los campos calculados (`comisionGenerada`, etc.)
  * para que el llamador los persista junto al resto de la factura.
  */
-async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento }) {
+async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento, fechaPagoZoho }) {
     if (!vendedor) {
         functions.logger.warn(`Factura #${facturaData.numero} pagada pero sin vendedor asignado — no se genera comisión.`);
         return;
@@ -112,10 +112,15 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
     const comisionRecuperadas = cfg.comisionRecuperadas ?? DEFAULT_COMMISSION_CONFIG.comisionRecuperadas;
     const comisionFoodservice = cfg.comisionFoodservice ?? DEFAULT_COMMISSION_CONFIG.comisionFoodservice;
 
-    // Fecha de pago: usamos el momento de recepción del webhook como proxy,
-    // ya que Zoho dispara `invoice.paid` cuando el saldo de la factura llega
-    // a 0 (cobro 100%).
-    const fechaPago = new Date();
+    // Fecha de pago: la fecha REAL de Zoho (`last_payment_date`) cuando la
+    // tenemos — imprescindible para conciliaciones de facturas viejas (una
+    // factura de 2025 conciliada en 2026 con `new Date()` daba cientos de días
+    // de pago). Orden de preferencia: fecha de Zoho → la ya guardada en la
+    // factura (reatribuciones/backfill preservan el pago real) → ahora (webhook
+    // que dispara justo al pagar).
+    const fechaPagoPrevia = facturaData.fechaPago?.toDate?.() || null;
+    const fechaPago = fechaPagoZoho instanceof Date ? fechaPagoZoho
+        : (fechaPagoPrevia instanceof Date ? fechaPagoPrevia : new Date());
     const diasParaCobrar = fechaFactura ? diffDias(fechaFactura, fechaPago) : null;
     const esRecuperada = facturaData.recuperada === true;
 
