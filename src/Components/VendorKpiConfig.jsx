@@ -4,19 +4,28 @@
 // Config por ROL (todos los vendedores), guardada en settings/vendorKpiConfig.
 // AdminPanel → Comercial → "KPIs del Vendedor".
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Save, Eye, EyeOff } from 'lucide-react';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import { VENDOR_KPI_REGISTRY, VENDOR_KPI_CATS } from '@/config/vendorKpiRegistry.js';
 
+// Estado inicial desde el catálogo ESTÁTICO (todos visibles). Así la pantalla
+// se pinta SIEMPRE al instante, sin depender de que la lectura de Firestore
+// resuelva — antes, si el snapshot no llegaba, la tarjeta quedaba vacía.
+const buildInitial = () => VENDOR_KPI_REGISTRY.map((w, i) => ({ id: w.id, enabled: true, order: i }));
+
 export default function VendorKpiConfig() {
     const { config, loading, save } = useVendorKpiConfig();
-    const [state, setState] = useState([]);      // [{ id, enabled, order }]
+    const [state, setState] = useState(buildInitial);   // [{ id, enabled, order }] — nunca vacío
     const [saving, setSaving] = useState(false);
     const [saved, setSaved]   = useState(false);
+    const appliedRef = useRef(false);
 
+    // Cuando llega la config guardada, se fusiona UNA vez (no pisa cambios que el
+    // máster esté haciendo si el snapshot vuelve a emitir en vivo).
     useEffect(() => {
-        if (loading) return;
+        if (loading || appliedRef.current) return;
+        appliedRef.current = true;
         const savedMap = Object.fromEntries((config?.widgets || []).map(w => [w.id, w]));
         setState(VENDOR_KPI_REGISTRY.map((w, i) => ({
             id: w.id,
@@ -35,10 +44,6 @@ export default function VendorKpiConfig() {
         catch (e) { alert('No se pudo guardar. Intenta de nuevo.'); }
         finally { setSaving(false); }
     };
-
-    if (loading || !state.length) {
-        return <div className="h-40 rounded-xl bg-white border border-slate-200 animate-pulse" />;
-    }
 
     const enabledCount = state.filter(w => w.enabled).length;
 
