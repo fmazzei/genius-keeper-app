@@ -16,21 +16,37 @@ const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-const diasColor = (d) => {
+// Umbrales de color según el modo. En 'vencimiento' importa el atraso (0 = a
+// tiempo). En 'emision' es el período de cobranza completo (incluye crédito):
+// un cliente a 30 días de crédito que paga puntual da ~30, así que la escala
+// verde/ámbar/rojo se corre.
+const diasColor = (d, modo) => {
     if (d === null || d === undefined) return 'text-slate-400';
     const r = Math.round(d);
+    if (modo === 'emision') {
+        if (r <= 30) return 'text-emerald-600';
+        if (r <= 45) return 'text-amber-600';
+        return 'text-red-600';
+    }
     if (r <= 0) return 'text-emerald-600';
     if (r <= 15) return 'text-amber-600';
     return 'text-red-600';
 };
-const diasLabel = (d) => {
+const diasLabel = (d, modo) => {
     if (d === null || d === undefined) return 'sin datos';
     const r = Math.round(d);
+    if (modo === 'emision') return `tardan ${Math.abs(r)} días en pagar desde la emisión`;
     if (r === 0) return 'pagan justo al vencer';
     if (r > 0) return `pagan ${r} días TARDE en promedio`;
     return `pagan ${Math.abs(r)} días ANTES de vencer`;
 };
-const fmtDias = (d) => (d === null || d === undefined ? '—' : `${Math.round(d) > 0 ? '+' : ''}${Math.round(d)}`);
+// En modo emisión los días son siempre positivos (no se muestra el "+").
+const fmtDias = (d, modo) => {
+    if (d === null || d === undefined) return '—';
+    const r = Math.round(d);
+    if (modo === 'emision') return `${r}`;
+    return `${r > 0 ? '+' : ''}${r}`;
+};
 
 export default function DiasPagoModal({ facturas = [], onClose }) {
     // Rango de años disponible (año actual → primer año con factura de emisión).
@@ -49,6 +65,7 @@ export default function DiasPagoModal({ facturas = [], onClose }) {
     const [anio, setAnio] = useState(anioActual);
     const [gran, setGran] = useState('anio'); // 'anio' | 'sem' | 'tri' | 'mes'
     const [sub, setSub]   = useState(0);       // índice del sub-período
+    const [modo, setModo] = useState('vencimiento'); // 'vencimiento' | 'emision'
 
     // Rango [start, end) según granularidad + sub-período.
     const { start, end, periodoLabel } = useMemo(() => {
@@ -66,7 +83,7 @@ export default function DiasPagoModal({ facturas = [], onClose }) {
         return { start: new Date(anio, sub, 1), end: new Date(anio, sub + 1, 1), periodoLabel: `${MESES[sub]} ${anio}` };
     }, [anio, gran, sub]);
 
-    const res = useMemo(() => computeDiasPago(facturas, start, end), [facturas, start, end]);
+    const res = useMemo(() => computeDiasPago(facturas, start, end, modo), [facturas, start, end, modo]);
 
     const subOptions = gran === 'sem' ? ['S1', 'S2']
         : gran === 'tri' ? ['T1', 'T2', 'T3', 'T4']
@@ -89,8 +106,24 @@ export default function DiasPagoModal({ facturas = [], onClose }) {
                     <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-200 text-slate-500"><X size={20} /></button>
                 </div>
 
+                {/* Toggle de tipo de cálculo */}
+                <div className="px-5 pt-4 shrink-0">
+                    <div className="flex bg-slate-200/70 rounded-xl p-1 gap-1">
+                        <button onClick={() => setModo('vencimiento')}
+                            className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-colors ${modo === 'vencimiento' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>
+                            Desde el vencimiento
+                            <span className="block text-[10px] font-medium opacity-70">días de atraso</span>
+                        </button>
+                        <button onClick={() => setModo('emision')}
+                            className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold transition-colors ${modo === 'emision' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>
+                            Desde la emisión
+                            <span className="block text-[10px] font-medium opacity-70">cobranza total</span>
+                        </button>
+                    </div>
+                </div>
+
                 {/* Controles de período */}
-                <div className="px-5 pt-4 pb-2 space-y-3 shrink-0">
+                <div className="px-5 pt-3 pb-2 space-y-3 shrink-0">
                     <div className="flex gap-1.5 overflow-x-auto pb-1">
                         {anios.map(y => (
                             <button key={y} onClick={() => setAnio(y)}
@@ -124,16 +157,16 @@ export default function DiasPagoModal({ facturas = [], onClose }) {
                     <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">{periodoLabel}</p>
-                            <p className={`text-4xl font-black tabular-nums ${diasColor(res.diasPonderado)}`}>
-                                {fmtDias(res.diasPonderado)} <span className="text-base font-bold text-slate-400">días</span>
+                            <p className={`text-4xl font-black tabular-nums ${diasColor(res.diasPonderado, modo)}`}>
+                                {fmtDias(res.diasPonderado, modo)} <span className="text-base font-bold text-slate-400">días</span>
                             </p>
-                            <p className="text-xs text-slate-500 mt-0.5">{diasLabel(res.diasPonderado)}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{diasLabel(res.diasPonderado, modo)}</p>
                         </div>
                         <div className="text-right text-xs text-slate-500 space-y-1">
                             <p><b className="text-slate-700 tabular-nums">{res.nFacturas}</b> facturas cobradas</p>
                             <p><b className="text-slate-700 tabular-nums">{res.nClientes}</b> clientes</p>
                             <p><b className="text-slate-700 tabular-nums">{money(res.totalFacturado)}</b> cobrado</p>
-                            <p className="text-slate-400">Promedio simple: {fmtDias(res.diasSimple)} d</p>
+                            <p className="text-slate-400">Promedio simple: {fmtDias(res.diasSimple, modo)} d</p>
                         </div>
                     </div>
                 </div>
@@ -164,7 +197,7 @@ export default function DiasPagoModal({ facturas = [], onClose }) {
                                         </td>
                                         <td className="py-2 text-right tabular-nums text-slate-600 whitespace-nowrap">{money(c.facturado)}</td>
                                         <td className="py-2 text-right tabular-nums text-slate-500">{c.pesoPct.toFixed(1)}%</td>
-                                        <td className={`py-2 text-right tabular-nums font-bold ${diasColor(c.diasProm)}`}>{fmtDias(c.diasProm)}</td>
+                                        <td className={`py-2 text-right tabular-nums font-bold ${diasColor(c.diasProm, modo)}`}>{fmtDias(c.diasProm, modo)}</td>
                                         <td className="py-2 text-right tabular-nums text-slate-500">{c.nFacturas}</td>
                                     </tr>
                                 ))}
@@ -172,8 +205,11 @@ export default function DiasPagoModal({ facturas = [], onClose }) {
                         </table>
                     )}
                     <p className="text-[11px] text-slate-400 mt-4 leading-relaxed">
-                        <b>Cómo se calcula:</b> a cada factura cobrada se le miden los días entre su <b>vencimiento</b> y su <b>pago</b>
-                        (+ tarde / − antes). El número grande es el promedio <b>ponderado por el peso de cada cliente</b> en la
+                        <b>Cómo se calcula:</b> a cada factura cobrada se le miden los días entre su{' '}
+                        {modo === 'emision'
+                            ? <><b>emisión</b> y su <b>pago</b> (período de cobranza completo, incluye los días de crédito)</>
+                            : <><b>vencimiento</b> y su <b>pago</b> (+ tarde / − antes de vencer)</>}.
+                        El número grande es el promedio <b>ponderado por el peso de cada cliente</b> en la
                         facturación del período — así los clientes grandes pesan lo que mueven y no lo distorsionan facturas chicas.
                         El período agrupa las facturas por su <b>fecha de emisión</b>.
                     </p>

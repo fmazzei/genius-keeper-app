@@ -14,28 +14,32 @@ const sum = (arr, sel) => arr.reduce((s, f) => s + (Number(sel(f)) || 0), 0);
 
 // ── Días de pago PONDERADO por peso del cliente (metodología del dueño) ───────
 // Para un período [start, end) (por fecha de EMISIÓN de la factura):
-//   1. Lista las facturas PAGADAS del período con vencimiento y fecha de pago.
-//   2. A cada factura le calcula sus "días para pago" = fechaPago − vencimiento
-//      (positivo = pagó tarde; negativo = pagó antes de vencer).
+//   1. Lista las facturas PAGADAS del período con fecha de pago (y la fecha base
+//      según el modo: vencimiento o emisión).
+//   2. A cada factura le calcula sus "días para pago" según `modo`:
+//        - 'vencimiento': fechaPago − vencimiento (días de ATRASO; − = pagó antes)
+//        - 'emision':     fechaPago − fechaEmisión (PERÍODO DE COBRANZA completo,
+//                         incluye los días de crédito; siempre ≥ 0)
 //   3. Pondera por el PESO del cliente en la facturación (monto), no un simple
 //      promedio de facturas — así los clientes grandes (que mueven la caja)
 //      pesan lo que deben, y no un montón de facturas chicas viejas inflan el
 //      número (causa del "+221 días" sin sentido).
 // El promedio ponderado por monto de factura equivale exactamente a ponderar
 // por el peso de cada cliente: Σ(monto·días)/Σ(monto).
-export function computeDiasPago(facturas, start, end) {
+export function computeDiasPago(facturas, start, end, modo = 'vencimiento') {
+    const baseDe = (f) => modo === 'emision' ? toDate(f.fecha) : toDate(f.vencimiento);
     const enPeriodo = (facturas || []).filter(f => {
         if (f.estado !== 'pagada') return false;
         const t = toDate(f.fecha);
         if (!t || t < start || t >= end) return false;
-        return toDate(f.vencimiento) && toDate(f.fechaPago);
+        return baseDe(f) && toDate(f.fechaPago);
     });
 
     const porClienteMap = {};
     let totMonto = 0, totMontoDias = 0, totSimpleDias = 0, n = 0;
 
     enPeriodo.forEach(f => {
-        const dias = (toDate(f.fechaPago) - toDate(f.vencimiento)) / 86400000;
+        const dias = (toDate(f.fechaPago) - baseDe(f)) / 86400000;
         if (!Number.isFinite(dias)) return;
         const monto = Number(f.monto) || 0;
         const k = f.razonSocialCanonica || f.clienteName || '—';
