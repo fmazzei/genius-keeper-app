@@ -5,10 +5,11 @@
 // anterior y una línea de acción. Se muestran arriba del dashboard para
 // máster/gerencia. Diseño "Tablero de 4 Preguntas" (validado en mockup).
 
-import React from 'react';
+import React, { useState } from 'react';
 import { TrendingUp, AlertTriangle, Clock, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { useFinancialKpis } from '@/hooks/useFinancialKpis.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
+import DiasPagoModal from '@/Components/DiasPagoModal.jsx';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
@@ -66,6 +67,7 @@ const Tile = ({ label, children, className = '' }) => (
 export default function BandasFinancieras({ rotacion = null, onMapa = null, onAnaquel = null }) {
     const fin = useFinancialKpis();
     const { metaVentasGeneral } = useAppConfig();
+    const [showDiasPago, setShowDiasPago] = useState(false);
 
     if (fin.loading) {
         return <div className="h-24 rounded-2xl bg-white border border-slate-200 animate-pulse" />;
@@ -191,7 +193,9 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
                             <span><i className="inline-block w-2 h-2 rounded-sm bg-red-500 mr-1 align-middle" />+45 d · {money0(d45p)}</span>
                         </div>
                     </Tile>
-                    <Tile label="Días de pago tras vencimiento">
+                    <button type="button" onClick={() => setShowDiasPago(true)}
+                        className="text-left bg-slate-50 border border-slate-200 rounded-xl p-4 hover:shadow-md hover:border-slate-300 transition-all">
+                        <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Días de pago tras vencimiento</p>
                         {(() => {
                             const d = fin.diasTrasVencimiento;
                             if (d === null || d === undefined) return <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">— <span className="text-sm font-bold text-slate-400">días</span></p>;
@@ -206,14 +210,18 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
                                 </>
                             );
                         })()}
-                        <p className="text-xs text-slate-400 mt-2 flex items-center gap-1"><Clock size={12} /> mediana, ventas propias (90 días)</p>
-                    </Tile>
+                        <p className="text-xs text-brand-blue mt-2 flex items-center gap-1 font-semibold"><Clock size={12} /> ponderado, año {new Date().getFullYear()} · ver por período →</p>
+                    </button>
                     <Tile label="Cobrado a tiempo">
                         <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{fin.aTiempoPct !== null ? `${Math.round(fin.aTiempoPct)}%` : '—'}</p>
                         <p className="text-xs text-slate-400 mt-2">dentro de vencimiento + días de gracia</p>
                     </Tile>
                 </div>
             </Band>
+
+            {showDiasPago && (
+                <DiasPagoModal facturas={fin.facturas || []} onClose={() => setShowDiasPago(false)} />
+            )}
         </div>
     );
 }
