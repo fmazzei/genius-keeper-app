@@ -342,8 +342,9 @@ service cloud.firestore {
     // entregado en Caracas, el operario de despacho sincroniza el stock
     // recibido — escritura legítima del puente Kroma → GK.
     match /almacenes_comerciales/{almacenId} {
-      allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess());
-      allow write: if isAuthenticated() && isComercialAccess();
+      // Merchandiser incluido en lectura: recibe el camión / hace pickings en Frimaca.
+      allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+      allow write: if isAuthenticated() && (isComercialAccess() || isMerchandiser());
     }
     match /inventario_comercial/{itemId} {
       // Merchandiser incluido: recibe el camión en Caracas y hace pickings (retiros).

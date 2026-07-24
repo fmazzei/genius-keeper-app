@@ -213,7 +213,7 @@ const AppShell = ({ user, role, onLogout }) => {
             reportes_historial: 'Mis Reportes',
             pedidos_historial: 'Pedidos Tomados',
             notificaciones: 'Notificaciones',
-            frimaca: 'Almacén Frimaca (Caracas)',
+            frimaca: 'Recepción y Picking — Frimaca',
             visit_report: `Reporte: ${selectedPos?.name || ''}`,
         };
         return viewTitles[currentView] || 'Genius Keeper';
