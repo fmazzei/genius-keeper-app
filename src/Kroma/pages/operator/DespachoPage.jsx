@@ -609,15 +609,6 @@ export default function DespachoPage() {
         const id = despacho.id;
         try {
             const caracasWh = warehouses.find(w => w.nombre === 'Depósito Comercial Caracas');
-            const norm = s => (s || '').trim().toLowerCase();
-
-            // Pre-load GK almacenes and inventario_comercial so we can sync on delivery
-            const [almSnap, invComSnap] = await Promise.all([
-                getDocs(collection(db, 'almacenes_comerciales')),
-                getDocs(collection(db, 'inventario_comercial')),
-            ]);
-            const gkAlmacenes = almSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            let invCom = invComSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
             for (const linea of (despacho.lineas || [])) {
                 const { inventoryId, cantidad, destino } = linea;
@@ -652,49 +643,12 @@ export default function DespachoPage() {
                         createdAt:        serverTimestamp(),
                     });
 
-                    // Sync to GK inventario_comercial
-                    const gkAlmacen   = gkAlmacenes.find(a => norm(a.nombre) === norm(caracasWh.nombre));
-                    const loteKey     = linea.lote || srcData.lote || '';
-                    const vencKey     = linea.fechaVencimiento || srcData.fechaVencimiento || '';
-                    const existing    = invCom.find(i =>
-                        norm(i.almacenNombre) === norm(caracasWh.nombre) &&
-                        norm(i.productoNombre) === norm(linea.productoNombre) &&
-                        (i.lote || '') === loteKey &&
-                        (i.fechaVencimiento || '') === vencKey
-                    );
-                    if (existing) {
-                        await updateDoc(doc(db, 'inventario_comercial', existing.id), {
-                            unidades:  (existing.unidades || 0) + deducir,
-                            updatedAt: serverTimestamp(),
-                        });
-                        invCom = invCom.map(i => i.id === existing.id
-                            ? { ...i, unidades: (i.unidades || 0) + deducir }
-                            : i
-                        );
-                    } else {
-                        const newRef = await addDoc(collection(db, 'inventario_comercial'), {
-                            almacenId:        gkAlmacen?.id || null,
-                            almacenNombre:    caracasWh.nombre,
-                            productoNombre:   linea.productoNombre,
-                            presentacion:     linea.presentacion || srcData.presentacion || '',
-                            tipo:             srcData.tipo || 'empacado',
-                            unit:             isEmpacado ? 'ud' : 'kg',
-                            lote:             loteKey,
-                            fechaVencimiento: vencKey,
-                            unidades:         deducir,
-                            updatedAt:        serverTimestamp(),
-                        });
-                        invCom = [...invCom, {
-                            id:               newRef.id,
-                            almacenId:        gkAlmacen?.id || null,
-                            almacenNombre:    caracasWh.nombre,
-                            productoNombre:   linea.productoNombre,
-                            lote:             loteKey,
-                            fechaVencimiento: vencKey,
-                            unidades:         deducir,
-                        }];
-                    }
-
+                    // NOTA: el inventario de GK (inventario_comercial / Frimaca) YA NO se
+                    // llena aquí. La mercancía entra a GK SOLO por la recepción declarada
+                    // en Caracas (RecepcionFrimacaSheet: cantidad recibida + estado + foto
+                    // de planilla). Antes este bloque también sumaba a inventario_comercial
+                    // y, junto con el botón "Recibido" de GK, generaba DOBLE CONTEO. La
+                    // deducción de planta y el movimiento de Kroma se conservan abajo.
                     const srcWhNombre = warehouses.find(w => w.id === srcData.warehouseId)?.nombre || 'Planta';
                     await addDoc(collection(db, 'kroma_warehouse_movements'), {
                         tipo:           'despacho_entregado',

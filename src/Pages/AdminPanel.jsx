@@ -5113,7 +5113,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'vendor_kpis':    return <VendorKpiConfig />;
             case 'liquidaciones':  return <LiquidacionesManagement />;
             case 'depots':         return <DepotManagement />;
-            case 'almacen_comercial': return <AlmacenComercialPage />;
+            case 'almacen_comercial': return <AlmacenComercialPage canPicking />;
             case 'competitors':    return <CompetitorManagement />;
             case 'visibilidad':    return <VisibilidadSection />;
             case 'notificaciones': return <NotificacionesSection />;

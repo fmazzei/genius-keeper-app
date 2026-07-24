@@ -15,6 +15,62 @@ y convenciones de implementación. **Toda decisión de desarrollo debe estar ali
 
 ---
 
+## Almacén Frimaca (Caracas) — Recepción del camión → entrega → Picking (2026-07) ✅
+
+Procedimiento formal para la mercancía que llega de Barinas (camión de Lácteos
+Danny) a Caracas, se recibe en Quinta Crespo, se entrega en el almacén **Frimaca**
+y luego el mercaderista retira ("picking") para surtir PDVs. Diseñado para ser
+extremadamente rápido y con trazabilidad de quién declara cada cosa.
+
+**Decisiones de negocio (dueño):** recepción/entrega la declara **el vendedor O el
+mercaderista** (persona designada, en ambas apps); el **picking descuenta al
+instante** y avisa al vendedor; recepción+Frimaca es **un flujo guiado de 2 pasos**.
+
+**Flujo (todo del lado del cliente, sin Cloud Functions):**
+1. **Recepción del camión (Quinta Crespo)** — `RecepcionFrimacaSheet.jsx`, paso 1:
+   por línea confirma/ajusta la **cantidad recibida** y marca **"Sanos y limpios"**
+   o **"Reportar novedad"** (nota + foto opcional).
+2. **Entrega en Frimaca** — paso 2: **foto de la planilla** de recibo + notas. Al
+   guardar: carga `inventario_comercial` (desde lo RECIBIDO), escribe el libro de
+   movimientos `inventario_movimientos` (`entrada_recepcion`), guarda el acta
+   `recepciones_frimaca/{despachoId}` (con fotos, doc aparte para no inflar), y
+   cierra el despacho `kroma_despachos` → `estado:'recibido_caracas'`,
+   `recibidoCaracas:true`, `inventarioAplicado:true`.
+3. **Picking** — `PickingSheet.jsx` (mercaderista/vendedor/master, botón "Picking"
+   por ítem en la pestaña Inventario): cantidad retirada + fecha/hora (auto) +
+   vencimiento del lote (precargado). **Descuenta al instante** `inventario_comercial`,
+   escribe movimiento (`picking`, negativo) y un doc en `pickings`. El vendedor lo ve
+   como **alerta** en su campana (`VendedorLayout.loadAlertas` fusiona los `pickings`
+   de las últimas 24h como alertas sintéticas `alertType:'picking'`, id `picking:<id>`;
+   `deleteAlerta` las descarta solo localmente).
+
+**Anti doble-conteo:** la mercancía entra a `inventario_comercial` SOLO por la
+recepción declarada en Caracas. Se RETIRÓ el auto-llenado de GK que hacía
+`DespachoPage.markEntregado` (Kroma) — antes ese bloque + el viejo botón "Recibido"
+de GK generaban doble conteo. `markEntregado` conserva la deducción de planta y el
+movimiento de Kroma; ya NO escribe `inventario_comercial`. **Regla operativa:** el
+operario de Barinas despacha (`en_transito`) y NO marca "Entregado" para Caracas —
+la recepción en Caracas cierra el despacho. Evitar el botón "Sincronizar desde
+Kroma" en el flujo diario (importa PT de Kroma; se conserva solo para stock legacy).
+
+**Colecciones nuevas:** `inventario_movimientos` (libro inmutable: entrada_recepcion
+/entrada_manual/correccion/picking, con unidadesAntes/Despues y actor),
+`recepciones_frimaca/{despachoId}` (acta + fotos base64), `pickings` (retiros).
+Reglas Firestore: merchandiser incluido en `inventario_comercial`/`kroma_despachos`
+(update) y en las tres nuevas colecciones. Fotos = base64 comprimido
+(`src/utils/imageCapture.js`, JPEG redimensionado — no hay Storage).
+
+**Acceso:** vendedor (`VendedorLayout` pestaña Almacén, dark, canPicking),
+mercaderista (`AppShell`/`MerchandiserHub` → "Almacén Frimaca", light, canPicking),
+máster/gerencia (`AdminPanel` → Almacén Comercial, light, canPicking). `AlmacenComercialPage`
+acepta `actor={{id,nombre,role}}` (mercaderista pasa el reporter) y `canPicking`.
+
+**Pendiente/futuro:** push FCM dirigido al vendedor responsable del picking (hoy es
+alerta in-app leyendo `pickings`); asignar "vendedor responsable" por almacén;
+validar tamaño de doc si una recepción trae muchas fotos de novedad.
+
+---
+
 ## Pendientes — Comisiones GK y Webhooks Zoho Books
 
 Sección de seguimiento para terminar de conectar el módulo de comisiones del

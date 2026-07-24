@@ -938,16 +938,21 @@ function AlertasView({ alertas, loadingAlertas, onDelete }) {
             {alertas.map((alert) => {
                 const isDanger = alert.alertType === 'facturas_venciendo';
                 const isInfo = alert.alertType === 'despacho_en_transito';
+                const isPicking = alert.alertType === 'picking';
                 const cardClass = isDanger
                     ? 'bg-red-500/10 border-red-500/30'
                     : isInfo
                         ? 'bg-blue-500/10 border-blue-500/30'
-                        : 'bg-amber-500/10 border-amber-500/30';
+                        : isPicking
+                            ? 'bg-emerald-500/10 border-emerald-500/30'
+                            : 'bg-amber-500/10 border-amber-500/30';
                 const titleClass = isDanger
                     ? 'text-red-300'
                     : isInfo
                         ? 'text-blue-300'
-                        : 'text-amber-300';
+                        : isPicking
+                            ? 'text-emerald-300'
+                            : 'text-amber-300';
                 return (
                     <div
                         key={alert.id}
@@ -1018,21 +1023,36 @@ const VendedorLayout = ({ user, onLogout }) => {
         setLoadingAlertas(true);
         try {
             const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-            const snap = await getDocs(
-                query(collection(db, 'vendedor_alertas'), where('uid', '==', uid))
-            );
+            // Pickings recientes (mercaderista retiró de Frimaca) → alertas
+            // sintéticas para el vendedor. El stock ya se descontó; es informativo
+            // para que revise/ajuste. No hay uid en pickings (almacén global).
+            const [snap, pickSnap] = await Promise.all([
+                getDocs(query(collection(db, 'vendedor_alertas'), where('uid', '==', uid))),
+                getDocs(collection(db, 'pickings')).catch(() => ({ docs: [] })),
+            ]);
             const items = snap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
                 .filter(a => {
                     const t = a.createdAt?.toDate?.() || new Date(0);
                     return t >= since24h;
-                })
-                .sort((a, b) => {
-                    const ta = a.createdAt?.toDate?.() || new Date(0);
-                    const tb = b.createdAt?.toDate?.() || new Date(0);
-                    return tb - ta;
                 });
-            setAlertas(items);
+            const pickAlerts = (pickSnap.docs || [])
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(p => (p.createdAt?.toDate?.() || new Date(0)) >= since24h)
+                .map(p => ({
+                    id: `picking:${p.id}`,
+                    synthetic: true,
+                    alertType: 'picking',
+                    title: `Picking en Frimaca: ${p.cantidad} ${p.unit || 'ud'} de ${p.productoNombre}`,
+                    body: `Lote ${p.lote || '—'}${p.fechaVencimiento ? ` (vence ${p.fechaVencimiento})` : ''}${p.mercaderistaNombre ? ` · ${p.mercaderistaNombre}` : ''}. Quedan ${p.stockDespues ?? '—'} uds. Inventario ya actualizado.`,
+                    createdAt: p.createdAt,
+                }));
+            const merged = [...items, ...pickAlerts].sort((a, b) => {
+                const ta = a.createdAt?.toDate?.() || new Date(0);
+                const tb = b.createdAt?.toDate?.() || new Date(0);
+                return tb - ta;
+            });
+            setAlertas(merged);
         } catch (e) {
             console.warn('loadAlertas error:', e);
         } finally {
@@ -1089,6 +1109,12 @@ const VendedorLayout = ({ user, onLogout }) => {
     };
 
     const deleteAlerta = async (alertId) => {
+        // Alertas sintéticas de picking no viven en vendedor_alertas: solo se
+        // descartan localmente (el picking queda en su colección para auditoría).
+        if (String(alertId).startsWith('picking:')) {
+            setAlertas(prev => prev.filter(a => a.id !== alertId));
+            return;
+        }
         try {
             await deleteDoc(doc(db, 'vendedor_alertas', alertId));
             setAlertas(prev => prev.filter(a => a.id !== alertId));
@@ -1651,7 +1677,11 @@ const VendedorLayout = ({ user, onLogout }) => {
         if (currentView === 'almacen') {
             return (
                 <div className="flex-1 overflow-y-auto pb-24">
-                    <AlmacenComercialPage theme="dark" />
+                    <AlmacenComercialPage
+                        theme="dark"
+                        actor={{ id: user?.uid || '', nombre: vendedor?.nombre || '', role: 'vendedor' }}
+                        canPicking
+                    />
                 </div>
             );
         }

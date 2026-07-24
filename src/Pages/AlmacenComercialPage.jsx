@@ -19,9 +19,11 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import {
     Warehouse, Truck, Package, Plus, ChevronDown, ChevronRight,
-    Loader, CheckCircle, MapPin, RefreshCw, Download,
+    Loader, CheckCircle, MapPin, RefreshCw, Download, PackageMinus,
 } from 'lucide-react';
 import StockAdjustSheet from '@/Components/StockAdjustSheet.jsx';
+import RecepcionFrimacaSheet from '@/Components/RecepcionFrimacaSheet.jsx';
+import PickingSheet from '@/Components/PickingSheet.jsx';
 
 const destinoDisplay = (d) => {
     if (!d) return '';
@@ -94,7 +96,12 @@ const THEME = {
     },
 };
 
-const AlmacenComercialPage = ({ theme = 'light' }) => {
+// Props:
+//  - theme: 'light' (admin/gerencia) | 'dark' (vendedor/campo).
+//  - actor: { id, nombre, role } de la persona que declara (mercaderista: se pasa
+//    el reporter seleccionado; si no, cae al usuario autenticado).
+//  - canPicking: habilita el retiro (picking) por ítem (mercaderista/vendedor/admin).
+const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPicking = false }) => {
     const t = THEME[theme] || THEME.light;
     const { user } = useAuth();
     const [tab, setTab]                 = useState('recepcion');
@@ -104,10 +111,10 @@ const AlmacenComercialPage = ({ theme = 'light' }) => {
     const [loading, setLoading]         = useState(true);
     const [error, setError]             = useState('');
 
-    const [almacenChoice, setAlmacenChoice] = useState({});
-    const [savingId, setSavingId]           = useState(null);
 
     const [adjustItem, setAdjustItem]       = useState(null);
+    const [pickItem, setPickItem]           = useState(null);
+    const [recepDespacho, setRecepDespacho] = useState(null);
     const [newAlmacenName, setNewAlmacenName] = useState('');
     const [creatingAlmacen, setCreatingAlmacen] = useState(false);
     const [showCreateAlmacen, setShowCreateAlmacen] = useState(false);
@@ -115,7 +122,11 @@ const AlmacenComercialPage = ({ theme = 'light' }) => {
     const [syncing, setSyncing]             = useState(false);
     const [syncMessage, setSyncMessage]     = useState('');
 
-    const userLabel = { id: user?.uid || '', nombre: user?.displayName || user?.email || '' };
+    // Actor de las declaraciones: el reporter pasado (mercaderista) o el usuario.
+    const actorLabel = actorProp?.id || actorProp?.nombre
+        ? { id: actorProp.id || '', nombre: actorProp.nombre || '', role: actorProp.role || '' }
+        : { id: user?.uid || '', nombre: user?.displayName || user?.email || '', role: '' };
+    const userLabel = actorLabel;
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -130,11 +141,6 @@ const AlmacenComercialPage = ({ theme = 'light' }) => {
             setAlmacenes(alms);
             setInventario(invSnap.docs.map(d => ({ id: d.id, ...d.data() })));
             setPendientes(despSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setAlmacenChoice(prev => {
-                const next = { ...prev };
-                despSnap.docs.forEach(d => { if (!next[d.id] && alms[0]) next[d.id] = alms[0].id; });
-                return next;
-            });
         } catch (e) {
             setError('No se pudo cargar el almacén comercial. ' + e.message);
         } finally {
@@ -163,63 +169,31 @@ const AlmacenComercialPage = ({ theme = 'light' }) => {
         }
     };
 
-    const handleRecibir = async (despacho) => {
-        const almacenId = almacenChoice[despacho.id];
-        const almacen = almacenes.find(a => a.id === almacenId);
-        if (!almacen || savingId) return;
-        setSavingId(despacho.id);
-        try {
-            const lineas = despacho.lineas || [];
-            for (const linea of lineas) {
-                const lote = linea.lote || '';
-                const existing = inventario.find(i =>
-                    i.almacenId === almacenId &&
-                    i.productoNombre === linea.productoNombre &&
-                    (i.lote || '') === lote
-                );
-                if (existing) {
-                    await updateDoc(doc(db, 'inventario_comercial', existing.id), {
-                        unidades: (existing.unidades || 0) + (Number(linea.cantidad) || 0),
-                        fechaVencimiento: existing.fechaVencimiento || linea.fechaVencimiento || '',
-                        updatedAt: serverTimestamp(),
-                    });
-                } else {
-                    await addDoc(collection(db, 'inventario_comercial'), {
-                        almacenId,
-                        almacenNombre:    almacen.nombre,
-                        productoNombre:   linea.productoNombre,
-                        presentacion:     linea.presentacion || '',
-                        tipo:             linea.tipo || 'empacado',
-                        unit:             linea.unit || 'ud',
-                        lote,
-                        fechaVencimiento: linea.fechaVencimiento || '',
-                        unidades:         Number(linea.cantidad) || 0,
-                        updatedAt:        serverTimestamp(),
-                    });
-                }
-            }
-            await updateDoc(doc(db, 'kroma_despachos', despacho.id), {
-                estado:                 'entregado',
-                recibidoEnGK:           true,
-                recibidoPorGK:          userLabel,
-                recibidoEnGKAt:         serverTimestamp(),
-                almacenComercialId:     almacenId,
-                almacenComercialNombre: almacen.nombre,
-            });
-            await load();
-        } catch (e) {
-            alert('No se pudo recibir el despacho. ' + e.message);
-        } finally {
-            setSavingId(null);
-        }
-    };
+    // La recepción ahora se hace por el flujo guiado (RecepcionFrimacaSheet):
+    // recepción del camión (cantidad + estado + novedad) → entrega en Frimaca
+    // (foto de planilla). Ese sheet carga el inventario, escribe el libro de
+    // movimientos y el acta, y cierra el despacho. Es la ÚNICA vía a
+    // inventario_comercial (se retiró el auto-llenado de Kroma para no duplicar).
 
-    const handleAdjustSave = async ({ newUnidades, notas }) => {
+    const handleAdjustSave = async ({ newUnidades, modoAjuste, notas }) => {
+        const antes = adjustItem.unidades || 0;
         await updateDoc(doc(db, 'inventario_comercial', adjustItem.id), {
             unidades:       newUnidades,
             lastAjusteNota: notas || '',
             updatedAt:      serverTimestamp(),
             updatedBy:      userLabel,
+        });
+        // Movimiento en el libro (entrada manual o corrección) — antes los ajustes
+        // sobrescribían el stock sin dejar rastro.
+        await addDoc(collection(db, 'inventario_movimientos'), {
+            almacenId: adjustItem.almacenId || null, almacenNombre: adjustItem.almacenNombre || '',
+            productoNombre: adjustItem.productoNombre, presentacion: adjustItem.presentacion || '',
+            lote: adjustItem.lote || '', fechaVencimiento: adjustItem.fechaVencimiento || '',
+            tipo: modoAjuste ? 'correccion' : 'entrada_manual',
+            cantidad: newUnidades - antes, unidadesAntes: antes, unidadesDespues: newUnidades,
+            ref: { itemId: adjustItem.id },
+            actorId: actorLabel.id, actorNombre: actorLabel.nombre, actorRole: actorLabel.role,
+            nota: notas || '', createdAt: serverTimestamp(),
         });
         await load();
     };
@@ -400,23 +374,12 @@ const AlmacenComercialPage = ({ theme = 'light' }) => {
                                     ))}
                                 </div>
                                 {almacenes.length > 0 && (
-                                    <div className="flex flex-col sm:flex-row gap-2">
-                                        <select
-                                            value={almacenChoice[despacho.id] || ''}
-                                            onChange={e => setAlmacenChoice(p => ({ ...p, [despacho.id]: e.target.value }))}
-                                            className={`w-full min-w-0 p-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 ${t.select}`}
-                                        >
-                                            {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
-                                        </select>
-                                        <button
-                                            onClick={() => handleRecibir(despacho)}
-                                            disabled={savingId === despacho.id}
-                                            className={`w-full sm:w-auto sm:shrink-0 font-bold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-50 ${t.primaryBtn}`}
-                                        >
-                                            {savingId === despacho.id ? <Loader size={14} className="animate-spin" /> : <CheckCircle size={14} />}
-                                            Recibido
-                                        </button>
-                                    </div>
+                                    <button
+                                        onClick={() => setRecepDespacho(despacho)}
+                                        className={`w-full font-bold px-4 py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 ${t.primaryBtn}`}
+                                    >
+                                        <CheckCircle size={14} /> Recibir y entregar en Frimaca
+                                    </button>
                                 )}
                             </div>
                         );
@@ -476,24 +439,35 @@ const AlmacenComercialPage = ({ theme = 'light' }) => {
                                         {items.length === 0 ? (
                                             <p className={`text-sm py-2 ${t.emptyText}`}>Sin inventario. Recibe un despacho de planta para empezar.</p>
                                         ) : items.map(item => (
-                                            <button
-                                                key={item.id}
-                                                onClick={() => setAdjustItem(item)}
-                                                className={`w-full flex items-center justify-between rounded-xl px-3 py-2.5 text-left transition-colors ${t.itemRow}`}
-                                            >
-                                                <div className="min-w-0">
-                                                    <p className={`text-sm font-semibold truncate ${t.itemTitle}`}>{item.productoNombre}</p>
-                                                    <p className={`text-xs ${t.meta}`}>
-                                                        {item.presentacion}
-                                                        {item.lote && ` · Lote ${item.lote}`}
-                                                        {item.fechaVencimiento && ` · Vence ${item.fechaVencimiento}`}
-                                                    </p>
-                                                </div>
-                                                <div className="flex items-center gap-2 shrink-0 ml-2">
-                                                    <span className={`font-bold ${t.itemTitle}`}>{item.unidades} {item.unit || 'und'}</span>
-                                                    <Package size={14} className={t.meta} />
-                                                </div>
-                                            </button>
+                                            <div key={item.id} className={`flex items-stretch gap-2 rounded-xl ${t.itemRow}`}>
+                                                <button
+                                                    onClick={() => setAdjustItem(item)}
+                                                    className="flex-1 min-w-0 flex items-center justify-between px-3 py-2.5 text-left"
+                                                >
+                                                    <div className="min-w-0">
+                                                        <p className={`text-sm font-semibold truncate ${t.itemTitle}`}>{item.productoNombre}</p>
+                                                        <p className={`text-xs ${t.meta}`}>
+                                                            {item.presentacion}
+                                                            {item.lote && ` · Lote ${item.lote}`}
+                                                            {item.fechaVencimiento && ` · Vence ${item.fechaVencimiento}`}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                                                        <span className={`font-bold ${t.itemTitle}`}>{item.unidades} {item.unit || 'und'}</span>
+                                                        <Package size={14} className={t.meta} />
+                                                    </div>
+                                                </button>
+                                                {canPicking && (
+                                                    <button
+                                                        onClick={() => setPickItem(item)}
+                                                        disabled={(item.unidades || 0) <= 0}
+                                                        title="Registrar picking (retiro)"
+                                                        className={`shrink-0 my-1.5 mr-1.5 px-3 rounded-lg flex items-center gap-1 text-xs font-bold disabled:opacity-40 ${t.primaryBtn}`}
+                                                    >
+                                                        <PackageMinus size={14} /> Picking
+                                                    </button>
+                                                )}
+                                            </div>
                                         ))}
                                     </div>
                                 )}
@@ -509,6 +483,28 @@ const AlmacenComercialPage = ({ theme = 'light' }) => {
                     onClose={() => setAdjustItem(null)}
                     onSave={handleAdjustSave}
                     theme={theme}
+                />
+            )}
+
+            {recepDespacho && (
+                <RecepcionFrimacaSheet
+                    despacho={recepDespacho}
+                    almacenes={almacenes}
+                    inventario={inventario}
+                    actor={actorLabel}
+                    theme={theme}
+                    onClose={() => setRecepDespacho(null)}
+                    onDone={load}
+                />
+            )}
+
+            {pickItem && (
+                <PickingSheet
+                    item={pickItem}
+                    actor={actorLabel}
+                    theme={theme}
+                    onClose={() => setPickItem(null)}
+                    onDone={load}
                 />
             )}
         </div>

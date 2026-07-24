@@ -346,8 +346,31 @@ service cloud.firestore {
       allow write: if isAuthenticated() && isComercialAccess();
     }
     match /inventario_comercial/{itemId} {
-      allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess());
-      allow write: if isAuthenticated() && (isKromaAccess() || isComercialAccess());
+      // Merchandiser incluido: recibe el camión en Caracas y hace pickings (retiros).
+      allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+      allow write: if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+    }
+    // Libro de movimientos del almacén comercial (entradas de recepción, pickings,
+    // ajustes/correcciones). Rastro inmutable de cada cambio de stock.
+    match /inventario_movimientos/{movId} {
+      allow read:   if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+      allow create: if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+      allow update: if false;                 // inmutable
+      allow delete: if isMaster();
+    }
+    // Acta de recepción del camión + entrega en Frimaca (cantidades, novedades,
+    // foto de la planilla). docId = despachoId.
+    match /recepciones_frimaca/{despachoId} {
+      allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+      allow write: if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+    }
+    // Pickings (retiros) declarados por el mercaderista; el vendedor los ve como
+    // alerta. El stock ya se descontó al crearlos.
+    match /pickings/{pickId} {
+      allow read:   if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+      allow create: if isAuthenticated() && (isComercialAccess() || isMerchandiser());
+      allow update: if isAuthenticated() && (isComercialAccess() || isMerchandiser());
+      allow delete: if isMaster();
     }
 
     match /kroma_settings/{docId} {
@@ -410,8 +433,8 @@ service cloud.firestore {
     match /kroma_despachos/{id} {
       // Kroma crea y gestiona despachos. GK (vendedor/gerencia/master) puede
       // leerlos y marcarlos como recibidos al ingresarlos al almacén comercial.
-      allow read:           if isKromaAccess() || isComercialAccess();
-      allow update:         if isKromaAccess() || isComercialAccess();
+      allow read:           if isKromaAccess() || isComercialAccess() || isMerchandiser();
+      allow update:         if isKromaAccess() || isComercialAccess() || isMerchandiser();
       allow create, delete: if isKromaAccess();
     }
     match /kroma_edit_requests/{id} {

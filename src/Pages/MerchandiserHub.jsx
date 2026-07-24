@@ -1,7 +1,7 @@
 // RUTA: src/Pages/MerchandiserHub.jsx
 
 import React from 'react';
-import { FileText, Map, Truck, ShoppingCart, AlertTriangle, ClipboardList, Target } from 'lucide-react';
+import { FileText, Map, Truck, ShoppingCart, AlertTriangle, ClipboardList, Target, Warehouse } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { usePendingTransfer } from '../hooks/usePendingTransfer';
 import { useCoverageGoal } from '../hooks/useCoverageGoal';
@@ -102,6 +102,18 @@ const MerchandiserHub = ({ onNavigate, selectedReporter, posList }) => {
                         <div>
                             <h3 className="text-xl font-bold">Tomar Pedido</h3>
                             <p className="text-sm opacity-80">Registrar un pedido verbal de un cliente.</p>
+                        </div>
+                    </button>
+
+                    {/* Almacén Frimaca — recepción del camión y picking */}
+                    <button
+                        onClick={() => onNavigate('frimaca')}
+                        className="w-full bg-slate-800 text-white p-6 rounded-xl shadow-xl text-left flex items-center active:scale-95 transition-transform"
+                    >
+                        <Warehouse size={40} className="mr-4 shrink-0 text-brand-yellow" />
+                        <div>
+                            <h3 className="text-xl font-bold">Almacén Frimaca</h3>
+                            <p className="text-sm opacity-80">Recibir el camión de Barinas y registrar pickings.</p>
                         </div>
                     </button>
 

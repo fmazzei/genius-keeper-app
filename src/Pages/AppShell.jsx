@@ -16,6 +16,7 @@ import ReportesHistorial from '@/Pages/ReportesHistorial.jsx';
 import PedidosHistorial from '@/Pages/PedidosHistorial.jsx';
 import NotificacionesMerchandiser from '@/Pages/NotificacionesMerchandiser.jsx';
 import LogisticsPanel from '@/Pages/LogisticsPanel.jsx';
+import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import PosList from '@/Pages/PosList.jsx';
 import VisitReportForm from '@/Pages/VisitReportForm.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
@@ -212,6 +213,7 @@ const AppShell = ({ user, role, onLogout }) => {
             reportes_historial: 'Mis Reportes',
             pedidos_historial: 'Pedidos Tomados',
             notificaciones: 'Notificaciones',
+            frimaca: 'Almacén Frimaca (Caracas)',
             visit_report: `Reporte: ${selectedPos?.name || ''}`,
         };
         return viewTitles[currentView] || 'Genius Keeper';
@@ -284,6 +286,13 @@ const AppShell = ({ user, role, onLogout }) => {
             case 'pedidos_historial': return <PedidosHistorial selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
             case 'notificaciones': return <NotificacionesMerchandiser user={user} onBack={() => setCurrentView('hub')} />;
             case 'logistics': return <LogisticsPanel />;
+            case 'frimaca': return (
+                <AlmacenComercialPage
+                    theme="light"
+                    actor={{ id: selectedReporter?.id || '', nombre: selectedReporter?.name || 'Equipo de Campo', role: 'merchandiser' }}
+                    canPicking
+                />
+            );
             case 'report': return <PosList posList={masterStopList} onSelectPos={navigateToReport} />;
             case 'tasks':
                 return (
