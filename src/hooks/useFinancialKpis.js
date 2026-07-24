@@ -77,7 +77,7 @@ export function computeDiasPago(facturas, start, end, modo = 'vencimiento') {
 // falta cobrar tras abonos parciales); si aún no se ha conciliado y no existe,
 // cae al monto total. Esto evita sobre-contar "Por Cobrar" cuando hay pagos
 // parciales (GK marcaba el total mientras Zoho ya mostraba el saldo restante).
-const saldoAbierto = (f) => {
+export const saldoAbierto = (f) => {
     const b = Number(f.balance);
     return (f.balance != null && Number.isFinite(b)) ? b : (Number(f.monto) || 0);
 };

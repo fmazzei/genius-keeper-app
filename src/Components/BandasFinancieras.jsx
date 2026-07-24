@@ -10,6 +10,7 @@ import { TrendingUp, AlertTriangle, Clock, ArrowUpRight, ArrowDownRight } from '
 import { useFinancialKpis } from '@/hooks/useFinancialKpis.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import DiasPagoModal from '@/Components/DiasPagoModal.jsx';
+import CarteraVencidaModal from '@/Components/CarteraVencidaModal.jsx';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
@@ -40,7 +41,7 @@ const Delta = ({ value, goodWhenUp = true, suffix = '%' }) => {
     );
 };
 
-const Band = ({ num: n, title, status, statusLabel, action, actionTone = 'neutral', children }) => (
+const Band = ({ num: n, title, status, statusLabel, action, actionTone = 'neutral', onAction = null, children }) => (
     <section className={`relative bg-white border border-slate-200 rounded-2xl shadow-sm p-5 pl-6 overflow-hidden
         before:content-[''] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[5px] ${STRIPE[status]}`}>
         <div className="flex items-center gap-3 mb-3">
@@ -49,9 +50,18 @@ const Band = ({ num: n, title, status, statusLabel, action, actionTone = 'neutra
             <span className={`text-[11px] font-extrabold uppercase tracking-wide px-2.5 py-1 rounded-full border ${PILL[status]}`}>{statusLabel}</span>
         </div>
         {action && (
-            <div className={`flex items-start gap-2 text-sm rounded-lg border px-3 py-2 mb-4 ${ACTION[actionTone]}`}>
-                <AlertTriangle size={15} className="shrink-0 mt-0.5" /> <span>{action}</span>
-            </div>
+            onAction ? (
+                <button type="button" onClick={onAction}
+                    className={`w-full text-left flex items-start gap-2 text-sm rounded-lg border px-3 py-2 mb-4 transition-shadow hover:shadow-md ${ACTION[actionTone]}`}>
+                    <AlertTriangle size={15} className="shrink-0 mt-0.5" />
+                    <span className="flex-1">{action}</span>
+                    <span aria-hidden className="shrink-0 font-black">→</span>
+                </button>
+            ) : (
+                <div className={`flex items-start gap-2 text-sm rounded-lg border px-3 py-2 mb-4 ${ACTION[actionTone]}`}>
+                    <AlertTriangle size={15} className="shrink-0 mt-0.5" /> <span>{action}</span>
+                </div>
+            )
         )}
         {children}
     </section>
@@ -68,6 +78,7 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
     const fin = useFinancialKpis();
     const { metaVentasGeneral } = useAppConfig();
     const [showDiasPago, setShowDiasPago] = useState(false);
+    const [showVencidas, setShowVencidas] = useState(false);
 
     if (fin.loading) {
         return <div className="h-24 rounded-2xl bg-white border border-slate-200 animate-pulse" />;
@@ -103,9 +114,12 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
     let cobStatus = 'good', cobLabel = 'Al día';
     if (d45p > 0) { cobStatus = 'bad'; cobLabel = 'Cartera en riesgo'; }
     else if (d31_45 > 0) { cobStatus = 'warn'; cobLabel = 'Vigilar'; }
+    // Mensaje reformulado para el dueño/CEO (máster/gerencia NO son vendedores):
+    // no habla de comisiones, sino de decisiones sobre cartera vencida sin cobrar.
     const cobAction = d45p > 0
-        ? <><b>{fin.clientesMas45} cliente{fin.clientesMas45 === 1 ? '' : 's'}</b> con facturas de +45 días ({money0(d45p)}) — comisión en riesgo de anularse. Priorizar cobro.</>
-        : (d31_45 > 0 ? <>{money0(d31_45)} entrando en la ventana 31–45 días — cobrar antes de perder el bono.</> : null);
+        ? <><b>{fin.clientesMas45} cliente{fin.clientesMas45 === 1 ? '' : 's'}</b> con facturas de +45 días sin cobrar ({money0(d45p)}). Toca para revisarlas y decidir.</>
+        : (d31_45 > 0 ? <>{money0(d31_45)} en la ventana 31–45 días. Toca para revisar la cartera.</> : null);
+    const cobHasVencidas = d45p > 0 || d31_45 > 0;
 
     return (
         <div className="space-y-4">
@@ -178,7 +192,8 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
 
             {/* 2 · ¿Cobramos? */}
             <Band num="02" title="¿Cobramos?" status={cobStatus} statusLabel={cobLabel}
-                  action={cobAction} actionTone={cobStatus === 'bad' ? 'bad' : cobStatus === 'warn' ? 'warn' : 'neutral'}>
+                  action={cobAction} actionTone={cobStatus === 'bad' ? 'bad' : cobStatus === 'warn' ? 'warn' : 'neutral'}
+                  onAction={cobHasVencidas ? () => setShowVencidas(true) : null}>
                 <div className="grid gap-4 md:grid-cols-3">
                     <Tile label="Por cobrar" className="bg-gradient-to-br from-slate-50 to-slate-100">
                         <p className="text-3xl font-black text-slate-800 tracking-tight tabular-nums mt-1">{money(fin.porCobrar)}</p>
@@ -221,6 +236,14 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
 
             {showDiasPago && (
                 <DiasPagoModal facturas={fin.facturas || []} onClose={() => setShowDiasPago(false)} />
+            )}
+            {showVencidas && (
+                <CarteraVencidaModal
+                    facturas={fin.facturas || []}
+                    minDias={d45p > 0 ? 46 : 31}
+                    titulo={d45p > 0 ? 'Cartera vencida +45 días' : 'Cartera vencida 31–45 días'}
+                    onClose={() => setShowVencidas(false)}
+                />
             )}
         </div>
     );
