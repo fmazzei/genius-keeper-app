@@ -23,6 +23,7 @@ import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import CarteraManager from '@/Components/CarteraManager.jsx';
 import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas, GestionClientesZoho } from '@/Pages/AdminPanel.jsx';
+import VinculacionPdvZoho from '@/Components/VinculacionPdvZoho.jsx';
 
 const saludoDelDia = () => {
     const h = new Date().getHours();
@@ -58,6 +59,7 @@ export default function AdministracionLayout({ user, onLogout }) {
     const { getModulesForRole } = useAppConfig();
     const uid = user?.uid || authUser?.uid;
     const [perfil, setPerfil] = useState(null); // null = cargando; {name, modulos}
+    const [clientesTab, setClientesTab] = useState('zoho'); // 'zoho' | 'pdv'
     const [vendedores, setVendedores] = useState([]); // cargados UNA vez, compartidos
     const [active, setActive] = useState('pagar'); // pagar | clientes | cartera
     // Flujo guiado de pago: vendedor elegido + paso (conciliar → liquidar).
@@ -151,7 +153,21 @@ export default function AdministracionLayout({ user, onLogout }) {
                 {tabs.length === 0 ? (
                     <p className="text-slate-400 text-sm">No tienes módulos asignados. Contacta al administrador del sistema.</p>
                 ) : activeTab?.id === 'clientes' ? (
-                    <GestionClientesZoho />
+                    /* Dos caras de la atribución: cliente → vendedor, y PDV → cliente
+                       (esta última alimenta "días sin facturar" del seguidor semanal). */
+                    <div className="space-y-4">
+                        <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
+                            {[['zoho', 'Clientes → Vendedor'], ['pdv', 'PDV ↔ Cliente Zoho']].map(([id, label]) => (
+                                <button key={id} onClick={() => setClientesTab(id)}
+                                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                                        clientesTab === id ? 'bg-brand-blue text-white' : 'text-slate-500 hover:text-slate-800'
+                                    }`}>
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+                        {clientesTab === 'pdv' ? <VinculacionPdvZoho /> : <GestionClientesZoho />}
+                    </div>
                 ) : activeTab?.id === 'cartera' ? (
                     <CarteraAdmin vendedores={vendedores} />
                 ) : (

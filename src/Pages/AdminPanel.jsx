@@ -20,6 +20,7 @@ import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 import EditPosModal from '../Components/EditPosModal.jsx';
+import VinculacionPdvZoho from '../Components/VinculacionPdvZoho.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
@@ -387,7 +388,7 @@ const PosManagement = ({ posList = [], loading }) => {
                     </div>
                 ))}
             </div>
-            <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Agregar Nuevo Punto de Venta"><AddPosForm onClose={() => setIsAddModalOpen(false)} /></Modal>
+            <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Agregar Nuevo Punto de Venta"><AddPosForm onClose={() => setIsAddModalOpen(false)} canEditZoho /></Modal>
             {posToEdit && (
                 <EditPosModal
                     pos={posToEdit}
@@ -5051,6 +5052,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             id: 'comercial', label: 'Comercial', Icon: Store,
             items: [
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
+                { id: 'pdv_zoho',    label: 'PDV ↔ Cliente Zoho', Icon: Link2, badge: 'Nuevo' },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
                 { id: 'comisiones_dash', label: 'Comisiones a pagar', Icon: BarChart2, badge: 'Nuevo' },
                 { id: 'facturacion', label: 'Facturación', Icon: Receipt, badge: 'Nuevo' },
@@ -5107,6 +5109,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'admin_mgmt':    return <AdministradoresManagement />;
             case 'mercaderistas': return <ReportersManagement />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
+            case 'pdv_zoho':       return <VinculacionPdvZoho />;
             case 'sales_goals':    return <SalesGoalsManagement />;
             case 'comisiones_dash': return <ComisionesDashboard />;
             case 'facturacion':    return <FacturacionClientes />;
