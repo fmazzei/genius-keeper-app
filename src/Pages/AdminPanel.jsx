@@ -272,7 +272,27 @@ const SalesGoalsManagement = () => {
 };
 
 
-const PosManagement = ({ posList = [], loading }) => {
+// OJO: esta pantalla es la LISTA MAESTRA de puntos de venta, así que carga TODOS
+// los PDV — activos e inactivos. El `posList` que llega por props viene filtrado
+// a `active == true` (lo que consumen rutas, KPIs y el seguidor), y usarlo aquí
+// hacía que un PDV desapareciera de la pantalla al inactivarlo, sin manera de
+// volver a verlo o reactivarlo. Inactivar es poner la frecuencia en 0, NO borrar.
+const PosManagement = ({ posList: posListActivos = [], loading }) => {
+    const [todos, setTodos] = useState(null);   // null = cargando
+    const [verInactivos, setVerInactivos] = useState(true);
+
+    useEffect(() => {
+        const unsub = onSnapshot(
+            collection(db, 'pos'),
+            (snap) => setTodos(snap.docs.map(d => ({ id: d.id, ...d.data(), type: 'pos' }))),
+            (e) => { console.error('PosManagement pos listener:', e); setTodos([]); }
+        );
+        return () => unsub();
+    }, []);
+
+    // Mientras carga la lista completa se usa la de props para no parpadear.
+    const posList = todos ?? posListActivos;
+
     const [editablePos, setEditablePos] = useState([]);
     const [openCategories, setOpenCategories] = useState({});
     const [isSaving, setIsSaving] = useState(false);
@@ -375,12 +395,19 @@ const PosManagement = ({ posList = [], loading }) => {
         setChangesMade(true);
     };
 
-    const groupedPos = useMemo(() => editablePos.reduce((acc, pos) => {
-        const chain = pos.chain || 'Automercados Individuales';
-        if (!acc[chain]) { acc[chain] = []; }
-        acc[chain].push(pos);
-        return acc;
-    }, {}), [editablePos]);
+    // Un PDV está inactivo cuando su frecuencia es 0/vacía (foodservice no lleva
+    // visitas por diseño: no se considera inactivo).
+    const estaInactivo = (p) => p.canal !== 'foodservice' && !(Number(p.visitInterval) > 0);
+    const totalInactivos = useMemo(() => editablePos.filter(estaInactivo).length, [editablePos]);
+
+    const groupedPos = useMemo(() => editablePos
+        .filter(pos => verInactivos || !estaInactivo(pos))
+        .reduce((acc, pos) => {
+            const chain = pos.chain || 'Automercados Individuales';
+            if (!acc[chain]) { acc[chain] = []; }
+            acc[chain].push(pos);
+            return acc;
+        }, {}), [editablePos, verInactivos]);
 
     const toggleCategory = useCallback((category) => {
         setOpenCategories(prev => ({ ...prev, [category]: !prev[category] }));
@@ -401,7 +428,19 @@ const PosManagement = ({ posList = [], loading }) => {
                     <button onClick={handleSaveChanges} disabled={!changesMade || isSaving} className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">{isSaving ? <LoadingSpinner size="sm" /> : <Save size={18} />}{isSaving ? 'Guardando...' : 'Guardar'}</button>
                 </div>
             </div>
-            <p className="text-sm text-slate-500 mb-6 flex items-start gap-2"><AlertCircle size={16} className="flex-shrink-0 mt-0.5" /> <span>Modifica los días entre visitas. Asignar '0' días desactivará el PDV.</span></p>
+            <p className="text-sm text-slate-500 mb-3 flex items-start gap-2"><AlertCircle size={16} className="flex-shrink-0 mt-0.5" /> <span>Modifica los días entre visitas. Asignar '0' días desactiva el PDV: <strong>no se borra</strong>, deja de contar en rutas, KPIs y seguimiento, y puedes reactivarlo aquí cuando quieras.</span></p>
+
+            {/* La lista maestra muestra TODOS los PDV. Este filtro solo oculta los
+                inactivos de la vista; nunca los elimina. */}
+            <div className="flex items-center gap-2 mb-6">
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${totalInactivos > 0 ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                    {totalInactivos} inactivo{totalInactivos === 1 ? '' : 's'}
+                </span>
+                <button onClick={() => setVerInactivos(v => !v)}
+                    className="text-xs font-semibold text-brand-blue hover:underline">
+                    {verInactivos ? 'Ocultar inactivos' : 'Mostrar inactivos'}
+                </button>
+            </div>
             <div className="space-y-2">
                 {Object.keys(groupedPos).sort().map(chain => (
                     <div key={chain} className="border border-slate-200 rounded-lg overflow-hidden">
