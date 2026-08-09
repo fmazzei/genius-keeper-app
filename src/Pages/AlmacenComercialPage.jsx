@@ -305,6 +305,61 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
         items: inventario.filter(i => i.almacenId === a.id),
     }));
 
+    // ── Lotes CERRADOS (existencia 0) agrupados por MES de cierre ──
+    // El mes sale de `updatedAt` (el último movimiento, que es el que lo agotó).
+    const cerradosPorMes = (() => {
+        const cerrados = inventario.filter(i => (Number(i.unidades) || 0) <= 0);
+        const grupos = {};
+        cerrados.forEach(i => {
+            const d = i.updatedAt?.toDate?.() || null;
+            const key = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : '0000-00';
+            if (!grupos[key]) {
+                grupos[key] = {
+                    key,
+                    label: d ? d.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' }) : 'Sin fecha',
+                    items: [],
+                };
+            }
+            grupos[key].items.push(i);
+        });
+        return Object.values(grupos).sort((a, b) => b.key.localeCompare(a.key)); // más reciente primero
+    })();
+
+    // Fila de lote reutilizable (inventario activo y histórico de cerrados).
+    const LoteFila = ({ item, cerrado }) => (
+        <div className={`rounded-xl px-3 py-2.5 ${t.itemRow} ${cerrado ? 'opacity-70' : ''}`}>
+            <button onClick={() => cerrado ? setTraceItem(item) : setAdjustItem(item)} className="w-full text-left">
+                <p className={`text-sm font-semibold leading-snug ${t.itemTitle}`}>{item.productoNombre}</p>
+                <p className={`text-xs leading-snug ${t.meta}`}>
+                    {item.presentacion}{item.lote && ` · Lote ${item.lote}`}
+                </p>
+                {item.fechaVencimiento && (
+                    <p className={`text-xs leading-snug ${t.meta}`}>Vence {item.fechaVencimiento}</p>
+                )}
+                {cerrado && item.almacenNombre && (
+                    <p className={`text-xs leading-snug ${t.meta}`}>{item.almacenNombre}</p>
+                )}
+            </button>
+            <div className={`flex items-center justify-between gap-2 mt-2 pt-2 border-t ${t.divider}`}>
+                <span className={`font-black text-base ${t.itemTitle}`}>
+                    {item.unidades} <span className="text-xs font-bold opacity-60">{item.unit || 'ud'}</span>
+                </span>
+                <div className="flex items-center gap-1.5">
+                    <button onClick={() => setTraceItem(item)} title="Pista del lote"
+                        className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.chip}`}>
+                        <History size={13} /> Pista
+                    </button>
+                    {!cerrado && canPicking && (
+                        <button onClick={() => setPickItem(item)}
+                            className={`px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.primaryBtn}`}>
+                            <PackageMinus size={13} /> Picking
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
     if (loading) {
         return (
             <div className="flex items-center justify-center h-full p-10">
@@ -395,6 +450,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                 {[
                     ['recepcion', `Recepción${pendientes.length ? ` (${pendientes.length})` : ''}`],
                     ['inventario', 'Inventario'],
+                    ['cerrados', 'Lotes cerrados'],
                 ].map(([id, label]) => (
                     <button key={id} onClick={() => setTab(id)}
                         className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
@@ -498,46 +554,9 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
 
                     {inventarioPorAlmacen.map(({ almacen, items }) => {
                         const isOpen = expanded[almacen.id] !== false; // default open
-                        // Lote ACTIVO = con existencia. Lote CERRADO = se agotó
-                        // (todo el stock salió por pickings): pasa al histórico,
-                        // ya no se edita, solo se consulta su pista.
-                        const activos  = items.filter(i => (Number(i.unidades) || 0) > 0);
-                        const cerrados = items.filter(i => (Number(i.unidades) || 0) <= 0);
+                        // Solo lotes ACTIVOS: los cerrados viven en su propia pestaña.
+                        const activos = items.filter(i => (Number(i.unidades) || 0) > 0);
                         const totalUnidades = activos.reduce((s, i) => s + (Number(i.unidades) || 0), 0);
-                        const verCerrados = !!showCerrados[almacen.id];
-
-                        const Fila = ({ item, cerrado }) => (
-                            <div className={`rounded-xl px-3 py-2.5 ${t.itemRow} ${cerrado ? 'opacity-60' : ''}`}>
-                                <button onClick={() => cerrado ? setTraceItem(item) : setAdjustItem(item)}
-                                    className="w-full text-left">
-                                    <p className={`text-sm font-semibold leading-snug ${t.itemTitle}`}>{item.productoNombre}</p>
-                                    <p className={`text-xs leading-snug ${t.meta}`}>
-                                        {item.presentacion}{item.lote && ` · Lote ${item.lote}`}
-                                    </p>
-                                    {item.fechaVencimiento && (
-                                        <p className={`text-xs leading-snug ${t.meta}`}>Vence {item.fechaVencimiento}</p>
-                                    )}
-                                </button>
-                                <div className={`flex items-center justify-between gap-2 mt-2 pt-2 border-t ${t.divider}`}>
-                                    <span className={`font-black text-base ${t.itemTitle}`}>
-                                        {item.unidades} <span className="text-xs font-bold opacity-60">{item.unit || 'ud'}</span>
-                                    </span>
-                                    <div className="flex items-center gap-1.5">
-                                        <button onClick={() => setTraceItem(item)} title="Pista del lote"
-                                            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.chip}`}>
-                                            <History size={13} /> Pista
-                                        </button>
-                                        {!cerrado && canPicking && (
-                                            <button onClick={() => setPickItem(item)}
-                                                className={`px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.primaryBtn}`}>
-                                                <PackageMinus size={13} /> Picking
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        );
-
                         return (
                             <div key={almacen.id} className={`rounded-xl overflow-hidden ${t.card}`}>
                                 <button
@@ -548,7 +567,6 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                                         <p className={`font-bold ${t.itemTitle}`}>{almacen.nombre}</p>
                                         <p className={`text-xs ${t.meta}`}>
                                             {activos.length} lote{activos.length !== 1 ? 's' : ''} activo{activos.length !== 1 ? 's' : ''} · {totalUnidades} unid.
-                                            {cerrados.length > 0 && ` · ${cerrados.length} cerrado${cerrados.length !== 1 ? 's' : ''}`}
                                         </p>
                                     </div>
                                     {isOpen ? <ChevronDown size={18} className={t.chevron} /> : <ChevronRight size={18} className={t.chevron} />}
@@ -557,26 +575,41 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                                     <div className={`border-t px-4 pb-4 pt-2 space-y-2 ${t.divider}`}>
                                         {activos.length === 0 ? (
                                             <p className={`text-sm py-2 ${t.emptyText}`}>Sin lotes activos. Recibe un despacho de planta para empezar.</p>
-                                        ) : activos.map(item => <Fila key={item.id} item={item} cerrado={false} />)}
+                                        ) : activos.map(item => <LoteFila key={item.id} item={item} cerrado={false} />)}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
 
-                                        {/* Histórico de lotes cerrados */}
-                                        {cerrados.length > 0 && (
-                                            <div className="pt-2">
-                                                <button
-                                                    onClick={() => setShowCerrados(p => ({ ...p, [almacen.id]: !verCerrados }))}
-                                                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold ${t.chip}`}
-                                                >
-                                                    <Archive size={14} />
-                                                    Lotes cerrados ({cerrados.length})
-                                                    {verCerrados ? <ChevronDown size={14} className="ml-auto" /> : <ChevronRight size={14} className="ml-auto" />}
-                                                </button>
-                                                {verCerrados && (
-                                                    <div className="space-y-2 mt-2">
-                                                        {cerrados.map(item => <Fila key={item.id} item={item} cerrado />)}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+            {/* ── Lotes cerrados (histórico por mes) ── */}
+            {tab === 'cerrados' && (
+                <div className="space-y-3">
+                    {cerradosPorMes.length === 0 ? (
+                        <div className="text-center py-16">
+                            <Archive size={32} className={`mx-auto mb-3 ${t.emptyIcon}`} />
+                            <p className={`text-sm ${t.emptyText}`}>Aún no hay lotes cerrados.</p>
+                            <p className={`text-xs mt-1 ${t.emptyText}`}>Un lote se cierra cuando su existencia llega a 0.</p>
+                        </div>
+                    ) : cerradosPorMes.map(({ key, label, items }) => {
+                        const abierto = !!showCerrados[key];
+                        return (
+                            <div key={key} className={`rounded-xl overflow-hidden ${t.card}`}>
+                                <button
+                                    onClick={() => setShowCerrados(p => ({ ...p, [key]: !abierto }))}
+                                    className="w-full flex items-center justify-between p-4 text-left"
+                                >
+                                    <div>
+                                        <p className={`font-bold capitalize ${t.itemTitle}`}>{label}</p>
+                                        <p className={`text-xs ${t.meta}`}>{items.length} lote{items.length !== 1 ? 's' : ''} cerrado{items.length !== 1 ? 's' : ''}</p>
+                                    </div>
+                                    {abierto ? <ChevronDown size={18} className={t.chevron} /> : <ChevronRight size={18} className={t.chevron} />}
+                                </button>
+                                {abierto && (
+                                    <div className={`border-t px-4 pb-4 pt-2 space-y-2 ${t.divider}`}>
+                                        {items.map(item => <LoteFila key={item.id} item={item} cerrado />)}
                                     </div>
                                 )}
                             </div>

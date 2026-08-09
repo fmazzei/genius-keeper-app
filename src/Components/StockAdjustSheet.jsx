@@ -54,10 +54,12 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
     const cerrado = current <= 0;
     const STEPS   = esKg ? [0.25, 1, 5] : [1, 10, 100];
 
-    // Sin permiso de edición: lote cerrado y no eres máster.
-    const soloLectura = cerrado && !isMaster;
+    // Los AJUSTES de inventario son EXCLUSIVOS del máster. El vendedor y el
+    // mercaderista solo hacen PICKINGS (salida declarada, con su propia hoja):
+    // aquí solo consultan el lote y, si hubo un error, notifican al máster.
+    const soloLectura = !isMaster;
 
-    const [modo, setModo]     = useState(isMaster ? 'entrada' : 'salida'); // entrada | salida | correccion
+    const [modo, setModo]     = useState('entrada'); // entrada | salida | correccion
     const [value, setValue]   = useState(0);
     const [step, setStep]     = useState(esKg ? 1 : 1);
     const [notas, setNotas]   = useState('');
@@ -125,11 +127,15 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                     </button>
 
                     {soloLectura ? (
-                        /* ── Lote cerrado y sin permiso: solo notificar ── */
+                        /* ── Sin permiso de ajuste: consultar y, si hubo error, notificar ── */
                         <>
                             <div className={`flex items-start gap-2 text-sm rounded-xl px-3 py-3 mb-3 ${t.notice}`}>
                                 <Lock size={16} className="shrink-0 mt-0.5" />
-                                <span><b>Lote cerrado.</b> Solo el máster puede darle entradas o corregirlo. Si hubo una equivocación, notifícalo y él ajusta el inventario.</span>
+                                <span>
+                                    {cerrado ? <><b>Lote cerrado.</b> </> : null}
+                                    Los ajustes de inventario los hace el <b>máster</b>. Tú registras las salidas con <b>Picking</b>.
+                                    Si hubo una equivocación, notifícalo y él lo corrige.
+                                </span>
                             </div>
                             <textarea value={notas} onChange={e => setNotas(e.target.value)}
                                 placeholder="¿Qué pasó? (obligatorio para notificar)" rows={3}
@@ -142,30 +148,26 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                         </>
                     ) : (
                         <>
-                            {/* Modos permitidos según el rol */}
+                            {/* Modos de ajuste — exclusivos del máster */}
                             <div className="flex gap-2 mb-4">
-                                {isMaster && (
-                                    <button type="button" onClick={() => switchMode('entrada')}
-                                        className={`flex-1 py-2.5 rounded-xl text-sm font-semibold ${modo === 'entrada' ? t.toggleEntrada : t.toggleInactive}`}>
-                                        + Entrada
-                                    </button>
-                                )}
+                                <button type="button" onClick={() => switchMode('entrada')}
+                                    className={`flex-1 py-2.5 rounded-xl text-sm font-semibold ${modo === 'entrada' ? t.toggleEntrada : t.toggleInactive}`}>
+                                    + Entrada
+                                </button>
                                 <button type="button" onClick={() => switchMode('salida')}
                                     className={`flex-1 py-2.5 rounded-xl text-sm font-semibold ${modo === 'salida' ? t.toggleSalida : t.toggleInactive}`}>
                                     − Descontar
                                 </button>
-                                {isMaster && (
-                                    <button type="button" onClick={() => switchMode('correccion')}
-                                        className={`flex-1 py-2.5 rounded-xl text-sm font-semibold ${modo === 'correccion' ? t.toggleCorregir : t.toggleInactive}`}>
-                                        Corregir
-                                    </button>
-                                )}
+                                <button type="button" onClick={() => switchMode('correccion')}
+                                    className={`flex-1 py-2.5 rounded-xl text-sm font-semibold ${modo === 'correccion' ? t.toggleCorregir : t.toggleInactive}`}>
+                                    Corregir
+                                </button>
                             </div>
 
-                            {!isMaster && (
+                            {cerrado && (
                                 <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2 mb-3 ${t.notice}`}>
                                     <ShieldAlert size={14} className="shrink-0 mt-0.5" />
-                                    <span>Solo puedes <b>descontar</b> con motivo. Las entradas y correcciones las hace el máster.</span>
+                                    <span>Este lote está <b>cerrado</b>. Solo tú (máster) puedes reabrirlo o corregirlo.</span>
                                 </div>
                             )}
 
@@ -202,14 +204,6 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                                 {saving ? <Loader size={18} className="animate-spin" /> : null}
                                 {saving ? 'Guardando…' : 'Guardar'}
                             </button>
-
-                            {!isMaster && (
-                                <button onClick={handleNotify} disabled={notifying || !notas.trim() || notified}
-                                    className={`w-full mt-2 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold disabled:opacity-50 ${t.ghostBtn}`}>
-                                    {notifying ? <Loader size={15} className="animate-spin" /> : <Send size={15} />}
-                                    {notified ? '¡Notificado!' : '¿Te equivocaste? Notificar al administrador'}
-                                </button>
-                            )}
                         </>
                     )}
                 </div>

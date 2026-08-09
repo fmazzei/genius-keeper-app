@@ -131,37 +131,40 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                         </div>
                     )}
 
-                    {/* UN SOLO número: lo que queda en Frimaca, bajando en vivo a
-                        medida que se carga lo retirado (arranca en el stock real). */}
-                    <div className={`rounded-xl px-3 py-3 mb-4 text-center ${t.card}`}>
-                        <p className={`text-[10px] font-bold uppercase tracking-wider ${t.meta}`}>Queda en Frimaca</p>
-                        <p className={`text-4xl font-black leading-tight ${restante <= 0 ? 'text-amber-500' : t.title}`}>
-                            {fmtQty(restante, unit)} <span className="text-base font-bold opacity-60">{unit}</span>
-                        </p>
-                        {cantidad > 0 && (
-                            <p className={`text-xs mt-0.5 ${t.meta}`}>de {fmtQty(stock, unit)} {unit} · retiras {fmtQty(cantidad, unit)}</p>
-                        )}
+                    {/* El stepper opera sobre lo que QUEDA: tocar (−) saca del
+                        almacén (que es lo que hace un picking) y (+) deshace. Antes
+                        había que pulsar (+) para restar inventario: ilógico. */}
+                    <p className={`text-[10px] font-bold uppercase tracking-wider text-center mb-1 ${t.meta}`}>Queda en Frimaca</p>
+                    <div className="flex items-center justify-center gap-3 mb-2">
+                        <button onClick={() => setCantidad(c => clamp(c + paso))} disabled={restante <= 0}
+                            title="Sacar del almacén"
+                            className={`w-16 h-16 rounded-xl flex items-center justify-center active:scale-95 disabled:opacity-40 ${t.stepBtn}`}>
+                            <Minus size={24} />
+                        </button>
+                        <div className={`w-32 text-center rounded-xl py-2 ${t.card}`}>
+                            <p className={`text-4xl font-black leading-tight ${restante <= 0 ? 'text-amber-500' : t.title}`}>
+                                {fmtQty(restante, unit)}
+                            </p>
+                            <p className={`text-xs font-bold opacity-60 ${t.title}`}>{unit}</p>
+                        </div>
+                        <button onClick={() => setCantidad(c => clamp(c - paso))} disabled={cantidad <= 0}
+                            title="Devolver"
+                            className={`w-16 h-16 rounded-xl flex items-center justify-center active:scale-95 disabled:opacity-40 ${t.stepBtn}`}>
+                            <Plus size={24} />
+                        </button>
                     </div>
 
-                    <p className={`text-xs font-semibold mb-1 ${t.label}`}>Cantidad retirada ({unit})</p>
-                    <div className="flex items-center justify-center gap-3 mb-2">
-                        <button onClick={() => setCantidad(c => clamp(c - paso))}
-                            className={`w-14 h-14 rounded-xl flex items-center justify-center active:scale-95 ${t.stepBtn}`}><Minus size={20} /></button>
-                        <input
-                            type="number" inputMode="decimal" step="1" min="0"
-                            value={cantidad}
-                            onChange={e => { const v = parseFloat(e.target.value); setCantidad(Number.isFinite(v) ? v : ''); }}
-                            onBlur={() => setCantidad(c => clamp(Number(c) || 0))}
-                            className={`w-32 text-center text-3xl font-black rounded-xl py-2 focus:outline-none ${t.input}`} />
-                        <button onClick={() => setCantidad(c => clamp(c + paso))}
-                            className={`w-14 h-14 rounded-xl flex items-center justify-center active:scale-95 ${t.stepBtn}`}><Plus size={20} /></button>
-                    </div>
+                    {/* Lo retirado, siempre a la vista */}
+                    <p className={`text-center text-sm mb-3 ${t.meta}`}>
+                        Retiras <span className={`font-black text-base ${cantidad > 0 ? 'text-emerald-500' : t.title}`}>{fmtQty(cantidad, unit)} {unit}</span>
+                        <span className="opacity-70"> de {fmtQty(stock, unit)} {unit}</span>
+                    </p>
 
                     {/* Paso rápido + "todo el lote" */}
                     <div className="flex gap-2 justify-center mb-4 flex-wrap">
                         {PASOS.map(p => (
                             <button key={p} onClick={() => setPaso(p)}
-                                className={`px-3 py-1 rounded-full text-xs font-bold ${paso === p ? t.chipOn : t.chipOff}`}>±{p}</button>
+                                className={`px-3 py-1 rounded-full text-xs font-bold ${paso === p ? t.chipOn : t.chipOff}`}>de {p} en {p}</button>
                         ))}
                         <button onClick={() => setCantidad(clamp(stock))}
                             className={`px-3 py-1 rounded-full text-xs font-bold ${cantidad === stock ? t.chipOn : t.chipOff}`}>Todo</button>
