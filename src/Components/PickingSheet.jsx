@@ -43,19 +43,22 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
     const stock = Number(item?.unidades) || 0;
     const unit  = item?.unit || 'ud';
     const esKg  = unit === 'kg';
-    // Granel (kg) admite fracciones; empacado va de unidad en unidad.
-    const PASOS = esKg ? [0.25, 0.5, 1] : [1, 5, 10];
+    // Se descuenta de 1 en 1: incluso en kg las presentaciones son bolsas de 1 kg
+    // (foodservice). Los atajos grandes solo ayudan cuando hay mucho stock.
+    const PASOS = esKg ? [1, 2, 5] : [1, 5, 10];
 
     const now = new Date();
-    const [cantidad, setCantidad] = useState(esKg ? Math.min(1, stock) : Math.min(1, stock));
-    const [paso, setPaso]   = useState(esKg ? 0.5 : 1);
+    // Arranca en 0 retirado: el número de arriba muestra lo que HAY, y baja a
+    // medida que el usuario carga lo que se lleva.
+    const [cantidad, setCantidad] = useState(0);
+    const [paso, setPaso]   = useState(1);
     const [fecha, setFecha] = useState(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
     const [hora, setHora]   = useState(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
     const [error, setError] = useState('');
 
     const clamp = (n) => {
         const v = esKg ? r2(n) : Math.round(n);
-        return Math.max(esKg ? 0.01 : 1, Math.min(stock, v));
+        return Math.max(0, Math.min(stock, v));
     };
     const restante = r2(Math.max(0, stock - cantidad));
 
@@ -128,18 +131,16 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                         </div>
                     )}
 
-                    {/* Stock y resultado, siempre visibles */}
-                    <div className={`rounded-xl px-3 py-2.5 mb-3 flex items-center justify-between ${t.card}`}>
-                        <div>
-                            <p className={`text-[10px] font-bold uppercase tracking-wider ${t.meta}`}>En Frimaca</p>
-                            <p className={`text-lg font-black ${t.title}`}>{fmtQty(stock, unit)} <span className="text-xs font-bold opacity-60">{unit}</span></p>
-                        </div>
-                        <div className="text-right">
-                            <p className={`text-[10px] font-bold uppercase tracking-wider ${t.meta}`}>Queda</p>
-                            <p className={`text-lg font-black ${restante <= 0 ? 'text-amber-500' : t.title}`}>
-                                {fmtQty(restante, unit)} <span className="text-xs font-bold opacity-60">{unit}</span>
-                            </p>
-                        </div>
+                    {/* UN SOLO número: lo que queda en Frimaca, bajando en vivo a
+                        medida que se carga lo retirado (arranca en el stock real). */}
+                    <div className={`rounded-xl px-3 py-3 mb-4 text-center ${t.card}`}>
+                        <p className={`text-[10px] font-bold uppercase tracking-wider ${t.meta}`}>Queda en Frimaca</p>
+                        <p className={`text-4xl font-black leading-tight ${restante <= 0 ? 'text-amber-500' : t.title}`}>
+                            {fmtQty(restante, unit)} <span className="text-base font-bold opacity-60">{unit}</span>
+                        </p>
+                        {cantidad > 0 && (
+                            <p className={`text-xs mt-0.5 ${t.meta}`}>de {fmtQty(stock, unit)} {unit} · retiras {fmtQty(cantidad, unit)}</p>
+                        )}
                     </div>
 
                     <p className={`text-xs font-semibold mb-1 ${t.label}`}>Cantidad retirada ({unit})</p>
@@ -147,7 +148,7 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                         <button onClick={() => setCantidad(c => clamp(c - paso))}
                             className={`w-14 h-14 rounded-xl flex items-center justify-center active:scale-95 ${t.stepBtn}`}><Minus size={20} /></button>
                         <input
-                            type="number" inputMode="decimal" step={esKg ? '0.25' : '1'}
+                            type="number" inputMode="decimal" step="1" min="0"
                             value={cantidad}
                             onChange={e => { const v = parseFloat(e.target.value); setCantidad(Number.isFinite(v) ? v : ''); }}
                             onBlur={() => setCantidad(c => clamp(Number(c) || 0))}
@@ -179,9 +180,10 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                         </div>
                     </div>
 
-                    <button onClick={guardar} disabled={stock <= 0}
+                    <button onClick={guardar} disabled={stock <= 0 || !(cantidad > 0)}
                         className={`w-full font-black py-4 rounded-xl text-base disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.99] ${t.save}`}>
-                        <CheckCircle size={18} /> Registrar picking
+                        <CheckCircle size={18} />
+                        {cantidad > 0 ? `Registrar picking · ${fmtQty(cantidad, unit)} ${unit}` : 'Registrar picking'}
                     </button>
                     <p className={`text-[11px] text-center mt-2 ${t.meta}`}>
                         Un picking confirmado no se puede revertir.
