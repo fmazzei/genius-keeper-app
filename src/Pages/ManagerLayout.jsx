@@ -16,6 +16,7 @@ import GerencialDashboard from './GerencialDashboard.jsx';
 import MarketTrendsView from './MarketTrendsView.jsx';
 import AlertsCenterView from './AlertsCenterView.jsx';
 import AdminPanel from './AdminPanel.jsx';
+import SeguimientoComercial from './SeguimientoComercial.jsx';
 import VentasView from './VentasView.jsx';
 import RendimientoComercialView from './RendimientoComercialView.jsx';
 import ReportesAnaquelView from './ReportesAnaquelView.jsx';
@@ -83,6 +84,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             alerts:           'Centro de Notificaciones',
             settings:         'Configuraciones',
             ventas:           'Ventas',
+            seguimiento:      'Seguimiento Comercial',
             planner:          'Centro de Planificación',
             reportesAnaquel:  'Reportes de Anaquel',
             exportes:         'Módulo de Exportes',
@@ -107,6 +109,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             <ul>
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
                 <NavItem icon={<Target size={24} />} text="Ventas" active={currentView === 'ventas'} onClick={() => setCurrentView('ventas')} />
+                <NavItem icon={<ClipboardList size={24} />} text="Seguimiento" active={currentView === 'seguimiento'} onClick={() => setCurrentView('seguimiento')} />
                 {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Rendimiento" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
                 {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
@@ -121,6 +124,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         const gerenciaNav = (
             <ul>
                 <NavItem icon={<Target size={24} />} text="Ventas" active={currentView === 'ventas'} onClick={() => setCurrentView('ventas')} />
+                <NavItem icon={<ClipboardList size={24} />} text="Seguimiento" active={currentView === 'seguimiento'} onClick={() => setCurrentView('seguimiento')} />
                 {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Rendimiento" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
@@ -158,6 +162,14 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <div className={currentView === 'ventas' ? 'block h-full' : 'hidden'}>
                     <VentasView {...commonProps} allAlerts={[]} />
                 </div>
+
+                {/* Seguimiento comercial — mismos indicadores que ve el vendedor
+                     en "Mi Semana", por vendedor o de toda la empresa. */}
+                {currentView === 'seguimiento' && (
+                    <div className="block h-full overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-slate-50">
+                        <SeguimientoComercial posList={posList} reports={reports} />
+                    </div>
+                )}
 
                 {/* Rendimiento comercial por vendedor */}
                 <div className={currentView === 'rendimiento' ? 'block h-full' : 'hidden'}>

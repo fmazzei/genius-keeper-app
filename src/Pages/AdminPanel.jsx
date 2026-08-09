@@ -5,7 +5,7 @@ import { db, functions, auth } from '../Firebase/config.js';
 import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search } from 'lucide-react';
+import { Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
@@ -21,6 +21,7 @@ import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 import EditPosModal from '../Components/EditPosModal.jsx';
 import VinculacionPdvZoho from '../Components/VinculacionPdvZoho.jsx';
+import SeguimientoComercial from './SeguimientoComercial.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
@@ -5051,6 +5052,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
         {
             id: 'comercial', label: 'Comercial', Icon: Store,
             items: [
+                { id: 'seguimiento', label: 'Seguimiento comercial', Icon: Radar, badge: 'Nuevo' },
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
                 { id: 'pdv_zoho',    label: 'PDV ↔ Cliente Zoho', Icon: Link2, badge: 'Nuevo' },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
@@ -5108,6 +5110,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             );
             case 'admin_mgmt':    return <AdministradoresManagement />;
             case 'mercaderistas': return <ReportersManagement />;
+            case 'seguimiento':    return <SeguimientoComercial posList={posList} reports={reports} />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'pdv_zoho':       return <VinculacionPdvZoho />;
             case 'sales_goals':    return <SalesGoalsManagement />;

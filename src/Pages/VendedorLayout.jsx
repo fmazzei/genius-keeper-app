@@ -31,7 +31,7 @@ import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
 import PullToRefresh from '@/Components/PullToRefresh.jsx';
-import { computeSeguidor } from '@/utils/seguidorSemanal.js';
+import { computeSeguidor, periodoRango } from '@/utils/seguidorSemanal.js';
 import VendedorAnaquelMap from '@/Components/VendedorAnaquelMap.jsx';
 import VendedorVentasCartera from '@/Components/VendedorVentasCartera.jsx';
 import { useKpiCalculations } from '@/hooks/useKpiCalculations';
@@ -1021,9 +1021,14 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
     const [pedidosDocs, setPedidosDocs]               = useState([]); // pedidos de su cartera (seguidor semanal)
 
-    // ── SEGUIDOR SEMANAL ──────────────────────────────────────────────────────
-    // Indicadores accionables de la semana (lunes–domingo) calculados con lo que
-    // ya está cargado: cartera, visitas, facturas y pedidos. Función pura.
+    // ── SEGUIDOR ──────────────────────────────────────────────────────────────
+    // Indicadores accionables del período (semana lunes–domingo por defecto, o
+    // mes), calculados con lo que ya está cargado: cartera, visitas, facturas y
+    // pedidos. Función pura. El histórico se reconstruye desde los datos crudos,
+    // así que se puede navegar hacia atrás sin haber guardado nada.
+    const [segGran, setSegGran]     = useState('semana');
+    const [segOffset, setSegOffset] = useState(0);
+    const segRango = useMemo(() => periodoRango(segGran, segOffset), [segGran, segOffset]);
     const seguidor = useMemo(() => computeSeguidor({
         cartera:  carteraPosList,
         visitas:  carteraVisitas,
@@ -1035,8 +1040,10 @@ const VendedorLayout = ({ user, onLogout }) => {
             pisoAnaquel: Number(commConfig.anaquelMinUnits) > 0 ? Number(commConfig.anaquelMinUnits) : 12,
             // La meta de visitas NO se configura aquí: sale de `pos.visitInterval`
             // (fuente única de frecuencia, la misma que consumen los KPIs).
+            desde: segRango.desde,
+            hasta: segRango.hasta,
         },
-    }), [carteraPosList, carteraVisitas, carteraFacturas, pedidosDocs, commConfig.anaquelMinUnits]);
+    }), [carteraPosList, carteraVisitas, carteraFacturas, pedidosDocs, commConfig.anaquelMinUnits, segRango]);
     const [reloadKey, setReloadKey]                   = useState(0);
 
     // ── Load alerts (last 24 h) ── filtrado de fecha en cliente (evita índice compuesto uid+createdAt)
@@ -1751,7 +1758,15 @@ const VendedorLayout = ({ user, onLogout }) => {
                         refreshing={loading}
                         className="snap-center shrink-0 w-full h-full flex flex-col overflow-y-auto p-4 pb-24"
                     >
-                        <SeguidorSemanalView data={seguidor} theme="dark" />
+                        <SeguidorSemanalView
+                            data={seguidor}
+                            theme="dark"
+                            periodoCtl={{
+                                gran: segGran, setGran: setSegGran,
+                                offset: segOffset, setOffset: setSegOffset,
+                                label: segRango.label, actual: segRango.actual,
+                            }}
+                        />
                     </PullToRefresh>
                     <div className="snap-center shrink-0 w-full h-full flex flex-col">
                         <HomeView

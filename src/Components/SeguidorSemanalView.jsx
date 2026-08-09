@@ -14,7 +14,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Flame, PackageMinus, AlertOctagon, CalendarClock, Receipt, Truck, Users,
-    ChevronRight, X, CheckCircle2, Link2Off, ChevronDown,
+    ChevronRight, ChevronLeft, X, CheckCircle2, Link2Off, ChevronDown,
 } from 'lucide-react';
 
 const THEME = {
@@ -46,7 +46,10 @@ const NIVEL = {
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
 const fmtDia = (d) => d ? d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' }) : '—';
 
-export default function SeguidorSemanalView({ data, theme = 'dark' }) {
+// periodoCtl (opcional): { gran, setGran, offset, setOffset, label, actual }
+// Permite navegar el histórico por semana o por mes. Sin él, la vista muestra
+// solo el período que le pasen (comportamiento original).
+export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl = null, titulo = null }) {
     const t = THEME[theme] || THEME.dark;
     const [detalle, setDetalle] = useState(null);
     const [verVerdes, setVerVerdes] = useState(false);
@@ -156,11 +159,16 @@ export default function SeguidorSemanalView({ data, theme = 'dark' }) {
             {/* ── Pulso de la semana + foco ── */}
             <div className={`rounded-2xl p-4 ${t.hero}`}>
                 <div className="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                        <p className={`text-[10px] font-extrabold uppercase tracking-[0.2em] ${t.soft}`}>Tu semana</p>
-                        <p className={`text-xl font-black leading-tight ${t.title}`}>
-                            {fmtDia(semana.desde)} — {fmtDia(new Date(semana.hasta.getTime() - 86400000))}
+                    <div className="min-w-0">
+                        <p className={`text-[10px] font-extrabold uppercase tracking-[0.2em] ${t.soft}`}>
+                            {titulo || (periodoCtl?.gran === 'mes' ? 'Mes' : 'Tu semana')}
                         </p>
+                        <p className={`text-xl font-black leading-tight capitalize ${t.title}`}>
+                            {periodoCtl?.label || `${fmtDia(semana.desde)} — ${fmtDia(new Date(semana.hasta.getTime() - 86400000))}`}
+                        </p>
+                        {semana.enCurso === false && (
+                            <p className={`text-[11px] ${t.soft}`}>Cerrado · foto al final del período</p>
+                        )}
                     </div>
                     {sinFacturar.activadosSemana > 0 && (
                         <span className={`text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${t.okBox} text-emerald-400`}>
@@ -168,6 +176,36 @@ export default function SeguidorSemanalView({ data, theme = 'dark' }) {
                         </span>
                     )}
                 </div>
+
+                {/* Navegación del histórico: semana/mes + anterior/siguiente */}
+                {periodoCtl && (
+                    <div className="flex items-center gap-2 mb-3">
+                        <div className={`flex rounded-lg p-0.5 ${t.bar}`}>
+                            {[['semana', 'Semana'], ['mes', 'Mes']].map(([g, lbl]) => (
+                                <button key={g} onClick={() => { periodoCtl.setGran(g); periodoCtl.setOffset(0); }}
+                                    className={`px-3 py-1 rounded-md text-xs font-bold transition-colors ${
+                                        periodoCtl.gran === g ? 'bg-emerald-600 text-white' : t.meta
+                                    }`}>{lbl}</button>
+                            ))}
+                        </div>
+                        <div className="ml-auto flex items-center gap-1">
+                            <button onClick={() => periodoCtl.setOffset(periodoCtl.offset - 1)}
+                                aria-label="Período anterior"
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center ${t.bar} ${t.title}`}>
+                                <ChevronLeft size={16} />
+                            </button>
+                            <button onClick={() => periodoCtl.setOffset(Math.min(0, periodoCtl.offset + 1))}
+                                disabled={periodoCtl.offset >= 0} aria-label="Período siguiente"
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 ${t.bar} ${t.title}`}>
+                                <ChevronRight size={16} />
+                            </button>
+                            {periodoCtl.offset !== 0 && (
+                                <button onClick={() => periodoCtl.setOffset(0)}
+                                    className={`px-2 h-8 rounded-lg text-xs font-bold ${t.chip}`}>Hoy</button>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Semáforo compacto: un segmento por indicador, ordenado por urgencia */}
                 <div className="flex gap-1 mb-2">
