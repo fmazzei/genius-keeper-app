@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp, CheckCircle, Eye, Droplets, BarChart3, Package, Info, Star, ChevronDown } from 'lucide-react';
 import { VENDOR_KPI_MAP } from '@/config/vendorKpiRegistry.js';
+import PullToRefresh from '@/Components/PullToRefresh.jsx';
 import VendedorKpiDetalle from '@/Components/VendedorKpiDetalle.jsx';
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
@@ -86,7 +87,7 @@ function buildKpi(id, ctx) {
     }
 }
 
-export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, execKpis, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas }) {
+export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, execKpis, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas, onRefresh, refreshing = false }) {
     const ctx = { stats, vendedor, estadoActual, tier, pct, execKpis };
     const [detalle, setDetalle] = useState(null); // { id, def, kpi } del KPI expandido
     const [openCats, setOpenCats] = useState({}); // categorías colapsadas por defecto
@@ -109,7 +110,8 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                             .filter(x => x.def && x.kpi);
 
     return (
-        <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
+        <PullToRefresh onRefresh={onRefresh} refreshing={refreshing}
+            className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-xl font-black text-white">Tus indicadores</h2>
@@ -227,6 +229,6 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
             {detalle && (
                 <VendedorKpiDetalle id={detalle.id} def={detalle.def} kpi={detalle.kpi} ctx={ctx} onClose={() => setDetalle(null)} />
             )}
-        </div>
+        </PullToRefresh>
     );
 }

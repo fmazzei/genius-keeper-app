@@ -30,6 +30,7 @@ import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } fr
 import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
+import PullToRefresh from '@/Components/PullToRefresh.jsx';
 import { computeSeguidor } from '@/utils/seguidorSemanal.js';
 import VendedorAnaquelMap from '@/Components/VendedorAnaquelMap.jsx';
 import VendedorVentasCartera from '@/Components/VendedorVentasCartera.jsx';
@@ -384,7 +385,7 @@ function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
     );
 }
 
-function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, estadoActual, ultimoCerrado, loadError, onRetry }) {
+function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, estadoActual, ultimoCerrado, loadError, onRetry, onRefresh }) {
     const [showMetaModal, setShowMetaModal] = useState(false);
     const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 
@@ -447,7 +448,8 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
     ].filter(Boolean);
 
     return (
-        <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
+        <PullToRefresh onRefresh={onRefresh} refreshing={loading}
+            className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
 
             {/* ── Saludo ── */}
             <div className="pt-2">
@@ -790,7 +792,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                     </p>
                 </div>
             )}
-        </div>
+        </PullToRefresh>
     );
 }
 
@@ -1742,10 +1744,15 @@ const VendedorLayout = ({ user, onLogout }) => {
                      style={{ scrollbarWidth: 'none' }}>
                     {/* Página 0 — SEGUIDOR SEMANAL: es lo primero que ve al abrir.
                         Los números que deben bajar a cero esta semana, ordenados por
-                        urgencia, + la cobertura del mercaderista que él supervisa. */}
-                    <div className="snap-center shrink-0 w-full h-full flex flex-col overflow-y-auto p-4 pb-24">
+                        urgencia, + la cobertura del mercaderista que él supervisa.
+                        Se recarga halando hacia abajo (ya no hay botón en el header). */}
+                    <PullToRefresh
+                        onRefresh={handleRefresh}
+                        refreshing={loading}
+                        className="snap-center shrink-0 w-full h-full flex flex-col overflow-y-auto p-4 pb-24"
+                    >
                         <SeguidorSemanalView data={seguidor} theme="dark" />
-                    </div>
+                    </PullToRefresh>
                     <div className="snap-center shrink-0 w-full h-full flex flex-col">
                         <HomeView
                             vendedor={vendedor}
@@ -1758,6 +1765,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                             ultimoCerrado={estados.find(e => e.cerrado) || null}
                             loadError={loadError}
                             onRetry={() => setReloadKey(k => k + 1)}
+                            onRefresh={handleRefresh}
                         />
                     </div>
                     <div className="snap-center shrink-0 w-full h-full flex flex-col">
@@ -1774,6 +1782,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                             onOpenAnaquelMap={() => setShowAnaquelMap(true)}
                             hasVentasData={carteraFacturas.length > 0}
                             onOpenVentas={() => setShowVentas(true)}
+                            onRefresh={handleRefresh}
+                            refreshing={loading}
                         />
                     </div>
                 </div>
@@ -1804,15 +1814,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                     <span className="text-white font-bold text-sm">GK Vendedor</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                    {/* Refresh global — actualiza todo el perfil del vendedor en vivo */}
-                    <button
-                        onClick={handleRefresh}
-                        disabled={loading}
-                        className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center disabled:opacity-60"
-                        aria-label="Actualizar"
-                    >
-                        <RefreshCw size={16} className={`text-slate-300 ${loading ? 'animate-spin' : ''}`} />
-                    </button>
+                    {/* El botón de recarga se retiró para ganar espacio en la barra:
+                        ahora se actualiza HALANDO hacia abajo en cualquiera de las
+                        tres vistas del Home (ver PullToRefresh). */}
                     {/* Estado de Cuenta — píldora glanceable: tu comisión del período en curso */}
                     <button
                         onClick={() => navigate('estado_cuenta')}
