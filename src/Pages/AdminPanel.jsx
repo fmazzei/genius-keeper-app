@@ -309,9 +309,14 @@ const PosManagement = ({ posList = [], loading }) => {
 
     const handleSaveChanges = async () => {
         setIsSaving(true);
-        const batch = writeBatch(db);
-        let changesCount = 0;
+        // Se juntan los cambios y se escriben en tandas de 400 (el tope de un
+        // batch de Firestore es 500). Se usa `set(..., {merge:true})` en vez de
+        // `update`: `update` REVIENTA toda la tanda si algún documento ya no
+        // existe (p.ej. un PDV borrado en otra sesión o datos de simulación),
+        // y ese fallo global era el "Hubo un error al guardar los cambios".
+        const cambios = [];
         editablePos.forEach(pos => {
+            if (!pos?.id || typeof pos.id !== 'string') return;
             if (pos.id.startsWith('sim-pos-') || pos.id.startsWith('real-pos-')) return;
             if (pos.canal === 'foodservice') return; // foodservice: sin visitas, no se toca aquí
             const originalPos = posList.find(p => p.id === pos.id);
@@ -323,23 +328,33 @@ const PosManagement = ({ posList = [], loading }) => {
             const previo = Number(originalPos?.visitInterval) || 0;
             const activoIncoherente = originalPos && originalPos.active !== (previo > 0);
             if (originalPos && (previo !== nuevo || activoIncoherente)) {
-                const posRef = doc(db, 'pos', pos.id);
-                batch.update(posRef, { visitInterval: nuevo, active: nuevo > 0 });
-                changesCount++;
+                cambios.push({ id: pos.id, visitInterval: nuevo, active: nuevo > 0 });
             }
         });
-        if (changesCount === 0) {
+
+        if (cambios.length === 0) {
             alert("No hay cambios que guardar.");
             setIsSaving(false);
             setChangesMade(false);
             return;
         }
+
         try {
-            await batch.commit();
+            for (let i = 0; i < cambios.length; i += 400) {
+                const tanda = cambios.slice(i, i + 400);
+                const batch = writeBatch(db);
+                tanda.forEach(c => {
+                    batch.set(doc(db, 'pos', c.id), { visitInterval: c.visitInterval, active: c.active }, { merge: true });
+                });
+                await batch.commit();
+            }
             setChangesMade(false);
-            alert(`${changesCount} Puntos de Venta actualizados.`);
+            alert(`${cambios.length} Puntos de Venta actualizados.`);
         } catch (error) {
-            alert("Hubo un error al guardar los cambios.");
+            console.error('Guardar intervalos de visita:', error);
+            // Mostrar la causa real: un mensaje genérico impedía diagnosticar
+            // (permisos, documento inexistente, red…).
+            alert(`No se pudieron guardar los cambios.\n\n${error?.code || ''} ${error?.message || error}`);
         } finally {
             setIsSaving(false);
         }
