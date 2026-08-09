@@ -59,12 +59,16 @@ async function reverseGeocode(lat, lng) {
 
 // ─── Individual PDV form ──────────────────────────────────────────────────────
 
-const IndividualForm = ({ onClose }) => {
+const IndividualForm = ({ onClose, canEditZoho = false }) => {
     const [name, setName] = useState('');
     const [city, setCity] = useState('');
     const [zone, setZone] = useState('');
     const [canal, setCanal] = useState('retail');
     const [razonSocialZoho, setRazonSocialZoho] = useState('');
+    // Frecuencia de visita en DÍAS. Es la fuente única que consumen el
+    // Cumplimiento de visitas, la cobertura del mercaderista, las alertas de
+    // visita vencida y el radar del vendedor. 0 = PDV inactivo (sin visitas).
+    const [visitInterval, setVisitInterval] = useState(7);
 
     // Search
     const [query, setQuery]         = useState('');
@@ -188,7 +192,7 @@ const IndividualForm = ({ onClose }) => {
                 canal,
                 razonSocialZoho: razonSocialZoho.trim(),
                 sinMerchandising: esFood,          // foodservice: fuera de rutas
-                visitInterval: esFood ? 0 : 7,
+                visitInterval: esFood ? 0 : (parseInt(visitInterval, 10) || 0),
                 active:       true,
                 tipoDespacho: 'directo',
                 createdAt:    serverTimestamp(),
@@ -266,6 +270,37 @@ const IndividualForm = ({ onClose }) => {
                         máster/administración (canEditZoho). El mercaderista y el
                         vendedor crean PDV desde PosList sin ver este campo; se
                         vincula después desde "PDV ↔ Cliente Zoho". */}
+                    {/* Frecuencia de visita — fuente única que consumen el
+                        Cumplimiento de visitas, la cobertura del mercaderista, las
+                        alertas y el radar. Foodservice no lleva visitas. */}
+                    {canal !== 'foodservice' && (
+                        <div className="mt-3">
+                            <p className="text-sm font-medium text-slate-700">Frecuencia de visita</p>
+                            <p className="text-[11px] text-slate-400 mb-1.5">Cada cuántos días debe visitarlo el mercaderista.</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                                {[3, 7, 14, 30].map(d => (
+                                    <button key={d} type="button" onClick={() => setVisitInterval(d)}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                                            Number(visitInterval) === d
+                                                ? 'bg-brand-blue text-white border-brand-blue'
+                                                : 'bg-white text-slate-600 border-slate-300'
+                                        }`}>
+                                        {d} días
+                                    </button>
+                                ))}
+                                <div className="flex items-center gap-1">
+                                    <input type="number" min="0" value={visitInterval}
+                                        onChange={e => setVisitInterval(e.target.value)}
+                                        className="w-16 text-center px-2 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                                    <span className="text-xs text-slate-500">días</span>
+                                </div>
+                            </div>
+                            {parseInt(visitInterval, 10) === 0 && (
+                                <p className="text-[11px] text-red-600 mt-1">Con 0 días el PDV queda INACTIVO (fuera de rutas y KPIs).</p>
+                            )}
+                        </div>
+                    )}
+
                     {canEditZoho && (
                         <>
                             <p className="text-[11px] text-slate-400 mt-2">
@@ -604,12 +639,15 @@ const BranchCard = ({ branch, index, chainCity, onFieldChange, onLocationChange,
 
 // ─── Chain form ───────────────────────────────────────────────────────────────
 
-const ChainForm = ({ onClose }) => {
+const ChainForm = ({ onClose, canEditZoho = false }) => {
     const [chainName, setChainName] = useState('');
     const [chainCity, setChainCity] = useState('');
     const [branches, setBranches]   = useState([{ name: '', zone: '', address: '', coordinates: null, gpsStatus: 'pending' }]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState('');
+    // Frecuencia de visita en días — se aplica a TODAS las sucursales de la cadena
+    // (luego se ajusta por sucursal desde Puntos de Venta o la ficha del PDV).
+    const [visitInterval, setVisitInterval] = useState(7);
 
     // Chain autocomplete
     const [chainSuggestions, setChainSuggestions] = useState([]);
@@ -692,7 +730,7 @@ const ChainForm = ({ onClose }) => {
                 address:       branch.address,
                 coordinates:   branch.coordinates,
                 gpsStatus:     branch.gpsStatus,
-                visitInterval: 7,
+                visitInterval: parseInt(visitInterval, 10) || 0,
                 active:       true,
                 tipoDespacho: 'centralizado',
                 isChainHead:  index === 0,
@@ -751,6 +789,31 @@ const ChainForm = ({ onClose }) => {
                 placeholder="Ciudad (Ej: Caracas) *"
                 className="w-full px-3 py-3 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
                 required />
+
+            {/* Frecuencia de visita para todas las sucursales de la cadena.
+                Alimenta Cumplimiento de visitas, cobertura, alertas y radar. */}
+            <div>
+                <p className="text-sm font-medium text-slate-700">Frecuencia de visita</p>
+                <p className="text-[11px] text-slate-400 mb-1.5">Se aplica a todas las sucursales; luego se ajusta una por una.</p>
+                <div className="flex flex-wrap items-center gap-2">
+                    {[3, 7, 14, 30].map(d => (
+                        <button key={d} type="button" onClick={() => setVisitInterval(d)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                                Number(visitInterval) === d
+                                    ? 'bg-brand-blue text-white border-brand-blue'
+                                    : 'bg-white text-slate-600 border-slate-300'
+                            }`}>
+                            {d} días
+                        </button>
+                    ))}
+                    <div className="flex items-center gap-1">
+                        <input type="number" min="0" value={visitInterval}
+                            onChange={e => setVisitInterval(e.target.value)}
+                            className="w-16 text-center px-2 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-blue" />
+                        <span className="text-xs text-slate-500">días</span>
+                    </div>
+                </div>
+            </div>
 
             <h3 className="font-semibold text-slate-800 pt-1">Sucursales</h3>
             <div className="space-y-3">
@@ -814,8 +877,8 @@ const AddPosForm = ({ onClose, canEditZoho = false }) => {
             </div>
 
             {posType === 'individual'
-                ? <IndividualForm onClose={onClose} />
-                : <ChainForm onClose={onClose} />
+                ? <IndividualForm onClose={onClose} canEditZoho={canEditZoho} />
+                : <ChainForm onClose={onClose} canEditZoho={canEditZoho} />
             }
         </div>
     );
