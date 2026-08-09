@@ -162,6 +162,11 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
     const ultVisita  = ultimaVisitaPorPos(visitas, corte);
     const ultFactura = ultimaFacturaPorPos(pdvActivos, facturas, corte);
 
+    // Fecha de ingreso del vendedor: permite separar lo HEREDADO (venía frío o
+    // vencido antes de que él entrara) de lo que ocurrió bajo su gestión. Sin
+    // ella, todo se cuenta como propio.
+    const ingreso = cfg.ingreso ? toDate(cfg.ingreso) : null;
+
     // ── 1. PDV sin facturar (activación de cartera) — el principal ──
     const sinFacturarItems = [];
     let sinVincular = 0;
@@ -170,10 +175,17 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
         if (!info?.vinculado) { sinVincular++; return; }
         const dias = info.ultima ? Math.floor((corte - info.ultima) / DIA) : null;
         if (dias === null || dias >= cfg.diasSinFacturar) {
-            sinFacturarItems.push({ id: p.id, nombre: p.name || p.nombre || '—', zona: p.zone || p.zona || '', dias, nunca: dias === null });
+            // Heredado = nunca compró, o su última compra es ANTERIOR al ingreso
+            // del vendedor: llegó frío, no se enfrió con él.
+            const heredado = !!ingreso && (!info.ultima || info.ultima < ingreso);
+            sinFacturarItems.push({
+                id: p.id, nombre: p.name || p.nombre || '—', zona: p.zone || p.zona || '',
+                dias, nunca: dias === null, heredado,
+            });
         }
     });
     sinFacturarItems.sort((a, b) => (b.dias ?? 9999) - (a.dias ?? 9999));
+    const sinFacturarHeredados = sinFacturarItems.filter(i => i.heredado).length;
 
     // Activados EN EL PERÍODO: facturaron dentro de la ventana.
     const activadosSemana = pdvActivos.filter(p => {
@@ -231,13 +243,22 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
     const vencidasItems = (facturas || [])
         .filter(abiertaAlCorte)
         .filter(f => { const t = toDate(f.vencimiento); return t && t < corte; })
-        .map(f => ({
-            id: f.numero || f.id, cliente: f.razonSocialCanonica || f.clienteName || '—',
-            monto: Number(f.balance != null ? f.balance : f.monto) || 0,
-            diasVencida: Math.floor((corte - toDate(f.vencimiento)) / DIA),
-        }))
+        .map(f => {
+            const fFact = toDate(f.fecha);
+            // Heredada: emitida antes del ingreso del vendedor (misma noción que
+            // `recuperada` del motor de comisiones; se respeta si ya viene marcada).
+            const heredada = f.recuperada === true || (!!ingreso && !!fFact && fFact < ingreso);
+            return {
+                id: f.numero || f.id, cliente: f.razonSocialCanonica || f.clienteName || '—',
+                monto: Number(f.balance != null ? f.balance : f.monto) || 0,
+                diasVencida: Math.floor((corte - toDate(f.vencimiento)) / DIA),
+                heredada,
+            };
+        })
         .sort((a, b) => b.diasVencida - a.diasVencida);
-    const montoVencido = vencidasItems.reduce((s, f) => s + f.monto, 0);
+    const montoVencido    = vencidasItems.reduce((s, f) => s + f.monto, 0);
+    const heredadasItems  = vencidasItems.filter(f => f.heredada);
+    const montoHeredado   = heredadasItems.reduce((s, f) => s + f.monto, 0);
 
     // ── 6. Despachos por realizar (pedidos tomados sin despachar) ──
     const despachoItems = (pedidos || [])
@@ -279,11 +300,20 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
     return {
         semana: { desde, hasta, hoy: now, corte, enCurso },
         cfg,
-        sinFacturar:  { count: sinFacturarItems.length, items: sinFacturarItems, sinVincular, activadosSemana },
+        sinFacturar:  {
+            count: sinFacturarItems.length, items: sinFacturarItems, sinVincular, activadosSemana,
+            heredados: sinFacturarHeredados,
+            propios: sinFacturarItems.length - sinFacturarHeredados,
+        },
         anaquelBajo:  { count: anaquelBajoItems.length, items: anaquelBajoItems, piso: cfg.pisoAnaquel },
         quiebres:     { count: quiebreItems.length, items: quiebreItems },
         porVencer:    { count: porVencerItems.length, items: porVencerItems },
-        cobranza:     { count: vencidasItems.length, items: vencidasItems, monto: montoVencido },
+        cobranza:     {
+            count: vencidasItems.length, items: vencidasItems, monto: montoVencido,
+            heredadas: heredadasItems.length, montoHeredado,
+            propias: vencidasItems.length - heredadasItems.length,
+            montoPropio: montoVencido - montoHeredado,
+        },
         despachos:    { count: despachoItems.length, items: despachoItems },
         mercaderista: {
             hechas, meta: metaVisitas,
@@ -294,5 +324,6 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
             items: pdvSinCubrirItems,
         },
         cobertura: { vinculados: pdvActivos.length - sinVincular, total: pdvActivos.length, sinVincular },
+        ingreso,
     };
 }

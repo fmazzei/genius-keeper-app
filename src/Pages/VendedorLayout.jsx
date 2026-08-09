@@ -1042,8 +1042,10 @@ const VendedorLayout = ({ user, onLogout }) => {
             // (fuente única de frecuencia, la misma que consumen los KPIs).
             desde: segRango.desde,
             hasta: segRango.hasta,
+            // Separa lo heredado (frío o vencido antes de su ingreso) de su gestión.
+            ingreso: vendedor.ingreso || null,
         },
-    }), [carteraPosList, carteraVisitas, carteraFacturas, pedidosDocs, commConfig.anaquelMinUnits, segRango]);
+    }), [carteraPosList, carteraVisitas, carteraFacturas, pedidosDocs, commConfig.anaquelMinUnits, segRango, vendedor.ingreso]);
     const [reloadKey, setReloadKey]                   = useState(0);
 
     // ── Load alerts (last 24 h) ── filtrado de fecha en cliente (evita índice compuesto uid+createdAt)

@@ -81,14 +81,19 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
         const fact = esTodos ? facturas : facturas.filter(f => f.vendedorId === sel);
         const ped  = esTodos ? pedidos  : pedidos.filter(p => p.vendedorId === sel);
 
+        // Fecha de ingreso del vendedor: separa lo HEREDADO (venía frío o vencido
+        // antes de que entrara) de lo ocurrido bajo su gestión. En modo "toda la
+        // empresa" no aplica: no hay un único responsable.
+        const v = esTodos ? null : vendedores.find(x => x.id === sel);
         return computeSeguidor({
             cartera: pdv, visitas, facturas: fact, pedidos: ped,
             opts: {
                 pisoAnaquel: DEFAULT_COMMISSION_CONFIG.anaquelMinUnits || 12,
                 desde: rango.desde, hasta: rango.hasta,
+                ingreso: v?.fechaIngreso || null,
             },
         });
-    }, [sel, posList, reports, facturas, pedidos, cartera, rango]);
+    }, [sel, posList, reports, facturas, pedidos, cartera, rango, vendedores]);
 
     const nombreSel = sel === TODOS
         ? 'Toda la empresa'

@@ -68,9 +68,15 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
             valor: sinFacturar.count,
             nivel: sinFacturar.count >= 10 ? 3 : sinFacturar.count >= 4 ? 2 : sinFacturar.count > 0 ? 1 : 0,
             accion: 'Activa la cartera: llama o visita',
+            desglose: sinFacturar.heredados > 0
+                ? `${sinFacturar.heredados} ya venían fríos · ${sinFacturar.propios} de su gestión`
+                : null,
             onClick: () => abrir('PDV sin facturar', 'Del más frío al más reciente', sinFacturar.items,
                 (i) => (<>
-                    <p className="font-bold text-sm">{i.nombre}</p>
+                    <p className="font-bold text-sm">
+                        {i.nombre}
+                        {i.heredado && <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-400 align-middle">Heredado</span>}
+                    </p>
                     <p className="text-xs opacity-70">{i.zona}</p>
                     <span className={`text-xs font-black ${i.nunca || i.dias >= 15 ? 'text-red-500' : 'text-amber-500'}`}>
                         {i.nunca ? 'Nunca ha facturado' : `${i.dias} días`}
@@ -94,9 +100,15 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
             valor: cobranza.count, sufijo: cobranza.count > 0 ? money(cobranza.monto) : null,
             nivel: cobranza.count === 0 ? 0 : peorMora > 30 ? 3 : 2,
             accion: peorMora > 30 ? `Hay mora de ${peorMora} días: cobra hoy` : 'Cobra antes de que envejezca',
+            desglose: cobranza.heredadas > 0
+                ? `${cobranza.heredadas} heredadas (${money(cobranza.montoHeredado)}) · ${cobranza.propias} suyas (${money(cobranza.montoPropio)})`
+                : null,
             onClick: () => abrir('Facturas vencidas', `${money(cobranza.monto)} por cobrar`, cobranza.items,
                 (i) => (<>
-                    <p className="font-bold text-sm">{i.cliente}</p>
+                    <p className="font-bold text-sm">
+                        {i.cliente}
+                        {i.heredada && <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-400 align-middle">Heredada</span>}
+                    </p>
                     <p className="text-xs opacity-70">{i.id}</p>
                     <span className="text-xs font-black text-red-500">{money(i.monto)} · {i.diasVencida} d</span>
                 </>)),
@@ -264,6 +276,9 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                                         <div className="flex-1 min-w-0">
                                             <p className={`text-sm font-bold leading-snug ${t.title}`}>{l.label}</p>
                                             <p className={`text-xs leading-snug ${t.meta}`}>{l.sufijo ? `${l.sufijo} · ` : ''}{l.accion}</p>
+                                            {l.desglose && (
+                                                <p className={`text-[11px] leading-snug mt-0.5 ${t.soft}`}>{l.desglose}</p>
+                                            )}
                                         </div>
                                         <ChevronRight size={16} className={`shrink-0 ${t.meta}`} />
                                     </div>
