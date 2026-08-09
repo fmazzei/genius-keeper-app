@@ -65,9 +65,44 @@ mercaderista (`AppShell`/`MerchandiserHub` → "Almacén Frimaca", light, canPic
 máster/gerencia (`AdminPanel` → Almacén Comercial, light, canPicking). `AlmacenComercialPage`
 acepta `actor={{id,nombre,role}}` (mercaderista pasa el reporter) y `canPicking`.
 
-**Pendiente/futuro:** push FCM dirigido al vendedor responsable del picking (hoy es
-alerta in-app leyendo `pickings`); asignar "vendedor responsable" por almacén;
-validar tamaño de doc si una recepción trae muchas fotos de novedad.
+### Lotes cerrados, pista del lote y candados (2026-08) ✅
+
+- **Lote CERRADO = 0 unidades.** Sale de la lista activa y pasa a un desplegable
+  **"Lotes cerrados (N)"** por almacén. No se edita: al tocarlo abre su PISTA.
+  La recepción NUNCA reabre un lote cerrado (`RecepcionFrimacaSheet` solo suma a
+  lotes con `unidades > 0`; si no, crea un registro nuevo).
+- **Pista del lote** (`LoteTrazabilidadModal.jsx`): línea de tiempo con despacho
+  desde Barinas → recepción en Frimaca (recibido vs enviado, novedad, foto de
+  planilla) → cada picking/ajuste con fecha, hora y **quién**. Máster/gerencia ven
+  además la cadena de Kroma (leche → producción → envasado → movimientos), leyendo
+  `kroma_production_logs`/`kroma_inventory_pt`/`kroma_warehouse_movements` — sus
+  reglas se abrieron a `isAdmin()` **solo en lectura**. Todas las consultas son de
+  igualdad simple (`where('lote','==',…)`): sin índices compuestos.
+- **Permisos (candados):** solo el **máster** da Entradas / Corrige / toca lotes
+  cerrados. El resto (vendedor, mercaderista, gerencia) **solo descuenta** con
+  motivo obligatorio. Un **picking confirmado no se revierte** desde la app.
+  Reforzado en reglas: `inventario_comercial` update exige `isMaster() ||
+  resource.data.unidades > 0`; `pickings` update/delete = solo máster;
+  `inventario_movimientos` sigue inmutable.
+- **"Notificar al administrador"**: colección `ajustes_solicitudes` (motivo +
+  lote + solicitante). Trigger `onAjusteSolicitado` (`triggers.js`) manda **push
+  al máster** vía `notifyByDestinations(['master'])`; además el máster ve un banner
+  con las pendientes en Almacén Comercial y las marca "Listo".
+- **Velocidad del picking**: la hoja se cierra al instante (parche local optimista
+  `patchItem`) y las 3 escrituras van en **una tanda paralela** en segundo plano
+  (antes: 3 escrituras secuenciales + `load()` completo del almacén). Si falla,
+  banner de error + recarga.
+- **Granel/foodservice (kg)**: `PickingSheet`/`StockAdjustSheet` detectan `unit==='kg'`
+  → pasos 0.25/0.5/1, entrada decimal, atajo "Todo". Layout de ítem y de hoja
+  reescrito (título en línea propia; ya no se trunca el nombre ni se amontona
+  "Sin envasar · Lote … · Vence …").
+
+**Pendiente/futuro:** enlazar **picking → pedido/despacho al PDV** (el mercaderista
+ya declara el despacho en el paso 2 del reporte de visita: se puede conciliar
+"retiró N / entregó M en los PDV de hoy / queda N−M" sin pedirle ningún reporte
+extra); push FCM dirigido al vendedor responsable del picking (hoy es alerta
+in-app leyendo `pickings`); asignar "vendedor responsable" por almacén; validar
+tamaño de doc si una recepción trae muchas fotos de novedad.
 
 ---
 

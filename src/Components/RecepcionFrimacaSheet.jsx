@@ -102,11 +102,15 @@ export default function RecepcionFrimacaSheet({ despacho, almacenes = [], invent
                     if (recibida <= 0) continue;
                     const lote = l.lote || '';
                     const venc = l.fechaVencimiento || '';
+                    // Solo se suma a un lote VIGENTE. Un lote CERRADO (0 unidades)
+                    // se queda cerrado: mercancía nueva abre un registro nuevo,
+                    // así el histórico y su pista no se "reabren".
                     const existing = inventario.find(inv =>
                         inv.almacenId === almacenId &&
                         norm(inv.productoNombre) === norm(l.productoNombre) &&
                         (inv.lote || '') === lote &&
-                        (inv.fechaVencimiento || '') === venc
+                        (inv.fechaVencimiento || '') === venc &&
+                        (Number(inv.unidades) || 0) > 0
                     );
                     const antes = existing ? (existing.unidades || 0) : 0;
                     const despues = antes + recibida;

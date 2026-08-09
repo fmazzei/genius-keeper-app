@@ -348,8 +348,16 @@ service cloud.firestore {
     }
     match /inventario_comercial/{itemId} {
       // Merchandiser incluido: recibe el camión en Caracas y hace pickings (retiros).
-      allow read:  if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
-      allow write: if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+      allow read:   if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+      allow create: if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
+      allow delete: if isMaster();
+      // LOTE CERRADO (unidades == 0): solo el máster puede volver a moverlo. Para
+      // el resto, un lote agotado es histórico — ni entradas ni correcciones.
+      // (El resto de los updates —pickings, recepción, descuentos— siguen libres
+      // para comercial/merchandiser; el libro de movimientos deja el rastro.)
+      allow update: if isAuthenticated()
+        && (isKromaAccess() || isComercialAccess() || isMerchandiser())
+        && (isMaster() || resource.data.unidades > 0);
     }
     // Libro de movimientos del almacén comercial (entradas de recepción, pickings,
     // ajustes/correcciones). Rastro inmutable de cada cambio de stock.
@@ -366,12 +374,19 @@ service cloud.firestore {
       allow write: if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
     }
     // Pickings (retiros) declarados por el mercaderista; el vendedor los ve como
-    // alerta. El stock ya se descontó al crearlos.
+    // alerta. El stock ya se descontó al crearlos. Un picking confirmado NO se
+    // revierte: solo el máster puede tocarlo.
     match /pickings/{pickId} {
       allow read:   if isAuthenticated() && (isKromaAccess() || isComercialAccess() || isMerchandiser());
       allow create: if isAuthenticated() && (isComercialAccess() || isMerchandiser());
-      allow update: if isAuthenticated() && (isComercialAccess() || isMerchandiser());
-      allow delete: if isMaster();
+      allow update, delete: if isMaster();
+    }
+    // Solicitudes de ajuste al administrador ("me equivoqué"): las crea quien no
+    // puede corregir por sí mismo; el máster las resuelve.
+    match /ajustes_solicitudes/{solId} {
+      allow read:   if isAuthenticated() && (isAdmin() || isMaster() || isComercialAccess() || isMerchandiser());
+      allow create: if isAuthenticated() && (isComercialAccess() || isMerchandiser());
+      allow update, delete: if isMaster();
     }
 
     match /kroma_settings/{docId} {
@@ -405,7 +420,10 @@ service cloud.firestore {
       allow read, write: if isKromaAccess();
     }
     match /kroma_production_logs/{id} {
-      allow read, write: if isKromaAccess();
+      // Lectura para gerencia/máster: alimenta la PISTA del lote en GK
+      // (leche → producción → envasado → despacho). Escritura solo Kroma.
+      allow read:  if isKromaAccess() || isAdmin();
+      allow write: if isKromaAccess();
     }
     match /kroma_milk_reception/{id} {
       allow read:   if isKromaAccess();
@@ -423,10 +441,13 @@ service cloud.firestore {
       allow delete: if isKromaMaster();
     }
     match /kroma_inventory_pt/{id} {
-      allow read, write: if isKromaAccess();
+      // Lectura para gerencia/máster (pista del lote en GK). Escritura solo Kroma.
+      allow read:  if isKromaAccess() || isAdmin();
+      allow write: if isKromaAccess();
     }
     match /kroma_warehouse_movements/{id} {
-      allow read, write: if isKromaAccess();
+      allow read:  if isKromaAccess() || isAdmin();
+      allow write: if isKromaAccess();
     }
     match /kroma_notifications/{id} {
       allow read, write: if isKromaAccess();

@@ -430,6 +430,26 @@ exports.onDespachoCreated = functions.firestore
         return null;
     });
 
+// Solicitud de ajuste de inventario ("me equivoqué"): el vendedor/mercaderista
+// no puede revertir un picking ni dar entradas a un lote cerrado — notifica al
+// máster con PUSH para que él ajuste. Ver AlmacenComercialPage → StockAdjustSheet.
+exports.onAjusteSolicitado = functions.firestore
+    .document("ajustes_solicitudes/{solicitudId}")
+    .onCreate(async (snap) => {
+        const s = snap.data() || {};
+        const cant = `${s.unidadesActuales ?? 0} ${s.unit || "ud"}`;
+        try {
+            await notifyByDestinations(["master"], {
+                title: "Ajuste de inventario solicitado",
+                body: `${s.solicitanteNombre || "Alguien"} reporta un error en ${s.productoNombre || "un lote"}` +
+                      `${s.lote ? ` (lote ${s.lote})` : ""} — hoy en ${cant}. Motivo: ${s.motivo || "sin detalle"}`,
+            }, { link: "/almacen_comercial", tipo: "ajuste_solicitado" });
+        } catch (err) {
+            functions.logger.error("onAjusteSolicitado:", err);
+        }
+        return null;
+    });
+
 exports.onDespachoUpdated = functions.firestore
     .document("kroma_despachos/{despachoId}")
     .onUpdate(async (change) => {

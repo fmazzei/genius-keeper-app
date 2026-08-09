@@ -19,11 +19,12 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import {
     Warehouse, Truck, Package, Plus, ChevronDown, ChevronRight,
-    Loader, CheckCircle, MapPin, RefreshCw, Download, PackageMinus,
+    Loader, CheckCircle, MapPin, RefreshCw, Download, PackageMinus, History, Archive,
 } from 'lucide-react';
 import StockAdjustSheet from '@/Components/StockAdjustSheet.jsx';
 import RecepcionFrimacaSheet from '@/Components/RecepcionFrimacaSheet.jsx';
 import PickingSheet from '@/Components/PickingSheet.jsx';
+import LoteTrazabilidadModal from '@/Components/LoteTrazabilidadModal.jsx';
 
 const destinoDisplay = (d) => {
     if (!d) return '';
@@ -103,7 +104,11 @@ const THEME = {
 //  - canPicking: habilita el retiro (picking) por ítem (mercaderista/vendedor/admin).
 const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPicking = false }) => {
     const t = THEME[theme] || THEME.light;
-    const { user } = useAuth();
+    const { user, role } = useAuth();
+    // El máster es el único que puede dar entradas/corregir (y tocar lotes
+    // cerrados); también es quien ve la cadena de planta (Kroma) en la pista.
+    const isMaster    = role === 'master';
+    const verKroma    = isMaster || ['gerencia', 'sales_manager', 'director'].includes(role);
     const [tab, setTab]                 = useState('recepcion');
     const [almacenes, setAlmacenes]     = useState([]);
     const [inventario, setInventario]   = useState([]);
@@ -114,7 +119,10 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
 
     const [adjustItem, setAdjustItem]       = useState(null);
     const [pickItem, setPickItem]           = useState(null);
+    const [traceItem, setTraceItem]         = useState(null);
+    const [solicitudes, setSolicitudes]     = useState([]);
     const [recepDespacho, setRecepDespacho] = useState(null);
+    const [showCerrados, setShowCerrados]   = useState({});
     const [newAlmacenName, setNewAlmacenName] = useState('');
     const [creatingAlmacen, setCreatingAlmacen] = useState(false);
     const [showCreateAlmacen, setShowCreateAlmacen] = useState(false);
@@ -141,12 +149,19 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
             setAlmacenes(alms);
             setInventario(invSnap.docs.map(d => ({ id: d.id, ...d.data() })));
             setPendientes(despSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+            // El máster ve las solicitudes de ajuste pendientes (quien no puede
+            // corregir por sí mismo se las envía desde el ítem).
+            if (isMaster) {
+                const solSnap = await getDocs(query(collection(db, 'ajustes_solicitudes'), where('estado', '==', 'pendiente')))
+                    .catch(() => ({ docs: [] }));
+                setSolicitudes((solSnap.docs || []).map(d => ({ id: d.id, ...d.data() })));
+            }
         } catch (e) {
             setError('No se pudo cargar el almacén comercial. ' + e.message);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [isMaster]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -175,27 +190,52 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
     // movimientos y el acta, y cierra el despacho. Es la ÚNICA vía a
     // inventario_comercial (se retiró el auto-llenado de Kroma para no duplicar).
 
-    const handleAdjustSave = async ({ newUnidades, modoAjuste, notas }) => {
+    // Parche local optimista: evita recargar TODO el almacén tras cada acción
+    // (el picking debe sentirse instantáneo).
+    const patchItem = ({ itemId, unidades }) => {
+        setInventario(prev => prev.map(i => i.id === itemId ? { ...i, unidades } : i));
+    };
+
+    const handleAdjustSave = async ({ newUnidades, modo, notas }) => {
         const antes = adjustItem.unidades || 0;
-        await updateDoc(doc(db, 'inventario_comercial', adjustItem.id), {
-            unidades:       newUnidades,
-            lastAjusteNota: notas || '',
-            updatedAt:      serverTimestamp(),
-            updatedBy:      userLabel,
+        const tipo = modo === 'correccion' ? 'correccion'
+            : modo === 'salida' ? 'salida_ajuste'
+            : 'entrada_manual';
+        patchItem({ itemId: adjustItem.id, unidades: newUnidades });
+        await Promise.all([
+            updateDoc(doc(db, 'inventario_comercial', adjustItem.id), {
+                unidades:       newUnidades,
+                lastAjusteNota: notas || '',
+                updatedAt:      serverTimestamp(),
+                updatedBy:      userLabel,
+            }),
+            // Movimiento en el libro — ningún cambio de stock queda sin rastro.
+            addDoc(collection(db, 'inventario_movimientos'), {
+                almacenId: adjustItem.almacenId || null, almacenNombre: adjustItem.almacenNombre || '',
+                productoNombre: adjustItem.productoNombre, presentacion: adjustItem.presentacion || '',
+                lote: adjustItem.lote || '', fechaVencimiento: adjustItem.fechaVencimiento || '',
+                tipo, unit: adjustItem.unit || 'ud',
+                cantidad: newUnidades - antes, unidadesAntes: antes, unidadesDespues: newUnidades,
+                ref: { itemId: adjustItem.id },
+                actorId: actorLabel.id, actorNombre: actorLabel.nombre, actorRole: actorLabel.role,
+                nota: notas || '', createdAt: serverTimestamp(),
+            }),
+        ]);
+    };
+
+    // "Notificar al administrador": deja una solicitud para el máster (la ve en
+    // su panel) — el vendedor/mercaderista no puede revertir ni dar entradas.
+    const handleNotifyAdmin = async ({ item, motivo }) => {
+        await addDoc(collection(db, 'ajustes_solicitudes'), {
+            almacenId: item.almacenId || null, almacenNombre: item.almacenNombre || '',
+            itemId: item.id, productoNombre: item.productoNombre,
+            presentacion: item.presentacion || '', lote: item.lote || '',
+            fechaVencimiento: item.fechaVencimiento || '',
+            unidadesActuales: item.unidades || 0, unit: item.unit || 'ud',
+            motivo,
+            solicitanteId: actorLabel.id, solicitanteNombre: actorLabel.nombre, solicitanteRole: actorLabel.role || role || '',
+            estado: 'pendiente', createdAt: serverTimestamp(),
         });
-        // Movimiento en el libro (entrada manual o corrección) — antes los ajustes
-        // sobrescribían el stock sin dejar rastro.
-        await addDoc(collection(db, 'inventario_movimientos'), {
-            almacenId: adjustItem.almacenId || null, almacenNombre: adjustItem.almacenNombre || '',
-            productoNombre: adjustItem.productoNombre, presentacion: adjustItem.presentacion || '',
-            lote: adjustItem.lote || '', fechaVencimiento: adjustItem.fechaVencimiento || '',
-            tipo: modoAjuste ? 'correccion' : 'entrada_manual',
-            cantidad: newUnidades - antes, unidadesAntes: antes, unidadesDespues: newUnidades,
-            ref: { itemId: adjustItem.id },
-            actorId: actorLabel.id, actorNombre: actorLabel.nombre, actorRole: actorLabel.role,
-            nota: notas || '', createdAt: serverTimestamp(),
-        });
-        await load();
     };
 
     // Importa stock de PT que ya existe físicamente en los depósitos comerciales
@@ -313,6 +353,43 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
 
             {error && <p className={`text-sm p-3 rounded-lg font-medium mb-4 ${t.error}`}>{error}</p>}
 
+            {/* Solicitudes de ajuste (solo máster): alguien reportó un error que
+                él debe corregir — un picking no se revierte solo. */}
+            {isMaster && solicitudes.length > 0 && (
+                <div className={`rounded-xl p-3 mb-4 space-y-2 ${t.warning}`}>
+                    <p className="text-xs font-extrabold uppercase tracking-wider">
+                        {solicitudes.length} ajuste{solicitudes.length !== 1 ? 's' : ''} solicitado{solicitudes.length !== 1 ? 's' : ''}
+                    </p>
+                    {solicitudes.map(s => {
+                        const item = inventario.find(i => i.id === s.itemId);
+                        return (
+                            <div key={s.id} className="flex items-start gap-2 text-sm">
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-bold leading-snug">{s.productoNombre}{s.lote && ` · Lote ${s.lote}`}</p>
+                                    <p className="text-xs opacity-80 leading-snug">
+                                        {s.motivo} — {s.solicitanteNombre || 'Sin nombre'}
+                                    </p>
+                                </div>
+                                <div className="flex gap-1 shrink-0">
+                                    {item && (
+                                        <button onClick={() => setAdjustItem(item)}
+                                            className={`px-2 py-1 rounded-lg text-xs font-bold ${t.primaryBtn}`}>Ajustar</button>
+                                    )}
+                                    <button
+                                        onClick={async () => {
+                                            await updateDoc(doc(db, 'ajustes_solicitudes', s.id), {
+                                                estado: 'resuelto', resueltoPor: userLabel, resueltoAt: serverTimestamp(),
+                                            });
+                                            setSolicitudes(prev => prev.filter(x => x.id !== s.id));
+                                        }}
+                                        className={`px-2 py-1 rounded-lg text-xs font-bold ${t.chip}`}>Listo</button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
             {/* Tabs */}
             <div className={`flex gap-1 rounded-xl p-1 mb-6 w-fit ${t.tabsWrap}`}>
                 {[
@@ -421,7 +498,46 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
 
                     {inventarioPorAlmacen.map(({ almacen, items }) => {
                         const isOpen = expanded[almacen.id] !== false; // default open
-                        const totalUnidades = items.reduce((s, i) => s + (i.unidades || 0), 0);
+                        // Lote ACTIVO = con existencia. Lote CERRADO = se agotó
+                        // (todo el stock salió por pickings): pasa al histórico,
+                        // ya no se edita, solo se consulta su pista.
+                        const activos  = items.filter(i => (Number(i.unidades) || 0) > 0);
+                        const cerrados = items.filter(i => (Number(i.unidades) || 0) <= 0);
+                        const totalUnidades = activos.reduce((s, i) => s + (Number(i.unidades) || 0), 0);
+                        const verCerrados = !!showCerrados[almacen.id];
+
+                        const Fila = ({ item, cerrado }) => (
+                            <div className={`rounded-xl px-3 py-2.5 ${t.itemRow} ${cerrado ? 'opacity-60' : ''}`}>
+                                <button onClick={() => cerrado ? setTraceItem(item) : setAdjustItem(item)}
+                                    className="w-full text-left">
+                                    <p className={`text-sm font-semibold leading-snug ${t.itemTitle}`}>{item.productoNombre}</p>
+                                    <p className={`text-xs leading-snug ${t.meta}`}>
+                                        {item.presentacion}{item.lote && ` · Lote ${item.lote}`}
+                                    </p>
+                                    {item.fechaVencimiento && (
+                                        <p className={`text-xs leading-snug ${t.meta}`}>Vence {item.fechaVencimiento}</p>
+                                    )}
+                                </button>
+                                <div className={`flex items-center justify-between gap-2 mt-2 pt-2 border-t ${t.divider}`}>
+                                    <span className={`font-black text-base ${t.itemTitle}`}>
+                                        {item.unidades} <span className="text-xs font-bold opacity-60">{item.unit || 'ud'}</span>
+                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                        <button onClick={() => setTraceItem(item)} title="Pista del lote"
+                                            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.chip}`}>
+                                            <History size={13} /> Pista
+                                        </button>
+                                        {!cerrado && canPicking && (
+                                            <button onClick={() => setPickItem(item)}
+                                                className={`px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.primaryBtn}`}>
+                                                <PackageMinus size={13} /> Picking
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+
                         return (
                             <div key={almacen.id} className={`rounded-xl overflow-hidden ${t.card}`}>
                                 <button
@@ -430,45 +546,37 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                                 >
                                     <div>
                                         <p className={`font-bold ${t.itemTitle}`}>{almacen.nombre}</p>
-                                        <p className={`text-xs ${t.meta}`}>{items.length} ítem{items.length !== 1 ? 's' : ''} · {totalUnidades} unid. totales</p>
+                                        <p className={`text-xs ${t.meta}`}>
+                                            {activos.length} lote{activos.length !== 1 ? 's' : ''} activo{activos.length !== 1 ? 's' : ''} · {totalUnidades} unid.
+                                            {cerrados.length > 0 && ` · ${cerrados.length} cerrado${cerrados.length !== 1 ? 's' : ''}`}
+                                        </p>
                                     </div>
                                     {isOpen ? <ChevronDown size={18} className={t.chevron} /> : <ChevronRight size={18} className={t.chevron} />}
                                 </button>
                                 {isOpen && (
                                     <div className={`border-t px-4 pb-4 pt-2 space-y-2 ${t.divider}`}>
-                                        {items.length === 0 ? (
-                                            <p className={`text-sm py-2 ${t.emptyText}`}>Sin inventario. Recibe un despacho de planta para empezar.</p>
-                                        ) : items.map(item => (
-                                            <div key={item.id} className={`flex items-stretch gap-2 rounded-xl ${t.itemRow}`}>
+                                        {activos.length === 0 ? (
+                                            <p className={`text-sm py-2 ${t.emptyText}`}>Sin lotes activos. Recibe un despacho de planta para empezar.</p>
+                                        ) : activos.map(item => <Fila key={item.id} item={item} cerrado={false} />)}
+
+                                        {/* Histórico de lotes cerrados */}
+                                        {cerrados.length > 0 && (
+                                            <div className="pt-2">
                                                 <button
-                                                    onClick={() => setAdjustItem(item)}
-                                                    className="flex-1 min-w-0 flex items-center justify-between px-3 py-2.5 text-left"
+                                                    onClick={() => setShowCerrados(p => ({ ...p, [almacen.id]: !verCerrados }))}
+                                                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold ${t.chip}`}
                                                 >
-                                                    <div className="min-w-0">
-                                                        <p className={`text-sm font-semibold truncate ${t.itemTitle}`}>{item.productoNombre}</p>
-                                                        <p className={`text-xs ${t.meta}`}>
-                                                            {item.presentacion}
-                                                            {item.lote && ` · Lote ${item.lote}`}
-                                                            {item.fechaVencimiento && ` · Vence ${item.fechaVencimiento}`}
-                                                        </p>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 shrink-0 ml-2">
-                                                        <span className={`font-bold ${t.itemTitle}`}>{item.unidades} {item.unit || 'und'}</span>
-                                                        <Package size={14} className={t.meta} />
-                                                    </div>
+                                                    <Archive size={14} />
+                                                    Lotes cerrados ({cerrados.length})
+                                                    {verCerrados ? <ChevronDown size={14} className="ml-auto" /> : <ChevronRight size={14} className="ml-auto" />}
                                                 </button>
-                                                {canPicking && (
-                                                    <button
-                                                        onClick={() => setPickItem(item)}
-                                                        disabled={(item.unidades || 0) <= 0}
-                                                        title="Registrar picking (retiro)"
-                                                        className={`shrink-0 my-1.5 mr-1.5 px-3 rounded-lg flex items-center gap-1 text-xs font-bold disabled:opacity-40 ${t.primaryBtn}`}
-                                                    >
-                                                        <PackageMinus size={14} /> Picking
-                                                    </button>
+                                                {verCerrados && (
+                                                    <div className="space-y-2 mt-2">
+                                                        {cerrados.map(item => <Fila key={item.id} item={item} cerrado />)}
+                                                    </div>
                                                 )}
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -480,9 +588,21 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
             {adjustItem && (
                 <StockAdjustSheet
                     item={adjustItem}
+                    isMaster={isMaster}
                     onClose={() => setAdjustItem(null)}
                     onSave={handleAdjustSave}
+                    onNotifyAdmin={handleNotifyAdmin}
+                    onVerTrazabilidad={(it) => setTraceItem(it)}
                     theme={theme}
+                />
+            )}
+
+            {traceItem && (
+                <LoteTrazabilidadModal
+                    item={traceItem}
+                    theme={theme}
+                    verKroma={verKroma}
+                    onClose={() => setTraceItem(null)}
                 />
             )}
 
@@ -504,7 +624,8 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                     actor={actorLabel}
                     theme={theme}
                     onClose={() => setPickItem(null)}
-                    onDone={load}
+                    onDone={patchItem}
+                    onError={(msg) => { setError(msg); load(); }}
                 />
             )}
         </div>
