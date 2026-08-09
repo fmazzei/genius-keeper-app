@@ -88,6 +88,9 @@ function ultimaFacturaPorPos(cartera, facturas) {
  */
 export function computeSeguidor({ cartera = [], visitas = [], facturas = [], pedidos = [], opts = {} } = {}) {
     const cfg = { ...DEFAULTS, ...opts };
+    // Blindaje: un piso de anaquel en 0 convertiría "anaquel bajo" en un duplicado
+    // de "quiebre de stock". Si viene inválido, se usa el piso de negocio.
+    if (!(Number(cfg.pisoAnaquel) > 0)) cfg.pisoAnaquel = DEFAULTS.pisoAnaquel;
     const now = cfg.now || new Date();
     const lunes = inicioSemana(now);
 

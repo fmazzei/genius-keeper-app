@@ -992,7 +992,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [vendedor, setVendedor]                     = useState({ uid: null, nombre: '', metaMensual: 2400, reporterId: null, mesArranque: 0 });
     const [commConfig, setCommConfig]                 = useState(DEFAULT_COMMISSION_CONFIG);
     const { getEnabled: getVendorKpis }               = useVendorKpiConfig();
-    const [homePage, setHomePage]                     = useState(0); // 0 = inicio, 1 = KPIs
+    const [homePage, setHomePage]                     = useState(0); // 0 = Mi Semana, 1 = Inicio, 2 = Mis KPIs
     const [carteraVisitas, setCarteraVisitas]         = useState([]); // visit_reports completos de su cartera
     const [carteraPosList, setCarteraPosList]         = useState([]); // PDV de su cartera (para KPIs de ejecución)
     const [showAnaquelMap, setShowAnaquelMap]         = useState(false);
@@ -1028,7 +1028,9 @@ const VendedorLayout = ({ user, onLogout }) => {
         facturas: carteraFacturas,
         pedidos:  pedidosDocs,
         opts: {
-            pisoAnaquel: commConfig.anaquelMinUnits ?? 12,
+            // Un piso de 0 haría que "anaquel bajo" fuera lo mismo que "quiebre":
+            // si la config no trae un piso válido, se usa el de negocio (12 uds).
+            pisoAnaquel: Number(commConfig.anaquelMinUnits) > 0 ? Number(commConfig.anaquelMinUnits) : 12,
             visitasSemanaPorPdv: 2,
         },
     }), [carteraPosList, carteraVisitas, carteraFacturas, pedidosDocs, commConfig.anaquelMinUnits]);
@@ -1726,7 +1728,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 {/* Selector de vista (arriba, siempre visible) — deja claro que hay 2 vistas */}
                 <div className="shrink-0 px-4 pt-3 pb-2 bg-slate-950">
                     <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1">
-                        {['Inicio', 'Mi Semana', 'Mis KPIs'].map((lbl, i) => (
+                        {['Mi Semana', 'Inicio', 'Mis KPIs'].map((lbl, i) => (
                             <button key={i} onClick={() => go(i)}
                                 className={`flex-1 text-sm font-bold py-2 rounded-lg transition-colors ${homePage === i ? 'bg-slate-800 text-white shadow' : 'text-slate-400'}`}>
                                 {lbl}
@@ -1737,6 +1739,12 @@ const VendedorLayout = ({ user, onLogout }) => {
                 <div id="gk-home-swipe" onScroll={onScroll}
                      className="flex-1 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory"
                      style={{ scrollbarWidth: 'none' }}>
+                    {/* Página 0 — SEGUIDOR SEMANAL: es lo primero que ve al abrir.
+                        Los números que deben bajar a cero esta semana, ordenados por
+                        urgencia, + la cobertura del mercaderista que él supervisa. */}
+                    <div className="snap-center shrink-0 w-full h-full flex flex-col overflow-y-auto p-4 pb-24">
+                        <SeguidorSemanalView data={seguidor} theme="dark" />
+                    </div>
                     <div className="snap-center shrink-0 w-full h-full flex flex-col">
                         <HomeView
                             vendedor={vendedor}
@@ -1750,12 +1758,6 @@ const VendedorLayout = ({ user, onLogout }) => {
                             loadError={loadError}
                             onRetry={() => setReloadKey(k => k + 1)}
                         />
-                    </div>
-                    {/* Página 1 — SEGUIDOR SEMANAL: los números que deben bajar a
-                        cero esta semana (activación, anaquel, quiebres, cobranza,
-                        despachos) + la cobertura del mercaderista que él supervisa. */}
-                    <div className="snap-center shrink-0 w-full h-full flex flex-col overflow-y-auto p-4 pb-24">
-                        <SeguidorSemanalView data={seguidor} theme="dark" />
                     </div>
                     <div className="snap-center shrink-0 w-full h-full flex flex-col">
                         <VendedorKpisView
@@ -1859,8 +1861,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 <VendedorVentasCartera facturas={carteraFacturas} onClose={() => setShowVentas(false)} />
             )}
 
-            {/* ── FAB: Nuevo Pedido — se oculta en la 2ª vista del Home (KPIs), donde estorba ── */}
-            {!subView && currentView !== 'despacho' && !(currentView === 'home' && homePage === 1) && (
+            {/* ── FAB: Nuevo Pedido — se oculta en Mi Semana (pág. 0) y en Mis KPIs
+                 (pág. 2), donde tapa las listas de indicadores. Solo aparece en Inicio. ── */}
+            {!subView && currentView !== 'despacho' && !(currentView === 'home' && homePage !== 1) && (
                 <button
                     onClick={() => navigate('pedido')}
                     className="absolute bottom-20 right-4 z-40 flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black pl-4 pr-5 py-3.5 rounded-full shadow-xl shadow-emerald-900/50 transition-all"

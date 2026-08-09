@@ -1,235 +1,325 @@
 // RUTA: src/Components/SeguidorSemanalView.jsx
 //
-// SEGUIDOR SEMANAL del vendedor: cada indicador es un número que debe bajar a
-// cero (o subir a la meta), con la lista concreta detrás para actuar. Lunes a
-// domingo. Sirve igual al vendedor (tema oscuro) y al máster/gerencia para
-// supervisar (tema claro), con los mismos números.
+// SEGUIDOR SEMANAL del vendedor. No es una lista de tareas: cada indicador es un
+// número que debe bajar a cero, con la lista concreta detrás para actuar.
+//
+// Los indicadores NO tienen un orden fijo: cada uno calcula su NIVEL DE URGENCIA
+// y sube o baja solo. Se agrupan en tres zonas — "Atiende ya" (tarjetas grandes),
+// "Esta semana" (compactas) y "En verde" (colapsado) — para que el vendedor vea
+// primero lo que quema. Lunes a domingo.
+//
+// Sirve al vendedor (tema oscuro) y al máster/gerencia para supervisar (claro).
 
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Flame, PackageMinus, AlertOctagon, CalendarClock, Receipt, Truck, Users,
-    ChevronRight, X, CheckCircle2, Link2Off,
+    ChevronRight, X, CheckCircle2, Link2Off, ChevronDown,
 } from 'lucide-react';
 
 const THEME = {
     light: {
-        wrap: '', title: 'text-slate-800', meta: 'text-slate-500',
-        card: 'bg-white border border-slate-200 hover:border-slate-300', num: 'text-slate-800',
-        sheet: 'bg-slate-50', row: 'bg-white border border-slate-200', chip: 'bg-slate-100 text-slate-600',
-        ok: 'bg-emerald-50 border border-emerald-200 text-emerald-700', bar: 'bg-slate-200',
+        title: 'text-slate-800', meta: 'text-slate-500', soft: 'text-slate-400',
+        hero: 'bg-white border border-slate-200', card: 'bg-white border border-slate-200',
+        mini: 'bg-white border border-slate-200', sheet: 'bg-slate-50',
+        row: 'bg-white border border-slate-200', chip: 'bg-slate-100 text-slate-600',
+        bar: 'bg-slate-200', okBox: 'bg-emerald-50 border border-emerald-200',
     },
     dark: {
-        wrap: '', title: 'text-white', meta: 'text-slate-400',
-        card: 'bg-slate-900 border border-slate-800 hover:border-slate-700', num: 'text-white',
-        sheet: 'bg-slate-900', row: 'bg-slate-800/60 border border-slate-700', chip: 'bg-slate-800 text-slate-300',
-        ok: 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300', bar: 'bg-slate-800',
+        title: 'text-white', meta: 'text-slate-400', soft: 'text-slate-500',
+        hero: 'bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800',
+        card: 'bg-slate-900 border border-slate-800', mini: 'bg-slate-900 border border-slate-800',
+        sheet: 'bg-slate-900', row: 'bg-slate-800/60 border border-slate-700',
+        chip: 'bg-slate-800 text-slate-300', bar: 'bg-slate-800',
+        okBox: 'bg-emerald-500/10 border border-emerald-500/30',
     },
+};
+
+// Paleta por nivel de urgencia (3 = quema, 0 = en verde).
+const NIVEL = {
+    3: { txt: 'text-red-500',     bg: 'bg-red-500/10',     ring: 'ring-1 ring-red-500/30',     stripe: 'bg-red-500' },
+    2: { txt: 'text-amber-500',   bg: 'bg-amber-500/10',   ring: 'ring-1 ring-amber-500/25',   stripe: 'bg-amber-500' },
+    1: { txt: 'text-sky-500',     bg: 'bg-sky-500/10',     ring: '',                            stripe: 'bg-sky-500' },
+    0: { txt: 'text-emerald-500', bg: 'bg-emerald-500/10', ring: '',                            stripe: 'bg-emerald-500' },
 };
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
 const fmtDia = (d) => d ? d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' }) : '—';
 
-// Severidad → color del número y del punto.
-const TONO = {
-    rojo:  { txt: 'text-red-500',     dot: 'bg-red-500' },
-    ambar: { txt: 'text-amber-500',   dot: 'bg-amber-500' },
-    azul:  { txt: 'text-sky-500',     dot: 'bg-sky-500' },
-    verde: { txt: 'text-emerald-500', dot: 'bg-emerald-500' },
-};
-
-export default function SeguidorSemanalView({ data, theme = 'dark', onIrACobranza = null, onIrAPedidos = null }) {
+export default function SeguidorSemanalView({ data, theme = 'dark' }) {
     const t = THEME[theme] || THEME.dark;
-    const [detalle, setDetalle] = useState(null); // { titulo, items, render }
+    const [detalle, setDetalle] = useState(null);
+    const [verVerdes, setVerVerdes] = useState(false);
 
     if (!data) return null;
-    const { semana, sinFacturar, anaquelBajo, quiebres, porVencer, cobranza, despachos, mercaderista, cobertura } = data;
-
+    const { semana, cfg, sinFacturar, anaquelBajo, quiebres, porVencer, cobranza, despachos, mercaderista, cobertura } = data;
     const abrir = (titulo, subtitulo, items, render) => setDetalle({ titulo, subtitulo, items, render });
 
-    // Definición de las líneas del seguidor, en orden de prioridad de negocio.
+    // ── Cada indicador declara su nivel de urgencia; el orden sale de ahí ──
+    const peorVencimiento = porVencer.items[0]?.diasParaVencer ?? null;
+    const peorMora = cobranza.items[0]?.diasVencida ?? 0;
+
     const LINEAS = [
         {
-            key: 'sinFacturar', Icon: Flame,
-            label: `PDV sin facturar +${sinFacturar ? data.cfg.diasSinFacturar : 8} días`,
+            key: 'sinFacturar', Icon: Flame, label: `PDV sin facturar +${cfg.diasSinFacturar} días`,
             valor: sinFacturar.count,
-            tono: sinFacturar.count > 0 ? 'rojo' : 'verde',
-            pie: sinFacturar.activadosSemana > 0
-                ? `${sinFacturar.activadosSemana} activado${sinFacturar.activadosSemana !== 1 ? 's' : ''} esta semana`
-                : 'Activar la cartera es la prioridad',
-            onClick: () => abrir('PDV sin facturar', 'Ordenados por días sin comprar', sinFacturar.items,
-                (i) => (
-                    <>
-                        <p className="font-bold text-sm">{i.nombre}</p>
-                        <p className="text-xs opacity-70">{i.zona}</p>
-                        <span className={`text-xs font-black ${i.nunca ? 'text-red-500' : i.dias >= 15 ? 'text-red-500' : 'text-amber-500'}`}>
-                            {i.nunca ? 'Nunca ha facturado' : `${i.dias} días`}
-                        </span>
-                    </>
-                )),
+            nivel: sinFacturar.count >= 10 ? 3 : sinFacturar.count >= 4 ? 2 : sinFacturar.count > 0 ? 1 : 0,
+            accion: 'Activa la cartera: llama o visita',
+            onClick: () => abrir('PDV sin facturar', 'Del más frío al más reciente', sinFacturar.items,
+                (i) => (<>
+                    <p className="font-bold text-sm">{i.nombre}</p>
+                    <p className="text-xs opacity-70">{i.zona}</p>
+                    <span className={`text-xs font-black ${i.nunca || i.dias >= 15 ? 'text-red-500' : 'text-amber-500'}`}>
+                        {i.nunca ? 'Nunca ha facturado' : `${i.dias} días`}
+                    </span>
+                </>)),
         },
         {
-            key: 'anaquel', Icon: PackageMinus,
-            label: `Anaquel bajo ${anaquelBajo.piso} uds`,
-            valor: anaquelBajo.count,
-            tono: anaquelBajo.count > 0 ? 'ambar' : 'verde',
-            pie: 'Hay que meter la próxima OC',
-            onClick: () => abrir('Anaquel bajo el piso', `Menos de ${anaquelBajo.piso} unidades en la última visita`, anaquelBajo.items,
-                (i) => (
-                    <>
-                        <p className="font-bold text-sm">{i.nombre}</p>
-                        <p className="text-xs opacity-70">Visto {fmtDia(i.visita)} · {i.zona}</p>
-                        <span className="text-xs font-black text-amber-500">{i.nivel} uds · faltan {i.faltan}</span>
-                    </>
-                )),
-        },
-        {
-            key: 'quiebres', Icon: AlertOctagon,
-            label: 'Quiebres de stock',
+            key: 'quiebres', Icon: AlertOctagon, label: 'Quiebres de stock',
             valor: quiebres.count,
-            tono: quiebres.count > 0 ? 'rojo' : 'verde',
-            pie: 'Cero producto en anaquel',
+            nivel: quiebres.count > 0 ? 3 : 0,          // sin producto = venta perdida hoy
+            accion: 'Cero producto en anaquel: repón ya',
             onClick: () => abrir('Quiebres de stock', 'Sin producto en la última visita', quiebres.items,
-                (i) => (
-                    <>
-                        <p className="font-bold text-sm">{i.nombre}</p>
-                        <p className="text-xs opacity-70">Visto {fmtDia(i.visita)} · {i.zona}</p>
-                        <span className="text-xs font-black text-red-500">0 uds</span>
-                    </>
-                )),
+                (i) => (<>
+                    <p className="font-bold text-sm">{i.nombre}</p>
+                    <p className="text-xs opacity-70">Visto {fmtDia(i.visita)} · {i.zona}</p>
+                    <span className="text-xs font-black text-red-500">0 uds</span>
+                </>)),
         },
         {
-            key: 'porVencer', Icon: CalendarClock,
-            label: 'PDV con producto por vencer',
-            valor: porVencer.count,
-            tono: porVencer.count > 0 ? 'ambar' : 'verde',
-            pie: 'Rotar, promocionar o retirar',
-            onClick: () => abrir('Producto por vencer', 'Según el último reporte de visita', porVencer.items,
-                (i) => (
-                    <>
-                        <p className="font-bold text-sm">{i.nombre}</p>
-                        <p className="text-xs opacity-70">Vence {i.vence}{i.unidades ? ` · ${i.unidades} uds` : ''} · {i.zona}</p>
-                        <span className={`text-xs font-black ${i.diasParaVencer <= 0 ? 'text-red-500' : i.diasParaVencer <= 15 ? 'text-red-500' : 'text-amber-500'}`}>
-                            {i.diasParaVencer <= 0 ? 'Vencido' : `${i.diasParaVencer} días`}
-                        </span>
-                    </>
-                )),
-        },
-        {
-            key: 'cobranza', Icon: Receipt,
-            label: 'Facturas vencidas por cobrar',
-            valor: cobranza.count,
-            tono: cobranza.count > 0 ? 'rojo' : 'verde',
-            pie: cobranza.count > 0 ? `${money(cobranza.monto)} por cobrar` : 'Cartera al día',
+            key: 'cobranza', Icon: Receipt, label: 'Facturas vencidas por cobrar',
+            valor: cobranza.count, sufijo: cobranza.count > 0 ? money(cobranza.monto) : null,
+            nivel: cobranza.count === 0 ? 0 : peorMora > 30 ? 3 : 2,
+            accion: peorMora > 30 ? `Hay mora de ${peorMora} días: cobra hoy` : 'Cobra antes de que envejezca',
             onClick: () => abrir('Facturas vencidas', `${money(cobranza.monto)} por cobrar`, cobranza.items,
-                (i) => (
-                    <>
-                        <p className="font-bold text-sm">{i.cliente}</p>
-                        <p className="text-xs opacity-70">{i.id}</p>
-                        <span className="text-xs font-black text-red-500">{money(i.monto)} · {i.diasVencida} d</span>
-                    </>
-                )),
+                (i) => (<>
+                    <p className="font-bold text-sm">{i.cliente}</p>
+                    <p className="text-xs opacity-70">{i.id}</p>
+                    <span className="text-xs font-black text-red-500">{money(i.monto)} · {i.diasVencida} d</span>
+                </>)),
         },
         {
-            key: 'despachos', Icon: Truck,
-            label: 'Despachos por realizar',
+            key: 'porVencer', Icon: CalendarClock, label: 'PDV con producto por vencer',
+            valor: porVencer.count,
+            nivel: porVencer.count === 0 ? 0 : (peorVencimiento !== null && peorVencimiento <= 15) ? 3 : 2,
+            accion: (peorVencimiento !== null && peorVencimiento <= 0)
+                ? 'Hay producto VENCIDO en anaquel'
+                : 'Rota, promociona o retira',
+            onClick: () => abrir('Producto por vencer', 'Según el último reporte de visita', porVencer.items,
+                (i) => (<>
+                    <p className="font-bold text-sm">{i.nombre}</p>
+                    <p className="text-xs opacity-70">Vence {i.vence}{i.unidades ? ` · ${i.unidades} uds` : ''} · {i.zona}</p>
+                    <span className={`text-xs font-black ${i.diasParaVencer <= 15 ? 'text-red-500' : 'text-amber-500'}`}>
+                        {i.diasParaVencer <= 0 ? 'Vencido' : `${i.diasParaVencer} días`}
+                    </span>
+                </>)),
+        },
+        {
+            key: 'anaquel', Icon: PackageMinus, label: `Anaquel bajo ${anaquelBajo.piso} uds`,
+            valor: anaquelBajo.count,
+            nivel: anaquelBajo.count >= 5 ? 2 : anaquelBajo.count > 0 ? 1 : 0,
+            accion: 'Mete la próxima OC antes del quiebre',
+            onClick: () => abrir('Anaquel bajo el piso', `Menos de ${anaquelBajo.piso} unidades en la última visita`, anaquelBajo.items,
+                (i) => (<>
+                    <p className="font-bold text-sm">{i.nombre}</p>
+                    <p className="text-xs opacity-70">Visto {fmtDia(i.visita)} · {i.zona}</p>
+                    <span className="text-xs font-black text-amber-500">{i.nivel} uds · faltan {i.faltan}</span>
+                </>)),
+        },
+        {
+            key: 'despachos', Icon: Truck, label: 'Despachos por realizar',
             valor: despachos.count,
-            tono: despachos.count > 0 ? 'azul' : 'verde',
-            pie: 'Pedidos tomados sin despachar',
+            nivel: despachos.count >= 5 ? 2 : despachos.count > 0 ? 1 : 0,
+            accion: 'Pedidos tomados sin despachar',
             onClick: () => abrir('Despachos por realizar', 'Pedidos pendientes', despachos.items,
-                (i) => (
-                    <>
-                        <p className="font-bold text-sm">{i.nombre}</p>
-                        <p className="text-xs opacity-70">Tomado {fmtDia(i.fecha)}</p>
-                        <span className="text-xs font-black text-sky-500">{i.cantidad} uds</span>
-                    </>
-                )),
+                (i) => (<>
+                    <p className="font-bold text-sm">{i.nombre}</p>
+                    <p className="text-xs opacity-70">Tomado {fmtDia(i.fecha)}</p>
+                    <span className="text-xs font-black text-sky-500">{i.cantidad} uds</span>
+                </>)),
         },
     ];
 
+    // Orden dinámico: más urgente primero; a igual urgencia, el número más grande.
+    const orden = [...LINEAS].sort((a, b) => b.nivel - a.nivel || b.valor - a.valor);
+    const urgentes = orden.filter(l => l.nivel === 3);
+    const medios   = orden.filter(l => l.nivel === 1 || l.nivel === 2);
+    const verdes   = orden.filter(l => l.nivel === 0);
+
+    const totalIndicadores = LINEAS.length;
+    const enVerde = verdes.length;
+    const foco = urgentes[0] || medios[0] || null;
+
     return (
-        <div className="space-y-3">
-            {/* Encabezado de la semana */}
-            <div className="flex items-baseline justify-between gap-2">
-                <div>
-                    <p className={`text-[11px] font-extrabold uppercase tracking-widest ${t.meta}`}>Tu semana</p>
-                    <p className={`text-lg font-black ${t.title}`}>
-                        {fmtDia(semana.desde)} — {fmtDia(new Date(semana.hasta.getTime() - 86400000))}
-                    </p>
+        <div className="space-y-4">
+
+            {/* ── Pulso de la semana + foco ── */}
+            <div className={`rounded-2xl p-4 ${t.hero}`}>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                        <p className={`text-[10px] font-extrabold uppercase tracking-[0.2em] ${t.soft}`}>Tu semana</p>
+                        <p className={`text-xl font-black leading-tight ${t.title}`}>
+                            {fmtDia(semana.desde)} — {fmtDia(new Date(semana.hasta.getTime() - 86400000))}
+                        </p>
+                    </div>
+                    {sinFacturar.activadosSemana > 0 && (
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ${t.okBox} text-emerald-400`}>
+                            <CheckCircle2 size={12} className="inline mr-1" />{sinFacturar.activadosSemana} activados
+                        </span>
+                    )}
                 </div>
-                {sinFacturar.activadosSemana > 0 && (
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${t.ok}`}>
-                        <CheckCircle2 size={12} className="inline mr-1" />
-                        {sinFacturar.activadosSemana} activados
-                    </span>
+
+                {/* Semáforo compacto: un segmento por indicador, ordenado por urgencia */}
+                <div className="flex gap-1 mb-2">
+                    {orden.map(l => (
+                        <span key={l.key} className={`h-1.5 flex-1 rounded-full ${NIVEL[l.nivel].stripe} ${l.nivel === 0 ? 'opacity-40' : ''}`} />
+                    ))}
+                </div>
+                <p className={`text-xs mb-3 ${t.meta}`}>
+                    <b className={enVerde === totalIndicadores ? 'text-emerald-500' : t.title}>{enVerde} de {totalIndicadores}</b> indicadores en verde
+                </p>
+
+                {/* Foco: lo primero que hay que atender */}
+                {foco && foco.valor > 0 ? (
+                    <button onClick={foco.onClick}
+                        className={`w-full flex items-center gap-3 rounded-xl p-3 text-left ${NIVEL[foco.nivel].bg} ${NIVEL[foco.nivel].ring}`}>
+                        <foco.Icon size={20} className={`shrink-0 ${NIVEL[foco.nivel].txt}`} />
+                        <div className="flex-1 min-w-0">
+                            <p className={`text-[10px] font-extrabold uppercase tracking-wider ${NIVEL[foco.nivel].txt}`}>Lo primero</p>
+                            <p className={`text-sm font-bold leading-snug ${t.title}`}>{foco.valor} {foco.label.toLowerCase()}</p>
+                            <p className={`text-xs leading-snug ${t.meta}`}>{foco.accion}</p>
+                        </div>
+                        <ChevronRight size={18} className={`shrink-0 ${t.meta}`} />
+                    </button>
+                ) : (
+                    <div className={`flex items-center gap-2 rounded-xl p-3 ${t.okBox}`}>
+                        <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                        <p className="text-sm font-bold text-emerald-500">Semana bajo control. Sigue facturando.</p>
+                    </div>
                 )}
             </div>
 
-            {/* Aviso de PDV sin vincular: el indicador principal depende del vínculo */}
+            {/* Aviso de PDV sin vincular (el indicador principal depende del vínculo) */}
             {cobertura.sinVincular > 0 && (
                 <div className="flex items-start gap-2 text-xs rounded-xl px-3 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-500">
                     <Link2Off size={14} className="shrink-0 mt-0.5" />
                     <span>
                         <b>{cobertura.sinVincular} PDV sin vincular</b> a su cliente de Zoho — no cuentan en "sin facturar".
-                        Vincúlalos en la ficha del PDV (campo "Razón social en Zoho").
+                        Añade su razón social en la ficha del PDV.
                     </span>
                 </div>
             )}
 
-            {/* Indicadores */}
-            <div className="space-y-2">
-                {LINEAS.map(({ key, Icon, label, valor, tono, pie, onClick }) => {
-                    const c = TONO[tono];
-                    return (
-                        <button key={key} onClick={onClick} disabled={valor === 0}
-                            className={`w-full flex items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors disabled:cursor-default ${t.card}`}>
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${c.dot}`} />
-                            <Icon size={18} className={`shrink-0 ${t.meta}`} />
-                            <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-bold leading-snug ${t.title}`}>{label}</p>
-                                <p className={`text-xs leading-snug ${t.meta}`}>{pie}</p>
-                            </div>
-                            <span className={`text-3xl font-black tabular-nums shrink-0 ${valor === 0 ? 'text-emerald-500' : c.txt}`}>{valor}</span>
-                            {valor > 0 && <ChevronRight size={16} className={`shrink-0 ${t.meta}`} />}
-                        </button>
-                    );
-                })}
+            {/* ── ATIENDE YA ── */}
+            {urgentes.length > 0 && (
+                <div>
+                    <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-red-500 mb-2 px-1">Atiende ya</p>
+                    <div className="space-y-2">
+                        {urgentes.map(l => {
+                            const n = NIVEL[l.nivel];
+                            return (
+                                <button key={l.key} onClick={l.onClick}
+                                    className={`w-full flex items-stretch gap-3 rounded-2xl overflow-hidden text-left ${t.card} ${n.ring}`}>
+                                    <span className={`w-1.5 shrink-0 ${n.stripe}`} />
+                                    <div className="flex items-center gap-3 flex-1 min-w-0 py-3 pr-3">
+                                        <span className={`text-4xl font-black tabular-nums shrink-0 ${n.txt}`}>{l.valor}</span>
+                                        <div className="flex-1 min-w-0">
+                                            <p className={`text-sm font-bold leading-snug ${t.title}`}>{l.label}</p>
+                                            <p className={`text-xs leading-snug ${t.meta}`}>{l.sufijo ? `${l.sufijo} · ` : ''}{l.accion}</p>
+                                        </div>
+                                        <ChevronRight size={16} className={`shrink-0 ${t.meta}`} />
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
-                {/* Supervisión del mercaderista */}
+            {/* ── ESTA SEMANA ── */}
+            {medios.length > 0 && (
+                <div>
+                    <p className={`text-[10px] font-extrabold uppercase tracking-[0.2em] mb-2 px-1 ${t.soft}`}>Esta semana</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {medios.map(l => {
+                            const n = NIVEL[l.nivel];
+                            return (
+                                <button key={l.key} onClick={l.onClick}
+                                    className={`rounded-2xl p-3 text-left ${t.mini}`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <l.Icon size={16} className={n.txt} />
+                                        <span className={`text-2xl font-black tabular-nums ${n.txt}`}>{l.valor}</span>
+                                    </div>
+                                    <p className={`text-xs font-bold leading-snug ${t.title}`}>{l.label}</p>
+                                    <p className={`text-[11px] leading-snug ${t.soft}`}>{l.sufijo || l.accion}</p>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* ── MERCADERISTA ── */}
+            <div>
+                <p className={`text-[10px] font-extrabold uppercase tracking-[0.2em] mb-2 px-1 ${t.soft}`}>Tu mercaderista</p>
                 <button
                     onClick={() => mercaderista.items.length && abrir(
                         'PDV por cubrir', `Meta: ${mercaderista.visitasPorPdv} visitas por PDV esta semana`, mercaderista.items,
-                        (i) => (
-                            <>
-                                <p className="font-bold text-sm">{i.nombre}</p>
-                                <p className="text-xs opacity-70">{i.zona}</p>
-                                <span className="text-xs font-black text-indigo-400">{i.visitas}/{mercaderista.visitasPorPdv} · faltan {i.faltan}</span>
-                            </>
-                        ))}
+                        (i) => (<>
+                            <p className="font-bold text-sm">{i.nombre}</p>
+                            <p className="text-xs opacity-70">{i.zona}</p>
+                            <span className="text-xs font-black text-indigo-400">{i.visitas}/{mercaderista.visitasPorPdv} · faltan {i.faltan}</span>
+                        </>))}
                     disabled={mercaderista.items.length === 0}
-                    className={`w-full rounded-xl px-4 py-3 text-left transition-colors disabled:cursor-default ${t.card}`}
+                    className={`w-full rounded-2xl p-4 text-left disabled:cursor-default ${t.card}`}
                 >
-                    <div className="flex items-center gap-3">
-                        <Users size={18} className={`shrink-0 ${t.meta}`} />
-                        <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-bold leading-snug ${t.title}`}>Tu mercaderista</p>
-                            <p className={`text-xs leading-snug ${t.meta}`}>
-                                Meta {mercaderista.visitasPorPdv} visitas/semana en {mercaderista.pdvTotal} PDV
-                            </p>
+                    <div className="flex items-end justify-between gap-3 mb-2">
+                        <div className="min-w-0">
+                            <p className={`text-sm font-bold ${t.title}`}>Cobertura de visitas</p>
+                            <p className={`text-xs ${t.meta}`}>{mercaderista.visitasPorPdv} por PDV · {mercaderista.pdvTotal} puntos</p>
                         </div>
                         <div className="text-right shrink-0">
-                            <p className={`text-2xl font-black tabular-nums ${mercaderista.faltan === 0 ? 'text-emerald-500' : 'text-indigo-400'}`}>
-                                {mercaderista.hechas}<span className={`text-sm ${t.meta}`}>/{mercaderista.meta}</span>
+                            <p className={`text-3xl font-black tabular-nums leading-none ${mercaderista.faltan === 0 ? 'text-emerald-500' : 'text-indigo-400'}`}>
+                                {mercaderista.hechas}<span className={`text-base ${t.soft}`}>/{mercaderista.meta}</span>
                             </p>
-                            {mercaderista.faltan > 0 && <p className="text-[11px] text-indigo-400 font-bold">faltan {mercaderista.faltan}</p>}
                         </div>
                     </div>
-                    <div className={`h-2 rounded-full overflow-hidden mt-2 ${t.bar}`}>
-                        <div className="h-full rounded-full bg-indigo-500 transition-all"
+                    <div className={`h-2.5 rounded-full overflow-hidden ${t.bar}`}>
+                        <div className={`h-full rounded-full transition-all ${mercaderista.faltan === 0 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
                              style={{ width: `${Math.min(100, mercaderista.pct || 0)}%` }} />
                     </div>
+                    <p className={`text-xs mt-1.5 ${t.meta}`}>
+                        {mercaderista.faltan === 0
+                            ? '¡Meta semanal cumplida!'
+                            : <>Faltan <b className="text-indigo-400">{mercaderista.faltan} visitas</b> · {mercaderista.items.length} PDV sin cubrir</>}
+                    </p>
                 </button>
             </div>
+
+            {/* ── EN VERDE (colapsado) ── */}
+            {verdes.length > 0 && (
+                <div>
+                    <button onClick={() => setVerVerdes(v => !v)}
+                        className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-bold ${t.chip}`}>
+                        <CheckCircle2 size={14} className="text-emerald-500" />
+                        En verde ({verdes.length})
+                        {verVerdes ? <ChevronDown size={14} className="ml-auto" /> : <ChevronRight size={14} className="ml-auto" />}
+                    </button>
+                    {verVerdes && (
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                            {verdes.map(l => (
+                                <div key={l.key} className={`rounded-xl p-3 ${t.mini}`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <l.Icon size={15} className="text-emerald-500" />
+                                        <span className="text-xl font-black text-emerald-500">0</span>
+                                    </div>
+                                    <p className={`text-xs font-bold leading-snug ${t.title}`}>{l.label}</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Detalle */}
             {detalle && createPortal(
