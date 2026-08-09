@@ -348,13 +348,22 @@ const EditPosModal = ({ pos, onClose, onSaved }) => {
                             </div>
                         </div>
 
-                        {form.canal === 'foodservice' && (
-                            <div className="p-3 border border-orange-200 bg-orange-50/50 rounded-xl">
+                        {/* Razón social en Zoho — para TODOS los canales. Es el
+                            vínculo PDV ↔ facturación: sin él este PDV no cuenta en
+                            "días sin facturar" del seguidor semanal (y, si es
+                            foodservice, tampoco en la comisión flat). En cadenas usa
+                            el nombre EXACTO de la sucursal, con su paréntesis. */}
+                        {(
+                            <div className={`p-3 border rounded-xl ${form.canal === 'foodservice' ? 'border-orange-200 bg-orange-50/50' : 'border-slate-200 bg-slate-50'}`}>
                                 <span className="text-sm font-medium text-slate-700">Razón social en Zoho</span>
-                                <p className="text-xs text-slate-400 mb-2">Nombre exacto con que factura en Zoho. Enlaza este cliente foodservice con su comisión flat.</p>
+                                <p className="text-xs text-slate-400 mb-2">
+                                    Nombre exacto con que factura en Zoho. Vincula este PDV con su facturación
+                                    {form.canal === 'foodservice' ? ' y con la comisión flat de foodservice' : ' (activación de cartera y días sin facturar)'}.
+                                    En cadenas, incluye la sucursal tal cual: "Central Madeirense, C.A. (Santa Marta)".
+                                </p>
                                 <input type="text" value={form.razonSocialZoho} onChange={e => handleField('razonSocialZoho', e.target.value)}
-                                    placeholder="Razón social (ej. Agencia de Festejos Elite, C.A)"
-                                    className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                                    placeholder="Ej: Central Madeirense, C.A. (Santa Marta)"
+                                    className={`w-full px-3 py-2.5 border border-slate-300 rounded-xl text-base focus:outline-none focus:ring-2 ${form.canal === 'foodservice' ? 'focus:ring-orange-400' : 'focus:ring-brand-blue'}`} />
                             </div>
                         )}
 

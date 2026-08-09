@@ -259,15 +259,25 @@ const IndividualForm = ({ onClose }) => {
                         ))}
                     </div>
                     {canal === 'foodservice' && (
-                        <>
-                            <p className="text-[11px] text-slate-400 mt-1.5">Foodservice: sin seguimiento de merchandiser, comisión flat. Indica su razón social en Zoho para enlazarlo a comisiones.</p>
-                            <input
-                                type="text" value={razonSocialZoho} onChange={e => setRazonSocialZoho(e.target.value)}
-                                placeholder="Razón social en Zoho"
-                                className="w-full mt-2 px-3 py-3 border border-orange-300 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-orange-400"
-                            />
-                        </>
+                        <p className="text-[11px] text-slate-400 mt-1.5">Foodservice: sin seguimiento de merchandiser, comisión flat.</p>
                     )}
+                    {/* Razón social en Zoho — para TODOS los canales. Es el vínculo
+                        PDV ↔ facturación: sin él, este PDV no cuenta en el indicador
+                        "días sin facturar" del seguidor semanal (ni en comisiones
+                        si es foodservice). Para cadenas, usa el nombre EXACTO de la
+                        sucursal en Zoho, con su paréntesis. */}
+                    <p className="text-[11px] text-slate-400 mt-2">
+                        Razón social en Zoho <span className="text-slate-300">(vincula este PDV con su facturación)</span>
+                    </p>
+                    <input
+                        type="text" value={razonSocialZoho} onChange={e => setRazonSocialZoho(e.target.value)}
+                        placeholder="Ej: Central Madeirense, C.A. (Santa Marta)"
+                        className={`w-full mt-1 px-3 py-3 border rounded-xl text-base focus:outline-none focus:ring-2 ${
+                            canal === 'foodservice'
+                                ? 'border-orange-300 focus:ring-orange-400'
+                                : 'border-slate-300 focus:ring-brand-blue'
+                        }`}
+                    />
                 </div>
             </div>
 

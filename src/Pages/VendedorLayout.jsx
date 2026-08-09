@@ -1,6 +1,6 @@
 // RUTA: src/Pages/VendedorLayout.jsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
 import {
@@ -29,6 +29,8 @@ import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.js
 import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
 import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
+import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
+import { computeSeguidor } from '@/utils/seguidorSemanal.js';
 import VendedorAnaquelMap from '@/Components/VendedorAnaquelMap.jsx';
 import VendedorVentasCartera from '@/Components/VendedorVentasCartera.jsx';
 import { useKpiCalculations } from '@/hooks/useKpiCalculations';
@@ -1015,6 +1017,21 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [alertas, setAlertas]                       = useState([]);
     const [loadingAlertas, setLoadingAlertas]         = useState(false);
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
+    const [pedidosDocs, setPedidosDocs]               = useState([]); // pedidos de su cartera (seguidor semanal)
+
+    // ── SEGUIDOR SEMANAL ──────────────────────────────────────────────────────
+    // Indicadores accionables de la semana (lunes–domingo) calculados con lo que
+    // ya está cargado: cartera, visitas, facturas y pedidos. Función pura.
+    const seguidor = useMemo(() => computeSeguidor({
+        cartera:  carteraPosList,
+        visitas:  carteraVisitas,
+        facturas: carteraFacturas,
+        pedidos:  pedidosDocs,
+        opts: {
+            pisoAnaquel: commConfig.anaquelMinUnits ?? 12,
+            visitasSemanaPorPdv: 2,
+        },
+    }), [carteraPosList, carteraVisitas, carteraFacturas, pedidosDocs, commConfig.anaquelMinUnits]);
     const [reloadKey, setReloadKey]                   = useState(0);
 
     // ── Load alerts (last 24 h) ── filtrado de fecha en cliente (evita índice compuesto uid+createdAt)
@@ -1577,11 +1594,11 @@ const VendedorLayout = ({ user, onLogout }) => {
         const unsub = onSnapshot(
             query(collection(db, 'pedidos_mercaderista'), where('vendedorId', '==', user.uid)),
             (snap) => {
-                const pendingCount = snap.docs.filter(d => {
-                    const s = d.data().estado;
-                    return s === 'pendiente' || s === 'hold';
-                }).length;
-                setPedidosPendientesCount(pendingCount);
+                const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                setPedidosDocs(docs);
+                setPedidosPendientesCount(
+                    docs.filter(p => p.estado === 'pendiente' || p.estado === 'hold').length
+                );
             },
             (e) => console.warn('pedidos_mercaderista listener error:', e)
         );
@@ -1709,7 +1726,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 {/* Selector de vista (arriba, siempre visible) — deja claro que hay 2 vistas */}
                 <div className="shrink-0 px-4 pt-3 pb-2 bg-slate-950">
                     <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1">
-                        {['Inicio', 'Mis KPIs'].map((lbl, i) => (
+                        {['Inicio', 'Mi Semana', 'Mis KPIs'].map((lbl, i) => (
                             <button key={i} onClick={() => go(i)}
                                 className={`flex-1 text-sm font-bold py-2 rounded-lg transition-colors ${homePage === i ? 'bg-slate-800 text-white shadow' : 'text-slate-400'}`}>
                                 {lbl}
@@ -1733,6 +1750,12 @@ const VendedorLayout = ({ user, onLogout }) => {
                             loadError={loadError}
                             onRetry={() => setReloadKey(k => k + 1)}
                         />
+                    </div>
+                    {/* Página 1 — SEGUIDOR SEMANAL: los números que deben bajar a
+                        cero esta semana (activación, anaquel, quiebres, cobranza,
+                        despachos) + la cobertura del mercaderista que él supervisa. */}
+                    <div className="snap-center shrink-0 w-full h-full flex flex-col overflow-y-auto p-4 pb-24">
+                        <SeguidorSemanalView data={seguidor} theme="dark" />
                     </div>
                     <div className="snap-center shrink-0 w-full h-full flex flex-col">
                         <VendedorKpisView
