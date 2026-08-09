@@ -264,11 +264,11 @@ export default function SeguidorSemanalView({ data, theme = 'dark' }) {
                 <p className={`text-[10px] font-extrabold uppercase tracking-[0.2em] mb-2 px-1 ${t.soft}`}>Tu mercaderista</p>
                 <button
                     onClick={() => mercaderista.items.length && abrir(
-                        'PDV por cubrir', `Meta: ${mercaderista.visitasPorPdv} visitas por PDV esta semana`, mercaderista.items,
+                        'PDV por cubrir', 'Según la frecuencia de cada punto', mercaderista.items,
                         (i) => (<>
                             <p className="font-bold text-sm">{i.nombre}</p>
-                            <p className="text-xs opacity-70">{i.zona}</p>
-                            <span className="text-xs font-black text-indigo-400">{i.visitas}/{mercaderista.visitasPorPdv} · faltan {i.faltan}</span>
+                            <p className="text-xs opacity-70">Cada {i.intervalo} días · {i.zona}</p>
+                            <span className="text-xs font-black text-indigo-400">{i.visitas}/{i.meta} · faltan {i.faltan}</span>
                         </>))}
                     disabled={mercaderista.items.length === 0}
                     className={`w-full rounded-2xl p-4 text-left disabled:cursor-default ${t.card}`}
@@ -276,7 +276,9 @@ export default function SeguidorSemanalView({ data, theme = 'dark' }) {
                     <div className="flex items-end justify-between gap-3 mb-2">
                         <div className="min-w-0">
                             <p className={`text-sm font-bold ${t.title}`}>Cobertura de visitas</p>
-                            <p className={`text-xs ${t.meta}`}>{mercaderista.visitasPorPdv} por PDV · {mercaderista.pdvTotal} puntos</p>
+                            <p className={`text-xs ${t.meta}`}>
+                                Según la frecuencia de cada PDV · {mercaderista.pdvTotal} tocan esta semana
+                            </p>
                         </div>
                         <div className="text-right shrink-0">
                             <p className={`text-3xl font-black tabular-nums leading-none ${mercaderista.faltan === 0 ? 'text-emerald-500' : 'text-indigo-400'}`}>

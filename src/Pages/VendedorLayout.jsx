@@ -1031,7 +1031,8 @@ const VendedorLayout = ({ user, onLogout }) => {
             // Un piso de 0 haría que "anaquel bajo" fuera lo mismo que "quiebre":
             // si la config no trae un piso válido, se usa el de negocio (12 uds).
             pisoAnaquel: Number(commConfig.anaquelMinUnits) > 0 ? Number(commConfig.anaquelMinUnits) : 12,
-            visitasSemanaPorPdv: 2,
+            // La meta de visitas NO se configura aquí: sale de `pos.visitInterval`
+            // (fuente única de frecuencia, la misma que consumen los KPIs).
         },
     }), [carteraPosList, carteraVisitas, carteraFacturas, pedidosDocs, commConfig.anaquelMinUnits]);
     const [reloadKey, setReloadKey]                   = useState(0);

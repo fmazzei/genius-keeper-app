@@ -30,8 +30,23 @@ export const DEFAULTS = {
     diasSinFacturar: 8,     // umbral de cartera "fría" → activación
     pisoAnaquel: 12,        // por debajo de esto hay que meter OC (anaquelMinUnits)
     diasPorVencer: 30,      // producto en anaquel próximo a vencer
-    visitasSemanaPorPdv: 2, // meta de cobertura del mercaderista
 };
+
+// Cuántas visitas TOCAN esta semana en un PDV, derivadas de SU frecuencia
+// (`pos.visitInterval`, en días) — la fuente ÚNICA de frecuencia del sistema, la
+// misma que consumen Cumplimiento de visitas, las alertas y el radar.
+//   · 0 días  → PDV inactivo (o foodservice): no toca.
+//   · ≤ 7 días → se repite dentro de la semana: 3 días ≈ 2 visitas, 7 días = 1.
+//   · > 7 días → toca UNA vez, y solo si su próxima visita cae dentro de la
+//     semana (o ya está vencida). Un PDV quincenal no exige visita cada semana.
+export function metaVisitasSemana(pos, ultimaVisita, finSemana) {
+    const iv = Number(pos?.visitInterval);
+    if (!(iv > 0)) return 0;
+    if (iv <= 7) return Math.max(1, Math.round(7 / iv));
+    if (!ultimaVisita) return 1;                     // nunca visitado → toca ya
+    const proxima = new Date(ultimaVisita.getTime() + iv * DIA);
+    return proxima < finSemana ? 1 : 0;
+}
 
 // Última visita registrada por PDV.
 function ultimaVisitaPorPos(visitas) {
@@ -181,20 +196,30 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
         }))
         .sort((a, b) => (a.fecha?.getTime() || 0) - (b.fecha?.getTime() || 0));
 
-    // ── 7. Cobertura del mercaderista (meta: N visitas/semana por PDV) ──
+    // ── 7. Cobertura del mercaderista ──
+    // La meta NO es un número plano: sale de la frecuencia de CADA PDV
+    // (`visitInterval`), única fuente de frecuencia del sistema.
+    const finSemana = new Date(lunes.getTime() + 7 * DIA);
     const visitasSemana = (visitas || []).filter(v => { const t = toDate(v.createdAt); return t && t >= lunes; });
     const conteoPorPos = {};
     visitasSemana.forEach(v => { if (v.posId) conteoPorPos[v.posId] = (conteoPorPos[v.posId] || 0) + 1; });
-    const metaVisitas = pdvMerch.length * cfg.visitasSemanaPorPdv;
-    const hechas = pdvMerch.reduce((s, p) => s + Math.min(conteoPorPos[p.id] || 0, cfg.visitasSemanaPorPdv), 0);
-    const pdvSinCubrirItems = pdvMerch
-        .map(p => ({
+
+    const conMeta = pdvMerch.map(p => {
+        const meta = metaVisitasSemana(p, ultVisita[p.id]?._t || null, finSemana);
+        const hechasPdv = Math.min(conteoPorPos[p.id] || 0, meta);
+        return {
             id: p.id, nombre: p.name || p.nombre || '—', zona: p.zone || p.zona || '',
-            visitas: conteoPorPos[p.id] || 0,
-            faltan: Math.max(0, cfg.visitasSemanaPorPdv - (conteoPorPos[p.id] || 0)),
-        }))
+            intervalo: Number(p.visitInterval) || 0,
+            meta, visitas: conteoPorPos[p.id] || 0, hechasPdv,
+            faltan: Math.max(0, meta - (conteoPorPos[p.id] || 0)),
+        };
+    }).filter(p => p.meta > 0);   // solo los que TOCAN esta semana
+
+    const metaVisitas = conMeta.reduce((s, p) => s + p.meta, 0);
+    const hechas      = conMeta.reduce((s, p) => s + p.hechasPdv, 0);
+    const pdvSinCubrirItems = conMeta
         .filter(p => p.faltan > 0)
-        .sort((a, b) => a.visitas - b.visitas);
+        .sort((a, b) => a.intervalo - b.intervalo || a.visitas - b.visitas);
 
     return {
         semana: { desde: lunes, hasta: new Date(lunes.getTime() + 7 * DIA), hoy: now },
@@ -206,10 +231,12 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
         cobranza:     { count: vencidasItems.length, items: vencidasItems, monto: montoVencido },
         despachos:    { count: despachoItems.length, items: despachoItems },
         mercaderista: {
-            hechas, meta: metaVisitas, pdvTotal: pdvMerch.length,
+            hechas, meta: metaVisitas,
+            pdvTotal: conMeta.length,          // PDV que TOCAN esta semana
+            pdvCartera: pdvMerch.length,       // PDV con visitas en su cartera
             faltan: Math.max(0, metaVisitas - hechas),
             pct: metaVisitas > 0 ? Math.round((hechas / metaVisitas) * 100) : null,
-            items: pdvSinCubrirItems, visitasPorPdv: cfg.visitasSemanaPorPdv,
+            items: pdvSinCubrirItems,
         },
         cobertura: { vinculados: pdvActivos.length - sinVincular, total: pdvActivos.length, sinVincular },
     };
