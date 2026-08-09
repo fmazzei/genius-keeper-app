@@ -5225,7 +5225,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                         <span>Administración</span>
                         {activeItem && <span className="text-slate-400 font-normal">· {activeItem.label}</span>}
                     </button>
-                    <div className="flex-1 overflow-y-auto p-4">
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4">
                         {renderContent()}
                     </div>
                 </div>
@@ -5239,7 +5239,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                             <span className="text-sm font-bold text-slate-700">{activeItem.label}</span>
                         </>}
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 md:p-6">
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6">
                         {renderContent()}
                     </div>
                 </div>

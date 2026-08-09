@@ -149,7 +149,10 @@ export default function AdministracionLayout({ user, onLogout }) {
             </nav>
 
             {/* ── Contenido (scrollable) ── */}
-            <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
+            {/* overflow-x-hidden: con overflow-y:auto el navegador vuelve
+                desplazable también el eje X, y cualquier contenido ancho (un
+                <select> con nombres largos) hacía "bailar" la pantalla de lado. */}
+            <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
                 {tabs.length === 0 ? (
                     <p className="text-slate-400 text-sm">No tienes módulos asignados. Contacta al administrador del sistema.</p>
                 ) : activeTab?.id === 'clientes' ? (

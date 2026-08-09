@@ -83,7 +83,7 @@ export default function VinculacionPdvZoho() {
     }
 
     return (
-        <div className="bg-white rounded-lg shadow p-5">
+        <div className="bg-white rounded-lg shadow p-5 max-w-full overflow-x-hidden">
             <div className="mb-4">
                 <h3 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
                     <Link2 size={20} className="text-brand-blue" /> PDV ↔ Cliente de Zoho
@@ -142,8 +142,8 @@ export default function VinculacionPdvZoho() {
                                 <div className="flex items-start gap-2 mb-2">
                                     <Store size={15} className="text-slate-400 shrink-0 mt-0.5" />
                                     <div className="min-w-0 flex-1">
-                                        <p className="font-semibold text-slate-800 text-sm leading-snug">{p.name}</p>
-                                        <p className="text-xs text-slate-400">
+                                        <p className="font-semibold text-slate-800 text-sm leading-snug break-words">{p.name}</p>
+                                        <p className="text-xs text-slate-400 break-words">
                                             {[p.chain, p.zone, p.canal === 'foodservice' ? 'Foodservice' : null].filter(Boolean).join(' · ')}
                                         </p>
                                     </div>
@@ -151,12 +151,17 @@ export default function VinculacionPdvZoho() {
                                         ? <Link2 size={15} className="text-emerald-500 shrink-0" />
                                         : <Link2Off size={15} className="text-amber-500 shrink-0" />}
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    {/* El <select> se dimensiona según su opción más
+                                        larga (iOS/Safari): sin este envoltorio con
+                                        min-w-0 + w-full/max-w-full desborda la
+                                        tarjeta y la pantalla "baila" de lado. */}
+                                    <div className="flex-1 min-w-0">
                                     <select
                                         value={actual}
                                         onChange={e => vincular(p.id, e.target.value)}
                                         disabled={savingId === p.id}
-                                        className="flex-1 min-w-0 px-2.5 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue disabled:opacity-50"
+                                        className="block w-full min-w-0 max-w-full px-2.5 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue disabled:opacity-50"
                                     >
                                         <option value="">— Sin vincular —</option>
                                         {/* Si el PDV ya tiene un nombre que no está en el registro, no se pierde */}
@@ -167,6 +172,7 @@ export default function VinculacionPdvZoho() {
                                             <option key={c.id} value={c.customerName}>{c.customerName}</option>
                                         ))}
                                     </select>
+                                    </div>
                                     {savingId === p.id && <Loader size={16} className="animate-spin text-brand-blue shrink-0" />}
                                     {okId === p.id && <Check size={16} className="text-emerald-500 shrink-0" />}
                                 </div>
