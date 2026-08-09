@@ -145,9 +145,19 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
     const enCurso = hasta > now;
 
     // Universo: PDV activos de su cartera.
-    const pdvActivos = cartera.filter(p => p.active !== false);
-    // Con merchandising = retail (los foodservice se excluyen: sinMerchandising).
-    const pdvMerch = pdvActivos.filter(p => p.sinMerchandising !== true && p.canal !== 'foodservice');
+    // Un PDV cuenta solo si está VIGENTE. "Vigente" es lo mismo que muestra la
+    // lista maestra de Puntos de Venta: `active` distinto de false Y con una
+    // frecuencia de visita válida. Sin la segunda condición, un PDV marcado
+    // INACTIVO (frecuencia 0/vacía) pero con `active` aún en true —registros
+    // viejos, depósitos— seguía apareciendo en "sin facturar".
+    // Excepción: foodservice no lleva visitas por diseño (frecuencia 0) y sí se
+    // factura, así que se rige solo por `active`.
+    const esFoodservice = (p) => p.canal === 'foodservice' || p.sinMerchandising === true;
+    const pdvActivos = cartera.filter(p =>
+        p.active !== false && (esFoodservice(p) || Number(p.visitInterval) > 0)
+    );
+    // Con merchandising = retail (los foodservice quedan fuera de rutas).
+    const pdvMerch = pdvActivos.filter(p => !esFoodservice(p));
 
     const ultVisita  = ultimaVisitaPorPos(visitas, corte);
     const ultFactura = ultimaFacturaPorPos(pdvActivos, facturas, corte);

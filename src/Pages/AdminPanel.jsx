@@ -296,10 +296,14 @@ const PosManagement = ({ posList = [], loading }) => {
         }
     }, [posList]);
 
+    // Se ACEPTA el campo vacío: antes, al borrar el número, `parseInt('')` daba
+    // NaN y la función salía sin actualizar el estado — el valor viejo se quedaba
+    // pegado y había que insertar el nuevo dígito al lado y borrar el anterior.
+    // Vacío se guarda como '' y al persistir se interpreta como 0 (PDV inactivo).
     const handleIntervalChange = useCallback((posId, newInterval) => {
-        const intervalValue = parseInt(newInterval, 10);
-        if (isNaN(intervalValue) || intervalValue < 0) return;
-        setEditablePos(currentPosList => currentPosList.map(pos => pos.id === posId ? { ...pos, visitInterval: intervalValue } : pos));
+        const limpio = String(newInterval ?? '').replace(/[^\d]/g, '');
+        const valor = limpio === '' ? '' : Math.max(0, parseInt(limpio, 10));
+        setEditablePos(currentPosList => currentPosList.map(pos => pos.id === posId ? { ...pos, visitInterval: valor } : pos));
         setChangesMade(true);
     }, []);
 
@@ -311,9 +315,16 @@ const PosManagement = ({ posList = [], loading }) => {
             if (pos.id.startsWith('sim-pos-') || pos.id.startsWith('real-pos-')) return;
             if (pos.canal === 'foodservice') return; // foodservice: sin visitas, no se toca aquí
             const originalPos = posList.find(p => p.id === pos.id);
-            if (originalPos && originalPos.visitInterval !== pos.visitInterval) {
+            // Campo vacío = 0 = PDV inactivo. Se normaliza SIEMPRE al guardar para
+            // que no queden registros con frecuencia vacía y `active: true`
+            // (aparecían como INACTIVO en la lista pero seguían contando en los
+            // indicadores del seguimiento comercial).
+            const nuevo = Number(pos.visitInterval) || 0;
+            const previo = Number(originalPos?.visitInterval) || 0;
+            const activoIncoherente = originalPos && originalPos.active !== (previo > 0);
+            if (originalPos && (previo !== nuevo || activoIncoherente)) {
                 const posRef = doc(db, 'pos', pos.id);
-                batch.update(posRef, { visitInterval: pos.visitInterval, active: pos.visitInterval > 0 });
+                batch.update(posRef, { visitInterval: nuevo, active: nuevo > 0 });
                 changesCount++;
             }
         });
