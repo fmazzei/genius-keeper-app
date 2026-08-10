@@ -264,7 +264,7 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
             {urgentes.length > 0 && (
                 <div>
                     <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-red-500 mb-2 px-1">Atiende ya</p>
-                    <div className="space-y-2">
+                    <div className="grid gap-2 md:grid-cols-2">
                         {urgentes.map(l => {
                             const n = NIVEL[l.nivel];
                             return (
@@ -293,7 +293,7 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
             {medios.length > 0 && (
                 <div>
                     <p className={`text-[10px] font-extrabold uppercase tracking-[0.2em] mb-2 px-1 ${t.soft}`}>Esta semana</p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                         {medios.map(l => {
                             const n = NIVEL[l.nivel];
                             return (

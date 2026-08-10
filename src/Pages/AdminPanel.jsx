@@ -21,7 +21,6 @@ import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 import EditPosModal from '../Components/EditPosModal.jsx';
 import VinculacionPdvZoho from '../Components/VinculacionPdvZoho.jsx';
-import SeguimientoComercial from './SeguimientoComercial.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
@@ -5117,7 +5116,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
         {
             id: 'comercial', label: 'Comercial', Icon: Store,
             items: [
-                { id: 'seguimiento', label: 'Seguimiento comercial', Icon: Radar, badge: 'Nuevo' },
                 { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
                 { id: 'pdv_zoho',    label: 'PDV ↔ Cliente Zoho', Icon: Link2, badge: 'Nuevo' },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
@@ -5175,7 +5173,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             );
             case 'admin_mgmt':    return <AdministradoresManagement />;
             case 'mercaderistas': return <ReportersManagement />;
-            case 'seguimiento':    return <SeguimientoComercial posList={posList} reports={reports} />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'pdv_zoho':       return <VinculacionPdvZoho />;
             case 'sales_goals':    return <SalesGoalsManagement />;

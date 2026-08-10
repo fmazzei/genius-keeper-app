@@ -11,7 +11,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, query, where } from 'firebase/firestore';
-import { Loader, Users, Building2, AlertTriangle } from 'lucide-react';
+import { Loader, Users, Building2, AlertTriangle, FileDown } from 'lucide-react';
+import SeguimientoDoc from '@/Components/SeguimientoDoc.jsx';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
 import { computeSeguidor, periodoRango } from '@/utils/seguidorSemanal.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
@@ -27,6 +28,7 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
     const [loading, setLoading]   = useState(true);
     const [error, setError]       = useState('');
 
+    const [showDoc, setShowDoc] = useState(false);
     const [gran, setGran]     = useState('semana');
     const [offset, setOffset] = useState(0);
     const rango = useMemo(() => periodoRango(gran, offset), [gran, offset]);
@@ -104,13 +106,19 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
     }
 
     return (
-        <div className="max-w-3xl mx-auto w-full space-y-4">
-            <div>
-                <h3 className="text-xl font-semibold text-slate-700">Seguimiento comercial</h3>
-                <p className="text-sm text-slate-500 mt-1">
-                    Los mismos indicadores que ve el vendedor en "Mi Semana". Elige un vendedor para
-                    supervisar su cartera, o mira toda la actividad de la empresa.
-                </p>
+        <div className="w-full max-w-5xl mx-auto space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <h3 className="text-xl font-semibold text-slate-700">Seguimiento comercial</h3>
+                    <p className="text-sm text-slate-500 mt-1">
+                        Los mismos indicadores que ve el vendedor en "Mi Semana". Elige un vendedor para
+                        supervisar su cartera, o mira toda la actividad de la empresa.
+                    </p>
+                </div>
+                <button onClick={() => setShowDoc(true)}
+                    className="flex items-center gap-2 bg-brand-blue text-white font-bold text-sm px-4 py-2.5 rounded-xl shrink-0 hover:bg-opacity-90">
+                    <FileDown size={16} /> Informe PDF
+                </button>
             </div>
 
             {error && (
@@ -143,6 +151,15 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
                 titulo={nombreSel}
                 periodoCtl={{ gran, setGran, offset, setOffset, label: rango.label, actual: rango.actual }}
             />
+
+            {showDoc && (
+                <SeguimientoDoc
+                    data={data}
+                    alcance={nombreSel}
+                    periodoLabel={rango.label}
+                    onClose={() => setShowDoc(false)}
+                />
+            )}
         </div>
     );
 }
