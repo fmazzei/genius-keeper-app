@@ -1,7 +1,7 @@
 // RUTA: src/hooks/useNotifications.js
 
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useAuth } from '@/context/AuthContext';
 import { useReportView } from '@/context/ReportViewContext'; // <-- Importamos el hook para el modal
@@ -26,14 +26,21 @@ export const useNotifications = () => {
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const notifsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-            // Ordenamos para mostrar las más recientes primero
-            notifsData.sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
-            const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000;
-            const twelveHoursAgo = new Date(Date.now() - TWELVE_HOURS_MS);
+            // Más recientes primero (tolerante a createdAt aún no resuelto).
+            const ts = (n) => n.createdAt?.toDate ? n.createdAt.toDate().getTime() : 0;
+            notifsData.sort((a, b) => ts(b) - ts(a));
+
+            // Reglas de permanencia:
+            //  · NO leída  → queda LATENTE hasta que el usuario la vea (sin caducar).
+            //  · Leída     → sigue visible (en opaco) 24 h desde que se leyó, y luego
+            //                desaparece. Antes se ocultaba al instante al leerla y
+            //                además caducaba a las 12 h aunque nadie la hubiera visto.
+            const HOY = Date.now();
+            const UN_DIA = 24 * 60 * 60 * 1000;
             const visible = notifsData.filter(n => {
-                if (n.read) return false;
-                const date = n.createdAt?.toDate ? n.createdAt.toDate() : null;
-                return date && date >= twelveHoursAgo;
+                if (!n.read) return true;
+                const leida = n.readAt?.toDate ? n.readAt.toDate().getTime() : ts(n);
+                return leida > 0 && (HOY - leida) <= UN_DIA;
             });
             setNotifications(visible);
             setLoading(false);
@@ -48,7 +55,7 @@ export const useNotifications = () => {
     const markAsRead = async (notificationId) => {
         try {
             const notifRef = doc(db, 'notifications', notificationId);
-            await updateDoc(notifRef, { read: true });
+            await updateDoc(notifRef, { read: true, readAt: serverTimestamp() });
         } catch (error) {
             console.error("Error al marcar la notificación como leída:", error);
         }
@@ -71,13 +78,14 @@ export const useNotifications = () => {
         }
     };
 
-    const unreadCount = notifications.length;
+    // El badge cuenta SOLO las no leídas (las leídas siguen listadas en opaco).
+    const unreadCount = notifications.filter(n => !n.read).length;
 
     const markAllAsRead = async () => {
         const unread = notifications.filter(n => !n.read);
         if (!unread.length) return;
         await Promise.all(unread.map(n =>
-            updateDoc(doc(db, 'notifications', n.id), { read: true })
+            updateDoc(doc(db, 'notifications', n.id), { read: true, readAt: serverTimestamp() })
         ));
     };
 

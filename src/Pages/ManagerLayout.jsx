@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useGeniusEngine } from '@/hooks/useGeniusEngine';
 import { useNotifications } from '@/hooks/useNotifications';
+import NotificationsBell from '@/Components/NotificationsBell.jsx';
 import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -30,7 +31,7 @@ import Planner from './Planner/Planner.jsx';
 
 const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     const { posList, reports, loading: geniusLoading } = useGeniusEngine(role);
-    const { unreadCount } = useNotifications();
+    const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole(role);
     
@@ -114,7 +115,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
-                <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
                 <NavItem icon={<Settings size={24} />} text="Configuraciones" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
@@ -129,7 +129,6 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
-                <NavItem icon={<Bell size={24} />} text="Notificaciones" active={currentView === 'alerts'} onClick={() => setCurrentView('alerts')} badgeCount={unreadCount} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
             </ul>
@@ -286,6 +285,16 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                     {(role === 'gerencia' || role === 'sales_manager') && (
                         <span className="shrink-0 hidden sm:inline text-xs font-bold px-2.5 py-1 rounded-full bg-pink-100 text-pink-700 border border-pink-200">Gerencia</span>
                     )}
+                    {/* Campanita: las notificaciones se consultan desde aquí, no
+                        desde una pestaña del menú lateral. */}
+                    <NotificationsBell
+                        notifications={notifications}
+                        unreadCount={unreadCount}
+                        onMarkRead={markAsRead}
+                        onMarkAllRead={markAllAsRead}
+                        onDelete={deleteNotification}
+                        onOpenLink={() => setCurrentView('alerts')}
+                    />
                 </header>
                 <div className="flex-1 p-4 md:p-6 overflow-y-auto bg-slate-50">
                     {renderMainContent()}

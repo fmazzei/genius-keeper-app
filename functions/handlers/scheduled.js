@@ -101,8 +101,13 @@ exports.supervisarVentasPendientes = onSchedule({
             ? `Hay 1 venta pendiente por despachar en el panel de inventario.`
             : `Hay ${totalPending} ventas pendientes por despachar en el panel de inventario.`;
 
-        await sendNotificationToUser(salesManager.uid, { title: "📦 Ventas Pendientes por Despachar", body: notificationBody }, { link: `/inventory` });
-        await sendNotificationToUser(masterUser.uid, { title: "📦 Ventas Pendientes por Despachar", body: notificationBody }, { link: `/inventory` });
+        // Si el gerente y el máster son la MISMA persona, se avisa una sola vez.
+        const destinatarios = [...new Set([salesManager?.uid, masterUser?.uid].filter(Boolean))];
+        await Promise.all(destinatarios.map(uid => sendNotificationToUser(
+            uid,
+            { title: "📦 Ventas Pendientes por Despachar", body: notificationBody },
+            { link: `/inventory` },
+        )));
 
     } catch (error) {
         logger.error("Error al notificar sobre ventas pendientes:", error);

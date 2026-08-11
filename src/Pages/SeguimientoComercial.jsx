@@ -10,7 +10,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { Loader, Users, Building2, AlertTriangle, FileDown } from 'lucide-react';
 import SeguimientoDoc from '@/Components/SeguimientoDoc.jsx';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
@@ -38,9 +38,22 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
         (async () => {
             setLoading(true); setError('');
             try {
-                const [uSnap, fSnap, pSnap, cSnap] = await Promise.all([
+                // Traer TODAS las facturas históricas (miles) dejaba la pantalla en
+                // spinner mucho tiempo. Solo hace falta:
+                //   a) las de los últimos 12 meses — dan la "última factura" por PDV
+                //      y permiten navegar el histórico de un año, y
+                //   b) las ABIERTAS de cualquier fecha — la cobranza vencida puede
+                //      ser vieja y no puede quedar fuera.
+                // Se unen por id. Índices de un solo campo: sin índices compuestos.
+                const hace12Meses = new Date();
+                hace12Meses.setMonth(hace12Meses.getMonth() - 12);
+
+                const [uSnap, fRecientes, fAbiertas, pSnap, cSnap] = await Promise.all([
                     getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
-                    getDocs(collection(db, 'facturas_vendedor')),
+                    getDocs(query(collection(db, 'facturas_vendedor'), where('fecha', '>=', Timestamp.fromDate(hace12Meses))))
+                        .catch(() => ({ docs: [] })),
+                    getDocs(query(collection(db, 'facturas_vendedor'), where('estado', 'in', ['pendiente', 'vencida'])))
+                        .catch(() => ({ docs: [] })),
                     getDocs(collection(db, 'pedidos_mercaderista')).catch(() => ({ docs: [] })),
                     getDocs(collection(db, 'vendor_clients')).catch(() => ({ docs: [] })),
                 ]);
@@ -48,7 +61,10 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
                 setVendedores(uSnap.docs
                     .map(d => ({ id: d.id, ...d.data() }))
                     .filter(v => v.active !== false));
-                setFacturas(fSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                const porId = new Map();
+                [...(fRecientes.docs || []), ...(fAbiertas.docs || [])]
+                    .forEach(d => porId.set(d.id, { id: d.id, ...d.data() }));
+                setFacturas([...porId.values()]);
                 setPedidos((pSnap.docs || []).map(d => ({ id: d.id, ...d.data() })));
                 // La cartera se asigna por PDV directo o por CADENA completa
                 // (tipoDespacho 'centralizado'): hay que contemplar las dos vías.
@@ -101,10 +117,6 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
         ? 'Toda la empresa'
         : (vendedores.find(v => v.id === sel)?.name || 'Vendedor');
 
-    if (loading) {
-        return <div className="flex justify-center py-16"><Loader size={26} className="animate-spin text-brand-blue" /></div>;
-    }
-
     return (
         <div className="w-full max-w-5xl mx-auto space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -145,12 +157,19 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
                 ))}
             </div>
 
+            {loading ? (
+                <div className="bg-white border border-slate-200 rounded-2xl py-16 flex flex-col items-center gap-3">
+                    <Loader size={26} className="animate-spin text-brand-blue" />
+                    <p className="text-sm text-slate-400">Cargando facturación y visitas…</p>
+                </div>
+            ) : (
             <SeguidorSemanalView
                 data={data}
                 theme="light"
                 titulo={nombreSel}
                 periodoCtl={{ gran, setGran, offset, setOffset, label: rango.label, actual: rango.actual }}
             />
+            )}
 
             {showDoc && (
                 <SeguimientoDoc

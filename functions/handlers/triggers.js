@@ -7,11 +7,32 @@ const {
 } = require('./carteraBridge');
 
 // --- Helper de Notificaciones ---
+// Hash corto y estable de una cadena (para armar IDs deterministas).
+const hashCorto = (s) => {
+    let h = 0;
+    for (let i = 0; i < String(s).length; i++) { h = ((h << 5) - h + String(s).charCodeAt(i)) | 0; }
+    return Math.abs(h).toString(36);
+};
+
 const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
     if (!userId) return;
 
-    // 1. Crear notificación en la base de datos (para el centro de notificaciones interno)
-    await admin.firestore().collection("notifications").add({
+    // 1. Notificación en la base de datos (centro de notificaciones interno).
+    //    ID DETERMINISTA para evitar DUPLICADOS: los triggers de Cloud Functions
+    //    son de entrega "al menos una vez" (pueden ejecutarse dos veces por el
+    //    mismo evento) y algunos flujos avisan al gerente y al máster por
+    //    separado. Con la misma clave, un reenvío sobrescribe en vez de crear
+    //    otra notificación. El bucket de 10 minutos permite que un aviso
+    //    legítimamente repetido más tarde sí genere una entrada nueva.
+    const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
+    const notifId = `${userId}_${hashCorto(`${notificationPayload.title}|${notificationPayload.body}`)}_${bucket}`;
+    const notifRef = admin.firestore().collection("notifications").doc(notifId);
+    const yaExiste = (await notifRef.get()).exists;
+    if (yaExiste) {
+        functions.logger.log(`Notificación duplicada omitida para ${userId}: ${notificationPayload.title}`);
+        return;   // ya se envió (incluido el push): no repetir
+    }
+    await notifRef.set({
         userId,
         title: notificationPayload.title,
         body: notificationPayload.body,
