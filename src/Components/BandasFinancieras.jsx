@@ -67,8 +67,11 @@ const Band = ({ num: n, title, status, statusLabel, action, actionTone = 'neutra
     </section>
 );
 
+// `min-w-0`: dentro de una rejilla, las celdas no encogen por debajo de su
+// contenido salvo que se les indique. Sin esto, un nombre largo o una cifra
+// grande desbordaban la tarjeta y quedaban cortados fuera de la pantalla.
 const Tile = ({ label, children, className = '' }) => (
-    <div className={`bg-slate-50 border border-slate-200 rounded-xl p-4 ${className}`}>
+    <div className={`bg-slate-50 border border-slate-200 rounded-xl p-4 min-w-0 overflow-hidden ${className}`}>
         <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">{label}</p>
         {children}
     </div>
@@ -147,16 +150,21 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
                         <div className="mt-2"><Delta value={dUds} /></div>
                         <p className="text-xs text-slate-400 mt-2">Mes anterior: {num(fin.unidadesPrev)} uds</p>
                     </Tile>
-                    <Tile label="Top clientes del mes (uds)">
-                        <div className="flex flex-col gap-1.5 mt-1">
+                    <Tile label="Top clientes del mes (uds)" className="min-w-0">
+                        <div className="flex flex-col gap-2 mt-1">
                             {fin.topClientes.length === 0 ? <p className="text-xs text-slate-400">Sin facturación este mes.</p> :
                              fin.topClientes.map((c, i) => (
-                                <div key={i}>
-                                    <div className="flex justify-between items-baseline gap-2 text-xs">
-                                        <span className="font-semibold text-slate-700 truncate">{c.nombre}</span>
-                                        <span className="font-extrabold text-slate-500 tabular-nums shrink-0">{num(c.unidades)}</span>
+                                <div key={i} className="min-w-0">
+                                    {/* `truncate` no encoge dentro de un flex sin
+                                        `min-w-0`: los nombres largos empujaban las
+                                        unidades fuera de la tarjeta y no se veían. */}
+                                    <div className="flex items-baseline justify-between gap-2 text-xs min-w-0">
+                                        <span className="font-semibold text-slate-700 truncate min-w-0 flex-1" title={c.nombre}>{c.nombre}</span>
+                                        <span className="font-extrabold text-slate-800 tabular-nums shrink-0 whitespace-nowrap">
+                                            {num(c.unidades)} <span className="font-bold text-slate-400">uds</span>
+                                        </span>
                                     </div>
-                                    <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden mt-0.5">
+                                    <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden mt-1">
                                         <div className="h-full rounded-full bg-amber-400" style={{ width: `${(c.unidades / maxTop) * 100}%` }} />
                                     </div>
                                 </div>
