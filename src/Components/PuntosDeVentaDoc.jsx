@@ -59,12 +59,12 @@ export default function PuntosDeVentaDoc({ posList = [], soloActivos = false, ci
     const cadenas = Object.keys(porCadena).sort((a, b) => a.localeCompare(b));
 
     return createPortal((
-        <div id="gk-pdv-portal" style={{ position: 'fixed', inset: 0, zIndex: 120, background: '#e9edf3', overflowY: 'auto', fontFamily: SANS }}>
+        <div id="gk-pdv-portal" style={{ position: 'fixed', inset: 0, zIndex: 120, background: '#e9edf3', overflowY: 'auto', overflowX: 'hidden', fontFamily: SANS }}>
             <style>{PRINT_CSS}</style>
 
-            <div className="gk-no-print" style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 16px', background: NAVY }}>
-                <span style={{ color: '#fff', fontWeight: 800, fontSize: 14 }}>Maestro de Puntos de Venta</span>
-                <div style={{ display: 'flex', gap: 8 }}>
+            <div className="gk-no-print" style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', background: NAVY }}>
+                <span style={{ color: '#fff', fontWeight: 800, fontSize: 14, flex: '1 1 auto', minWidth: 0 }}>Maestro de Puntos de Venta</span>
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                     <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 13, padding: '8px 14px', borderRadius: 8, border: 0 }}>
                         <Printer size={15} /> Descargar / Imprimir
                     </button>
@@ -74,7 +74,7 @@ export default function PuntosDeVentaDoc({ posList = [], soloActivos = false, ci
                 </div>
             </div>
 
-            <div id="gk-pdv-sheet" style={{ maxWidth: 820, margin: '18px auto', background: '#fff', padding: 34, boxShadow: '0 8px 28px rgba(0,0,0,.14)' }}>
+            <div id="gk-pdv-sheet" style={{ width: '100%', maxWidth: 820, margin: '16px auto', background: '#fff', padding: 'clamp(14px, 4vw, 34px)', boxSizing: 'border-box', boxShadow: '0 8px 28px rgba(0,0,0,.14)' }}>
 
                 {/* Encabezado */}
                 <div style={{ borderBottom: `3px solid ${NAVY}`, paddingBottom: 14, marginBottom: 18 }}>
@@ -94,14 +94,14 @@ export default function PuntosDeVentaDoc({ posList = [], soloActivos = false, ci
                 </div>
 
                 {/* Resumen */}
-                <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 10, marginBottom: 20 }}>
                     {[
                         ['Total', filtrados.length, NAVY],
                         ['Activos', activos, '#059669'],
                         ...(soloActivos ? [] : [['Inactivos', inactivos, ROJO]]),
                         ['Cadenas', cadenas.length, '#64748b'],
                     ].map(([lbl, val, color]) => (
-                        <div key={lbl} style={{ flex: '1 1 110px', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px' }}>
+                        <div key={lbl} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', minWidth: 0 }}>
                             <p style={{ margin: 0, fontSize: 9.5, letterSpacing: 1, textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>{lbl}</p>
                             <p style={{ margin: '2px 0 0', fontSize: 22, fontWeight: 900, color }}>{val}</p>
                         </div>
@@ -119,11 +119,20 @@ export default function PuntosDeVentaDoc({ posList = [], soloActivos = false, ci
                             <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>{cadena}</p>
                             <span style={{ fontSize: 11, color: '#94a3b8' }}>{porCadena[cadena].length} punto{porCadena[cadena].length === 1 ? '' : 's'}</span>
                         </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, tableLayout: 'fixed', wordBreak: 'break-word' }}>
+                            {/* Anchos explícitos: sin ellos las columnas peleaban por
+                                el espacio y la tabla se salía de la hoja. */}
+                            <colgroup>
+                                <col style={{ width: '34%' }} />
+                                <col style={{ width: '16%' }} />
+                                <col style={{ width: '18%' }} />
+                                <col style={{ width: '16%' }} />
+                                <col style={{ width: '16%' }} />
+                            </colgroup>
                             <thead>
                                 <tr style={{ background: '#f8fafc' }}>
                                     {['Punto de venta', 'Ciudad', 'Zona', 'Frecuencia', 'Estado'].map((c, i) => (
-                                        <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 9px', color: '#64748b', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e2e8f0' }}>{c}</th>
+                                        <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 7px', color: '#64748b', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.4, borderBottom: '1px solid #e2e8f0' }}>{c}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -133,13 +142,13 @@ export default function PuntosDeVentaDoc({ posList = [], soloActivos = false, ci
                                     const food = esFoodservicePos(p);
                                     return (
                                         <tr key={p.id} className="gk-row" style={{ borderBottom: '1px solid #f1f5f9', opacity: inactivo ? 0.62 : 1 }}>
-                                            <td style={{ padding: '5px 9px', color: '#0f172a', fontWeight: 600 }}>{p.name || '—'}</td>
-                                            <td style={{ padding: '5px 9px', textAlign: 'right', color: '#475569' }}>{p.city || '—'}</td>
-                                            <td style={{ padding: '5px 9px', textAlign: 'right', color: '#475569' }}>{p.zone || '—'}</td>
-                                            <td style={{ padding: '5px 9px', textAlign: 'right', color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                                            <td style={{ padding: '5px 7px', color: '#0f172a', fontWeight: 600 }}>{p.name || '—'}</td>
+                                            <td style={{ padding: '5px 7px', textAlign: 'right', color: '#475569' }}>{p.city || '—'}</td>
+                                            <td style={{ padding: '5px 7px', textAlign: 'right', color: '#475569' }}>{p.zone || '—'}</td>
+                                            <td style={{ padding: '5px 7px', textAlign: 'right', color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
                                                 {food ? 'Sin visitas' : (Number(p.visitInterval) > 0 ? `cada ${p.visitInterval} d` : '—')}
                                             </td>
-                                            <td style={{ padding: '5px 9px', textAlign: 'right' }}>
+                                            <td style={{ padding: '5px 7px', textAlign: 'right' }}>
                                                 <span style={{
                                                     fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20,
                                                     color: inactivo ? ROJO : food ? '#c2410c' : '#059669',

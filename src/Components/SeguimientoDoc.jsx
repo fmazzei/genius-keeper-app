@@ -114,13 +114,13 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
     const m = data.mercaderista;
 
     return createPortal((
-        <div id="gk-seg-portal" style={{ position: 'fixed', inset: 0, zIndex: 120, background: '#e9edf3', overflowY: 'auto', fontFamily: SANS }}>
+        <div id="gk-seg-portal" style={{ position: 'fixed', inset: 0, zIndex: 120, background: '#e9edf3', overflowY: 'auto', overflowX: 'hidden', fontFamily: SANS }}>
             <style>{PRINT_CSS}</style>
 
             {/* Barra de acciones (no se imprime) */}
-            <div className="gk-no-print" style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 16px', background: NAVY }}>
-                <span style={{ color: '#fff', fontWeight: 800, fontSize: 14 }}>Informe de Seguimiento Comercial</span>
-                <div style={{ display: 'flex', gap: 8 }}>
+            <div className="gk-no-print" style={{ position: 'sticky', top: 0, zIndex: 5, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '10px 14px', background: NAVY }}>
+                <span style={{ color: '#fff', fontWeight: 800, fontSize: 14, flex: '1 1 auto', minWidth: 0 }}>Informe de Seguimiento Comercial</span>
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                     <button onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 13, padding: '8px 14px', borderRadius: 8, border: 0 }}>
                         <Printer size={15} /> Descargar / Imprimir
                     </button>
@@ -131,7 +131,7 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
             </div>
 
             {/* Hoja */}
-            <div id="gk-seg-sheet" style={{ maxWidth: 820, margin: '18px auto', background: '#fff', padding: 34, boxShadow: '0 8px 28px rgba(0,0,0,.14)' }}>
+            <div id="gk-seg-sheet" style={{ width: '100%', maxWidth: 820, margin: '16px auto', background: '#fff', padding: 'clamp(14px, 4vw, 34px)', boxSizing: 'border-box', boxShadow: '0 8px 28px rgba(0,0,0,.14)' }}>
 
                 {/* Encabezado */}
                 <div style={{ borderBottom: `3px solid ${NAVY}`, paddingBottom: 14, marginBottom: 18 }}>
@@ -169,7 +169,7 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
                     )}
 
                     {/* Tabla resumen */}
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed', wordBreak: 'break-word' }}>
                         <thead>
                             <tr style={{ background: '#f1f5f9' }}>
                                 <th style={{ textAlign: 'left', padding: '7px 9px', color: '#475569', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.6 }}>Indicador</th>
@@ -210,7 +210,7 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
                                 <p style={{ margin: 0, fontSize: 11, color: '#64748b' }}>{l.nota}</p>
                             </div>
                         </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, tableLayout: 'fixed', wordBreak: 'break-word' }}>
                             <thead>
                                 <tr style={{ background: '#f8fafc' }}>
                                     {l.cols.map((c, i) => (
@@ -247,7 +247,7 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
                     {m.items.length === 0 ? (
                         <p style={{ fontSize: 11.5, color: VERDE, fontWeight: 700, margin: '4px 0 0 14px' }}>Meta cumplida: no hay PDV sin cubrir.</p>
                     ) : (
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, tableLayout: 'fixed', wordBreak: 'break-word' }}>
                             <thead>
                                 <tr style={{ background: '#f8fafc' }}>
                                     {['Punto de venta', 'Frecuencia', 'Visitas', 'Faltan'].map((c, i) => (
