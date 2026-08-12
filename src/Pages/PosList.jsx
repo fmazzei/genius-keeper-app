@@ -74,7 +74,7 @@ const PosList = ({ posList, onSelectPos, onBack, title = 'Puntos de Venta' }) =>
                                 </button>
                                 {openCategories.includes(chain) && (
                                     <ul className="divide-y divide-slate-100">
-                                        {filteredGroupedPos[chain].sort((a, b) => a.name.localeCompare(b.name)).map(pos => (
+                                        {filteredGroupedPos[chain].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(pos => (
                                             <li key={pos.id} onClick={() => onSelectPos(pos)} className="p-4 cursor-pointer hover:bg-yellow-50 flex justify-between items-center transition-colors">
                                                 <div>
                                                     <h4 className="font-semibold text-slate-800">{pos.name}</h4>

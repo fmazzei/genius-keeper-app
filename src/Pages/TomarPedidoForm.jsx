@@ -94,7 +94,7 @@ const TomarPedidoForm = ({ posList = [], selectedReporter, vendedor = null, onBa
     const [isNumpadOpen, setNumpadOpen] = useState(false);
 
     const sortedPosList = useMemo(
-        () => [...posList].sort((a, b) => a.name.localeCompare(b.name)),
+        () => [...posList].sort((a, b) => (a.name || '').localeCompare(b.name || '')),
         [posList],
     );
 

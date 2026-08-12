@@ -184,7 +184,7 @@ export function KromaUsersPage() {
             const list = snap.docs
                 .map((d, i) => ({ id: d.id, avatarIndex: i % AVATAR_COLORS.length, ...d.data() }))
                 .filter(u => u.active !== false)
-                .sort((a, b) => a.name.localeCompare(b.name));
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
             setUsers(list);
         } catch (err) {
             console.error(err);

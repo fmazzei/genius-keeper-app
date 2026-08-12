@@ -172,7 +172,7 @@ function UsuariosTab() {
             setUsers(
                 snap.docs.map((d, i) => ({ id: d.id, avatarIdx: i % AVATAR_COLORS.length, ...d.data() }))
                     .filter(u => u.active !== false)
-                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
             );
         } catch (e) { console.error(e); }
         finally { setLoading(false); }
@@ -416,7 +416,7 @@ function PermisosTab() {
     useEffect(() => {
         getDocs(collection(db, 'kroma_users'))
             .then(snap => {
-                const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.active !== false).sort((a, b) => a.name.localeCompare(b.name));
+                const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.active !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
                 setUsers(list);
                 if (list.length) applyUser(list[0]);
             })

@@ -272,7 +272,7 @@ export default function KromaUserSelect({ onExitKroma }) {
                 snap.docs
                     .map((d, i) => ({ id: d.id, avatarIndex: i % AVATAR_COLORS.length, ...d.data() }))
                     .filter(u => u.active !== false)
-                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
             );
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
@@ -300,7 +300,7 @@ export default function KromaUserSelect({ onExitKroma }) {
             setUsers(prev => [...prev, {
                 id: ref.id, name: form.name.trim(), role: form.role,
                 active: true, avatarIndex: prev.length % AVATAR_COLORS.length,
-            }].sort((a, b) => a.name.localeCompare(b.name)));
+            }].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
             setForm({ name: '', role: 'kroma_admin' });
             setShowCreate(false);
         } catch (err) { console.error(err); }
