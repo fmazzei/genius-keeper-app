@@ -428,7 +428,7 @@ const PosManagement = ({ posList: posListActivos = [], loading }) => {
                 <h3 className="text-xl font-semibold text-slate-700 text-center sm:text-left">Intervalos de Visita por PDV</h3>
                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     <button onClick={() => setIsAddModalOpen(true)} className="flex items-center justify-center gap-2 bg-brand-yellow text-black font-bold px-4 py-2 rounded-lg hover:bg-opacity-90 shadow-sm"><PlusCircle size={18} /> Agregar PDV</button>
-                    <button onClick={() => setExportCfg({ soloActivos: false, ciudad: '' })} className="flex items-center justify-center gap-2 bg-white border border-slate-300 text-slate-700 font-bold px-4 py-2 rounded-lg hover:bg-slate-50 shadow-sm"><FileDown size={18} /> Exportar PDF</button>
+                    <button onClick={() => setExportCfg({ estado: 'todos', ciudades: [], canal: 'todos' })} className="flex items-center justify-center gap-2 bg-white border border-slate-300 text-slate-700 font-bold px-4 py-2 rounded-lg hover:bg-slate-50 shadow-sm"><FileDown size={18} /> Exportar PDF</button>
                     <button onClick={handleSaveChanges} disabled={!changesMade || isSaving} className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">{isSaving ? <LoadingSpinner size="sm" /> : <Save size={18} />}{isSaving ? 'Guardando...' : 'Guardar'}</button>
                 </div>
             </div>
@@ -438,28 +438,64 @@ const PosManagement = ({ posList: posListActivos = [], loading }) => {
             {exportCfg && (
                 <div className="mb-5 p-4 border border-slate-200 rounded-xl bg-slate-50">
                     <p className="text-sm font-bold text-slate-700 mb-3">Exportar puntos de venta a PDF</p>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-4 sm:grid-cols-2">
                         <div>
-                            <p className="text-xs font-semibold text-slate-500 mb-1">¿Qué incluir?</p>
+                            <p className="text-xs font-semibold text-slate-500 mb-1.5">Estado</p>
                             <div className="flex gap-2">
-                                {[[false, 'Todos (marca inactivos)'], [true, 'Solo activos']].map(([val, lbl]) => (
-                                    <button key={String(val)} onClick={() => setExportCfg(c => ({ ...c, soloActivos: val }))}
-                                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${
-                                            exportCfg.soloActivos === val ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
+                                {[['todos', 'Ambos'], ['activos', 'Solo activos'], ['inactivos', 'Solo inactivos']].map(([val, lbl]) => (
+                                    <button key={val} onClick={() => setExportCfg(c => ({ ...c, estado: val }))}
+                                        className={`flex-1 px-2 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                                            exportCfg.estado === val ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
                                         }`}>{lbl}</button>
                                 ))}
                             </div>
                         </div>
                         <div>
-                            <p className="text-xs font-semibold text-slate-500 mb-1">Ciudad</p>
-                            <select value={exportCfg.ciudad} onChange={e => setExportCfg(c => ({ ...c, ciudad: e.target.value }))}
-                                className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue">
-                                <option value="">Todas las ciudades</option>
-                                {ciudadesDe(posList).map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
+                            <p className="text-xs font-semibold text-slate-500 mb-1.5">Canal</p>
+                            <div className="flex gap-2">
+                                {[['todos', 'Ambos'], ['retail', 'Retail'], ['foodservice', 'Foodservice']].map(([val, lbl]) => (
+                                    <button key={val} onClick={() => setExportCfg(c => ({ ...c, canal: val }))}
+                                        className={`flex-1 px-2 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                                            exportCfg.canal === val ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
+                                        }`}>{lbl}</button>
+                                ))}
+                            </div>
                         </div>
                     </div>
-                    <div className="flex gap-2 mt-3">
+
+                    {/* Ciudades: selección MÚLTIPLE (ninguna = todas) */}
+                    <div className="mt-4">
+                        <div className="flex items-center gap-2 mb-1.5">
+                            <p className="text-xs font-semibold text-slate-500">
+                                Ciudades {exportCfg.ciudades.length > 0 && <span className="text-brand-blue">({exportCfg.ciudades.length} seleccionadas)</span>}
+                            </p>
+                            {exportCfg.ciudades.length > 0 && (
+                                <button onClick={() => setExportCfg(c => ({ ...c, ciudades: [] }))}
+                                    className="text-xs font-semibold text-brand-blue hover:underline ml-auto">Limpiar</button>
+                            )}
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button onClick={() => setExportCfg(c => ({ ...c, ciudades: [] }))}
+                                className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                                    exportCfg.ciudades.length === 0 ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
+                                }`}>Todas</button>
+                            {ciudadesDe(posList).map(c => {
+                                const sel = exportCfg.ciudades.includes(c);
+                                return (
+                                    <button key={c}
+                                        onClick={() => setExportCfg(prev => ({
+                                            ...prev,
+                                            ciudades: sel ? prev.ciudades.filter(x => x !== c) : [...prev.ciudades, c],
+                                        }))}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                                            sel ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
+                                        }`}>{c}</button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2 mt-4">
                         <button onClick={() => setShowDoc(exportCfg)}
                             className="flex items-center gap-2 bg-brand-blue text-white font-bold text-sm px-4 py-2 rounded-lg">
                             <FileDown size={16} /> Generar PDF
@@ -473,8 +509,9 @@ const PosManagement = ({ posList: posListActivos = [], loading }) => {
             {showDoc && (
                 <PuntosDeVentaDoc
                     posList={posList}
-                    soloActivos={showDoc.soloActivos}
-                    ciudad={showDoc.ciudad}
+                    estado={showDoc.estado}
+                    ciudades={showDoc.ciudades}
+                    canal={showDoc.canal}
                     onClose={() => setShowDoc(null)}
                 />
             )}

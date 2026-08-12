@@ -41,14 +41,43 @@ export function ciudadesDe(posList = []) {
         .sort((a, b) => a.localeCompare(b));
 }
 
-export default function PuntosDeVentaDoc({ posList = [], soloActivos = false, ciudad = '', onClose }) {
+/**
+ * @param {'todos'|'activos'|'inactivos'} estado  qué puntos incluir
+ * @param {string[]} ciudades  vacío = todas; si trae varias, se incluyen todas
+ * @param {'todos'|'retail'|'foodservice'} canal
+ */
+export default function PuntosDeVentaDoc({
+    posList = [], estado = 'todos', ciudades = [], canal = 'todos', onClose,
+}) {
+    const ciudadesNorm = ciudades.map(c => c.trim().toLowerCase()).filter(Boolean);
+
     const filtrados = posList
-        .filter(p => (soloActivos ? !posInactivo(p) : true))
-        .filter(p => (ciudad ? (p.city || '').trim().toLowerCase() === ciudad.toLowerCase() : true))
+        .filter(p => {
+            if (estado === 'activos')   return !posInactivo(p);
+            if (estado === 'inactivos') return posInactivo(p);
+            return true;
+        })
+        .filter(p => (ciudadesNorm.length ? ciudadesNorm.includes((p.city || '').trim().toLowerCase()) : true))
+        .filter(p => {
+            if (canal === 'retail')      return !esFoodservicePos(p);
+            if (canal === 'foodservice') return esFoodservicePos(p);
+            return true;
+        })
         .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     const activos   = filtrados.filter(p => !posInactivo(p)).length;
     const inactivos = filtrados.length - activos;
+    const nFood     = filtrados.filter(esFoodservicePos).length;
+
+    // Subtítulo legible con los filtros aplicados.
+    const etiquetaEstado = estado === 'activos' ? 'Solo puntos activos'
+        : estado === 'inactivos' ? 'Solo puntos inactivos'
+        : 'Todos los puntos (activos e inactivos)';
+    const etiquetaCanal = canal === 'retail' ? 'Retail'
+        : canal === 'foodservice' ? 'Foodservice' : 'Todos los canales';
+    const etiquetaCiudad = ciudades.length === 0 ? 'Todas las ciudades'
+        : ciudades.length <= 3 ? ciudades.join(' · ')
+        : `${ciudades.length} ciudades`;
 
     // Agrupado por cadena; dentro, por nombre.
     const porCadena = filtrados.reduce((acc, p) => {
@@ -83,9 +112,14 @@ export default function PuntosDeVentaDoc({ posList = [], soloActivos = false, ci
                             <p style={{ margin: 0, fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Lacteoca · Genius Keeper</p>
                             <h1 style={{ margin: '4px 0 0', fontSize: 23, color: NAVY, fontWeight: 900, letterSpacing: -0.3 }}>Puntos de Venta</h1>
                             <p style={{ margin: '4px 0 0', fontSize: 13.5, color: '#334155', fontWeight: 700 }}>
-                                {soloActivos ? 'Solo puntos activos' : 'Todos los puntos (activos e inactivos)'}
-                                {ciudad ? ` · ${ciudad}` : ' · Todas las ciudades'}
+                                {etiquetaEstado}
                             </p>
+                            <p style={{ margin: '2px 0 0', fontSize: 11.5, color: '#64748b' }}>
+                                {etiquetaCanal} · {etiquetaCiudad}
+                            </p>
+                            {ciudades.length > 3 && (
+                                <p style={{ margin: '2px 0 0', fontSize: 10.5, color: '#94a3b8' }}>{ciudades.join(' · ')}</p>
+                            )}
                         </div>
                         <div style={{ textAlign: 'right', fontSize: 11, color: '#64748b', lineHeight: 1.6 }}>
                             <div><b style={{ color: '#334155' }}>Emitido</b><br />{fFecha(new Date())}</div>
@@ -97,8 +131,9 @@ export default function PuntosDeVentaDoc({ posList = [], soloActivos = false, ci
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 10, marginBottom: 20 }}>
                     {[
                         ['Total', filtrados.length, NAVY],
-                        ['Activos', activos, '#059669'],
-                        ...(soloActivos ? [] : [['Inactivos', inactivos, ROJO]]),
+                        ...(estado !== 'inactivos' ? [['Activos', activos, '#059669']] : []),
+                        ...(estado !== 'activos' ? [['Inactivos', inactivos, ROJO]] : []),
+                        ...(canal !== 'retail' && nFood > 0 ? [['Foodservice', nFood, '#c2410c']] : []),
                         ['Cadenas', cadenas.length, '#64748b'],
                     ].map(([lbl, val, color]) => (
                         <div key={lbl} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', minWidth: 0 }}>
