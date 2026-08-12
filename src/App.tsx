@@ -16,7 +16,8 @@ import ReportDetailModalController from '@/Components/ReportDetailModalControlle
 import RouteInviteModal from '@/Components/RouteInviteModal.tsx';
 import ErrorBoundary from '@/Components/ErrorBoundary.jsx';
 import ImpersonationBanner from '@/Components/ImpersonationBanner.jsx';
-import { LogOut, Lock } from 'lucide-react';
+import { LogOut, Lock, RefreshCw } from 'lucide-react';
+import { useAppUpdate } from '@/hooks/useAppUpdate.js';
 
 // Cada rol usa EXACTAMENTE uno de estos layouts — cargarlos con lazy() evita
 // que, por ejemplo, un mercaderista tenga que descargar/parsear todo el
@@ -138,6 +139,29 @@ const AppLayout: React.FC = () => {
 };
 
 
+// Aviso de VERSIÓN NUEVA: la app es de una sola página, así que sigue corriendo
+// el código con el que se abrió aunque se publique una actualización. Sin este
+// aviso, el usuario reporta que "no aparece" algo que sí está desplegado.
+const ActualizacionDisponible: React.FC = () => {
+    const { hayNueva, actualizar } = useAppUpdate();
+    if (!hayNueva) return null;
+    return (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[200] w-[min(92vw,420px)]
+                        flex items-center gap-3 bg-slate-900 text-white border border-slate-700
+                        rounded-2xl shadow-2xl px-4 py-3">
+            <RefreshCw size={18} className="text-emerald-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold leading-snug">Hay una versión nueva de GK</p>
+                <p className="text-xs text-slate-400 leading-snug">Actualiza para ver los últimos cambios.</p>
+            </div>
+            <button onClick={actualizar}
+                className="shrink-0 bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-black px-4 py-2 rounded-xl">
+                Actualizar
+            </button>
+        </div>
+    );
+};
+
 // Fallback de Suspense con ESCAPE: si la descarga del módulo (chunk lazy) se
 // cuelga en red móvil (nunca rechaza → el ErrorBoundary no se entera), a los
 // 20s se ofrece "Reintentar" que recarga la app. Evita el spinner oscuro
@@ -204,6 +228,7 @@ const App: React.FC = () => {
 
     return (
         <Router>
+            <ActualizacionDisponible />
             <InAppNotification
                 notification={activeNotification}
                 onDismiss={() => setActiveNotification(null)}
