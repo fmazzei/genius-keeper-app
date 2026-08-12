@@ -143,12 +143,12 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
                                 </div>
                             </>
                         )}
-                        <div className="mt-2"><Delta value={dFact} /> <span className="text-xs text-slate-400">vs. mes anterior</span></div>
+                        <div className="mt-2"><Delta value={dFact} /> <span className="text-xs text-slate-400">vs. mismo período mes anterior</span></div>
                     </Tile>
                     <Tile label="Unidades colocadas">
                         <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{num(fin.unidadesMes)} <span className="text-sm font-bold text-slate-400">uds</span></p>
                         <div className="mt-2"><Delta value={dUds} /></div>
-                        <p className="text-xs text-slate-400 mt-2">Mes anterior: {num(fin.unidadesPrev)} uds</p>
+                        <p className="text-xs text-slate-400 mt-2">Mismo período mes anterior: {num(fin.unidadesPrev)} uds</p>
                     </Tile>
                     <Tile label="Top clientes del mes (uds)" className="min-w-0">
                         <div className="flex flex-col gap-2 mt-1">

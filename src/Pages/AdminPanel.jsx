@@ -5,7 +5,7 @@ import { db, functions, auth } from '../Firebase/config.js';
 import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search } from 'lucide-react';
+import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
@@ -21,6 +21,7 @@ import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 import EditPosModal from '../Components/EditPosModal.jsx';
 import VinculacionPdvZoho from '../Components/VinculacionPdvZoho.jsx';
+import PuntosDeVentaDoc, { ciudadesDe } from '../Components/PuntosDeVentaDoc.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
@@ -279,6 +280,9 @@ const SalesGoalsManagement = () => {
 const PosManagement = ({ posList: posListActivos = [], loading }) => {
     const [todos, setTodos] = useState(null);   // null = cargando
     const [verInactivos, setVerInactivos] = useState(true);
+    // Exportación a PDF del maestro: alcance (todos / solo activos) y ciudad.
+    const [exportCfg, setExportCfg] = useState(null);   // null = cerrado
+    const [showDoc, setShowDoc] = useState(null);
 
     useEffect(() => {
         const unsub = onSnapshot(
@@ -424,10 +428,56 @@ const PosManagement = ({ posList: posListActivos = [], loading }) => {
                 <h3 className="text-xl font-semibold text-slate-700 text-center sm:text-left">Intervalos de Visita por PDV</h3>
                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     <button onClick={() => setIsAddModalOpen(true)} className="flex items-center justify-center gap-2 bg-brand-yellow text-black font-bold px-4 py-2 rounded-lg hover:bg-opacity-90 shadow-sm"><PlusCircle size={18} /> Agregar PDV</button>
+                    <button onClick={() => setExportCfg({ soloActivos: false, ciudad: '' })} className="flex items-center justify-center gap-2 bg-white border border-slate-300 text-slate-700 font-bold px-4 py-2 rounded-lg hover:bg-slate-50 shadow-sm"><FileDown size={18} /> Exportar PDF</button>
                     <button onClick={handleSaveChanges} disabled={!changesMade || isSaving} className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">{isSaving ? <LoadingSpinner size="sm" /> : <Save size={18} />}{isSaving ? 'Guardando...' : 'Guardar'}</button>
                 </div>
             </div>
             <p className="text-sm text-slate-500 mb-3 flex items-start gap-2"><AlertCircle size={16} className="flex-shrink-0 mt-0.5" /> <span>Modifica los días entre visitas. Asignar '0' días desactiva el PDV: <strong>no se borra</strong>, deja de contar en rutas, KPIs y seguimiento, y puedes reactivarlo aquí cuando quieras.</span></p>
+
+            {/* Opciones de exportación */}
+            {exportCfg && (
+                <div className="mb-5 p-4 border border-slate-200 rounded-xl bg-slate-50">
+                    <p className="text-sm font-bold text-slate-700 mb-3">Exportar puntos de venta a PDF</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <p className="text-xs font-semibold text-slate-500 mb-1">¿Qué incluir?</p>
+                            <div className="flex gap-2">
+                                {[[false, 'Todos (marca inactivos)'], [true, 'Solo activos']].map(([val, lbl]) => (
+                                    <button key={String(val)} onClick={() => setExportCfg(c => ({ ...c, soloActivos: val }))}
+                                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${
+                                            exportCfg.soloActivos === val ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
+                                        }`}>{lbl}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <p className="text-xs font-semibold text-slate-500 mb-1">Ciudad</p>
+                            <select value={exportCfg.ciudad} onChange={e => setExportCfg(c => ({ ...c, ciudad: e.target.value }))}
+                                className="w-full min-w-0 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-blue">
+                                <option value="">Todas las ciudades</option>
+                                {ciudadesDe(posList).map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                        <button onClick={() => setShowDoc(exportCfg)}
+                            className="flex items-center gap-2 bg-brand-blue text-white font-bold text-sm px-4 py-2 rounded-lg">
+                            <FileDown size={16} /> Generar PDF
+                        </button>
+                        <button onClick={() => setExportCfg(null)}
+                            className="text-sm font-semibold text-slate-500 px-3">Cancelar</button>
+                    </div>
+                </div>
+            )}
+
+            {showDoc && (
+                <PuntosDeVentaDoc
+                    posList={posList}
+                    soloActivos={showDoc.soloActivos}
+                    ciudad={showDoc.ciudad}
+                    onClose={() => setShowDoc(null)}
+                />
+            )}
 
             {/* La lista maestra muestra TODOS los PDV. Este filtro solo oculta los
                 inactivos de la vista; nunca los elimina. */}

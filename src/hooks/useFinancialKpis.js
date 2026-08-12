@@ -109,13 +109,23 @@ export function useFinancialKpis() {
         const mStart = new Date(now.getFullYear(), now.getMonth(), 1);
         const mEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 1);
         const pStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        // El mes en curso va POR LA MITAD, así que compararlo contra el mes
+        // anterior COMPLETO siempre daba una caída falsa. La ventana anterior se
+        // corta en el MISMO día y hora transcurridos (clamp por si el mes previo
+        // es más corto: 31-mar vs febrero).
+        const diasMesPrev = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+        const pEnd = new Date(
+            now.getFullYear(), now.getMonth() - 1,
+            Math.min(now.getDate(), diasMesPrev),
+            now.getHours(), now.getMinutes(), now.getSeconds(),
+        );
 
         const activas = facturas.filter(f => f.estado !== 'anulada');
         const inWin = (f, a, b) => { const t = toDate(f.fecha); return t && t >= a && t < b; };
 
         // ── Ventas (por fecha de factura): mes en curso vs. mes anterior
         const mesF  = activas.filter(f => inWin(f, mStart, mEnd));
-        const prevF = activas.filter(f => inWin(f, pStart, mStart));
+        const prevF = activas.filter(f => inWin(f, pStart, pEnd));   // mismo tramo del mes anterior
         const facturadoMes  = sum(mesF, f => f.monto);
         const unidadesMes   = sum(mesF, f => f.unidades);
         const facturadoPrev = sum(prevF, f => f.monto);
