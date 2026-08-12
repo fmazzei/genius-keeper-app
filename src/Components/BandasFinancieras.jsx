@@ -11,6 +11,7 @@ import { useFinancialKpis } from '@/hooks/useFinancialKpis.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import DiasPagoModal from '@/Components/DiasPagoModal.jsx';
 import CarteraVencidaModal from '@/Components/CarteraVencidaModal.jsx';
+import RotacionModal from '@/Components/RotacionModal.jsx';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
@@ -77,11 +78,12 @@ const Tile = ({ label, children, className = '' }) => (
     </div>
 );
 
-export default function BandasFinancieras({ rotacion = null, onMapa = null, onAnaquel = null }) {
+export default function BandasFinancieras({ rotacion = null, rotacionReports = null, onMapa = null, onAnaquel = null }) {
     const fin = useFinancialKpis();
     const { metaVentasGeneral } = useAppConfig();
     const [showDiasPago, setShowDiasPago] = useState(false);
     const [showVencidas, setShowVencidas] = useState(false);
+    const [showRotacion, setShowRotacion] = useState(false);
 
     if (fin.loading) {
         return <div className="h-24 rounded-2xl bg-white border border-slate-200 animate-pulse" />;
@@ -175,10 +177,19 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
                 {(rotacion !== null || onMapa || onAnaquel) && (
                     <div className="grid gap-4 md:grid-cols-3 mt-4">
                         {rotacion !== null && (
-                            <Tile label="Rotación estimada por PDV">
-                                <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{Number(rotacion).toFixed(1)} <span className="text-sm font-bold text-slate-400">uds/día aprox.</span></p>
-                                <p className="text-xs text-slate-400 mt-1">Estimado por caída de inventario entre visitas (no venta de caja).</p>
-                            </Tile>
+                            rotacionReports ? (
+                                <button type="button" onClick={() => setShowRotacion(true)}
+                                    className="text-left bg-slate-50 border border-slate-200 rounded-xl p-4 min-w-0 overflow-hidden hover:shadow-md hover:border-slate-300 transition-all">
+                                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Rotación estimada por PDV</p>
+                                    <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{Number(rotacion).toFixed(1)} <span className="text-sm font-bold text-slate-400">uds/día aprox.</span></p>
+                                    <p className="text-xs text-brand-blue font-semibold mt-1">Ver histórico por mes →</p>
+                                </button>
+                            ) : (
+                                <Tile label="Rotación estimada por PDV">
+                                    <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{Number(rotacion).toFixed(1)} <span className="text-sm font-bold text-slate-400">uds/día aprox.</span></p>
+                                    <p className="text-xs text-slate-400 mt-1">Estimado por caída de inventario entre visitas (no venta de caja).</p>
+                                </Tile>
+                            )
                         )}
                         {onAnaquel && (
                             <button onClick={onAnaquel} className="text-left bg-amber-50 border border-amber-200 rounded-xl p-4 hover:shadow-md transition-shadow">
@@ -245,6 +256,10 @@ export default function BandasFinancieras({ rotacion = null, onMapa = null, onAn
             {showDiasPago && (
                 <DiasPagoModal facturas={fin.facturas || []} onClose={() => setShowDiasPago(false)} />
             )}
+            {showRotacion && rotacionReports && (
+                <RotacionModal reports={rotacionReports} onClose={() => setShowRotacion(false)} />
+            )}
+
             {showVencidas && (
                 <CarteraVencidaModal
                     facturas={fin.facturas || []}

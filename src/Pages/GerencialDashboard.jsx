@@ -373,6 +373,9 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
                  Rotación estimada y Mapa de Calor van dentro de ¿Vendemos? (trade). ── */}
             <BandasFinancieras
                 rotacion={enabledSet.has('rotation') ? (kpis.productRotation?.averageDaily ?? null) : null}
+                /* Reportes completos: el modal calcula la rotación mes a mes con
+                   la MISMA fórmula, sin depender de la ventana del dashboard. */
+                rotacionReports={reports || []}
                 /* Mapa de Calor del Anaquel: SIEMPRE disponible para máster y gerencia
                    (no depende de que el widget "Efectividad en Anaquel" esté activado). */
                 onAnaquel={() => openModal('Mapa de Calor del Anaquel', 'positioning')}
