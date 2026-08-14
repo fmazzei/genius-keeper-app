@@ -106,6 +106,114 @@ tamaño de doc si una recepción trae muchas fotos de novedad.
 
 ---
 
+## Facturar desde GK hacia Zoho Books (2026-08) ✅ — requiere 2 pasos del dueño
+
+El vendedor emite facturas en Zoho **sin tener acceso a Zoho**. Decisiones del
+dueño: el vendedor **elige** borrador o emitida; factura **solo a los clientes de
+su cartera** (máster/administración a cualquiera); el **precio NO lo fija él**,
+sale de `commissionConfig` según el canal del cliente (retail `precioUnidad` /
+foodservice `precioUnidadFoodservice`).
+
+**Backend** (`functions/handlers/zohoInvoicing.js`, credenciales solo Admin SDK):
+- `sincronizarItemsZoho` (máster/administración): baja el catálogo de artículos de
+  Zoho (`zohoApi.listItems`) a la colección **`zoho_items`** (`{itemId, nombre, sku,
+  precioZoho, activo}`) para que el vendedor elija producto sin escribir nada.
+- `crearFacturaZoho({customerId, lineas:[{itemId,cantidad}], emitir, diasCredito, notas})`:
+  valida rol; si es `vendedor` exige `clientes_zoho/{customerId}.vendedorId == uid`;
+  pone el precio por canal; crea la factura (`zohoApi.createInvoice`, que además la
+  marca `sent` si `emitir`) y **la pasa por `upsertFacturaFromZoho`** — la MISMA vía
+  de la conciliación — para que entre a `facturas_vendedor` con atribución y
+  comisión sin duplicar reglas. Deja rastro en **`facturas_emitidas_gk`** (quién la
+  emitió; Zoho no lo sabe). Si el token es de solo lectura devuelve un
+  `permission-denied` explicando que hay que regenerar el Self Client.
+- **IVA: el producto es EXENTO.** GK **no envía ningún campo de impuesto**: Zoho
+  aplica lo configurado en cada artículo. No tocar esto salvo que cambie el
+  régimen fiscal del producto.
+
+**Frontend:** `NuevaFacturaSheet.jsx` (tema oscuro) — cliente (solo su cartera,
+con buscador) → productos y cantidades → días de crédito y notas → "Guardar
+borrador" / "Emitir factura". Botón **"Nueva factura"** en la pestaña Facturas del
+vendedor (`VendedorLayout`).
+
+**Reglas Firestore:** `zoho_items` y `facturas_emitidas_gk` = lectura desde el
+cliente, escritura solo Admin SDK. `clientes_zoho` ahora permite al **vendedor
+listar los suyos** (`isVendedor() && resource.data.vendedorId == request.auth.uid`,
+evaluado por documento).
+
+**PENDIENTE DEL DUEÑO (bloqueante, sin esto no funciona):**
+1. **Regenerar el Self Client de Zoho** con scope
+   `ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.settings.READ`
+   (las instrucciones en AdminPanel → Integraciones ya lo indican) y luego correr
+   **sincronizarItemsZoho** una vez.
+2. **Asignar los clientes de Zoho al vendedor** (Clientes de Zoho → Vendedor): sin
+   `vendedorId` en `clientes_zoho`, el vendedor no ve a nadie a quién facturar.
+
+**Recomendación operativa:** arrancar con "Guardar borrador" y que administración
+revise/emita desde Zoho unos días; cuando las facturas salgan correctas, pasar a
+emitir directo.
+
+---
+
+## Seguidor Semanal del vendedor y Seguimiento Comercial (2026-08) ✅
+
+Motivación del dueño: dar FOCO al encargado comercial de Caracas. No es una lista
+de tareas: es un **seguidor de metas e indicadores que generan acciones**.
+
+- **Motor puro** `src/utils/seguidorSemanal.js` (`computeSeguidor`): acepta una
+  ventana (`desde`/`hasta`) y evalúa el estado al **corte** del período (o a hoy si
+  sigue en curso). Reconstruye el pasado desde los datos crudos —facturas y
+  visitas—, así que el histórico está disponible **sin guardar fotos ni cron**.
+  Indicadores: PDV sin facturar +8 días (el principal), anaquel bajo el piso
+  (`anaquelMinUnits`, 12), quiebres, producto por vencer, facturas vencidas,
+  despachos por realizar y cobertura del mercaderista.
+- **Frecuencia de visita UNIFICADA**: la meta de visitas sale de `pos.visitInterval`
+  (`metaVisitasPeriodo`), la MISMA fuente que consumen Cumplimiento de visitas,
+  las alertas y el radar. Se eliminó la meta plana de "2 visitas/semana".
+- **Heredado vs. su gestión**: con `users_metadata.fechaIngreso` se marca lo que ya
+  estaba frío/vencido antes de que el vendedor entrara (misma noción que
+  `recuperada`), para poder evaluarlo con justicia.
+- **Vista**: `SeguidorSemanalView.jsx` — orden DINÁMICO por urgencia en tres zonas
+  ("Atiende ya" / "Esta semana" / "En verde" colapsado), pulso de la semana,
+  tarjeta de "Lo primero" y navegador Semana|Mes con anterior/siguiente. Es la
+  **primera** página del Home del vendedor (Mi Semana · Inicio · Mis KPIs).
+- **Supervisión**: `SeguimientoComercial.jsx` (máster/gerencia, menú lateral) — el
+  mismo tablero por vendedor o de **toda la empresa**, con **informe PDF**
+  (`SeguimientoDoc.jsx`). La cartera se resuelve por PDV directo Y por cadena
+  (`vendor_clients` centralizado).
+- **PDV ↔ cliente de Zoho**: `VinculacionPdvZoho.jsx` (AdminPanel → Comercial y
+  módulo Clientes de Administración). El campo "Razón social en Zoho" es
+  **exclusivo de máster/administración** (`AddPosForm canEditZoho`, default false):
+  el mercaderista y el vendedor crean PDV sin él.
+
+### Puntos de Venta: la lista maestra manda
+`INACTIVO` significa **frecuencia de visita 0**, no borrado. La pantalla de Puntos
+de Venta carga **todos** los PDV (activos e inactivos) con filtro "Mostrar/Ocultar
+inactivos" — antes usaba el `posList` filtrado a `active==true` y un PDV
+desaparecía al inactivarlo. `computeSeguidor` define "vigente" igual que esa
+lista: `active !== false` **Y** frecuencia válida (excepto foodservice, que no
+lleva visitas por diseño). Guardar normaliza `visitInterval`+`active`.
+
+---
+
+## Notificaciones y versiones (2026-08) ✅
+
+- **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al
+  menos una vez"**. `sendNotificationToUser` usa ahora un **ID determinista**
+  (`uid + hash(título|cuerpo) + bucket de 10 min`): un reenvío sobrescribe en vez
+  de crear otra notificación y otro push.
+- **Campanita en la barra superior** (`NotificationsBell.jsx`) para máster y
+  gerencia; se retiró la pestaña del menú lateral.
+- **Permanencia**: no leída = **latente hasta que se vea** (no caduca); leída =
+  visible en opaco **24 h** desde `readAt`. Antes desaparecía al leerla y caducaba
+  a las 12 h aunque nadie la hubiera visto.
+- **Aviso de versión nueva** (`useAppUpdate.js` + banner en `App.tsx`): GK es una
+  SPA y seguía corriendo el código con el que se abrió, lo que llevó a reportar
+  como "no aparece" cosas ya desplegadas. Compara el script de entrada (hash) de
+  `index.html` cada 5 min y al volver a la app; sin service worker, todo en
+  try/catch.
+
+---
+
 ## Pendientes — Comisiones GK y Webhooks Zoho Books
 
 Sección de seguimiento para terminar de conectar el módulo de comisiones del
