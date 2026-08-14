@@ -157,4 +157,63 @@ async function exchangeCode({ clientId, clientSecret, code, dataCenter }) {
     return refreshToken;
 }
 
-module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode };
+
+/**
+ * Lista el CATÁLOGO de artículos de Zoho Books. Una factura se arma con los
+ * ítems de Zoho (cada uno con su `item_id`), así que GK necesita esta lista para
+ * que el vendedor elija producto sin escribir nada a mano.
+ * @returns {Promise<Array>} artículos activos
+ */
+async function listItems({ accessToken, organizationId, dataCenter, perPage = 200 }) {
+    const { api } = dcUrls(dataCenter);
+    const todos = [];
+    for (let page = 1; page <= 10; page++) {
+        const res = await axios.get(`${api}/books/v3/items`, {
+            params: { organization_id: organizationId, page, per_page: perPage },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+            timeout: 30000,
+        });
+        const lote = Array.isArray(res.data?.items) ? res.data.items : [];
+        todos.push(...lote);
+        if (!res.data?.page_context?.has_more_page || lote.length === 0) break;
+    }
+    return todos;
+}
+
+/**
+ * CREA una factura en Zoho Books. Requiere que el self-client tenga permiso de
+ * ESCRITURA (ZohoBooks.invoices.CREATE): con el token de solo lectura Zoho
+ * responde 401/"not authorized".
+ *
+ * @param {object} invoice  payload de Zoho: { customer_id, date, line_items:[...], ... }
+ * @param {boolean} enviar  true = la deja EMITIDA (sent); false = borrador
+ * @returns {Promise<object>} la factura creada, tal como la devuelve Zoho
+ */
+async function createInvoice({ accessToken, organizationId, dataCenter, invoice, enviar = false }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.post(`${api}/books/v3/invoices`, invoice, {
+        params: { organization_id: organizationId, ...(enviar ? { send: false } : {}) },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 30000,
+    });
+    const creada = res.data?.invoice;
+    if (!creada) throw new Error('Zoho no devolvió la factura creada.');
+
+    // Zoho crea en BORRADOR por defecto. Para dejarla emitida hay que marcarla.
+    if (enviar && creada.invoice_id) {
+        try {
+            await axios.post(`${api}/books/v3/invoices/${creada.invoice_id}/status/sent`, null, {
+                params: { organization_id: organizationId },
+                headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+                timeout: 20000,
+            });
+            creada.status = 'sent';
+        } catch (e) {
+            // La factura YA existe; solo no se pudo cambiar el estado.
+            creada._avisoEstado = e.response?.data?.message || e.message;
+        }
+    }
+    return creada;
+}
+
+module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode, listItems, createInvoice };

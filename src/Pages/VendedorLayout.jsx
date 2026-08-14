@@ -12,7 +12,7 @@ import {
     Home, MapPin, Package, Bell,
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
-    ClipboardList, Receipt, Store, Warehouse, X, RefreshCw,
+    ClipboardList, Receipt, Store, Warehouse, X, RefreshCw, FilePlus,
     Zap, ChevronLeft, Wallet, Download, Award,
 } from 'lucide-react';
 import EstadoCuentaDoc from '@/Components/EstadoCuentaDoc.jsx';
@@ -31,6 +31,7 @@ import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
 import PullToRefresh from '@/Components/PullToRefresh.jsx';
+import NuevaFacturaSheet from '@/Components/NuevaFacturaSheet.jsx';
 import { computeSeguidor, periodoRango } from '@/utils/seguidorSemanal.js';
 import VendedorAnaquelMap from '@/Components/VendedorAnaquelMap.jsx';
 import VendedorVentasCartera from '@/Components/VendedorVentasCartera.jsx';
@@ -1020,6 +1021,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [loadingAlertas, setLoadingAlertas]         = useState(false);
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
     const [pedidosDocs, setPedidosDocs]               = useState([]); // pedidos de su cartera (seguidor semanal)
+    const [showNuevaFactura, setShowNuevaFactura]     = useState(false);
 
     // ── SEGUIDOR ──────────────────────────────────────────────────────────────
     // Indicadores accionables del período (semana lunes–domingo por defecto, o
@@ -1680,7 +1682,17 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         if (currentView === 'facturas') {
-            return <MisFacturasView vendedorId={user.uid} fechaIngreso={vendedor.ingreso || null} />;
+            return (
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    <div className="px-4 pt-3 shrink-0">
+                        <button onClick={() => setShowNuevaFactura(true)}
+                            className="w-full flex items-center justify-center gap-2 bg-emerald-600 active:bg-emerald-500 text-white font-black py-3 rounded-xl text-sm">
+                            <FilePlus size={17} /> Nueva factura
+                        </button>
+                    </div>
+                    <MisFacturasView vendedorId={user.uid} fechaIngreso={vendedor.ingreso || null} />
+                </div>
+            );
         }
 
         if (currentView === 'estado_cuenta') {
@@ -1879,6 +1891,14 @@ const VendedorLayout = ({ user, onLogout }) => {
             )}
 
             {/* ── Ventas por cliente/PDV de tu cartera (real, Zoho) ── */}
+            {showNuevaFactura && (
+                <NuevaFacturaSheet
+                    vendedorId={user.uid}
+                    onClose={() => setShowNuevaFactura(false)}
+                    onCreada={() => setReloadKey(k => k + 1)}
+                />
+            )}
+
             {showVentas && (
                 <VendedorVentasCartera facturas={carteraFacturas} onClose={() => setShowVentas(false)} />
             )}

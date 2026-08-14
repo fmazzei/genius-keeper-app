@@ -154,7 +154,12 @@ service cloud.firestore {
       // atribución. Lo construye la conciliación y lo asigna la callable
       // asignarClienteVendedor (Admin SDK). El cliente (admin/master) solo lo LEE
       // para la pantalla de gestión de clientes.
-      allow get, list: if isAuthenticated() && (isAdmin() || isMaster());
+      // El VENDEDOR lee los clientes de SU cartera (para facturar desde GK):
+      // la consulta va restringida por vendedorId y la regla se evalúa por
+      // documento, así que no puede ver los de otros.
+      allow get, list: if isAuthenticated() && (
+        isAdmin() || isMaster() || (isVendedor() && resource.data.vendedorId == request.auth.uid)
+      );
       allow write: if false; // solo Admin SDK (Cloud Functions)
     }
 
@@ -291,6 +296,18 @@ service cloud.firestore {
     // Credenciales de la API de Zoho Books (OAuth self-client). SOLO el Admin SDK
     // (Cloud Functions) las lee/escribe — nunca el cliente. Se guardan con la
     // callable `guardarCredencialesZoho` (master) y las usa la conciliación.
+    // Catálogo de artículos de Zoho para facturar desde GK. Lo escribe solo el
+    // Admin SDK (sincronizarItemsZoho); el vendedor únicamente lo lee.
+    match /zoho_items/{itemId} {
+      allow read:  if isAuthenticated() && (isComercialAccess() || isAdmin());
+      allow write: if false;
+    }
+    // Rastro de las facturas emitidas DESDE GK (quién la hizo). Zoho no lo sabe.
+    match /facturas_emitidas_gk/{id} {
+      allow read:  if isAuthenticated() && (isAdmin() || isMaster() || isVendedor());
+      allow write: if false;   // solo Cloud Functions
+    }
+
     match /zoho_secure/{docId} {
       allow read, write: if false;
     }
