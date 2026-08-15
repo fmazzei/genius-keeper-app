@@ -136,9 +136,14 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
                 {/* Encabezado */}
                 <div style={{ borderBottom: `3px solid ${NAVY}`, paddingBottom: 14, marginBottom: 18 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-                        <div>
-                            <p style={{ margin: 0, fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Lacteoca · Genius Keeper</p>
-                            <h1 style={{ margin: '4px 0 0', fontSize: 23, color: NAVY, fontWeight: 900, letterSpacing: -0.3 }}>Seguimiento Comercial</h1>
+                        <div style={{ minWidth: 0 }}>
+                            {/* Logo de marca: `print-color-adjust` para que el
+                                navegador no lo descarte al imprimir. */}
+                            <img src="/logo-lacteoca.png" alt="Lacteoca"
+                                 style={{ height: 52, width: 'auto', display: 'block', marginBottom: 10,
+                                          printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }} />
+                            <p style={{ margin: 0, fontSize: 9.5, letterSpacing: 2, textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Genius Keeper</p>
+                            <h1 style={{ margin: '2px 0 0', fontSize: 23, color: NAVY, fontWeight: 900, letterSpacing: -0.3 }}>Seguimiento Comercial</h1>
                             <p style={{ margin: '4px 0 0', fontSize: 14, color: '#334155', fontWeight: 700 }}>{alcance}</p>
                         </div>
                         <div style={{ textAlign: 'right', fontSize: 11, color: '#64748b', lineHeight: 1.6 }}>
@@ -277,7 +282,7 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
                         La meta de visitas sale de la frecuencia configurada en cada punto de venta. Los PDV inactivos no se cuentan.
                         {data.cobertura.sinVincular > 0 && <> <b style={{ color: AMBAR }}>Nota:</b> {data.cobertura.sinVincular} PDV aún sin vincular a su cliente de Zoho quedan fuera del indicador de facturación.</>}
                     </p>
-                    <p style={{ margin: '8px 0 0', textAlign: 'center', color: '#cbd5e1' }}>Generado por Genius Keeper · Lacteoca C.A.</p>
+                    <p style={{ margin: '8px 0 0', textAlign: 'center', color: '#cbd5e1' }}>Genius Keeper · Lacteoca, C.A. — Quesos de Cabra</p>
                 </div>
             </div>
         </div>

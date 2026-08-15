@@ -108,9 +108,12 @@ export default function PuntosDeVentaDoc({
                 {/* Encabezado */}
                 <div style={{ borderBottom: `3px solid ${NAVY}`, paddingBottom: 14, marginBottom: 18 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
-                        <div>
-                            <p style={{ margin: 0, fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Lacteoca · Genius Keeper</p>
-                            <h1 style={{ margin: '4px 0 0', fontSize: 23, color: NAVY, fontWeight: 900, letterSpacing: -0.3 }}>Puntos de Venta</h1>
+                        <div style={{ minWidth: 0 }}>
+                            <img src="/logo-lacteoca.png" alt="Lacteoca"
+                                 style={{ height: 52, width: 'auto', display: 'block', marginBottom: 10,
+                                          printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' }} />
+                            <p style={{ margin: 0, fontSize: 9.5, letterSpacing: 2, textTransform: 'uppercase', color: '#94a3b8', fontWeight: 800 }}>Genius Keeper</p>
+                            <h1 style={{ margin: '2px 0 0', fontSize: 23, color: NAVY, fontWeight: 900, letterSpacing: -0.3 }}>Puntos de Venta</h1>
                             <p style={{ margin: '4px 0 0', fontSize: 13.5, color: '#334155', fontWeight: 700 }}>
                                 {etiquetaEstado}
                             </p>
@@ -207,7 +210,7 @@ export default function PuntosDeVentaDoc({
                         asignada: no se borra, pero deja de contar en rutas, KPIs y seguimiento comercial.
                         Los clientes <b>Foodservice</b> no llevan visitas de merchandising por definición del canal.
                     </p>
-                    <p style={{ margin: '8px 0 0', textAlign: 'center', color: '#cbd5e1' }}>Generado por Genius Keeper · Lacteoca C.A.</p>
+                    <p style={{ margin: '8px 0 0', textAlign: 'center', color: '#cbd5e1' }}>Genius Keeper · Lacteoca, C.A. — Quesos de Cabra</p>
                 </div>
             </div>
         </div>
