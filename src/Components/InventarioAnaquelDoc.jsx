@@ -31,6 +31,9 @@ const PRINT_CSS = `
   .gk-grupo { break-inside: avoid; }
   .gk-row { break-inside: avoid; }
   thead { display: table-header-group; }
+  /* En papel hay ancho de sobra: se quita el scroll y el ancho mínimo. */
+  .gk-tabla-wrap { overflow: visible !important; }
+  .gk-tabla { min-width: 0 !important; }
 }
 `;
 
@@ -146,19 +149,20 @@ export default function InventarioAnaquelDoc({
                                 <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>{cadena}</p>
                                 <span style={{ fontSize: 11, color: '#94a3b8' }}>{lista.length} PDV · {uds} uds</span>
                             </div>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, tableLayout: 'fixed', wordBreak: 'break-word' }}>
+                            <div className="gk-tabla-wrap" style={{ overflowX: 'auto' }}>
+                            <table className="gk-tabla" style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 11, tableLayout: 'fixed' }}>
                                 <colgroup>
-                                    <col style={{ width: '30%' }} />
-                                    <col style={{ width: '13%' }} />
-                                    <col style={{ width: '10%' }} />
-                                    <col style={{ width: '25%' }} />
-                                    <col style={{ width: '10%' }} />
+                                    <col style={{ width: '28%' }} />
                                     <col style={{ width: '12%' }} />
+                                    <col style={{ width: '8%' }} />
+                                    <col style={{ width: '30%' }} />
+                                    <col style={{ width: '8%' }} />
+                                    <col style={{ width: '14%' }} />
                                 </colgroup>
                                 <thead>
                                     <tr style={{ background: '#f8fafc' }}>
                                         {['Punto de venta', 'Zona', 'Uds', 'Lotes en anaquel', 'Dato', 'Estado'].map((c, i) => (
-                                            <th key={i} style={{ textAlign: i === 0 || i === 3 ? 'left' : 'right', padding: '6px 6px', color: '#64748b', fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, borderBottom: '1px solid #e2e8f0' }}>{c}</th>
+                                            <th key={i} style={{ textAlign: i === 0 || i === 3 ? 'left' : 'right', padding: '6px 6px', color: '#64748b', fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{c}</th>
                                         ))}
                                     </tr>
                                 </thead>
@@ -167,24 +171,24 @@ export default function InventarioAnaquelDoc({
                                         const est = estiloEstado(f.estado);
                                         return (
                                             <tr key={f.id} className="gk-row" style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                                <td style={{ padding: '5px 6px', color: '#0f172a', fontWeight: 600 }}>{f.nombre}</td>
-                                                <td style={{ padding: '5px 6px', textAlign: 'right', color: '#475569' }}>{f.zona || '—'}</td>
-                                                <td style={{ padding: '5px 6px', textAlign: 'right', fontWeight: 800, color: est.color, fontVariantNumeric: 'tabular-nums' }}>
+                                                <td style={{ padding: '5px 6px', color: '#0f172a', fontWeight: 600, overflowWrap: 'break-word' }}>{f.nombre}</td>
+                                                <td style={{ padding: '5px 6px', textAlign: 'right', color: '#475569', overflowWrap: 'break-word' }}>{f.zona || '—'}</td>
+                                                <td style={{ padding: '5px 6px', textAlign: 'right', fontWeight: 800, color: est.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                                                     {f.unidades === null ? '—' : f.unidades}
                                                 </td>
                                                 <td style={{ padding: '5px 6px', color: '#475569', fontSize: 10 }}>
                                                     {f.lotes.length === 0 ? '—' : f.lotes.map((l, k) => (
-                                                        <span key={k} style={{ display: 'block', color: l.dias <= 0 ? ROJO : l.dias <= 30 ? AMBAR : '#475569' }}>
+                                                        <span key={k} style={{ display: 'block', color: l.dias <= 0 ? ROJO : l.dias <= 30 ? AMBAR : '#475569', whiteSpace: 'nowrap' }}>
                                                             {l.cantidad} uds · vence {l.vence}
                                                             {l.dias <= 0 ? ' (VENCIDO)' : ` (${l.dias} d)`}
                                                         </span>
                                                     ))}
                                                 </td>
-                                                <td style={{ padding: '5px 6px', textAlign: 'right', color: (f.diasDelDato ?? 0) > 14 ? AMBAR : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                                                <td style={{ padding: '5px 6px', textAlign: 'right', color: (f.diasDelDato ?? 0) > 14 ? AMBAR : '#94a3b8', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                                                     {f.diasDelDato === null ? '—' : `${f.diasDelDato} d`}
                                                 </td>
                                                 <td style={{ padding: '5px 6px', textAlign: 'right' }}>
-                                                    <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 20, color: est.color, background: est.bg }}>
+                                                    <span style={{ fontSize: 9, fontWeight: 800, padding: '2px 7px', borderRadius: 20, color: est.color, background: est.bg, whiteSpace: 'nowrap', display: 'inline-block' }}>
                                                         {est.txt}
                                                     </span>
                                                 </td>
@@ -193,6 +197,7 @@ export default function InventarioAnaquelDoc({
                                     })}
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                     );
                 })}

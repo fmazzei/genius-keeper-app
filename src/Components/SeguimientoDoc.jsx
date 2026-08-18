@@ -30,6 +30,8 @@ const PRINT_CSS = `
   .gk-sec { break-inside: avoid; }
   .gk-row { break-inside: avoid; }
   thead { display: table-header-group; }
+  .gk-tabla-wrap { overflow: visible !important; }
+  .gk-tabla { min-width: 0 !important; }
 }
 `;
 
@@ -215,11 +217,12 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
                                 <p style={{ margin: 0, fontSize: 11, color: '#64748b' }}>{l.nota}</p>
                             </div>
                         </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, tableLayout: 'fixed', wordBreak: 'break-word' }}>
+                        <div className="gk-tabla-wrap" style={{ overflowX: 'auto' }}>
+                        <table className="gk-tabla" style={{ width: '100%', minWidth: 540, borderCollapse: 'collapse', fontSize: 11.5, tableLayout: 'fixed' }}>
                             <thead>
                                 <tr style={{ background: '#f8fafc' }}>
                                     {l.cols.map((c, i) => (
-                                        <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 9px', color: '#64748b', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e2e8f0' }}>{c}</th>
+                                        <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 9px', color: '#64748b', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{c}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -238,6 +241,7 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
                                 ))}
                             </tbody>
                         </table>
+                        </div>
                     </div>
                 ))}
 
@@ -252,11 +256,12 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
                     {m.items.length === 0 ? (
                         <p style={{ fontSize: 11.5, color: VERDE, fontWeight: 700, margin: '4px 0 0 14px' }}>Meta cumplida: no hay PDV sin cubrir.</p>
                     ) : (
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, tableLayout: 'fixed', wordBreak: 'break-word' }}>
+                        <div className="gk-tabla-wrap" style={{ overflowX: 'auto' }}>
+                        <table className="gk-tabla" style={{ width: '100%', minWidth: 540, borderCollapse: 'collapse', fontSize: 11.5, tableLayout: 'fixed' }}>
                             <thead>
                                 <tr style={{ background: '#f8fafc' }}>
                                     {['Punto de venta', 'Frecuencia', 'Visitas', 'Faltan'].map((c, i) => (
-                                        <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 9px', color: '#64748b', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e2e8f0' }}>{c}</th>
+                                        <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 9px', color: '#64748b', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.5, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{c}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -271,6 +276,7 @@ export default function SeguimientoDoc({ data, alcance = 'Toda la empresa', peri
                                 ))}
                             </tbody>
                         </table>
+                        </div>
                     )}
                 </div>
 

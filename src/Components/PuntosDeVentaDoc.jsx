@@ -25,6 +25,8 @@ const PRINT_CSS = `
   .gk-grupo { break-inside: avoid; }
   .gk-row { break-inside: avoid; }
   thead { display: table-header-group; }
+  .gk-tabla-wrap { overflow: visible !important; }
+  .gk-tabla { min-width: 0 !important; }
 }
 `;
 
@@ -157,7 +159,8 @@ export default function PuntosDeVentaDoc({
                             <p style={{ margin: 0, fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>{cadena}</p>
                             <span style={{ fontSize: 11, color: '#94a3b8' }}>{porCadena[cadena].length} punto{porCadena[cadena].length === 1 ? '' : 's'}</span>
                         </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, tableLayout: 'fixed', wordBreak: 'break-word' }}>
+                        <div className="gk-tabla-wrap" style={{ overflowX: 'auto' }}>
+                        <table className="gk-tabla" style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse', fontSize: 11.5, tableLayout: 'fixed' }}>
                             {/* Anchos explícitos: sin ellos las columnas peleaban por
                                 el espacio y la tabla se salía de la hoja. */}
                             <colgroup>
@@ -170,7 +173,7 @@ export default function PuntosDeVentaDoc({
                             <thead>
                                 <tr style={{ background: '#f8fafc' }}>
                                     {['Punto de venta', 'Ciudad', 'Zona', 'Frecuencia', 'Estado'].map((c, i) => (
-                                        <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 7px', color: '#64748b', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.4, borderBottom: '1px solid #e2e8f0' }}>{c}</th>
+                                        <th key={i} style={{ textAlign: i === 0 ? 'left' : 'right', padding: '6px 7px', color: '#64748b', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: 0.4, borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{c}</th>
                                     ))}
                                 </tr>
                             </thead>
@@ -180,7 +183,7 @@ export default function PuntosDeVentaDoc({
                                     const food = esFoodservicePos(p);
                                     return (
                                         <tr key={p.id} className="gk-row" style={{ borderBottom: '1px solid #f1f5f9', opacity: inactivo ? 0.62 : 1 }}>
-                                            <td style={{ padding: '5px 7px', color: '#0f172a', fontWeight: 600 }}>{p.name || '—'}</td>
+                                            <td style={{ padding: '5px 7px', color: '#0f172a', fontWeight: 600, overflowWrap: 'break-word' }}>{p.name || '—'}</td>
                                             <td style={{ padding: '5px 7px', textAlign: 'right', color: '#475569' }}>{p.city || '—'}</td>
                                             <td style={{ padding: '5px 7px', textAlign: 'right', color: '#475569' }}>{p.zone || '—'}</td>
                                             <td style={{ padding: '5px 7px', textAlign: 'right', color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
@@ -188,7 +191,7 @@ export default function PuntosDeVentaDoc({
                                             </td>
                                             <td style={{ padding: '5px 7px', textAlign: 'right' }}>
                                                 <span style={{
-                                                    fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20,
+                                                    fontSize: 9.5, fontWeight: 800, padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', display: 'inline-block',
                                                     color: inactivo ? ROJO : food ? '#c2410c' : '#059669',
                                                     background: inactivo ? '#fee2e2' : food ? '#ffedd5' : '#d1fae5',
                                                 }}>
@@ -200,6 +203,7 @@ export default function PuntosDeVentaDoc({
                                 })}
                             </tbody>
                         </table>
+                        </div>
                     </div>
                 ))}
 
