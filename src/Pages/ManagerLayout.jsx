@@ -182,7 +182,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
 
                 {/* Exportes */}
                 <div className={currentView === 'exportes' ? 'block h-full' : 'hidden'}>
-                    <ExportesView />
+                    <ExportesView posList={posList} reports={reports} />
                 </div>
 
                 <div className={currentView === 'dashboard' ? 'flex flex-col h-full' : 'hidden'}>

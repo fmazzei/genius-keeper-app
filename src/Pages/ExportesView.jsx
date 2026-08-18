@@ -4,7 +4,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/firestore';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
-import { Download, FileText, Printer, Search, Calendar } from 'lucide-react';
+import { Download, FileText, Printer, Search, Calendar, Boxes } from 'lucide-react';
+import InventarioAnaquelDoc from '@/Components/InventarioAnaquelDoc.jsx';
+import { ciudadesDe } from '@/Components/PuntosDeVentaDoc.jsx';
 
 const DATE_RANGES = [
     { label: '7d',   value: '7d',   days: 7   },
@@ -172,7 +174,10 @@ const printReportPdf = (report) => {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-const ExportesView = () => {
+const ExportesView = ({ posList = [], reports: todosLosReportes = [] }) => {
+    // Informe de inventario en anaquel (foto por PDV, no histórico de visitas).
+    const [anaquelCfg, setAnaquelCfg] = useState(null);   // null = cerrado
+    const [showAnaquel, setShowAnaquel] = useState(null);
     const [reports, setReports]       = useState([]);
     const [loading, setLoading]       = useState(true);
     const [dateRange, setDateRange]   = useState('30d');
@@ -218,6 +223,15 @@ const ExportesView = () => {
 
     return (
         <div className="bg-white min-h-full p-4 md:p-8 space-y-8">
+            {showAnaquel && (
+                <InventarioAnaquelDoc
+                    posList={posList}
+                    reports={todosLosReportes}
+                    ciudades={showAnaquel.ciudades}
+                    soloConDato={showAnaquel.soloConDato}
+                    onClose={() => setShowAnaquel(null)}
+                />
+            )}
 
             {/* Header */}
             <div>
@@ -283,6 +297,76 @@ const ExportesView = () => {
                                 >
                                     <Download size={18} />
                                     Descargar CSV
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Section A2 — Inventario en anaquel de toda la red */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 space-y-4">
+                        <div className="flex items-start gap-4">
+                            <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                                <Boxes size={22} className="text-amber-600" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <h3 className="text-lg font-bold text-slate-800">Inventario en anaquel (PDF)</h3>
+                                <p className="text-sm text-slate-500 mt-0.5">
+                                    Una línea por punto de venta con lo que reportó su <strong>última visita</strong>:
+                                    unidades, lotes con su vencimiento, antigüedad del dato y estado
+                                    (quiebre / bajo el piso / normal). No depende del período de arriba.
+                                </p>
+                            </div>
+                        </div>
+
+                        {anaquelCfg ? (
+                            <div className="space-y-3">
+                                <div>
+                                    <p className="text-xs font-semibold text-slate-500 mb-1.5">Ciudades (ninguna = todas)</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        <button onClick={() => setAnaquelCfg(c => ({ ...c, ciudades: [] }))}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                                                anaquelCfg.ciudades.length === 0 ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
+                                            }`}>Todas</button>
+                                        {ciudadesDe(posList).map(c => {
+                                            const sel = anaquelCfg.ciudades.includes(c);
+                                            return (
+                                                <button key={c}
+                                                    onClick={() => setAnaquelCfg(prev => ({
+                                                        ...prev,
+                                                        ciudades: sel ? prev.ciudades.filter(x => x !== c) : [...prev.ciudades, c],
+                                                    }))}
+                                                    className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                                                        sel ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
+                                                    }`}>{c}</button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                <label className="flex items-center gap-2 text-sm text-slate-600">
+                                    <input type="checkbox" checked={anaquelCfg.soloConDato}
+                                        onChange={e => setAnaquelCfg(c => ({ ...c, soloConDato: e.target.checked }))} />
+                                    Ocultar los puntos que nunca se han visitado
+                                </label>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setShowAnaquel(anaquelCfg)}
+                                        className="flex items-center gap-2 bg-brand-blue text-white font-bold text-sm px-4 py-2 rounded-lg">
+                                        <Printer size={16} /> Generar PDF
+                                    </button>
+                                    <button onClick={() => setAnaquelCfg(null)}
+                                        className="text-sm font-semibold text-slate-500 px-3">Cancelar</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-between gap-4 flex-wrap">
+                                <p className="text-sm text-slate-600">
+                                    <strong className="text-slate-800">{posList.length}</strong> puntos de venta en el maestro.
+                                </p>
+                                <button
+                                    onClick={() => setAnaquelCfg({ ciudades: [], soloConDato: false })}
+                                    className="flex items-center gap-2 bg-amber-500 hover:bg-amber-400 text-white font-bold px-5 py-2.5 rounded-xl transition-colors shadow-sm"
+                                >
+                                    <Boxes size={18} />
+                                    Generar informe
                                 </button>
                             </div>
                         )}
