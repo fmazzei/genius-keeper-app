@@ -123,12 +123,26 @@ exports.crearFacturaZoho = onCall({ region: "us-central1", timeoutSeconds: 240 }
     if (!cliSnap.exists) throw new HttpsError("not-found", "Ese cliente no está en el registro de GK. Concilia con Zoho primero.");
     const cliente = cliSnap.data();
 
-    if (rol === 'vendedor' && cliente.vendedorId !== uid) {
-        throw new HttpsError("permission-denied", "Ese cliente no pertenece a tu cartera.");
+    // El vendedor factura a los clientes de SU cartera y a los que aún no tienen
+    // dueño (al facturarlos, pasan a ser suyos: "todo lo que emite con su sesión
+    // es suyo"). Un cliente de OTRO vendedor sigue bloqueado.
+    let adoptarCliente = false;
+    if (rol === 'vendedor') {
+        if (cliente.vendedorId && cliente.vendedorId !== uid) {
+            throw new HttpsError("permission-denied", "Ese cliente pertenece a la cartera de otro vendedor.");
+        }
+        if (!cliente.vendedorId) adoptarCliente = true;
     }
 
+    // A quién se le atribuye la factura y su comisión: si la emite un vendedor,
+    // es SUYA por definición. Si la emite máster/administración, se respeta el
+    // dueño del cliente (que puede ser otro vendedor).
+    const vendedorDeLaFactura = rol === 'vendedor' ? uid : (cliente.vendedorId || null);
+
     // ── Precio por CANAL (no lo elige el vendedor) ──
-    const cfgVendedor = (await db.doc(`users_metadata/${cliente.vendedorId || uid}`).get()).data()?.commissionConfig || {};
+    const vendedorSnap = await db.doc(`users_metadata/${vendedorDeLaFactura || uid}`).get();
+    const vendedorData = vendedorSnap.exists ? vendedorSnap.data() : {};
+    const cfgVendedor = vendedorData.commissionConfig || {};
     const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...cfgVendedor };
     const esFoodservice = cliente.categoria === 'foodservice';
     const precio = Number(esFoodservice ? cfg.precioUnidadFoodservice : cfg.precioUnidad) || 0;
@@ -152,6 +166,10 @@ exports.crearFacturaZoho = onCall({ region: "us-central1", timeoutSeconds: 240 }
     const venc = new Date(hoy.getTime() + (Number(diasCredito) || 0) * 86400000);
     const iso = (d) => d.toISOString().slice(0, 10);
 
+    // Nombre del vendedor tal como está registrado en Zoho: sin esto la factura
+    // saldría sin salesperson y NO se vería igual que una hecha en Zoho.
+    const salesperson = (vendedorData.zohoSalespersonName || vendedorData.name || '').trim();
+
     const { creds, appConfig, organizationId } = await cargarContexto();
 
     let creada;
@@ -160,13 +178,20 @@ exports.crearFacturaZoho = onCall({ region: "us-central1", timeoutSeconds: 240 }
         creada = await createInvoice({
             accessToken, organizationId, dataCenter: creds.dataCenter,
             enviar: !!emitir,
+            // Mismos campos que una factura creada a mano en Zoho: nada de más
+            // (se retiró el `reference_number` "GK-xxx", que era un artefacto y
+            // no aparecería en una factura normal) y el SALESPERSON puesto, para
+            // que en Zoho se vea con su vendedor como cualquier otra.
+            // El IMPUESTO no se envía: el producto es EXENTO y Zoho aplica lo
+            // configurado en cada artículo.
             invoice: {
                 customer_id: String(customerId),
                 date: iso(hoy),
                 due_date: iso(venc),
+                payment_terms: Number(diasCredito) || 0,
                 line_items: lineItems,
                 notes: notas || '',
-                reference_number: `GK-${uid.slice(0, 6)}`,
+                ...(salesperson ? { salesperson_name: salesperson } : {}),
             },
         });
     } catch (e) { throw errorZoho(e); }
@@ -174,10 +199,17 @@ exports.crearFacturaZoho = onCall({ region: "us-central1", timeoutSeconds: 240 }
     // ── Que entre a GK por la MISMA vía que la conciliación (sin duplicar reglas) ──
     let sincronizada = false;
     try {
-        await upsertFacturaFromZoho(creada, appConfig, {});
+        await upsertFacturaFromZoho(creada, appConfig, { forzarVendedorId: vendedorDeLaFactura || undefined });
         sincronizada = true;
     } catch (e) {
         functions.logger.error('crearFacturaZoho: factura creada en Zoho pero no sincronizada en GK', e);
+    }
+
+    // Si el cliente no tenía dueño, queda asignado a quien lo facturó: así su
+    // histórico y sus próximas facturas se atribuyen solas.
+    if (adoptarCliente) {
+        try { await db.doc(`clientes_zoho/${customerId}`).set({ vendedorId: uid }, { merge: true }); }
+        catch (e) { functions.logger.warn('No se pudo asignar el cliente al vendedor', e); }
     }
 
     // Rastro de quién facturó desde GK (Zoho no lo sabe).
@@ -190,6 +222,9 @@ exports.crearFacturaZoho = onCall({ region: "us-central1", timeoutSeconds: 240 }
         emitida: !!emitir,
         lineas: lineItems,
         creadoPor: uid, creadoPorRol: rol,
+        vendedorId: vendedorDeLaFactura || null,
+        salesperson: salesperson || null,
+        clienteAdoptado: adoptarCliente,
         sincronizada,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });

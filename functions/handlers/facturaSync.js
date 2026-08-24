@@ -161,7 +161,12 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     // conciliación masiva se pasan datos PRE-CARGADOS (opts.preload) para resolver
     // en memoria y NO consultar la BD por cada factura (era el cuello de botella).
     let vendedor;
-    if (opts.preload) {
+    if (opts.forzarVendedorId) {
+        // Factura EMITIDA DESDE GK: el dueño es quien la creó con su sesión, sin
+        // depender de que el cliente esté vinculado o del salesperson de Zoho.
+        const vSnap = await admin.firestore().doc(`users_metadata/${opts.forzarVendedorId}`).get();
+        vendedor = vSnap.exists ? { id: vSnap.id, data: vSnap.data() } : null;
+    } else if (opts.preload) {
         vendedor = resolveVendedorFromPreload(invoice, opts.preload);
     } else {
         vendedor = await resolveVendedorPorRazonSocial(invoice.customer_name);

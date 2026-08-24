@@ -192,7 +192,7 @@ async function listItems({ accessToken, organizationId, dataCenter, perPage = 20
 async function createInvoice({ accessToken, organizationId, dataCenter, invoice, enviar = false }) {
     const { api } = dcUrls(dataCenter);
     const res = await axios.post(`${api}/books/v3/invoices`, invoice, {
-        params: { organization_id: organizationId, ...(enviar ? { send: false } : {}) },
+        params: { organization_id: organizationId },
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' },
         timeout: 30000,
     });

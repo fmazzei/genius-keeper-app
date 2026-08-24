@@ -11,8 +11,9 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { db, functions } from '@/Firebase/config.js';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 import {
     X, Loader, Plus, Minus, FileText, Search, CheckCircle2, AlertTriangle, Trash2,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFract
 export default function NuevaFacturaSheet({ vendedorId, onClose, onCreada }) {
     const [clientes, setClientes] = useState([]);
     const [items, setItems]       = useState([]);
+    const [commConfig, setCommConfig] = useState(DEFAULT_COMMISSION_CONFIG);
     const [cargando, setCargando] = useState(true);
     const [error, setError]       = useState('');
 
@@ -38,11 +40,17 @@ export default function NuevaFacturaSheet({ vendedorId, onClose, onCreada }) {
         let vivo = true;
         (async () => {
             try {
-                const [cSnap, iSnap] = await Promise.all([
+                const [cSnap, iSnap, uSnap] = await Promise.all([
                     getDocs(query(collection(db, 'clientes_zoho'), where('vendedorId', '==', vendedorId))),
                     getDocs(collection(db, 'zoho_items')),
+                    getDoc(doc(db, 'users_metadata', vendedorId)).catch(() => null),
                 ]);
                 if (!vivo) return;
+                // Solo para PREVISUALIZAR el monto: el precio autoritativo lo pone
+                // el servidor al crear la factura (el vendedor no lo fija).
+                if (uSnap?.exists()) {
+                    setCommConfig({ ...DEFAULT_COMMISSION_CONFIG, ...(uSnap.data().commissionConfig || {}) });
+                }
                 setClientes(cSnap.docs.map(d => ({ id: d.id, ...d.data() }))
                     .filter(c => !c.esOficina)
                     .sort((a, b) => (a.customerName || '').localeCompare(b.customerName || '')));
@@ -78,6 +86,11 @@ export default function NuevaFacturaSheet({ vendedorId, onClose, onCreada }) {
     };
 
     const totalUnidades = lineas.reduce((s, l) => s + l.cantidad, 0);
+    // Precio por CANAL del cliente (retail / foodservice), igual que en el servidor.
+    const precioUnit = cliente?.categoria === 'foodservice'
+        ? Number(commConfig.precioUnidadFoodservice) || 0
+        : Number(commConfig.precioUnidad) || 0;
+    const totalEstimado = totalUnidades * precioUnit;
 
     const emitir = async (deseaEmitir) => {
         if (enviando || lineas.length === 0 || !cliente) return;
@@ -231,6 +244,18 @@ export default function NuevaFacturaSheet({ vendedorId, onClose, onCreada }) {
                                         {totalUnidades}
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* Monto: hay que verlo ANTES de emitir un documento fiscal */}
+                            <div className="rounded-xl px-4 py-3 mb-3 bg-emerald-500/10 border border-emerald-500/30 flex items-end justify-between gap-3">
+                                <div>
+                                    <p className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">Total</p>
+                                    <p className="text-2xl font-black text-white tabular-nums leading-tight">{money(totalEstimado)}</p>
+                                </div>
+                                <p className="text-xs text-slate-400 text-right">
+                                    {totalUnidades} uds × {money(precioUnit)}<br />
+                                    <span className="opacity-70">{cliente?.categoria === 'foodservice' ? 'Foodservice' : 'Retail'} · exento de IVA</span>
+                                </p>
                             </div>
 
                             <textarea value={notas} onChange={e => setNotas(e.target.value)}
