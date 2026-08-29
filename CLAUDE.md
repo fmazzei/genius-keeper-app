@@ -247,6 +247,11 @@ lleva visitas por diseño). Guardar normaliza `visitInterval`+`active`.
     (pantalla "Clientes de Zoho → Vendedor") y solo como respaldo del mapa por
     nombre `zoho_customer_map`. Antes solo miraba el mapa por nombre, así que un
     cliente marcado foodservice desde el carnet cobraba tasa de retail.
+    `GestionClientesZoho` ahora tiene el selector **Canal Retail/Foodservice**
+    por razón social (el callable `asignarClienteVendedor` ya aceptaba
+    `categoria`; la UI no lo enviaba). La acción `'canal'` reenvía la atribución
+    vigente para no soltar el cliente al cambiar el canal, y aplica también a
+    los de **Oficina** (sin comisión, pero con su precio por unidad correcto).
   `crearFacturaZoho` aplica el mismo factor al **precio de la línea** (retail
   $5,60/ud → foodservice $19,20/kg): la cantidad se digita en la unidad del
   artículo en Zoho y el monto sale idéntico al de una factura hecha en Zoho.

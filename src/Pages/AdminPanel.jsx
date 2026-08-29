@@ -2368,7 +2368,11 @@ export const GestionClientesZoho = () => {
             if (x.oficina === total) estado = 'oficina';
             else if (x.vendedorIds.size === 1 && x.oficina === 0 && x.carnets.every(c => c.vendedorId)) estado = 'asignado';
             else if (x.vendedorIds.size >= 1 || x.oficina > 0) estado = 'mixto';
-            return { ...x, sucursales: total, estado, vendedorId: x.vendedorIds.size === 1 ? [...x.vendedorIds][0] : null };
+            // CANAL del cliente (retail / foodservice): define el precio por unidad
+            // y, si tiene vendedor, si su comisión es flat. Foodservice se factura
+            // POR KILO en Zoho, así que también manda en la conversión kg → uds.
+            const canal = x.carnets.some(c => c.categoria === 'foodservice') ? 'foodservice' : 'retail';
+            return { ...x, sucursales: total, estado, canal, vendedorId: x.vendedorIds.size === 1 ? [...x.vendedorIds][0] : null };
         }).sort((a, b) => {
             // pendientes primero, luego por nº de facturas desc
             const rank = (e) => e === 'pendiente' ? 0 : e === 'mixto' ? 1 : 2;
@@ -2392,7 +2396,7 @@ export const GestionClientesZoho = () => {
         return true;
     });
 
-    const aplicar = async (grupo, accion, vendedorId) => {
+    const aplicar = async (grupo, accion, vendedorId, categoria) => {
         setSaving(grupo.canon); setMsg('');
         try {
             const fn = httpsCallable(functions, 'asignarClienteVendedor', { timeout: 540000 });
@@ -2400,14 +2404,28 @@ export const GestionClientesZoho = () => {
             const payload = { customerIds };
             if (accion === 'oficina') payload.esOficina = true;
             else if (accion === 'quitar') { payload.vendedorId = null; }
+            else if (accion === 'canal') {
+                // Solo cambia el CANAL: se reenvía la atribución actual tal cual
+                // para no soltar el cliente al tocar Retail/Foodservice.
+                payload.esOficina  = grupo.estado === 'oficina';
+                payload.vendedorId = grupo.estado === 'oficina' ? null : (grupo.vendedorId || null);
+                payload.categoria  = categoria;
+            }
             else { payload.vendedorId = vendedorId; }
             const { data } = await fn(payload);
             // refresco local optimista
-            setClientes(cs => cs.map(c => customerIds.includes(c.customerId)
-                ? { ...c, vendedorId: accion === 'asignar' ? vendedorId : null, esOficina: accion === 'oficina' }
-                : c));
-            const etiqueta = accion === 'oficina' ? 'Oficina' : accion === 'quitar' ? 'sin vendedor' : vendName(vendedorId);
-            setMsg(`✓ "${grupo.canon}" → ${etiqueta} · ${data.backfilled || 0} factura(s) re-atribuida(s).`);
+            setClientes(cs => cs.map(c => {
+                if (!customerIds.includes(c.customerId)) return c;
+                if (accion === 'canal') return { ...c, categoria };
+                return { ...c, vendedorId: accion === 'asignar' ? vendedorId : null, esOficina: accion === 'oficina' };
+            }));
+            const etiqueta = accion === 'canal'
+                ? (categoria === 'foodservice' ? 'Foodservice' : 'Retail')
+                : accion === 'oficina' ? 'Oficina'
+                : accion === 'quitar' ? 'sin vendedor' : vendName(vendedorId);
+            setMsg(accion === 'canal'
+                ? `✓ "${grupo.canon}" → canal ${etiqueta}.`
+                : `✓ "${grupo.canon}" → ${etiqueta} · ${data.backfilled || 0} factura(s) re-atribuida(s).`);
         } catch (e) { setMsg('Error: ' + (e?.message || e)); }
         setSaving('');
     };
@@ -2423,7 +2441,7 @@ export const GestionClientesZoho = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mb-4">
             <p className="font-bold text-slate-800 text-base mb-1">Clientes de Zoho → Vendedor</p>
             <p className="text-xs text-slate-400 mb-3">
-                Cada cliente se atribuye por su <b>carnet</b> (id estable de Zoho) — no importa cómo escriban el nombre. Asigna su vendedor, o márcalo <b>Oficina</b> (atención directa, sin comisión). Al asignar, sus facturas se re-atribuyen solas.
+                Cada cliente se atribuye por su <b>carnet</b> (id estable de Zoho) — no importa cómo escriban el nombre. Asigna su vendedor, o márcalo <b>Oficina</b> (atención directa, sin comisión). Al asignar, sus facturas se re-atribuyen solas. El <b>canal</b> (Retail / Foodservice) fija el precio por unidad y, en foodservice, la comisión flat y la conversión de kilos a unidades — márcalo también en los de Oficina.
             </p>
 
             {loading ? <LoadingSpinner /> : (
@@ -2465,7 +2483,32 @@ export const GestionClientesZoho = () => {
                                             {g.sucursales > 1 ? `${g.sucursales} sucursales · ` : ''}{g.facturas} factura{g.facturas === 1 ? '' : 's'}
                                         </p>
                                     </div>
-                                    <Badge estado={g.estado} vendedorId={g.vendedorId} />
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        {g.canal === 'foodservice' && (
+                                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">Foodservice</span>
+                                        )}
+                                        <Badge estado={g.estado} vendedorId={g.vendedorId} />
+                                    </div>
+                                </div>
+                                {/* Canal: define el precio por unidad, la comisión flat de
+                                    foodservice y la conversión kg → uds (foodservice se
+                                    factura POR KILO en Zoho). Aplica también a los de Oficina. */}
+                                <div className="flex items-center gap-1.5 mb-2.5">
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mr-1">Canal</span>
+                                    {[['retail', 'Retail'], ['foodservice', 'Foodservice']].map(([val, lbl]) => (
+                                        <button
+                                            key={val}
+                                            onClick={() => g.canal !== val && aplicar(g, 'canal', null, val)}
+                                            disabled={saving === g.canon}
+                                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
+                                                g.canal === val
+                                                    ? 'bg-brand-blue border-brand-blue text-white'
+                                                    : 'border-slate-300 text-slate-500 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            {lbl}
+                                        </button>
+                                    ))}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2">
                                     <select
