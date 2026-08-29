@@ -84,6 +84,23 @@ service cloud.firestore {
       allow get: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow list: if isAdmin() || getRole(request.auth.uid) == 'vendedor' || (isMerchandiser() && resource.data.userId == request.auth.uid);
       allow create: if (isMerchandiser() || isAdmin()) && request.resource.data.userId == request.auth.uid;
+      // El máster edita cualquier campo. Además, al declarar una DEVOLUCIÓN hay
+      // que marcar los lotes devueltos en el reporte de origen para que dejen de
+      // contar como producto en anaquel: eso se permite al equipo de campo, pero
+      // ACOTADO a `batches` — ningún otro dato del reporte se puede tocar.
+      allow update: if isMaster() || (
+        (isMerchandiser() || isVendedor() || isAdmin()) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['batches'])
+      );
+      allow delete: if isMaster();
+    }
+
+    // Devoluciones declaradas en el punto de venta: unidades retiradas y cómo se
+    // resuelven con el cliente (reposición 1:1 o nota de crédito). Las crea el
+    // equipo de campo; solo el máster corrige o borra.
+    match /devoluciones/{devolucionId} {
+      allow get, list: if isAuthenticated() && (isAdmin() || isMerchandiser() || isVendedor());
+      allow create: if isAuthenticated() && (isMerchandiser() || isVendedor() || isAdmin());
       allow update, delete: if isMaster();
     }
 

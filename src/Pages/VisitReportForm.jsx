@@ -6,7 +6,7 @@ import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { safeUUID } from '@/utils/safeId.js';
-import { MOTIVOS_RETIRO, DIAS_POR_VENCER, motivosDe, labelMotivosRetiro, contabilizarLotes } from '@/utils/retiros.js';
+import { estadoLote, resumenLotes } from '@/utils/retiros.js';
 import { useSwipeable } from 'react-swipeable';
 // ✅ CORRECCIÓN: Se añade 'Check' a la lista de importaciones para solucionar el error.
 import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, AlertTriangle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check, HelpCircle } from 'lucide-react';
@@ -162,21 +162,20 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
     // su MOTIVO (queda su rastro) y deja de contar como stock vendible.
     // El motivo importa: solo el vencimiento es merma por caducidad; un daño o una
     // devolución son otra cosa y mezclarlos ensucia el indicador.
-    // Los motivos se COMBINAN: un lote puede estar vencido y además con el envase
-    // dañado, y esa misma unidad cuenta en los dos. El lote queda retirado
-    // mientras tenga al menos un motivo marcado; al quitar el último, se deshace.
-    const handleToggleMotivo = (index, motivo) => {
+    // El reporte OBSERVA el anaquel; no retira nada. El estado de cada lote
+    // (vencido / por vencer / vigente) lo DEDUCE el sistema de la fecha — no hay
+    // por qué preguntárselo al mercaderista. Lo único que la fecha no puede
+    // decir es cuántas unidades tienen el ENVASE DAÑADO: eso sí se declara.
+    // El retiro efectivo (y si se repone o se emite nota de crédito) se declara
+    // después, en Devoluciones.
+    const handleDanadasChange = (index, valor) => {
         if (isReadOnly) return;
+        const limpio = String(valor ?? '').replace(/[^\d]/g, '');
         setReport(prev => ({
             ...prev,
-            batches: prev.batches.map((b, i) => {
-                if (i !== index) return b;
-                const actuales = motivosDe(b);
-                const nuevos = actuales.includes(motivo)
-                    ? actuales.filter(m => m !== motivo)
-                    : [...actuales, motivo];
-                return { ...b, retirado: nuevos.length > 0, motivosRetiro: nuevos, motivoRetiro: null };
-            }),
+            batches: prev.batches.map((b, i) => i === index
+                ? { ...b, danadas: limpio === '' ? '' : Math.min(Number(b.quantity) || 0, parseInt(limpio, 10) || 0) }
+                : b),
         }));
     };
     const openNumpad = () => { if(!isReadOnly) { if (currentDate) setNumpadOpen(true); else alert("Primero selecciona o escanea una fecha."); }};
@@ -238,83 +237,54 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                                 const days = daysUntilExpiry(batch.expiryDate);
                                 const urg = getUrgency(days);
                                 return (
-                                    <div key={batch.originalIdx} className={`p-3 rounded-lg animate-fade-in ${batch.retirado ? 'bg-slate-100 border border-slate-300' : urg.row}`}>
+                                    <div key={batch.originalIdx} className={`p-3 rounded-lg animate-fade-in ${urg.row}`}>
                                         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                                             <div className="flex items-center gap-2 min-w-0">
-                                                <span className={`font-semibold ${batch.retirado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>Vence: {batch.expiryDate}</span>
-                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${batch.retirado ? 'bg-slate-200 text-slate-600' : urg.badge}`}>
-                                                    {batch.retirado ? `RETIRADO · ${labelMotivosRetiro(batch)}` : urg.label}
-                                                </span>
+                                                <span className="font-semibold text-slate-800">Vence: {batch.expiryDate}</span>
+                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${urg.badge}`}>{urg.label}</span>
                                             </div>
                                             <div className="flex items-center justify-between w-full sm:w-auto gap-3">
-                                                <span className={`font-bold text-lg ${batch.retirado ? 'text-slate-400 line-through' : 'text-brand-blue'}`}>
+                                                <span className="font-bold text-lg text-brand-blue">
                                                     {batch.quantity} <span className="text-sm font-normal text-slate-500">unid.</span>
                                                 </span>
                                                 {!isReadOnly && <button onClick={() => handleRemoveBatch(batch.originalIdx)}><Trash2 className="text-red-500" size={18}/></button>}
                                             </div>
                                         </div>
-                                        {/* Retiro del anaquel — en CUALQUIER lote, sin importar
-                                            su fecha. Los motivos son PILLS que se combinan: un
-                                            lote puede estar vencido y con el envase dañado, y esa
-                                            misma unidad cuenta en los dos. */}
-                                        {!isReadOnly && (() => {
-                                            const marcados = motivosDe(batch);
-                                            return (
-                                                <div className="mt-2">
-                                                    <p className="text-[11px] font-semibold text-slate-500 mb-1.5">
-                                                        {marcados.length > 0
-                                                            ? '¿Por qué lo retiraste? (puedes marcar varios)'
-                                                            : '¿Retiraste este lote del anaquel? Marca el motivo:'}
-                                                    </p>
-                                                    <div className="flex flex-wrap gap-1.5">
-                                                        {MOTIVOS_RETIRO.map(m => {
-                                                            const on = marcados.includes(m.id);
-                                                            // Sugerencia visual: el lote entra en la ventana
-                                                            // de retiro preventivo (7 días antes de vencer).
-                                                            const sugerido = m.id === 'por_vencer' && !on && days > 0 && days <= DIAS_POR_VENCER;
-                                                            return (
-                                                                <button
-                                                                    key={m.id}
-                                                                    type="button"
-                                                                    onClick={() => handleToggleMotivo(batch.originalIdx, m.id)}
-                                                                    className={`text-[11px] font-bold py-1.5 px-2.5 rounded-full border-2 transition-colors active:scale-95 ${
-                                                                        on
-                                                                            ? 'bg-slate-700 text-white border-slate-700'
-                                                                            : sugerido
-                                                                                ? 'bg-amber-50 text-amber-800 border-amber-400 border-dashed'
-                                                                                : 'bg-white text-slate-600 border-slate-300'
-                                                                    }`}
-                                                                >
-                                                                    {on && '✓ '}{m.label}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                    {marcados.length > 0 && (
-                                                        <p className="text-[11px] text-slate-500 mt-1.5">
-                                                            {batch.quantity} unid. salen del anaquel · cuentan en {marcados.length === 1 ? 'este motivo' : `los ${marcados.length} motivos`}.
-                                                        </p>
-                                                    )}
-                                                </div>
-                                            );
-                                        })()}
+                                        {/* Lo ÚNICO que la fecha no puede decir: cuántas de esas
+                                            unidades tienen el envase dañado. El estado (vencido /
+                                            por vencer / vigente) lo deduce el sistema, y el retiro
+                                            efectivo se declara después en Devoluciones. */}
+                                        {!isReadOnly && (
+                                            <div className="mt-2 flex items-center gap-2">
+                                                <label className="text-[11px] font-semibold text-slate-600 flex-1 min-w-0">
+                                                    ¿Unidades con envase dañado?
+                                                </label>
+                                                <input
+                                                    type="number" min="0" max={batch.quantity} inputMode="numeric"
+                                                    value={batch.danadas ?? ''}
+                                                    onChange={e => handleDanadasChange(batch.originalIdx, e.target.value)}
+                                                    placeholder="0"
+                                                    className="w-16 px-2 py-1.5 border-2 border-slate-300 rounded-lg text-sm text-center font-bold bg-white"
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 );
                         })}
                     </div>
                     {(() => {
-                        const retiradas = report.batches.reduce((s, b) => s + (b.retirado ? (Number(b.quantity) || 0) : 0), 0);
-                        return retiradas > 0 ? (
+                        const danadas = report.batches.reduce((s, b) => s + Math.min(Number(b.quantity) || 0, Number(b.danadas) || 0), 0);
+                        return danadas > 0 ? (
                             <div className="flex items-center gap-2 bg-slate-100 border border-slate-300 rounded-lg p-3 mt-3">
-                                <Trash2 size={16} className="text-slate-500 shrink-0" />
+                                <AlertCircle size={16} className="text-slate-500 shrink-0" />
                                 <p className="text-sm font-semibold text-slate-700">
-                                    {retiradas} unidad{retiradas !== 1 ? 'es' : ''} retirada{retiradas !== 1 ? 's' : ''} del anaquel: no cuentan como inventario disponible. Quedan registradas con su motivo.
+                                    {danadas} unidad{danadas !== 1 ? 'es' : ''} con envase dañado. El retiro y la reposición se declaran en <b>Devoluciones</b>.
                                 </p>
                             </div>
                         ) : null;
                     })()}
                     {(() => {
-                        const atRisk = report.batches.reduce((s, b) => s + (!b.retirado && daysUntilExpiry(b.expiryDate) <= 15 ? b.quantity : 0), 0);
+                        const atRisk = report.batches.reduce((s, b) => s + (daysUntilExpiry(b.expiryDate) <= 15 ? b.quantity : 0), 0);
                         return atRisk > 0 && !report.stockout ? (
                             <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-lg p-3 mt-3">
                                 <AlertTriangle size={16} className="text-amber-600 shrink-0" />
@@ -638,13 +608,14 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         // está en el punto de venta. Lo retirado se guarda aparte, SEPARADO POR
         // MOTIVO — solo el vencimiento es merma por caducidad; un daño o una
         // devolución son otra cosa y mezclarlos ensucia el indicador.
-        const { inventoryLevel, retirados, retiradoVencimiento } = contabilizarLotes(report.batches);
+        // El reporte observa: inventario total del anaquel, cuántas unidades traen
+        // el envase dañado, y el desglose por estado DEDUCIDO de las fechas.
+        // El retiro efectivo se declara aparte, en Devoluciones.
+        const { inventoryLevel, envasesDanados, porEstado } = resumenLotes(report.batches);
 
         const finalReportData = {
-            // TODOS los retiros de la visita, con su motivo; y aparte el subconjunto
-            // por caducidad, que es la merma por vencimiento (métrica de negocio).
-            retirados,
-            retiradoVencimiento,
+            envasesDanados,
+            lotesPorEstado: porEstado,
             price: Number(report.price) || 0,
             orderQuantity: Number(report.orderQuantity) || 0,
             stockout: report.stockout || false,

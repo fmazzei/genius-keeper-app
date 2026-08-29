@@ -46,7 +46,7 @@ export function inventarioEnAnaquel(pos = [], reports = [], opts = {}) {
         // Lotes observados, ordenados por urgencia de vencimiento. Los RETIRADOS
         // del anaquel en la visita no cuentan: ya no están en el punto de venta.
         const lotes = (v?.batches || [])
-            .filter(b => b?.retirado !== true)
+            .filter(b => b?.devuelto !== true && b?.retirado !== true)
             .map(b => {
                 const d = b?.expiryDate ? new Date(`${b.expiryDate}T00:00:00`) : null;
                 if (!d || isNaN(d)) return null;

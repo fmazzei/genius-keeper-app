@@ -1,88 +1,109 @@
 // RUTA: src/utils/retiros.js
 //
-// RETIRO DE PRODUCTO DEL ANAQUEL — motivos y contabilidad.
+// ESTADO DE LOS LOTES EN ANAQUEL y DEVOLUCIONES.
 //
-// Sacar producto del anaquel es una ACCIÓN de la visita, igual que reponer. Si no
-// se declara, GK sigue creyendo que ese producto está en el punto de venta hasta
-// la visita siguiente (y el indicador "PDV con producto por vencer" miente).
+// Separación de responsabilidades (decisión del dueño):
 //
-// Cualquier lote se puede retirar, tenga la fecha que tenga.
+//  · El REPORTE DE VISITA solo OBSERVA el anaquel: lote = fecha + cantidad, más
+//    —lo único que la fecha no puede decir— cuántas unidades tienen el ENVASE
+//    DAÑADO. El estado (vencido / por vencer / vigente) NO se le pregunta al
+//    mercaderista: se DEDUCE de la fecha de vencimiento.
 //
-// MOTIVOS MÚLTIPLES: un mismo retiro puede tener varias razones a la vez — un
-// lote puede estar vencido Y con el envase dañado. Por eso los motivos son pills
-// que se combinan, no una lista de opción única. La MISMA unidad cuenta en cada
-// motivo que se le marque (`porMotivo` se solapa a propósito: sirve para
-// preguntar "¿cuántas unidades tenían el envase dañado?" sin importar si además
-// estaban vencidas). El total `unidades` NO doble-cuenta: son las unidades
-// físicas que salieron del anaquel.
-//
-// El lote NUNCA se borra del reporte: se marca (`retirado` + `motivosRetiro`)
-// para que quede su rastro, pero deja de contar como stock vendible.
+//  · La DEVOLUCIÓN es un acto posterior: el mercaderista retira físicamente las
+//    unidades y declara cómo se resuelve con el cliente — se REPONE unidad por
+//    unidad con producto vigente, o se emite NOTA DE CRÉDITO. Vive en su propio
+//    flujo (Centro de Operaciones → Devoluciones), no dentro del reporte.
 
-export const MOTIVOS_RETIRO = [
-    { id: 'vencido',            label: 'Vencido',                corto: 'Vencido' },
-    { id: 'por_vencer',         label: 'Por vencer (≤7 días)',   corto: 'Por vencer' },
-    { id: 'envase_danado',      label: 'Envase dañado',          corto: 'Envase dañado' },
-    { id: 'devolucion_calidad', label: 'Devolución por calidad', corto: 'Dev. calidad' },
-];
-
-// Días antes del vencimiento a partir de los cuales se sugiere el retiro
-// preventivo (regla del negocio: se saca del anaquel 7 días antes).
+// Días antes del vencimiento a partir de los cuales el lote se considera "por
+// vencer" y debe salir del anaquel (regla del negocio).
 export const DIAS_POR_VENCER = 7;
 
-// Compatibilidad con los motivos de la primera versión (opción única).
-const LEGACY = { vencimiento: 'vencido', dano: 'envase_danado', devolucion: 'devolucion_calidad', otro: 'devolucion_calidad' };
+export const MOTIVOS_DEVOLUCION = [
+    { id: 'vencido',    label: 'Vencido',        corto: 'Vencido' },
+    { id: 'por_vencer', label: 'Por vencer',     corto: 'Por vencer' },
+    { id: 'danado',     label: 'Envase dañado',  corto: 'Envase dañado' },
+    { id: 'calidad',    label: 'Calidad',        corto: 'Calidad' },
+];
 
-/** Motivos de un lote, normalizados a arreglo (soporta el formato viejo). */
-export function motivosDe(batch) {
-    if (Array.isArray(batch?.motivosRetiro) && batch.motivosRetiro.length) {
-        return batch.motivosRetiro.map(m => LEGACY[m] || m);
-    }
-    if (batch?.motivoRetiro) return [LEGACY[batch.motivoRetiro] || batch.motivoRetiro];
-    // Retiros anteriores a los motivos: solo se podían declarar por caducidad.
-    return batch?.retirado ? ['vencido'] : [];
+export const labelMotivo = (id) => MOTIVOS_DEVOLUCION.find(m => m.id === id)?.corto || id;
+
+// Cómo se resuelve la devolución con el cliente.
+export const RESOLUCIONES = [
+    { id: 'reposicion',   label: 'Reposición 1:1', desc: 'Se repone cada unidad con producto vigente.' },
+    { id: 'nota_credito', label: 'Nota de crédito', desc: 'Se acredita el monto al cliente.' },
+    { id: 'pendiente',    label: 'Por definir',     desc: 'Se retira ahora y se acuerda después.' },
+];
+
+const MS_DIA = 86400000;
+
+/** Días hasta el vencimiento (negativo si ya venció). null si no hay fecha. */
+export function diasParaVencer(expiryDate, referencia = new Date()) {
+    if (!expiryDate) return null;
+    const d = new Date(`${expiryDate}T00:00:00`);
+    if (isNaN(d.getTime())) return null;
+    const ref = new Date(referencia);
+    ref.setHours(0, 0, 0, 0);
+    return Math.ceil((d - ref) / MS_DIA);
 }
 
-export const labelMotivo = (id) => MOTIVOS_RETIRO.find(m => m.id === id)?.corto || id;
+/**
+ * Estado de un lote DEDUCIDO de su fecha — el sistema no se lo pregunta a nadie.
+ * @returns {'vencido'|'por_vencer'|'vigente'|'sin_fecha'}
+ */
+export function estadoLote(expiryDate, referencia = new Date()) {
+    const d = diasParaVencer(expiryDate, referencia);
+    if (d === null) return 'sin_fecha';
+    if (d <= 0) return 'vencido';
+    if (d <= DIAS_POR_VENCER) return 'por_vencer';
+    return 'vigente';
+}
 
-/** Etiqueta legible de todos los motivos de un lote ("Vencido + Envase dañado"). */
-export const labelMotivosRetiro = (batch) => {
-    const ms = motivosDe(batch);
-    return ms.length ? ms.map(labelMotivo).join(' + ') : 'Retirado';
+export const ESTADO_LABEL = {
+    vencido:    'Vencido',
+    por_vencer: `Por vencer (≤${DIAS_POR_VENCER} d)`,
+    vigente:    'Vigente',
+    sin_fecha:  'Sin fecha',
 };
 
-/** Unidades y lotes de un conjunto de lotes retirados, con sus motivos. */
-export const resumenRetiro = (lotes = []) => ({
-    unidades: lotes.reduce((s, b) => s + (Number(b.quantity) || 0), 0),
-    lotes: lotes.map(b => ({
-        expiryDate: b.expiryDate || null,
-        quantity: Number(b.quantity) || 0,
-        motivos: motivosDe(b),
-    })),
-});
+/**
+ * Resumen de los lotes de un reporte de visita.
+ *  · `inventoryLevel`  todas las unidades observadas en el anaquel
+ *  · `envasesDanados`  unidades con el envase dañado (declaradas)
+ *  · `porEstado`       unidades por estado deducido de la fecha
+ * El reporte NO retira nada: eso ocurre en Devoluciones.
+ */
+export function resumenLotes(batches = [], referencia = new Date()) {
+    const porEstado = { vencido: 0, por_vencer: 0, vigente: 0, sin_fecha: 0 };
+    let inventoryLevel = 0, envasesDanados = 0;
+    batches.forEach(b => {
+        const q = Number(b.quantity) || 0;
+        const d = Math.min(q, Number(b.danadas) || 0);
+        inventoryLevel += q;
+        envasesDanados += d;
+        porEstado[estadoLote(b.expiryDate, referencia)] += q;
+    });
+    return { inventoryLevel, envasesDanados, porEstado };
+}
 
 /**
- * Contabilidad de los lotes de un reporte:
- *  · `inventoryLevel`      inventario VENDIBLE (excluye lo retirado)
- *  · `retirados`           todo lo retirado + `porMotivo` (las unidades se
- *                          repiten en cada motivo marcado, a propósito)
- *  · `retiradoVencimiento` solo lo que salió YA VENCIDO = merma por caducidad
+ * Lotes de un reporte que AMERITAN devolución: vencidos, por vencer, o con
+ * envases dañados. Es lo que precarga el flujo de Devoluciones para que el
+ * mercaderista confirme en vez de escribir.
  */
-export function contabilizarLotes(batches = []) {
-    const retirados = batches.filter(b => b.retirado && motivosDe(b).length > 0);
-
-    const porMotivo = {};
-    MOTIVOS_RETIRO.forEach(m => { porMotivo[m.id] = 0; });
-    retirados.forEach(b => {
+export function lotesParaDevolver(report, referencia = new Date()) {
+    const out = [];
+    (report?.batches || []).forEach(b => {
         const q = Number(b.quantity) || 0;
-        motivosDe(b).forEach(m => { porMotivo[m] = (porMotivo[m] || 0) + q; });
+        const danadas = Math.min(q, Number(b.danadas) || 0);
+        const estado = estadoLote(b.expiryDate, referencia);
+        if (estado === 'vencido' || estado === 'por_vencer') {
+            out.push({ expiryDate: b.expiryDate || null, unidades: q, motivo: estado, estado });
+        } else if (danadas > 0) {
+            // Un lote vigente solo se devuelve por las unidades dañadas.
+            out.push({ expiryDate: b.expiryDate || null, unidades: danadas, motivo: 'danado', estado });
+        }
+        // Un lote vencido/por vencer que ADEMÁS trae envases dañados ya está
+        // cubierto por su línea: son las mismas unidades físicas.
     });
-
-    const vencidos = retirados.filter(b => motivosDe(b).includes('vencido'));
-
-    return {
-        inventoryLevel: batches.reduce((s, b) => s + (b.retirado ? 0 : (Number(b.quantity) || 0)), 0),
-        retirados: retirados.length > 0 ? { ...resumenRetiro(retirados), porMotivo } : null,
-        retiradoVencimiento: vencidos.length > 0 ? resumenRetiro(vencidos) : null,
-    };
+    return out;
 }

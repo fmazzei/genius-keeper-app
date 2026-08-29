@@ -293,29 +293,39 @@ visita no se estaba declarando**, así que GK seguía viendo el problema abierto
   items}`; la tarjeta pasó a **"Quiebres sin reponer"** y muestra **abiertos**,
   con desglose "N quiebres · M repuestos en la visita (R)" y chip **R** por PDV.
   Sin esto el vendedor salía a pedir OC de puntos ya surtidos.
-- **Retiro de producto del anaquel** (`batch.retirado` + `batch.motivosRetiro[]`):
-  en el paso de lotes del `VisitReportForm`, **CUALQUIER lote** — sin importar su
-  fecha — puede retirarse marcando sus motivos como **pills COMBINABLES**
-  (`src/utils/retiros.js`): `vencido` / `por_vencer` (≤7 días, `DIAS_POR_VENCER`,
-  se sugiere solo cuando el lote entra en esa ventana) / `envase_danado` /
-  `devolucion_calidad`. **Un lote puede tener varios motivos a la vez** (vencido
-  Y con el envase dañado) y la MISMA unidad cuenta en cada uno: `porMotivo` se
-  solapa a propósito, mientras que `retirados.unidades` son las unidades físicas
-  SIN doble conteo. `motivosDe()` normaliza el formato viejo de opción única.
-  El lote NO se borra (queda su rastro), pero:
-  · `inventoryLevel` cuenta solo lo VENDIBLE (excluye retirados);
-  · se guardan `retirados` (todo lo retirado + `porMotivo`) y
-    `retiradoVencimiento` (solo los que incluyen `vencido`) = **merma declarada**;
-  · dejan de contar en "PDV con producto por vencer" (`seguidorSemanal`),
-    Índice de Frescura (`useKpiCalculations`, `FreshnessModalContent`) y el
-    export de inventario en anaquel (`inventarioAnaquel.js`).
-  La contabilidad vive en `contabilizarLotes(batches)` (`utils/retiros.js`), una
-  sola fuente para el reporte y para la edición del máster.
-  **Corrección retroactiva**: `EditReportForm` (máster) tiene la sección "Lotes en
-  anaquel" con los mismos motivos y recalcula `inventoryLevel` al guardar. La hoja
-  de detalle marca el lote como "RETIRADO (Vencido + Envase dañado)".
-  *Pendiente/futuro*: tablero de merma con `retiradoVencimiento` (unidades y $
-  perdidos por vencimiento, por PDV y por mes).
+- **Retiro de producto: el reporte OBSERVA, la devolución ACTÚA.** Decisión del
+  dueño: la fecha del lote ya le dice al sistema si está `vencido` /
+  `por_vencer` (≤`DIAS_POR_VENCER`=7) / `vigente` — no se le pregunta al
+  mercaderista (`estadoLote()` en `src/utils/retiros.js`). En el reporte solo se
+  declara lo que la fecha NO puede decir: **cuántas unidades tienen el envase
+  dañado** (`batch.danadas`). El reporte guarda `envasesDanados` y
+  `lotesPorEstado`; `inventoryLevel` sigue siendo TODO lo observado.
+- **Módulo Devoluciones** (`src/Pages/DevolucionesPage.jsx`, Centro de
+  Operaciones → **Devoluciones**, ruta `devoluciones` en `AppShell`): el acto
+  POSTERIOR al reporte. El mercaderista declara las unidades que retira y —lo
+  que no existía en ningún lado— **cómo se resuelve con el cliente**:
+  `reposicion` 1:1 con producto vigente, `nota_credito` (con monto), o
+  `pendiente`. Colección **`devoluciones`** `{posId, posName, reporterId, fecha,
+  lotes:[{expiryDate, unidades, motivo}], unidades, resolucion,
+  unidadesRepuestas, montoNotaCredito, notas, reporteOrigenId}`.
+  - **Diseño híbrido (elegido a propósito):** abre con los PDV que YA tienen
+    lotes pendientes, precargados del último reporte — se CONFIRMA en vez de
+    escribir. Debajo, **"Otro punto de venta"** para lo que no está en el último
+    reporte (daño no visto, PDV que visitó otro, acuerdo por teléfono). Sin esa
+    salida esos casos no tendrían dónde declararse y se trabajaría por fuera.
+  - **Cierra el ciclo:** al guardar marca `batch.devuelto = true` en el reporte
+    de origen, así esas unidades dejan de contar en "PDV con producto por
+    vencer" (`seguidorSemanal`), Índice de Frescura (`useKpiCalculations`,
+    `FreshnessModalContent`) y el export de anaquel (`inventarioAnaquel.js`).
+  - **Reglas Firestore:** `devoluciones` (crea el equipo de campo, corrige solo
+    el máster) y `visit_reports.update` acotado — el campo puede tocar
+    ÚNICAMENTE `batches` (`affectedKeys().hasOnly(['batches'])`); el resto del
+    reporte sigue siendo del máster.
+  - El máster corrige `danadas` por lote en `EditReportForm` ("Lotes en anaquel",
+    que además muestra el estado deducido de la fecha).
+  *Pendiente/futuro*: tablero de devoluciones (unidades y $ por motivo, por PDV y
+  por mes; reposición vs nota de crédito) y que el vendedor las vea en su
+  seguidor.
 
 ### Rotación: muestra mínima para comparar (2026-08) ✅
 El modal mostraba **+1139%** de agosto contra julio. La aritmética estaba bien

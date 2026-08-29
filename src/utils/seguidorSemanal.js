@@ -221,7 +221,7 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
         // Los lotes marcados como RETIRADOS del anaquel en la propia visita no
         // cuentan: ya no están en el punto de venta (ver `retiradoVencimiento`).
         const lotes = (v.batches || [])
-            .filter(b => b?.retirado !== true)
+            .filter(b => b?.devuelto !== true && b?.retirado !== true)
             .map(b => {
                 const d = b?.expiryDate ? new Date(`${b.expiryDate}T00:00:00`) : null;
                 if (!d || isNaN(d)) return null;

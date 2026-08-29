@@ -5,7 +5,7 @@ import { FormSection, ToggleButton, FormInput } from '@/Components/FormControls.
 import { DollarSign, BarChart2, Shield, Trash2, X, Search } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner.jsx';
 import NewEntrantModal from './NewEntrantModal.jsx';
-import { MOTIVOS_RETIRO, motivosDe, contabilizarLotes } from '@/utils/retiros.js';
+import { estadoLote, ESTADO_LABEL, resumenLotes } from '@/utils/retiros.js';
 
 const SHELF_LOCATIONS = ['ojos', 'manos', 'superior', 'inferior'];
 const POP_STATUS_OPTIONS = ['Exhibido correctamente', 'Dañado', 'Ausente', 'Sin Campaña Activa'];
@@ -56,17 +56,14 @@ const EditReportForm = ({ report, onSave, onClose }) => {
     };
     const handleRemoveEntrant = (index) => handleChange('newEntrants', editedData.newEntrants.filter((_, i) => i !== index));
 
-    // Marcar un lote como RETIRADO del anaquel a posteriori. Es la vía para
-    // corregir reportes donde el producto ya se sacó del punto de venta pero la
-    // visita no lo declaró (el mercaderista no tenía cómo decirlo).
-    // Los motivos se COMBINAN (mismo modelo que el reporte de campo): un lote
-    // puede estar vencido y con el envase dañado a la vez.
-    const handleToggleMotivo = (index, motivo) => handleChange('batches',
+    // El máster corrige lo ÚNICO que la fecha no puede decir: cuántas unidades
+    // del lote tienen el envase dañado. El estado (vencido / por vencer /
+    // vigente) lo deduce el sistema, y el retiro se declara en Devoluciones.
+    const handleDanadasChange = (index, valor) => handleChange('batches',
         (editedData.batches || []).map((b, i) => {
             if (i !== index) return b;
-            const actuales = motivosDe(b);
-            const nuevos = actuales.includes(motivo) ? actuales.filter(m => m !== motivo) : [...actuales, motivo];
-            return { ...b, retirado: nuevos.length > 0, motivosRetiro: nuevos, motivoRetiro: null };
+            const limpio = String(valor ?? '').replace(/[^\d]/g, '');
+            return { ...b, danadas: limpio === '' ? '' : Math.min(Number(b.quantity) || 0, parseInt(limpio, 10) || 0) };
         }));
 
     const handleSave = async () => {
@@ -88,9 +85,12 @@ const EditReportForm = ({ report, onSave, onClose }) => {
                 competition: editedData.competition || [],
                 newEntrants: editedData.newEntrants || [],
                 batches,
-                // El inventario en anaquel cuenta solo lo vendible: un lote
-                // retirado por vencimiento ya no está en el punto de venta.
-                ...(batches.length > 0 ? contabilizarLotes(batches) : {}),
+                // Inventario observado + unidades con envase dañado + desglose por
+                // estado deducido de las fechas (ver utils/retiros.js).
+                ...(batches.length > 0 ? (() => {
+                    const { inventoryLevel, envasesDanados, porEstado } = resumenLotes(batches);
+                    return { inventoryLevel, envasesDanados, lotesPorEstado: porEstado };
+                })() : {}),
             };
             await updateDoc(reportRef, finalData);
             onSave();
@@ -139,32 +139,36 @@ const EditReportForm = ({ report, onSave, onClose }) => {
                     {(editedData.batches || []).length > 0 && (
                         <FormSection title="Lotes en anaquel" icon={<DollarSign className="text-brand-blue mr-3"/>}>
                             <p className="text-xs text-slate-500 mb-2">
-                                Marca los lotes que ya se <b>retiraron del anaquel</b> con sus motivos (se pueden combinar). Dejan de
-                                contar como inventario disponible y como producto por vencer en el punto de venta.
+                                El estado de cada lote (vencido / por vencer / vigente) lo <b>deduce el sistema</b> de
+                                su fecha. Aquí solo se corrige cuántas unidades tienen el <b>envase dañado</b>. El
+                                retiro efectivo se declara en <b>Devoluciones</b>.
                             </p>
                             <div className="space-y-2">
                                 {(editedData.batches || []).map((b, i) => {
-                                    const marcados = motivosDe(b);
+                                    const est = estadoLote(b.expiryDate);
+                                    const tono = est === 'vencido' ? 'bg-red-50 border-red-200'
+                                        : est === 'por_vencer' ? 'bg-amber-50 border-amber-200'
+                                        : 'bg-white border-slate-200';
                                     return (
-                                        <div key={i} className={`p-2.5 rounded-lg border ${b.retirado ? 'bg-slate-100 border-slate-300' : 'bg-white border-slate-200'}`}>
-                                            <div className="min-w-0">
-                                                <p className={`text-sm font-semibold ${b.retirado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
-                                                    Vence: {b.expiryDate || '—'}
-                                                </p>
-                                                <p className="text-xs text-slate-500">{Number(b.quantity) || 0} unid.</p>
-                                            </div>
-                                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                                {MOTIVOS_RETIRO.map(m => {
-                                                    const on = marcados.includes(m.id);
-                                                    return (
-                                                        <button key={m.id} type="button" onClick={() => handleToggleMotivo(i, m.id)}
-                                                            className={`text-[11px] font-bold py-1.5 px-2.5 rounded-full border-2 transition-colors ${
-                                                                on ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300'
-                                                            }`}>
-                                                            {on && '\u2713 '}{m.label}
-                                                        </button>
-                                                    );
-                                                })}
+                                        <div key={i} className={`p-2.5 rounded-lg border ${tono} ${b.devuelto ? 'opacity-60' : ''}`}>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-semibold text-slate-800">Vence: {b.expiryDate || '—'}</p>
+                                                    <p className="text-xs text-slate-500">
+                                                        {Number(b.quantity) || 0} unid. · {ESTADO_LABEL[est]}
+                                                        {b.devuelto && ' · DEVUELTO'}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <label className="text-[11px] font-semibold text-slate-600">Dañadas</label>
+                                                    <input
+                                                        type="number" min="0" max={b.quantity} inputMode="numeric"
+                                                        value={b.danadas ?? ''}
+                                                        onChange={e => handleDanadasChange(i, e.target.value)}
+                                                        placeholder="0"
+                                                        className="w-16 px-2 py-1.5 border-2 border-slate-300 rounded-lg text-sm text-center font-bold bg-white"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
                                     );

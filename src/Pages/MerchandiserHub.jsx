@@ -1,7 +1,7 @@
 // RUTA: src/Pages/MerchandiserHub.jsx
 
 import React from 'react';
-import { FileText, Map, Truck, AlertTriangle, ClipboardList, Target, Warehouse } from 'lucide-react';
+import { FileText, Map, Truck, AlertTriangle, ClipboardList, Target, Warehouse, PackageX } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { usePendingTransfer } from '../hooks/usePendingTransfer';
 import { useCoverageGoal } from '../hooks/useCoverageGoal';
@@ -90,6 +90,19 @@ const MerchandiserHub = ({ onNavigate, selectedReporter, posList }) => {
                         <div>
                             <h3 className="text-xl font-bold">Recepción y Picking</h3>
                             <p className="text-sm opacity-80">Recibe el camión de Barinas y surte (picking) en Frimaca.</p>
+                        </div>
+                    </button>
+
+                    {/* Devoluciones — el acto POSTERIOR al reporte: retirar las
+                        unidades y declarar si se reponen o van a nota de crédito. */}
+                    <button
+                        onClick={() => onNavigate('devoluciones')}
+                        className="w-full bg-amber-600 text-white p-6 rounded-xl shadow-xl text-left flex items-center active:scale-95 transition-transform"
+                    >
+                        <PackageX size={40} className="mr-4 shrink-0" />
+                        <div>
+                            <h3 className="text-xl font-bold">Devoluciones</h3>
+                            <p className="text-sm opacity-80">Retirar unidades del PDV y declarar reposición o nota de crédito.</p>
                         </div>
                     </button>
 

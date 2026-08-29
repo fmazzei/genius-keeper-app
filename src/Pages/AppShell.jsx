@@ -10,6 +10,7 @@ import { useReporter } from '@/context/ReporterContext.jsx';
 import { LogOut, ChevronsRight, ChevronLeft, FileText, Truck, Map, ShoppingCart, Menu, ClipboardList, AlertTriangle, UserCheck, Users, Bell } from 'lucide-react';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import MerchandiserHub from '@/Pages/MerchandiserHub.jsx';
+import DevolucionesPage from '@/Pages/DevolucionesPage.jsx';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
 import TomarPedidoForm from '@/Pages/TomarPedidoForm.jsx';
 import ReportesHistorial from '@/Pages/ReportesHistorial.jsx';
@@ -214,6 +215,7 @@ const AppShell = ({ user, role, onLogout }) => {
             pedidos_historial: 'Pedidos Tomados',
             notificaciones: 'Notificaciones',
             frimaca: 'Recepción y Picking — Frimaca',
+            devoluciones: 'Devoluciones',
             visit_report: `Reporte: ${selectedPos?.name || ''}`,
         };
         return viewTitles[currentView] || 'Genius Keeper';
@@ -291,6 +293,14 @@ const AppShell = ({ user, role, onLogout }) => {
                     theme="light"
                     actor={{ id: selectedReporter?.id || '', nombre: selectedReporter?.name || 'Equipo de Campo', role: 'merchandiser' }}
                     canPicking
+                />
+            );
+            case 'devoluciones': return (
+                <DevolucionesPage
+                    posList={masterStopList}
+                    selectedReporter={selectedReporter}
+                    user={user}
+                    onBack={() => setCurrentView('hub')}
                 />
             );
             case 'report': return <PosList posList={masterStopList} onSelectPos={navigateToReport} />;

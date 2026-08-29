@@ -72,7 +72,7 @@ const FreshnessModalContent = ({ reports }) => {
             const ref = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000) : new Date();
             // Los lotes retirados del anaquel en la visita ya no están en el PDV.
             return (r.batches || [])
-                .filter(b => b?.retirado !== true)
+                .filter(b => b?.devuelto !== true && b?.retirado !== true)
                 .map(b => ({ ...b, posName: r.posName, status: getFreshnessStatus(b.expiryDate, ref) }));
         });
         if (batchesWithStatus.length === 0) return { hasData: false };

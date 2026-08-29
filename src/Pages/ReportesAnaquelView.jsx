@@ -5,7 +5,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useAuth } from '@/context/AuthContext';
 import EditReportForm from '@/Components/EditReportForm.jsx';
-import { labelMotivosRetiro } from '@/utils/retiros.js';
+import { estadoLote, ESTADO_LABEL } from '@/utils/retiros.js';
 import Modal from '@/Components/Modal.jsx';
 import {
     ClipboardList, ChevronRight, Search, X,
@@ -412,19 +412,20 @@ function ReportDetailSheet({ report, isMaster, onEdit, onClose, t }) {
                                 {report.batches.map((b, i) => {
                                     const f = freshnessOf(b.expiryDate, created);
                                     return (
-                                        <div key={i} className={`rounded-lg px-3 py-2 text-sm ${t.batchRow} ${b.retirado ? 'opacity-60' : ''}`}>
+                                        <div key={i} className={`rounded-lg px-3 py-2 text-sm ${t.batchRow} ${b.devuelto ? 'opacity-60' : ''}`}>
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className={`font-medium break-words min-w-0 ${t.batchCode}`}>
                                                     {b.batchCode || b.code || `Lote ${i + 1}`}
                                                 </span>
                                                 {b.quantity !== undefined && (
-                                                    <span className={`font-black shrink-0 ${b.retirado ? t.metricLabel : t.metricPrimary}`}>{b.quantity} uds</span>
+                                                    <span className={`font-black shrink-0 ${b.devuelto ? t.metricLabel : t.metricPrimary}`}>{b.quantity} uds</span>
                                                 )}
                                             </div>
                                             <div className={`flex items-center gap-2 text-xs mt-0.5 flex-wrap ${t.batchExpiry}`}>
                                                 {b.expiryDate && <span>Vence {b.expiryDate}</span>}
                                                 {f && <span className={`font-semibold ${toneOf(f)}`}>· {f.label}</span>}
-                                                {b.retirado && <span className="font-bold">· RETIRADO ({labelMotivosRetiro(b)})</span>}
+                                                {Number(b.danadas) > 0 && <span className="font-bold">· {b.danadas} con envase dañado</span>}
+                                                {b.devuelto && <span className="font-bold">· DEVUELTO</span>}
                                             </div>
                                         </div>
                                     );
