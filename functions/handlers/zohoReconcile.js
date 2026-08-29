@@ -206,8 +206,14 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     // El listado de Zoho no incluye line_items, así que sin esto una factura que
     // entra por conciliación queda en 0 uds (aparece en la lista pero no cuenta a
     // la meta). Con tope para no exceder el timeout de la función.
-    const zstats = { detalleConsultados: 0, detalleErrores: 0, detalleRellenadas: 0, derivadasDeMonto: 0, detalleTope: false, ultimoErrorDetalle: null };
-    const MAX_DETALLE_FETCHES = 150;
+    // `normalizadas` = facturas cuyas unidades venían en kg y se convirtieron a
+    // unidades de venta; `pendientesNormalizar` = sospechosas que no se pudieron
+    // confirmar en esta pasada (tope o error de Zoho) → volver a conciliar.
+    const zstats = {
+        detalleConsultados: 0, detalleErrores: 0, detalleRellenadas: 0, derivadasDeMonto: 0,
+        normalizadas: 0, pendientesNormalizar: 0, detalleTope: false, ultimoErrorDetalle: null,
+    };
+    const MAX_DETALLE_FETCHES = 250;
     const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     const fetchLineItems = async (invoiceId) => {
         if (zstats.detalleConsultados >= MAX_DETALLE_FETCHES) { zstats.detalleTope = true; return null; }

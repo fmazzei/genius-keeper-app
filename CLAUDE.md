@@ -229,10 +229,24 @@ lleva visitas por diseño). Guardar normaliza `visitInterval`+`active`.
   `line_items[].quantity` tal cual → 50 "unidades" en vez de 200 (50 kg ÷ 250 g).
   `facturaSync.js` normaliza por la unidad de la línea (`factorUnidadZoho`:
   kg = 1000/`appConfig.ourProductWeight_g`) y marca la factura
-  `unidadesNormalizadas: true`. La conciliación **pide el detalle** de las
-  facturas foodservice aún sin normalizar (se auto-corrige el histórico) y
-  acumula solo la **DIFERENCIA** en `comisiones_mensuales`/`comisiones_periodos`
-  (nunca la factura entera, que ya estaba contada), conservando la tasa-cohorte.
+  `unidadesNormalizadas: true`, acumulando solo la **DIFERENCIA** en
+  `comisiones_mensuales`/`comisiones_periodos` (nunca la factura entera, que ya
+  estaba contada) y conservando la tasa-cohorte.
+  - **Detección sin depender de la etiqueta del cliente:** el listado de Zoho no
+    trae `line_items`, así que la conciliación pide el DETALLE de las facturas
+    **sospechosas** — importe por unidad guardada > 1,5 × precio de lista del
+    canal (Alberca: $912 ÷ 50 = $18,24 con precio $4,80 ⇒ eran kg). Antes el
+    filtro era `categoria === 'foodservice'` y no disparaba con clientes sin
+    marcar. Una vez normalizada NO se vuelve a pedir. Contadores
+    `normalizadas`/`pendientesNormalizar` visibles en el resultado; tope de
+    detalles por corrida = 250.
+  - **Descuentos:** las unidades se derivan del **`sub_total`** (antes de
+    descuento) — con `total` una factura con 5% de descuento daba 190 uds en vez
+    de 200. La COMISIÓN sigue sobre `total` (lo que de verdad se cobra).
+  - **`categoria` por CARNET:** se lee primero de `clientes_zoho/{customerId}`
+    (pantalla "Clientes de Zoho → Vendedor") y solo como respaldo del mapa por
+    nombre `zoho_customer_map`. Antes solo miraba el mapa por nombre, así que un
+    cliente marcado foodservice desde el carnet cobraba tasa de retail.
   `crearFacturaZoho` aplica el mismo factor al **precio de la línea** (retail
   $5,60/ud → foodservice $19,20/kg): la cantidad se digita en la unidad del
   artículo en Zoho y el monto sale idéntico al de una factura hecha en Zoho.

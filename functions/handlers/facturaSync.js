@@ -238,14 +238,30 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         : (invoice.contact_id != null ? String(invoice.contact_id) : null);
 
     // Categoría del cliente (retail/foodservice) — define si la comisión es flat.
-    // En masa viene pre-cargada; en el webhook se lee del mapa.
+    // Igual que la atribución: manda el CARNET (`clientes_zoho`, la pantalla
+    // "Clientes de Zoho → Vendedor"), y el mapa por nombre (`zoho_customer_map`)
+    // queda de respaldo. Antes solo se leía el mapa por nombre, así que un cliente
+    // marcado foodservice desde la pantalla del carnet seguía tratado como retail.
     const custKey = normalizeCustomerKey(invoice.customer_name);
     let categoria = 'retail';
-    if (opts.preload && opts.preload.categoriaMap) {
-        categoria = opts.preload.categoriaMap.get(custKey) || 'retail';
-    } else if (custKey) {
-        const cs = await admin.firestore().doc(`zoho_customer_map/${custKey}`).get();
-        categoria = (cs.exists && cs.data().categoria) || 'retail';
+    if (opts.preload) {
+        // `loadClienteMap` rellena 'retail' por defecto, así que solo un valor
+        // DISTINTO de retail cuenta como marca explícita del carnet; si no, manda
+        // el mapa por nombre (donde vive la marca hecha desde la Vinculación).
+        const porCarnet = zohoCustomerId && opts.preload.clienteMap
+            ? opts.preload.clienteMap.get(zohoCustomerId)?.categoria : null;
+        categoria = (porCarnet && porCarnet !== 'retail' ? porCarnet : null)
+            || (opts.preload.categoriaMap ? opts.preload.categoriaMap.get(custKey) : null)
+            || 'retail';
+    } else {
+        if (zohoCustomerId) {
+            const cl = await admin.firestore().doc(`clientes_zoho/${zohoCustomerId}`).get();
+            if (cl.exists && cl.data().categoria) categoria = cl.data().categoria;
+        }
+        if (categoria === 'retail' && custKey) {
+            const cs = await admin.firestore().doc(`zoho_customer_map/${custKey}`).get();
+            categoria = (cs.exists && cs.data().categoria) || 'retail';
+        }
     }
 
     const _diag = {
@@ -275,6 +291,18 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     const gramosPorUnidad = Number(appConfig?.ourProductWeight_g) > 0
         ? Number(appConfig.ourProductWeight_g) : GRAMOS_POR_UNIDAD_DEFAULT;
 
+    // Precio de LISTA por unidad de venta según el canal — referencia para
+    // detectar unidades mal contadas y para derivarlas cuando no hay detalle.
+    const cfgVend = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor?.data?.commissionConfig || {}) };
+    const precioCanal = categoria === 'foodservice'
+        ? (cfgVend.precioUnidadFoodservice || DEFAULT_COMMISSION_CONFIG.precioUnidadFoodservice)
+        : (cfgVend.precioUnidad || DEFAULT_COMMISSION_CONFIG.precioUnidad);
+    // Base ANTES de descuentos: las unidades son mercancía física, así que se
+    // derivan del subtotal a precio de lista. El `total` (neto de descuento) las
+    // subestimaba — una factura con 5% de descuento daba 190 uds en vez de 200.
+    // La COMISIÓN sigue calculándose sobre `total` (lo que de verdad se cobra).
+    const baseBruta = Number(invoice.sub_total) > 0 ? Number(invoice.sub_total) : (Number(invoice.total) || 0);
+
     let unidades;
     let unidadesNormalizadas = existingData?.unidadesNormalizadas === true;
     if (Array.isArray(invoice.line_items)) {
@@ -288,18 +316,23 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         // aparece en la lista pero no cuenta a la meta del vendedor. Acotado por el
         // llamador (opts.fetchLineItems trae un tope para no exceder el timeout).
         //
-        // También se pide el detalle de las facturas FOODSERVICE cuyas unidades aún
-        // no pasaron por la conversión kg→uds (`unidadesNormalizadas`): son las que
-        // Zoho factura por kilo, y sin el detalle quedarían con las unidades viejas
-        // (50 kg contados como 50 uds en vez de 200). Se corrige sola al conciliar.
-        const necesitaNormalizar = categoria === 'foodservice' && !unidadesNormalizadas;
-        if ((!unidades || unidades <= 0 || necesitaNormalizar) && estado !== 'draft'
+        // También se pide el detalle de las facturas SOSPECHOSAS de traer las
+        // unidades sin convertir: si el importe por "unidad" guardada es muy
+        // superior al precio de lista del canal, esa cantidad venía en KILOS
+        // (Alberca: $912 ÷ 50 = $18,24 con un precio de $4,80/ud → eran 200 uds,
+        // no 50). No depende de que el cliente esté marcado foodservice — el
+        // propio número delata el caso — y una vez normalizada no se vuelve a
+        // pedir (`unidadesNormalizadas`), así que el costo es de una sola pasada.
+        const sospechosa = !unidadesNormalizadas && unidades > 0 && precioCanal > 0
+            && baseBruta > 0 && (baseBruta / unidades) > precioCanal * 1.5;
+        if ((!unidades || unidades <= 0 || sospechosa) && estado !== 'draft'
             && invoice.invoice_id && typeof opts.fetchLineItems === 'function') {
             try {
                 const items = await opts.fetchLineItems(invoice.invoice_id);
                 if (Array.isArray(items)) {
                     const u = unidadesDeLineItems(items, gramosPorUnidad);
                     if (u > 0) {
+                        if (opts.stats && sospechosa && u !== unidades) opts.stats.normalizadas = (opts.stats.normalizadas || 0) + 1;
                         unidades = u;
                         unidadesNormalizadas = true;
                         if (opts.stats) opts.stats.detalleRellenadas++;
@@ -309,20 +342,20 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
                 // No abortar la conciliación por un detalle que falle.
             }
         }
+        // Quedó sospechosa y sin poder confirmarse (se agotó el tope de detalles o
+        // Zoho falló): se cuenta para avisar que hace falta otra pasada.
+        if (sospechosa && !unidadesNormalizadas && opts.stats) {
+            opts.stats.pendientesNormalizar = (opts.stats.pendientesNormalizar || 0) + 1;
+        }
         // Respaldo: si aún no hay unidades (el detalle no vino o el fetch falló por
-        // rate-limit de Zoho) las DERIVAMOS del monto ÷ precio por unidad del canal
-        // (retail 5.6 / foodservice 4.8, o el precio configurado del vendedor). Es
-        // el mismo método que usó el dueño en su auditoría manual ($2.352/$5,6=420
-        // uds). Aproximado, pero mejor que 0 (la factura contaría 0 a la meta). Si
-        // luego llega el line_items real por webhook, se sobreescribe con el exacto.
+        // rate-limit de Zoho) las DERIVAMOS del subtotal ÷ precio por unidad del
+        // canal (retail 5.6 / foodservice 4.8, o el precio configurado del
+        // vendedor). Es el mismo método que usó el dueño en su auditoría manual
+        // ($2.352/$5,6=420 uds). Aproximado, pero mejor que 0 (la factura contaría
+        // 0 a la meta). Si luego llega el line_items real, se sobreescribe.
         if ((!unidades || unidades <= 0) && estado !== 'draft') {
-            const total = Number(invoice.total) || 0;
-            const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor?.data?.commissionConfig || {}) };
-            const precio = categoria === 'foodservice'
-                ? (cfg.precioUnidadFoodservice || DEFAULT_COMMISSION_CONFIG.precioUnidadFoodservice)
-                : (cfg.precioUnidad || DEFAULT_COMMISSION_CONFIG.precioUnidad);
-            if (total > 0 && precio > 0) {
-                const u = Math.round(total / precio);
+            if (baseBruta > 0 && precioCanal > 0) {
+                const u = Math.round(baseBruta / precioCanal);
                 if (u > 0) { unidades = u; if (opts.stats) opts.stats.derivadasDeMonto = (opts.stats.derivadasDeMonto || 0) + 1; }
             }
         }

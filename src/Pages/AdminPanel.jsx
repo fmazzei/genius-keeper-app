@@ -4809,6 +4809,8 @@ const IntegracionesSection = () => {
                         {reconResult.unidades && (
                             <p className="mt-1 pt-1 border-t border-emerald-200">
                                 Unidades: detalle consultado <b>{reconResult.unidades.detalleConsultados ?? 0}</b> · rellenadas <b className="text-emerald-700">{reconResult.unidades.detalleRellenadas ?? 0}</b> · derivadas del monto <b className="text-emerald-700">{reconResult.unidades.derivadasDeMonto ?? 0}</b>
+                                {reconResult.unidades.normalizadas ? <> · <b className="text-emerald-700">{reconResult.unidades.normalizadas} convertidas de kg a uds</b></> : null}
+                                {reconResult.unidades.pendientesNormalizar ? <> · <b className="text-amber-600">{reconResult.unidades.pendientesNormalizar} por convertir (corre de nuevo)</b></> : null}
                                 {reconResult.unidades.detalleErrores ? <> · fallos <b className="text-red-600">{reconResult.unidades.detalleErrores}</b></> : null}
                                 {reconResult.unidades.detalleTope ? <> · <b className="text-amber-600">tope alcanzado (corre de nuevo)</b></> : null}
                                 {reconResult.unidades.ultimoErrorDetalle ? <><br/><span className="text-red-600 break-words">Error Zoho: {reconResult.unidades.ultimoErrorDetalle}</span></> : null}
