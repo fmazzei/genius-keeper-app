@@ -65,9 +65,10 @@ const GRAMOS_POR_UNIDAD_DEFAULT = 250;
 // ese artículo. 1 kg = 4 uds de 250 g; "und"/vacío = 1 (ya está en unidades).
 function factorUnidadZoho(unidad, gramosPorUnidad) {
     const g = Number(gramosPorUnidad) > 0 ? Number(gramosPorUnidad) : GRAMOS_POR_UNIDAD_DEFAULT;
-    const u = String(unidad || '').trim().toLowerCase().replace(/\./g, '');
-    if (['kg', 'kgs', 'kilo', 'kilos', 'kilogramo', 'kilogramos'].includes(u)) return 1000 / g;
-    if (['g', 'gr', 'grs', 'gramo', 'gramos'].includes(u))                     return 1 / g;
+    // Se ignoran puntos y espacios: Zoho puede traer "kg", "Kg.", "KGS", "Kg ".
+    const u = String(unidad || '').trim().toLowerCase().replace(/[.\s]/g, '');
+    if (/^(kg|kgs|kilo|kilos|kilogramo|kilogramos)$/.test(u)) return 1000 / g;
+    if (/^(g|gr|grs|gramo|gramos)$/.test(u))                  return 1 / g;
     return 1; // und / pcs / caja / sin unidad → ya viene en unidades de venta
 }
 
@@ -330,7 +331,20 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
             try {
                 const items = await opts.fetchLineItems(invoice.invoice_id);
                 if (Array.isArray(items)) {
-                    const u = unidadesDeLineItems(items, gramosPorUnidad);
+                    let u = unidadesDeLineItems(items, gramosPorUnidad);
+                    // Red de seguridad: si tras leer el detalle el importe por
+                    // unidad SIGUE muy por encima del precio de lista, la unidad
+                    // del artículo en Zoho no se reconoció (un nombre de unidad
+                    // fuera de kg/g). Se derivan del subtotal a precio de lista —
+                    // el mismo método de la auditoría manual del dueño — para no
+                    // quedarnos con una cantidad que sabemos que está mal.
+                    if (u > 0 && precioCanal > 0 && baseBruta > 0 && (baseBruta / u) > precioCanal * 1.5) {
+                        const derivadas = Math.round(baseBruta / precioCanal);
+                        if (derivadas > 0) {
+                            u = derivadas;
+                            if (opts.stats) opts.stats.normalizadasPorPrecio = (opts.stats.normalizadasPorPrecio || 0) + 1;
+                        }
+                    }
                     if (u > 0) {
                         if (opts.stats && sospechosa && u !== unidades) opts.stats.normalizadas = (opts.stats.normalizadas || 0) + 1;
                         unidades = u;
@@ -375,6 +389,9 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         salespersonName: invoice.salesperson_name || '',
         categoria,
         zohoCustomerId,
+        // Id interno de Zoho: permite pedir el DETALLE de esta factura sin tener
+        // que buscarla por número (lo usa "Recalcular unidades").
+        zohoInvoiceId: invoice.invoice_id != null ? String(invoice.invoice_id) : (existingData?.zohoInvoiceId ?? null),
         _diag,
         monto:        Number(invoice.total) || 0,
         // Saldo pendiente REAL de Zoho (total − abonado). Clave para que "Por

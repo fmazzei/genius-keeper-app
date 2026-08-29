@@ -240,6 +240,18 @@ lleva visitas por diseño). Guardar normaliza `visitInterval`+`active`.
     marcar. Una vez normalizada NO se vuelve a pedir. Contadores
     `normalizadas`/`pendientesNormalizar` visibles en el resultado; tope de
     detalles por corrida = 250.
+  - **Arreglo de UNA factura sin esperar el barrido:** acción
+    `recalcularUnidades` en `gestionarFacturaVendedor` + botón "Recalcular
+    unidades" en AdminPanel → Integraciones → Gestión de facturas Zoho. Relee
+    las líneas en Zoho (traduce nº de factura → `invoice_id` con
+    `findInvoiceIdByNumber`), reescribe `unidades` y ajusta solo la diferencia
+    en el acumulado. La ficha muestra si la factura está "convertida a uds de
+    venta" o "sin convertir", y su canal. `facturaSync` guarda ahora
+    `zohoInvoiceId` para no tener que buscar por número la próxima vez.
+  - **Red de seguridad si la unidad no se reconoce:** si tras leer el detalle el
+    importe por unidad sigue > 1,5 × precio de lista, las unidades se derivan del
+    subtotal (mismo método de la auditoría manual). `factorUnidadZoho` ignora
+    puntos y espacios ("Kg.", "KGS", "kg ").
   - **Descuentos:** las unidades se derivan del **`sub_total`** (antes de
     descuento) — con `total` una factura con 5% de descuento daba 190 uds en vez
     de 200. La COMISIÓN sigue sobre `total` (lo que de verdad se cobra).

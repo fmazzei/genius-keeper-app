@@ -8,11 +8,13 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { congelarTasaCohorte, procesarPagoFactura, revertirAcumulados, normalizeCustomerKey } = require('./facturaCommissionOps');
-const { periodoCohorteFromDate } = require('./commissionEngine');
+const { periodoCohorteFromDate, DEFAULT_COMMISSION_CONFIG } = require('./commissionEngine');
 const {
     loadVendedor, linkRazonSocialToVendedor, resolveRazonesSociales,
 } = require('./carteraBridge');
 const { clienteIdKey, backfillFacturasPorCustomerId } = require('./clientesRegistry');
+const { getAccessToken, getInvoiceDetail, findInvoiceIdByNumber } = require('./zohoApi');
+const { unidadesDeLineItems, GRAMOS_POR_UNIDAD_DEFAULT } = require('./facturaSync');
 
 /**
  * Acciones soportadas sobre un documento de `facturas_vendedor`:
@@ -59,7 +61,7 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
     if (!["master", "sales_manager", "gerencia", "administrador"].includes(role)) throw new Error("Permisos insuficientes");
 
     const { facturaId, action, nuevoVendedorId } = request.data || {};
-    if (!facturaId || !['eliminar', 'anular', 'reasignar', 'conciliarPago'].includes(action)) {
+    if (!facturaId || !['eliminar', 'anular', 'reasignar', 'conciliarPago', 'recalcularUnidades'].includes(action)) {
         throw new Error("Parámetros inválidos");
     }
 
@@ -67,6 +69,94 @@ exports.gestionarFacturaVendedor = onCall({ region: "us-central1" }, async (requ
     const facturaSnap = await facturaRef.get();
     if (!facturaSnap.exists) throw new Error("Factura no encontrada");
     const factura = { id: facturaSnap.id, ...facturaSnap.data() };
+
+    // ── 'recalcularUnidades': relee el DETALLE de la factura en Zoho y reescribe
+    // las unidades con la conversión por unidad de venta (foodservice se factura
+    // por kilo: 50 kg = 200 uds de 250 g). Arregla UNA factura al instante, sin
+    // esperar al barrido completo. Solo ajusta la DIFERENCIA en el acumulado del
+    // vendedor, para no doble-contar la factura.
+    if (action === 'recalcularUnidades') {
+        const [credsSnap, cfgSnap] = await Promise.all([
+            admin.firestore().doc('zoho_secure/creds').get(),
+            admin.firestore().doc('settings/appConfig').get(),
+        ]);
+        const creds = credsSnap.data() || {};
+        const appConfig = cfgSnap.data() || {};
+        const organizationId = appConfig.zohoOrgIdLacteoca;
+        if (!organizationId) throw new HttpsError("failed-precondition", "Falta el ID de organización Zoho (Integraciones).");
+
+        const gramosPorUnidad = Number(appConfig.ourProductWeight_g) > 0
+            ? Number(appConfig.ourProductWeight_g) : GRAMOS_POR_UNIDAD_DEFAULT;
+
+        let detalle, zohoInvoiceId = factura.zohoInvoiceId || null;
+        try {
+            const accessToken = await getAccessToken(creds);
+            // El doc de GK se identifica por el NÚMERO de factura; el detalle de
+            // Zoho se pide por su id interno, así que primero se traduce.
+            if (!zohoInvoiceId) {
+                zohoInvoiceId = await findInvoiceIdByNumber({
+                    accessToken, organizationId, dataCenter: creds.dataCenter,
+                    invoiceNumber: factura.numero,
+                });
+            }
+            if (!zohoInvoiceId) throw new HttpsError("not-found", `Zoho no encontró la factura ${factura.numero}.`);
+            detalle = await getInvoiceDetail({
+                accessToken, organizationId, dataCenter: creds.dataCenter, invoiceId: zohoInvoiceId,
+            });
+        } catch (e) {
+            if (e instanceof HttpsError) throw e;
+            throw new HttpsError("internal", `Zoho: ${e.response?.data?.message || e.message}`);
+        }
+        const items = detalle?.line_items;
+        if (!Array.isArray(items) || items.length === 0) {
+            throw new HttpsError("not-found", "Zoho no devolvió las líneas de esa factura.");
+        }
+
+        const previas = Number(factura.unidades) || 0;
+        let nuevas = unidadesDeLineItems(items, gramosPorUnidad);
+
+        // Misma red de seguridad que la conciliación: si el importe por unidad
+        // sigue muy por encima del precio de lista, la unidad del artículo no se
+        // reconoció → se derivan del subtotal a precio de lista.
+        const vSnap = factura.vendedorId
+            ? await admin.firestore().doc(`users_metadata/${factura.vendedorId}`).get() : null;
+        const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vSnap?.data()?.commissionConfig || {}) };
+        const precioCanal = factura.categoria === 'foodservice'
+            ? (cfg.precioUnidadFoodservice || DEFAULT_COMMISSION_CONFIG.precioUnidadFoodservice)
+            : (cfg.precioUnidad || DEFAULT_COMMISSION_CONFIG.precioUnidad);
+        const baseBruta = Number(detalle.sub_total) > 0 ? Number(detalle.sub_total) : (Number(factura.monto) || 0);
+        let porPrecio = false;
+        if (nuevas > 0 && precioCanal > 0 && baseBruta > 0 && (baseBruta / nuevas) > precioCanal * 1.5) {
+            const derivadas = Math.round(baseBruta / precioCanal);
+            if (derivadas > 0) { nuevas = derivadas; porPrecio = true; }
+        }
+        if (!(nuevas > 0)) throw new HttpsError("failed-precondition", "No se pudo determinar las unidades.");
+
+        // Acumulado del vendedor: solo la diferencia.
+        if (factura.vendedorId && factura.mesCohorte && factura.unidadesContabilizadas === true
+            && nuevas !== previas && vSnap?.exists) {
+            await congelarTasaCohorte(
+                { id: factura.vendedorId, data: vSnap.data() },
+                factura.mesCohorte, nuevas - previas, factura.periodoCohorte || null,
+            );
+        }
+
+        await facturaRef.update({
+            unidades: nuevas,
+            unidadesNormalizadas: true,
+            zohoInvoiceId,
+            unidadesRecalculadasPor: request.auth.uid,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        return {
+            ok: true,
+            unidadesAntes: previas,
+            unidadesDespues: nuevas,
+            metodo: porPrecio ? 'derivadas del subtotal (unidad no reconocida)' : 'líneas de la factura',
+            lineas: items.map(i => ({ nombre: i.name || i.description || '', cantidad: Number(i.quantity) || 0, unidad: i.unit || '' })),
+        };
+    }
 
     // Tombstone: registra el número de factura en `facturas_bloqueadas` para que
     // el webhook NO la vuelva a crear/actualizar aunque Zoho la reenvíe. Así una

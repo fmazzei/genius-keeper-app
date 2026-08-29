@@ -2990,6 +2990,7 @@ const FacturaManagementTool = () => {
     const [vendedores, setVendedores]       = useState([]);
     const [loadingSearch, setLoadingSearch] = useState(false);
     const [error, setError]                 = useState('');
+    const [aviso, setAviso]                 = useState('');
     const [actionLoading, setActionLoading] = useState('');
     const [nuevoVendedorId, setNuevoVendedorId] = useState('');
     const [confirmAction, setConfirmAction] = useState(null); // 'eliminar' | 'anular'
@@ -3027,14 +3028,18 @@ const FacturaManagementTool = () => {
     const ejecutar = async (action) => {
         if (!factura) return;
         setActionLoading(action);
-        setError('');
+        setError(''); setAviso('');
         try {
-            const fn = httpsCallable(functions, 'gestionarFacturaVendedor');
-            await fn({
+            const fn = httpsCallable(functions, 'gestionarFacturaVendedor', { timeout: 120000 });
+            const { data } = await fn({
                 facturaId: factura.id,
                 action,
                 ...(action === 'reasignar' ? { nuevoVendedorId } : {}),
             });
+            if (action === 'recalcularUnidades' && data) {
+                const det = (data.lineas || []).map(l => `${l.cantidad} ${l.unidad || 'und'}${l.nombre ? ` · ${l.nombre}` : ''}`).join(' | ');
+                setAviso(`Unidades: ${data.unidadesAntes} → ${data.unidadesDespues} (${data.metodo}). Zoho: ${det}`);
+            }
             if (action === 'eliminar') {
                 setFactura(null);
                 setNumero('');
@@ -3091,11 +3096,37 @@ const FacturaManagementTool = () => {
                             </p>
                         )}
                         <p>Monto: <span className="text-slate-700">${Number(factura.monto || 0).toLocaleString('es-VE', { minimumFractionDigits: 2 })}</span></p>
-                        <p>Unidades: <span className="text-slate-700">{factura.unidades ?? '—'}</span></p>
+                        <p>
+                            Unidades: <span className="text-slate-700">{factura.unidades ?? '—'}</span>
+                            {factura.unidadesNormalizadas === true
+                                ? <span className="ml-1 text-emerald-600">· convertidas a uds de venta</span>
+                                : <span className="ml-1 text-amber-600">· sin convertir (tal como vinieron de Zoho)</span>}
+                        </p>
+                        <p>Canal: <span className="text-slate-700">{factura.categoria === 'foodservice' ? 'Foodservice' : 'Retail'}</span></p>
                         <p>Vendedor actual: <span className="text-slate-700">{vendedorActual?.name || factura.vendedorId || 'sin asignar'}</span></p>
                         {Number.isFinite(factura.comisionGenerada) && factura.comisionGenerada > 0 && (
                             <p>Comisión generada: <span className="text-slate-700">${factura.comisionGenerada.toFixed(2)}</span></p>
                         )}
+                    </div>
+
+                    {/* Unidades: foodservice se factura POR KILO en Zoho (50 kg =
+                        200 uds de 250 g). Relee las líneas de ESTA factura y las
+                        reescribe, sin esperar al barrido completo. */}
+                    <div className="border-t border-slate-100 pt-3 mb-3">
+                        <p className="text-xs font-semibold text-slate-700 mb-1">Recalcular unidades desde Zoho</p>
+                        <p className="text-[11px] text-slate-500 mb-2">
+                            Relee las líneas de esta factura en Zoho y convierte la cantidad a unidades de
+                            venta (los kilos de foodservice se multiplican por el equivalente en unidades).
+                            Solo se ajusta la diferencia en el acumulado del vendedor.
+                        </p>
+                        <button
+                            onClick={() => ejecutar('recalcularUnidades')}
+                            disabled={actionLoading !== ''}
+                            className="w-full sm:w-auto px-3 py-2 bg-brand-blue text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                        >
+                            {actionLoading === 'recalcularUnidades' ? '...' : 'Recalcular unidades'}
+                        </button>
+                        {aviso && <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-2 mt-2 break-words">{aviso}</p>}
                     </div>
 
                     {factura.estado !== 'pagada' && factura.estado !== 'anulada' && (

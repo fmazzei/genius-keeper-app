@@ -114,6 +114,24 @@ async function getInvoiceDetail({ accessToken, organizationId, dataCenter, invoi
 }
 
 /**
+ * Busca UNA factura por su NÚMERO ("INV-001737") y devuelve su `invoice_id` de
+ * Zoho. El documento de GK se identifica por el número, no por el id interno de
+ * Zoho, así que hace falta este puente para pedir el detalle de una sola factura.
+ * @returns {Promise<string|null>} invoice_id, o null si no existe.
+ */
+async function findInvoiceIdByNumber({ accessToken, organizationId, dataCenter, invoiceNumber }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/invoices`, {
+        params: { organization_id: organizationId, invoice_number: invoiceNumber, per_page: 5 },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+        timeout: 20000,
+    });
+    const list = Array.isArray(res.data?.invoices) ? res.data.invoices : [];
+    const exacta = list.find(i => String(i.invoice_number).trim() === String(invoiceNumber).trim());
+    return (exacta || list[0])?.invoice_id ? String((exacta || list[0]).invoice_id) : null;
+}
+
+/**
  * Trae el DETALLE de un CONTACTO (cliente) de Zoho Books — incluye company_name,
  * tax_reg_no, custom_fields y la dirección fiscal, de donde se extrae el RIF.
  * El RIF es la identidad REAL de la razón social (varias sucursales = varios
@@ -216,4 +234,4 @@ async function createInvoice({ accessToken, organizationId, dataCenter, invoice,
     return creada;
 }
 
-module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode, listItems, createInvoice };
+module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, exchangeCode, listItems, createInvoice };
