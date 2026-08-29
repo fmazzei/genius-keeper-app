@@ -378,6 +378,9 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
                 /* Reportes completos: el modal calcula la rotación mes a mes con
                    la MISMA fórmula, sin depender de la ventana del dashboard. */
                 rotacionReports={reports || []}
+                /* Etiqueta de la ventana de la tarjeta, para que el modal explique
+                   por qué su corte por mes calendario no da el mismo número. */
+                rotacionVentanaLabel={timeRange === 'all' ? 'todo el histórico' : `los últimos ${timeRange.replace('d', '')} días`}
                 /* Mapa de Calor del Anaquel: SIEMPRE disponible para máster y gerencia
                    (no depende de que el widget "Efectividad en Anaquel" esté activado). */
                 onAnaquel={() => openModal('Mapa de Calor del Anaquel', 'positioning')}

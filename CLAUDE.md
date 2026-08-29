@@ -284,6 +284,30 @@ lleva visitas por diseño). Guardar normaliza `visitInterval`+`active`.
   calendario, de cualquier factura) y **Por cobrar a la fecha** (`porCobrar`,
   saldo abierto total).
 
+### Rotación: muestra mínima para comparar (2026-08) ✅
+El modal mostraba **+1139%** de agosto contra julio. La aritmética estaba bien
+(0,400 vs 0,032 uds/día) — el problema era la BASE: julio tenía **7 tramos entre
+visitas en 5 PDV** (5 uds en total). Eso no es "rotación baja", es un mes sin
+medir; y mostrado como "0.0" parecía un cero real.
+- `rotacion.js` expone `confiable` por mes (`MIN_PARES_CONFIABLE = 12`,
+  `MIN_PDV_CONFIABLE = 8`).
+- `RotacionModal` solo calcula el % contra el último mes **confiable**; si no
+  hay, muestra "sin base comparable" **y dice por qué** (con la muestra concreta
+  del mes que se descartó). Los meses flacos salen en gris con "muestra
+  insuficiente — referencial, no comparable".
+- Los valores < 0,1 se muestran con dos decimales (0,03 en vez de "0.0").
+- El modal **reconcilia con la tarjeta**: la tarjeta mide la ventana móvil del
+  dashboard (15/30/90d) y la lista corta por mes calendario; ahora lo dice y
+  muestra el número de la ventana (`rotacionVentana`/`ventanaLabel`).
+
+### Trazabilidad de la conversión kg → uds ✅
+"Unidades colocadas" cambió sola al activarse la reinterpretación. Para que sea
+verificable contra Zoho, `useFinancialKpis` devuelve `unidadesAjustadasMes` /
+`unidadesAjustadasPrev` (`{facturas, delta}`) y la tarjeta lo declara: "Incluye
+la conversión de kilos a unidades de venta: este mes N facturas (+X uds)…".
+El cambio del % de unidades (de +31% a +3,4%) es correcto: la corrección aplica
+a AMBAS ventanas, así que la tendencia quedó comparando peras con peras.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

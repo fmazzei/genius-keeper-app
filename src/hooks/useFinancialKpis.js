@@ -148,6 +148,20 @@ export function useFinancialKpis() {
         const facturadoPrev = sum(prevF, f => f.monto);
         const unidadesPrev  = sum(prevF, uds);
 
+        // AUDITORÍA de la corrección de unidades: cuántas facturas de cada ventana
+        // venían en otra unidad (kg) y cuánto sumó reinterpretarlas. Se muestra en
+        // el tablero para que el número no sea "magia" y se pueda contrastar con
+        // Zoho factura por factura.
+        const ajuste = (lista) => {
+            const tocadas = lista.filter(f => uds(f) !== (Number(f.unidades) || 0));
+            return {
+                facturas: tocadas.length,
+                delta: sum(tocadas, uds) - sum(tocadas, f => f.unidades),
+            };
+        };
+        const unidadesAjustadasMes  = ajuste(mesF);
+        const unidadesAjustadasPrev = ajuste(prevF);
+
         // Top clientes del mes por unidades (rank ¿Vendemos? / trade)
         const byCliente = {};
         mesF.forEach(f => {
@@ -208,6 +222,7 @@ export function useFinancialKpis() {
 
         return {
             facturadoMes, unidadesMes, facturadoPrev, unidadesPrev, topClientes,
+            unidadesAjustadasMes, unidadesAjustadasPrev,
             cobradoMes, nCobradasMes,
             porCobrar, aging: { d0_30: a0, d31_45: a1, d45p: a2 }, clientesMas45,
             diasTrasVencimiento, dso: diasTrasVencimiento, diasPagoAnio, aTiempoPct,

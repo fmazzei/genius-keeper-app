@@ -78,7 +78,7 @@ const Tile = ({ label, children, className = '' }) => (
     </div>
 );
 
-export default function BandasFinancieras({ rotacion = null, rotacionReports = null, onMapa = null, onAnaquel = null }) {
+export default function BandasFinancieras({ rotacion = null, rotacionReports = null, rotacionVentanaLabel = '', onMapa = null, onAnaquel = null }) {
     const fin = useFinancialKpis();
     const { metaVentasGeneral } = useAppConfig();
     const [showDiasPago, setShowDiasPago] = useState(false);
@@ -166,6 +166,21 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                         <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{num(fin.unidadesMes)} <span className="text-sm font-bold text-slate-400">uds</span></p>
                         <div className="mt-2"><Delta value={dUds} /></div>
                         <p className="text-xs text-slate-400 mt-2">Mismo período mes anterior: {num(fin.unidadesPrev)} uds</p>
+                        {/* Trazabilidad de la conversión kg → uds: sin esto el total
+                            cambia "solo" y no hay forma de contrastarlo con Zoho. */}
+                        {(fin.unidadesAjustadasMes?.facturas > 0 || fin.unidadesAjustadasPrev?.facturas > 0) && (
+                            <p className="text-[11px] text-slate-400 mt-2 pt-2 border-t border-slate-200 leading-snug">
+                                Incluye la conversión de kilos a unidades de venta:
+                                {fin.unidadesAjustadasMes?.facturas > 0 && (
+                                    <> este mes <b className="text-slate-600">{fin.unidadesAjustadasMes.facturas} factura{fin.unidadesAjustadasMes.facturas === 1 ? '' : 's'}</b> (+{num(fin.unidadesAjustadasMes.delta)} uds)</>
+                                )}
+                                {fin.unidadesAjustadasMes?.facturas > 0 && fin.unidadesAjustadasPrev?.facturas > 0 && ' ·'}
+                                {fin.unidadesAjustadasPrev?.facturas > 0 && (
+                                    <> el anterior <b className="text-slate-600">{fin.unidadesAjustadasPrev.facturas}</b> (+{num(fin.unidadesAjustadasPrev.delta)} uds)</>
+                                )}
+                                .
+                            </p>
+                        )}
                     </Tile>
                     <Tile label="Top clientes del mes (uds)" className="min-w-0">
                         <div className="flex flex-col gap-2 mt-1">
@@ -272,7 +287,7 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                 <DiasPagoModal facturas={fin.facturas || []} onClose={() => setShowDiasPago(false)} />
             )}
             {showRotacion && rotacionReports && (
-                <RotacionModal reports={rotacionReports} onClose={() => setShowRotacion(false)} />
+                <RotacionModal reports={rotacionReports} rotacionVentana={rotacion} ventanaLabel={rotacionVentanaLabel} onClose={() => setShowRotacion(false)} />
             )}
 
             {showVencidas && (

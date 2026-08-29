@@ -18,6 +18,13 @@
 
 const seg = (r) => r?.createdAt?.seconds ?? (r?.createdAt?.toDate ? r.createdAt.toDate().getTime() / 1000 : 0);
 
+// Muestra mínima para que el número de un mes sirva para COMPARAR. Por debajo de
+// esto el estimado existe, pero su varianza es enorme: un mes con 7 tramos en 5
+// PDV no es "rotación baja", es "mes sin medir". Comparar contra él producía
+// saltos absurdos (+1139% de agosto contra un julio de 0,03 uds/día).
+export const MIN_PARES_CONFIABLE = 12;
+export const MIN_PDV_CONFIABLE   = 8;
+
 /**
  * Rotación sobre un conjunto de reportes ya filtrado.
  * Cada PAR de visitas consecutivas se atribuye al mes de la visita MÁS RECIENTE.
@@ -50,10 +57,12 @@ export function computeRotacion(reports = [], filtroPar = null) {
         }
     });
 
+    const pdv = pdvConDato.size;
     return {
-        unidades, dias, pares,
-        pdv: pdvConDato.size,
+        unidades, dias, pares, pdv,
         porDia: dias > 0 ? unidades / dias : null,
+        // `confiable` = la muestra alcanza para comparar contra otro mes.
+        confiable: pares >= MIN_PARES_CONFIABLE && pdv >= MIN_PDV_CONFIABLE,
     };
 }
 
