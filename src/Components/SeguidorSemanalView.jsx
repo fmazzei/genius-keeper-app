@@ -84,15 +84,26 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                 </>)),
         },
         {
-            key: 'quiebres', Icon: AlertOctagon, label: 'Quiebres de stock',
-            valor: quiebres.count,
-            nivel: quiebres.count > 0 ? 3 : 0,          // sin producto = venta perdida hoy
+            // El número accionable es el de quiebres que quedaron ABIERTOS. Los que
+            // el mercaderista repuso en la misma visita ya están surtidos: contarlos
+            // aquí manda al vendedor a pedir una OC que no hace falta.
+            key: 'quiebres', Icon: AlertOctagon, label: 'Quiebres sin reponer',
+            valor: quiebres.abiertos ?? quiebres.count,
+            nivel: (quiebres.abiertos ?? quiebres.count) > 0 ? 3 : 0,
             accion: 'Cero producto en anaquel: repón ya',
-            onClick: () => abrir('Quiebres de stock', 'Sin producto en la última visita', quiebres.items,
+            desglose: quiebres.repuestos > 0
+                ? `${quiebres.count} quiebre${quiebres.count === 1 ? '' : 's'} · ${quiebres.repuestos} repuesto${quiebres.repuestos === 1 ? '' : 's'} en la visita (R)`
+                : null,
+            onClick: () => abrir('Quiebres de stock', `${quiebres.abiertos ?? 0} sin reponer · ${quiebres.repuestos ?? 0} atendidos (R)`, quiebres.items,
                 (i) => (<>
-                    <p className="font-bold text-sm">{i.nombre}</p>
+                    <p className="font-bold text-sm">
+                        {i.nombre}
+                        {i.atendido && <span className="ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 align-middle">R</span>}
+                    </p>
                     <p className="text-xs opacity-70">Visto {fmtDia(i.visita)} · {i.zona}</p>
-                    <span className="text-xs font-black text-red-500">0 uds</span>
+                    <span className={`text-xs font-black ${i.atendido ? 'text-emerald-400' : 'text-red-500'}`}>
+                        {i.atendido ? `Repuesto ${i.repuesto} uds` : '0 uds'}
+                    </span>
                 </>)),
         },
         {

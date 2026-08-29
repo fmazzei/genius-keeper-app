@@ -55,6 +55,12 @@ const EditReportForm = ({ report, onSave, onClose }) => {
     };
     const handleRemoveEntrant = (index) => handleChange('newEntrants', editedData.newEntrants.filter((_, i) => i !== index));
 
+    // Marcar un lote como RETIRADO del anaquel a posteriori. Es la vía para
+    // corregir reportes donde el producto vencido ya se sacó del punto de venta
+    // pero la visita no lo declaró (el mercaderista no tenía cómo decirlo).
+    const handleToggleRetirado = (index) => handleChange('batches',
+        (editedData.batches || []).map((b, i) => i === index ? { ...b, retirado: !b.retirado } : b));
+
     const handleSave = async () => {
         setIsProcessing(true);
         if (report.id.startsWith('sim-report-')) {
@@ -64,6 +70,9 @@ const EditReportForm = ({ report, onSave, onClose }) => {
         }
         const reportRef = doc(db, 'visit_reports', report.id);
         try {
+            const batches = editedData.batches || [];
+            const lotesRetirados    = batches.filter(b => b.retirado);
+            const unidadesRetiradas = lotesRetirados.reduce((s, b) => s + (Number(b.quantity) || 0), 0);
             const finalData = {
                 ...editedData,
                 price: editedData.price || 0,
@@ -72,6 +81,15 @@ const EditReportForm = ({ report, onSave, onClose }) => {
                 notes: editedData.notes || '',
                 competition: editedData.competition || [],
                 newEntrants: editedData.newEntrants || [],
+                batches,
+                // El inventario en anaquel cuenta solo lo vendible: un lote
+                // retirado por vencimiento ya no está en el punto de venta.
+                ...(batches.length > 0 ? {
+                    inventoryLevel: batches.reduce((s, b) => s + (b.retirado ? 0 : (Number(b.quantity) || 0)), 0),
+                    retiradoVencimiento: unidadesRetiradas > 0
+                        ? { unidades: unidadesRetiradas, lotes: lotesRetirados.map(b => ({ expiryDate: b.expiryDate, quantity: Number(b.quantity) || 0 })) }
+                        : null,
+                } : {}),
             };
             await updateDoc(reportRef, finalData);
             onSave();
@@ -116,6 +134,36 @@ const EditReportForm = ({ report, onSave, onClose }) => {
                             <FormInput label="Pedido (Unid.)" type="number" value={editedData.orderQuantity} onChange={e => handleNumericChange('orderQuantity', e.target.value)} />
                         </div>
                     </FormSection>
+
+                    {(editedData.batches || []).length > 0 && (
+                        <FormSection title="Lotes en anaquel" icon={<DollarSign className="text-brand-blue mr-3"/>}>
+                            <p className="text-xs text-slate-500 mb-2">
+                                Marca los lotes que ya se <b>retiraron del anaquel</b>. Dejan de contar como
+                                inventario disponible y como producto por vencer en el punto de venta.
+                            </p>
+                            <div className="space-y-2">
+                                {(editedData.batches || []).map((b, i) => (
+                                    <div key={i} className={`flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg border ${b.retirado ? 'bg-slate-100 border-slate-300' : 'bg-white border-slate-200'}`}>
+                                        <div className="min-w-0">
+                                            <p className={`text-sm font-semibold ${b.retirado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
+                                                Vence: {b.expiryDate || '—'}
+                                            </p>
+                                            <p className="text-xs text-slate-500">{Number(b.quantity) || 0} unid.</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleToggleRetirado(i)}
+                                            className={`text-xs font-bold px-3 py-2 rounded-lg border-2 transition-colors ${
+                                                b.retirado ? 'bg-slate-600 text-white border-slate-600' : 'bg-white text-slate-700 border-slate-300'
+                                            }`}
+                                        >
+                                            {b.retirado ? '✓ Retirado' : 'Marcar retirado'}
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </FormSection>
+                    )}
 
                     <FormSection title="Ejecución en Anaquel" icon={<BarChart2 className="text-brand-blue mr-3"/>}>
                         <div className="grid grid-cols-2 gap-4">

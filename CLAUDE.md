@@ -284,6 +284,29 @@ lleva visitas por diseño). Guardar normaliza `visitInterval`+`active`.
   calendario, de cualquier factura) y **Por cobrar a la fecha** (`porCobrar`,
   saldo abierto total).
 
+### Acciones de la visita que el sistema no veía (2026-08) ✅
+Dos indicadores mentían por la misma razón: **lo que el mercaderista HACE en la
+visita no se estaba declarando**, así que GK seguía viendo el problema abierto.
+
+- **Quiebre atendido en el Seguidor** (`seguidorSemanal.js`): `nivel<=0` con
+  `orderQuantity>0` ⇒ `atendido:true`. `quiebres` = `{count, abiertos, repuestos,
+  items}`; la tarjeta pasó a **"Quiebres sin reponer"** y muestra **abiertos**,
+  con desglose "N quiebres · M repuestos en la visita (R)" y chip **R** por PDV.
+  Sin esto el vendedor salía a pedir OC de puntos ya surtidos.
+- **Retiro de producto vencido** (nuevo `batch.retirado`): en el paso de lotes
+  del `VisitReportForm`, un lote con ≤15 días (o vencido) puede marcarse
+  **"Retiré este lote del anaquel"**. El lote NO se borra (queda su rastro), pero:
+  · `inventoryLevel` cuenta solo lo VENDIBLE (excluye retirados);
+  · se guarda `retiradoVencimiento: {unidades, lotes}` = **merma declarada**;
+  · dejan de contar en "PDV con producto por vencer" (`seguidorSemanal`),
+    Índice de Frescura (`useKpiCalculations`, `FreshnessModalContent`) y el
+    export de inventario en anaquel (`inventarioAnaquel.js`).
+  **Corrección retroactiva**: `EditReportForm` (máster) tiene ahora la sección
+  "Lotes en anaquel" con el mismo toggle y recalcula `inventoryLevel` al guardar.
+  La hoja de detalle marca el lote como "RETIRADO DEL ANAQUEL".
+  *Pendiente/futuro*: tablero de merma con `retiradoVencimiento` (unidades y $
+  perdidos por vencimiento, por PDV y por mes).
+
 ### Rotación: muestra mínima para comparar (2026-08) ✅
 El modal mostraba **+1139%** de agosto contra julio. La aritmética estaba bien
 (0,400 vs 0,032 uds/día) — el problema era la BASE: julio tenía **7 tramos entre

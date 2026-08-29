@@ -43,8 +43,10 @@ export function inventarioEnAnaquel(pos = [], reports = [], opts = {}) {
         const dias = fecha ? Math.floor((ahora - fecha) / DIA) : null;
         const nivel = v && Number.isFinite(Number(v.inventoryLevel)) ? Number(v.inventoryLevel) : null;
 
-        // Lotes observados, ordenados por urgencia de vencimiento.
+        // Lotes observados, ordenados por urgencia de vencimiento. Los RETIRADOS
+        // del anaquel en la visita no cuentan: ya no están en el punto de venta.
         const lotes = (v?.batches || [])
+            .filter(b => b?.retirado !== true)
             .map(b => {
                 const d = b?.expiryDate ? new Date(`${b.expiryDate}T00:00:00`) : null;
                 if (!d || isNaN(d)) return null;

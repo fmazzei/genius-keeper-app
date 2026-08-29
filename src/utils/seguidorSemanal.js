@@ -205,12 +205,23 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
         const nivel = Number(v.inventoryLevel);
         const base = { id: p.id, nombre: p.name || p.nombre || '—', zona: p.zone || p.zona || '', visita: v._t };
         if (Number.isFinite(nivel)) {
-            if (nivel <= 0) quiebreItems.push({ ...base, nivel: 0 });
+            if (nivel <= 0) {
+                // Quiebre ATENDIDO: el anaquel estaba en cero pero el mercaderista
+                // repuso en esa misma visita (`orderQuantity`). Sigue siendo un
+                // quiebre que hay que registrar, pero NO es un PDV desabastecido
+                // hoy: si el vendedor lo ve como abierto, sale a pedir una OC que
+                // ya no hace falta.
+                const repuesto = Number(v.orderQuantity) || 0;
+                quiebreItems.push({ ...base, nivel: 0, repuesto, atendido: repuesto > 0 });
+            }
             else if (nivel < cfg.pisoAnaquel) anaquelBajoItems.push({ ...base, nivel, faltan: cfg.pisoAnaquel - nivel });
         }
         // Lotes observados en la última visita (`batches: [{expiryDate, quantity}]`).
         // Se evalúan contra el CORTE del período: el más próximo define la urgencia.
+        // Los lotes marcados como RETIRADOS del anaquel en la propia visita no
+        // cuentan: ya no están en el punto de venta (ver `retiradoVencimiento`).
         const lotes = (v.batches || [])
+            .filter(b => b?.retirado !== true)
             .map(b => {
                 const d = b?.expiryDate ? new Date(`${b.expiryDate}T00:00:00`) : null;
                 if (!d || isNaN(d)) return null;
@@ -230,6 +241,8 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
     });
     anaquelBajoItems.sort((a, b) => a.nivel - b.nivel);
     porVencerItems.sort((a, b) => a.diasParaVencer - b.diasParaVencer);
+    // Los quiebres SIN atender van primero: son los que exigen acción.
+    quiebreItems.sort((a, b) => (a.atendido === b.atendido ? 0 : a.atendido ? 1 : -1));
 
     // ── 5. Facturas vencidas por cobrar ──
     // Para reconstruir el pasado, una factura cuenta como abierta si al CORTE
@@ -306,7 +319,12 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], ped
             propios: sinFacturarItems.length - sinFacturarHeredados,
         },
         anaquelBajo:  { count: anaquelBajoItems.length, items: anaquelBajoItems, piso: cfg.pisoAnaquel },
-        quiebres:     { count: quiebreItems.length, items: quiebreItems },
+        quiebres: {
+            count:     quiebreItems.length,                                  // todos los observados
+            abiertos:  quiebreItems.filter(i => !i.atendido).length,         // siguen sin producto
+            repuestos: quiebreItems.filter(i =>  i.atendido).length,         // repuestos en la visita (R)
+            items: quiebreItems,
+        },
         porVencer:    { count: porVencerItems.length, items: porVencerItems },
         cobranza:     {
             count: vencidasItems.length, items: vencidasItems, monto: montoVencido,

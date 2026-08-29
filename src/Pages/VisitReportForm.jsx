@@ -155,6 +155,17 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
     
     const handleNumpadConfirm = (quantity) => { if(!isReadOnly) { if (currentDate && quantity > 0) { setReport(prev => ({ ...prev, batches: [...prev.batches, { expiryDate: currentDate, quantity: parseInt(quantity) }] })); setCurrentDate(''); } setNumpadOpen(false); }};
     const handleRemoveBatch = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, batches: prev.batches.filter((_, i) => i !== index) })); };
+    // Retirar un lote del anaquel es una ACCIÓN de la visita, igual que reponer.
+    // Si no se declara, el sistema sigue creyendo que el producto vencido está en
+    // el punto de venta hasta la visita siguiente. El lote NO se borra: se marca
+    // (queda su rastro como merma) y deja de contar como stock vendible.
+    const handleToggleRetirado = (index) => {
+        if (isReadOnly) return;
+        setReport(prev => ({
+            ...prev,
+            batches: prev.batches.map((b, i) => i === index ? { ...b, retirado: !b.retirado } : b),
+        }));
+    };
     const openNumpad = () => { if(!isReadOnly) { if (currentDate) setNumpadOpen(true); else alert("Primero selecciona o escanea una fecha."); }};
     
     return (
@@ -213,22 +224,58 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                             .map((batch) => {
                                 const days = daysUntilExpiry(batch.expiryDate);
                                 const urg = getUrgency(days);
+                                // Un lote vencido o casi vencido se puede RETIRAR en la
+                                // misma visita. Se declara aquí para que el sistema no
+                                // siga contándolo en el anaquel.
+                                const retirable = days <= 15;
                                 return (
-                                    <div key={batch.originalIdx} className={`flex flex-col sm:flex-row justify-between sm:items-center p-3 rounded-lg animate-fade-in gap-2 ${urg.row}`}>
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <span className="font-semibold text-slate-800">Vence: {batch.expiryDate}</span>
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${urg.badge}`}>{urg.label}</span>
+                                    <div key={batch.originalIdx} className={`p-3 rounded-lg animate-fade-in ${batch.retirado ? 'bg-slate-100 border border-slate-300' : urg.row}`}>
+                                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <span className={`font-semibold ${batch.retirado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>Vence: {batch.expiryDate}</span>
+                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${batch.retirado ? 'bg-slate-200 text-slate-600' : urg.badge}`}>
+                                                    {batch.retirado ? 'RETIRADO' : urg.label}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between w-full sm:w-auto gap-3">
+                                                <span className={`font-bold text-lg ${batch.retirado ? 'text-slate-400 line-through' : 'text-brand-blue'}`}>
+                                                    {batch.quantity} <span className="text-sm font-normal text-slate-500">unid.</span>
+                                                </span>
+                                                {!isReadOnly && <button onClick={() => handleRemoveBatch(batch.originalIdx)}><Trash2 className="text-red-500" size={18}/></button>}
+                                            </div>
                                         </div>
-                                        <div className="flex items-center justify-between w-full sm:w-auto gap-3">
-                                            <span className="font-bold text-lg text-brand-blue">{batch.quantity} <span className="text-sm font-normal text-slate-500">unid.</span></span>
-                                            {!isReadOnly && <button onClick={() => handleRemoveBatch(batch.originalIdx)}><Trash2 className="text-red-500" size={18}/></button>}
-                                        </div>
+                                        {!isReadOnly && retirable && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleToggleRetirado(batch.originalIdx)}
+                                                className={`mt-2 w-full text-xs font-bold py-2 px-3 rounded-lg border-2 transition-colors ${
+                                                    batch.retirado
+                                                        ? 'bg-slate-600 text-white border-slate-600'
+                                                        : 'bg-white text-slate-700 border-slate-300 active:scale-95'
+                                                }`}
+                                            >
+                                                {batch.retirado
+                                                    ? '✓ Lo retiré del anaquel — toca para deshacer'
+                                                    : 'Retiré este lote del anaquel'}
+                                            </button>
+                                        )}
                                     </div>
                                 );
                         })}
                     </div>
                     {(() => {
-                        const atRisk = report.batches.reduce((s, b) => s + (daysUntilExpiry(b.expiryDate) <= 15 ? b.quantity : 0), 0);
+                        const retiradas = report.batches.reduce((s, b) => s + (b.retirado ? (Number(b.quantity) || 0) : 0), 0);
+                        return retiradas > 0 ? (
+                            <div className="flex items-center gap-2 bg-slate-100 border border-slate-300 rounded-lg p-3 mt-3">
+                                <Trash2 size={16} className="text-slate-500 shrink-0" />
+                                <p className="text-sm font-semibold text-slate-700">
+                                    {retiradas} unidad{retiradas !== 1 ? 'es' : ''} retirada{retiradas !== 1 ? 's' : ''} del anaquel: no cuentan como inventario disponible.
+                                </p>
+                            </div>
+                        ) : null;
+                    })()}
+                    {(() => {
+                        const atRisk = report.batches.reduce((s, b) => s + (!b.retirado && daysUntilExpiry(b.expiryDate) <= 15 ? b.quantity : 0), 0);
                         return atRisk > 0 && !report.stockout ? (
                             <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-lg p-3 mt-3">
                                 <AlertTriangle size={16} className="text-amber-600 shrink-0" />
@@ -548,9 +595,17 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         e.preventDefault();
         if (isReadOnly) return;
         setSubmissionState('submitting');
-        const inventoryLevel = report.batches.reduce((sum, batch) => sum + batch.quantity, 0);
-        
+        // El inventario en anaquel cuenta SOLO lo vendible: un lote retirado por
+        // vencimiento ya no está en el punto de venta. Lo retirado se guarda aparte
+        // (merma declarada) para no perder el rastro de cuánto producto se perdió.
+        const inventoryLevel = report.batches.reduce((sum, b) => sum + (b.retirado ? 0 : (Number(b.quantity) || 0)), 0);
+        const lotesRetirados = report.batches.filter(b => b.retirado);
+        const unidadesRetiradas = lotesRetirados.reduce((s, b) => s + (Number(b.quantity) || 0), 0);
+
         const finalReportData = {
+            retiradoVencimiento: unidadesRetiradas > 0
+                ? { unidades: unidadesRetiradas, lotes: lotesRetirados.map(b => ({ expiryDate: b.expiryDate, quantity: Number(b.quantity) || 0 })) }
+                : null,
             price: Number(report.price) || 0,
             orderQuantity: Number(report.orderQuantity) || 0,
             stockout: report.stockout || false,

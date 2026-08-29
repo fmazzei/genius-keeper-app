@@ -152,10 +152,11 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         const stockoutAbiertos  = stockoutCount - stockoutRepuestos;
 
         // Índice de Frescura: lotes de la ÚLTIMA visita de cada PDV, evaluados
-        // contra la fecha de observación del reporte.
+        // contra la fecha de observación del reporte. Los lotes RETIRADOS del
+        // anaquel en esa visita no cuentan: ya no están en el punto de venta.
         const freshnessBatches = Object.values(latestByStore).flatMap(r => {
             const ref = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000) : new Date();
-            return (r.batches || []).map(b => getFreshnessStatus(b.expiryDate, ref));
+            return (r.batches || []).filter(b => b?.retirado !== true).map(b => getFreshnessStatus(b.expiryDate, ref));
         });
         const optimalFresh   = freshnessBatches.filter(s => s === 'Fresco' || s === 'Óptimo').length;
         const freshnessIndex = safeAvg(optimalFresh, freshnessBatches.length) * 100;
