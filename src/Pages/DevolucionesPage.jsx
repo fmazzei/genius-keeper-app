@@ -23,8 +23,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
-    collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp, orderBy,
+    collection, query, where, getDocs, addDoc, doc, updateDoc, serverTimestamp,
 } from 'firebase/firestore';
+import { useAuth } from '@/context/AuthContext';
 import {
     ChevronLeft, ChevronRight, Search, Loader, PackageX, AlertTriangle,
     CheckCircle2, Plus, Trash2, Store,
@@ -234,6 +235,7 @@ function DevolucionSheet({ pos, lineasIniciales, reporteOrigen, actor, onClose, 
 // ── Pantalla principal ───────────────────────────────────────────────────────
 
 export default function DevolucionesPage({ posList = [], selectedReporter, user, onBack }) {
+    const { role } = useAuth();
     const [reportes, setReportes] = useState([]);
     const [cargando, setCargando] = useState(true);
     const [error, setError]       = useState('');
@@ -245,14 +247,27 @@ export default function DevolucionesPage({ posList = [], selectedReporter, user,
     const cargar = useCallback(async () => {
         setCargando(true); setError('');
         try {
-            // Últimos 60 días: lo que puede tener producto vivo en anaquel.
-            const desde = new Date(); desde.setDate(desde.getDate() - 60);
-            const snap = await getDocs(query(collection(db, 'visit_reports'), where('createdAt', '>=', desde)));
-            setReportes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            // Las reglas solo dejan al MERCADERISTA listar SUS propios reportes
+            // (`visit_reports.userId == auth.uid`); vendedor/admin/máster ven
+            // todos. Sin ese filtro la consulta entera se rechaza con "Missing or
+            // insufficient permissions".
+            //
+            // El corte de fecha se hace EN CLIENTE a propósito: combinar
+            // `userId ==` con `createdAt >=` exigiría un índice compuesto, y la
+            // regla del proyecto es no crearlos (ver CLAUDE.md).
+            const puedeVerTodos = ['master', 'vendedor', 'gerencia', 'sales_manager', 'administrador', 'director'].includes(role);
+            const ref = collection(db, 'visit_reports');
+            const q = puedeVerTodos ? ref : query(ref, where('userId', '==', user?.uid || '__nadie__'));
+            const snap = await getDocs(q);
+
+            const desde = Date.now() - 60 * 86400000;   // producto que puede seguir vivo en anaquel
+            setReportes(snap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(r => ((r.createdAt?.seconds || 0) * 1000) >= desde));
         } catch (e) {
             setError('No se pudieron cargar los reportes. ' + (e?.message || ''));
         } finally { setCargando(false); }
-    }, []);
+    }, [role, user?.uid]);
     useEffect(() => { cargar(); }, [cargar]);
 
     const posById = useMemo(() => {
