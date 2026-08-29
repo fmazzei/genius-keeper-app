@@ -293,17 +293,24 @@ visita no se estaba declarando**, así que GK seguía viendo el problema abierto
   items}`; la tarjeta pasó a **"Quiebres sin reponer"** y muestra **abiertos**,
   con desglose "N quiebres · M repuestos en la visita (R)" y chip **R** por PDV.
   Sin esto el vendedor salía a pedir OC de puntos ya surtidos.
-- **Retiro de producto vencido** (nuevo `batch.retirado`): en el paso de lotes
-  del `VisitReportForm`, un lote con ≤15 días (o vencido) puede marcarse
-  **"Retiré este lote del anaquel"**. El lote NO se borra (queda su rastro), pero:
+- **Retiro de producto del anaquel** (`batch.retirado` + `batch.motivoRetiro`):
+  en el paso de lotes del `VisitReportForm`, **CUALQUIER lote** — sin importar su
+  fecha — puede retirarse eligiendo su **motivo** (`src/utils/retiros.js`:
+  vencimiento / dañado / devolución al almacén / otro). El motivo define la
+  contabilidad: solo `vencimiento` es merma por caducidad, y mezclarlo con daños
+  o devoluciones ensuciaría el indicador. El lote NO se borra (queda su rastro),
+  pero:
   · `inventoryLevel` cuenta solo lo VENDIBLE (excluye retirados);
-  · se guarda `retiradoVencimiento: {unidades, lotes}` = **merma declarada**;
+  · se guardan `retirados` (TODO lo retirado, con motivo por lote) y
+    `retiradoVencimiento` (solo caducidad) = **merma declarada**;
   · dejan de contar en "PDV con producto por vencer" (`seguidorSemanal`),
     Índice de Frescura (`useKpiCalculations`, `FreshnessModalContent`) y el
     export de inventario en anaquel (`inventarioAnaquel.js`).
-  **Corrección retroactiva**: `EditReportForm` (máster) tiene ahora la sección
-  "Lotes en anaquel" con el mismo toggle y recalcula `inventoryLevel` al guardar.
-  La hoja de detalle marca el lote como "RETIRADO DEL ANAQUEL".
+  La contabilidad vive en `contabilizarLotes(batches)` (`utils/retiros.js`), una
+  sola fuente para el reporte y para la edición del máster.
+  **Corrección retroactiva**: `EditReportForm` (máster) tiene la sección "Lotes en
+  anaquel" con los mismos motivos y recalcula `inventoryLevel` al guardar. La hoja
+  de detalle marca el lote como "RETIRADO (motivo)".
   *Pendiente/futuro*: tablero de merma con `retiradoVencimiento` (unidades y $
   perdidos por vencimiento, por PDV y por mes).
 
