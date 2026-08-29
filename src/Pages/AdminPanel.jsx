@@ -20,7 +20,7 @@ import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
 import AddPosForm from '../Components/AddPosForm.jsx';
 import EditPosModal from '../Components/EditPosModal.jsx';
-import VinculacionPdvZoho from '../Components/VinculacionPdvZoho.jsx';
+import ClientesPdvHub from './ClientesPdvHub.jsx';
 import PuntosDeVentaDoc, { ciudadesDe } from '../Components/PuntosDeVentaDoc.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
@@ -515,6 +515,16 @@ const PosManagement = ({ posList: posListActivos = [], loading }) => {
                     onClose={() => setShowDoc(null)}
                 />
             )}
+
+            {/* Esta pantalla es para trabajo EN LOTE (aplicar una frecuencia a toda
+                una cadena, revisar inactivos, exportar). La gestión de un cliente
+                concreto — vendedor, canal, razón social y sus PDV — vive completa en
+                "Clientes y PDV". */}
+            <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3 leading-relaxed">
+                Lista maestra para trabajo <b>en lote</b>: aplicar una frecuencia a toda una cadena, revisar
+                inactivos y exportar. Para gestionar un cliente concreto (vendedor, canal, razón social y sus
+                puntos de venta) usa <b>Comercial → Clientes y PDV</b>.
+            </p>
 
             {/* La lista maestra muestra TODOS los PDV. Este filtro solo oculta los
                 inactivos de la vista; nunca los elimina. */}
@@ -2318,227 +2328,12 @@ const scoreRazon = (pdvName, razon) => {
     return inter / Math.max(a.size, b.size);
 };
 
-// ─── Gestión de Clientes de Zoho (por CARNET = customer_id) ─────────────────
-// La pantalla PRINCIPAL del administrador para atribuir la comisión: lista TODOS
-// los clientes de Zoho (por su carnet estable), agrupados por razón social, y
-// permite asignarlos a un vendedor, marcarlos "Oficina" (sin comisión, a
-// propósito) o quitarlos. La atribución queda por carnet — no se rompe si el
-// nombre cambia. Accesible a admin y máster. Espaciosa, buscable, editable.
-export const GestionClientesZoho = () => {
-    const [clientes, setClientes]     = useState([]);
-    const [vendedores, setVendedores] = useState([]);
-    const [loading, setLoading]       = useState(true);
-    const [busca, setBusca]           = useState('');
-    const [filtro, setFiltro]         = useState('todos'); // todos|pendientes|oficina|asignados
-    const [saving, setSaving]         = useState('');
-    const [msg, setMsg]               = useState('');
-
-    const cargar = async () => {
-        setLoading(true); setMsg('');
-        try {
-            const [cSnap, vSnap] = await Promise.all([
-                getDocs(collection(db, 'clientes_zoho')),
-                getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
-            ]);
-            setClientes(cSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setVendedores(vSnap.docs.map(d => ({ id: d.id, name: d.data().name || d.data().email || d.id })));
-        } catch (e) { setMsg('Error al cargar: ' + (e?.message || e)); }
-        setLoading(false);
-    };
-    useEffect(() => { cargar(); }, []);
-
-    const vendName = (id) => vendedores.find(v => v.id === id)?.name || '—';
-
-    // Agrupa los carnets por razón social canónica (una fila por razón social,
-    // aunque tenga varias sucursales). Así asignas el CLIENTE una vez.
-    const grupos = useMemo(() => {
-        const g = new Map();
-        clientes.forEach(c => {
-            const key = (c.razonSocialCanonica || c.customerName || '(sin nombre)').trim();
-            const cur = g.get(key) || { canon: key, carnets: [], facturas: 0, vendedorIds: new Set(), oficina: 0 };
-            cur.carnets.push(c);
-            cur.facturas += Number(c.facturas) || 0;
-            if (c.esOficina) cur.oficina++;
-            else if (c.vendedorId) cur.vendedorIds.add(c.vendedorId);
-            g.set(key, cur);
-        });
-        return [...g.values()].map(x => {
-            const total = x.carnets.length;
-            let estado = 'pendiente';
-            if (x.oficina === total) estado = 'oficina';
-            else if (x.vendedorIds.size === 1 && x.oficina === 0 && x.carnets.every(c => c.vendedorId)) estado = 'asignado';
-            else if (x.vendedorIds.size >= 1 || x.oficina > 0) estado = 'mixto';
-            // CANAL del cliente (retail / foodservice): define el precio por unidad
-            // y, si tiene vendedor, si su comisión es flat. Foodservice se factura
-            // POR KILO en Zoho, así que también manda en la conversión kg → uds.
-            const canal = x.carnets.some(c => c.categoria === 'foodservice') ? 'foodservice' : 'retail';
-            return { ...x, sucursales: total, estado, canal, vendedorId: x.vendedorIds.size === 1 ? [...x.vendedorIds][0] : null };
-        }).sort((a, b) => {
-            // pendientes primero, luego por nº de facturas desc
-            const rank = (e) => e === 'pendiente' ? 0 : e === 'mixto' ? 1 : 2;
-            return rank(a.estado) - rank(b.estado) || b.facturas - a.facturas;
-        });
-    }, [clientes]);
-
-    const resumen = useMemo(() => ({
-        total: grupos.length,
-        asignados: grupos.filter(g => g.estado === 'asignado').length,
-        oficina: grupos.filter(g => g.estado === 'oficina').length,
-        pendientes: grupos.filter(g => g.estado === 'pendiente' || g.estado === 'mixto').length,
-    }), [grupos]);
-
-    const term = busca.trim().toLowerCase();
-    const visibles = grupos.filter(g => {
-        if (filtro === 'pendientes' && !(g.estado === 'pendiente' || g.estado === 'mixto')) return false;
-        if (filtro === 'oficina' && g.estado !== 'oficina') return false;
-        if (filtro === 'asignados' && g.estado !== 'asignado') return false;
-        if (term && !g.canon.toLowerCase().includes(term) && !g.carnets.some(c => (c.customerName || '').toLowerCase().includes(term))) return false;
-        return true;
-    });
-
-    const aplicar = async (grupo, accion, vendedorId, categoria) => {
-        setSaving(grupo.canon); setMsg('');
-        try {
-            const fn = httpsCallable(functions, 'asignarClienteVendedor', { timeout: 540000 });
-            const customerIds = grupo.carnets.map(c => c.customerId).filter(Boolean);
-            const payload = { customerIds };
-            if (accion === 'oficina') payload.esOficina = true;
-            else if (accion === 'quitar') { payload.vendedorId = null; }
-            else if (accion === 'canal') {
-                // Solo cambia el CANAL: se reenvía la atribución actual tal cual
-                // para no soltar el cliente al tocar Retail/Foodservice.
-                payload.esOficina  = grupo.estado === 'oficina';
-                payload.vendedorId = grupo.estado === 'oficina' ? null : (grupo.vendedorId || null);
-                payload.categoria  = categoria;
-            }
-            else { payload.vendedorId = vendedorId; }
-            const { data } = await fn(payload);
-            // refresco local optimista
-            setClientes(cs => cs.map(c => {
-                if (!customerIds.includes(c.customerId)) return c;
-                if (accion === 'canal') return { ...c, categoria };
-                return { ...c, vendedorId: accion === 'asignar' ? vendedorId : null, esOficina: accion === 'oficina' };
-            }));
-            const etiqueta = accion === 'canal'
-                ? (categoria === 'foodservice' ? 'Foodservice' : 'Retail')
-                : accion === 'oficina' ? 'Oficina'
-                : accion === 'quitar' ? 'sin vendedor' : vendName(vendedorId);
-            setMsg(accion === 'canal'
-                ? `✓ "${grupo.canon}" → canal ${etiqueta}.`
-                : `✓ "${grupo.canon}" → ${etiqueta} · ${data.backfilled || 0} factura(s) re-atribuida(s).`);
-        } catch (e) { setMsg('Error: ' + (e?.message || e)); }
-        setSaving('');
-    };
-
-    const Badge = ({ estado, vendedorId }) => {
-        if (estado === 'asignado') return <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{vendName(vendedorId)}</span>;
-        if (estado === 'oficina')  return <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Oficina</span>;
-        if (estado === 'mixto')    return <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Mixto</span>;
-        return <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-600">Pendiente</span>;
-    };
-
-    return (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 mb-4">
-            <p className="font-bold text-slate-800 text-base mb-1">Clientes de Zoho → Vendedor</p>
-            <p className="text-xs text-slate-400 mb-3">
-                Cada cliente se atribuye por su <b>carnet</b> (id estable de Zoho) — no importa cómo escriban el nombre. Asigna su vendedor, o márcalo <b>Oficina</b> (atención directa, sin comisión). Al asignar, sus facturas se re-atribuyen solas. El <b>canal</b> (Retail / Foodservice) fija el precio por unidad y, en foodservice, la comisión flat y la conversión de kilos a unidades — márcalo también en los de Oficina.
-            </p>
-
-            {loading ? <LoadingSpinner /> : (
-                <>
-                    {/* Resumen */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-                        {[
-                            { k: 'todos', label: 'Razones sociales', val: resumen.total, cls: 'text-slate-800' },
-                            { k: 'asignados', label: 'Con vendedor', val: resumen.asignados, cls: 'text-emerald-700' },
-                            { k: 'oficina', label: 'Oficina', val: resumen.oficina, cls: 'text-slate-500' },
-                            { k: 'pendientes', label: 'Pendientes', val: resumen.pendientes, cls: 'text-red-600' },
-                        ].map(s => (
-                            <button key={s.k} onClick={() => setFiltro(s.k)} className={`text-left border rounded-xl px-3 py-2 transition-colors ${filtro === s.k ? 'border-brand-blue bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                                <p className={`text-2xl font-black ${s.cls}`}>{s.val}</p>
-                                <p className="text-[11px] text-slate-500">{s.label}</p>
-                            </button>
-                        ))}
-                    </div>
-
-                    {resumen.pendientes > 0 && filtro !== 'pendientes' && (
-                        <p className="text-[11px] text-amber-700 mb-2">Hay <b>{resumen.pendientes}</b> por asignar — toca "Pendientes" para verlas.</p>
-                    )}
-
-                    <div className="relative mb-3">
-                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                        <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar cliente por nombre…" className="w-full pl-9 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm" />
-                    </div>
-
-                    {msg && <p className="text-xs text-slate-600 mb-2 break-words">{msg}</p>}
-
-                    <div className="space-y-2.5">
-                        {visibles.length === 0 && <p className="text-sm text-slate-400 py-6 text-center">Sin clientes con ese filtro.</p>}
-                        {visibles.slice(0, 200).map(g => (
-                            <div key={g.canon} className="border border-slate-200 rounded-xl p-3.5">
-                                <div className="flex items-start justify-between gap-3 mb-2.5">
-                                    <div className="min-w-0">
-                                        <p className="font-bold text-slate-800 text-sm leading-snug">{g.canon}</p>
-                                        <p className="text-[11px] text-slate-400 mt-0.5">
-                                            {g.sucursales > 1 ? `${g.sucursales} sucursales · ` : ''}{g.facturas} factura{g.facturas === 1 ? '' : 's'}
-                                        </p>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                        {g.canal === 'foodservice' && (
-                                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">Foodservice</span>
-                                        )}
-                                        <Badge estado={g.estado} vendedorId={g.vendedorId} />
-                                    </div>
-                                </div>
-                                {/* Canal: define el precio por unidad, la comisión flat de
-                                    foodservice y la conversión kg → uds (foodservice se
-                                    factura POR KILO en Zoho). Aplica también a los de Oficina. */}
-                                <div className="flex items-center gap-1.5 mb-2.5">
-                                    <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mr-1">Canal</span>
-                                    {[['retail', 'Retail'], ['foodservice', 'Foodservice']].map(([val, lbl]) => (
-                                        <button
-                                            key={val}
-                                            onClick={() => g.canal !== val && aplicar(g, 'canal', null, val)}
-                                            disabled={saving === g.canon}
-                                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
-                                                g.canal === val
-                                                    ? 'bg-brand-blue border-brand-blue text-white'
-                                                    : 'border-slate-300 text-slate-500 hover:bg-slate-50'
-                                            }`}
-                                        >
-                                            {lbl}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <select
-                                        value={g.estado === 'asignado' ? g.vendedorId : ''}
-                                        onChange={e => e.target.value && aplicar(g, 'asignar', e.target.value)}
-                                        disabled={saving === g.canon}
-                                        className="flex-1 min-w-[160px] p-2 border border-slate-300 rounded-lg text-xs bg-white"
-                                    >
-                                        <option value="">Asignar a vendedor…</option>
-                                        {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                                    </select>
-                                    <button onClick={() => aplicar(g, 'oficina')} disabled={saving === g.canon} className={`text-xs font-semibold px-3 py-2 rounded-lg border ${g.estado === 'oficina' ? 'bg-slate-200 border-slate-300 text-slate-700' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>Oficina</button>
-                                    {(g.estado !== 'pendiente') && (
-                                        <button onClick={() => aplicar(g, 'quitar')} disabled={saving === g.canon} className="text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 text-red-500 hover:bg-red-50">Quitar</button>
-                                    )}
-                                    {saving === g.canon && <RefreshCw size={14} className="animate-spin text-slate-400" />}
-                                </div>
-                            </div>
-                        ))}
-                        {visibles.length > 200 && <p className="text-[11px] text-slate-400 text-center pt-1">Mostrando 200 de {visibles.length}. Usa el buscador para acotar.</p>}
-                    </div>
-                </>
-            )}
-        </div>
-    );
-};
-
-// Selector de razón social CON BÚSQUEDA (combobox). La lista es larga (80+
-// razones), así que un <select> nativo es inmanejable. Muestra el valor actual
-// como botón; al abrir, un input filtra en vivo.
+// ─── Herramientas de REPARACIÓN por nombre de razón social ──────────────────
+// La atribución del día a día (cliente → vendedor, canal, PDV y frecuencias)
+// vive en `ClientesPdvHub` (Comercial → "Clientes y PDV"), en una sola ficha por
+// cliente y por CARNET (customer_id, estable). Lo que queda aquí abajo son
+// herramientas de emergencia que operan por NOMBRE, para casos en que el carnet
+// aún no existe o hay que reparar histórico.
 const RazonSocialPicker = ({ value, options, onChange, currentVendedorId }) => {
     const [open, setOpen] = useState(false);
     const [q, setQ]       = useState('');
@@ -4992,12 +4787,22 @@ const IntegracionesSection = () => {
 
             <FacturaManagementTool />
 
-            <SectionTitle n="4" title="Clientes de Zoho → Vendedor" desc="Atribución por carnet (id estable de Zoho). Asigna cada cliente a su vendedor o márcalo Oficina." />
+            <SectionTitle n="4" title="Reparación de datos (avanzado)" desc="Herramientas de emergencia sobre la atribución por nombre de razón social. El trabajo del día a día NO se hace aquí." />
 
-            <GestionClientesZoho />
+            {/* La gestión normal de clientes (vendedor, canal, razón social, PDV y
+                frecuencias) vive en Comercial → "Clientes y PDV", en una sola ficha
+                por cliente. Aquí solo queda lo avanzado: reparar y diagnosticar. */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
+                <p className="font-bold text-blue-900 text-sm mb-1">¿Buscas asignar un cliente a un vendedor?</p>
+                <p className="text-blue-800 text-xs leading-relaxed">
+                    Eso ahora vive en <b>Comercial → Clientes y PDV</b>, junto con el canal
+                    (retail/foodservice), la razón social de cada punto de venta y su frecuencia de visita —
+                    todo en la misma ficha del cliente. Esta sección quedó solo para reparar datos.
+                </p>
+            </div>
 
             <details className="mb-4">
-                <summary className="cursor-pointer text-xs font-semibold text-slate-500 select-none">Herramientas anteriores (por nombre de razón social) — respaldo</summary>
+                <summary className="cursor-pointer text-xs font-semibold text-slate-500 select-none">Herramientas de reparación (por nombre de razón social)</summary>
                 <div className="mt-3">
 
             {/* Reparación cartera ↔ atribución — una sola fuente de la verdad.
@@ -5279,8 +5084,8 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
         {
             id: 'comercial', label: 'Comercial', Icon: Store,
             items: [
-                { id: 'pos',         label: 'Puntos de Venta', Icon: Store    },
-                { id: 'pdv_zoho',    label: 'PDV ↔ Cliente Zoho', Icon: Link2, badge: 'Nuevo' },
+                { id: 'clientes_pdv', label: 'Clientes y PDV',  Icon: Store, badge: 'Nuevo' },
+                { id: 'pos',         label: 'PDV: lista maestra', Icon: Link2 },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
                 { id: 'comisiones_dash', label: 'Comisiones a pagar', Icon: BarChart2, badge: 'Nuevo' },
                 { id: 'facturacion', label: 'Facturación', Icon: Receipt, badge: 'Nuevo' },
@@ -5337,7 +5142,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'admin_mgmt':    return <AdministradoresManagement />;
             case 'mercaderistas': return <ReportersManagement />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
-            case 'pdv_zoho':       return <VinculacionPdvZoho />;
+            case 'clientes_pdv':   return <ClientesPdvHub />;
             case 'sales_goals':    return <SalesGoalsManagement />;
             case 'comisiones_dash': return <ComisionesDashboard />;
             case 'facturacion':    return <FacturacionClientes />;

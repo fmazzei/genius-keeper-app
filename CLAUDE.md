@@ -373,6 +373,38 @@ Foodservice es un **canal de cliente** de primera clase (no un tag):
 - **Comisión**: `commissionConfig` con `precioUnidadFoodservice` (4.8) y `comisionFoodservice` (% flat, editable) en el constructor. `facturaSync` guarda `categoria` en cada factura. El motor (`vendedorMeta` + `procesarPagoFactura`): las facturas foodservice **cuentan a la meta de unidades** (como retail) pero su cobrado paga la **comisión FLAT** (`comisionFoodservice`), **sin** tasa de nivel, **sin** Bono Cobranza y **sin** Activación. (Recuperadas: 5% flat y NO cuentan a la meta.)
 - **Recordatorio de negocio**: al vendedor se le asignan **clientes, no PDVs** — la atribución/comisión es por razón social.
 
+## Centro único de Clientes y PDV (2026-08) ✅
+
+Antes, dar de alta o actualizar un cliente obligaba a saltar entre pantallas: el
+vendedor se declaraba en **Integraciones §4**, el canal retail/foodservice en la
+Vinculación por nombre o en la ficha del PDV, la razón social del PDV en **PDV ↔
+Cliente Zoho**, y la frecuencia de visita en la **lista maestra**. Todo eso vive
+ahora en **`src/Pages/ClientesPdvHub.jsx`** — una ficha por cliente, en la
+secuencia del negocio:
+
+  ① **Quién es** (razón social de Zoho + sus carnets/sucursales) → ② **De quién
+  es** (vendedor u *Oficina*) → ③ **Cómo se le vende** (canal Retail/Foodservice)
+  → ④ **Dónde se ejecuta** (sus PDV, con frecuencia de visita editable, vincular
+  un PDV existente o crear uno nuevo).
+
+- **Acceso**: máster en AdminPanel → Comercial → **"Clientes y PDV"**;
+  `administrador` en el módulo **Clientes y PDV** (`AdministracionLayout`).
+- **Agrupa por razón social canónica** (`stripSucursal`) y escribe por CARNET vía
+  `asignarClienteVendedor` (vendedor / oficina / `categoria`). El vínculo PDV →
+  cliente escribe `pos.razonSocialZoho` + `emparejarRazonSocialPDV` (backfill del
+  histórico). La frecuencia escribe `visitInterval`+`active` (0 = inactivo).
+- **El canal es del CLIENTE y sus PDV lo heredan**: al marcar foodservice se
+  aplica a sus PDV (`canal`, `sinMerchandising:true`, `visitInterval:0`).
+- **Panel "Puntos de venta sin cliente"** dentro de la misma pantalla — cubre el
+  sentido inverso del vínculo (lo que hacía `VinculacionPdvZoho`).
+- **Retirados por duplicados**: `VinculacionPdvZoho.jsx` (borrado) y
+  `GestionClientesZoho` (borrado de `AdminPanel.jsx`); la pestaña "PDV ↔ Cliente
+  Zoho" ya no existe. **Integraciones §4** pasó a "Reparación de datos
+  (avanzado)" — solo Emparejador / Vinculación por nombre / Reparar cartera, con
+  un aviso que remite al centro único. **"Puntos de Venta"** se renombró a
+  **"PDV: lista maestra"** y se declara como pantalla de trabajo EN LOTE
+  (frecuencia por cadena, inactivos, export PDF).
+
 ## Rol `administrador` (perfil operativo de Lacteoca) ✅
 
 Rol nuevo `administrador`: usuario que **paga comisiones y concilia**, sin control total (no crea/borra usuarios ni toca config del sistema — eso es del `master`).
