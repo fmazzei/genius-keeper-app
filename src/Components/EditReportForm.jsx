@@ -5,7 +5,7 @@ import { FormSection, ToggleButton, FormInput } from '@/Components/FormControls.
 import { DollarSign, BarChart2, Shield, Trash2, X, Search } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner.jsx';
 import NewEntrantModal from './NewEntrantModal.jsx';
-import { MOTIVOS_RETIRO, labelMotivoRetiro, contabilizarLotes } from '@/utils/retiros.js';
+import { MOTIVOS_RETIRO, motivosDe, contabilizarLotes } from '@/utils/retiros.js';
 
 const SHELF_LOCATIONS = ['ojos', 'manos', 'superior', 'inferior'];
 const POP_STATUS_OPTIONS = ['Exhibido correctamente', 'Dañado', 'Ausente', 'Sin Campaña Activa'];
@@ -59,14 +59,15 @@ const EditReportForm = ({ report, onSave, onClose }) => {
     // Marcar un lote como RETIRADO del anaquel a posteriori. Es la vía para
     // corregir reportes donde el producto ya se sacó del punto de venta pero la
     // visita no lo declaró (el mercaderista no tenía cómo decirlo).
-    const handleRetirar = (index, motivo) => handleChange('batches',
-        (editedData.batches || []).map((b, i) => i === index
-            ? (b.retirado && b.motivoRetiro === motivo
-                ? { ...b, retirado: false, motivoRetiro: null }
-                : { ...b, retirado: true, motivoRetiro: motivo })
-            : b));
-    const handleDeshacerRetiro = (index) => handleChange('batches',
-        (editedData.batches || []).map((b, i) => i === index ? { ...b, retirado: false, motivoRetiro: null } : b));
+    // Los motivos se COMBINAN (mismo modelo que el reporte de campo): un lote
+    // puede estar vencido y con el envase dañado a la vez.
+    const handleToggleMotivo = (index, motivo) => handleChange('batches',
+        (editedData.batches || []).map((b, i) => {
+            if (i !== index) return b;
+            const actuales = motivosDe(b);
+            const nuevos = actuales.includes(motivo) ? actuales.filter(m => m !== motivo) : [...actuales, motivo];
+            return { ...b, retirado: nuevos.length > 0, motivosRetiro: nuevos, motivoRetiro: null };
+        }));
 
     const handleSave = async () => {
         setIsProcessing(true);
@@ -138,38 +139,36 @@ const EditReportForm = ({ report, onSave, onClose }) => {
                     {(editedData.batches || []).length > 0 && (
                         <FormSection title="Lotes en anaquel" icon={<DollarSign className="text-brand-blue mr-3"/>}>
                             <p className="text-xs text-slate-500 mb-2">
-                                Marca los lotes que ya se <b>retiraron del anaquel</b>, con su motivo. Dejan de
+                                Marca los lotes que ya se <b>retiraron del anaquel</b> con sus motivos (se pueden combinar). Dejan de
                                 contar como inventario disponible y como producto por vencer en el punto de venta.
                             </p>
                             <div className="space-y-2">
-                                {(editedData.batches || []).map((b, i) => (
-                                    <div key={i} className={`p-2.5 rounded-lg border ${b.retirado ? 'bg-slate-100 border-slate-300' : 'bg-white border-slate-200'}`}>
-                                        <div className="flex items-center justify-between gap-2">
+                                {(editedData.batches || []).map((b, i) => {
+                                    const marcados = motivosDe(b);
+                                    return (
+                                        <div key={i} className={`p-2.5 rounded-lg border ${b.retirado ? 'bg-slate-100 border-slate-300' : 'bg-white border-slate-200'}`}>
                                             <div className="min-w-0">
                                                 <p className={`text-sm font-semibold ${b.retirado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
                                                     Vence: {b.expiryDate || '—'}
                                                 </p>
                                                 <p className="text-xs text-slate-500">{Number(b.quantity) || 0} unid.</p>
                                             </div>
-                                            {b.retirado && (
-                                                <button type="button" onClick={() => handleDeshacerRetiro(i)}
-                                                    className="text-xs font-bold px-3 py-2 rounded-lg border-2 bg-slate-600 text-white border-slate-600 shrink-0">
-                                                    ✓ {labelMotivoRetiro(b.motivoRetiro)} — deshacer
-                                                </button>
-                                            )}
-                                        </div>
-                                        {!b.retirado && (
-                                            <div className="grid grid-cols-2 gap-1.5 mt-2">
-                                                {MOTIVOS_RETIRO.map(m => (
-                                                    <button key={m.id} type="button" onClick={() => handleRetirar(i, m.id)}
-                                                        className="text-[11px] font-bold py-1.5 px-2 rounded-lg border-2 border-slate-300 bg-white text-slate-700">
-                                                        {m.label}
-                                                    </button>
-                                                ))}
+                                            <div className="flex flex-wrap gap-1.5 mt-2">
+                                                {MOTIVOS_RETIRO.map(m => {
+                                                    const on = marcados.includes(m.id);
+                                                    return (
+                                                        <button key={m.id} type="button" onClick={() => handleToggleMotivo(i, m.id)}
+                                                            className={`text-[11px] font-bold py-1.5 px-2.5 rounded-full border-2 transition-colors ${
+                                                                on ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-300'
+                                                            }`}>
+                                                            {on && '\u2713 '}{m.label}
+                                                        </button>
+                                                    );
+                                                })}
                                             </div>
-                                        )}
-                                    </div>
-                                ))}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </FormSection>
                     )}

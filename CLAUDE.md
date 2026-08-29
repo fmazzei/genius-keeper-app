@@ -293,16 +293,19 @@ visita no se estaba declarando**, así que GK seguía viendo el problema abierto
   items}`; la tarjeta pasó a **"Quiebres sin reponer"** y muestra **abiertos**,
   con desglose "N quiebres · M repuestos en la visita (R)" y chip **R** por PDV.
   Sin esto el vendedor salía a pedir OC de puntos ya surtidos.
-- **Retiro de producto del anaquel** (`batch.retirado` + `batch.motivoRetiro`):
+- **Retiro de producto del anaquel** (`batch.retirado` + `batch.motivosRetiro[]`):
   en el paso de lotes del `VisitReportForm`, **CUALQUIER lote** — sin importar su
-  fecha — puede retirarse eligiendo su **motivo** (`src/utils/retiros.js`:
-  vencimiento / dañado / devolución al almacén / otro). El motivo define la
-  contabilidad: solo `vencimiento` es merma por caducidad, y mezclarlo con daños
-  o devoluciones ensuciaría el indicador. El lote NO se borra (queda su rastro),
-  pero:
+  fecha — puede retirarse marcando sus motivos como **pills COMBINABLES**
+  (`src/utils/retiros.js`): `vencido` / `por_vencer` (≤7 días, `DIAS_POR_VENCER`,
+  se sugiere solo cuando el lote entra en esa ventana) / `envase_danado` /
+  `devolucion_calidad`. **Un lote puede tener varios motivos a la vez** (vencido
+  Y con el envase dañado) y la MISMA unidad cuenta en cada uno: `porMotivo` se
+  solapa a propósito, mientras que `retirados.unidades` son las unidades físicas
+  SIN doble conteo. `motivosDe()` normaliza el formato viejo de opción única.
+  El lote NO se borra (queda su rastro), pero:
   · `inventoryLevel` cuenta solo lo VENDIBLE (excluye retirados);
-  · se guardan `retirados` (TODO lo retirado, con motivo por lote) y
-    `retiradoVencimiento` (solo caducidad) = **merma declarada**;
+  · se guardan `retirados` (todo lo retirado + `porMotivo`) y
+    `retiradoVencimiento` (solo los que incluyen `vencido`) = **merma declarada**;
   · dejan de contar en "PDV con producto por vencer" (`seguidorSemanal`),
     Índice de Frescura (`useKpiCalculations`, `FreshnessModalContent`) y el
     export de inventario en anaquel (`inventarioAnaquel.js`).
@@ -310,7 +313,7 @@ visita no se estaba declarando**, así que GK seguía viendo el problema abierto
   sola fuente para el reporte y para la edición del máster.
   **Corrección retroactiva**: `EditReportForm` (máster) tiene la sección "Lotes en
   anaquel" con los mismos motivos y recalcula `inventoryLevel` al guardar. La hoja
-  de detalle marca el lote como "RETIRADO (motivo)".
+  de detalle marca el lote como "RETIRADO (Vencido + Envase dañado)".
   *Pendiente/futuro*: tablero de merma con `retiradoVencimiento` (unidades y $
   perdidos por vencimiento, por PDV y por mes).
 

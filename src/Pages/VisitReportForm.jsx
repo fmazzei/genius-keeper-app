@@ -6,7 +6,7 @@ import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { safeUUID } from '@/utils/safeId.js';
-import { MOTIVOS_RETIRO, labelMotivoRetiro, contabilizarLotes } from '@/utils/retiros.js';
+import { MOTIVOS_RETIRO, DIAS_POR_VENCER, motivosDe, labelMotivosRetiro, contabilizarLotes } from '@/utils/retiros.js';
 import { useSwipeable } from 'react-swipeable';
 // ✅ CORRECCIÓN: Se añade 'Check' a la lista de importaciones para solucionar el error.
 import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, AlertTriangle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check, HelpCircle } from 'lucide-react';
@@ -162,22 +162,21 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
     // su MOTIVO (queda su rastro) y deja de contar como stock vendible.
     // El motivo importa: solo el vencimiento es merma por caducidad; un daño o una
     // devolución son otra cosa y mezclarlos ensucia el indicador.
-    const handleRetirar = (index, motivo) => {
+    // Los motivos se COMBINAN: un lote puede estar vencido y además con el envase
+    // dañado, y esa misma unidad cuenta en los dos. El lote queda retirado
+    // mientras tenga al menos un motivo marcado; al quitar el último, se deshace.
+    const handleToggleMotivo = (index, motivo) => {
         if (isReadOnly) return;
         setReport(prev => ({
             ...prev,
-            batches: prev.batches.map((b, i) => i === index
-                ? (b.retirado && b.motivoRetiro === motivo
-                    ? { ...b, retirado: false, motivoRetiro: null }   // mismo motivo = deshacer
-                    : { ...b, retirado: true, motivoRetiro: motivo })
-                : b),
-        }));
-    };
-    const handleDeshacerRetiro = (index) => {
-        if (isReadOnly) return;
-        setReport(prev => ({
-            ...prev,
-            batches: prev.batches.map((b, i) => i === index ? { ...b, retirado: false, motivoRetiro: null } : b),
+            batches: prev.batches.map((b, i) => {
+                if (i !== index) return b;
+                const actuales = motivosDe(b);
+                const nuevos = actuales.includes(motivo)
+                    ? actuales.filter(m => m !== motivo)
+                    : [...actuales, motivo];
+                return { ...b, retirado: nuevos.length > 0, motivosRetiro: nuevos, motivoRetiro: null };
+            }),
         }));
     };
     const openNumpad = () => { if(!isReadOnly) { if (currentDate) setNumpadOpen(true); else alert("Primero selecciona o escanea una fecha."); }};
@@ -244,7 +243,7 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                                             <div className="flex items-center gap-2 min-w-0">
                                                 <span className={`font-semibold ${batch.retirado ? 'text-slate-500 line-through' : 'text-slate-800'}`}>Vence: {batch.expiryDate}</span>
                                                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${batch.retirado ? 'bg-slate-200 text-slate-600' : urg.badge}`}>
-                                                    {batch.retirado ? `RETIRADO · ${labelMotivoRetiro(batch.motivoRetiro)}` : urg.label}
+                                                    {batch.retirado ? `RETIRADO · ${labelMotivosRetiro(batch)}` : urg.label}
                                                 </span>
                                             </div>
                                             <div className="flex items-center justify-between w-full sm:w-auto gap-3">
@@ -254,37 +253,51 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                                                 {!isReadOnly && <button onClick={() => handleRemoveBatch(batch.originalIdx)}><Trash2 className="text-red-500" size={18}/></button>}
                                             </div>
                                         </div>
-                                        {/* Retiro del anaquel — disponible en CUALQUIER lote,
-                                            sin importar su fecha: se retira por vencimiento,
-                                            por daño, por devolución o por lo que sea. El motivo
-                                            es lo que define cómo se contabiliza. */}
-                                        {!isReadOnly && (
-                                            batch.retirado ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDeshacerRetiro(batch.originalIdx)}
-                                                    className="mt-2 w-full text-xs font-bold py-2 px-3 rounded-lg border-2 bg-slate-600 text-white border-slate-600"
-                                                >
-                                                    ✓ Retirado ({labelMotivoRetiro(batch.motivoRetiro)}) — toca para deshacer
-                                                </button>
-                                            ) : (
+                                        {/* Retiro del anaquel — en CUALQUIER lote, sin importar
+                                            su fecha. Los motivos son PILLS que se combinan: un
+                                            lote puede estar vencido y con el envase dañado, y esa
+                                            misma unidad cuenta en los dos. */}
+                                        {!isReadOnly && (() => {
+                                            const marcados = motivosDe(batch);
+                                            return (
                                                 <div className="mt-2">
-                                                    <p className="text-[11px] font-semibold text-slate-500 mb-1">¿Retiraste este lote del anaquel?</p>
-                                                    <div className="grid grid-cols-2 gap-1.5">
-                                                        {MOTIVOS_RETIRO.map(m => (
-                                                            <button
-                                                                key={m.id}
-                                                                type="button"
-                                                                onClick={() => handleRetirar(batch.originalIdx, m.id)}
-                                                                className="text-[11px] font-bold py-2 px-2 rounded-lg border-2 border-slate-300 bg-white text-slate-700 active:scale-95"
-                                                            >
-                                                                {m.label}
-                                                            </button>
-                                                        ))}
+                                                    <p className="text-[11px] font-semibold text-slate-500 mb-1.5">
+                                                        {marcados.length > 0
+                                                            ? '¿Por qué lo retiraste? (puedes marcar varios)'
+                                                            : '¿Retiraste este lote del anaquel? Marca el motivo:'}
+                                                    </p>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {MOTIVOS_RETIRO.map(m => {
+                                                            const on = marcados.includes(m.id);
+                                                            // Sugerencia visual: el lote entra en la ventana
+                                                            // de retiro preventivo (7 días antes de vencer).
+                                                            const sugerido = m.id === 'por_vencer' && !on && days > 0 && days <= DIAS_POR_VENCER;
+                                                            return (
+                                                                <button
+                                                                    key={m.id}
+                                                                    type="button"
+                                                                    onClick={() => handleToggleMotivo(batch.originalIdx, m.id)}
+                                                                    className={`text-[11px] font-bold py-1.5 px-2.5 rounded-full border-2 transition-colors active:scale-95 ${
+                                                                        on
+                                                                            ? 'bg-slate-700 text-white border-slate-700'
+                                                                            : sugerido
+                                                                                ? 'bg-amber-50 text-amber-800 border-amber-400 border-dashed'
+                                                                                : 'bg-white text-slate-600 border-slate-300'
+                                                                    }`}
+                                                                >
+                                                                    {on && '✓ '}{m.label}
+                                                                </button>
+                                                            );
+                                                        })}
                                                     </div>
+                                                    {marcados.length > 0 && (
+                                                        <p className="text-[11px] text-slate-500 mt-1.5">
+                                                            {batch.quantity} unid. salen del anaquel · cuentan en {marcados.length === 1 ? 'este motivo' : `los ${marcados.length} motivos`}.
+                                                        </p>
+                                                    )}
                                                 </div>
-                                            )
-                                        )}
+                                            );
+                                        })()}
                                     </div>
                                 );
                         })}

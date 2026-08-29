@@ -5,7 +5,7 @@ import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useAuth } from '@/context/AuthContext';
 import EditReportForm from '@/Components/EditReportForm.jsx';
-import { labelMotivoRetiro } from '@/utils/retiros.js';
+import { labelMotivosRetiro } from '@/utils/retiros.js';
 import Modal from '@/Components/Modal.jsx';
 import {
     ClipboardList, ChevronRight, Search, X,
@@ -424,7 +424,7 @@ function ReportDetailSheet({ report, isMaster, onEdit, onClose, t }) {
                                             <div className={`flex items-center gap-2 text-xs mt-0.5 flex-wrap ${t.batchExpiry}`}>
                                                 {b.expiryDate && <span>Vence {b.expiryDate}</span>}
                                                 {f && <span className={`font-semibold ${toneOf(f)}`}>· {f.label}</span>}
-                                                {b.retirado && <span className="font-bold">· RETIRADO ({labelMotivoRetiro(b.motivoRetiro)})</span>}
+                                                {b.retirado && <span className="font-bold">· RETIRADO ({labelMotivosRetiro(b)})</span>}
                                             </div>
                                         </div>
                                     );
