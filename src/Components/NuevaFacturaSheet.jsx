@@ -14,13 +14,27 @@ import { db, functions } from '@/Firebase/config.js';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
+import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import {
     X, Loader, Plus, Minus, FileText, Search, CheckCircle2, AlertTriangle, Trash2,
 } from 'lucide-react';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 2 });
+
+// Cuántas unidades de venta de GK equivale 1 unidad de la que Zoho usa para ese
+// artículo. Foodservice se factura POR KILO: 1 kg = 4 uds de 250 g. Espejo de
+// `factorUnidadZoho` en functions/handlers/facturaSync.js — el servidor manda.
+const factorUnidad = (unidad, gramosPorUnidad) => {
+    const g = Number(gramosPorUnidad) > 0 ? Number(gramosPorUnidad) : 250;
+    const u = String(unidad || '').trim().toLowerCase().replace(/\./g, '');
+    if (['kg', 'kgs', 'kilo', 'kilos', 'kilogramo', 'kilogramos'].includes(u)) return 1000 / g;
+    if (['g', 'gr', 'grs', 'gramo', 'gramos'].includes(u))                     return 1 / g;
+    return 1;
+};
 
 export default function NuevaFacturaSheet({ vendedorId, onClose, onCreada }) {
+    const { ourProductWeight_g: gramosPorUnidad } = useAppConfig();
     const [clientes, setClientes] = useState([]);
     const [items, setItems]       = useState([]);
     const [commConfig, setCommConfig] = useState(DEFAULT_COMMISSION_CONFIG);
@@ -85,12 +99,23 @@ export default function NuevaFacturaSheet({ vendedorId, onClose, onCreada }) {
         });
     };
 
-    const totalUnidades = lineas.reduce((s, l) => s + l.cantidad, 0);
     // Precio por CANAL del cliente (retail / foodservice), igual que en el servidor.
     const precioUnit = cliente?.categoria === 'foodservice'
         ? Number(commConfig.precioUnidadFoodservice) || 0
         : Number(commConfig.precioUnidad) || 0;
-    const totalEstimado = totalUnidades * precioUnit;
+
+    // La cantidad se digita en la unidad del artículo en Zoho (kg para las bolsas
+    // de foodservice); las UNIDADES de venta y el monto se derivan de ella.
+    const { totalUnidades, totalEstimado } = useMemo(() => {
+        let uds = 0, monto = 0;
+        lineas.forEach(l => {
+            const it = items.find(i => i.id === l.itemId);
+            const f = factorUnidad(it?.unidad, gramosPorUnidad);
+            uds   += l.cantidad * f;
+            monto += l.cantidad * f * precioUnit;
+        });
+        return { totalUnidades: uds, totalEstimado: monto };
+    }, [lineas, items, precioUnit, gramosPorUnidad]);
 
     const emitir = async (deseaEmitir) => {
         if (enviando || lineas.length === 0 || !cliente) return;
@@ -210,16 +235,24 @@ export default function NuevaFacturaSheet({ vendedorId, onClose, onCreada }) {
                                     {items.map(it => {
                                         const linea = lineas.find(l => l.itemId === it.id);
                                         const cant = linea?.cantidad || 0;
+                                        const f = factorUnidad(it.unidad, gramosPorUnidad);
+                                        const uLabel = it.unidad || 'und';
                                         return (
                                             <div key={it.id} className={`rounded-xl px-3 py-2.5 border ${cant > 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-slate-800/60 border-slate-700'}`}>
                                                 <p className="text-sm font-semibold text-white leading-snug">{it.nombre}</p>
-                                                {it.sku && <p className="text-[11px] text-slate-500">{it.sku}</p>}
+                                                <p className="text-[11px] text-slate-500">
+                                                    {it.sku ? `${it.sku} · ` : ''}se factura por <b className="text-slate-400">{uLabel}</b>
+                                                    {f !== 1 && ` · 1 ${uLabel} = ${num(f)} uds`}
+                                                </p>
                                                 <div className="flex items-center justify-end gap-2 mt-2">
                                                     <button onClick={() => setCantidad(it.id, -1)} disabled={cant === 0}
                                                         className="w-10 h-10 rounded-lg bg-slate-800 text-slate-200 flex items-center justify-center disabled:opacity-30">
                                                         <Minus size={16} />
                                                     </button>
-                                                    <span className="w-12 text-center text-lg font-black text-white tabular-nums">{cant}</span>
+                                                    <span className="w-16 text-center text-lg font-black text-white tabular-nums leading-none">
+                                                        {cant}
+                                                        <span className="block text-[10px] font-bold text-slate-500 mt-0.5">{uLabel}</span>
+                                                    </span>
                                                     <button onClick={() => setCantidad(it.id, 1)}
                                                         className="w-10 h-10 rounded-lg bg-slate-800 text-slate-200 flex items-center justify-center">
                                                         <Plus size={16} />
@@ -241,7 +274,7 @@ export default function NuevaFacturaSheet({ vendedorId, onClose, onCreada }) {
                                 <div className="min-w-0">
                                     <p className="text-xs font-semibold text-slate-300 mb-1">Unidades</p>
                                     <div className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-lg font-black tabular-nums">
-                                        {totalUnidades}
+                                        {num(totalUnidades)}
                                     </div>
                                 </div>
                             </div>
@@ -253,7 +286,7 @@ export default function NuevaFacturaSheet({ vendedorId, onClose, onCreada }) {
                                     <p className="text-2xl font-black text-white tabular-nums leading-tight">{money(totalEstimado)}</p>
                                 </div>
                                 <p className="text-xs text-slate-400 text-right">
-                                    {totalUnidades} uds × {money(precioUnit)}<br />
+                                    {num(totalUnidades)} uds × {money(precioUnit)}<br />
                                     <span className="opacity-70">{cliente?.categoria === 'foodservice' ? 'Foodservice' : 'Retail'} · exento de IVA</span>
                                 </p>
                             </div>

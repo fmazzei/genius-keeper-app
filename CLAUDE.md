@@ -195,6 +195,53 @@ lleva visitas por diseño). Guardar normaliza `visitInterval`+`active`.
 
 ---
 
+## Quiebre ATENDIDO (R), navegación del máster, kg→uds y caja del mes (2026-08) ✅
+
+- **Navegación (máster/gerencia)**: se ELIMINÓ la pestaña "Ventas" (`VentasView.jsx`
+  borrado). Su radar de alertas recibía siempre `allAlerts={[]}` (nunca mostraba
+  nada) y sus cifras ya viven en las bandas ¿Vendemos?/¿Cobramos?. "Rendimiento"
+  pasó a llamarse **"Vendedores"** (el módulo sigue siendo `rendimientoComercial`).
+  Todos los roles del `ManagerLayout` arrancan ahora en `dashboard`.
+- **Quiebre ≠ PDV desabastecido — la "R" de reposición.** El mercaderista suele
+  encontrar el anaquel en cero y REPONER en la misma visita (lo declara en
+  `orderQuantity`, "Reposición de inventario"). Antes eso contaba igual que un
+  quiebre abierto, e inflaba el KPI ("10 en quiebre" cuando varios ya estaban
+  surtidos). Ahora:
+  - `quiebreInfo(report)` (exportado de `ReportesAnaquelView.jsx`): `atendido =
+    stockout && orderQuantity > 0`. La etiqueta lleva un chip **"R"** al lado.
+  - `useKpiCalculations.stockouts` = `{ count, abiertos, repuestos, percentage }`.
+    El widget `stockouts` ("Quiebres sin reponer") muestra **abiertos** y explica
+    en su descripción DINÁMICA "N reportados · M repuestos en la visita (R)".
+    `getData` puede devolver `description` y las tarjetas la prefieren sobre la
+    estática (`data.description || def.description`).
+  - `StockoutModalContent` separa "Sin reponer — requieren despacho" de
+    "Atendidos en la visita (R)", con las unidades repuestas.
+- **Reportes de Anaquel**: tarjetas COMPACTAS (identidad + contexto + tira de
+  cifras) que al tocarlas abren `ReportDetailSheet` — hoja a pantalla completa,
+  respeta el tema (light/dark), con el **nombre COMPLETO del PDV** sin truncar y
+  TODOS los datos: visita (quién, fecha/hora, duración, coordenadas), anaquel y
+  reposición, ejecución, lotes con frescura calculada a la fecha de observación,
+  competencia (marca, gramaje, $/100 g, POP, degustación), nuevos entrantes,
+  observaciones y un bloque "Otros datos" con cualquier campo suelto del
+  documento. El máster edita desde la hoja (ya no hay botón en la tarjeta).
+- **kg → UNIDADES en la facturación (bug real).** Foodservice se factura en Zoho
+  **por kilo** ("Chèvre Bolsa 1 Kg", 50,00 kg a $19,20/kg). GK sumaba
+  `line_items[].quantity` tal cual → 50 "unidades" en vez de 200 (50 kg ÷ 250 g).
+  `facturaSync.js` normaliza por la unidad de la línea (`factorUnidadZoho`:
+  kg = 1000/`appConfig.ourProductWeight_g`) y marca la factura
+  `unidadesNormalizadas: true`. La conciliación **pide el detalle** de las
+  facturas foodservice aún sin normalizar (se auto-corrige el histórico) y
+  acumula solo la **DIFERENCIA** en `comisiones_mensuales`/`comisiones_periodos`
+  (nunca la factura entera, que ya estaba contada), conservando la tasa-cohorte.
+  `crearFacturaZoho` aplica el mismo factor al **precio de la línea** (retail
+  $5,60/ud → foodservice $19,20/kg): la cantidad se digita en la unidad del
+  artículo en Zoho y el monto sale idéntico al de una factura hecha en Zoho.
+  `NuevaFacturaSheet` muestra la unidad de cada artículo y la equivalencia.
+- **¿Vendemos? — facturar no es cobrar.** Bajo "Facturado del mes" se muestran
+  ahora **Cobrado en el mes** (`cobradoMes`: pagos recibidos dentro del mes
+  calendario, de cualquier factura) y **Por cobrar a la fecha** (`porCobrar`,
+  saldo abierto total).
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

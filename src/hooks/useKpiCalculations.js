@@ -77,7 +77,7 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
 
         if (!filteredReports || filteredReports.length === 0) {
             return {
-                totalVisits: 0, stockouts: { count: 0, percentage: 0 }, productRotation: { total: 0, averageDaily: 0 },
+                totalVisits: 0, stockouts: { count: 0, abiertos: 0, repuestos: 0, percentage: 0 }, productRotation: { total: 0, averageDaily: 0 },
                 daysOfInventory: 0, freshnessIndex: 0, shelfPositioning: { percentage: 0 }, popQuality: { percentage: 0 },
                 averageVisitDuration: 0, priceIndex: { difference: 0 }, newEntrantsCount: 0, promoActivityCount: 0,
                 visitCompliance: 0,
@@ -140,7 +140,16 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
 
         // Quiebres de Stock: PDV DISTINTOS cuya ÚLTIMA visita reporta quiebre
         // (antes contaba cada reporte con quiebre → inflaba el nº de "tiendas").
-        const stockoutCount = Object.values(latestByStore).filter(r => r.stockout === true).length;
+        //
+        // Un quiebre NO es lo mismo que un PDV desabastecido HOY: el mercaderista
+        // suele encontrar el anaquel en cero y REPONER en esa misma visita
+        // (declara las unidades en `orderQuantity`). Ese quiebre quedó ATENDIDO.
+        // El número que importa para actuar es el de quiebres SIN reponer; el
+        // total sigue disponible como señal de frecuencia del problema.
+        const quiebreStores   = Object.values(latestByStore).filter(r => r.stockout === true);
+        const stockoutCount   = quiebreStores.length;
+        const stockoutRepuestos = quiebreStores.filter(r => (Number(r.orderQuantity) || 0) > 0).length;
+        const stockoutAbiertos  = stockoutCount - stockoutRepuestos;
 
         // Índice de Frescura: lotes de la ÚLTIMA visita de cada PDV, evaluados
         // contra la fecha de observación del reporte.
@@ -261,7 +270,12 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
 
         return {
             totalVisits,
-            stockouts: { count: stockoutCount, percentage: safeAvg(stockoutCount, totalVisits) * 100 },
+            stockouts: {
+                count: stockoutCount,
+                abiertos: stockoutAbiertos,
+                repuestos: stockoutRepuestos,
+                percentage: safeAvg(stockoutCount, totalVisits) * 100,
+            },
             shelfPositioning: { percentage: shelfPositioningPct },
             priceIndex: { difference: priceIndexDifference },
             freshnessIndex,

@@ -17,16 +17,27 @@ export const WIDGET_REGISTRY = [
     {
         id: 'stockouts',
         category: 'Salud del Producto',
-        label: 'Quiebres de Stock',
-        description: 'PDVs activos sin producto disponible',
+        label: 'Quiebres sin reponer',
+        description: 'PDVs que quedaron sin producto tras la visita',
         Icon: Package,
-        getData: (kpis) => ({
-            value: kpis.stockouts.count,
-            unit: 'tiendas',
-            sentiment: kpis.stockouts.count > 0 ? 'bad' : 'good',
-            modalType: 'stockout',
-            modalTitle: 'Tiendas con Quiebre de Stock',
-        }),
+        // El número accionable es el de quiebres que quedaron ABIERTOS: los que
+        // el mercaderista repuso en la misma visita (declaró reposición) ya
+        // fueron atendidos y no son un PDV desabastecido hoy.
+        getData: (kpis) => {
+            const abiertos  = kpis.stockouts.abiertos ?? kpis.stockouts.count;
+            const repuestos = kpis.stockouts.repuestos ?? 0;
+            const total     = kpis.stockouts.count;
+            return {
+                value: abiertos,
+                unit: 'tiendas',
+                sentiment: abiertos > 0 ? 'bad' : 'good',
+                description: total === 0
+                    ? 'Sin quiebres reportados en el período'
+                    : `${total} quiebre${total === 1 ? '' : 's'} reportado${total === 1 ? '' : 's'} · ${repuestos} repuesto${repuestos === 1 ? '' : 's'} en la visita (R)`,
+                modalType: 'stockout',
+                modalTitle: 'Tiendas con Quiebre de Stock',
+            };
+        },
     },
     {
         id: 'rotation',

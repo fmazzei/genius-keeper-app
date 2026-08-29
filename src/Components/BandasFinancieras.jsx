@@ -146,6 +146,21 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                             </>
                         )}
                         <div className="mt-2"><Delta value={dFact} /> <span className="text-xs text-slate-400">vs. mismo período mes anterior</span></div>
+                        {/* Facturar no es cobrar: debajo del monto facturado va la
+                            CAJA del mes y lo que sigue pendiente a la fecha. */}
+                        <div className="mt-3 pt-2 border-t border-slate-200 space-y-1">
+                            <div className="flex items-baseline justify-between gap-2 text-xs">
+                                <span className="text-slate-500">Cobrado en el mes</span>
+                                <span className="font-extrabold text-emerald-700 tabular-nums whitespace-nowrap">{money(fin.cobradoMes)}</span>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-2 text-xs">
+                                <span className="text-slate-500">Por cobrar a la fecha</span>
+                                <span className="font-extrabold text-slate-700 tabular-nums whitespace-nowrap">{money(fin.porCobrar)}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 leading-snug">
+                                Cobrado = pagos recibidos este mes (de cualquier factura). Por cobrar = saldo abierto total.
+                            </p>
+                        </div>
                     </Tile>
                     <Tile label="Unidades colocadas">
                         <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{num(fin.unidadesMes)} <span className="text-sm font-bold text-slate-400">uds</span></p>

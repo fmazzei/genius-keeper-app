@@ -52,6 +52,36 @@ function rifKey(rif) {
     return String(rif || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+// ── kg → UNIDADES ────────────────────────────────────────────────────────────
+//
+// La "unidad" de GK (la que cuenta a la meta y a la comisión) es la presentación
+// de venta al detal — `settings/appConfig.ourProductWeight_g`, 250 g por defecto.
+// Foodservice, en cambio, se factura en Zoho POR KILO (p.ej. "Chèvre Bolsa 1 Kg",
+// 50.00 kg a $19,20/kg). Tomar esa cantidad tal cual contaba 50 unidades cuando
+// en realidad son 200 (50 kg ÷ 0,25 kg). Se normaliza por la unidad de la línea.
+const GRAMOS_POR_UNIDAD_DEFAULT = 250;
+
+// Cuántas unidades de venta de GK equivale 1 de la unidad con que Zoho factura
+// ese artículo. 1 kg = 4 uds de 250 g; "und"/vacío = 1 (ya está en unidades).
+function factorUnidadZoho(unidad, gramosPorUnidad) {
+    const g = Number(gramosPorUnidad) > 0 ? Number(gramosPorUnidad) : GRAMOS_POR_UNIDAD_DEFAULT;
+    const u = String(unidad || '').trim().toLowerCase().replace(/\./g, '');
+    if (['kg', 'kgs', 'kilo', 'kilos', 'kilogramo', 'kilogramos'].includes(u)) return 1000 / g;
+    if (['g', 'gr', 'grs', 'gramo', 'gramos'].includes(u))                     return 1 / g;
+    return 1; // und / pcs / caja / sin unidad → ya viene en unidades de venta
+}
+
+function unidadesDeLinea(item, gramosPorUnidad) {
+    const q = Number(item?.quantity) || 0;
+    if (!q) return 0;
+    return q * factorUnidadZoho(item?.unit, gramosPorUnidad);
+}
+
+/** Suma las unidades de venta de un arreglo de `line_items` de Zoho. */
+function unidadesDeLineItems(items, gramosPorUnidad) {
+    return (items || []).reduce((s, it) => s + unidadesDeLinea(it, gramosPorUnidad), 0);
+}
+
 /**
  * Resuelve el vendedor por CARTERA: mapea la razón social de la factura
  * (`customer_name`) al vendedor dueño de ese cliente (`zoho_customer_map`).
@@ -242,9 +272,14 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     // entrado antes por webhook con sus unidades). Así conciliar el estado nunca
     // borra las unidades. La comisión al pagar se calcula sobre el MONTO, no sobre
     // las unidades, así que se computa bien aunque falten.
+    const gramosPorUnidad = Number(appConfig?.ourProductWeight_g) > 0
+        ? Number(appConfig.ourProductWeight_g) : GRAMOS_POR_UNIDAD_DEFAULT;
+
     let unidades;
+    let unidadesNormalizadas = existingData?.unidadesNormalizadas === true;
     if (Array.isArray(invoice.line_items)) {
-        unidades = invoice.line_items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+        unidades = unidadesDeLineItems(invoice.line_items, gramosPorUnidad);
+        unidadesNormalizadas = true;
     } else {
         unidades = existingData?.unidades ?? 0;
         // La factura no trae line_items (viene del listado de la conciliación) y
@@ -252,12 +287,23 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         // quedó en 0). Pedimos su DETALLE a Zoho para obtener las unidades — si no,
         // aparece en la lista pero no cuenta a la meta del vendedor. Acotado por el
         // llamador (opts.fetchLineItems trae un tope para no exceder el timeout).
-        if ((!unidades || unidades <= 0) && estado !== 'draft' && invoice.invoice_id && typeof opts.fetchLineItems === 'function') {
+        //
+        // También se pide el detalle de las facturas FOODSERVICE cuyas unidades aún
+        // no pasaron por la conversión kg→uds (`unidadesNormalizadas`): son las que
+        // Zoho factura por kilo, y sin el detalle quedarían con las unidades viejas
+        // (50 kg contados como 50 uds en vez de 200). Se corrige sola al conciliar.
+        const necesitaNormalizar = categoria === 'foodservice' && !unidadesNormalizadas;
+        if ((!unidades || unidades <= 0 || necesitaNormalizar) && estado !== 'draft'
+            && invoice.invoice_id && typeof opts.fetchLineItems === 'function') {
             try {
                 const items = await opts.fetchLineItems(invoice.invoice_id);
                 if (Array.isArray(items)) {
-                    const u = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-                    if (u > 0) { unidades = u; if (opts.stats) opts.stats.detalleRellenadas++; }
+                    const u = unidadesDeLineItems(items, gramosPorUnidad);
+                    if (u > 0) {
+                        unidades = u;
+                        unidadesNormalizadas = true;
+                        if (opts.stats) opts.stats.detalleRellenadas++;
+                    }
                 }
             } catch (e) {
                 // No abortar la conciliación por un detalle que falle.
@@ -307,6 +353,9 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         vencimiento:  vencimiento ? admin.firestore.Timestamp.fromDate(vencimiento) : null,
         diasCredito,
         unidades,
+        // Marca que `unidades` ya pasó por la conversión de unidad de venta
+        // (kg → uds de 250 g). Sin ella, la conciliación vuelve a pedir el detalle.
+        unidadesNormalizadas,
         estado,
         vendedorId:   vendedor?.id || null,
         reporterId:   vendedor?.data?.reporterId || null,
@@ -317,12 +366,21 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     };
 
     const yaContabilizada = existingData?.unidadesContabilizadas === true;
+    const unidadesPrevias = Number(existingData?.unidades) || 0;
     if (vendedor && mesCohorte && unidades > 0 && !yaContabilizada) {
         const tier = await congelarTasaCohorte(vendedor, mesCohorte, unidades, periodoCohorte);
         facturaData.tasaCohorte = tier.rate * 100;
         facturaData.tierCohorte = tier.label;
         facturaData.unidadesContabilizadas = true;
     } else if (existingData) {
+        // CORRECCIÓN de unidades ya contabilizadas — hoy solo la normalización
+        // kg → uds de una factura foodservice. Se acumula únicamente la
+        // DIFERENCIA en el mes/período del vendedor (nunca la factura entera,
+        // que ya está contada) y se conserva la tasa-cohorte congelada.
+        if (vendedor && mesCohorte && yaContabilizada && unidades > 0
+            && unidades !== unidadesPrevias && existingData.vendedorId === vendedor.id) {
+            await congelarTasaCohorte(vendedor, mesCohorte, unidades - unidadesPrevias, periodoCohorte);
+        }
         facturaData.tasaCohorte = existingData.tasaCohorte ?? null;
         facturaData.tierCohorte = existingData.tierCohorte ?? null;
         facturaData.unidadesContabilizadas = existingData.unidadesContabilizadas === true;
@@ -370,6 +428,10 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
 }
 
 module.exports = {
+    GRAMOS_POR_UNIDAD_DEFAULT,
+    factorUnidadZoho,
+    unidadesDeLinea,
+    unidadesDeLineItems,
     toDate,
     stripSucursal,
     extraerRif,

@@ -18,7 +18,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { getAccessToken, listItems, createInvoice } = require('./zohoApi');
-const { upsertFacturaFromZoho } = require('./facturaSync');
+const { upsertFacturaFromZoho, factorUnidadZoho, GRAMOS_POR_UNIDAD_DEFAULT } = require('./facturaSync');
 const { DEFAULT_COMMISSION_CONFIG } = require('./commissionEngine');
 
 async function getRole(uid) {
@@ -150,14 +150,25 @@ exports.crearFacturaZoho = onCall({ region: "us-central1", timeoutSeconds: 240 }
         throw new HttpsError("failed-precondition", "No hay precio configurado para este canal (AdminPanel → Vendedores → Comisiones).");
     }
 
+    const { creds, appConfig, organizationId } = await cargarContexto();
+    const gramosPorUnidad = Number(appConfig?.ourProductWeight_g) > 0
+        ? Number(appConfig.ourProductWeight_g) : GRAMOS_POR_UNIDAD_DEFAULT;
+
     // ── Líneas: se validan contra el catálogo guardado ──
+    // La CANTIDAD va en la unidad con que Zoho factura ese artículo (foodservice
+    // se factura POR KILO: "50.00 kg"), así que el precio de la línea también
+    // tiene que ser POR ESA UNIDAD. `precio` es el precio por unidad de venta de
+    // GK (bolsa de 250 g); para un artículo en kg se multiplica por 4 → $19,20/kg.
+    // Sin esto la factura salía a $4,80/kg (¼ del monto real).
     const lineItems = [];
     for (const l of lineas) {
         const cantidad = Number(l.cantidad);
         if (!l.itemId || !(cantidad > 0)) continue;
         const itSnap = await db.doc(`zoho_items/${l.itemId}`).get();
         if (!itSnap.exists) throw new HttpsError("not-found", `Producto no encontrado en el catálogo: ${l.itemId}`);
-        lineItems.push({ item_id: String(l.itemId), quantity: cantidad, rate: precio });
+        const factor = factorUnidadZoho(itSnap.data().unidad, gramosPorUnidad); // uds de GK por unidad Zoho
+        const rate = Math.round(precio * factor * 100) / 100;
+        lineItems.push({ item_id: String(l.itemId), quantity: cantidad, rate });
     }
     if (lineItems.length === 0) throw new HttpsError("invalid-argument", "Ninguna línea válida.");
 
@@ -169,8 +180,6 @@ exports.crearFacturaZoho = onCall({ region: "us-central1", timeoutSeconds: 240 }
     // Nombre del vendedor tal como está registrado en Zoho: sin esto la factura
     // saldría sin salesperson y NO se vería igual que una hecha en Zoho.
     const salesperson = (vendedorData.zohoSalespersonName || vendedorData.name || '').trim();
-
-    const { creds, appConfig, organizationId } = await cargarContexto();
 
     let creada;
     try {

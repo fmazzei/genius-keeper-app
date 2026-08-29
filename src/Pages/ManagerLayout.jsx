@@ -8,7 +8,7 @@ import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/Firebase/config.js';
-import { LogOut, BarChart2, TrendingUp, Bell, Settings, Sun, DollarSign, Target, Map as MapIcon, Menu, ChevronsRight, Users, ClipboardList, Download, Warehouse } from 'lucide-react';
+import { LogOut, BarChart2, TrendingUp, Settings, Map as MapIcon, Menu, ChevronsRight, Users, ClipboardList, Download, Warehouse } from 'lucide-react';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
@@ -18,7 +18,6 @@ import MarketTrendsView from './MarketTrendsView.jsx';
 import AlertsCenterView from './AlertsCenterView.jsx';
 import AdminPanel from './AdminPanel.jsx';
 import SeguimientoComercial from './SeguimientoComercial.jsx';
-import VentasView from './VentasView.jsx';
 import RendimientoComercialView from './RendimientoComercialView.jsx';
 import ReportesAnaquelView from './ReportesAnaquelView.jsx';
 import ExportesView from './ExportesView.jsx';
@@ -40,9 +39,10 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [currentView, setCurrentView] = useState(
-        (role === 'sales_manager' || role === 'gerencia') ? 'ventas' : 'dashboard'
-    );
+    // Todos los roles de este layout arrancan en el Dashboard Gerencial: la vieja
+    // pestaña "Ventas" se retiró (su radar de alertas nunca recibía datos y sus
+    // cifras ya viven en las bandas ¿Vendemos? / ¿Cobramos? del dashboard).
+    const [currentView, setCurrentView] = useState('dashboard');
     const [userMetadata, setUserMetadata] = useState({ name: '', email: '' });
     const [dashPage, setDashPage] = useState(0); // 0 = KPIs, 1 = Ventas por cliente/PDV
 
@@ -63,9 +63,10 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
         }
         if (role === 'gerencia' || role === 'sales_manager') {
-            if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('ventas');
-            if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('ventas');
+            if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
+            if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
         }
+        if (currentView === 'rendimiento' && !modules.rendimientoComercial) setCurrentView('dashboard');
     }, [modules, role, currentView]);
 
     // ✅ Se añade un estado para controlar la navegación del planificador.
@@ -84,8 +85,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             trends:           'Análisis de Tendencias',
             alerts:           'Centro de Notificaciones',
             settings:         'Configuraciones',
-            ventas:           'Ventas',
+            rendimiento:      'Vendedores',
             seguimiento:      'Seguimiento Comercial',
+            almacenComercial: 'Almacén Comercial',
             planner:          'Centro de Planificación',
             reportesAnaquel:  'Reportes de Anaquel',
             exportes:         'Módulo de Exportes',
@@ -109,9 +111,8 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         const masterNav = (
             <ul>
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
-                <NavItem icon={<Target size={24} />} text="Ventas" active={currentView === 'ventas'} onClick={() => setCurrentView('ventas')} />
                 <NavItem icon={<ClipboardList size={24} />} text="Seguimiento" active={currentView === 'seguimiento'} onClick={() => setCurrentView('seguimiento')} />
-                {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Rendimiento" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
+                {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Vendedores" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
                 {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
@@ -123,10 +124,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
 
         const gerenciaNav = (
             <ul>
-                <NavItem icon={<Target size={24} />} text="Ventas" active={currentView === 'ventas'} onClick={() => setCurrentView('ventas')} />
-                <NavItem icon={<ClipboardList size={24} />} text="Seguimiento" active={currentView === 'seguimiento'} onClick={() => setCurrentView('seguimiento')} />
-                {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Rendimiento" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
+                <NavItem icon={<ClipboardList size={24} />} text="Seguimiento" active={currentView === 'seguimiento'} onClick={() => setCurrentView('seguimiento')} />
+                {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Vendedores" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
@@ -153,15 +153,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     
     const renderMainContent = () => {
         const commonProps = { reports, posList, loading: geniusLoading, onNavigate: setCurrentView };
-        const isGerencia  = role === 'gerencia' || role === 'sales_manager';
 
         return (
             <>
-                {/* Ventas — visible para todos los roles */}
-                <div className={currentView === 'ventas' ? 'block h-full' : 'hidden'}>
-                    <VentasView {...commonProps} allAlerts={[]} />
-                </div>
-
                 {/* Seguimiento comercial — mismos indicadores que ve el vendedor
                      en "Mi Semana", por vendedor o de toda la empresa. */}
                 {currentView === 'seguimiento' && (

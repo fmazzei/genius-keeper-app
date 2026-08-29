@@ -205,7 +205,7 @@ const MetricCard = ({ def, data, onOpen }) => {
                 )}
 
                 {/* Description */}
-                <p className="text-xs text-slate-400 mt-2 leading-snug line-clamp-2">{def.description}</p>
+                <p className="text-xs text-slate-400 mt-2 leading-snug line-clamp-2">{data.description || def.description}</p>
             </div>
         </div>
     );
@@ -246,7 +246,9 @@ const KpiTile = ({ def, data, onOpen }) => {
             <p className={`text-2xl font-black tabular-nums mt-1 ${color}`}>
                 {data.value} {data.unit && <span className="text-xs font-bold text-slate-400">{data.unit}</span>}
             </p>
-            <p className="text-[11px] text-slate-500 mt-1 leading-snug line-clamp-2">{def.description}</p>
+            {/* `data.description` permite una lectura dinámica (p.ej. quiebres:
+                "10 reportados · 6 repuestos en la visita"); si no, la estática. */}
+            <p className="text-[11px] text-slate-500 mt-1 leading-snug line-clamp-2">{data.description || def.description}</p>
         </button>
     );
 };

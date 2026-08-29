@@ -7,9 +7,9 @@ import { useAuth } from '@/context/AuthContext';
 import EditReportForm from '@/Components/EditReportForm.jsx';
 import Modal from '@/Components/Modal.jsx';
 import {
-    ClipboardList, ChevronDown, ChevronUp, Search,
+    ClipboardList, ChevronRight, Search, X,
     Calendar, User, AlertTriangle, Loader,
-    CheckCircle, XCircle, ThumbsUp, Info, Pencil,
+    CheckCircle, Pencil,
 } from 'lucide-react';
 
 const PERIODS = [
@@ -22,12 +22,6 @@ const PERIODS = [
 
 function normalize(str) {
     return (str || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-}
-
-function formatDate(ts) {
-    if (!ts) return '—';
-    const d = ts?.toDate ? ts.toDate() : new Date(ts);
-    return d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function daysSinceTs(ts) {
@@ -71,6 +65,12 @@ const THEME = {
         stockoutTotal: 'text-red-600 bg-red-50 border-red-200',
         stockoutPartial: 'text-amber-600 bg-amber-50 border-amber-200',
         stockoutNone: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+        repoChip: 'text-emerald-700 bg-emerald-100 border-emerald-300',
+        sheet: 'bg-white',
+        sheetHeader: 'bg-white border-b border-slate-200',
+        sheetClose: 'text-slate-400 hover:text-slate-700',
+        sectionTitle: 'text-slate-400',
+        rowHover: 'hover:bg-slate-50 active:bg-slate-100',
         tabsWrap: 'bg-slate-100',
         tabActive: 'bg-white text-slate-800 shadow-sm',
         tabInactive: 'text-slate-500',
@@ -125,6 +125,12 @@ const THEME = {
         stockoutTotal: 'text-red-300 bg-red-500/10 border-red-500/30',
         stockoutPartial: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
         stockoutNone: 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30',
+        repoChip: 'text-emerald-200 bg-emerald-500/20 border-emerald-400/40',
+        sheet: 'bg-slate-950',
+        sheetHeader: 'bg-slate-950 border-b border-slate-800',
+        sheetClose: 'text-slate-400 hover:text-white',
+        sectionTitle: 'text-slate-500',
+        rowHover: 'hover:bg-slate-800/60 active:bg-slate-800',
         tabsWrap: 'bg-slate-800/60 border border-slate-700',
         tabActive: 'bg-emerald-600 text-white',
         tabInactive: 'text-slate-400',
@@ -149,224 +155,359 @@ const THEME = {
     },
 };
 
-// ── Report Card ──────────────────────────────────────────────────────────────
+// ── Quiebre + reposición ─────────────────────────────────────────────────────
+//
+// Un quiebre reportado NO siempre es un quiebre abierto: el mercaderista suele
+// encontrar el anaquel en cero y reponer en esa misma visita (declara las
+// unidades en "Reposición de inventario", `orderQuantity`). Ese caso se marca
+// con una "R" junto a la etiqueta de quiebre — el anaquel estaba en cero, pero
+// quedó atendido. Sin esa distinción, la etiqueta (y el KPI del dashboard)
+// exageran los quiebres realmente abiertos.
+export function quiebreInfo(report) {
+    const s = report?.stockout;
+    const esQuiebre = s === true || s === 'total' || s === 'partial';
+    const repuesto  = Number(report?.orderQuantity) || 0;
+    return {
+        esQuiebre,
+        parcial: s === 'partial',
+        atendido: esQuiebre && repuesto > 0,
+        repuesto,
+        label: s === true || s === 'total' ? 'Quiebre total'
+            : s === 'partial' ? 'Quiebre parcial'
+            : (s === false || s === 'none') ? 'Sin quiebre' : '—',
+    };
+}
 
-function ReportCard({ report, isMaster, onEdit, t }) {
-    const [expanded, setExpanded] = useState(false);
+const freshnessOf = (expiryDateStr, refDate) => {
+    if (!expiryDateStr) return null;
+    const ref = refDate ? new Date(refDate) : new Date();
+    const exp = new Date(expiryDateStr);
+    if (isNaN(exp.getTime())) return null;
+    ref.setHours(0, 0, 0, 0); exp.setHours(0, 0, 0, 0);
+    const d = Math.ceil((exp - ref) / 86400000);
+    if (d <= 0)  return { label: 'Vencido',          tone: 'bad'  };
+    if (d <= 30) return { label: 'Próximo a vencer', tone: 'warn' };
+    if (d <= 60) return { label: 'Fresco',           tone: 'ok'   };
+    return { label: 'Óptimo', tone: 'ok' };
+};
 
-    const stockout = report.stockout;
-    const stockoutLabel = stockout === true || stockout === 'total'
-        ? 'Quiebre total'
-        : stockout === 'partial'
-            ? 'Quiebre parcial'
-            : stockout === false || stockout === 'none'
-                ? 'Sin quiebre'
-                : '—';
-    const stockoutColor = stockout === true || stockout === 'total'
-        ? t.stockoutTotal
-        : stockout === 'partial'
-            ? t.stockoutPartial
-            : t.stockoutNone;
+// Etiqueta de quiebre + chip "R" de reposición atendida.
+function StockoutBadge({ report, t, size = 'sm' }) {
+    const q = quiebreInfo(report);
+    const color = q.esQuiebre
+        ? (q.parcial ? t.stockoutPartial : t.stockoutTotal)
+        : t.stockoutNone;
+    const px = size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs';
+    return (
+        <span className="inline-flex items-center gap-1 shrink-0">
+            <span className={`font-semibold rounded-full border whitespace-nowrap ${px} ${color}`}>
+                {q.label}
+            </span>
+            {q.atendido && (
+                <span
+                    title={`Quiebre atendido: repuso ${q.repuesto} uds en esta visita`}
+                    className={`font-black rounded-full border ${px} ${t.repoChip}`}
+                >
+                    R
+                </span>
+            )}
+        </span>
+    );
+}
 
+// ── Tarjeta compacta ─────────────────────────────────────────────────────────
+// Una línea de identidad + una de contexto + una tira de cifras. El detalle
+// COMPLETO vive en la hoja (`ReportDetailSheet`), que se abre al tocarla.
+
+function ReportCard({ report, onOpen, t }) {
     const ago = daysSinceTs(report.createdAt);
     const agoLabel = ago === null ? '' : ago === 0 ? 'Hoy' : ago === 1 ? 'Ayer' : `Hace ${ago} días`;
 
-    const popLabel = {
-        'Exhibido correctamente': 'POP OK',
-        'Dañado': 'POP dañado',
-        'Ausente': 'POP ausente',
-        'Sin Campaña Activa': 'Sin campaña',
-    }[report.popStatus] || report.popStatus;
-
-    const popColor = report.popStatus === 'Exhibido correctamente'
-        ? t.popOk
-        : report.popStatus === 'Ausente' || report.popStatus === 'Dañado'
-            ? t.popBad
-            : t.popNeutral;
+    const cifras = [
+        { v: report.inventoryLevel, l: 'en anaquel', primary: true },
+        { v: report.facing,         l: 'caras' },
+        { v: report.price !== undefined && report.price !== '' ? `$${report.price}` : undefined, l: 'PVP' },
+        { v: Array.isArray(report.batches) ? report.batches.length : undefined, l: 'lotes' },
+        { v: report.competition?.length || undefined, l: 'compet.' },
+        { v: report.newEntrants?.length || undefined, l: 'entrantes' },
+    ].filter(c => c.v !== undefined && c.v !== '' && c.v !== null);
 
     return (
-        <div className={`rounded-2xl overflow-hidden ${t.card}`}>
-            {/* Header */}
-            <div className="p-4">
-                <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="min-w-0 flex-1">
-                        <p className={`font-bold truncate text-base ${t.cardTitle}`}>{report.posName || 'PDV sin nombre'}</p>
-                        <p className={`text-xs mt-0.5 truncate ${t.cardSub}`}>{report.posZone || '—'}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                        {isMaster && (
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onEdit(report); }}
-                                className={`transition-colors ${t.editBtn}`}
-                                title="Editar reporte"
-                            >
-                                <Pencil size={15} />
-                            </button>
-                        )}
-                        <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${stockoutColor}`}>
-                            {stockoutLabel}
-                        </span>
-                    </div>
-                </div>
-
-                <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${t.meta}`}>
-                    <span className="flex items-center gap-1">
-                        <User size={11} />
-                        {report.userName || 'Mercaderista'}
-                    </span>
-                    <span className="flex items-center gap-1">
-                        <Calendar size={11} />
-                        {agoLabel}{agoLabel && ' · '}{formatDate(report.createdAt)}
-                    </span>
-                </div>
-
-                {/* Key metrics */}
-                <div className="flex items-center gap-5 mt-3 flex-wrap">
-                    {report.inventoryLevel !== undefined && report.inventoryLevel !== '' && (
-                        <div className="text-center">
-                            <p className={`text-lg font-black leading-none ${t.metricPrimary}`}>{report.inventoryLevel}</p>
-                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>En anaquel</p>
-                        </div>
-                    )}
-                    {report.facing !== undefined && report.facing !== '' && (
-                        <div className="text-center">
-                            <p className={`text-lg font-black leading-none ${t.metricValue}`}>{report.facing}</p>
-                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Caras vis.</p>
-                        </div>
-                    )}
-                    {report.price !== undefined && report.price !== '' && (
-                        <div className="text-center">
-                            <p className={`text-lg font-black leading-none ${t.metricValue}`}>${report.price}</p>
-                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Precio</p>
-                        </div>
-                    )}
-                    {report.batches !== undefined && report.batches !== '' && (
-                        <div className="text-center">
-                            <p className={`text-lg font-black leading-none ${t.metricValue}`}>
-                                {Array.isArray(report.batches) ? report.batches.length : report.batches}
-                            </p>
-                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Lotes</p>
-                        </div>
-                    )}
-                    {report.competition?.length > 0 && (
-                        <div className="text-center">
-                            <p className={`text-lg font-black leading-none ${t.metricCompetidores}`}>{report.competition.length}</p>
-                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Competid.</p>
-                        </div>
-                    )}
-                    {report.newEntrants?.length > 0 && (
-                        <div className="text-center">
-                            <p className={`text-lg font-black leading-none ${t.metricEntrantes}`}>{report.newEntrants.length}</p>
-                            <p className={`text-[10px] uppercase tracking-wide mt-0.5 ${t.metricLabel}`}>Entrantes</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Expand button */}
+        <div className={`rounded-xl overflow-hidden ${t.card}`}>
             <button
-                onClick={() => setExpanded(!expanded)}
-                className={`w-full flex items-center justify-center gap-1.5 py-2.5 text-xs transition-colors ${t.expandBtn}`}
+                type="button"
+                onClick={() => onOpen(report)}
+                className={`w-full text-left px-3.5 py-3 transition-colors ${t.rowHover}`}
             >
-                {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                {expanded ? 'Menos detalles' : 'Ver detalles completos'}
-            </button>
-
-            {/* Expanded content */}
-            {expanded && (
-                <div className={`px-4 pb-4 pt-3 space-y-4 ${t.divider}`}>
-                    {/* Grid of fields */}
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                        {report.orderQuantity !== undefined && report.orderQuantity !== '' && (
-                            <div>
-                                <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Cantidad pedido</p>
-                                <p className={`font-semibold mt-0.5 ${t.fieldValue}`}>{report.orderQuantity}</p>
-                            </div>
-                        )}
-                        {report.shelfLocation && (
-                            <div>
-                                <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Ubicación anaquel</p>
-                                <p className={`font-semibold mt-0.5 ${t.fieldValue}`}>{report.shelfLocation}</p>
-                            </div>
-                        )}
-                        {report.adjacentCategory && (
-                            <div>
-                                <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Categoría adyacente</p>
-                                <p className={`font-semibold mt-0.5 ${t.fieldValue}`}>{report.adjacentCategory}</p>
-                            </div>
-                        )}
-                        {report.popStatus && (
-                            <div>
-                                <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Material POP</p>
-                                <p className={`font-semibold mt-0.5 ${popColor}`}>{popLabel}</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Batches list */}
-                    {Array.isArray(report.batches) && report.batches.length > 0 && (
-                        <div>
-                            <p className={`text-[10px] uppercase tracking-wide font-semibold mb-2 ${t.fieldLabel}`}>Lotes en anaquel</p>
-                            <div className="space-y-1.5">
-                                {report.batches.map((b, i) => (
-                                    <div key={i} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${t.batchRow}`}>
-                                        <span className={`font-medium ${t.batchCode}`}>{b.batchCode || b.code || `Lote ${i + 1}`}</span>
-                                        {b.expiryDate && <span className={`text-xs ${t.batchExpiry}`}>{b.expiryDate}</span>}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Competitors */}
-                    {report.competition?.length > 0 && (
-                        <div>
-                            <p className={`text-[10px] uppercase tracking-wide font-semibold mb-2 ${t.fieldLabel}`}>
-                                Competidores ({report.competition.length})
-                            </p>
-                            <div className="space-y-1.5">
-                                {report.competition.map((c, i) => (
-                                    <div key={i} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${t.competitorRow}`}>
-                                        <span className={`font-medium truncate flex-1 mr-2 ${t.competitorName}`}>{c.product}</span>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            {c.price && <span className={`font-semibold ${t.competitorPrice}`}>${c.price}</span>}
-                                            {c.hasPop === true && <span className={`text-xs ${t.competitorPop}`}>POP</span>}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* New entrants */}
-                    {report.newEntrants?.length > 0 && (
-                        <div>
-                            <p className={`text-[10px] uppercase tracking-wide font-semibold mb-2 ${t.fieldLabel}`}>
-                                Nuevos Entrantes ({report.newEntrants.length})
-                            </p>
-                            <div className="space-y-1.5">
-                                {report.newEntrants.map((e, i) => (
-                                    <div key={i} className={`rounded-lg px-3 py-2 text-sm ${t.entrantRow}`}>
-                                        <span className={`font-medium ${t.entrantBrand}`}>{e.brand}</span>
-                                        {e.presentation && <span className={`ml-1.5 text-xs ${t.entrantPresentation}`}>· {e.presentation}</span>}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Notes */}
-                    {report.notes && (
-                        <div>
-                            <p className={`text-[10px] uppercase tracking-wide mb-1 ${t.fieldLabel}`}>Observaciones</p>
-                            <p className={`text-sm rounded-lg px-3 py-2 leading-relaxed ${t.notesBox}`}>{report.notes}</p>
-                        </div>
-                    )}
+                <div className="flex items-start justify-between gap-2">
+                    <p className={`font-bold text-sm leading-snug truncate min-w-0 flex-1 ${t.cardTitle}`}>
+                        {report.posName || 'PDV sin nombre'}
+                    </p>
+                    <StockoutBadge report={report} t={t} />
                 </div>
-            )}
+
+                <div className={`flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] mt-1 ${t.meta}`}>
+                    {report.posZone && report.posZone !== 'N/A' && <span className="truncate max-w-[45%]">{report.posZone}</span>}
+                    <span className="flex items-center gap-1"><User size={10} />{report.userName || 'Mercaderista'}</span>
+                    <span className="flex items-center gap-1"><Calendar size={10} />{agoLabel}</span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 mt-2">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 min-w-0">
+                        {cifras.map((c, i) => (
+                            <span key={i} className="text-xs whitespace-nowrap">
+                                <b className={`font-black ${c.primary ? t.metricPrimary : t.metricValue}`}>{c.v}</b>
+                                <span className={`ml-1 ${t.metricLabel}`}>{c.l}</span>
+                            </span>
+                        ))}
+                    </div>
+                    <span className={`flex items-center gap-1 text-[11px] font-semibold shrink-0 ${t.metricPrimary}`}>
+                        Ver <ChevronRight size={12} />
+                    </span>
+                </div>
+            </button>
         </div>
     );
 }
+
+// ── Hoja de detalle COMPLETO ─────────────────────────────────────────────────
+// Todo lo que trae el reporte, sin recortar: nombre completo del PDV, quién y
+// cuándo, duración de la visita, anaquel, ejecución, lotes con su frescura,
+// competencia, nuevos entrantes, observaciones y — al final — cualquier campo
+// adicional que traiga el documento y no esté mapeado arriba.
+
+const OMIT_KEYS = new Set([
+    'id', 'reportId', 'posId', 'posName', 'posZone', 'userId', 'userName', 'reporterId',
+    'createdAt', 'startTime', 'endTime', 'price', 'orderQuantity', 'stockout', 'batches',
+    'shelfLocation', 'adjacentCategory', 'popStatus', 'facing', 'competition',
+    'newEntrants', 'notes', 'inventoryLevel', 'coordinates',
+]);
+
+// Cualquier campo suelto del documento, legible: Timestamps con fecha, booleanos
+// en español, objetos/arreglos serializados (nunca "[object Object]").
+function formatExtra(v) {
+    if (v && typeof v.toDate === 'function') return v.toDate().toLocaleString('es-VE');
+    if (typeof v === 'boolean') return v ? 'sí' : 'no';
+    if (Array.isArray(v)) return v.map(formatExtra).join(', ');
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+}
+
+function Field({ label, value, t, tone }) {
+    if (value === undefined || value === null || value === '') return null;
+    return (
+        <div className="min-w-0">
+            <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>{label}</p>
+            <p className={`font-semibold mt-0.5 break-words ${tone || t.fieldValue}`}>{value}</p>
+        </div>
+    );
+}
+
+function Section({ title, t, children }) {
+    return (
+        <div>
+            <p className={`text-[10px] uppercase tracking-widest font-bold mb-2 ${t.sectionTitle}`}>{title}</p>
+            {children}
+        </div>
+    );
+}
+
+function ReportDetailSheet({ report, isMaster, onEdit, onClose, t }) {
+    if (!report) return null;
+
+    const q = quiebreInfo(report);
+    const created = report.createdAt?.toDate ? report.createdAt.toDate() : (report.createdAt ? new Date(report.createdAt) : null);
+    const fechaHora = created
+        ? created.toLocaleString('es-VE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '—';
+    const durMin = (report.startTime && report.endTime)
+        ? (new Date(report.endTime).getTime() - new Date(report.startTime).getTime()) / 60000
+        : null;
+
+    const popLabel = {
+        'Exhibido correctamente': 'Exhibido correctamente',
+        'Dañado': 'Dañado',
+        'Ausente': 'Ausente',
+        'Sin Campaña Activa': 'Sin campaña activa',
+    }[report.popStatus] || report.popStatus;
+    const popColor = report.popStatus === 'Exhibido correctamente' ? t.popOk
+        : (report.popStatus === 'Ausente' || report.popStatus === 'Dañado') ? t.popBad : t.popNeutral;
+
+    const extras = Object.entries(report).filter(([k, v]) =>
+        !OMIT_KEYS.has(k) && v !== null && v !== undefined && v !== '' && typeof v !== 'function'
+    );
+
+    const toneOf = (f) => f?.tone === 'bad' ? t.popBad : f?.tone === 'warn' ? t.metricCompetidores : t.popOk;
+
+    return (
+        <div className="fixed inset-0 z-[60] flex flex-col" role="dialog" aria-modal="true">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+
+            <div className={`relative m-auto w-full h-full md:h-auto md:max-h-[92vh] md:max-w-2xl md:rounded-2xl overflow-hidden flex flex-col shadow-2xl ${t.sheet}`}>
+                {/* Encabezado: nombre COMPLETO del PDV, sin truncar. */}
+                <div className={`px-4 py-3 shrink-0 flex items-start gap-3 ${t.sheetHeader}`}>
+                    <div className="min-w-0 flex-1">
+                        <p className={`font-black text-base leading-snug break-words ${t.cardTitle}`}>
+                            {report.posName || 'PDV sin nombre'}
+                        </p>
+                        <p className={`text-xs mt-0.5 break-words ${t.cardSub}`}>
+                            {report.posZone && report.posZone !== 'N/A' ? report.posZone : 'Zona sin definir'}
+                        </p>
+                        <div className="mt-2"><StockoutBadge report={report} t={t} size="md" /></div>
+                    </div>
+                    <button onClick={onClose} className={`shrink-0 p-1 ${t.sheetClose}`} aria-label="Cerrar">
+                        <X size={22} />
+                    </button>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain px-4 py-4 space-y-5" style={{ WebkitOverflowScrolling: 'touch' }}>
+
+                    {q.atendido && (
+                        <div className={`rounded-xl border px-3 py-2.5 text-sm ${t.repoChip}`}>
+                            <b>Quiebre atendido (R).</b> El anaquel estaba en cero y el mercaderista
+                            repuso <b>{q.repuesto} unidades</b> en esta misma visita.
+                        </div>
+                    )}
+                    {q.esQuiebre && !q.atendido && (
+                        <div className={`rounded-xl border px-3 py-2.5 text-sm ${t.stockoutTotal}`}>
+                            <b>Quiebre sin reponer.</b> No se declaró reposición en esta visita: el PDV
+                            quedó sin producto.
+                        </div>
+                    )}
+
+                    <Section title="Visita" t={t}>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                            <Field label="Reportado por" value={report.userName || '—'} t={t} />
+                            <Field label="Fecha y hora" value={fechaHora} t={t} />
+                            {durMin !== null && Number.isFinite(durMin) && durMin > 0 && (
+                                <Field label="Duración" value={`${durMin.toFixed(1)} min`} t={t} />
+                            )}
+                            {report.coordinates?.lat != null && (
+                                <Field label="Coordenadas" value={`${Number(report.coordinates.lat).toFixed(5)}, ${Number(report.coordinates.lng).toFixed(5)}`} t={t} />
+                            )}
+                        </div>
+                    </Section>
+
+                    <Section title="Anaquel y reposición" t={t}>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                            <Field label="Unidades en anaquel" value={report.inventoryLevel} t={t} tone={t.metricPrimary} />
+                            <Field label="Reposición declarada" value={report.orderQuantity !== undefined ? `${report.orderQuantity} uds` : undefined} t={t} />
+                            <Field label="PVP observado" value={report.price !== undefined && report.price !== '' ? `$${report.price}` : undefined} t={t} />
+                            <Field label="Caras visibles" value={report.facing} t={t} />
+                        </div>
+                    </Section>
+
+                    <Section title="Ejecución" t={t}>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                            <Field label="Ubicación en anaquel" value={report.shelfLocation} t={t} />
+                            <Field label="Categoría adyacente" value={report.adjacentCategory} t={t} />
+                            <Field label="Material POP" value={popLabel} t={t} tone={popColor} />
+                        </div>
+                    </Section>
+
+                    {Array.isArray(report.batches) && report.batches.length > 0 && (
+                        <Section title={`Lotes en anaquel (${report.batches.length})`} t={t}>
+                            <div className="space-y-1.5">
+                                {report.batches.map((b, i) => {
+                                    const f = freshnessOf(b.expiryDate, created);
+                                    return (
+                                        <div key={i} className={`rounded-lg px-3 py-2 text-sm ${t.batchRow}`}>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className={`font-medium break-words min-w-0 ${t.batchCode}`}>
+                                                    {b.batchCode || b.code || `Lote ${i + 1}`}
+                                                </span>
+                                                {b.quantity !== undefined && (
+                                                    <span className={`font-black shrink-0 ${t.metricPrimary}`}>{b.quantity} uds</span>
+                                                )}
+                                            </div>
+                                            <div className={`flex items-center gap-2 text-xs mt-0.5 ${t.batchExpiry}`}>
+                                                {b.expiryDate && <span>Vence {b.expiryDate}</span>}
+                                                {f && <span className={`font-semibold ${toneOf(f)}`}>· {f.label}</span>}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </Section>
+                    )}
+
+                    {report.competition?.length > 0 && (
+                        <Section title={`Competencia (${report.competition.length})`} t={t}>
+                            <div className="space-y-1.5">
+                                {report.competition.map((c, i) => {
+                                    const per100 = (Number(c.price) > 0 && Number(c.weight_g) > 0)
+                                        ? ((Number(c.price) / Number(c.weight_g)) * 100).toFixed(2) : null;
+                                    return (
+                                        <div key={i} className={`rounded-lg px-3 py-2 text-sm ${t.competitorRow}`}>
+                                            <div className="flex items-start justify-between gap-2">
+                                                <span className={`font-semibold break-words min-w-0 ${t.competitorName}`}>
+                                                    {[c.brand, c.productName].filter(Boolean).join(' ') || c.product || 'Producto'}
+                                                </span>
+                                                {c.price && <span className={`font-black shrink-0 ${t.competitorPrice}`}>${c.price}</span>}
+                                            </div>
+                                            <div className={`flex flex-wrap gap-x-2 text-xs mt-0.5 ${t.competitorPop}`}>
+                                                {c.weight_g ? <span>{c.weight_g} g</span> : null}
+                                                {per100 ? <span>· ${per100}/100 g</span> : null}
+                                                <span>· POP: {c.hasPop === true ? 'sí' : c.hasPop === false ? 'no' : 'no sabe'}</span>
+                                                <span>· Degustación: {c.hasTasting === true ? 'sí' : c.hasTasting === false ? 'no' : 'no sabe'}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </Section>
+                    )}
+
+                    {report.newEntrants?.length > 0 && (
+                        <Section title={`Nuevos entrantes (${report.newEntrants.length})`} t={t}>
+                            <div className="space-y-1.5">
+                                {report.newEntrants.map((e, i) => (
+                                    <div key={i} className={`rounded-lg px-3 py-2 text-sm ${t.entrantRow}`}>
+                                        <span className={`font-semibold break-words ${t.entrantBrand}`}>{e.brand}</span>
+                                        <div className={`text-xs mt-0.5 flex flex-wrap gap-x-2 ${t.entrantPresentation}`}>
+                                            {e.presentation && <span>{e.presentation}</span>}
+                                            {e.weight_g ? <span>· {e.weight_g} g</span> : null}
+                                            {e.price ? <span>· ${e.price}</span> : null}
+                                        </div>
+                                        {e.notes && <p className={`text-xs mt-1 break-words ${t.entrantPresentation}`}>{e.notes}</p>}
+                                    </div>
+                                ))}
+                            </div>
+                        </Section>
+                    )}
+
+                    {report.notes && (
+                        <Section title="Observaciones" t={t}>
+                            <p className={`text-sm rounded-lg px-3 py-2 leading-relaxed break-words ${t.notesBox}`}>{report.notes}</p>
+                        </Section>
+                    )}
+
+                    {extras.length > 0 && (
+                        <Section title="Otros datos del reporte" t={t}>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                                {extras.map(([k, v]) => (
+                                    <Field key={k} label={k} value={formatExtra(v)} t={t} />
+                                ))}
+                            </div>
+                        </Section>
+                    )}
+                </div>
+
+                {isMaster && (
+                    <div className={`shrink-0 px-4 py-3 ${t.sheetHeader}`}>
+                        <button
+                            onClick={() => { onClose(); onEdit(report); }}
+                            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border ${t.repoChip}`}
+                        >
+                            <Pencil size={14} /> Editar este reporte
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
@@ -379,6 +520,7 @@ const ReportesAnaquelView = ({ theme = 'light' }) => {
     const [loading, setLoading]             = useState(true);
     const [error, setError]                 = useState(null);
     const [editingReport, setEditingReport] = useState(null);
+    const [detailReport, setDetailReport]   = useState(null);
 
     // Histórico filters
     const [periodDays, setPeriodDays]       = useState(30);
@@ -604,21 +746,26 @@ const ReportesAnaquelView = ({ theme = 'light' }) => {
                     </p>
                 </div>
             ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                     <p className={`text-xs font-semibold ${t.reportCount}`}>
                         {displayReports.length} reporte{displayReports.length !== 1 ? 's' : ''}
                         {activeTab === 'recientes' ? ' · Últimos 7 días' : ` · Últimos ${periodDays} días`}
                     </p>
                     {displayReports.map(r => (
-                        <ReportCard
-                            key={r.id}
-                            report={r}
-                            isMaster={role === 'master'}
-                            onEdit={setEditingReport}
-                            t={t}
-                        />
+                        <ReportCard key={r.id} report={r} onOpen={setDetailReport} t={t} />
                     ))}
                 </div>
+            )}
+
+            {/* Vista COMPLETA del reporte (nombre entero del PDV + todos los datos) */}
+            {detailReport && (
+                <ReportDetailSheet
+                    report={detailReport}
+                    isMaster={role === 'master'}
+                    onEdit={setEditingReport}
+                    onClose={() => setDetailReport(null)}
+                    t={t}
+                />
             )}
 
             <Modal

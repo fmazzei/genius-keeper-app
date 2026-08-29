@@ -142,6 +142,18 @@ export function useFinancialKpis() {
             .sort((a, b) => b.unidades - a.unidades)
             .slice(0, 5);
 
+        // ── Cobrado DENTRO del mes calendario en curso (caja del mes) ────────
+        // No es "lo facturado que ya se cobró": es todo lo que ENTRÓ este mes,
+        // sin importar de qué mes venga la factura. Es la lectura que pide el
+        // dueño al lado de lo facturado ("cuánto vendimos / cuánto cobramos").
+        const cobradasMes = activas.filter(f => {
+            if (f.estado !== 'pagada') return false;
+            const p = toDate(f.fechaPago);
+            return p && p >= mStart && p < mEnd;
+        });
+        const cobradoMes    = sum(cobradasMes, f => f.monto);
+        const nCobradasMes  = cobradasMes.length;
+
         // ── Cobranza (snapshot de cartera ABIERTA, no ventana de tiempo)
         // Se usa el SALDO real (balance de Zoho) por factura, no el monto total,
         // para cuadrar con "Total de cuentas por cobrar" de Zoho Books cuando hay
@@ -179,6 +191,7 @@ export function useFinancialKpis() {
 
         return {
             facturadoMes, unidadesMes, facturadoPrev, unidadesPrev, topClientes,
+            cobradoMes, nCobradasMes,
             porCobrar, aging: { d0_30: a0, d31_45: a1, d45p: a2 }, clientesMas45,
             diasTrasVencimiento, dso: diasTrasVencimiento, diasPagoAnio, aTiempoPct,
             facturas,
