@@ -8,6 +8,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
+import { unidadesReales, buildCanalResolver } from '@/utils/unidadesFactura.js';
 
 const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 const sum = (arr, sel) => arr.reduce((s, f) => s + (Number(sel(f)) || 0), 0);
@@ -84,6 +85,7 @@ export const saldoAbierto = (f) => {
 
 export function useFinancialKpis() {
     const [facturas, setFacturas] = useState([]);
+    const [clientes, setClientes] = useState([]);
     const [loading, setLoading]   = useState(true);
     const [error, setError]       = useState('');
 
@@ -92,8 +94,17 @@ export function useFinancialKpis() {
         (async () => {
             setLoading(true); setError('');
             try {
-                const snap = await getDocs(collection(db, 'facturas_vendedor'));
-                if (alive) setFacturas(snap.docs.map(d => d.data()));
+                // El registro de clientes se trae para conocer el canal VIGENTE de
+                // cada uno (retail/foodservice): es lo que permite reinterpretar
+                // las unidades de las facturas que Zoho emitió por kilo y que
+                // todavía no pasaron por la conciliación.
+                const [snap, cliSnap] = await Promise.all([
+                    getDocs(collection(db, 'facturas_vendedor')),
+                    getDocs(collection(db, 'clientes_zoho')).catch(() => ({ docs: [] })),
+                ]);
+                if (!alive) return;
+                setFacturas(snap.docs.map(d => d.data()));
+                setClientes((cliSnap.docs || []).map(d => d.data()));
             } catch (e) {
                 console.error(e);
                 if (alive) setError('No se pudo cargar la facturación.');
@@ -123,19 +134,25 @@ export function useFinancialKpis() {
         const activas = facturas.filter(f => f.estado !== 'anulada');
         const inWin = (f, a, b) => { const t = toDate(f.fecha); return t && t >= a && t < b; };
 
+        // Unidades de VENTA reales: Zoho factura foodservice por kilo, así que la
+        // cantidad de la línea no siempre está en unidades de 250 g. Se
+        // reinterpreta con el canal vigente del cliente (ver utils/unidadesFactura).
+        const canalDe = buildCanalResolver(clientes);
+        const uds = (f) => unidadesReales(f, { canal: canalDe(f) });
+
         // ── Ventas (por fecha de factura): mes en curso vs. mes anterior
         const mesF  = activas.filter(f => inWin(f, mStart, mEnd));
         const prevF = activas.filter(f => inWin(f, pStart, pEnd));   // mismo tramo del mes anterior
         const facturadoMes  = sum(mesF, f => f.monto);
-        const unidadesMes   = sum(mesF, f => f.unidades);
+        const unidadesMes   = sum(mesF, uds);
         const facturadoPrev = sum(prevF, f => f.monto);
-        const unidadesPrev  = sum(prevF, f => f.unidades);
+        const unidadesPrev  = sum(prevF, uds);
 
         // Top clientes del mes por unidades (rank ¿Vendemos? / trade)
         const byCliente = {};
         mesF.forEach(f => {
             const k = f.razonSocialCanonica || f.clienteName || '—';
-            byCliente[k] = (byCliente[k] || 0) + (Number(f.unidades) || 0);
+            byCliente[k] = (byCliente[k] || 0) + uds(f);
         });
         const topClientes = Object.entries(byCliente)
             .map(([nombre, unidades]) => ({ nombre, unidades }))
@@ -197,7 +214,7 @@ export function useFinancialKpis() {
             facturas,
             tieneFacturas: facturas.length > 0,
         };
-    }, [facturas]);
+    }, [facturas, clientes]);
 
     return { ...kpis, loading, error };
 }

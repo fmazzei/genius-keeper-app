@@ -252,6 +252,17 @@ lleva visitas por diseño). Guardar normaliza `visitInterval`+`active`.
     importe por unidad sigue > 1,5 × precio de lista, las unidades se derivan del
     subtotal (mismo método de la auditoría manual). `factorUnidadZoho` ignora
     puntos y espacios ("Kg.", "KGS", "kg ").
+  - **Corrección al LEER (sin depender de conciliar):** `src/utils/unidadesFactura.js`
+    (`unidadesReales` + `buildCanalResolver`). El dashboard reinterpreta las
+    unidades de una factura cuando el importe por unidad guardada es un
+    **múltiplo limpio (≥2)** del precio de lista del canal: $912 ÷ 50 = $18,24 ≈
+    4 × $4,80 ⇒ factor 4 ⇒ 200 uds. Se multiplica la CANTIDAD por el factor (no
+    se divide el monto entre el precio) para que los descuentos no distorsionen —
+    el 5% mueve el ratio de 4,00 a 3,80, que sigue redondeando a 4. El canal sale
+    del registro `clientes_zoho` (el VIGENTE, por carnet), no del `categoria`
+    congelado en la factura. Es **idempotente** y respeta `unidadesNormalizadas`,
+    así que no doble-cuenta cuando el servidor ya corrigió el dato.
+    `useFinancialKpis` carga `clientes_zoho` para esto.
   - **Descuentos:** las unidades se derivan del **`sub_total`** (antes de
     descuento) — con `total` una factura con 5% de descuento daba 190 uds en vez
     de 200. La COMISIÓN sigue sobre `total` (lo que de verdad se cobra).
