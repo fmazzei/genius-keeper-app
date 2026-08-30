@@ -195,6 +195,40 @@ lleva visitas por diseño). Guardar normaliza `visitInterval`+`active`.
 
 ---
 
+## Bug real: "Mi Semana" del vendedor mostraba su cartera entera como sin facturar (2026-08) ✅
+
+El máster veía, para Carolina, "16 PDV sin facturar +8 días" (15 heredados · 1 de
+su gestión) — su propia "Mi Semana" mostraba **25** (25 heredados · 0 de su
+gestión), como si NINGUNA factura existiera. Causa: `VendedorLayout.jsx`
+recortaba `carteraFacturas` (el arreglo que alimenta `computeSeguidor`) a solo
+los campos que usaba el modal "Ventas por cliente/PDV" — y se comía `fecha`.
+`ultimaFacturaPorPos()` (`seguidorSemanal.js`) descarta cualquier factura sin
+`fecha`, así que **todas** las facturas del vendedor quedaban invisibles para el
+Seguidor: cada PDV vinculado se leía como "nunca facturó", y como
+`!info.ultima` también decide "heredado", todo caía marcado heredado. El máster
+no tenía el bug porque `SeguimientoComercial.jsx` sí spreadea el doc completo
+(`{ id: d.id, ...d.data() }`). Fix: `setCarteraFacturas` ahora copia también
+`id`, `numero`, `balance`, `fecha`, `fechaPago` y `recuperada` — los mismos
+campos que toca `computeSeguidor` end-to-end (`sinFacturar` + "Facturas
+vencidas por cobrar"). **Lección**: cuando se recorta un objeto a "los campos
+que necesita el consumidor actual", hay que revisar TODOS los consumidores del
+estado, no solo el que motivó el recorte.
+
+## Cobertura de visitas: arriba y compacta (2026-08) ✅
+
+Vivía en su propia zona "Tu mercaderista" al final de la página, como una
+tarjeta grande (fracción + barra + texto) — mucho espacio para un dato que
+además quedaba enterrado bajo "Atiende ya"/"Esta semana". Ahora es una fila
+compacta (ícono + fracción + chevron) **justo debajo del hero**, antes de
+"Atiende ya". Al pulsarla se abre la MISMA hoja de detalle que el resto de los
+indicadores, con un bloque `resumen` nuevo (fracción grande + barra + "faltan
+N") arriba de la lista de PDV pendientes — `abrir()` ahora acepta un 5º
+parámetro opcional `resumen` (JSX) para esto. Se oculta si el vendedor no tiene
+PDV con mercaderista (`mercaderista.pdvCartera === 0`) y muestra "Nada que
+cubrir este período" cuando ningún PDV toca visita en la ventana (`meta === 0`,
+antes mostraba un confuso "0/0"). Mismo componente para vendedor y máster
+(`SeguidorSemanalView.jsx`), así que el cambio aplica a los dos.
+
 ## Quiebre ATENDIDO (R), navegación del máster, kg→uds y caja del mes (2026-08) ✅
 
 - **Navegación (máster/gerencia)**: se ELIMINÓ la pestaña "Ventas" (`VentasView.jsx`

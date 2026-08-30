@@ -56,7 +56,10 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
 
     if (!data) return null;
     const { semana, cfg, sinFacturar, anaquelBajo, quiebres, porVencer, cobranza, despachos, mercaderista, cobertura } = data;
-    const abrir = (titulo, subtitulo, items, render) => setDetalle({ titulo, subtitulo, items, render });
+    // `resumen` (opcional): un bloque JSX que va ARRIBA de la lista en la hoja de
+    // detalle — para indicadores que no son solo una lista (p.ej. Cobertura de
+    // visitas, que además necesita mostrar la fracción y la barra de progreso).
+    const abrir = (titulo, subtitulo, items, render, resumen = null) => setDetalle({ titulo, subtitulo, items, render, resumen });
 
     // ── Cada indicador declara su nivel de urgencia; el orden sale de ahí ──
     const peorVencimiento = porVencer.items[0]?.diasParaVencer ?? null;
@@ -260,6 +263,67 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                 )}
             </div>
 
+            {/* ── Cobertura de visitas del mercaderista ── arriba y compacta: una
+                sola fila (antes era una tarjeta con barra de progreso que ocupaba
+                mucho espacio). El detalle completo —fracción, barra, PDV
+                pendientes— se ve al pulsarla, en la hoja ampliada. */}
+            {mercaderista.pdvCartera > 0 && (() => {
+                const sinNadaQueCubrir = mercaderista.meta === 0;
+                const cumplida = !sinNadaQueCubrir && mercaderista.faltan === 0;
+                const ok = sinNadaQueCubrir || cumplida;
+                const resumenCobertura = (
+                    <div className="mb-1">
+                        <div className="flex items-end justify-between gap-3 mb-2">
+                            <p className={`text-xs ${t.meta}`}>{mercaderista.pdvTotal} PDV tocan este período</p>
+                            <p className={`text-3xl font-black tabular-nums leading-none ${ok ? 'text-emerald-500' : 'text-indigo-400'}`}>
+                                {mercaderista.hechas}<span className={`text-base ${t.soft}`}>/{mercaderista.meta}</span>
+                            </p>
+                        </div>
+                        <div className={`h-2.5 rounded-full overflow-hidden ${t.bar}`}>
+                            <div className={`h-full rounded-full transition-all ${ok ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                                 style={{ width: `${Math.min(100, mercaderista.pct || 0)}%` }} />
+                        </div>
+                        <p className={`text-xs mt-1.5 ${t.meta}`}>
+                            {cumplida
+                                ? '¡Meta del período cumplida!'
+                                : <>Faltan <b className="text-indigo-400">{mercaderista.faltan} visitas</b> · {mercaderista.items.length} PDV sin cubrir</>}
+                        </p>
+                    </div>
+                );
+                return (
+                    <button
+                        onClick={() => abrir(
+                            'Cobertura de visitas', 'Según la frecuencia de cada PDV', mercaderista.items,
+                            (i) => (<>
+                                <p className="font-bold text-sm">{i.nombre}</p>
+                                <p className="text-xs opacity-70">Cada {i.intervalo} días · {i.zona}</p>
+                                <span className="text-xs font-black text-indigo-400">{i.visitas}/{i.meta} · faltan {i.faltan}</span>
+                            </>),
+                            resumenCobertura,
+                        )}
+                        className={`w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left ${t.card}`}
+                    >
+                        <Users size={18} className={`shrink-0 ${ok ? 'text-emerald-500' : 'text-indigo-400'}`} />
+                        <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-bold ${t.title}`}>Cobertura de visitas</p>
+                            <p className={`text-xs leading-snug ${t.meta}`}>
+                                {sinNadaQueCubrir
+                                    ? 'Nada que cubrir este período'
+                                    : cumplida
+                                        ? '¡Meta del período cumplida!'
+                                        : <>Faltan <b className="text-indigo-400">{mercaderista.faltan}</b> · {mercaderista.items.length} PDV sin cubrir</>}
+                            </p>
+                        </div>
+                        {!sinNadaQueCubrir && (
+                            <span className={`text-xl font-black tabular-nums shrink-0 ${ok ? 'text-emerald-500' : 'text-indigo-400'}`}>
+                                {mercaderista.hechas}<span className={`text-xs font-bold ${t.soft}`}>/{mercaderista.meta}</span>
+                            </span>
+                        )}
+                        <ChevronRight size={16} className={`shrink-0 ${t.meta}`} />
+                    </button>
+                );
+            })()}
+
             {/* Aviso de PDV sin vincular (el indicador principal depende del vínculo) */}
             {cobertura.sinVincular > 0 && (
                 <div className="flex items-start gap-2 text-xs rounded-xl px-3 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-500">
@@ -323,45 +387,6 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                 </div>
             )}
 
-            {/* ── MERCADERISTA ── */}
-            <div>
-                <p className={`text-[10px] font-extrabold uppercase tracking-[0.2em] mb-2 px-1 ${t.soft}`}>Tu mercaderista</p>
-                <button
-                    onClick={() => mercaderista.items.length && abrir(
-                        'PDV por cubrir', 'Según la frecuencia de cada punto', mercaderista.items,
-                        (i) => (<>
-                            <p className="font-bold text-sm">{i.nombre}</p>
-                            <p className="text-xs opacity-70">Cada {i.intervalo} días · {i.zona}</p>
-                            <span className="text-xs font-black text-indigo-400">{i.visitas}/{i.meta} · faltan {i.faltan}</span>
-                        </>))}
-                    disabled={mercaderista.items.length === 0}
-                    className={`w-full rounded-2xl p-4 text-left disabled:cursor-default ${t.card}`}
-                >
-                    <div className="flex items-end justify-between gap-3 mb-2">
-                        <div className="min-w-0">
-                            <p className={`text-sm font-bold ${t.title}`}>Cobertura de visitas</p>
-                            <p className={`text-xs ${t.meta}`}>
-                                Según la frecuencia de cada PDV · {mercaderista.pdvTotal} tocan esta semana
-                            </p>
-                        </div>
-                        <div className="text-right shrink-0">
-                            <p className={`text-3xl font-black tabular-nums leading-none ${mercaderista.faltan === 0 ? 'text-emerald-500' : 'text-indigo-400'}`}>
-                                {mercaderista.hechas}<span className={`text-base ${t.soft}`}>/{mercaderista.meta}</span>
-                            </p>
-                        </div>
-                    </div>
-                    <div className={`h-2.5 rounded-full overflow-hidden ${t.bar}`}>
-                        <div className={`h-full rounded-full transition-all ${mercaderista.faltan === 0 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-                             style={{ width: `${Math.min(100, mercaderista.pct || 0)}%` }} />
-                    </div>
-                    <p className={`text-xs mt-1.5 ${t.meta}`}>
-                        {mercaderista.faltan === 0
-                            ? '¡Meta semanal cumplida!'
-                            : <>Faltan <b className="text-indigo-400">{mercaderista.faltan} visitas</b> · {mercaderista.items.length} PDV sin cubrir</>}
-                    </p>
-                </button>
-            </div>
-
             {/* ── EN VERDE (colapsado) ── */}
             {verdes.length > 0 && (
                 <div>
@@ -401,6 +426,12 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                             <button onClick={() => setDetalle(null)} className={`p-1 ${t.meta}`}><X size={18} /></button>
                         </div>
                         <div className="px-5 pb-6 overflow-y-auto space-y-2">
+                            {detalle.resumen && (
+                                <div className={`rounded-xl p-3 mb-1 ${t.mini}`}>{detalle.resumen}</div>
+                            )}
+                            {detalle.items.length === 0 && !detalle.resumen && (
+                                <p className={`text-sm text-center py-6 ${t.meta}`}>Sin pendientes.</p>
+                            )}
                             {detalle.items.map((i, idx) => (
                                 <div key={idx} className={`rounded-xl px-3 py-2.5 ${t.row} ${t.title}`}>
                                     {detalle.render(i)}

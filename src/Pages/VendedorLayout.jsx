@@ -1273,12 +1273,23 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //     Se calcula desde facturas_vendedor (no desde el acumulado
                 //     calendario `comisiones_mensuales`) para respetar el mes de
                 //     empleo del vendedor, no el mes de calendario.
-                const facturasVend = facturasSnap ? facturasSnap.docs.map(d => d.data()) : [];
-                // Facturas de la cartera para el modal "Ventas por cliente/PDV" (no se
-                // cachea en localStorage; solo los campos que el modal necesita).
+                const facturasVend = facturasSnap ? facturasSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+                // Facturas de la cartera para el modal "Ventas por cliente/PDV" Y para
+                // el Seguidor Semanal (computeSeguidor → `ultimaFacturaPorPos` /
+                // "Facturas vencidas por cobrar"). BUG real: esta lista se recortaba a
+                // los campos que el modal necesitaba y se le caía `fecha`/`fechaPago`/
+                // `numero`/`recuperada` — sin `fecha`, TODAS las facturas se leían como
+                // "nunca facturadas" (`ultimaFacturaPorPos` descarta cualquier factura
+                // sin fecha), así que el Seguidor del propio vendedor mostraba "PDV sin
+                // facturar" para TODA su cartera vinculada (25) en vez del número real
+                // (16, el mismo que ve el máster desde `facturas_vendedor` completas).
                 setCarteraFacturas(facturasVend.map(f => ({
+                    id: f.id, numero: f.numero,
                     clienteName: f.clienteName, razonSocialCanonica: f.razonSocialCanonica,
-                    unidades: f.unidades, monto: f.monto, estado: f.estado, categoria: f.categoria, vencimiento: f.vencimiento,
+                    unidades: f.unidades, monto: f.monto, balance: f.balance,
+                    estado: f.estado, categoria: f.categoria,
+                    fecha: f.fecha, vencimiento: f.vencimiento, fechaPago: f.fechaPago,
+                    recuperada: f.recuperada,
                 })));
                 const enPeriodo = (f) => {
                     const t = f.fecha?.toDate?.() || (f.fecha ? new Date(f.fecha) : null);
