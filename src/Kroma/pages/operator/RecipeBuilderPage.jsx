@@ -285,6 +285,7 @@ export default function RecipeBuilderPage() {
             const ref = await addDoc(collection(db, 'kroma_materials'), {
                 nombre: newMatNombre.trim(),
                 categoria: newMatCat,
+                empresaId: kromaUser?.empresaId || 'lacteoca',
                 active: true,
                 costoUSD: null,
                 cantidadPresentacion: null,
@@ -335,6 +336,7 @@ export default function RecipeBuilderPage() {
                     procesoNombre:    selProcess?.productoNombre || null,
                     loteReferencia:   LOTE_REF,
                     ingredientes,
+                    empresaId:        kromaUser?.empresaId || 'lacteoca',
                     estado:           'borrador',
                     creadoPor:        kromaUser?.id || null,
                     creadoPorNombre:  kromaUser?.name || null,

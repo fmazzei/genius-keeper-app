@@ -6,6 +6,7 @@ import {
 import {
     Package, Plus, Search, X, Edit2, Trash2, Loader, Calculator, Link2,
 } from 'lucide-react';
+import { useKroma } from '../../KromaContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -546,6 +547,7 @@ function MaterialCard({ material, supplierName, onEdit, onDelete }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function MaterialsMasterPage() {
+    const { kromaUser } = useKroma();
     const [materials, setMaterials] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
     const [products, setProducts] = useState([]);
@@ -601,7 +603,7 @@ export default function MaterialsMasterPage() {
             if (editing) {
                 await updateDoc(doc(db, 'kroma_materials', editing.id), { ...form, updatedAt: serverTimestamp() });
             } else {
-                await addDoc(collection(db, 'kroma_materials'), { ...form, active: true, createdAt: serverTimestamp() });
+                await addDoc(collection(db, 'kroma_materials'), { ...form, empresaId: kromaUser?.empresaId || 'lacteoca', active: true, createdAt: serverTimestamp() });
             }
             await loadAll();
             setMode('list');

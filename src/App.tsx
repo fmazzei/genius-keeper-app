@@ -97,7 +97,7 @@ const AppLayout: React.FC = () => {
         if (role === 'administrador') {
             return <AdministracionLayout user={user} onLogout={() => signOut(auth)} />;
         }
-        if (role === 'produccion') {
+        if (role === 'produccion' || role === 'kroma_owner' || role === 'kroma_admin' || role === 'kroma_gerencial' || role === 'kroma_operario') {
             return <KromaShell onExitKroma={() => signOut(auth)} />;
         }
         if (role === 'merchandiser') {

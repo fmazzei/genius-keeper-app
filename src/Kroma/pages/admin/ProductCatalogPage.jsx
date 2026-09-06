@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { Tag, Plus, Edit2, Trash2, Loader, X } from 'lucide-react';
+import { useKroma } from '../../KromaContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -318,6 +319,7 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ProductCatalogPage() {
+    const { kromaUser } = useKroma();
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [mode, setMode] = useState('list'); // 'list' | 'create' | 'edit'
@@ -351,7 +353,7 @@ export default function ProductCatalogPage() {
             if (editing) {
                 await updateDoc(doc(db, 'kroma_products', editing.id), { ...cleanForm, updatedAt: serverTimestamp() });
             } else {
-                await addDoc(collection(db, 'kroma_products'), { ...cleanForm, active: true, createdAt: serverTimestamp() });
+                await addDoc(collection(db, 'kroma_products'), { ...cleanForm, empresaId: kromaUser?.empresaId || 'lacteoca', active: true, createdAt: serverTimestamp() });
             }
             await load();
             setMode('list');

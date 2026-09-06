@@ -722,6 +722,7 @@ export default function MilkInventoryPage() {
                     proveedorId, proveedorNombre: supplierName(prov),
                     litros, fecha: fechaDate, parametros: { ...params }, enrutamiento,
                     costoUsdLitro,
+                    empresaId: kromaUser?.empresaId || 'lacteoca',
                     operarioId: kromaUser?.id || '', operarioNombre: kromaUser?.name || '',
                     status: 'pendiente', active: true, createdAt: serverTimestamp(),
                 };

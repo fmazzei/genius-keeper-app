@@ -1133,5 +1133,134 @@ Corregido en una ronda:
   selector de sal del bloque Salado.
 
 Todo verificado con `npm run build` limpio tras cada cambio. Pendiente/futuro:
-ProductionHistoryPage, Dashboards Gerenciales y ControlSistemaPage (Módulos
-1.5, 2 y 5) siguen sin construir.
+ProductionHistoryPage y Dashboards Gerenciales (Módulos 1.5 y 2) siguen sin
+construir. **Corrección sobre la tabla de arriba**: `ControlSistemaPage.jsx`
+(Módulo 5 — usuarios/permisos/notificaciones/mantenimiento) SÍ está construido
+y en uso — la tabla decía "🔲 Pendiente", pero es un panel completo de 900+
+líneas (`UsuariosTab`/`PermisosTab`/`NotificacionesTab`/`MantenimientoTab`).
+Ver también la sección de multi-empresa abajo: la identidad de esos usuarios
+de `kroma_users` es solo de atribución/PIN, client-side — no está atada a
+ninguna cuenta de Firebase Auth.
+
+---
+
+## Multi-empresa: Kroma como plataforma para varias empresas (2026-09) ✅
+
+Motivación del dueño: poder dar de alta una empresa nueva (ajena a Lacteoca)
+con su propio maestro de materiales, producción e inventario — totalmente
+aislada, sin que una empresa vea ni toque los datos de otra. Antes de tocar
+el modelo de datos se hizo una auditoría del estado real de identidad/roles en
+Kroma, con un hallazgo de fondo: **Kroma nunca tuvo autenticación real por
+persona**. Todo el módulo se entraba con **una sola cuenta de Firebase Auth
+compartida** (`produccion@lacteoca.com`); el selector "¿quién eres?" con PIN
+(`kroma_users` + `KromaContext`, `sessionStorage`) es solo una etiqueta de
+atribución **invisible para las reglas de Firestore** — la única barrera de
+seguridad real era esa única cuenta compartida (`isKromaAccess()` en
+`firestore.rules`, que solo mira `users_metadata.role` de la cuenta de GK
+logueada, nunca `kroma_users`). Aislar datos por empresa exigía entonces dar a
+cada persona una cuenta de Auth real, no solo agregar un campo `empresaId`.
+
+**Decisiones de negocio (dueño):** aislamiento **multi-tenant completo**
+(cada empresa con su propio maestro/producción/inventario, cero visibilidad
+cruzada); **solo el máster global (Francisco/`lacteoca@lacteoca.com`) da de
+alta empresas nuevas** (nada de auto-registro público); el primer usuario de
+cada empresa es su **"dueño"** (`kroma_owner`) — control total, pero **acotado
+a los datos de su propia empresa**; el máster global sí conserva visibilidad
+de todas las empresas (soporte).
+
+**Modelo de datos:**
+- **`kroma_empresas/{empresaId}`** (nuevo): `{nombre, contactoNombre,
+  contactoEmail, contactoTelefono, dueñoUid, active, createdAt, createdBy}`.
+  `empresaId` es un slug del nombre de la empresa (`slugify`, con sufijo
+  numérico si colisiona), no un ID aleatorio.
+- **`users_metadata`** (la cuenta de Firebase Auth de GK) gana `empresaId` y
+  `kromaDirectLogin:true` para cada persona de una empresa nueva, más un rol
+  nuevo **`kroma_owner`**. Los roles `kroma_admin`/`kroma_gerencial` ya
+  existían en las reglas como ramas muertas (nunca asignadas a ninguna cuenta
+  real) — ahora sí se usan. `kroma_operario` (ya reconocido internamente por
+  `KromaShell` para el maestro quesero) también pasa a ser una cuenta real
+  asignable, no solo un valor de `kroma_users.role` del picker.
+- **`kroma_users`** sigue existiendo para AMBOS mundos: el picker de PIN
+  legacy de Lacteoca (sin cambios) Y, para empresas nuevas, un doc espejo
+  `{name, email, role, empresaId, viaAuth:true}` con el MISMO ID que el uid de
+  Auth — así el `kroma_owner` puede leer el roster de su equipo con una
+  consulta ya acotada por empresa (`kroma_users` ya tenía reglas por
+  colección; `users_metadata` exige `isAdmin()`/`isMaster()` para `list`, que
+  un `kroma_owner` no tiene).
+
+**Reglas de Firestore — el corazón del aislamiento** (`firestore.rules`):
+`kromaCallerEmpresaId()` lee `users_metadata.empresaId` de quien llama;
+`kromaSameEmpresa(data)` compara contra `data.empresaId`, con
+`isKromaMaster()` como bypass total. **Ambos lados usan el MISMO default
+`'lacteoca'`** cuando el campo falta (`data.get('empresaId', 'lacteoca')`) —
+así los documentos existentes de Lacteoca y la cuenta compartida
+`produccion@lacteoca.com` (que nunca tendrán `empresaId` escrito) siguen
+funcionando exactamente igual, **sin necesitar ninguna migración/backfill**.
+Una empresa nueva recibe un `empresaId` real (nunca `'lacteoca'`), así que
+sus documentos SOLO calzan con su propio `empresaId` — fallan cerrado si
+falta etiquetar una escritura, nunca se filtran a Lacteoca. Todas las
+colecciones `kroma_*` (incluidas las de solo lectura para GK admin/gerencia,
+como `kroma_inventory_pt`/`kroma_production_logs`/`kroma_warehouse_movements`,
+y las de acceso comercial como `kroma_despachos`) quedan acotadas con este
+mismo patrón. **Pendiente/limitación conocida**: `kroma_config`,
+`kroma_settings` y `kroma_fixed_costs` son documentos **singleton** (un solo
+doc fijo, sin `empresaId`) — quedaron con el mismo candado
+`kromaSameEmpresa`, así que una empresa nueva simplemente no puede usarlos
+todavía (falla cerrado, no filtra Lacteoca) hasta re-clavijarlos por empresa.
+
+**Cloud Functions** (`functions/handlers/kromaEmpresas.js`, NUEVO):
+- `crearEmpresaConUsuario` (callable, solo máster): crea la empresa
+  (`kroma_empresas`) y la cuenta real de su primer usuario (Auth vía
+  `admin.auth().createUser` — Admin SDK del lado del servidor, no el truco de
+  app-de-Firebase-temporal que usa el resto de GK — más seguro para una
+  operación tan sensible) con rol `kroma_owner`. Si falla la escritura en
+  Firestore después de crear la cuenta de Auth, la borra (`deleteUser`) para
+  no dejar cuentas huérfanas.
+- `crearUsuarioEmpresa` (callable): el `kroma_owner` (o el máster) crea más
+  cuentas reales dentro de SU MISMA empresa (`kroma_admin`/`kroma_gerencial`/
+  `kroma_operario`).
+- Ambas reusan `crearPersonaKroma()`: valida usuario único
+  (`users_metadata`+`login_index`), crea la cuenta de Auth, y escribe
+  `users_metadata`+`login_index`+`kroma_users` en un solo `batch`.
+
+**Frontend:**
+- `KromaContext.jsx`: si no hay sesión de picker guardada, revisa si la
+  cuenta de GK autenticada tiene `kromaDirectLogin:true` — si sí, arma el
+  `kromaUser` directo desde `users_metadata` (empresaId incluido) y NUNCA
+  muestra el picker de PIN. `viaPicker:true/false` distingue ambos caminos:
+  el botón de "usuario" del header es "cambiar usuario" (vuelve al picker)
+  para Lacteoca, o "cerrar sesión" para una cuenta real. `canEdit/canDelete/
+  canDo` tratan `kroma_owner` igual que `master` (control total, acotado por
+  las reglas de datos, no por permisos de UI).
+- `App.tsx`: rutea `kroma_owner`/`kroma_admin`/`kroma_gerencial`/
+  `kroma_operario` a `KromaShell`, igual que `produccion` (la cuenta
+  compartida legacy).
+- **AdminPanel → Personas → "Empresas Kroma"** (`EmpresasKromaManagement`,
+  solo máster): lista las empresas + formulario para dar de alta una nueva
+  (nombre de la empresa, nombre/correo/teléfono/usuario/contraseña del primer
+  usuario) → llama `crearEmpresaConUsuario`.
+- **Kroma → "Mi Equipo"** (`EmpresaEquipoPage.jsx`, visible solo para
+  `kroma_owner`): lista su equipo (`kroma_users` acotado a su empresa) +
+  formulario para agregar gente (mismos campos + rol) → llama
+  `crearUsuarioEmpresa`. Sin PIN — cada persona entra con su propio correo y
+  contraseña, no hay selector compartido para empresas nuevas.
+
+**Etiquetado de `empresaId` en las escrituras**: se recorrieron los sitios de
+creación de la cadena núcleo (`kroma_materials`, `kroma_inventory_materials`,
+`kroma_inventory_pt`, `kroma_production_logs`, `kroma_fichas`,
+`kroma_warehouses`, `kroma_warehouse_movements`, `kroma_suppliers`,
+`kroma_despachos`, `kroma_edit_requests`, `kroma_users`, `kroma_products`,
+`kroma_milk_reception`, más los constructores muertos `kroma_recipes`/
+`kroma_processes` por consistencia) agregando `empresaId: kromaUser?.empresaId
+|| 'lacteoca'`. Las LECTURAS no necesitaron cambios — al ser `list` con reglas
+por documento, Firestore ya devuelve únicamente los documentos de la propia
+empresa sin tocar las consultas del cliente. `applyHistoricalTransfer` en
+`DespachoPage.jsx` (herramienta de backfill legacy para datos viejos de
+Lacteoca) se dejó sin tocar a propósito.
+
+**Pendiente/futuro:** re-clavijar `kroma_config`/`kroma_settings`/
+`kroma_fixed_costs` por empresa (hoy solo Lacteoca puede usar Rotación de
+Cava/Costos Fijos); blindar la atribución de `kroma_owner` con claims
+personalizados si se necesita en el futuro; permitir que el `kroma_owner`
+edite los datos de contacto de su propia empresa (hoy solo el máster escribe
+`kroma_empresas`).

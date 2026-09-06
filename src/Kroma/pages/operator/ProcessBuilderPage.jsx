@@ -1639,6 +1639,7 @@ export default function ProcessBuilderPage() {
                     productoId: selectedProduct.id,
                     productoNombre: selectedProduct.nombre,
                     bloques,
+                    empresaId: kromaUser?.empresaId || 'lacteoca',
                     estado: 'borrador',
                     creadoPor: kromaUser?.id || null,
                     creadoPorNombre: kromaUser?.name || null,

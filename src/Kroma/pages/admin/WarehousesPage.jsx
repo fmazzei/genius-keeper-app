@@ -1033,6 +1033,7 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
             if (qtyChange) {
                 const delta = qtyChange.de - qtyChange.a; // positivo = unidades removidas
                 await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                    empresaId:      kromaUser?.empresaId || 'lacteoca',
                     tipo:           'ajuste',
                     origenId:       null,
                     origenNombre:   'Ajuste aprobado',
@@ -1620,10 +1621,11 @@ export default function WarehousesPage() {
 
             // Seed default warehouses on first launch
             if (wh.length === 0) {
+                const seedEmpresaId = kromaUser?.empresaId || 'lacteoca';
                 const refs = await Promise.all(
-                    DEFAULT_WAREHOUSES.map(d => addDoc(collection(db, 'kroma_warehouses'), { ...d, active: true, createdAt: serverTimestamp() }))
+                    DEFAULT_WAREHOUSES.map(d => addDoc(collection(db, 'kroma_warehouses'), { ...d, empresaId: seedEmpresaId, active: true, createdAt: serverTimestamp() }))
                 );
-                wh = DEFAULT_WAREHOUSES.map((d, i) => ({ id: refs[i].id, ...d, active: true }));
+                wh = DEFAULT_WAREHOUSES.map((d, i) => ({ id: refs[i].id, ...d, empresaId: seedEmpresaId, active: true }));
             }
 
             const inv = invSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1652,14 +1654,16 @@ export default function WarehousesPage() {
         if (!form.nombre.trim()) return;
         setSaving(true);
         try {
+            const empresaId = kromaUser?.empresaId || 'lacteoca';
             const ref = await addDoc(collection(db, 'kroma_warehouses'), {
                 nombre: form.nombre.trim(),
                 tipo: form.tipo,
                 descripcion: form.descripcion.trim(),
+                empresaId,
                 active: true,
                 createdAt: serverTimestamp(),
             });
-            setWarehouses(prev => [...prev, { id: ref.id, ...form, active: true }]);
+            setWarehouses(prev => [...prev, { id: ref.id, ...form, empresaId, active: true }]);
             setShowNew(false);
         } catch (e) { alert(e.message); }
         finally { setSaving(false); }
@@ -1734,6 +1738,7 @@ export default function WarehousesPage() {
             // fecha en TODO movimiento (regla de negocio, Módulo 1.2). Antes
             // faltaban la caducidad y el usuario en las transferencias.
             const movRef = await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                empresaId:     kromaUser?.empresaId || 'lacteoca',
                 tipo: 'transferencia',
                 origenId:      srcId,
                 origenNombre:  srcW?.nombre || '',
@@ -1776,6 +1781,7 @@ export default function WarehousesPage() {
                 if (qtyChange) {
                     const delta = qtyChange.de - qtyChange.a; // positive = units removed
                     await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                        empresaId:      kromaUser?.empresaId || 'lacteoca',
                         tipo:           'ajuste',
                         origenId:       null,
                         origenNombre:   'Ajuste manual',
@@ -1803,6 +1809,7 @@ export default function WarehousesPage() {
                 // Create edit request + notification
                 const warehouse = warehouses.find(w => w.id === editItemWId);
                 const ref = await addDoc(collection(db, 'kroma_edit_requests'), {
+                    empresaId: kromaUser?.empresaId || 'lacteoca',
                     tipo: 'inventory_edit',
                     coleccion: 'kroma_inventory_pt',
                     documentId: item.id,
@@ -1822,6 +1829,7 @@ export default function WarehousesPage() {
                     resolvedAt: null,
                 });
                 await addDoc(collection(db, 'kroma_notifications'), {
+                    empresaId: kromaUser?.empresaId || 'lacteoca',
                     tipo: 'solicitud_edicion',
                     editRequestId: ref.id,
                     mensaje: `${kromaUser?.name || 'Alguien'} solicita ajuste de inventario: ${item.productoNombre} (Lote ${item.lote || '—'})`,
@@ -1846,6 +1854,7 @@ export default function WarehousesPage() {
             // el libro de movimientos — se registra como una salida total.
             const wh = warehouses.find(w => w.id === item.warehouseId);
             await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                empresaId:      kromaUser?.empresaId || 'lacteoca',
                 tipo:           'eliminacion',
                 origenId:       item.warehouseId || null,
                 origenNombre:   wh?.nombre || '',
@@ -1870,6 +1879,7 @@ export default function WarehousesPage() {
             const wh = warehouses.find(w => w.id === data.warehouseId);
             const ref = await addDoc(collection(db, 'kroma_inventory_pt'), {
                 ...data,
+                empresaId:       kromaUser?.empresaId || 'lacteoca',
                 active: true,
                 creadoPorId:     kromaUser?.id || null,
                 creadoPorNombre: kromaUser?.name || null,
@@ -1880,6 +1890,7 @@ export default function WarehousesPage() {
 
             // Record movement
             const movRef = await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                empresaId:      kromaUser?.empresaId || 'lacteoca',
                 tipo:           'entrada',
                 origenId:       null,
                 origenNombre:   'Entrada manual',

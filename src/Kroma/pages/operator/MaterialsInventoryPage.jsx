@@ -830,6 +830,7 @@ export default function MaterialsInventoryPage() {
                 : initEnUso;
 
             const invData = {
+                empresaId:         kromaUser?.empresaId || 'lacteoca',
                 materialId:        mat.id,
                 materialNombre:    mat.nombre,
                 categoria:         mat.categoria || 'otros',

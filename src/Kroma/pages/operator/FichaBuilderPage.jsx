@@ -1259,7 +1259,7 @@ export default function FichaBuilderPage() {
                     if (item.nombre && !ingredientesTags.includes(item.nombre)) ingredientesTags.push(item.nombre);
                 }
             }
-            const base = { productoId: selectedProduct.id, productoNombre: selectedProduct.nombre, bloques, active: true, ingredientesCount: ingredientesTags.length, ingredientesTags, updatedAt: serverTimestamp(), updatedPor: kromaUser?.id || null, updatedPorNombre: kromaUser?.name || null };
+            const base = { productoId: selectedProduct.id, productoNombre: selectedProduct.nombre, bloques, active: true, ingredientesCount: ingredientesTags.length, ingredientesTags, empresaId: kromaUser?.empresaId || 'lacteoca', updatedAt: serverTimestamp(), updatedPor: kromaUser?.id || null, updatedPorNombre: kromaUser?.name || null };
             if (editingFicha) {
                 await updateDoc(doc(db, 'kroma_fichas', editingFicha.id), base);
             } else {

@@ -2309,6 +2309,7 @@ export default function DailyProductionPage() {
                 parametros: { temperatura: quickMilk.temperatura, pH: quickMilk.pH },
                 enrutamiento: 'produccion',
                 costoUsdLitro: milkPriceFor(quickMilk.proveedorId, materialsMap),
+                empresaId: kromaUser?.empresaId || 'lacteoca',
                 operarioId: kromaUser?.id || '',
                 operarioNombre: kromaUser?.name || '',
                 status: 'pendiente',
@@ -2349,6 +2350,7 @@ export default function DailyProductionPage() {
         try {
             const lote = generateLote(selectedFicha.productoNombre);
             const data = {
+                empresaId: kromaUser?.empresaId || 'lacteoca',
                 fichaId: selectedFicha.id,
                 productoId: selectedFicha.productoId,
                 productoNombre: selectedFicha.productoNombre,
@@ -2495,6 +2497,7 @@ export default function DailyProductionPage() {
 
                     await addDoc(collection(db, 'kroma_alerts'), {
                         tipo: 'stock_bajo',
+                        empresaId:      kromaUser?.empresaId || 'lacteoca',
                         materialId,
                         materialNombre: inv.materialNombre,
                         categoria:      inv.categoria,
@@ -2519,6 +2522,7 @@ export default function DailyProductionPage() {
     async function createInventoryPT(log, empaqReg, logId) {
         if (!empaqReg || !empaqReg.totalKgProducido) return;
         const base = {
+            empresaId:      kromaUser?.empresaId || 'lacteoca',
             productoId:     log.productoId,
             productoNombre: log.productoNombre,
             fichaId:        log.fichaId,
@@ -2586,6 +2590,7 @@ export default function DailyProductionPage() {
         // (transferencias, ajustes) dejaba rastro. Un doc por presentación
         // creada, con lote + fecha de caducidad + usuario + fecha.
         const movOps = presentacionesCreadas.map(pr => addDoc(collection(db, 'kroma_warehouse_movements'), {
+            empresaId:       kromaUser?.empresaId || 'lacteoca',
             tipo:            'entrada_produccion',
             origenId:        null,
             origenNombre:    'Producción',
@@ -2604,6 +2609,7 @@ export default function DailyProductionPage() {
         }));
         if (kgSinEnv > 0) {
             movOps.push(addDoc(collection(db, 'kroma_warehouse_movements'), {
+                empresaId:       kromaUser?.empresaId || 'lacteoca',
                 tipo:            'entrada_produccion',
                 origenId:        null,
                 origenNombre:    'Producción',
@@ -2638,6 +2644,7 @@ export default function DailyProductionPage() {
         setFinSaving(true);
         try {
             const base = {
+                empresaId: kromaUser?.empresaId || 'lacteoca',
                 productoId: log.productoId, productoNombre: log.productoNombre,
                 fichaId: log.fichaId, logId: log.id,
                 lote: log.lote || log.id,

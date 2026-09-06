@@ -644,6 +644,7 @@ export default function DespachoPage() {
                     fechaVencimiento: linea.fechaVencimiento || null,
                     cantidad:        deducir,
                     unidad:          isEmpacado ? 'unidades' : 'kg',
+                    empresaId:       kromaUser?.empresaId || 'lacteoca',
                     creadoPorId:     kromaUser?.id || null,
                     creadoPorNombre: kromaUser?.name || null,
                     createdAt:       serverTimestamp(),
@@ -658,6 +659,7 @@ export default function DespachoPage() {
                 lineas:      validLineas,
                 notas:       notas.trim(),
                 estado:      'en_transito',
+                empresaId:   kromaUser?.empresaId || 'lacteoca',
                 active:      true,
                 createdAt:   serverTimestamp(),
             });

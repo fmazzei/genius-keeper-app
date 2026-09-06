@@ -9,6 +9,7 @@ import ProductCatalogPageImpl from './admin/ProductCatalogPage';
 import WarehousesPageImpl from './admin/WarehousesPage';
 import ProductionHistoryPageImpl from './admin/ProductionHistoryPage';
 import ControlSistemaPageImpl from './admin/ControlSistemaPage';
+import EmpresaEquipoPageImpl from './admin/EmpresaEquipoPage';
 
 const ComingSoon = ({ title, description, items = [] }) => (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -153,6 +154,8 @@ export const ProductionHistoryPage = () => <ProductionHistoryPageImpl />;
 
 export const ControlSistemaPage = ({ kromaUser }) => <ControlSistemaPageImpl kromaUser={kromaUser} />;
 
+export const EmpresaEquipoPage = () => <EmpresaEquipoPageImpl />;
+
 // ─── Kroma Users Page ─────────────────────────────────────────────────────────
 
 const ROLE_CONFIG = {
@@ -169,6 +172,7 @@ const AVATAR_COLORS = [
 const initials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 
 export function KromaUsersPage() {
+    const { kromaUser } = useKroma();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -222,6 +226,7 @@ export function KromaUsersPage() {
                 await addDoc(collection(db, 'kroma_users'), {
                     name: form.name.trim(),
                     role: form.role,
+                    empresaId: kromaUser?.empresaId || 'lacteoca',
                     active: true,
                     createdAt: serverTimestamp(),
                 });

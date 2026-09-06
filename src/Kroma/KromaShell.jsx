@@ -11,6 +11,7 @@ import { registerKromaFCMToken, cancelFirestoreScheduledNotif } from './utils/kr
 import {
     AdminHome, WarehousesPage, SuppliersPage, MaterialsMasterPage,
     ProductCatalogPage, ProductionHistoryPage, KromaUsersPage, ControlSistemaPage,
+    EmpresaEquipoPage,
 } from './pages/AdminPages';
 import KromaNotificationsPage from './pages/admin/KromaNotificationsPage';
 import CavaRotacionPage from './pages/admin/CavaRotacionPage';
@@ -31,6 +32,7 @@ import {
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
     LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell, RotateCcw,
+    UserPlus,
 } from 'lucide-react';
 
 // ─── Module defaults per role ─────────────────────────────────────────────────
@@ -62,6 +64,7 @@ const ALL_NAV_ITEMS = [
     { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,         modulo: 'catalogos',            section: 'Administración' },
     { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,       modulo: 'catalogos',            section: 'Administración' },
     { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,         modulo: 'usuarios',             section: 'Administración' },
+    { id: 'mi_equipo',     label: 'Mi Equipo',           Icon: UserPlus,      masterOnly: true,               section: 'Administración' },
     { id: 'control',       label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema',       section: 'Administración', delegation: ['csGestionarUsuarios', 'csConfigPermisos'] },
     // — Gerencial —
     { id: 'financial',     label: 'Financiero',          Icon: DollarSign,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
@@ -71,6 +74,7 @@ const ALL_NAV_ITEMS = [
 
 const ROLE_LABELS = {
     master:          'Master',
+    kroma_owner:     'Dueño',
     kroma_admin:     'Administrador',
     kroma_gerencial: 'Gerencial',
     kroma_operario:  'Operario',
@@ -78,6 +82,7 @@ const ROLE_LABELS = {
 
 const ROLE_COLORS = {
     master:          'text-violet-400',
+    kroma_owner:     'text-violet-400',
     kroma_admin:     'text-emerald-400',
     kroma_gerencial: 'text-amber-400',
     kroma_operario:  'text-blue-400',
@@ -90,7 +95,7 @@ const ROLE_COLORS = {
 function renderPage(view, role, kromaUser, onNavigate) {
     if (view === 'home') {
         if (role === 'kroma_operario') return <OperatorHome onNavigate={onNavigate} />;
-        if (role === 'kroma_gerencial' || role === 'master') return <ManagerHome onNavigate={onNavigate} />;
+        if (role === 'kroma_gerencial' || role === 'master' || role === 'kroma_owner') return <ManagerHome onNavigate={onNavigate} />;
         return <AdminHome onNavigate={onNavigate} />;
     }
     switch (view) {
@@ -107,6 +112,7 @@ function renderPage(view, role, kromaUser, onNavigate) {
         case 'suppliers':     return <SuppliersPage />;
         case 'materials':     return <MaterialsMasterPage />;
         case 'users':         return <KromaUsersPage />;
+        case 'mi_equipo':     return <EmpresaEquipoPage />;
         case 'control':       return <ControlSistemaPage kromaUser={kromaUser} />;
         case 'notifications': return <KromaNotificationsPage />;
         case 'financial':     return <FinancialBoard />;
@@ -138,7 +144,7 @@ function useUnreadCount(kromaUser) {
 }
 
 function KromaInner({ onExitKroma }) {
-    const { kromaUser, kromaRole, clearUser, canDo } = useKroma();
+    const { kromaUser, kromaRole, kromaLoading, clearUser, canDo } = useKroma();
     const [currentView, setCurrentView] = useState('home');
     const [prevView,    setPrevView]    = useState(null); // set when navigating from home tiles/shortcuts
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -203,17 +209,28 @@ function KromaInner({ onExitKroma }) {
         return () => { cancelled = true; };
     }, [kromaUser?.id]);
 
+    // Mientras se revisa si la cuenta autenticada es una cuenta REAL de Kroma
+    // (empresa nueva, entra directo) evita el parpadeo del picker de PIN.
+    if (kromaLoading) {
+        return (
+            <div className="h-screen bg-slate-950 flex items-center justify-center">
+                <div className="w-8 h-8 border-2 border-slate-700 border-t-emerald-500 rounded-full animate-spin" />
+            </div>
+        );
+    }
+
     if (!kromaUser) {
         return <KromaUserSelect onExitKroma={onExitKroma} />;
     }
 
     // Effective modules = role defaults merged with any explicit flags saved per user.
-    // Master bypasses all filters entirely.
-    const effective = kromaRole === 'master'
+    // Master y kroma_owner (dueño de su empresa) bypasean todos los filtros.
+    const isFullAccessRole = kromaRole === 'master' || kromaRole === 'kroma_owner';
+    const effective = isFullAccessRole
         ? null
         : { ...DEFAULT_MODULES[kromaRole], ...(kromaUser.modulos || {}) };
 
-    const visibleNavItems = kromaRole === 'master'
+    const visibleNavItems = isFullAccessRole
         ? ALL_NAV_ITEMS.filter(item => item.id !== 'notifications')
         : ALL_NAV_ITEMS.filter(item => {
             if (item.id === 'notifications') return false; // bell in header is sufficient
@@ -248,10 +265,18 @@ function KromaInner({ onExitKroma }) {
         setPrevView(null);
     };
 
+    // Cuenta compartida legacy (picker de PIN): "cambiar usuario" vuelve al
+    // selector. Cuenta real (kroma_owner/admin/gerencial/operario de una
+    // empresa, un login por persona): no hay "otro usuario" al que volver —
+    // el pill funciona como cerrar sesión.
     const handleSwitchUser = () => {
-        clearUser();
-        setCurrentView('home');
-        setPrevView(null);
+        if (kromaUser.viaPicker) {
+            clearUser();
+            setCurrentView('home');
+            setPrevView(null);
+        } else {
+            onExitKroma();
+        }
     };
 
     const initials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -298,7 +323,7 @@ function KromaInner({ onExitKroma }) {
                 <button
                     onClick={handleSwitchUser}
                     className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-full px-3 py-1.5 mr-3 transition-colors"
-                    title="Cambiar usuario"
+                    title={kromaUser.viaPicker ? 'Cambiar usuario' : 'Cerrar sesión'}
                 >
                     <div className="w-6 h-6 rounded-full bg-emerald-600 flex items-center justify-center">
                         <span className="text-white font-bold text-xs">{initials(kromaUser.name)}</span>

@@ -7,6 +7,7 @@ import {
     Truck, Plus, Search, X, Edit2, Trash2, Loader, ChevronDown, ChevronUp,
     Building2, Phone, Mail, CreditCard, Smartphone, Globe,
 } from 'lucide-react';
+import { useKroma } from '../../KromaContext';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -329,6 +330,7 @@ function SupplierCard({ supplier, onEdit, onDelete }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function SuppliersPage() {
+    const { kromaUser } = useKroma();
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -362,7 +364,7 @@ export default function SuppliersPage() {
             if (editing) {
                 await updateDoc(doc(db, 'kroma_suppliers', editing.id), { ...form, updatedAt: serverTimestamp() });
             } else {
-                await addDoc(collection(db, 'kroma_suppliers'), { ...form, active: true, createdAt: serverTimestamp() });
+                await addDoc(collection(db, 'kroma_suppliers'), { ...form, empresaId: kromaUser?.empresaId || 'lacteoca', active: true, createdAt: serverTimestamp() });
             }
             await load();
             setMode('list');

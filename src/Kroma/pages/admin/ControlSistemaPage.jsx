@@ -156,6 +156,7 @@ function Toggle({ checked, onChange }) {
 // ─── Tab 1: Usuarios ──────────────────────────────────────────────────────────
 
 function UsuariosTab() {
+    const { kromaUser } = useKroma();
     const [users,    setUsers]    = useState([]);
     const [loading,  setLoading]  = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -220,7 +221,7 @@ function UsuariosTab() {
             if (editing) {
                 await updateDoc(doc(db, 'kroma_users', editing.id), data);
             } else {
-                await addDoc(collection(db, 'kroma_users'), { ...data, active: true, createdAt: serverTimestamp() });
+                await addDoc(collection(db, 'kroma_users'), { ...data, empresaId: kromaUser?.empresaId || 'lacteoca', active: true, createdAt: serverTimestamp() });
             }
             setShowForm(false);
             await load();
