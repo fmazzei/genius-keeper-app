@@ -1202,11 +1202,18 @@ falta etiquetar una escritura, nunca se filtran a Lacteoca. Todas las
 colecciones `kroma_*` (incluidas las de solo lectura para GK admin/gerencia,
 como `kroma_inventory_pt`/`kroma_production_logs`/`kroma_warehouse_movements`,
 y las de acceso comercial como `kroma_despachos`) quedan acotadas con este
-mismo patrón. **Pendiente/limitación conocida**: `kroma_config`,
-`kroma_settings` y `kroma_fixed_costs` son documentos **singleton** (un solo
-doc fijo, sin `empresaId`) — quedaron con el mismo candado
-`kromaSameEmpresa`, así que una empresa nueva simplemente no puede usarlos
-todavía (falla cerrado, no filtra Lacteoca) hasta re-clavijarlos por empresa.
+mismo patrón. **Rotación de Cava ya adaptada**: `kroma_settings` pasó de un
+doc fijo (`rotacion`) a **uno por empresa** — `rotacionDocId(empresaId)` en
+`CavaRotacionPage.jsx` devuelve el doc histórico `'rotacion'` para Lacteoca
+(sin migrar, conserva su configuración ya guardada tal cual) y `empresaId`
+para cualquier empresa nueva; el doc lleva el campo `empresaId` para que
+`kromaSameEmpresa` lo acote igual que al resto de `kroma_*`. **Pendiente/
+limitación conocida**: `kroma_config` (config de leche, `MilkInventoryPage`)
+y `kroma_fixed_costs` (Costos Fijos, doc por mes `YYYY-MM`) siguen siendo
+singletons sin `empresaId` — quedaron con el mismo candado `kromaSameEmpresa`,
+así que una empresa nueva simplemente no puede usarlos todavía (falla
+cerrado, nunca filtra Lacteoca) hasta re-clavijarlos por empresa con el mismo
+patrón que Rotación de Cava.
 
 **Cloud Functions** (`functions/handlers/kromaEmpresas.js`, NUEVO):
 - `crearEmpresaConUsuario` (callable, solo máster): crea la empresa

@@ -22,6 +22,17 @@ import {
     Package, ChevronDown, ChevronUp, Edit2, Save, X, Info, Calendar,
     Zap, TrendingDown, Loader, RefreshCw, Shield, BarChart2, Eye, EyeOff, Truck,
 } from 'lucide-react';
+import { useKroma } from '../../KromaContext';
+
+// Config global de rotación por empresa: un doc por empresa en
+// `kroma_settings/{docId}` (con `empresaId` como campo, para que las reglas
+// de Firestore la acoten igual que al resto de kroma_*). Lacteoca conserva su
+// doc histórico `kroma_settings/rotacion` (NO se migra, para no perder la
+// configuración ya guardada); cualquier empresa nueva recibe su propio doc
+// `kroma_settings/{empresaId}`.
+function rotacionDocId(empresaId) {
+    return empresaId === 'lacteoca' ? 'rotacion' : empresaId;
+}
 
 // ─── Configuración global por defecto ────────────────────────────────────────
 
@@ -734,6 +745,8 @@ function WarehouseGroup({ grupo, globalCfg }) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function CavaRotacionPage() {
+    const { kromaUser } = useKroma();
+    const empresaId = kromaUser?.empresaId || 'lacteoca';
     const [tab, setTab] = useState('tablero');
 
     // Data
@@ -764,7 +777,7 @@ export default function CavaRotacionPage() {
                 getDocs(query(collection(db, 'kroma_warehouses'), where('active', '==', true))),
                 getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
                 getDocs(collection(db, 'kroma_products')),
-                getDoc(doc(db, 'kroma_settings', 'rotacion')),
+                getDoc(doc(db, 'kroma_settings', rotacionDocId(empresaId))),
                 getDocs(collection(db, 'inventario_comercial')),
             ]);
 
@@ -801,7 +814,7 @@ export default function CavaRotacionPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [empresaId]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -810,8 +823,9 @@ export default function CavaRotacionPage() {
     const handleSaveGlobal = async (cfg) => {
         setSavingGlobal(true);
         try {
-            await setDoc(doc(db, 'kroma_settings', 'rotacion'), {
+            await setDoc(doc(db, 'kroma_settings', rotacionDocId(empresaId)), {
                 ...cfg,
+                empresaId,
                 updatedAt: serverTimestamp(),
             }, { merge: true });
             setGlobalCfg(cfg);
