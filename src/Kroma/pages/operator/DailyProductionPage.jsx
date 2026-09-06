@@ -377,6 +377,13 @@ function extractBlockIngredients(bloque, reg) {
                 if (ref?.materialId && (reg[regKey] ?? 0) > 0)
                     out.push({ materialId: ref.materialId, nombre: ref.materialNombre || '', amount: reg[regKey], unidad: ref.unidad || 'g' });
             });
+    } else if (tipo === 'salado') {
+        // Solo "en masa / superficie" tiene una dosis por kg definida (ver
+        // SaladoEditor); la salmuera no lleva cantidad de sal declarada todavía
+        // (se prepara como solución, sin un modelo de consumo capturado aquí).
+        const metodo = reg.metodo ?? bloque.params?.metodo ?? 'superficie';
+        if (metodo !== 'salmuera' && d.materialId && (reg.cantidadSalReal ?? 0) > 0)
+            out.push({ materialId: d.materialId, nombre: d.materialNombre || '', amount: reg.cantidadSalReal, unidad: d.unidad || 'g' });
     }
     return out;
 }
@@ -476,6 +483,39 @@ function calcCostoBasePorKg(log, bloquesData, totalKgProducido, materialsMap) {
 function costoEmpaqueUnitario(productoId, presentacionId, unidades, materialsMap) {
     if (!(unidades > 0)) return 0;
     return packagingCostForPresentacion(productoId, presentacionId, unidades, materialsMap) / unidades;
+}
+// Mismas `asignaciones` que `packagingCostForPresentacion`, pero devolviendo
+// CANTIDAD FÍSICA a descontar del inventario en vez de costo — antes el sistema
+// solo costeaba el empaque y nunca bajaba el stock de envases/bolsas/cajas.
+function packagingConsumptionForPresentacion(productoId, presentacionId, unidades, materialsMap) {
+    const out = [];
+    if (!(unidades > 0)) return out;
+    Object.values(materialsMap || {}).forEach(mat => {
+        (mat.asignaciones || []).forEach(a => {
+            if (a?.productoId !== productoId || a?.presentacionId !== presentacionId) return;
+            let amount = 0;
+            if (a.tipoConsumo === 'grupal') {
+                const porGrupo = a.unidadesPorGrupo || 0;
+                if (!porGrupo) return;
+                amount = Math.ceil(unidades / porGrupo) * (a.cantidadPorGrupo || 0);
+            } else {
+                amount = unidades * (a.cantidadPorUnidad || 0);
+            }
+            if (amount > 0) out.push({ materialId: mat.id, nombre: mat.nombre, amount, unidad: mat.unidad || 'und' });
+        });
+    });
+    return out;
+}
+// Junta varias líneas del mismo material (p.ej. el mismo envase usado por dos
+// presentaciones del lote) en una sola, para no pisar el mismo doc de
+// inventario dos veces en la misma tanda.
+function mergePackagingConsumption(entries) {
+    const map = new Map();
+    entries.forEach(e => {
+        if (!map.has(e.materialId)) map.set(e.materialId, { ...e });
+        else map.get(e.materialId).amount += e.amount;
+    });
+    return [...map.values()];
 }
 
 function tryBrowserNotification(title, body) {
@@ -595,6 +635,20 @@ function SimpleDosisEditor({ bloque, litrosNetos, reg, onChange, materialsMap })
     const cantRef = d.cantidad || 0;
     const unidRef = d.unidad || 'g';
 
+    // "Cantidad real añadida" es OBLIGATORIA (regla de negocio) — pero el input
+    // solo mostraba la teórica como valor de PANTALLA (`?? calcTeórico(...)`)
+    // sin escribirla nunca en el estado real. Un operario que completaba el
+    // bloque sin tocar el número terminaba con `reg.cantidadReal` en `undefined`
+    // y el insumo NUNCA se descontaba del inventario, en silencio. Se siembra la
+    // teórica en el estado real apenas se conoce, para que el descuento SIEMPRE
+    // ocurra — con la teórica como mínimo, nunca con "nada".
+    useEffect(() => {
+        if (cantRef > 0 && reg.cantidadReal == null && litrosNetos > 0) {
+            onChange({ ...reg, cantidadReal: calcTeórico(cantRef, litrosNetos) });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [cantRef, litrosNetos]);
+
     return (
         <div className="space-y-4">
             <RefCard>
@@ -641,6 +695,21 @@ function CuajadoEditor({ bloque, litrosNetos, reg, onChange, materialsMap }) {
         fermento:    p.fermento !== 'no' && d.fermento   ? { key: 'fermento',    nombre: d.fermento.materialNombre || 'Fermento',              ref: d.fermento    } : null,
     };
     const items = order.map(k => allItems[k]).filter(Boolean);
+
+    // Mismo cierre que en SimpleDosisEditor: sembrar la dosis teórica de CADA
+    // sub-ingrediente activo (calcio/conservante/cuajo/fermento) en el estado
+    // real apenas se conoce, para que ninguno se quede sin descontar por no
+    // haber tocado su input.
+    useEffect(() => {
+        if (!(litrosNetos > 0)) return;
+        const faltantes = {};
+        items.forEach(it => {
+            const regKey = `${it.key}Real`;
+            if (reg[regKey] == null) faltantes[regKey] = calcTeórico(it.ref.cantidad || 0, litrosNetos);
+        });
+        if (Object.keys(faltantes).length > 0) onChange({ ...reg, ...faltantes });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [items.map(it => `${it.key}:${it.ref.cantidad}`).join(','), litrosNetos]);
 
     return (
         <div className="space-y-4">
@@ -730,6 +799,16 @@ function SaladoEditor({ bloque, reg, onChange }) {
         (reg.titulacion   ?? 0) > 0 &&
         (reg.salinidad    ?? 0) > 0
     );
+
+    // Igual que en los demás asistentes de dosis: sembrar la sal teórica en el
+    // estado real apenas se conoce la masa, para que "no tocar el número" nunca
+    // signifique "no se descontó nada".
+    useEffect(() => {
+        if (!isInSalmuera && masaKg > 0 && reg.cantidadSalReal == null) {
+            onChange({ ...reg, cantidadSalReal: teoricoSalG });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isInSalmuera, masaKg, cantSalRefGkg]);
 
     return (
         <div className="space-y-4">
@@ -2331,11 +2410,17 @@ export default function DailyProductionPage() {
             consumibles: usados,
             reportadoPor: kromaUser?.id || '',
         }];
-        await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), { jornadasConsumo }).catch(() => {});
-        setActiveLog(prev => ({ ...prev, jornadasConsumo }));
-        // Deduct inventory
-        if (usados.length > 0) {
-            decrementInventory(usados.map(c => ({ materialId: c.materialId, nombre: c.nombre, amount: c.cantidad, unidad: c.unidad })));
+        try {
+            // Descontar PRIMERO (awaited): si falla, no se guarda el cierre como
+            // si los consumibles ya se hubieran restado del inventario.
+            if (usados.length > 0) {
+                await decrementInventory(usados.map(c => ({ materialId: c.materialId, nombre: c.nombre, amount: c.cantidad, unidad: c.unidad })));
+            }
+            await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), { jornadasConsumo });
+            setActiveLog(prev => ({ ...prev, jornadasConsumo }));
+        } catch (e) {
+            setSaveError(e.message);
+            return; // no avanzar al siguiente bloque si el cierre no quedó bien
         }
         const pendingIdx = cierreJornada.pendingIdx;
         setCierreJornada(null);
@@ -2359,13 +2444,28 @@ export default function DailyProductionPage() {
         return activeLog?.litrosNetos ?? activeLog?.litrosIngresados ?? 300;
     }
 
+    // Antes cada ingrediente iba en su propio try/catch que se tragaba
+    // CUALQUIER error ("inventory decrement is best-effort") — un fallo de
+    // permisos o de red desaparecía sin dejar rastro, y el maestro de
+    // materiales quedaba desactualizado sin que nadie se enterara. Ahora:
+    //  · si el material simplemente NO TIENE todavía un doc de inventario
+    //    (insumo nuevo sin su primera Entrada), se avisa mediante una alerta
+    //    VISIBLE — no bloquea el cierre del bloque, pero ya no pasa en silencio;
+    //  · cualquier otro error (permisos, red) se acumula y se relanza al final,
+    //    para que el `catch` de completeBlock lo muestre y el operario sepa que
+    //    algo no quedó bien reflejado en el inventario.
     async function decrementInventory(ingredients) {
         const newAlerts = [];
+        const errores = [];
         for (const { materialId, nombre, amount, unidad } of ingredients) {
             try {
                 const invRef  = doc(db, 'kroma_inventory_materials', materialId);
                 const invSnap = await getDoc(invRef);
-                if (!invSnap.exists()) continue;
+                if (!invSnap.exists()) {
+                    const msg = `⚠ Sin registro de inventario para "${nombre || materialId}" — no se pudo descontar. Regístralo en Almacén de Insumos.`;
+                    newAlerts.push(msg);
+                    continue;
+                }
                 const inv = { id: invSnap.id, ...invSnap.data() };
 
                 const amountInBase = convertUnit(amount, unidad, inv.unidadBase || 'g');
@@ -2404,10 +2504,15 @@ export default function DailyProductionPage() {
                         active:         true,
                     });
                 }
-            } catch (_) { /* inventory decrement is best-effort */ }
+            } catch (e) {
+                errores.push(`${nombre || materialId}: ${e.message}`);
+            }
         }
         if (newAlerts.length > 0) {
             setProductionAlerts(prev => [...prev, ...newAlerts]);
+        }
+        if (errores.length > 0) {
+            throw new Error(`No se pudo descontar del inventario: ${errores.join('; ')}`);
         }
     }
 
@@ -2474,6 +2579,59 @@ export default function DailyProductionPage() {
             }));
         }
         await Promise.all(ops);
+
+        // Registrar la ENTRADA del PT al libro de movimientos — antes el evento
+        // más importante de todos (el queso saliendo de producción) nunca
+        // quedaba en `kroma_warehouse_movements`; solo lo que pasaba DESPUÉS
+        // (transferencias, ajustes) dejaba rastro. Un doc por presentación
+        // creada, con lote + fecha de caducidad + usuario + fecha.
+        const movOps = presentacionesCreadas.map(pr => addDoc(collection(db, 'kroma_warehouse_movements'), {
+            tipo:            'entrada_produccion',
+            origenId:        null,
+            origenNombre:    'Producción',
+            destinoId:       null,
+            destinoNombre:   'Por asignar almacén',
+            productoNombre:  log.productoNombre,
+            presentacion:    pr.nombre || 'Sin nombre',
+            lote:            log.lote || logId,
+            fechaVencimiento: empaqReg.fechaVencimiento || null,
+            cantidad:        pr.unidades,
+            unidad:          'unidades',
+            logId,
+            creadoPorId:     kromaUser?.id || null,
+            creadoPorNombre: kromaUser?.name || null,
+            createdAt:       serverTimestamp(),
+        }));
+        if (kgSinEnv > 0) {
+            movOps.push(addDoc(collection(db, 'kroma_warehouse_movements'), {
+                tipo:            'entrada_produccion',
+                origenId:        null,
+                origenNombre:    'Producción',
+                destinoId:       null,
+                destinoNombre:   'Por asignar almacén',
+                productoNombre:  log.productoNombre,
+                presentacion:    'Sin envasar',
+                lote:            log.lote || logId,
+                fechaVencimiento: empaqReg.fechaVencimiento || null,
+                cantidad:        kgSinEnv,
+                unidad:          'kg',
+                logId,
+                creadoPorId:     kromaUser?.id || null,
+                creadoPorNombre: kromaUser?.name || null,
+                createdAt:       serverTimestamp(),
+            }));
+        }
+        await Promise.all(movOps);
+
+        // Descontar del inventario los envases/bolsas/cajas realmente consumidos
+        // al empacar — antes solo se COSTEABAN (costoEmpaqueUnitario arriba), el
+        // stock físico de empaque nunca bajaba. Se usan las MISMAS unidades
+        // producidas por SKU que ya se usaron para el costeo, así que el
+        // consumo declarado siempre cuadra con el PT que efectivamente se creó.
+        const empaqueConsumo = mergePackagingConsumption(
+            presentacionesCreadas.flatMap(pr => packagingConsumptionForPresentacion(log.productoId, pr.catalogId, pr.unidades, materialsMap))
+        );
+        if (empaqueConsumo.length > 0) await decrementInventory(empaqueConsumo);
     }
 
     async function finalizarEmpaque(log, presentaciones) {
@@ -2630,6 +2788,26 @@ export default function DailyProductionPage() {
                     };
                 })()),
             };
+
+            // Efectos sobre INVENTARIO y PT PRIMERO, y AWAITED — antes se
+            // disparaban sin esperar (`.catch(() => {})`) DESPUÉS de que el log
+            // ya se marcaba 'completada'/avanzado. Si algo fallaba (permisos,
+            // red), el bloque quedaba "completo" en Kroma sin que el inventario
+            // o el PT se hubieran tocado — exactamente la desincronización
+            // silenciosa que se pidió cerrar. Ahora, si algo de esto falla, el
+            // `catch` de abajo lo muestra y el bloque NUNCA se marca avanzado,
+            // así el operario reintenta sin quedar en un estado a medias.
+            if (usedIngredients.length > 0) await decrementInventory(usedIngredients);
+            if (isEmpaque && bloque.params?.aspersionMaterialId && (reg.aspersionRealG ?? 0) > 0) {
+                await decrementInventory([{
+                    materialId: bloque.params.aspersionMaterialId,
+                    nombre:     bloque.params.aspersionMaterialNombre || 'Conservante aspersión',
+                    amount:     reg.aspersionRealG,
+                    unidad:     'g',
+                }]);
+            }
+            if (isEmpaque) await createInventoryPT(activeLog, reg, activeLog.id);
+
             await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), payload);
 
             const updatedLog = { ...activeLog, ...payload };
@@ -2653,7 +2831,6 @@ export default function DailyProductionPage() {
                     )).catch(() => {});
                 }
                 if (isEmpaque) {
-                    createInventoryPT(activeLog, reg, activeLog.id).catch(() => {});
                     // Notify gerencia/admin
                     addDoc(collection(db, 'kroma_notifications'), {
                         tipo: 'produccion_completada',
@@ -2699,19 +2876,6 @@ export default function DailyProductionPage() {
                 setView('list');
             } else {
                 setLogs(prev => prev.map(l => l.id === activeLog.id ? { ...l, ...payload } : l));
-            }
-
-            // Decrement inventory for any ingredients used in this block
-            if (usedIngredients.length > 0) decrementInventory(usedIngredients);
-
-            // Decrement aspersión conservante if configured and real amount entered
-            if (isEmpaque && bloque.params?.aspersionMaterialId && (reg.aspersionRealG ?? 0) > 0) {
-                decrementInventory([{
-                    materialId: bloque.params.aspersionMaterialId,
-                    nombre:     bloque.params.aspersionMaterialNombre || 'Conservante aspersión',
-                    amount:     reg.aspersionRealG,
-                    unidad:     'g',
-                }]);
             }
 
         } catch (e) { setSaveError(e.message); }

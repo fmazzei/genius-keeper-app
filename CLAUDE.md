@@ -987,6 +987,18 @@ Seleccionar producto → Kroma cruza receta + proceso y despliega solo los campo
 - **Soft-delete**: `active: false` — nunca `.delete()`
 
 ### Archivos principales
+
+**⚠️ Arquitectura real (auditoría 2026-09):** `RecipeBuilderPage.jsx` y
+`ProcessBuilderPage.jsx` (constructores separados de receta/proceso, pensados
+originalmente para `kroma_recipes`/`kroma_processes`) son **código muerto** —
+se importan en `KromaShell.jsx` pero no tienen `case` en el switch de render
+ni ítem de navegación; nunca se despliegan. El constructor que SÍ está en
+producción es **`FichaBuilderPage.jsx`** (colección `kroma_fichas`, un solo
+documento por producto con `bloques:[{tipo, params, dosis}]`), consumido
+directamente por `DailyProductionPage.jsx`. No reactivar los constructores
+viejos sin fusionar su UI dentro del flujo de Fichas — hoy serían un segundo
+sistema desconectado del real.
+
 ```
 src/Kroma/
   KromaShell.jsx          ← navegación lateral y routing
@@ -997,9 +1009,14 @@ src/Kroma/
       ProductCatalogPage.jsx   ← PillGroup, catálogo de productos
       MaterialsMasterPage.jsx  ← Maestro de Materiales
       SupplierPage.jsx         ← Catálogo de proveedores
+      WarehousesPage.jsx       ← Almacenes, inventario PT, movimientos, ajustes
     operator/
-      ProcessBuilderPage.jsx   ← Constructor de procesos (Módulo 3.3)
-      RecipeBuilderPage.jsx    ← Constructor de recetas (Módulo 3.2)
+      FichaBuilderPage.jsx     ← Constructor REAL de ficha técnica (bloques + dosis + materiales)
+      DailyProductionPage.jsx  ← Planilla activa: corre la ficha, descuenta inventario, genera PT
+      MaterialsInventoryPage.jsx ← Inventario de insumos, entradas con costeo promedio ponderado
+      DespachoPage.jsx         ← Despachos de PT a Caracas/otros destinos
+      ProcessBuilderPage.jsx   ← código muerto, no usado (ver nota arriba)
+      RecipeBuilderPage.jsx    ← código muerto, no usado (ver nota arriba)
 ```
 
 ### Firestore rules (kroma_*)
@@ -1018,20 +1035,103 @@ match /kroma_{collection}/{id} {
 | ProductCatalogPage (Admin) | ✅ Completo |
 | MaterialsMasterPage (Admin) | ✅ Completo — unidades g/kg/ml/l/m/und |
 | SupplierPage (Admin) | ✅ Completo |
-| ProcessBuilderPage (Operario) | ✅ Completo — alineado con manual |
-| RecipeBuilderPage (Operario) | ✅ Completo — alineado con manual |
+| FichaBuilderPage (Operario) | ✅ Completo — constructor REAL en producción (ver nota "Archivos principales") |
+| ProcessBuilderPage / RecipeBuilderPage (Operario) | ⛔ Código muerto, no se despliega — no confundir con FichaBuilderPage |
 | MilkInventoryPage | ✅ Completo — edición master dentro de 10 min |
-| MaterialsInventoryPage | ✅ Completo — stockCerrado/stockEnUso, alertas, ajuste, secciones |
-| DailyProductionPage | ✅ Completo — recepción, runner bloques, historial, reporte lote, firmas, notificaciones |
-| WarehousesPage | 🔄 En desarrollo (Módulo 1.2) |
-| InventoryPTPage | 🔲 Pendiente (Módulo 1.2) |
+| MaterialsInventoryPage | ✅ Completo — stockCerrado/stockEnUso, alertas, ajuste, secciones, costeo promedio ponderado transaccional |
+| DailyProductionPage | ✅ Completo — recepción, runner bloques, historial, reporte lote, firmas, notificaciones, descuento de empaques/insumos/sal, generación de PT con movimiento de entrada |
+| WarehousesPage | ✅ Completo — almacenes, inventario PT, transferencias, ajustes con solicitud/aprobación, libro de movimientos |
+| DespachoPage | ✅ Completo — despacho a Caracas cierra en `RecepcionFrimacaSheet` (GK), no en Kroma |
+| InventoryPTPage | — no existe como página aparte: su función vive dentro de WarehousesPage |
 | ProductionHistoryPage | 🔲 Pendiente (Módulo 1.5) |
 | Dashboards Gerenciales | 🔲 Pendiente (Módulo 2) |
 | ControlSistemaPage | 🔲 Pendiente (Módulo 5) — usuarios, permisos, notificaciones |
 
-### Orden de construcción recomendado
-1. WarehousesPage — almacenes multialmacén + movimientos + PT
-2. InventoryPTPage — visualización y gestión del PT generado en producción
-3. ProductionHistoryPage — reportes históricos admin (Módulo 1.5)
-4. Dashboards Gerenciales — KPIs financieros, rendimiento, calidad (Módulo 2)
-5. ControlSistemaPage — usuarios, permisos, notificaciones push (Módulo 5)
+### Auditoría integral y corrección (2026-09) ✅
+
+Auditoría exhaustiva pedida por el dueño para verificar que la cadena
+**producción → inventario → maestro de materiales** funcionara de punta a
+punta y se mantuviera sincronizada proceso tras proceso. Hallazgo raíz: la
+arquitectura documentada arriba (RecipeBuilderPage/ProcessBuilderPage) nunca
+fue la que corrió en producción — `FichaBuilderPage.jsx`/`kroma_fichas` es la
+real, y varios eslabones de esa cadena real tenían huecos silenciosos.
+Corregido en una ronda:
+
+- **Costeo promedio ponderado (antes NO existía)**: `MaterialsInventoryPage.jsx`
+  ahora recalcula `costoUSD` del material con **Costo Promedio Ponderado**
+  dentro de una `runTransaction` (lee inventario+material frescos, pondera
+  stock previo × precio previo vs. entrada × precio de la entrada) cada vez
+  que se registra una entrada con costo — antes el costo del maestro quedaba
+  congelado en el valor de alta manual para siempre.
+- **Empaques nunca se descontaban del inventario**: `DailyProductionPage.jsx`
+  ahora, al generar el PT (`createInventoryPT`), calcula el consumo de
+  empaque por presentación (`asignaciones` del material, unitario o grupal) y
+  llama `decrementInventory` — antes el empaque salía físicamente de la sala
+  pero el maestro de materiales nunca se enteraba.
+- **Sal del bloque Salado sin vincular al maestro**: `FichaBuilderPage.jsx`
+  ganó un `MaterialPicker` (categoría `sales`) para el bloque `salado`, y
+  `DailyProductionPage.jsx` ahora la incluye en `extractBlockIngredients` para
+  descontarla. Se encontró y corrigió además un bug más profundo: `confirmBlock()`
+  guardaba `dosis` sin resincronizarlo desde `params`, así que una selección de
+  material (calcio/conservante/cuajo/fermento/sal) podía perderse en silencio
+  si el operario no tocaba también el stepper de cantidad — nueva
+  `finalizeDosis()` recalcula `dosis` desde `params` en cada guardado de bloque.
+- **"Cantidad real" nunca quedaba sin descontar**: los editores de dosis
+  (`SimpleDosisEditor`, `CuajadoEditor`, `SaladoEditor`) ahora siembran la
+  cantidad TEÓRICA en el estado real vía `useEffect` apenas se conocen los
+  litros netos — antes, si el operario nunca tocaba el campo, `cantidadReal`
+  quedaba `null` y ese insumo no se descontaba nunca del inventario.
+  Presentación de "no reflejado hasta que la registres" que en las mediciones
+  reales terminaba siendo permanente.
+- **Fallos silenciosos al completar bloque**: `completeBlock` escribía primero
+  `updateDoc` (marcar bloque completo) y DESPUÉS, sin `await` y con
+  `.catch(() => {})`, descontaba inventario y generaba el PT — un fallo ahí
+  dejaba el bloque marcado completo con el inventario intacto, sin ningún
+  rastro de error. Reordenado: inventario y PT se escriben y se esperan ANTES
+  de marcar el bloque completo; `decrementInventory` ahora lanza error real en
+  vez de tragárselo, y `confirmCierreJornada` no avanza si esa escritura falla.
+- **Movimientos de almacén incompletos**: faltaba el evento más importante de
+  todos — el PT saliendo de producción nunca generaba un doc en
+  `kroma_warehouse_movements` (solo lo hacían transferencias/ajustes
+  posteriores). `createInventoryPT` ahora escribe `tipo:'entrada_producción'`
+  por cada presentación creada, con lote + fecha de caducidad + usuario +
+  fecha. `WarehousesPage.jsx` completa además `fechaVencimiento`/`creadoPorId`
+  en transferencias, ajustes, entradas manuales, aprobación de solicitudes de
+  ajuste y eliminación de ítems — antes varios de esos sitios escribían el
+  movimiento sin esos campos, o no escribían movimiento en absoluto.
+- **Despacho a Caracas con stock fantasma**: `DespachoPage.jsx` deducía el
+  inventario de planta (`kroma_inventory_pt`) al marcar "Entregado", pero la
+  regla operativa (ver "Almacén Frimaca" arriba) es que el operario de Barinas
+  **no** marca Entregado para destinos Caracas — cierra la recepción en GK.
+  Eso dejaba el PT sin deducir de planta indefinidamente Y, peor, el viejo
+  botón alcanzaba a crear un registro fantasma de PT en el almacén
+  "Depósito Comercial Caracas" (que es de solo lectura, alimentado por
+  `inventario_comercial` de GK, no por Kroma). Corregido: la deducción de
+  planta ahora ocurre al **despachar** (`handleSubmit`) para líneas con
+  destino Caracas, el botón "Marcar como Entregado" se oculta/bloquea para
+  esos despachos con un aviso, se eliminó la creación fantasma de PT en el
+  almacén comercial, y el picker de inventario para nuevos despachos excluye
+  stock ya asignado a ese almacén.
+- **Gerencia sin edición directa de históricos**: la regla de negocio
+  ("Gerencia puede editar históricos, Administrador solo lectura") no estaba
+  implementada — `AdjustInventoryModal` solo daba aplicación directa a
+  `kromaRole === 'master'`; cualquier otro rol (incluida Gerencia) generaba
+  una solicitud pendiente de aprobación, y solo `kroma_admin`/`master` veían
+  el panel de aprobación (invirtiendo la regla: el rol que debía ser
+  solo-lectura era el único, junto al máster, que aprobaba). Corregido en
+  `WarehousesPage.jsx`: `kroma_gerencial` ahora aplica el ajuste directo
+  (`isPrivileged`) y ve/aprueba solicitudes pendientes (`canApproveEdits`);
+  `kroma_admin` conserva su rol de solo-lectura (puede solicitar, no aprobar).
+- **Selectores de material sin filtrar por categoría**: en `FichaBuilderPage.jsx`,
+  los `MaterialPicker` de calcio/conservante/cuajo/fermento (bloque Cuajado) e
+  Insumo/Cultivo (bloques `agregar_insumo`/`inoculacion`) mostraban TODOS los
+  materiales del maestro, incluida leche/empaques/detergentes/reactivos — un
+  operario podía enlazar por error un empaque como si fuera cuajo. Ahora cada
+  selector filtra por la categoría que le corresponde (calcio→`sales`,
+  conservante→`otros`, cuajo→`coagulantes`, fermento/cultivo→`cultivos`,
+  insumo genérico→`cultivos|coagulantes|sales|otros`), igual que ya hacía el
+  selector de sal del bloque Salado.
+
+Todo verificado con `npm run build` limpio tras cada cambio. Pendiente/futuro:
+ProductionHistoryPage, Dashboards Gerenciales y ControlSistemaPage (Módulos
+1.5, 2 y 5) siguen sin construir.

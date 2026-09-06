@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-    collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp,
+    collection, getDocs, getDoc, addDoc, updateDoc, doc, query, where, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import {
@@ -828,7 +828,7 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
     const [fechaAjuste, setFechaAjuste] = useState(new Date().toISOString().split('T')[0]);
     const [sent,        setSent]        = useState(false);
 
-    const isMaster = kromaRole === 'master';
+    const isPrivileged = kromaRole === 'master' || kromaRole === 'kroma_gerencial';
     const delta    = maxQty - value;        // always ≥ 0 (drum can't go above max)
     const canSave  = motivo.trim().length > 0 && delta > 0;
 
@@ -836,8 +836,8 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
         if (!canSave || saving) return;
         const field   = isEmpacado ? 'unidades' : 'kgTotales';
         const cambios = { [field]: { de: maxQty, a: value } };
-        await onSave({ item, cambios, motivo, isPrivileged: isMaster, fechaAjuste });
-        if (!isMaster) setSent(true);
+        await onSave({ item, cambios, motivo, isPrivileged, fechaAjuste });
+        if (!isPrivileged) setSent(true);
     };
 
     if (sent) {
@@ -1008,6 +1008,9 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
     async function handleAprobar(req) {
         setActing(req.id);
         try {
+            const itemSnap = await getDoc(doc(db, 'kroma_inventory_pt', req.documentId));
+            const item = itemSnap.exists() ? itemSnap.data() : {};
+
             // Apply each change to kroma_inventory_pt
             const updateData = {};
             Object.entries(req.cambios || {}).forEach(([field, change]) => {
@@ -1022,6 +1025,33 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
                 autorizadoPorNombre: kromaUser?.name || null,
                 resolvedAt: serverTimestamp(),
             });
+
+            // Registrar el movimiento — antes aprobar un ajuste cambiaba el
+            // inventario real sin dejar rastro en el libro de movimientos (solo
+            // quedaba la solicitud en kroma_edit_requests).
+            const qtyChange = req.cambios?.unidades || req.cambios?.kgTotales;
+            if (qtyChange) {
+                const delta = qtyChange.de - qtyChange.a; // positivo = unidades removidas
+                await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                    tipo:           'ajuste',
+                    origenId:       null,
+                    origenNombre:   'Ajuste aprobado',
+                    destinoId:      req.warehouseId || null,
+                    destinoNombre:  req.warehouseNombre || '',
+                    productoNombre: req.productoNombre,
+                    lote:           req.lote || '',
+                    fechaVencimiento: item.fechaVencimiento || null,
+                    cantidad:       Math.abs(delta),
+                    delta:          -delta,
+                    unidad:         item.tipo === 'empacado' ? 'unidades' : 'kg',
+                    motivo:         req.nota || null,
+                    solicitadoPorId: req.solicitadoPorId || null,
+                    solicitadoPorNombre: req.solicitadoPorNombre || null,
+                    creadoPorId:    kromaUser?.id || null,
+                    creadoPorNombre: kromaUser?.name || null,
+                    createdAt:      serverTimestamp(),
+                });
+            }
 
             setRequests(prev => prev.filter(r => r.id !== req.id));
             if (onInventoryUpdated) onInventoryUpdated(req.documentId, updateData);
@@ -1150,7 +1180,10 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
     const m = TIPO_META[warehouse.tipo] || TIPO_META.mixto;
 
     const canEditPT = !isComercial && (kromaRole === 'master' || kromaRole === 'kroma_admin' || kromaRole === 'produccion' || kromaRole === 'kroma_gerencial');
-    const isAdminOrMaster = kromaRole === 'master' || kromaRole === 'kroma_admin';
+    // Aprobar solicitudes de ajuste = editar históricos: el Administrador de
+    // planta (kroma_admin) es solo lectura en históricos (puede solicitar,
+    // no aprobar); Gerencia sí puede editarlos directamente.
+    const canApproveEdits = kromaRole === 'master' || kromaRole === 'kroma_gerencial';
     const isPT = warehouse.tipo === 'PT' || warehouse.tipo === 'mixto';
     const canCargar = !isComercial && (canDo ? canDo('cargarInventarioPT') : false);
     const canTransfer = !isComercial;
@@ -1193,7 +1226,7 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                 )}
 
                 {/* Pending edits section — visible only for admin/master */}
-                {isAdminOrMaster && !isComercial && (
+                {canApproveEdits && !isComercial && (
                     <PendingEditsSection
                         warehouseId={warehouse.id}
                         kromaUser={kromaUser}
@@ -1697,7 +1730,9 @@ export default function WarehousesPage() {
                 ];
             }
 
-            // Record movement
+            // Record movement — lote + fecha de caducidad + usuario responsable +
+            // fecha en TODO movimiento (regla de negocio, Módulo 1.2). Antes
+            // faltaban la caducidad y el usuario en las transferencias.
             const movRef = await addDoc(collection(db, 'kroma_warehouse_movements'), {
                 tipo: 'transferencia',
                 origenId:      srcId,
@@ -1707,8 +1742,11 @@ export default function WarehousesPage() {
                 productoNombre: transferItem.productoNombre,
                 presentacion:   transferItem.presentacion || (isEmpacado ? 'empacado' : 'sin_envasar'),
                 lote:           transferItem.lote || '',
+                fechaVencimiento: transferItem.fechaVencimiento || null,
                 cantidad:       qty,
                 unidad:         isEmpacado ? 'unidades' : 'kg',
+                creadoPorId:    kromaUser?.id || null,
+                creadoPorNombre: kromaUser?.name || null,
                 createdAt:      serverTimestamp(),
             });
 
@@ -1745,6 +1783,7 @@ export default function WarehousesPage() {
                         destinoNombre:  wh?.nombre || '',
                         productoNombre: item.productoNombre,
                         lote:           item.lote || '',
+                        fechaVencimiento: item.fechaVencimiento || null,
                         cantidad:       Math.abs(delta),
                         delta:          -delta,
                         unidad:         item.tipo === 'empacado' ? 'unidades' : 'kg',
@@ -1803,6 +1842,24 @@ export default function WarehousesPage() {
     async function handleDeleteInventoryItem(item) {
         try {
             await updateDoc(doc(db, 'kroma_inventory_pt', item.id), { active: false });
+            // Antes esto desaparecía el ítem del inventario sin dejar rastro en
+            // el libro de movimientos — se registra como una salida total.
+            const wh = warehouses.find(w => w.id === item.warehouseId);
+            await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                tipo:           'eliminacion',
+                origenId:       item.warehouseId || null,
+                origenNombre:   wh?.nombre || '',
+                destinoId:      null,
+                destinoNombre:  'Eliminado',
+                productoNombre: item.productoNombre,
+                lote:           item.lote || '',
+                fechaVencimiento: item.fechaVencimiento || null,
+                cantidad:       item.tipo === 'empacado' ? (item.unidades || 0) : (item.kgTotales || 0),
+                unidad:         item.tipo === 'empacado' ? 'unidades' : 'kg',
+                creadoPorId:    kromaUser?.id || null,
+                creadoPorNombre: kromaUser?.name || null,
+                createdAt:      serverTimestamp(),
+            });
             setInventoryPT(prev => prev.filter(i => i.id !== item.id));
         } catch (e) { alert(e.message); }
     }
@@ -1831,8 +1888,10 @@ export default function WarehousesPage() {
                 productoNombre: data.productoNombre,
                 presentacion:   data.presentacion || '',
                 lote:           data.lote || '',
+                fechaVencimiento: data.fechaVencimiento || null,
                 cantidad:       data.tipo === 'empacado' ? data.unidades : data.kgTotales,
                 unidad:         data.tipo === 'empacado' ? 'unidades' : 'kg',
+                creadoPorId:    kromaUser?.id || null,
                 creadoPorNombre: kromaUser?.name || null,
                 createdAt:      serverTimestamp(),
             });

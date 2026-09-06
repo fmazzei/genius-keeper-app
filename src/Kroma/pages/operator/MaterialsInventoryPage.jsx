@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     collection, getDocs, doc, setDoc, serverTimestamp,
-    query, where, onSnapshot, addDoc, updateDoc,
+    query, where, onSnapshot, addDoc, updateDoc, runTransaction,
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
@@ -55,6 +55,33 @@ function totalBase(inv) {
     if (!inv) return 0;
     if (isGranel(inv)) return inv.stockEnUso ?? 0;
     return ((inv.stockCerrado ?? 0) * (inv.cantidadPorUnidad || 0)) + (inv.stockEnUso ?? 0);
+}
+
+// ─── Costeo promedio ponderado ────────────────────────────────────────────────
+//
+// Regla de negocio: "Valoración: Costo Promedio Ponderado. Recalcular precio
+// promedio ante cada nueva compra." Todo se hace en UNIDADES BASE (g/ml/…) para
+// que discreto y a granel compartan la misma matemática:
+//   precioPorBase = (stockBaseAntes·precioAntes + entradaBase·precioEntrada)
+//                    / (stockBaseAntes + entradaBase)
+// y luego se vuelve a expresar como costoUSD de UNA presentación completa
+// (mat.cantidadPresentacion — el mismo denominador que usa MaterialsMasterPage
+// para `pricePerUnit`), que es el campo que vive en `kroma_materials`.
+// Si no hay stock previo (primera entrada, o se agotó), el promedio pondera a 0
+// y el resultado es sencillamente el precio de esta entrada — sin caso especial.
+function costoPonderado({ invDocAntes, mat, entradaBaseUnits, costoEntradaTotal }) {
+    const cantidadPresentacion = Number(mat?.cantidadPresentacion) || 0;
+    if (!(cantidadPresentacion > 0) || !(entradaBaseUnits > 0) || !(costoEntradaTotal > 0)) return null;
+
+    const stockBaseAntes = totalBase(invDocAntes);
+    const costoUSDAntes  = Number(mat?.costoUSD) || 0;
+    const precioAntes    = stockBaseAntes > 0 && costoUSDAntes > 0 ? costoUSDAntes / cantidadPresentacion : 0;
+    const precioEntrada  = costoEntradaTotal / entradaBaseUnits;
+
+    const pesoAntes   = stockBaseAntes > 0 && precioAntes > 0 ? stockBaseAntes : 0;
+    const precioPonderado = (pesoAntes * precioAntes + entradaBaseUnits * precioEntrada) / (pesoAntes + entradaBaseUnits);
+
+    return Math.round(precioPonderado * cantidadPresentacion * 10000) / 10000;
 }
 
 function fmtBase(n, unit) {
@@ -308,6 +335,12 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
     const [initEnUso,  setInitEnUso]  = useState(invDoc?.stockEnUso ?? 0);
     const [notas, setNotas]           = useState('');
     const [saving, setSaving]         = useState(false);
+    // Costo TOTAL pagado por esta entrada (no por unidad): de ahí se deriva el
+    // precio por unidad base y se pondera contra lo que ya había en stock.
+    // Solo aplica en "+ Entrada" — "Corregir stock" es un conteo, no una compra.
+    const [costoEntrada, setCostoEntrada] = useState('');
+    const [omitirCosto, setOmitirCosto]   = useState(false);
+    const puedeCostear = Number(mat.cantidadPresentacion) > 0;
 
     const cpu = config.cantidadPorUnidad || 0;
     // modoAjuste=true → replace current stock; false → add to current stock
@@ -329,10 +362,16 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
         setAddCerrado(0);
     }
 
+    // El costo es obligatorio en "+ Entrada" (así se mantiene el promedio
+    // ponderado al día); "Corregir stock" no lo pide porque no es una compra.
+    // "Omitir costo por ahora" es la única salida — deja el costoUSD como está.
+    const costoFaltante = !modoAjuste && puedeCostear && !omitirCosto && !(Number(costoEntrada) > 0);
+
     async function handleSave() {
-        if (addCerrado <= 0 || saving) return;
+        if (addCerrado <= 0 || saving || costoFaltante) return;
         setSaving(true);
-        await onSave(mat, config, addCerrado, initEnUso, notas.trim(), modoAjuste);
+        const costoTotal = !modoAjuste && !omitirCosto ? Number(costoEntrada) || 0 : 0;
+        await onSave(mat, config, addCerrado, initEnUso, notas.trim(), modoAjuste, costoTotal);
         setSaving(false);
         onClose();
     }
@@ -444,6 +483,30 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                         </div>
                     )}
 
+                    {/* Costo de esta entrada — alimenta el costo promedio ponderado del
+                        material. Solo aplica al registrar una entrada real (no al
+                        corregir el conteo de stock). */}
+                    {!modoAjuste && puedeCostear && (
+                        <div className="mb-4">
+                            <SecLabel>Costo total de esta entrada (USD)</SecLabel>
+                            <input
+                                type="number" min="0" step="0.01" inputMode="decimal"
+                                value={costoEntrada}
+                                onChange={e => { setCostoEntrada(e.target.value); if (e.target.value) setOmitirCosto(false); }}
+                                placeholder="Ej: 45.00"
+                                disabled={omitirCosto}
+                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-teal-500 disabled:opacity-40"
+                            />
+                            <p className="text-slate-500 text-xs mt-1.5">
+                                Lo que pagaste por {addCerrado > 0 ? `${addCerrado.toLocaleString()} ${config.presentacionTipo === 'granel' ? config.unidadBase : `${config.presentacionTipo}(s)`}` : 'esta entrada'} — se pondera contra el costo actual del material.
+                            </p>
+                            <button type="button" onClick={() => setOmitirCosto(v => !v)}
+                                className={`mt-2 text-xs font-semibold ${omitirCosto ? 'text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}>
+                                {omitirCosto ? '✓ Omitiendo costo — el precio del material no cambiará' : 'No tengo el precio ahora, omitir costo'}
+                            </button>
+                        </div>
+                    )}
+
                     <div className="mb-6">
                         <SecLabel>Lote / Notas (opcional)</SecLabel>
                         <textarea value={notas} onChange={e => setNotas(e.target.value)} rows={2}
@@ -451,12 +514,15 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
                             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm placeholder-slate-600 resize-none focus:outline-none focus:border-slate-500" />
                     </div>
 
-                    <button onClick={handleSave} disabled={addCerrado <= 0 || saving}
+                    <button onClick={handleSave} disabled={addCerrado <= 0 || saving || costoFaltante}
                         className={`w-full disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-4 rounded-xl ${
                             modoAjuste ? 'bg-amber-600 hover:bg-amber-500' : 'bg-teal-600 hover:bg-teal-500'
                         }`}>
                         {saving ? 'Guardando...' : modoAjuste ? 'Corregir Stock' : 'Registrar Entrada'}
                     </button>
+                    {costoFaltante && (
+                        <p className="text-amber-400 text-xs text-center mt-2">Indica el costo de esta entrada, u omítelo explícitamente.</p>
+                    )}
                 </div>
             </div>
         </>
@@ -737,35 +803,66 @@ export default function MaterialsInventoryPage() {
         setAlerts(prev => prev.filter(a => a.id !== alertId));
     }
 
-    async function handleEntrada(mat, config, addCerrado, initEnUso, notas, esAjuste = false) {
-        const invDoc  = inventory[mat.id];
-        const docRef  = doc(db, 'kroma_inventory_materials', mat.id);
-        const granel  = config.presentacionTipo === 'granel';
+    async function handleEntrada(mat, config, addCerrado, initEnUso, notas, esAjuste = false, costoTotal = 0) {
+        const invRef = doc(db, 'kroma_inventory_materials', mat.id);
+        const matRef = doc(db, 'kroma_materials', mat.id);
+        const granel = config.presentacionTipo === 'granel';
 
-        const newCerrado = granel ? 0
-            : esAjuste ? addCerrado
-            : (invDoc?.stockCerrado ?? 0) + addCerrado;
-        const newEnUso = granel
-            ? (esAjuste ? addCerrado : (invDoc?.stockEnUso ?? 0) + addCerrado)
-            : initEnUso;
+        // Unidades BASE que entran en esta operación — solo tiene sentido costear
+        // una entrada real (no un ajuste de conteo, que no es una compra).
+        const entradaBaseUnits = !esAjuste
+            ? (granel ? addCerrado : addCerrado * (config.cantidadPorUnidad || 0))
+            : 0;
 
-        const data = {
-            materialId:        mat.id,
-            materialNombre:    mat.nombre,
-            categoria:         mat.categoria || 'otros',
-            presentacionTipo:  config.presentacionTipo,
-            unidadBase:        config.unidadBase,
-            cantidadPorUnidad: granel ? 0 : (config.cantidadPorUnidad || 0),
-            stockCerrado:      newCerrado,
-            stockEnUso:        newEnUso,
-            stockMinimo:       invDoc?.stockMinimo ?? 0,
-            ultimaEntrada:     serverTimestamp(),
-            updatedAt:         serverTimestamp(),
-            active:            true,
-            ...(notas && { ultimaNotaEntrada: notas }),
-        };
-        await setDoc(docRef, data, { merge: true });
-        setInventory(prev => ({ ...prev, [mat.id]: { id: docRef.id, ...prev[mat.id], ...data } }));
+        // Todo en UNA transacción: el stock (kroma_inventory_materials) y el costo
+        // promedio ponderado (kroma_materials.costoUSD) se leen y escriben juntos,
+        // para que una compra concurrente no pise el promedio de otra.
+        const { invData, matUpdate } = await runTransaction(db, async (tx) => {
+            const [invSnap, matSnap] = await Promise.all([tx.get(invRef), tx.get(matRef)]);
+            const invDocAntes = invSnap.exists() ? invSnap.data() : null;
+            const matAntes    = matSnap.exists() ? matSnap.data() : mat;
+
+            const newCerrado = granel ? 0
+                : esAjuste ? addCerrado
+                : (invDocAntes?.stockCerrado ?? 0) + addCerrado;
+            const newEnUso = granel
+                ? (esAjuste ? addCerrado : (invDocAntes?.stockEnUso ?? 0) + addCerrado)
+                : initEnUso;
+
+            const invData = {
+                materialId:        mat.id,
+                materialNombre:    mat.nombre,
+                categoria:         mat.categoria || 'otros',
+                presentacionTipo:  config.presentacionTipo,
+                unidadBase:        config.unidadBase,
+                cantidadPorUnidad: granel ? 0 : (config.cantidadPorUnidad || 0),
+                stockCerrado:      newCerrado,
+                stockEnUso:        newEnUso,
+                stockMinimo:       invDocAntes?.stockMinimo ?? 0,
+                ultimaEntrada:     serverTimestamp(),
+                updatedAt:         serverTimestamp(),
+                active:            true,
+                ...(notas && { ultimaNotaEntrada: notas }),
+            };
+            tx.set(invRef, invData, { merge: true });
+
+            let matUpdate = null;
+            if (entradaBaseUnits > 0 && costoTotal > 0) {
+                const nuevoCosto = costoPonderado({
+                    invDocAntes, mat: matAntes, entradaBaseUnits, costoEntradaTotal: costoTotal,
+                });
+                if (nuevoCosto != null) {
+                    matUpdate = { costoUSD: nuevoCosto, updatedAt: serverTimestamp() };
+                    tx.update(matRef, matUpdate);
+                }
+            }
+            return { invData, matUpdate };
+        });
+
+        setInventory(prev => ({ ...prev, [mat.id]: { id: invRef.id, ...prev[mat.id], ...invData } }));
+        if (matUpdate) {
+            setMaterials(prev => prev.map(m => m.id === mat.id ? { ...m, costoUSD: matUpdate.costoUSD } : m));
+        }
     }
 
     async function handleSetEnUso(mat, newCerrado, newEnUso) {

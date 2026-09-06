@@ -20,7 +20,9 @@ const DOSE_UNITS = [
     { id: 'ml', label: 'ml' }, { id: 'l', label: 'L' }, { id: 'und', label: 'und' },
 ];
 
-const BLOCKS_WITH_DOSIS = ['agregar_insumo', 'inoculacion', 'cuajado'];
+// 'salado' se agrega para que la sal quede vinculada a un material del Maestro
+// (bug real: antes no tenía materialId y nunca se descontaba del inventario).
+const BLOCKS_WITH_DOSIS = ['agregar_insumo', 'inoculacion', 'cuajado', 'salado'];
 
 const BLOCK_TYPES = [
     { id: 'pasteurizacion',  label: 'Pasteurización',    Icon: Thermometer,  color: 'text-orange-400',  bg: 'bg-orange-500/20',  border: 'border-orange-500/30' },
@@ -128,13 +130,47 @@ function buildEmptyDosis(tipo, params) {
                 ? { materialId: params?.fermentoMaterialId || '', materialNombre: params?.fermentoMaterialNombre || fermentoL[params?.tipoFermento] || 'Fermento', cantidad: 0, unidad: 'g' } : null,
         };
     }
+    if (tipo === 'salado') {
+        return { materialId: params?.saladoMaterialId || '', materialNombre: params?.saladoMaterialNombre || 'Sal', cantidad: 0, unidad: 'g' };
+    }
     return null;
+}
+
+// Recalcula `dosis` a partir de los `params` VIGENTES al momento de confirmar
+// el bloque. BUG REAL que esta función cierra: `MaterialPicker` solo escribe en
+// `params` (p.ej. `calcioMaterialId`); `dosis.calcio.materialId` (lo que de
+// verdad lee producción) solo se refrescaba cuando el operario tocaba el
+// STEPPER de cantidad de esa sección — algo que en una ficha (donde la
+// cantidad siempre queda en 0, es solo una plantilla) puede no pasar nunca. Si
+// el operario elegía el material y avanzaba sin tocar el stepper, el vínculo
+// quedaba vacío en silencio, aunque en pantalla se viera seleccionado.
+// `buildEmptyDosis` ya lee `params` correctamente (incluye/excluye cada
+// sub-ingrediente según su toggle Sí/No) — se usa como fuente de verdad para la
+// forma + materialId, conservando la cantidad/unidad que ya hubiera.
+function finalizeDosis(tipo, params, dosis) {
+    if (!BLOCKS_WITH_DOSIS.includes(tipo)) return null;
+    const fresh = buildEmptyDosis(tipo, params);
+    if (!fresh) return fresh;
+    if (tipo === 'cuajado') {
+        ['calcio', 'conservante', 'cuajo', 'fermento'].forEach(key => {
+            if (fresh[key] && dosis?.[key]) {
+                fresh[key].cantidad = dosis[key].cantidad ?? 0;
+                fresh[key].unidad   = dosis[key].unidad ?? fresh[key].unidad;
+            }
+        });
+        return fresh;
+    }
+    if (dosis) {
+        fresh.cantidad = dosis.cantidad ?? 0;
+        fresh.unidad   = dosis.unidad ?? fresh.unidad;
+    }
+    return fresh;
 }
 
 function getBlockDosisItems(bloque) {
     const { tipo, params, dosis } = bloque;
     if (!dosis) return [];
-    if (tipo === 'agregar_insumo' || tipo === 'inoculacion') {
+    if (tipo === 'agregar_insumo' || tipo === 'inoculacion' || tipo === 'salado') {
         return dosis.cantidad > 0 ? [{ nombre: dosis.materialNombre || 'Insumo', cantidad: dosis.cantidad, unidad: dosis.unidad }] : [];
     }
     if (tipo === 'cuajado') {
@@ -512,7 +548,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                 <div className="space-y-6">
                     <div>
                         <SecLabel>Insumo a Agregar</SecLabel>
-                        <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.materialId}
+                        <MaterialPicker materials={materials.filter(m => ['cultivos', 'coagulantes', 'sales', 'otros'].includes(m.categoria))} materialsLoading={materialsLoading} selectedId={params.materialId}
                             onSelect={m => setParams(p => ({ ...p, materialId: m.id, materialNombre: m.nombre }))} />
                     </div>
                     <div>
@@ -563,7 +599,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                     <div>
                         <SecLabel>Cultivo del Maestro de Materiales</SecLabel>
                         <p className="text-slate-500 text-xs mb-2">Vincula la marca/presentación exacta (ej. Choozit Mesófilo) para que Kroma costee y descuente inventario con precisión.</p>
-                        <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.materialId}
+                        <MaterialPicker materials={materials.filter(m => m.categoria === 'cultivos')} materialsLoading={materialsLoading} selectedId={params.materialId}
                             onSelect={m => setParams(p => ({ ...p, materialId: m.id, materialNombre: m.nombre }))}
                             emptyMsg="Sin cultivos en el Maestro todavía." />
                     </div>
@@ -635,7 +671,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                     {(params.calcio ?? 'si') !== 'no' && <>
                                         <div>
                                             <span className="block text-xs text-slate-500 mb-2">Material del Maestro (para costeo e inventario)</span>
-                                            <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.calcioMaterialId}
+                                            <MaterialPicker materials={materials.filter(m => m.categoria === 'sales')} materialsLoading={materialsLoading} selectedId={params.calcioMaterialId}
                                                 onSelect={m => setParams(p => ({ ...p, calcioMaterialId: m.id, calcioMaterialNombre: m.nombre }))}
                                                 emptyMsg="Sin sales/CaCl₂ en el Maestro todavía." />
                                         </div>
@@ -688,7 +724,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                     {params.conservante === 'si' && <>
                                         <div>
                                             <span className="block text-xs text-slate-500 mb-2">Material del Maestro (para costeo e inventario)</span>
-                                            <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.conservanteMaterialId}
+                                            <MaterialPicker materials={materials.filter(m => m.categoria === 'otros')} materialsLoading={materialsLoading} selectedId={params.conservanteMaterialId}
                                                 onSelect={m => setParams(p => ({ ...p, conservanteMaterialId: m.id, conservanteMaterialNombre: m.nombre, conservanteNombre: m.nombre }))}
                                                 emptyMsg="Sin conservantes en el Maestro todavía." />
                                         </div>
@@ -713,7 +749,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                         value={params.cuajoTipo ?? 'microbiano'} onChange={set('cuajoTipo')} />
                                     <div>
                                         <span className="block text-xs text-slate-500 mb-2">Material del Maestro (para costeo e inventario)</span>
-                                        <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.cuajoMaterialId}
+                                        <MaterialPicker materials={materials.filter(m => m.categoria === 'coagulantes')} materialsLoading={materialsLoading} selectedId={params.cuajoMaterialId}
                                             onSelect={m => setParams(p => ({ ...p, cuajoMaterialId: m.id, cuajoMaterialNombre: m.nombre }))}
                                             emptyMsg="Sin coagulantes en el Maestro todavía." />
                                     </div>
@@ -740,7 +776,7 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                                             value={params.tipoFermento ?? 'mesofilico'} onChange={set('tipoFermento')} />
                                         <div>
                                             <span className="block text-xs text-slate-500 mb-2">Material del Maestro (para costeo e inventario)</span>
-                                            <MaterialPicker materials={materials} materialsLoading={materialsLoading} selectedId={params.fermentoMaterialId}
+                                            <MaterialPicker materials={materials.filter(m => m.categoria === 'cultivos')} materialsLoading={materialsLoading} selectedId={params.fermentoMaterialId}
                                                 onSelect={m => setParams(p => ({ ...p, fermentoMaterialId: m.id, fermentoMaterialNombre: m.nombre }))}
                                                 emptyMsg="Sin cultivos/fermentos en el Maestro todavía." />
                                         </div>
@@ -946,6 +982,16 @@ function BlockParamEditor({ tipo, params, setParams, materials = [], materialsLo
                     <div><SecLabel>Método de Salado</SecLabel>
                         <PillGroup options={[{ id: 'superficie', label: 'Superficie' }, { id: 'salmuera', label: 'En salmuera' }, { id: 'masa', label: 'En masa (cuajada)' }]} value={params.metodo} onChange={set('metodo')} />
                     </div>
+                    {(params.metodo ?? 'superficie') !== 'salmuera' && (
+                        <div>
+                            <span className="block text-slate-500 text-xs mb-2">Material del Maestro (para costeo e inventario)</span>
+                            <p className="text-slate-500 text-xs mb-2">Vincula la sal exacta para que Kroma la descuente del inventario al declarar cuánta se aplicó realmente.</p>
+                            <MaterialPicker materials={materials.filter(m => m.categoria === 'sales')} materialsLoading={materialsLoading}
+                                selectedId={params.saladoMaterialId}
+                                onSelect={m => setParams(p => ({ ...p, saladoMaterialId: m.id, saladoMaterialNombre: m.nombre }))}
+                                emptyMsg="Sin sales en el Maestro todavía." />
+                        </div>
+                    )}
                     {params.metodo === 'masa' && (
                         <div><SecLabel>Cantidad de sal por kg de masa</SecLabel>
                             <div className="flex items-center gap-4 flex-wrap">
@@ -1163,16 +1209,17 @@ export default function FichaBuilderPage() {
         setModalTipo(b.tipo); setModalParams({ ...b.params });
         setModalDosis(b.dosis ?? (BLOCKS_WITH_DOSIS.includes(b.tipo) ? buildEmptyDosis(b.tipo, b.params) : null));
         setBlockModal({ mode: 'edit', index: idx });
-        if (['agregar_insumo', 'cuajado', 'inoculacion'].includes(b.tipo)) loadMaterials();
+        if (['agregar_insumo', 'cuajado', 'inoculacion', 'salado'].includes(b.tipo)) loadMaterials();
     };
     const selectTipo = (tipo) => {
         setModalTipo(tipo); setModalParams({ ...BLOCK_DEFAULTS[tipo] });
         setModalDosis(BLOCKS_WITH_DOSIS.includes(tipo) ? buildEmptyDosis(tipo, BLOCK_DEFAULTS[tipo]) : null);
-        if (['agregar_insumo', 'cuajado', 'inoculacion'].includes(tipo)) loadMaterials();
+        if (['agregar_insumo', 'cuajado', 'inoculacion', 'salado'].includes(tipo)) loadMaterials();
     };
     const confirmBlock = () => {
         if (!modalTipo) return;
-        const bloque = { id: uid(), tipo: modalTipo, params: modalParams, dosis: modalDosis };
+        const dosisFinal = finalizeDosis(modalTipo, modalParams, modalDosis);
+        const bloque = { id: uid(), tipo: modalTipo, params: modalParams, dosis: dosisFinal };
         if (blockModal.mode === 'add') {
             setBloques(prev => [...prev, bloque]);
         } else {

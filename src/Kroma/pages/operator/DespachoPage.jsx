@@ -62,6 +62,15 @@ const docenasLabel = (item) => {
     return resto > 0 ? `${doc} doc + ${resto} ud` : `${doc} docena${doc !== 1 ? 's' : ''}`;
 };
 
+// Único lugar donde se decide "¿este destino es Caracas?" — antes esta misma
+// condición estaba copiada 3 veces (handleSubmit, markEntregado,
+// applyHistoricalTransfer) y una CUARTA vez, ligeramente distinta, en
+// DespachoCard (hasCaracasLines). Una sola fuente evita que se desalineen.
+const isCaracasDestino = (destino) =>
+    destino?.ciudad === 'Caracas' ||
+    destino?.estado === 'Distrito Capital' ||
+    (destino?.tipo === 'otro' && /caracas/i.test(destino?.texto || ''));
+
 const destinoDisplay = (d) => {
     if (!d) return '';
     if (d.tipo === 'otro') return d.texto || 'Otro destino';
@@ -355,12 +364,15 @@ function DespachoCard({ despacho, onMarkEntregado, onApplyTransfer, onSyncGK }) 
     const destinos = [...new Set(lineas.map(l => destinoDisplay(l.destino)).filter(Boolean))];
     const isTransito    = despacho.estado === 'en_transito';
     const needsTransfer = !isTransito && !despacho.transferApplied;
-    const hasCaracasLines = lineas.some(l =>
-        l.destino?.ciudad === 'Caracas' ||
-        l.destino?.estado === 'Distrito Capital' ||
-        (l.destino?.tipo === 'otro' && /caracas/i.test(l.destino?.texto || ''))
-    );
+    const hasCaracasLines = lineas.some(l => isCaracasDestino(l.destino));
     const needsGKSync = !isTransito && despacho.transferApplied && !despacho.gkSynced && hasCaracasLines;
+    // Un despacho a Caracas lo cierra la RECEPCIÓN en Frimaca (GK), no este
+    // botón — por eso, si es a Caracas, la planta ya descontó su stock al
+    // despachar (en handleSubmit) y aquí no hay "Marcar como Entregado" que
+    // pulsar. Antes este botón sí aparecía, y si se pulsaba por error el
+    // despacho desaparecía de la cola de recepción de Frimaca (que solo lista
+    // los `en_transito`) y quedaba un registro de PT huérfano en Caracas.
+    const bloqueadoPorCaracas = isTransito && hasCaracasLines;
 
     const handleMark = async () => {
         setMarking(true);
@@ -446,7 +458,13 @@ function DespachoCard({ despacho, onMarkEntregado, onApplyTransfer, onSyncGK }) 
                         </button>
                     )}
 
-                    {isTransito && (
+                    {bloqueadoPorCaracas && (
+                        <div className="w-full mt-1 bg-sky-500/10 border border-sky-500/30 text-sky-300 text-xs rounded-xl px-3 py-2.5 flex items-start gap-2">
+                            <MapPin size={13} className="shrink-0 mt-0.5" />
+                            <span>Destino Caracas: la planta ya descontó su stock al despachar. Este envío lo cierra la <b>Recepción en Frimaca</b> desde GK, no este botón.</span>
+                        </div>
+                    )}
+                    {isTransito && !bloqueadoPorCaracas && (
                         <>
                             <button
                                 onClick={() => setConfirmOpen(true)}
@@ -526,9 +544,17 @@ export default function DespachoPage() {
                 const whMap = {};
                 whList.forEach(w => { whMap[w.id] = w.nombre || ''; });
                 setWarehouses(whList);
+                // El "Depósito Comercial Caracas" NO es un almacén de planta — es
+                // el que GK gestiona por su cuenta vía `inventario_comercial` tras
+                // la Recepción en Frimaca. Si alguna vez quedó un registro de
+                // kroma_inventory_pt marcado con ese warehouseId (p.ej. de antes de
+                // este arreglo), NO debe ofrecerse aquí para despachar de nuevo:
+                // esa mercancía ya salió de la planta.
+                const caracasWhId = whList.find(w => w.nombre === 'Depósito Comercial Caracas')?.id;
                 const inv = invSnap.docs
                     .map(d => ({ id: d.id, ...d.data(), warehouseNombre: whMap[d.data().warehouseId] || '' }))
-                    .filter(i => getMaxQty(i) > 0);
+                    .filter(i => getMaxQty(i) > 0)
+                    .filter(i => !caracasWhId || i.warehouseId !== caracasWhId);
                 setInventory(inv);
             } catch (err) { console.error(err); }
             finally { setLoadingInv(false); }
@@ -586,6 +612,45 @@ export default function DespachoPage() {
                     destino,
                 }));
 
+            // Un despacho a Caracas lo cierra la Recepción en Frimaca (GK), no
+            // "Marcar como Entregado" — así que la planta descuenta su propio
+            // stock AQUÍ, al momento real de salir el camión, no después. Antes
+            // esta deducción solo ocurría al marcar "Entregado", y para Caracas
+            // ese botón nunca debía pulsarse: el stock de la planta se quedaba
+            // mostrando mercancía que ya se fue.
+            for (const linea of validLineas) {
+                if (!isCaracasDestino(linea.destino)) continue;
+                const srcRef  = doc(db, 'kroma_inventory_pt', linea.inventoryId);
+                const srcSnap = await getDoc(srcRef);
+                if (!srcSnap.exists()) continue;
+                const srcData    = srcSnap.data();
+                const isEmpacado = srcData.tipo === 'empacado';
+                const field      = isEmpacado ? 'unidades' : 'kgTotales';
+                const current    = srcData[field] || 0;
+                const deducir    = isEmpacado ? Math.round(linea.cantidad) : (parseFloat(linea.cantidad) || 0);
+                const remaining  = Math.max(0, +(current - deducir).toFixed(3));
+                await updateDoc(srcRef, remaining === 0 ? { [field]: 0, active: false } : { [field]: remaining });
+
+                const srcWhNombre = warehouses.find(w => w.id === srcData.warehouseId)?.nombre || 'Planta';
+                await addDoc(collection(db, 'kroma_warehouse_movements'), {
+                    tipo:            'despacho_salida',
+                    origenId:        srcData.warehouseId || null,
+                    origenNombre:    srcWhNombre,
+                    destinoId:       null,
+                    destinoNombre:   'Camino a Caracas — cierra Recepción Frimaca',
+                    productoNombre:  linea.productoNombre,
+                    presentacion:    linea.presentacion || '',
+                    lote:            linea.lote || '',
+                    fechaVencimiento: linea.fechaVencimiento || null,
+                    cantidad:        deducir,
+                    unidad:          isEmpacado ? 'unidades' : 'kg',
+                    creadoPorId:     kromaUser?.id || null,
+                    creadoPorNombre: kromaUser?.name || null,
+                    createdAt:       serverTimestamp(),
+                });
+                linea.plantaDeducida = true;
+            }
+
             await addDoc(collection(db, 'kroma_despachos'), {
                 fecha:       new Date().toISOString().split('T')[0],
                 horasSalida: serverTimestamp(),
@@ -605,14 +670,22 @@ export default function DespachoPage() {
         finally { setSaving(false); }
     };
 
+    // "Marcar como Entregado" es SOLO para destinos que este propio botón cierra
+    // (no Caracas — la UI ya lo oculta cuando `hasCaracasLines`, ver
+    // DespachoCard). Por defensa en profundidad, esta función también IGNORA
+    // cualquier línea a Caracas si de algún modo llegara a llamarse: esas ya se
+    // descontaron de la planta al despachar (`handleSubmit` → `plantaDeducida`)
+    // y las cierra la Recepción en Frimaca — crear aquí un doc "fantasma" en
+    // kroma_inventory_pt bajo "Depósito Comercial Caracas" (que WarehousesPage
+    // no gestiona — ese almacén se lee de `inventario_comercial`, no de
+    // kroma_inventory_pt) dejaba ese registro invisible, y disponible de nuevo
+    // para volver a despacharse por error.
     const markEntregado = async (despacho) => {
         const id = despacho.id;
         try {
-            const caracasWh = warehouses.find(w => w.nombre === 'Depósito Comercial Caracas');
-
             for (const linea of (despacho.lineas || [])) {
-                const { inventoryId, cantidad, destino } = linea;
-                if (!inventoryId) continue;
+                const { inventoryId, cantidad } = linea;
+                if (!inventoryId || linea.plantaDeducida || isCaracasDestino(linea.destino)) continue;
 
                 const srcRef  = doc(db, 'kroma_inventory_pt', inventoryId);
                 const srcSnap = await getDoc(srcRef);
@@ -626,45 +699,6 @@ export default function DespachoPage() {
                 const remaining  = Math.max(0, +(current - deducir).toFixed(3));
 
                 await updateDoc(srcRef, remaining === 0 ? { [field]: 0, active: false } : { [field]: remaining });
-
-                const isCaracasDest =
-                    destino?.ciudad === 'Caracas' ||
-                    destino?.estado === 'Distrito Capital' ||
-                    (destino?.tipo === 'otro' && /caracas/i.test(destino?.texto || ''));
-
-                if (isCaracasDest && caracasWh) {
-                    const { id: _id, warehouseNombre: _wn, ...itemBase } = srcData;
-                    await addDoc(collection(db, 'kroma_inventory_pt'), {
-                        ...itemBase,
-                        [field]:          deducir,
-                        warehouseId:      caracasWh.id,
-                        active:           true,
-                        origenDespachoId: id,
-                        createdAt:        serverTimestamp(),
-                    });
-
-                    // NOTA: el inventario de GK (inventario_comercial / Frimaca) YA NO se
-                    // llena aquí. La mercancía entra a GK SOLO por la recepción declarada
-                    // en Caracas (RecepcionFrimacaSheet: cantidad recibida + estado + foto
-                    // de planilla). Antes este bloque también sumaba a inventario_comercial
-                    // y, junto con el botón "Recibido" de GK, generaba DOBLE CONTEO. La
-                    // deducción de planta y el movimiento de Kroma se conservan abajo.
-                    const srcWhNombre = warehouses.find(w => w.id === srcData.warehouseId)?.nombre || 'Planta';
-                    await addDoc(collection(db, 'kroma_warehouse_movements'), {
-                        tipo:           'despacho_entregado',
-                        origenId:       srcData.warehouseId || null,
-                        origenNombre:   srcWhNombre,
-                        destinoId:      caracasWh.id,
-                        destinoNombre:  caracasWh.nombre,
-                        productoNombre: linea.productoNombre,
-                        presentacion:   linea.presentacion || '',
-                        lote:           linea.lote || '',
-                        cantidad:       deducir,
-                        unidad:         isEmpacado ? 'unidades' : 'kg',
-                        despachoId:     id,
-                        createdAt:      serverTimestamp(),
-                    });
-                }
             }
 
             await updateDoc(doc(db, 'kroma_despachos', id), {
