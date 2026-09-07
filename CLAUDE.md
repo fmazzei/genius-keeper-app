@@ -1389,6 +1389,43 @@ sigue exactamente igual — nunca cambió.
   futuro hace falta blindarlo, la opción más simple es un contador de
   intentos fallidos en Firestore con backoff.
 
+**⚠️ PENDIENTE DEL DUEÑO (BLOQUEANTE, 2026-09) — permiso de IAM para firmar
+custom tokens.** El PIN 2025 quedó bien guardado en Firestore (`kroma_empresa_pins`
++ `kroma_empresas`, confirmado con la Cloud Function de diagnóstico
+`diagnosticoPinLacteoca`) pero el login seguía fallando: `admin.auth()
+.createCustomToken()` truena con `PERMISSION_DENIED: Permission
+'iam.serviceAccounts.signBlob' denied`. Causa: para firmar un custom token,
+el Admin SDK necesita que la cuenta de servicio con la que corre la Cloud
+Function tenga el rol **"Service Account Token Creator"** sobre sí misma —
+y en este proyecto NINGUNA cuenta de servicio lo tiene (ni la de cómputo por
+defecto que usan las funciones Gen 2, ni `geniuskeeper-36553@appspot
+.gserviceaccount.com`, la de App Engine, a la que se fijó explícitamente
+`loginConPinEmpresa`/`diagnosticoPinLacteoca`/`crearTokenImpersonacion` vía
+la opción `serviceAccount` de `onCall` — confirmado con el metadata server,
+`runtimeServiceAccount` en el diagnóstico). Esto significa que la "llave
+maestra" (impersonación, `crearTokenImpersonacion`) probablemente tampoco
+funciona hoy, por la misma causa.
+
+**Esto NO se puede arreglar desde el código — requiere una acción manual del
+dueño en la consola de Google Cloud (una sola vez):**
+1. Entrar a https://console.cloud.google.com/iam-admin/serviceaccounts?project=geniuskeeper-36553
+2. Abrir `geniuskeeper-36553@appspot.gserviceaccount.com` (cuenta de App Engine).
+3. Pestaña **"Permissions"** (Permisos) → **"Grant Access"** (Otorgar acceso).
+4. En "New principals" escribir el correo de esa MISMA cuenta:
+   `geniuskeeper-36553@appspot.gserviceaccount.com`.
+5. En "Select a role" buscar y elegir **"Service Account Token Creator"**.
+6. Guardar. Esperar 1-2 minutos (propagación de IAM) y volver a probar el PIN.
+   Alternativa más rápida: el mensaje de error trae un link "Troubleshooter"
+   de Google (`console.cloud.google.com/iam-admin/troubleshooter/...`) que,
+   abierto con la cuenta de Google dueña del proyecto, ofrece un botón para
+   otorgar el permiso exacto en un clic.
+
+Mientras este permiso no se otorgue, **ninguna función que use
+`admin.auth().createCustomToken()` funciona** (PIN de empresa nuevo o de
+Lacteoca, y la llave maestra de impersonación). No es un bug de esta sesión
+de desarrollo — es una configuración de IAM que le falta al proyecto GCP
+desde su creación.
+
 **Reglas de Firestore**: `kroma_empresa_pins` es `allow read, write: if false`
 — solo el Admin SDK (dentro de las Cloud Functions) lo toca; exponerlo al
 cliente permitiría listar los PIN de todas las empresas.
