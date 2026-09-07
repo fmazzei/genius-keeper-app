@@ -273,6 +273,7 @@ export default function CostosFijosPage() {
             const logsSnap = await getDocs(query(
                 collection(db, 'kroma_production_logs'),
                 where('estado', '==', 'completada'),
+                where('empresaId', '==', kromaUser?.empresaId || 'lacteoca'),
             ));
             const totalKg = logsSnap.docs.reduce((s, d) => {
                 const data  = d.data();

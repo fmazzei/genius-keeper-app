@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
 import {
     FlaskConical, Plus, X, Loader, ChevronUp, ChevronDown,
@@ -169,11 +169,12 @@ export default function RecipeBuilderPage() {
     const loadAll = useCallback(async () => {
         setLoadError(null);
         try {
+            const empresaId = kromaUser?.empresaId || 'lacteoca';
             const [prodSnap, procSnap, matSnap, recSnap] = await Promise.all([
-                getDocs(collection(db, 'kroma_products')),
-                getDocs(collection(db, 'kroma_processes')),
-                getDocs(collection(db, 'kroma_materials')),
-                getDocs(collection(db, 'kroma_recipes')),
+                getDocs(query(collection(db, 'kroma_products'), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_processes'), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_materials'), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_recipes'), where('empresaId', '==', empresaId))),
             ]);
             setProducts(prodSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.active !== false).sort((a, b) => a.nombre.localeCompare(b.nombre)));
             setProcesses(procSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.active !== false));
@@ -185,7 +186,7 @@ export default function RecipeBuilderPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     useEffect(() => { loadAll(); }, [loadAll]);
 

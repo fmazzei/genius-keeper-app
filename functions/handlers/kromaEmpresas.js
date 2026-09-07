@@ -30,6 +30,13 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 
 const MASTER_EMAIL = "lacteoca@lacteoca.com";
+// Cuenta compartida legacy de Kroma (Lacteoca) — es como se llega al perfil
+// "Master" del picker de PIN dentro de Kroma, desde donde ahora vive la
+// gestión de empresas (ver ControlSistemaPage). Esa cuenta ya tiene control
+// total sobre todos los datos de Kroma vía isKromaAccess() en las reglas;
+// dejarla crear empresas nuevas no es una escalada real de lo que ya puede
+// hacer.
+const KROMA_SHARED_ACCOUNT_EMAIL = "produccion@lacteoca.com";
 // NOTA: el operario de planta de una empresa nueva usa el rol 'kroma_operario'
 // (no 'produccion' — ese string queda reservado para la cuenta compartida
 // legacy de Lacteoca, produccion@lacteoca.com, que sigue usando el selector
@@ -39,12 +46,16 @@ const MASTER_EMAIL = "lacteoca@lacteoca.com";
 // había asignado a ninguna cuenta real de GK hasta ahora.
 const KROMA_TEAM_ROLES = ["kroma_admin", "kroma_gerencial", "kroma_operario"];
 
-async function requireMaster(request) {
+// Máster global (GK) O la cuenta compartida de Kroma (produccion@lacteoca.com,
+// con la que se llega al perfil "Master" del picker de Kroma).
+async function requireKromaMasterAccess(request) {
     if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
-    if (request.auth.token?.email === MASTER_EMAIL) return;
+    const email = request.auth.token?.email;
+    if (email === MASTER_EMAIL || email === KROMA_SHARED_ACCOUNT_EMAIL) return;
     const snap = await admin.firestore().doc(`users_metadata/${request.auth.uid}`).get();
-    if (snap.data()?.role === "master") return;
-    throw new HttpsError("permission-denied", "Solo el máster puede hacer esto.");
+    const role = snap.data()?.role;
+    if (role === "master" || role === "produccion") return;
+    throw new HttpsError("permission-denied", "Solo el máster de Kroma puede hacer esto.");
 }
 
 function normalizeUsername(raw) {
@@ -155,7 +166,7 @@ async function crearPersonaKroma({ nombre, correo, telefono, username, password,
 }
 
 exports.crearEmpresaConUsuario = onCall({ region: "us-central1" }, async (request) => {
-    await requireMaster(request);
+    await requireKromaMasterAccess(request);
 
     const { empresaNombre, nombre, correo, telefono, username, password } = request.data || {};
     const empresaNombreTrim = String(empresaNombre || "").trim();
@@ -194,8 +205,9 @@ exports.crearUsuarioEmpresa = onCall({ region: "us-central1" }, async (request) 
     }
 
     const db = admin.firestore();
-    const callerIsMaster = request.auth.token?.email === MASTER_EMAIL
-        || (await db.doc(`users_metadata/${request.auth.uid}`).get()).data()?.role === "master";
+    const callerEmail = request.auth.token?.email;
+    const callerIsMaster = callerEmail === MASTER_EMAIL || callerEmail === KROMA_SHARED_ACCOUNT_EMAIL
+        || ["master", "produccion"].includes((await db.doc(`users_metadata/${request.auth.uid}`).get()).data()?.role);
 
     let empresaId;
     if (callerIsMaster) {
@@ -221,4 +233,37 @@ exports.crearUsuarioEmpresa = onCall({ region: "us-central1" }, async (request) 
     });
 
     return { ok: true, uid, username: uname, empresaId };
+});
+
+// ── Backfill: empresaId='lacteoca' en documentos existentes ────────────────
+// Las queries de lista (getDocs(collection(...))) necesitan un where('empresaId',
+// '==', ...) EXPLÍCITO para que las reglas filtren correctamente por empresa
+// (Firestore no aplica el default de la regla a una query sin ese filtro, solo
+// a un get() de un documento puntual). Un where('empresaId','==','lacteoca')
+// NO matchea documentos que no tengan el campo — así que todo lo creado antes
+// de multi-empresa necesita este backfill una sola vez, o Lacteoca vería sus
+// propias listas vacías. Idempotente: solo toca documentos sin el campo.
+const KROMA_COLLECTIONS_TO_BACKFILL = [
+    "kroma_users", "kroma_materials", "kroma_inventory_materials", "kroma_inventory_pt",
+    "kroma_production_logs", "kroma_fichas", "kroma_warehouses", "kroma_warehouse_movements",
+    "kroma_suppliers", "kroma_despachos", "kroma_edit_requests", "kroma_products",
+    "kroma_milk_reception", "kroma_recipes", "kroma_processes", "kroma_alerts",
+    "kroma_notifications", "kroma_settings", "kroma_config", "kroma_fixed_costs",
+];
+
+exports.backfillEmpresaIdLacteoca = onCall({ region: "us-central1", timeoutSeconds: 300 }, async (request) => {
+    await requireKromaMasterAccess(request);
+    const db = admin.firestore();
+    const resultado = {};
+    for (const col of KROMA_COLLECTIONS_TO_BACKFILL) {
+        const snap = await db.collection(col).get();
+        const faltantes = snap.docs.filter(d => d.data().empresaId === undefined);
+        for (let i = 0; i < faltantes.length; i += 400) {
+            const batch = db.batch();
+            faltantes.slice(i, i + 400).forEach(d => batch.update(d.ref, { empresaId: "lacteoca" }));
+            await batch.commit();
+        }
+        resultado[col] = { total: snap.size, actualizados: faltantes.length };
+    }
+    return { ok: true, resultado };
 });

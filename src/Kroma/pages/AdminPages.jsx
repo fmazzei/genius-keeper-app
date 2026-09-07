@@ -59,22 +59,23 @@ const COLOR_MAP = {
 
 export function AdminHome({ onNavigate }) {
     const { kromaUser } = useKroma();
+    const empresaId = kromaUser?.empresaId || 'lacteoca';
     const [counts, setCounts] = useState({ warehouses: null, suppliers: null, materials: null, inventory: null });
 
     useEffect(() => {
         const load = async () => {
             try {
                 const [whSnap, supSnap, matSnap, invSnap] = await Promise.all([
-                    getDocs(query(collection(db, 'kroma_warehouses'),         where('active', '==', true))),
-                    getDocs(query(collection(db, 'kroma_suppliers'),          where('active', '==', true))),
-                    getDocs(query(collection(db, 'kroma_materials'),          where('active', '==', true))),
-                    getDocs(query(collection(db, 'kroma_inventory_pt'),       where('active', '==', true))),
+                    getDocs(query(collection(db, 'kroma_warehouses'),         where('active', '==', true), where('empresaId', '==', empresaId))),
+                    getDocs(query(collection(db, 'kroma_suppliers'),          where('active', '==', true), where('empresaId', '==', empresaId))),
+                    getDocs(query(collection(db, 'kroma_materials'),          where('active', '==', true), where('empresaId', '==', empresaId))),
+                    getDocs(query(collection(db, 'kroma_inventory_pt'),       where('active', '==', true), where('empresaId', '==', empresaId))),
                 ]);
                 setCounts({ warehouses: whSnap.size, suppliers: supSnap.size, materials: matSnap.size, inventory: invSnap.size });
             } catch {}
         };
         load();
-    }, []);
+    }, [empresaId]);
 
     const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
 
@@ -184,7 +185,7 @@ export function KromaUsersPage() {
 
     const load = useCallback(async () => {
         try {
-            const snap = await getDocs(collection(db, 'kroma_users'));
+            const snap = await getDocs(query(collection(db, 'kroma_users'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
             const list = snap.docs
                 .map((d, i) => ({ id: d.id, avatarIndex: i % AVATAR_COLORS.length, ...d.data() }))
                 .filter(u => u.active !== false)
@@ -195,7 +196,7 @@ export function KromaUsersPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     useEffect(() => { load(); }, [load]);
 

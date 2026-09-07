@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import {
     ClipboardList, ChevronLeft, ChevronRight, Search, X,
     Loader, Droplets, Package, Calendar, BarChart3,
     CheckCircle, User,
 } from 'lucide-react';
+import { useKroma } from '../../KromaContext';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -282,6 +283,7 @@ function statusBadge(log) {
 }
 
 export default function ProductionHistoryPage() {
+    const { kromaUser } = useKroma();
     const [logs,       setLogs]       = useState([]);
     const [loading,    setLoading]    = useState(true);
     const [error,      setError]      = useState(null);
@@ -294,7 +296,7 @@ export default function ProductionHistoryPage() {
     const load = useCallback(async () => {
         setLoading(true); setError(null);
         try {
-            const snap = await getDocs(collection(db, 'kroma_production_logs'));
+            const snap = await getDocs(query(collection(db, 'kroma_production_logs'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
             setLogs(
                 snap.docs.map(d => ({ id: d.id, ...d.data() }))
                     .filter(l => l.estado === 'completada')
@@ -305,7 +307,7 @@ export default function ProductionHistoryPage() {
             );
         } catch (e) { setError(e.message); }
         finally     { setLoading(false); }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     useEffect(() => { load(); }, [load]);
 

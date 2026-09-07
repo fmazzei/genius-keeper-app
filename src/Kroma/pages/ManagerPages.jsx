@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, query, where, writeBatch, serverTimestamp } from 'firebase/firestore';
 import {
     BarChart, Bar, LineChart, Line, AreaChart, Area,
     PieChart, Pie, Cell,
@@ -210,18 +210,21 @@ function last6Months() {
 // ─── Shared data hook ─────────────────────────────────────────────────────────
 
 function useKromaDashboard() {
+    const { kromaUser } = useKroma();
+    const empresaId = kromaUser?.empresaId || 'lacteoca';
     const [state, setState] = useState({ data: null, loading: true, error: null });
     const load = useCallback(async () => {
         setState(s => ({ ...s, loading: true, error: null }));
         try {
+            const eq = (col) => query(collection(db, col), where('empresaId', '==', empresaId));
             const [logsS, matInvS, ptS, milkS, suppS, materialsS, prodsS] = await Promise.all([
-                getDocs(collection(db, 'kroma_production_logs')),
-                getDocs(collection(db, 'kroma_inventory_materials')),
-                getDocs(collection(db, 'kroma_inventory_pt')),
-                getDocs(collection(db, 'kroma_milk_reception')),
-                getDocs(collection(db, 'kroma_suppliers')),
-                getDocs(collection(db, 'kroma_materials')),
-                getDocs(collection(db, 'kroma_products')),
+                getDocs(eq('kroma_production_logs')),
+                getDocs(eq('kroma_inventory_materials')),
+                getDocs(eq('kroma_inventory_pt')),
+                getDocs(eq('kroma_milk_reception')),
+                getDocs(eq('kroma_suppliers')),
+                getDocs(eq('kroma_materials')),
+                getDocs(eq('kroma_products')),
             ]);
             const allLogDocs = logsS.docs.map(d => ({ id: d.id, ...d.data() }));
             setState({
@@ -240,7 +243,7 @@ function useKromaDashboard() {
         } catch (e) {
             setState({ data: null, loading: false, error: e.message });
         }
-    }, []);
+    }, [empresaId]);
     useEffect(() => { load(); }, [load]);
     return { ...state, reload: load };
 }

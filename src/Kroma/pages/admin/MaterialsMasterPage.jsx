@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
-    collection, getDocs, addDoc, updateDoc, doc, serverTimestamp,
+    collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp,
 } from 'firebase/firestore';
 import {
     Package, Plus, Search, X, Edit2, Trash2, Loader, Calculator, Link2,
@@ -562,10 +562,11 @@ export default function MaterialsMasterPage() {
 
     const loadAll = useCallback(async () => {
         try {
+            const empresaId = kromaUser?.empresaId || 'lacteoca';
             const [matsSnap, suppSnap, prodSnap] = await Promise.all([
-                getDocs(collection(db, 'kroma_materials')),
-                getDocs(collection(db, 'kroma_suppliers')),
-                getDocs(collection(db, 'kroma_products')),
+                getDocs(query(collection(db, 'kroma_materials'), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_suppliers'), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_products'), where('empresaId', '==', empresaId))),
             ]);
             const mats = matsSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
@@ -587,7 +588,7 @@ export default function MaterialsMasterPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     useEffect(() => { loadAll(); }, [loadAll]);
 

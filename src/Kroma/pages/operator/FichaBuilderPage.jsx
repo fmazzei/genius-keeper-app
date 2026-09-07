@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
 import {
     ClipboardList, Plus, X, ChevronUp, ChevronDown, Edit2, Trash2, Loader,
@@ -1176,9 +1176,10 @@ export default function FichaBuilderPage() {
     const loadAll = useCallback(async () => {
         setLoadError(null);
         try {
+            const empresaId = kromaUser?.empresaId || 'lacteoca';
             const [prodSnap, fichaSnap] = await Promise.all([
-                getDocs(collection(db, 'kroma_products')),
-                getDocs(collection(db, 'kroma_fichas')),
+                getDocs(query(collection(db, 'kroma_products'), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_fichas'), where('empresaId', '==', empresaId))),
             ]);
             setProducts(prodSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.active !== false).sort((a, b) => a.nombre.localeCompare(b.nombre)));
             setFichas(fichaSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(f => f.active !== false).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
@@ -1188,16 +1189,16 @@ export default function FichaBuilderPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     const loadMaterials = useCallback(async () => {
         if (materials.length > 0) return;
         setMaterialsLoading(true);
         try {
-            const snap = await getDocs(collection(db, 'kroma_materials'));
+            const snap = await getDocs(query(collection(db, 'kroma_materials'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
             setMaterials(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false).sort((a, b) => a.nombre.localeCompare(b.nombre)));
         } catch (err) { console.error(err); } finally { setMaterialsLoading(false); }
-    }, [materials.length]);
+    }, [materials.length, kromaUser?.empresaId]);
 
     useEffect(() => { loadAll(); }, [loadAll]);
     useEffect(() => { if (mode === 'builder') saveDraft(selectedProduct, bloques); }, [mode, selectedProduct, bloques]);

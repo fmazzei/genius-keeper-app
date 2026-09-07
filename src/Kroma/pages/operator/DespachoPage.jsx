@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
     collection, getDocs, getDoc, addDoc, updateDoc, doc,
-    serverTimestamp, query, orderBy, limit, where,
+    serverTimestamp, query, where,
 } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
 import {
@@ -536,9 +536,10 @@ export default function DespachoPage() {
     useEffect(() => {
         const load = async () => {
             try {
+                const myEmpresaId = kromaUser?.empresaId || 'lacteoca';
                 const [invSnap, whSnap] = await Promise.all([
-                    getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
-                    getDocs(collection(db, 'kroma_warehouses')),
+                    getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true), where('empresaId', '==', myEmpresaId))),
+                    getDocs(query(collection(db, 'kroma_warehouses'), where('empresaId', '==', myEmpresaId))),
                 ]);
                 const whList = whSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(w => w.active !== false);
                 const whMap = {};
@@ -565,11 +566,17 @@ export default function DespachoPage() {
     const loadHistorial = useCallback(async () => {
         setLoadingHist(true);
         try {
-            const snap = await getDocs(query(collection(db, 'kroma_despachos'), orderBy('createdAt', 'desc'), limit(60)));
-            setHistorial(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            // Sin orderBy en el servidor a propósito: combinarlo con
+            // where('empresaId',...) exigiría un índice compuesto (este
+            // proyecto los evita) — se ordena y recorta en cliente.
+            const snap = await getDocs(query(collection(db, 'kroma_despachos'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
+            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
+                .slice(0, 60);
+            setHistorial(list);
         } catch (err) { console.error(err); }
         finally { setLoadingHist(false); }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     useEffect(() => { if (tab === 'historial') loadHistorial(); }, [tab, loadHistorial]);
 

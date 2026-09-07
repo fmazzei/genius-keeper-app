@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
-    collection, getDocs, addDoc, updateDoc, doc, serverTimestamp,
+    collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp,
 } from 'firebase/firestore';
 import {
     Truck, Plus, Search, X, Edit2, Trash2, Loader, ChevronDown, ChevronUp,
@@ -343,7 +343,7 @@ export default function SuppliersPage() {
 
     const load = useCallback(async () => {
         try {
-            const snap = await getDocs(collection(db, 'kroma_suppliers'));
+            const snap = await getDocs(query(collection(db, 'kroma_suppliers'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
             const list = snap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
                 .filter(s => s.active !== false)
@@ -354,7 +354,7 @@ export default function SuppliersPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     useEffect(() => { load(); }, [load]);
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
 import {
     Workflow, Plus, X, ChevronUp, ChevronDown, Edit2, Trash2, Loader,
@@ -1516,9 +1516,10 @@ export default function ProcessBuilderPage() {
     const loadAll = useCallback(async () => {
         setLoadError(null);
         try {
+            const empresaId = kromaUser?.empresaId || 'lacteoca';
             const [prodSnap, procSnap] = await Promise.all([
-                getDocs(collection(db, 'kroma_products')),
-                getDocs(collection(db, 'kroma_processes')),
+                getDocs(query(collection(db, 'kroma_products'), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_processes'), where('empresaId', '==', empresaId))),
             ]);
             setProducts(
                 prodSnap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -1536,13 +1537,13 @@ export default function ProcessBuilderPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     const loadMaterials = useCallback(async () => {
         if (materials.length > 0) return;
         setMaterialsLoading(true);
         try {
-            const snap = await getDocs(collection(db, 'kroma_materials'));
+            const snap = await getDocs(query(collection(db, 'kroma_materials'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
             setMaterials(
                 snap.docs.map(d => ({ id: d.id, ...d.data() }))
                     .filter(m => m.active !== false)
@@ -1553,7 +1554,7 @@ export default function ProcessBuilderPage() {
         } finally {
             setMaterialsLoading(false);
         }
-    }, [materials.length]);
+    }, [materials.length, kromaUser?.empresaId]);
 
     useEffect(() => { loadAll(); }, [loadAll]);
 

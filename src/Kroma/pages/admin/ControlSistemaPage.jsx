@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useKroma } from '@/Kroma/KromaContext';
-import { db } from '@/Firebase/config.js';
+import { db, functions } from '@/Firebase/config.js';
+import { httpsCallable } from 'firebase/functions';
 import {
     collection, getDocs, addDoc, updateDoc, doc, deleteDoc,
-    serverTimestamp, query, orderBy, limit,
+    serverTimestamp, query, where, orderBy, limit,
 } from 'firebase/firestore';
 import {
     Shield, Users, Bell, Settings2, Loader, Plus, Edit2, Trash2,
@@ -11,6 +12,7 @@ import {
     ClipboardList, Tag, BookOpen, Droplets, BarChart3, Truck,
     ToggleLeft, ToggleRight, Mail, Briefcase, ChevronDown, X,
     Check, Clock, KeyRound, Eye, EyeOff, Wrench, ClipboardCheck, PackagePlus,
+    Building2, RefreshCw,
 } from 'lucide-react';
 
 // ─── PIN hash helper ──────────────────────────────────────────────────────────
@@ -169,7 +171,7 @@ function UsuariosTab() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const snap = await getDocs(collection(db, 'kroma_users'));
+            const snap = await getDocs(query(collection(db, 'kroma_users'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
             setUsers(
                 snap.docs.map((d, i) => ({ id: d.id, avatarIdx: i % AVATAR_COLORS.length, ...d.data() }))
                     .filter(u => u.active !== false)
@@ -177,7 +179,7 @@ function UsuariosTab() {
             );
         } catch (e) { console.error(e); }
         finally { setLoading(false); }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -404,6 +406,7 @@ function UsuariosTab() {
 // ─── Tab 2: Permisos de Módulos ───────────────────────────────────────────────
 
 function PermisosTab() {
+    const { kromaUser } = useKroma();
     const [users,    setUsers]    = useState([]);
     const [selected, setSelected] = useState(null);
     const [modulos,  setModulos]  = useState({});
@@ -415,14 +418,14 @@ function PermisosTab() {
     const [saved,    setSaved]    = useState(false);
 
     useEffect(() => {
-        getDocs(collection(db, 'kroma_users'))
+        getDocs(query(collection(db, 'kroma_users'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')))
             .then(snap => {
                 const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.active !== false).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
                 setUsers(list);
                 if (list.length) applyUser(list[0]);
             })
             .finally(() => setLoading(false));
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     const applyUser = (u) => {
         setSelected(u);
@@ -631,29 +634,29 @@ function PermisosTab() {
 // ─── Tab 3: Historial de Notificaciones ──────────────────────────────────────
 
 function NotificacionesTab({ kromaUserId, kromaUserRole }) {
+    const { kromaUser } = useKroma();
+    const empresaId = kromaUser?.empresaId || 'lacteoca';
     const [notifs,   setNotifs]   = useState([]);
     const [loading,  setLoading]  = useState(true);
     const [filter,   setFilter]   = useState('all');
     const [marking,  setMarking]  = useState(false);
 
+    // Sin orderBy en el servidor a propósito: combinar where('empresaId',...)
+    // con orderBy('createdAt',...) en campos distintos exige un índice
+    // compuesto, y este proyecto evita índices compuestos — se ordena en
+    // cliente (ver convención documentada en CLAUDE.md).
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const q = query(collection(db, 'kroma_notifications'), orderBy('createdAt', 'desc'), limit(50));
-            const snap = await getDocs(q);
-            setNotifs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        } catch (e) {
-            // fallback without orderBy (missing index)
-            try {
-                const snap = await getDocs(collection(db, 'kroma_notifications'));
-                setNotifs(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
-                    const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-                    const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-                    return tb - ta;
-                }));
-            } catch {}
-        } finally { setLoading(false); }
-    }, []);
+            const snap = await getDocs(query(collection(db, 'kroma_notifications'), where('empresaId', '==', empresaId)));
+            setNotifs(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+                const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+                const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+                return tb - ta;
+            }).slice(0, 50));
+        } catch (e) { console.error(e); }
+        finally { setLoading(false); }
+    }, [empresaId]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -749,7 +752,148 @@ function NotificacionesTab({ kromaUserId, kromaUserRole }) {
     );
 }
 
-// ─── Tab 4: Mantenimiento (Master only) ──────────────────────────────────────
+// ─── Tab 4: Empresas (Master de Kroma) ────────────────────────────────────────
+// Cada empresa es un tenant aislado dentro de Kroma: su propio maestro de
+// materiales, producción e inventario, sin ver ni tocar los de las demás
+// (reglas de Firestore por empresaId). Vive AQUÍ (dentro de Kroma) y no en el
+// AdminPanel de GK: es el máster de Kroma (que se llega con la cuenta
+// compartida produccion@lacteoca.com + perfil "Master") quien da de alta
+// empresas nuevas — no tiene que salir de Kroma para hacerlo.
+function EmpresasTab() {
+    const [empresas, setEmpresas] = useState([]);
+    const [loading, setLoading]   = useState(true);
+    const [showForm, setShowForm] = useState(false);
+    const [form, setForm] = useState({ empresaNombre: '', nombre: '', correo: '', telefono: '', username: '', password: '' });
+    const [saving, setSaving]   = useState(false);
+    const [error, setError]     = useState('');
+    const [success, setSuccess] = useState('');
+    const [backfillRunning, setBackfillRunning] = useState(false);
+    const [backfillMsg, setBackfillMsg]         = useState('');
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        try {
+            const snap = await getDocs(collection(db, 'kroma_empresas'));
+            setEmpresas(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')));
+        } catch (e) { setError('Error cargando empresas: ' + (e?.message || e)); }
+        setLoading(false);
+    }, []);
+
+    useEffect(() => { load(); }, [load]);
+
+    const handleCreate = async (e) => {
+        e.preventDefault();
+        setError(''); setSuccess(''); setSaving(true);
+        try {
+            const fn  = httpsCallable(functions, 'crearEmpresaConUsuario');
+            const res = await fn({ ...form });
+            setSuccess(`✓ Empresa "${form.empresaNombre}" creada. El usuario "${res.data.username}" (dueño) ya puede iniciar sesión con su correo y contraseña.`);
+            setForm({ empresaNombre: '', nombre: '', correo: '', telefono: '', username: '', password: '' });
+            setShowForm(false);
+            load();
+        } catch (err) { setError(err?.message || String(err)); }
+        setSaving(false);
+    };
+
+    const runBackfill = async () => {
+        setBackfillRunning(true); setBackfillMsg('');
+        try {
+            const fn  = httpsCallable(functions, 'backfillEmpresaIdLacteoca', { timeout: 300000 });
+            const res = await fn({});
+            const total = Object.values(res.data.resultado || {}).reduce((s, r) => s + r.actualizados, 0);
+            setBackfillMsg(`✓ Migración aplicada: ${total} documento(s) etiquetados como "lacteoca".`);
+        } catch (err) { setBackfillMsg('Error: ' + (err?.message || err)); }
+        setBackfillRunning(false);
+    };
+
+    return (
+        <div className="space-y-5">
+            <div className="bg-amber-900/10 border border-amber-700/30 rounded-xl p-4 space-y-2">
+                <p className="text-amber-300 text-xs font-semibold flex items-center gap-1.5"><RefreshCw size={12} /> Migración única (correr una sola vez)</p>
+                <p className="text-slate-400 text-xs">Etiqueta los documentos existentes de Lacteoca con <code className="text-slate-300">empresaId: "lacteoca"</code> para que las listas de Kroma sigan funcionando ahora que hay más de una empresa.</p>
+                <button onClick={runBackfill} disabled={backfillRunning}
+                    className="flex items-center gap-1.5 bg-amber-700 hover:bg-amber-600 text-white text-xs font-bold px-3 py-2 rounded-lg disabled:opacity-50">
+                    {backfillRunning && <Loader size={12} className="animate-spin" />}
+                    {backfillRunning ? 'Migrando…' : 'Migrar datos de Lacteoca'}
+                </button>
+                {backfillMsg && <p className="text-xs text-slate-300">{backfillMsg}</p>}
+            </div>
+
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-white font-semibold text-sm">Empresas Kroma</p>
+                    <p className="text-slate-500 text-xs mt-0.5">Cada empresa ve solo sus propios datos.</p>
+                </div>
+                <button onClick={() => setShowForm(s => !s)}
+                    className="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0">
+                    {showForm ? <X size={14} /> : <Plus size={14} />}
+                    {showForm ? 'Cerrar' : 'Nueva empresa'}
+                </button>
+            </div>
+
+            {error   && <div className="bg-rose-900/20 border border-rose-700/40 text-rose-300 text-sm rounded-xl p-3">{error}</div>}
+            {success && <div className="bg-emerald-900/20 border border-emerald-700/40 text-emerald-300 text-sm rounded-xl p-3">{success}</div>}
+
+            {showForm && (
+                <form onSubmit={handleCreate} className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-4">
+                    <input required placeholder="Nombre de la empresa" value={form.empresaNombre}
+                        onChange={e => setForm(f => ({ ...f, empresaNombre: e.target.value }))}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Primer usuario (dueño de la empresa)</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <input required placeholder="Nombre completo" value={form.nombre}
+                            onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
+                        <input required type="email" placeholder="Correo" value={form.correo}
+                            onChange={e => setForm(f => ({ ...f, correo: e.target.value }))}
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
+                        <input placeholder="Teléfono" value={form.telefono}
+                            onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))}
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
+                        <input required placeholder="Nombre de usuario" value={form.username}
+                            onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
+                        <input required placeholder="Contraseña (mín. 6 caracteres)" value={form.password}
+                            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 sm:col-span-2" />
+                    </div>
+                    <div className="flex justify-end">
+                        <button type="submit" disabled={saving}
+                            className="bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold px-4 py-2 rounded-lg disabled:opacity-50 flex items-center gap-2">
+                            {saving && <Loader size={14} className="animate-spin" />}
+                            {saving ? 'Creando…' : 'Crear empresa'}
+                        </button>
+                    </div>
+                </form>
+            )}
+
+            <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden">
+                {loading ? (
+                    <div className="flex justify-center py-8"><Loader size={18} className="animate-spin text-emerald-400" /></div>
+                ) : empresas.length === 0 ? (
+                    <p className="p-6 text-center text-slate-500 text-sm">Todavía no hay empresas registradas.</p>
+                ) : (
+                    <ul className="divide-y divide-slate-700">
+                        {empresas.map(emp => (
+                            <li key={emp.id} className="p-4 flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center shrink-0">
+                                    <Building2 size={15} className="text-slate-300" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-slate-200 text-sm font-semibold truncate">{emp.nombre}</p>
+                                    <p className="text-slate-500 text-xs truncate">{emp.contactoNombre} · {emp.contactoEmail}</p>
+                                </div>
+                                <span className="text-slate-500 text-xs font-mono shrink-0">{emp.id}</span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ─── Tab 5: Mantenimiento (Master only) ──────────────────────────────────────
 
 const CLEANUP_COLLECTIONS = [
     { id: 'kroma_production_logs',      label: 'Historial de Producción',   Icon: Factory,       color: 'text-rose-400' },
@@ -761,6 +905,8 @@ const CLEANUP_COLLECTIONS = [
 ];
 
 function MantenimientoTab() {
+    const { kromaUser } = useKroma();
+    const empresaId = kromaUser?.empresaId || 'lacteoca';
     const CONFIRM_WORD = 'LIMPIAR';
     const [confirm, setConfirm]   = useState('');
     const [running, setRunning]   = useState(false);
@@ -775,9 +921,12 @@ function MantenimientoTab() {
         setRunning(true);
         setResults(null);
         const out = [];
+        // Acotado a la PROPIA empresa — antes esto borraba estas colecciones
+        // ENTERAS (de cualquier empresa), lo que con multi-empresa habría
+        // borrado también los datos de otras compañías.
         for (const col of CLEANUP_COLLECTIONS.filter(c => selected.includes(c.id))) {
             try {
-                const snap = await getDocs(collection(db, col.id));
+                const snap = await getDocs(query(collection(db, col.id), where('empresaId', '==', empresaId)));
                 await Promise.all(snap.docs.map(d => deleteDoc(doc(db, col.id, d.id))));
                 out.push({ col: col.id, deleted: snap.docs.length, error: null });
             } catch (e) {
@@ -871,9 +1020,10 @@ function MantenimientoTab() {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const TAB_USUARIOS      = { id: 'usuarios',     label: 'Usuarios',     Icon: Users  };
-const TAB_PERMISOS      = { id: 'permisos',     label: 'Permisos',     Icon: Shield };
-const TAB_MANTENIMIENTO = { id: 'mantenimiento',label: 'Mantenimiento',Icon: Wrench };
+const TAB_USUARIOS      = { id: 'usuarios',     label: 'Usuarios',     Icon: Users    };
+const TAB_PERMISOS      = { id: 'permisos',     label: 'Permisos',     Icon: Shield   };
+const TAB_EMPRESAS      = { id: 'empresas',     label: 'Empresas',     Icon: Building2 };
+const TAB_MANTENIMIENTO = { id: 'mantenimiento',label: 'Mantenimiento',Icon: Wrench   };
 
 export default function ControlSistemaPage({ kromaUser }) {
     const { canDo } = useKroma();
@@ -888,6 +1038,7 @@ export default function ControlSistemaPage({ kromaUser }) {
     const tabs = [
         ...(canManageUsers    ? [TAB_USUARIOS]      : []),
         ...(canConfigPermisos ? [TAB_PERMISOS]       : []),
+        ...(isMaster          ? [TAB_EMPRESAS]       : []),
         ...(isMaster          ? [TAB_MANTENIMIENTO]  : []),
     ];
 
@@ -936,6 +1087,7 @@ export default function ControlSistemaPage({ kromaUser }) {
             {/* Tab content */}
             {activeTab === 'usuarios'      && <UsuariosTab />}
             {activeTab === 'permisos'      && <PermisosTab />}
+            {activeTab === 'empresas'      && <EmpresasTab />}
             {activeTab === 'mantenimiento' && <MantenimientoTab />}
         </div>
     );

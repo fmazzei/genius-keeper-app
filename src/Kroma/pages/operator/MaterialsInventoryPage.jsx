@@ -760,10 +760,12 @@ export default function MaterialsInventoryPage() {
     const [enUsoTarget, setEnUsoTarget]     = useState(null);
     const [minimoTarget, setMinimoTarget]   = useState(null);
 
+    const empresaId = kromaUser?.empresaId || 'lacteoca';
+
     useEffect(() => {
         loadData();
         const unsub = onSnapshot(
-            query(collection(db, 'kroma_alerts'), where('active', '==', true)),
+            query(collection(db, 'kroma_alerts'), where('active', '==', true), where('empresaId', '==', empresaId)),
             snap => {
                 const myId = kromaUser?.id || '';
                 setAlerts(
@@ -774,14 +776,14 @@ export default function MaterialsInventoryPage() {
             }
         );
         return () => unsub();
-    }, []);
+    }, [empresaId]);
 
     async function loadData() {
         setLoading(true); setError(null);
         try {
             const [matsSnap, invSnap] = await Promise.all([
-                getDocs(query(collection(db, 'kroma_materials'), where('active', '==', true))),
-                getDocs(collection(db, 'kroma_inventory_materials')),
+                getDocs(query(collection(db, 'kroma_materials'), where('active', '==', true), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_inventory_materials'), where('empresaId', '==', empresaId))),
             ]);
             const mats = matsSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, query, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import {
@@ -546,15 +546,16 @@ export default function MilkInventoryPage() {
     const [params, setParams]             = useState({});
     const [enrutamiento, setEnrutamiento] = useState('tanque');
 
-    useEffect(() => { loadData(); }, []);
+    const empresaId = kromaUser?.empresaId || 'lacteoca';
+    useEffect(() => { loadData(); }, [empresaId]);
 
     async function loadData() {
         setLoading(true); setError(null);
         try {
             const [recSnap, suppSnap, matSnap, cfgDoc] = await Promise.all([
-                getDocs(collection(db, 'kroma_milk_reception')),
-                getDocs(collection(db, 'kroma_suppliers')),
-                getDocs(collection(db, 'kroma_materials')),
+                getDocs(query(collection(db, 'kroma_milk_reception'), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_suppliers'), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_materials'), where('empresaId', '==', empresaId))),
                 getDoc(doc(db, 'kroma_config', CONFIG_DOC_ID)),
             ]);
 

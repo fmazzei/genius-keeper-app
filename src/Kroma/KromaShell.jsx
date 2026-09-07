@@ -130,7 +130,7 @@ function useUnreadCount(kromaUser) {
         if (!kromaUser) return;
         const uid  = kromaUser.id;
         const role = kromaUser.role;
-        const unsub = onSnapshot(collection(db, 'kroma_notifications'), (snap) => {
+        const unsub = onSnapshot(query(collection(db, 'kroma_notifications'), where('empresaId', '==', kromaUser.empresaId || 'lacteoca')), (snap) => {
             const unread = snap.docs.filter(d => {
                 const n = d.data();
                 const mine = (n.destinatarios || []).includes(uid) || (n.destinatarios || []).includes(role) || !(n.destinatarios || []).length;
@@ -161,7 +161,8 @@ function KromaInner({ onExitKroma }) {
             try {
                 const snap = await getDocs(query(
                     collection(db, 'kroma_production_logs'),
-                    where('estado', '==', 'en_hold')
+                    where('estado', '==', 'en_hold'),
+                    where('empresaId', '==', kromaUser.empresaId || 'lacteoca')
                 ));
                 if (cancelled) return;
 

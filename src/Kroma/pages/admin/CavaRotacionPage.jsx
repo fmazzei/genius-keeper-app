@@ -774,9 +774,9 @@ export default function CavaRotacionPage() {
         setLoading(true); setError('');
         try {
             const [whSnap, invSnap, prodSnap, cfgSnap, comercialSnap] = await Promise.all([
-                getDocs(query(collection(db, 'kroma_warehouses'), where('active', '==', true))),
-                getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
-                getDocs(collection(db, 'kroma_products')),
+                getDocs(query(collection(db, 'kroma_warehouses'), where('active', '==', true), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true), where('empresaId', '==', empresaId))),
+                getDocs(query(collection(db, 'kroma_products'), where('empresaId', '==', empresaId))),
                 getDoc(doc(db, 'kroma_settings', rotacionDocId(empresaId))),
                 getDocs(collection(db, 'inventario_comercial')),
             ]);
@@ -804,6 +804,7 @@ export default function CavaRotacionPage() {
             const despSnap = await getDocs(query(
                 collection(db, 'kroma_despachos'),
                 where('estado', '==', 'entregado'),
+                where('empresaId', '==', empresaId),
             ));
             setDespachos(despSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => {
                 const fecha = d.recibidoEnGKAt?.toDate?.() || d.createdAt?.toDate?.();

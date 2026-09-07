@@ -40,6 +40,7 @@ const COLOR_MAP = {
 
 export function OperatorHome({ onNavigate }) {
     const { kromaUser } = useKroma();
+    const empresaId = kromaUser?.empresaId || 'lacteoca';
     const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
     const [stats, setStats] = useState({ litrosTanque: null, litrosEnProceso: null, insumos: null, recetas: null });
 
@@ -47,11 +48,12 @@ export function OperatorHome({ onNavigate }) {
         const load = async () => {
             try {
                 const [milkSnap, matSnap, fichasSnap] = await Promise.all([
-                    getDocs(query(collection(db, 'kroma_milk_reception'), where('active', '!=', false))),
-                    getDocs(query(collection(db, 'kroma_inventory_materials'), where('active', '!=', false))),
-                    getDocs(query(collection(db, 'kroma_fichas'), where('active', '!=', false))),
+                    getDocs(query(collection(db, 'kroma_milk_reception'), where('empresaId', '==', empresaId))),
+                    getDocs(query(collection(db, 'kroma_inventory_materials'), where('empresaId', '==', empresaId))),
+                    getDocs(query(collection(db, 'kroma_fichas'), where('empresaId', '==', empresaId))),
                 ]);
-                const milkDocs = milkSnap.docs.map(d => d.data());
+                const activeOnly = d => d.data().active !== false;
+                const milkDocs = milkSnap.docs.filter(activeOnly).map(d => d.data());
                 const litrosTanque = milkDocs
                     .filter(r => r.enrutamiento === 'tanque' && r.status !== 'en_proceso' && r.status !== 'inactivo')
                     .reduce((s, r) => s + (r.litros || 0), 0);
@@ -63,12 +65,12 @@ export function OperatorHome({ onNavigate }) {
                         (r.enrutamiento === 'produccion' && r.status !== 'inactivo' && r.status !== 'completada')
                     )
                     .reduce((s, r) => s + (r.litros || 0), 0);
-                const recetas = fichasSnap.size;
-                setStats({ litrosTanque, litrosEnProceso, insumos: matSnap.size, recetas });
+                const recetas = fichasSnap.docs.filter(activeOnly).length;
+                setStats({ litrosTanque, litrosEnProceso, insumos: matSnap.docs.filter(activeOnly).length, recetas });
             } catch {}
         };
         load();
-    }, []);
+    }, [empresaId]);
 
     const STAT_TILES = [
         {

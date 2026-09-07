@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { db } from '@/Firebase/config.js';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '@/Firebase/config.js';
+import { collection, getDocs, addDoc, doc, getDoc, query, where, serverTimestamp } from 'firebase/firestore';
 import { useKroma } from './KromaContext';
 import {
     Settings, BarChart3, ChefHat, Shield,
@@ -60,6 +60,7 @@ async function verifyBiometric(uid) {
 
 const ROLE_CFG = {
     master:          { label: 'Master',        bg: 'bg-violet-500/20',  text: 'text-violet-400',  border: 'border-violet-500/40',  Icon: Shield },
+    kroma_owner:     { label: 'Dueño',          bg: 'bg-violet-500/20',  text: 'text-violet-400',  border: 'border-violet-500/40',  Icon: Shield },
     kroma_admin:     { label: 'Administrador', bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/40', Icon: Settings },
     kroma_gerencial: { label: 'Gerencial',     bg: 'bg-amber-500/20',   text: 'text-amber-400',   border: 'border-amber-500/40',   Icon: BarChart3 },
     kroma_operario:  { label: 'Operario',      bg: 'bg-blue-500/20',    text: 'text-blue-400',    border: 'border-blue-500/40',    Icon: ChefHat },
@@ -259,6 +260,11 @@ export default function KromaUserSelect({ onExitKroma }) {
     const [pinUser,       setPinUser]       = useState(null);
     const [bioAvailable,  setBioAvailable]  = useState(false);
     const [offerBio,      setOfferBio]      = useState(null);
+    // La cuenta de GK autenticada aquí es SIEMPRE la compartida legacy (una
+    // cuenta con kromaDirectLogin salta este picker por completo, ver
+    // KromaContext) — pero se resuelve su empresaId igual, en vez de asumir
+    // 'lacteoca', por si el patrón se reutiliza más adelante.
+    const [myEmpresaId, setMyEmpresaId] = useState('lacteoca');
 
     useEffect(() => {
         loadUsers();
@@ -267,7 +273,16 @@ export default function KromaUserSelect({ onExitKroma }) {
 
     const loadUsers = async () => {
         try {
-            const snap = await getDocs(collection(db, 'kroma_users'));
+            let empresaId = 'lacteoca';
+            try {
+                const uid = auth.currentUser?.uid;
+                if (uid) {
+                    const meSnap = await getDoc(doc(db, 'users_metadata', uid));
+                    empresaId = meSnap.exists() ? (meSnap.data().empresaId || 'lacteoca') : 'lacteoca';
+                }
+            } catch {}
+            setMyEmpresaId(empresaId);
+            const snap = await getDocs(query(collection(db, 'kroma_users'), where('empresaId', '==', empresaId)));
             setUsers(
                 snap.docs
                     .map((d, i) => ({ id: d.id, avatarIndex: i % AVATAR_COLORS.length, ...d.data() }))
@@ -295,7 +310,7 @@ export default function KromaUserSelect({ onExitKroma }) {
         setCreating(true);
         try {
             const ref = await addDoc(collection(db, 'kroma_users'), {
-                name: form.name.trim(), role: form.role, active: true, createdAt: serverTimestamp(),
+                name: form.name.trim(), role: form.role, empresaId: myEmpresaId, active: true, createdAt: serverTimestamp(),
             });
             setUsers(prev => [...prev, {
                 id: ref.id, name: form.name.trim(), role: form.role,

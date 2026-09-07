@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
     collection, getDocs, updateDoc, doc,
-    query, orderBy, limit,
+    query, where,
 } from 'firebase/firestore';
 import {
     Bell, CheckCircle, Loader, X, AlertTriangle,
@@ -59,27 +59,20 @@ export default function KromaNotificationsPage() {
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const q = query(collection(db, 'kroma_notifications'), orderBy('createdAt', 'desc'), limit(50));
-            const snap = await getDocs(q);
-            setNotifs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        } catch {
-            // fallback without orderBy (missing index)
-            try {
-                const snap = await getDocs(collection(db, 'kroma_notifications'));
-                setNotifs(
-                    snap.docs
-                        .map(d => ({ id: d.id, ...d.data() }))
-                        .sort((a, b) => {
-                            const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-                            const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-                            return tb - ta;
-                        })
-                );
-            } catch {}
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+            const snap = await getDocs(query(collection(db, 'kroma_notifications'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
+            setNotifs(
+                snap.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .sort((a, b) => {
+                        const ta = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+                        const tb = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+                        return tb - ta;
+                    })
+                    .slice(0, 50)
+            );
+        } catch (e) { console.error(e); }
+        finally { setLoading(false); }
+    }, [kromaUser?.empresaId]);
 
     useEffect(() => { load(); }, [load]);
 

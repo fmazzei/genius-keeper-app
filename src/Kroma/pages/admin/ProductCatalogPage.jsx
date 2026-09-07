@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { Tag, Plus, Edit2, Trash2, Loader, X } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
 
@@ -330,7 +330,7 @@ export default function ProductCatalogPage() {
 
     const load = useCallback(async () => {
         try {
-            const snap = await getDocs(collection(db, 'kroma_products'));
+            const snap = await getDocs(query(collection(db, 'kroma_products'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
             const list = snap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
                 .filter(p => p.active !== false)
@@ -341,7 +341,7 @@ export default function ProductCatalogPage() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     useEffect(() => { load(); }, [load]);
 

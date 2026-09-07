@@ -5,7 +5,7 @@ import { db, functions, auth } from '../Firebase/config.js';
 import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Factory } from 'lucide-react';
+import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
@@ -5009,121 +5009,6 @@ const MasterManagement = () => (
     </div>
 );
 
-// ─── Empresas Kroma (multi-empresa, 2026-09) ──────────────────────────────────
-// Cada empresa es un tenant aislado dentro de Kroma: su propio maestro de
-// materiales, producción e inventario, sin ver ni tocar los de las demás
-// (reglas de Firestore por `empresaId`, ver firestore.rules). Solo el máster
-// da de alta empresas nuevas — el primer usuario ("dueño", rol kroma_owner)
-// puede luego crear el resto de su propio equipo desde dentro de Kroma.
-const EmpresasKromaManagement = () => {
-    const [empresas, setEmpresas] = useState([]);
-    const [loading, setLoading]   = useState(true);
-    const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState({ empresaNombre: '', nombre: '', correo: '', telefono: '', username: '', password: '' });
-    const [saving, setSaving]   = useState(false);
-    const [error, setError]     = useState('');
-    const [success, setSuccess] = useState('');
-
-    const load = useCallback(async () => {
-        setLoading(true);
-        try {
-            const snap = await getDocs(collection(db, 'kroma_empresas'));
-            setEmpresas(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '')));
-        } catch (e) { setError('Error cargando empresas: ' + (e?.message || e)); }
-        setLoading(false);
-    }, []);
-
-    useEffect(() => { load(); }, [load]);
-
-    const handleCreate = async (e) => {
-        e.preventDefault();
-        setError(''); setSuccess(''); setSaving(true);
-        try {
-            const fn  = httpsCallable(functions, 'crearEmpresaConUsuario');
-            const res = await fn({ ...form });
-            setSuccess(`✓ Empresa "${form.empresaNombre}" creada. El usuario "${res.data.username}" (dueño) ya puede iniciar sesión con su correo y contraseña.`);
-            setForm({ empresaNombre: '', nombre: '', correo: '', telefono: '', username: '', password: '' });
-            setShowForm(false);
-            load();
-        } catch (err) { setError(err?.message || String(err)); }
-        setSaving(false);
-    };
-
-    if (loading) return <LoadingSpinner />;
-
-    return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <div>
-                    <h3 className="text-xl font-semibold text-slate-700">Empresas Kroma</h3>
-                    <p className="text-sm text-slate-500 mt-1">Cada empresa ve solo sus propios datos — materiales, producción, inventario y almacenes aislados del resto.</p>
-                </div>
-                <button onClick={() => setShowForm(s => !s)} className="flex items-center gap-2 bg-brand-blue text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm shrink-0">
-                    <PlusCircle size={18} /><span className="hidden sm:inline">Nueva empresa</span>
-                </button>
-            </div>
-
-            {error   && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3">{error}</div>}
-            {success && <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-lg p-3">{success}</div>}
-
-            {showForm && (
-                <form onSubmit={handleCreate} className="bg-white rounded-lg shadow p-5 space-y-4 border border-slate-200">
-                    <p className="font-semibold text-slate-700 text-sm">Datos de la empresa</p>
-                    <input required placeholder="Nombre de la empresa" value={form.empresaNombre}
-                        onChange={e => setForm(f => ({ ...f, empresaNombre: e.target.value }))}
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-
-                    <p className="font-semibold text-slate-700 text-sm pt-2">Primer usuario (dueño de la empresa)</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input required placeholder="Nombre completo" value={form.nombre}
-                            onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
-                            className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-                        <input required type="email" placeholder="Correo" value={form.correo}
-                            onChange={e => setForm(f => ({ ...f, correo: e.target.value }))}
-                            className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-                        <input placeholder="Teléfono" value={form.telefono}
-                            onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))}
-                            className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-                        <input required placeholder="Nombre de usuario" value={form.username}
-                            onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-                            className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-                        <input required placeholder="Contraseña (mín. 6 caracteres)" value={form.password}
-                            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                            className="border border-slate-300 rounded-lg px-3 py-2 text-sm sm:col-span-2" />
-                    </div>
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Cancelar</button>
-                        <button type="submit" disabled={saving} className="bg-brand-blue text-white font-bold py-2 px-4 rounded-lg text-sm disabled:opacity-50">
-                            {saving ? 'Creando…' : 'Crear empresa'}
-                        </button>
-                    </div>
-                </form>
-            )}
-
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-                {empresas.length === 0 ? (
-                    <p className="p-6 text-center text-slate-400 text-sm">Todavía no hay empresas registradas.</p>
-                ) : (
-                    <ul className="divide-y divide-slate-200">
-                        {empresas.map(emp => (
-                            <li key={emp.id} className="p-4 flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                                    <Factory size={18} className="text-slate-500" />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <p className="font-semibold text-slate-800 text-sm truncate">{emp.nombre}</p>
-                                    <p className="text-slate-500 text-xs truncate">{emp.contactoNombre} · {emp.contactoEmail}</p>
-                                </div>
-                                <span className="text-slate-400 text-xs font-mono shrink-0">{emp.id}</span>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
-        </div>
-    );
-};
-
 const AdministradoresManagement = () => {
     const [admins, setAdmins] = useState([]);
     useEffect(() => {
@@ -5194,7 +5079,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                 { id: 'vendedores',   label: 'Vendedores',    Icon: TrendingUp                   },
                 { id: 'mercaderistas',label: 'Mercaderistas', Icon: Users                        },
                 { id: 'admin_mgmt',   label: 'Administrador', Icon: LayoutGrid                   },
-                { id: 'kroma_empresas', label: 'Empresas Kroma', Icon: Factory, badge: 'Nuevo'    },
             ],
         },
         {
@@ -5256,7 +5140,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                 />
             );
             case 'admin_mgmt':    return <AdministradoresManagement />;
-            case 'kroma_empresas': return <EmpresasKromaManagement />;
             case 'mercaderistas': return <ReportersManagement />;
             case 'pos':            return <PosManagement posList={posList} loading={loading} />;
             case 'clientes_pdv':   return <ClientesPdvHub />;

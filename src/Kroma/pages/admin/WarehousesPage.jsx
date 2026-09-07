@@ -234,6 +234,7 @@ function pesoToKg(pesoNeto, unidad) {
 }
 
 function AddInventoryModal({ warehouse, onClose, onSave, saving }) {
+    const { kromaUser } = useKroma();
     const [products, setProducts]         = useState([]);
     const [loadingProds, setLoadingProds] = useState(true);
 
@@ -246,11 +247,11 @@ function AddInventoryModal({ warehouse, onClose, onSave, saving }) {
     const [lote, setLote]                 = useState('');
 
     useEffect(() => {
-        getDocs(query(collection(db, 'kroma_products'), where('active', '==', true)))
+        getDocs(query(collection(db, 'kroma_products'), where('active', '==', true), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')))
             .then(snap => setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
             .catch(() => {})
             .finally(() => setLoadingProds(false));
-    }, []);
+    }, [kromaUser?.empresaId]);
 
     const selectedProduct = products.find(p => p.id === productoId);
     const presentaciones  = selectedProduct?.presentaciones || [];
@@ -1609,11 +1610,12 @@ export default function WarehousesPage() {
     async function loadData() {
         setLoading(true); setError(null);
         try {
+            const myEmpresaId = kromaUser?.empresaId || 'lacteoca';
             const [whSnap, invSnap, movSnap, matSnap, comercialSnap] = await Promise.all([
-                getDocs(query(collection(db, 'kroma_warehouses'), where('active', '==', true))),
-                getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
-                getDocs(collection(db, 'kroma_warehouse_movements')),
-                getDocs(collection(db, 'kroma_inventory_materials')),
+                getDocs(query(collection(db, 'kroma_warehouses'), where('active', '==', true), where('empresaId', '==', myEmpresaId))),
+                getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true), where('empresaId', '==', myEmpresaId))),
+                getDocs(query(collection(db, 'kroma_warehouse_movements'), where('empresaId', '==', myEmpresaId))),
+                getDocs(query(collection(db, 'kroma_inventory_materials'), where('empresaId', '==', myEmpresaId))),
                 getDocs(collection(db, 'inventario_comercial')),
             ]);
 

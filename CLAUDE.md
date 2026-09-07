@@ -1242,10 +1242,17 @@ patrón que Rotación de Cava.
 - `App.tsx`: rutea `kroma_owner`/`kroma_admin`/`kroma_gerencial`/
   `kroma_operario` a `KromaShell`, igual que `produccion` (la cuenta
   compartida legacy).
-- **AdminPanel → Personas → "Empresas Kroma"** (`EmpresasKromaManagement`,
-  solo máster): lista las empresas + formulario para dar de alta una nueva
-  (nombre de la empresa, nombre/correo/teléfono/usuario/contraseña del primer
-  usuario) → llama `crearEmpresaConUsuario`.
+- **Kroma → Control del Sistema → pestaña "Empresas"** (`EmpresasTab`, dentro
+  de `ControlSistemaPage.jsx`, solo máster de Kroma): lista las empresas +
+  formulario para dar de alta una nueva (nombre de la empresa, nombre/correo/
+  teléfono/usuario/contraseña del primer usuario) → llama
+  `crearEmpresaConUsuario`. Vive DENTRO de Kroma (no en el AdminPanel de GK,
+  donde se puso originalmente) — es el máster de Kroma, que se llega con la
+  cuenta compartida `produccion@lacteoca.com` + perfil "Master" del picker,
+  quien da de alta empresas nuevas sin salir de Kroma. La Cloud Function
+  acepta esa cuenta compartida como autorizada (`requireKromaMasterAccess`),
+  no solo al máster global de GK — esa cuenta ya tiene control total sobre
+  todos los datos de Kroma vía `isKromaAccess()`, así que no es una escalada.
 - **Kroma → "Mi Equipo"** (`EmpresaEquipoPage.jsx`, visible solo para
   `kroma_owner`): lista su equipo (`kroma_users` acotado a su empresa) +
   formulario para agregar gente (mismos campos + rol) → llama
@@ -1259,15 +1266,55 @@ creación de la cadena núcleo (`kroma_materials`, `kroma_inventory_materials`,
 `kroma_despachos`, `kroma_edit_requests`, `kroma_users`, `kroma_products`,
 `kroma_milk_reception`, más los constructores muertos `kroma_recipes`/
 `kroma_processes` por consistencia) agregando `empresaId: kromaUser?.empresaId
-|| 'lacteoca'`. Las LECTURAS no necesitaron cambios — al ser `list` con reglas
-por documento, Firestore ya devuelve únicamente los documentos de la propia
-empresa sin tocar las consultas del cliente. `applyHistoricalTransfer` en
-`DespachoPage.jsx` (herramienta de backfill legacy para datos viejos de
-Lacteoca) se dejó sin tocar a propósito.
+|| 'lacteoca'`. `applyHistoricalTransfer` en `DespachoPage.jsx` (herramienta de
+backfill legacy para datos viejos de Lacteoca) se dejó sin tocar a propósito.
 
-**Pendiente/futuro:** re-clavijar `kroma_config`/`kroma_settings`/
-`kroma_fixed_costs` por empresa (hoy solo Lacteoca puede usar Rotación de
-Cava/Costos Fijos); blindar la atribución de `kroma_owner` con claims
-personalizados si se necesita en el futuro; permitir que el `kroma_owner`
-edite los datos de contacto de su propia empresa (hoy solo el máster escribe
-`kroma_empresas`).
+### Corrección crítica: las queries de lista NO filtraban por empresa (2026-09) ✅
+
+Al probar con una empresa de prueba real, el dueño nuevo apareció **mezclado
+en el picker de Lacteoca** (con el rol mal etiquetado). Investigación con
+`@firebase/rules-unit-testing` contra el emulador confirmó la causa raíz:
+**`getDoc()` de un documento puntual SÍ respeta el default de `kromaSameEmpresa`
+(`data.get('empresaId','lacteoca')`), pero una query de lista
+(`getDocs(collection(...))`/`onSnapshot(collection(...))`) SIN un
+`where('empresaId','==', ...)` EXPLÍCITO en la propia consulta NO filtra por
+documento** — Firestore devuelve documentos de OTRAS empresas igual. Verificado
+con un test reproducible contra el emulador (visible→invisible al agregar el
+`where`). Esto significa que la premisa original ("las reglas ya filtran las
+listas sin tocar las consultas") era falsa — hubo que:
+
+1. **Agregar `where('empresaId','==', empresaId)` a CADA `getDocs`/`onSnapshot`
+   de lista** en los ~20 archivos de Kroma (páginas admin/operador/manager,
+   `KromaShell.jsx` —contador de no leídas y alertas de hold—, `KromaUserSelect.jsx`
+   —picker de PIN, que además resuelve su propio `empresaId` vía `users_metadata`
+   antes de tener un `kromaUser`—). Consultas que ya combinaban `orderBy`+`limit`
+   (que exigirían índice compuesto al sumar el `where`) se reescribieron para
+   ordenar/recortar en cliente en su lugar (`kroma_despachos`, `kroma_notifications`)
+   — este proyecto no despliega índices compuestos en CI, así que cualquier
+   query que los necesitara fallaría para siempre sin arreglo manual.
+2. **Bug de seguridad real encontrado de paso**: `MantenimientoTab` (borrado
+   masivo de colecciones) leía y borraba la colección ENTERA sin filtro — con
+   multi-empresa, la primera vez que alguien la usara habría borrado también
+   los despachos/inventario/notificaciones de las OTRAS empresas. Ya acotado
+   por `empresaId`.
+3. **Backfill obligatorio**: a diferencia del default de las reglas,
+   `where('empresaId','==','lacteoca')` **no matchea documentos sin el campo**
+   — todo lo creado antes de multi-empresa se habría vuelto invisible para
+   Lacteoca en cuanto se agregó el `where`. Nuevo callable
+   `backfillEmpresaIdLacteoca` (`functions/handlers/kromaEmpresas.js`,
+   máster de Kroma): recorre cada colección `kroma_*` y escribe
+   `empresaId:'lacteoca'` solo en los documentos que no lo tienen (idempotente).
+   Botón "Migrar datos de Lacteoca" en Kroma → Control del Sistema → Empresas
+   — **hay que correrlo una vez después de desplegar este cambio**, antes de
+   que Lacteoca note listas vacías.
+4. **Rol `kroma_owner` mal etiquetado**: `KromaUserSelect.jsx` tenía su propio
+   `ROLE_CFG` (independiente del de `KromaShell.jsx`) sin entrada para
+   `kroma_owner`, así que caía al fallback `kroma_operario` ("Operario").
+   Agregado. En la práctica, con el filtro de empresa puesto, un `kroma_owner`
+   de otra empresa ya ni siquiera debería aparecer en el picker de Lacteoca.
+
+**Pendiente/futuro:** re-clavijar `kroma_config`/`kroma_fixed_costs` por
+empresa (hoy solo Lacteoca puede usarlos; Rotación de Cava ya se adaptó);
+blindar la atribución de `kroma_owner` con claims personalizados si se
+necesita en el futuro; permitir que el `kroma_owner` edite los datos de
+contacto de su propia empresa (hoy solo el máster escribe `kroma_empresas`).

@@ -2207,14 +2207,15 @@ export default function DailyProductionPage() {
     async function loadData() {
         setLoading(true); setError(null);
         try {
+            const myEmpresaId = kromaUser?.empresaId || 'lacteoca';
             const [fichasSnap, logsSnap, matsSnap, suppSnap, prodsSnap, milkSnap, invConsSnap] = await Promise.all([
-                getDocs(query(collection(db, 'kroma_fichas'), where('active', '==', true))),
-                getDocs(collection(db, 'kroma_production_logs')),
-                getDocs(query(collection(db, 'kroma_materials'), where('active', '==', true))),
-                getDocs(query(collection(db, 'kroma_suppliers'), where('active', '==', true))),
-                getDocs(query(collection(db, 'kroma_products'), where('active', '==', true))),
-                getDocs(collection(db, 'kroma_milk_reception')),
-                getDocs(collection(db, 'kroma_inventory_materials')),
+                getDocs(query(collection(db, 'kroma_fichas'), where('active', '==', true), where('empresaId', '==', myEmpresaId))),
+                getDocs(query(collection(db, 'kroma_production_logs'), where('empresaId', '==', myEmpresaId))),
+                getDocs(query(collection(db, 'kroma_materials'), where('active', '==', true), where('empresaId', '==', myEmpresaId))),
+                getDocs(query(collection(db, 'kroma_suppliers'), where('active', '==', true), where('empresaId', '==', myEmpresaId))),
+                getDocs(query(collection(db, 'kroma_products'), where('active', '==', true), where('empresaId', '==', myEmpresaId))),
+                getDocs(query(collection(db, 'kroma_milk_reception'), where('empresaId', '==', myEmpresaId))),
+                getDocs(query(collection(db, 'kroma_inventory_materials'), where('empresaId', '==', myEmpresaId))),
             ]);
             const fichasList = fichasSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
