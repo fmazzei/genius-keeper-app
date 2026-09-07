@@ -37,6 +37,17 @@ const MASTER_EMAIL = "lacteoca@lacteoca.com";
 const KROMA_SHARED_ACCOUNT_EMAIL = "produccion@lacteoca.com";
 const LACTEOCA_PIN = "2025";
 
+// admin.auth().createCustomToken() firma con la cuenta de servicio del
+// runtime vía la API de IAM (signBlob). Las Cloud Functions Gen 2 (como esta,
+// definida con onCall de v2) corren por defecto con la cuenta de cómputo
+// (PROJECT_NUMBER-compute@developer.gserviceaccount.com), que NO tiene el rol
+// "Service Account Token Creator" sobre sí misma — createCustomToken falla
+// con "iam.serviceAccounts.signBlob denied". La cuenta de App Engine SÍ lo
+// tiene (por eso el login por huella/FaceID, que corre en una función Gen 1,
+// nunca tuvo este problema). Fijamos explícitamente esa cuenta para que el
+// minteo de token funcione sin tocar IAM manualmente.
+const CUSTOM_TOKEN_SERVICE_ACCOUNT = "geniuskeeper-36553@appspot.gserviceaccount.com";
+
 // Máster global (GK) O la cuenta compartida de Kroma (produccion@lacteoca.com,
 // con la que se llega al perfil "Master" del picker de Kroma).
 async function requireKromaMasterAccess(request) {
@@ -157,7 +168,7 @@ exports.crearEmpresaConUsuario = onCall({ region: "us-central1" }, async (reques
 // PIN de una empresa entra a ESA empresa (nunca a otra) — el PIN es, ni más
 // ni menos, la contraseña de la empresa. Igual de "fuerte" que el PIN
 // individual que ya usa Lacteoca hace tiempo dentro del selector.
-exports.loginConPinEmpresa = onCall({ region: "us-central1" }, async (request) => {
+exports.loginConPinEmpresa = onCall({ region: "us-central1", serviceAccount: CUSTOM_TOKEN_SERVICE_ACCOUNT }, async (request) => {
     const pin = String(request.data?.pin || "").trim();
     if (!/^\d{4}$/.test(pin)) throw new HttpsError("invalid-argument", "El PIN debe tener 4 dígitos.");
 
@@ -233,7 +244,7 @@ exports.backfillEmpresaIdLacteoca = onCall({ region: "us-central1", timeoutSecon
 // ── Diagnóstico del PIN de Lacteoca (para rescate manual) ──────────────────
 // El cliente NO puede leer kroma_empresa_pins (regla allow read: if false),
 // así que esta es la única forma de ver por qué un PIN no valida.
-exports.diagnosticoPinLacteoca = onCall({ region: "us-central1" }, async (request) => {
+exports.diagnosticoPinLacteoca = onCall({ region: "us-central1", serviceAccount: CUSTOM_TOKEN_SERVICE_ACCOUNT }, async (request) => {
     await requireKromaMasterAccess(request);
     const db = admin.firestore();
     const out = {};

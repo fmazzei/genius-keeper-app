@@ -11,7 +11,16 @@ const admin = require("firebase-admin");
 
 const MASTER_EMAIL = "lacteoca@lacteoca.com";
 
-exports.crearTokenImpersonacion = onCall({ region: "us-central1" }, async (request) => {
+// admin.auth().createCustomToken() firma vía la API de IAM (signBlob) con la
+// cuenta de servicio del runtime. Esta función Gen 2 corre por defecto con la
+// cuenta de cómputo (PROJECT_NUMBER-compute@developer.gserviceaccount.com),
+// que no tiene el rol "Service Account Token Creator" sobre sí misma — de ahí
+// el error "iam.serviceAccounts.signBlob denied" que ya anticipaba el catch
+// de abajo. La cuenta de App Engine sí lo tiene (la usan las funciones Gen 1
+// de login por huella/FaceID, que nunca tuvieron este problema).
+const CUSTOM_TOKEN_SERVICE_ACCOUNT = "geniuskeeper-36553@appspot.gserviceaccount.com";
+
+exports.crearTokenImpersonacion = onCall({ region: "us-central1", serviceAccount: CUSTOM_TOKEN_SERVICE_ACCOUNT }, async (request) => {
     if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
 
     // El llamante debe ser máster: la cuenta-correo original o role=='master'.
