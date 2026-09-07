@@ -763,8 +763,9 @@ function EmpresasTab() {
     const [empresas, setEmpresas] = useState([]);
     const [loading, setLoading]   = useState(true);
     const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState({ empresaNombre: '', nombre: '', correo: '', telefono: '', username: '', password: '' });
+    const [form, setForm] = useState({ empresaNombre: '', contactoNombre: '', contactoEmail: '', contactoTelefono: '' });
     const [saving, setSaving]   = useState(false);
+    const [newPin, setNewPin]   = useState(null); // PIN recién generado, para mostrarlo destacado
     const [error, setError]     = useState('');
     const [success, setSuccess] = useState('');
     const [backfillRunning, setBackfillRunning] = useState(false);
@@ -793,8 +794,8 @@ function EmpresasTab() {
         try {
             const fn  = httpsCallable(functions, 'crearEmpresaConUsuario');
             const res = await fn({ ...form });
-            setSuccess(`✓ Empresa "${form.empresaNombre}" creada. El usuario "${res.data.username}" (dueño) ya puede iniciar sesión con su correo y contraseña.`);
-            setForm({ empresaNombre: '', nombre: '', correo: '', telefono: '', username: '', password: '' });
+            setNewPin(res.data.pin);
+            setForm({ empresaNombre: '', contactoNombre: '', contactoEmail: '', contactoTelefono: '' });
             setShowForm(false);
             load();
         } catch (err) { setError(err?.message || String(err)); }
@@ -867,27 +868,30 @@ function EmpresasTab() {
             {error   && <div className="bg-rose-900/20 border border-rose-700/40 text-rose-300 text-sm rounded-xl p-3">{error}</div>}
             {success && <div className="bg-emerald-900/20 border border-emerald-700/40 text-emerald-300 text-sm rounded-xl p-3">{success}</div>}
 
+            {newPin && (
+                <div className="bg-emerald-900/20 border border-emerald-700/40 rounded-xl p-5 text-center space-y-2">
+                    <p className="text-emerald-300 text-sm font-semibold">✓ Empresa creada. Su PIN de entrada a Kroma es:</p>
+                    <p className="text-white text-4xl font-black tracking-[0.3em]">{newPin}</p>
+                    <p className="text-slate-400 text-xs">Compartíselo a la empresa — con eso entran tocando el ícono de la fábrica en el login. Adentro crean su propio equipo, igual que siempre.</p>
+                    <button onClick={() => setNewPin(null)} className="text-slate-500 hover:text-slate-300 text-xs underline">Cerrar</button>
+                </div>
+            )}
+
             {showForm && (
                 <form onSubmit={handleCreate} className="bg-slate-800 border border-slate-700 rounded-xl p-5 space-y-4">
                     <input required placeholder="Nombre de la empresa" value={form.empresaNombre}
                         onChange={e => setForm(f => ({ ...f, empresaNombre: e.target.value }))}
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Primer usuario (dueño de la empresa)</p>
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Datos de contacto (opcional, para tu registro)</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <input required placeholder="Nombre completo" value={form.nombre}
-                            onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
+                        <input placeholder="Nombre de contacto" value={form.contactoNombre}
+                            onChange={e => setForm(f => ({ ...f, contactoNombre: e.target.value }))}
                             className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
-                        <input required type="email" placeholder="Correo" value={form.correo}
-                            onChange={e => setForm(f => ({ ...f, correo: e.target.value }))}
+                        <input type="email" placeholder="Correo" value={form.contactoEmail}
+                            onChange={e => setForm(f => ({ ...f, contactoEmail: e.target.value }))}
                             className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
-                        <input placeholder="Teléfono" value={form.telefono}
-                            onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))}
-                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
-                        <input required placeholder="Nombre de usuario" value={form.username}
-                            onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-                            className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500" />
-                        <input required placeholder="Contraseña (mín. 6 caracteres)" value={form.password}
-                            onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                        <input placeholder="Teléfono" value={form.contactoTelefono}
+                            onChange={e => setForm(f => ({ ...f, contactoTelefono: e.target.value }))}
                             className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 sm:col-span-2" />
                     </div>
                     <div className="flex justify-end">
@@ -927,7 +931,10 @@ function EmpresasTab() {
                                     ) : (
                                         <>
                                             <p className="text-slate-200 text-sm font-semibold truncate">{emp.nombre}</p>
-                                            <p className="text-slate-500 text-xs truncate">{emp.contactoNombre} · {emp.contactoEmail}</p>
+                                            <p className="text-slate-500 text-xs truncate">
+                                                {emp.contactoNombre && <>{emp.contactoNombre} · </>}
+                                                PIN <span className="text-emerald-400 font-mono font-bold">{emp.pin || '—'}</span>
+                                            </p>
                                         </>
                                     )}
                                 </div>

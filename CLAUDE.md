@@ -1318,3 +1318,77 @@ empresa (hoy solo Lacteoca puede usarlos; Rotación de Cava ya se adaptó);
 blindar la atribución de `kroma_owner` con claims personalizados si se
 necesita en el futuro; permitir que el `kroma_owner` edite los datos de
 contacto de su propia empresa (hoy solo el máster escribe `kroma_empresas`).
+
+### Reemplazo: acceso por PIN de empresa, no por usuario/contraseña (2026-09) ✅
+
+**Esto SUPERA el diseño de "cuenta real por persona" (`kroma_owner`,
+`crearUsuarioEmpresa`, `kromaDirectLogin`) descrito arriba.** El dueño pidió,
+en este orden: (1) que Kroma tuviera una entrada independiente de GK — se
+probó una ruta `/kroma` separada y la rechazó (no quería un link nuevo que
+recordar/compartir); (2) que fuera el mismo ícono de fábrica de siempre el
+que abriera "el mundo Kroma" dentro de la misma pantalla — hecho, pero
+todavía pedía usuario/correo/contraseña por persona; (3) versión final: **cada
+empresa tiene un PIN de 4 dígitos** para entrar a su mundo — ni más ni menos
+que lo que Lacteoca ya vivía con la cuenta compartida `produccion@lacteoca.com`,
+solo que ahora cualquier empresa nueva tiene el mismo mecanismo con su propio
+PIN. El selector interno de "¿quién eres?" (con PIN por persona, opcional)
+sigue exactamente igual — nunca cambió.
+
+**Cómo quedó:**
+- `crearEmpresaConUsuario` (Cloud Function, `functions/handlers/kromaEmpresas.js`)
+  ya NO pide nombre/correo/usuario/contraseña de un "dueño" — solo el nombre
+  de la empresa (+ datos de contacto opcionales, para el registro del
+  máster). Crea UNA cuenta de Auth compartida por empresa (correo y
+  contraseña generados al azar — `empresa.<empresaId>@kroma.internal`, nadie
+  los necesita nunca) con `role:'produccion'` + `empresaId`, y genera un
+  **PIN de 4 dígitos único** (`crypto.randomInt`, reintenta si choca) guardado
+  en `kroma_empresa_pins/{pin}` → `{empresaId, uid}`. Devuelve el PIN para
+  que el máster se lo dé al cliente — se muestra destacado una sola vez en
+  Kroma → Control del Sistema → Empresas, y después queda visible en el
+  campo `pin` de cada fila (por si hace falta recordarlo).
+- **`loginConPinEmpresa` (Cloud Function, NUEVA)**: sin autenticación previa
+  — es la puerta de entrada misma. Recibe el PIN, busca
+  `kroma_empresa_pins/{pin}`, y si existe emite un custom token
+  (`admin.auth().createCustomToken`, el mismo mecanismo que ya usaba el login
+  por huella/FaceID en `callable.js`) para la cuenta de esa empresa. El
+  cliente hace `signInWithCustomToken` y entra — a partir de ahí todo sigue
+  exactamente igual que como entra Lacteoca hoy (KromaShell → selector de PIN
+  por persona, acotado a su empresa por `kromaSameEmpresa`).
+- **`KromaLoginScreen.jsx`** se reescribió: ya NO es un formulario de
+  usuario/contraseña — es un teclado numérico (mismo estilo que el `PinPad`
+  del selector interno, con puntitos de progreso) que **entra solo al
+  completar el 4º dígito**, sin botón de confirmar. Se abre igual que antes:
+  tocando el ícono de fábrica en `LoginScreen.jsx` (`kromaMode`), con
+  "Volver" para salir sin loguearse.
+- **Lacteoca conserva su PIN fijo `2025`**, apuntando a la cuenta compartida
+  de siempre (`produccion@lacteoca.com`) — lo fija `backfillEmpresaIdLacteoca`
+  (idempotente, busca el uid por correo con `admin.auth().getUserByEmail` y
+  escribe `kroma_empresa_pins/2025` + `kroma_empresas/lacteoca.pin`). El
+  botón "Acceso rápido — Producción Lacteoca" que existía en el login se
+  retiró: ahora Lacteoca entra por el mismo PIN pad que cualquier otra
+  empresa, tecleando `2025`.
+- **`eliminarEmpresaKroma`** ahora también borra `kroma_empresa_pins/{pin}`
+  (lee el PIN desde `kroma_empresas/{id}.pin` antes de borrar el registro).
+- **Retirado por quedar sin uso**: `crearUsuarioEmpresa` (Cloud Function),
+  `EmpresaEquipoPage.jsx` / pestaña "Mi Equipo" en Kroma. Sumar gente a una
+  empresa nueva vuelve a ser exactamente lo que ya era para Lacteoca: el
+  selector interno bootstrapea el primer perfil (`KromaUserSelect`, cuando la
+  empresa no tiene ningún `kroma_users` todavía) y de ahí en más se agrega
+  gente desde Control del Sistema → Usuarios, sin Cloud Functions de por
+  medio (son escrituras directas a `kroma_users`, ya acotadas por
+  `kromaSameEmpresa`). `kroma_owner` como rol de `users_metadata` y el flag
+  `kromaDirectLogin` se dejan intactos en el código por compatibilidad con
+  cualquier cuenta que ya se haya creado con el diseño anterior — simplemente
+  no se vuelve a usar en ningún alta nueva.
+- **Advertencia de seguridad conocida y aceptada**: un PIN de empresa de 4
+  dígitos (10.000 combinaciones) es fuerza bruta-mente débil si alguien
+  llamara a `loginConPinEmpresa` miles de veces seguidas — no hay throttling
+  del lado del servidor todavía. Es el mismo nivel de "seguridad por PIN
+  corto" que Lacteoca ya acepta hace tiempo para el selector interno; el
+  dueño priorizó explícitamente la simplicidad de acceso sobre esto. Si en el
+  futuro hace falta blindarlo, la opción más simple es un contador de
+  intentos fallidos en Firestore con backoff.
+
+**Reglas de Firestore**: `kroma_empresa_pins` es `allow read, write: if false`
+— solo el Admin SDK (dentro de las Cloud Functions) lo toca; exponerlo al
+cliente permitiría listar los PIN de todas las empresas.

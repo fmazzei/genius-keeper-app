@@ -456,6 +456,12 @@ service cloud.firestore {
       allow read:  if isKromaMasterAccess() || (isKromaAccess() && kromaCallerEmpresaId() == empresaId);
       allow write: if isKromaMasterAccess();
     }
+    // El PIN de empresa es la puerta de entrada a Kroma — solo el Admin SDK
+    // (Cloud Function loginConPinEmpresa) lo lee, nunca el cliente, o
+    // cualquiera podría listar los PIN de todas las empresas.
+    match /kroma_empresa_pins/{pin} {
+      allow read, write: if false;
+    }
 
     match /kroma_settings/{docId} {
       allow read, write: if isKromaAccess() && kromaSameEmpresa(resource.data);

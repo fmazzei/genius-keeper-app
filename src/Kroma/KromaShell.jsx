@@ -11,7 +11,6 @@ import { registerKromaFCMToken, cancelFirestoreScheduledNotif } from './utils/kr
 import {
     AdminHome, WarehousesPage, SuppliersPage, MaterialsMasterPage,
     ProductCatalogPage, ProductionHistoryPage, KromaUsersPage, ControlSistemaPage,
-    EmpresaEquipoPage,
 } from './pages/AdminPages';
 import KromaNotificationsPage from './pages/admin/KromaNotificationsPage';
 import CavaRotacionPage from './pages/admin/CavaRotacionPage';
@@ -32,7 +31,6 @@ import {
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
     LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell, RotateCcw,
-    UserPlus,
 } from 'lucide-react';
 
 // ─── Module defaults per role ─────────────────────────────────────────────────
@@ -64,7 +62,6 @@ const ALL_NAV_ITEMS = [
     { id: 'suppliers',     label: 'Proveedores',         Icon: Truck,         modulo: 'catalogos',            section: 'Administración' },
     { id: 'materials',     label: 'Maestro Materiales',  Icon: Package,       modulo: 'catalogos',            section: 'Administración' },
     { id: 'users',         label: 'Usuarios Kroma',      Icon: Users,         modulo: 'usuarios',             section: 'Administración' },
-    { id: 'mi_equipo',     label: 'Mi Equipo',           Icon: UserPlus,      masterOnly: true,               section: 'Administración' },
     { id: 'control',       label: 'Control Sistema',     Icon: Shield,        modulo: 'controlSistema',       section: 'Administración', delegation: ['csGestionarUsuarios', 'csConfigPermisos'] },
     // — Gerencial —
     { id: 'financial',     label: 'Financiero',          Icon: DollarSign,    modulo: 'dashboardsGerenciales', section: 'Gerencial' },
@@ -112,7 +109,6 @@ function renderPage(view, role, kromaUser, onNavigate) {
         case 'suppliers':     return <SuppliersPage />;
         case 'materials':     return <MaterialsMasterPage />;
         case 'users':         return <KromaUsersPage />;
-        case 'mi_equipo':     return <EmpresaEquipoPage />;
         case 'control':       return <ControlSistemaPage kromaUser={kromaUser} />;
         case 'notifications': return <KromaNotificationsPage />;
         case 'financial':     return <FinancialBoard />;
