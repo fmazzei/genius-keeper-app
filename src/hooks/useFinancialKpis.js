@@ -222,6 +222,11 @@ export function useFinancialKpis() {
 
         return {
             facturadoMes, unidadesMes, facturadoPrev, unidadesPrev, topClientes,
+            // Cantidad de facturas detrás de cada suma — el % vs. mes anterior solo
+            // es confiable si la base tiene facturas suficientes (ver
+            // MIN_FACTURAS_CONFIABLE en BandasFinancieras.jsx); comparar contra 1-2
+            // facturas sueltas produce variaciones de cientos de % que no dicen nada.
+            facturasMesCount: mesF.length, facturasPrevCount: prevF.length,
             unidadesAjustadasMes, unidadesAjustadasPrev,
             cobradoMes, nCobradasMes,
             porCobrar, aging: { d0_30: a0, d31_45: a1, d45p: a2 }, clientesMas45,

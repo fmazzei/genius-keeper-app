@@ -16,7 +16,18 @@ import RotacionModal from '@/Components/RotacionModal.jsx';
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
 const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
-const pctChange = (cur, prev) => (prev > 0 ? ((cur - prev) / prev) * 100 : (cur > 0 ? 100 : 0));
+
+// Un mes anterior con 1-2 facturas sueltas no es una base: una factura grande
+// o chica de más/menos produce variaciones de cientos de % (p. ej. 12→94 uds
+// da "+683%", aritméticamente correcto pero engañoso como señal de negocio).
+// Mismo principio que Rotación (rotacion.js: MIN_PARES_CONFIABLE) aplicado acá
+// con la cantidad de facturas del mes anterior como medida de la muestra.
+const MIN_FACTURAS_CONFIABLE = 3;
+const pctChange = (cur, prev, prevCount) => {
+    if (prevCount !== undefined && prevCount < MIN_FACTURAS_CONFIABLE) return null;
+    if (prev > 0) return ((cur - prev) / prev) * 100;
+    return cur > 0 ? 100 : null;
+};
 
 const STRIPE = { good: 'before:bg-emerald-500', warn: 'before:bg-amber-500', bad: 'before:bg-red-500' };
 const PILL = {
@@ -109,8 +120,9 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
     const ventaAction = meta > 0
         ? `A este ritmo cierras el mes en ~${num(proyeccion)} uds. Faltan ${num(faltan)} para la meta de ${num(meta)}.`
         : null;
-    const dFact = pctChange(fin.facturadoMes, fin.facturadoPrev);
-    const dUds  = pctChange(fin.unidadesMes, fin.unidadesPrev);
+    const dFact = pctChange(fin.facturadoMes, fin.facturadoPrev, fin.facturasPrevCount);
+    const dUds  = pctChange(fin.unidadesMes, fin.unidadesPrev, fin.facturasPrevCount);
+    const deltaConfiable = (fin.facturasPrevCount ?? 0) >= MIN_FACTURAS_CONFIABLE;
     const maxTop = Math.max(1, ...fin.topClientes.map(c => c.unidades));
 
     // ── ¿Cobramos? — cartera abierta y vencimiento
@@ -145,7 +157,11 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                                 </div>
                             </>
                         )}
-                        <div className="mt-2"><Delta value={dFact} /> <span className="text-xs text-slate-400">vs. mismo período mes anterior</span></div>
+                        <div className="mt-2">
+                            {deltaConfiable
+                                ? <><Delta value={dFact} /> <span className="text-xs text-slate-400">vs. mismo período mes anterior</span></>
+                                : <span className="text-xs text-slate-400">Mes anterior con solo {fin.facturasPrevCount} factura{fin.facturasPrevCount === 1 ? '' : 's'} — muestra insuficiente para comparar</span>}
+                        </div>
                         {/* Facturar no es cobrar: debajo del monto facturado va la
                             CAJA del mes y lo que sigue pendiente a la fecha. */}
                         <div className="mt-3 pt-2 border-t border-slate-200 space-y-1">
@@ -164,7 +180,9 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                     </Tile>
                     <Tile label="Unidades colocadas">
                         <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{num(fin.unidadesMes)} <span className="text-sm font-bold text-slate-400">uds</span></p>
-                        <div className="mt-2"><Delta value={dUds} /></div>
+                        <div className="mt-2">{deltaConfiable ? <Delta value={dUds} /> : (
+                            <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">muestra insuficiente</span>
+                        )}</div>
                         <p className="text-xs text-slate-400 mt-2">Mismo período mes anterior: {num(fin.unidadesPrev)} uds</p>
                         {/* Trazabilidad de la conversión kg → uds: sin esto el total
                             cambia "solo" y no hay forma de contrastarlo con Zoho. */}
