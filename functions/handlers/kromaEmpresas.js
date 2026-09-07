@@ -249,6 +249,28 @@ exports.diagnosticoPinLacteoca = onCall({ region: "us-central1", serviceAccount:
     const db = admin.firestore();
     const out = {};
 
+    // Confirma con qué cuenta de servicio corre REALMENTE esta función ahora
+    // mismo — para saber si el `serviceAccount` del deploy se aplicó de
+    // verdad, o si sigue corriendo con la cuenta de cómputo por defecto.
+    try {
+        const http = require("http");
+        out.runtimeServiceAccount = await new Promise((resolve, reject) => {
+            const req = http.get(
+                "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email",
+                { headers: { "Metadata-Flavor": "Google" }, timeout: 3000 },
+                (res) => {
+                    let body = "";
+                    res.on("data", (c) => (body += c));
+                    res.on("end", () => resolve(body));
+                },
+            );
+            req.on("error", reject);
+            req.on("timeout", () => req.destroy(new Error("timeout")));
+        });
+    } catch (err) {
+        out.runtimeServiceAccountError = err.message;
+    }
+
     try {
         const u = await admin.auth().getUserByEmail(KROMA_SHARED_ACCOUNT_EMAIL);
         out.produccionUid = u.uid;
