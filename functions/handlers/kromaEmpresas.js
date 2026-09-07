@@ -230,6 +230,33 @@ exports.backfillEmpresaIdLacteoca = onCall({ region: "us-central1", timeoutSecon
     return { ok: true, resultado };
 });
 
+// ── Diagnóstico del PIN de Lacteoca (para rescate manual) ──────────────────
+// El cliente NO puede leer kroma_empresa_pins (regla allow read: if false),
+// así que esta es la única forma de ver por qué un PIN no valida.
+exports.diagnosticoPinLacteoca = onCall({ region: "us-central1" }, async (request) => {
+    await requireKromaMasterAccess(request);
+    const db = admin.firestore();
+    const out = {};
+
+    try {
+        const u = await admin.auth().getUserByEmail(KROMA_SHARED_ACCOUNT_EMAIL);
+        out.produccionUid = u.uid;
+        out.produccionDisabled = u.disabled;
+    } catch (err) {
+        out.produccionUidError = err.message;
+    }
+
+    const pinSnap = await db.doc(`kroma_empresa_pins/${LACTEOCA_PIN}`).get();
+    out.pinDocExists = pinSnap.exists;
+    out.pinDocData = pinSnap.exists ? pinSnap.data() : null;
+
+    const empresaSnap = await db.doc("kroma_empresas/lacteoca").get();
+    out.empresaDocExists = empresaSnap.exists;
+    out.empresaDocData = empresaSnap.exists ? empresaSnap.data() : null;
+
+    return out;
+});
+
 // ── Eliminar una empresa (deshacer un alta por error, p.ej. un duplicado) ──
 // Borra la cuenta de Auth compartida de esa empresa, su PIN, TODAS las
 // cuentas reales de su equipo si las hubiera (Auth + users_metadata +

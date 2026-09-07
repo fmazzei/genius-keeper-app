@@ -5018,16 +5018,30 @@ const MasterManagement = () => (
 const KromaReparacion = () => {
     const [running, setRunning] = useState(false);
     const [msg, setMsg] = useState('');
+    const [raw, setRaw] = useState(null);
+    const [diagnosing, setDiagnosing] = useState(false);
+    const [diag, setDiag] = useState(null);
 
     const runBackfill = async () => {
-        setRunning(true); setMsg('');
+        setRunning(true); setMsg(''); setRaw(null);
         try {
             const fn  = httpsCallable(functions, 'backfillEmpresaIdLacteoca', { timeout: 300000 });
             const res = await fn({});
             const total = Object.values(res.data.resultado || {}).reduce((s, r) => s + (r.actualizados || 0), 0);
             setMsg(`✓ Migración aplicada: ${total} documento(s), PIN de Lacteoca: ${res.data.resultado?.pinLacteoca || '?'}.`);
+            setRaw(res.data);
         } catch (err) { setMsg('Error: ' + (err?.message || err)); }
         setRunning(false);
+    };
+
+    const runDiagnostico = async () => {
+        setDiagnosing(true); setDiag(null);
+        try {
+            const fn  = httpsCallable(functions, 'diagnosticoPinLacteoca');
+            const res = await fn({});
+            setDiag(res.data);
+        } catch (err) { setDiag({ error: err?.message || String(err) }); }
+        setDiagnosing(false);
     };
 
     return (
@@ -5036,11 +5050,19 @@ const KromaReparacion = () => {
                 <h3 className="text-xl font-semibold text-slate-700">Reparación de Kroma</h3>
                 <p className="text-sm text-slate-500 mt-1">Herramienta de rescate: corre la migración de Lacteoca (empresaId + PIN 2025) desde acá, sin depender de poder entrar a Kroma.</p>
             </div>
-            <button onClick={runBackfill} disabled={running}
-                className="flex items-center gap-2 bg-amber-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm disabled:opacity-50">
-                {running ? 'Migrando…' : 'Migrar datos de Lacteoca (fijar PIN 2025)'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+                <button onClick={runBackfill} disabled={running}
+                    className="flex items-center gap-2 bg-amber-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm disabled:opacity-50">
+                    {running ? 'Migrando…' : 'Migrar datos de Lacteoca (fijar PIN 2025)'}
+                </button>
+                <button onClick={runDiagnostico} disabled={diagnosing}
+                    className="flex items-center gap-2 bg-slate-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm disabled:opacity-50">
+                    {diagnosing ? 'Revisando…' : 'Diagnóstico del PIN 2025'}
+                </button>
+            </div>
             {msg && <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700">{msg}</div>}
+            {raw && <pre className="bg-slate-900 text-emerald-300 rounded-lg p-3 text-xs overflow-x-auto">{JSON.stringify(raw, null, 2)}</pre>}
+            {diag && <pre className="bg-slate-900 text-sky-300 rounded-lg p-3 text-xs overflow-x-auto">{JSON.stringify(diag, null, 2)}</pre>}
         </div>
     );
 };
