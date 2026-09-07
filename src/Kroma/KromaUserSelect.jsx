@@ -313,7 +313,7 @@ export default function KromaUserSelect({ onExitKroma }) {
                 name: form.name.trim(), role: form.role, empresaId: myEmpresaId, active: true, createdAt: serverTimestamp(),
             });
             setUsers(prev => [...prev, {
-                id: ref.id, name: form.name.trim(), role: form.role,
+                id: ref.id, name: form.name.trim(), role: form.role, empresaId: myEmpresaId,
                 active: true, avatarIndex: prev.length % AVATAR_COLORS.length,
             }].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
             setForm({ name: '', role: 'kroma_admin' });
