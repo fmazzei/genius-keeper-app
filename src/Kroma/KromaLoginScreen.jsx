@@ -1,18 +1,18 @@
 // RUTA: src/Kroma/KromaLoginScreen.jsx
 //
-// Puerta de entrada de Kroma, INDEPENDIENTE de Genius Keeper — sin ninguna
-// marca de GK. Kroma se ofrece como producto aparte a otras empresas; nadie
-// debería tener que pasar por la pantalla de login de GK (con sus puertas de
-// Ventas/Administración/Gerencia/Máster) para llegar a Kroma. Vive en la ruta
-// /kroma (ver App.tsx) y usa el MISMO Firebase Auth de siempre — el login por
-// nombre de usuario resuelve contra `login_index`, igual que en
-// LoginScreen.jsx — solo cambia la marca y que no hay "puertas" de GK.
+// "El mundo Kroma" — se entra tocando el ícono de la fábrica en la pantalla
+// de login de GK (LoginScreen.jsx), sin ninguna marca de Genius Keeper ni
+// las puertas de Ventas/Administración/Gerencia/Máster. No es una URL nueva
+// ni un sistema aparte: usa el MISMO Firebase Auth de siempre (un solo
+// proyecto para toda la app) — solo cambia la pantalla que se muestra. El
+// login por nombre de usuario resuelve contra `login_index`, igual que en
+// LoginScreen.jsx.
 
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext.tsx';
 import { db } from '@/Firebase/config.js';
 import { doc, getDoc } from 'firebase/firestore';
-import { Loader, X } from 'lucide-react';
+import { Loader, X, ChevronLeft, Factory } from 'lucide-react';
 
 // Misma resolución usuario→correo que usa GK (login_index), con el mismo
 // timeout de red — ver LoginScreen.jsx.
@@ -33,25 +33,27 @@ async function resolveEmail(idf) {
     return null;
 }
 
-export default function KromaLoginScreen() {
+const PRODUCCION_PASS = import.meta.env.VITE_PRODUCCION_PASSWORD || 'ProduccionPass123!';
+
+export default function KromaLoginScreen({ onBack }) {
     const { login } = useAuth();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const handleLogin = async () => {
-        if (isSubmitting || !username || !password) return;
+    const doLogin = async (resolvedEmailOrIdf, loginPassword) => {
+        if (isSubmitting) return;
         setIsSubmitting(true); setError('');
         try {
-            const resolvedEmail = await resolveEmail(username);
+            const resolvedEmail = await resolveEmail(resolvedEmailOrIdf);
             if (!resolvedEmail) {
                 setError('Usuario no encontrado. Verifica tu usuario o correo.');
                 setIsSubmitting(false);
                 return;
             }
-            await login(resolvedEmail, password);
-            // Al autenticar, KromaEntry (App.tsx) toma el control automáticamente.
+            await login(resolvedEmail, loginPassword);
+            // Al autenticar, App.tsx rutea solo según el rol — sigue en la misma pantalla.
         } catch (e) {
             setError(e?.message === 'timeout'
                 ? 'La conexión está lenta y no respondió. Revisa tu señal e intenta de nuevo.'
@@ -62,6 +64,12 @@ export default function KromaLoginScreen() {
 
     return (
         <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6">
+            {onBack && (
+                <button onClick={onBack} className="fixed top-5 left-5 flex items-center gap-1 text-slate-500 hover:text-slate-300 text-sm transition-colors">
+                    <ChevronLeft size={18} /> Volver
+                </button>
+            )}
+
             <div className="text-center mb-10">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500 mb-4 shadow-lg shadow-emerald-500/30">
                     <span className="text-white font-black text-2xl tracking-tighter">K</span>
@@ -93,7 +101,7 @@ export default function KromaLoginScreen() {
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                    onKeyDown={e => e.key === 'Enter' && doLogin(username, password)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl py-3.5 px-4 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                     placeholder="Contraseña"
                     autoComplete="current-password"
@@ -102,7 +110,7 @@ export default function KromaLoginScreen() {
                     spellCheck={false}
                 />
                 <button
-                    onClick={handleLogin}
+                    onClick={() => doLogin(username, password)}
                     disabled={isSubmitting || !username || !password}
                     className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black py-3.5 rounded-xl disabled:opacity-40 active:scale-[0.98] transition-transform text-lg flex items-center justify-center gap-2"
                 >
@@ -110,6 +118,16 @@ export default function KromaLoginScreen() {
                     {isSubmitting ? 'Ingresando…' : 'Ingresar'}
                 </button>
             </div>
+
+            {/* Acceso rápido de Lacteoca — la cuenta compartida de planta, para no
+                obligar a escribir usuario/contraseña en el tablet compartido. */}
+            <button
+                onClick={() => doLogin('produccion@lacteoca.com', PRODUCCION_PASS)}
+                disabled={isSubmitting}
+                className="mt-4 flex items-center gap-2 text-slate-500 hover:text-slate-300 text-xs transition-colors disabled:opacity-40"
+            >
+                <Factory size={14} /> Acceso rápido — Producción Lacteoca
+            </button>
         </div>
     );
 }

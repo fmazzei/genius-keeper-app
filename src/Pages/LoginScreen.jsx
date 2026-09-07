@@ -10,6 +10,7 @@ import {
     Users, Factory, Loader, TrendingUp, BarChart2,
     Shield, ChevronRight, X, LayoutGrid, Fingerprint,
 } from 'lucide-react';
+import KromaLoginScreen from '@/Kroma/KromaLoginScreen.jsx';
 
 const ROLE_DOORS = [
     { id: 'vendedor',      label: 'Ventas',        Icon: TrendingUp, accent: 'text-emerald-400', bg: 'bg-emerald-500/20', desc: 'Portal de ventas y comisiones' },
@@ -20,6 +21,7 @@ const ROLE_DOORS = [
 
 const LoginScreen = () => {
     const { login, signInWithCustomToken } = useAuth();
+    const [kromaMode, setKromaMode]     = useState(false);
     const [showForm, setShowForm]       = useState(false);
     const [email, setEmail]             = useState('');
     const [password, setPassword]       = useState('');
@@ -42,7 +44,6 @@ const LoginScreen = () => {
     }, []);
 
     const MERCHANDISER_PASS = import.meta.env.VITE_MERCHANDISER_PASSWORD || 'Password123!';
-    const PRODUCCION_PASS   = import.meta.env.VITE_PRODUCCION_PASSWORD   || 'ProduccionPass123!';
 
     // Resuelve un identificador a correo: si trae '@' ya es correo; si no, se
     // busca el nombre de usuario en el índice público `login_index`.
@@ -122,6 +123,12 @@ const LoginScreen = () => {
         setShowForm(true);
         setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
     };
+
+    // "El mundo Kroma" — se entra tocando el ícono de la fábrica (abajo), sin
+    // pasar por ninguna marca ni puerta de Genius Keeper.
+    if (kromaMode) {
+        return <KromaLoginScreen onBack={() => setKromaMode(false)} />;
+    }
 
     return (
         <div className="min-h-screen bg-[#0D2B4C] flex flex-col items-center justify-start p-5 pb-28 font-sans">
@@ -230,18 +237,15 @@ const LoginScreen = () => {
                 </div>
             )}
 
-            {/* ── KROMA — fixed bottom right ── */}
+            {/* ── KROMA — fixed bottom right. Entra al mundo Kroma (pantalla propia,
+                sin marca de GK) — no loguea directo, esa es la puerta. ── */}
             <button
-                onClick={() => handleLogin('produccion@lacteoca.com', PRODUCCION_PASS)}
-                disabled={isSubmitting}
-                className="fixed bottom-6 right-6 bg-slate-800/90 backdrop-blur-sm p-3.5 rounded-full shadow-xl active:scale-95 transition-transform disabled:opacity-60 border border-white/10"
-                aria-label="Acceso Producción — Kroma"
+                onClick={() => setKromaMode(true)}
+                className="fixed bottom-6 right-6 bg-slate-800/90 backdrop-blur-sm p-3.5 rounded-full shadow-xl active:scale-95 transition-transform border border-white/10"
+                aria-label="Entrar a Kroma"
                 title="Kroma — Sistema de Producción"
             >
-                {isSubmitting
-                    ? <Loader size={24} className="text-white animate-spin" />
-                    : <Factory size={26} className="text-white" />
-                }
+                <Factory size={26} className="text-white" />
             </button>
         </div>
     );
