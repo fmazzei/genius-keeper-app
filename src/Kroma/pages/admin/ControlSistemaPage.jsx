@@ -769,6 +769,12 @@ function EmpresasTab() {
     const [success, setSuccess] = useState('');
     const [backfillRunning, setBackfillRunning] = useState(false);
     const [backfillMsg, setBackfillMsg]         = useState('');
+    const [editingId, setEditingId] = useState(null);
+    const [editName, setEditName]   = useState('');
+    const [editSaving, setEditSaving] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null); // empresa siendo confirmada
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [deleting, setDeleting] = useState(false);
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -804,6 +810,33 @@ function EmpresasTab() {
             setBackfillMsg(`✓ Migración aplicada: ${total} documento(s) etiquetados como "lacteoca".`);
         } catch (err) { setBackfillMsg('Error: ' + (err?.message || err)); }
         setBackfillRunning(false);
+    };
+
+    const startEdit = (emp) => { setEditingId(emp.id); setEditName(emp.nombre || ''); };
+
+    const saveEdit = async (emp) => {
+        if (!editName.trim()) return;
+        setEditSaving(true); setError('');
+        try {
+            const fn = httpsCallable(functions, 'editarEmpresaKroma');
+            await fn({ empresaId: emp.id, nombre: editName.trim() });
+            setEmpresas(prev => prev.map(e => e.id === emp.id ? { ...e, nombre: editName.trim() } : e));
+            setEditingId(null);
+        } catch (err) { setError(err?.message || String(err)); }
+        setEditSaving(false);
+    };
+
+    const confirmDelete = async () => {
+        if (!deleteTarget || deleteConfirmText.trim() !== deleteTarget.id) return;
+        setDeleting(true); setError('');
+        try {
+            const fn = httpsCallable(functions, 'eliminarEmpresaKroma');
+            await fn({ empresaId: deleteTarget.id });
+            setEmpresas(prev => prev.filter(e => e.id !== deleteTarget.id));
+            setSuccess(`✓ Empresa "${deleteTarget.nombre}" eliminada, junto con sus cuentas de acceso.`);
+            setDeleteTarget(null); setDeleteConfirmText('');
+        } catch (err) { setError(err?.message || String(err)); }
+        setDeleting(false);
     };
 
     return (
@@ -880,15 +913,66 @@ function EmpresasTab() {
                                     <Building2 size={15} className="text-slate-300" />
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                    <p className="text-slate-200 text-sm font-semibold truncate">{emp.nombre}</p>
-                                    <p className="text-slate-500 text-xs truncate">{emp.contactoNombre} · {emp.contactoEmail}</p>
+                                    {editingId === emp.id ? (
+                                        <div className="flex items-center gap-2">
+                                            <input value={editName} onChange={e => setEditName(e.target.value)}
+                                                autoFocus
+                                                className="bg-slate-900 border border-slate-600 rounded-lg px-2 py-1 text-sm text-white flex-1 min-w-0" />
+                                            <button onClick={() => saveEdit(emp)} disabled={editSaving}
+                                                className="text-emerald-400 hover:text-emerald-300 p-1 shrink-0">
+                                                {editSaving ? <Loader size={14} className="animate-spin" /> : <Check size={14} />}
+                                            </button>
+                                            <button onClick={() => setEditingId(null)} className="text-slate-500 hover:text-white p-1 shrink-0"><X size={14} /></button>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <p className="text-slate-200 text-sm font-semibold truncate">{emp.nombre}</p>
+                                            <p className="text-slate-500 text-xs truncate">{emp.contactoNombre} · {emp.contactoEmail}</p>
+                                        </>
+                                    )}
                                 </div>
-                                <span className="text-slate-500 text-xs font-mono shrink-0">{emp.id}</span>
+                                {editingId !== emp.id && (
+                                    <>
+                                        <span className="text-slate-500 text-xs font-mono shrink-0 hidden sm:inline">{emp.id}</span>
+                                        <button onClick={() => startEdit(emp)} className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors shrink-0">
+                                            <Edit2 size={14} />
+                                        </button>
+                                        <button onClick={() => { setDeleteTarget(emp); setDeleteConfirmText(''); }} className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-700 rounded-lg transition-colors shrink-0">
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </>
+                                )}
                             </li>
                         ))}
                     </ul>
                 )}
             </div>
+
+            {deleteTarget && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                    <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 space-y-4">
+                        <p className="text-white font-bold text-base">¿Eliminar "{deleteTarget.nombre}"?</p>
+                        <p className="text-slate-400 text-xs leading-relaxed">
+                            Se borran las cuentas de acceso de todo su equipo (dueño incluido) — nadie podrá volver a
+                            entrar a esa empresa. Sus datos de producción/inventario NO se borran, solo quedan sin
+                            nadie que pueda verlos. Escribí <code className="text-rose-300">{deleteTarget.id}</code> para confirmar.
+                        </p>
+                        <input value={deleteConfirmText} onChange={e => setDeleteConfirmText(e.target.value)}
+                            placeholder={deleteTarget.id}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-600" />
+                        <div className="flex gap-2">
+                            <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2.5 rounded-xl text-slate-400 hover:text-white text-sm font-semibold transition-colors">
+                                Cancelar
+                            </button>
+                            <button onClick={confirmDelete} disabled={deleting || deleteConfirmText.trim() !== deleteTarget.id}
+                                className="flex-1 py-2.5 rounded-xl bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2">
+                                {deleting && <Loader size={14} className="animate-spin" />}
+                                {deleting ? 'Eliminando…' : 'Eliminar'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

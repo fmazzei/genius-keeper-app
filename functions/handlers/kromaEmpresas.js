@@ -267,3 +267,48 @@ exports.backfillEmpresaIdLacteoca = onCall({ region: "us-central1", timeoutSecon
     }
     return { ok: true, resultado };
 });
+
+// ── Eliminar una empresa (deshacer un alta por error, p.ej. un duplicado) ──
+// Borra TODAS las cuentas reales de esa empresa (Auth + users_metadata +
+// login_index + kroma_users) y el registro de la empresa. NO toca los datos
+// operativos (kroma_materials/kroma_inventory_pt/etc.) que hayan quedado con
+// ese empresaId — quedan huérfanos pero intactos, por si hiciera falta
+// auditarlos; nadie podrá volver a entrar a esa empresa después de esto.
+exports.eliminarEmpresaKroma = onCall({ region: "us-central1", timeoutSeconds: 120 }, async (request) => {
+    await requireKromaMasterAccess(request);
+    const { empresaId } = request.data || {};
+    const id = String(empresaId || "").trim();
+    if (!id) throw new HttpsError("invalid-argument", "Falta empresaId.");
+    if (id === "lacteoca") throw new HttpsError("invalid-argument", "No se puede eliminar la empresa de Lacteoca.");
+
+    const db = admin.firestore();
+    const usersSnap = await db.collection("users_metadata").where("empresaId", "==", id).get();
+
+    for (const userDoc of usersSnap.docs) {
+        const data = userDoc.data();
+        await admin.auth().deleteUser(userDoc.id).catch(() => {});
+        await db.doc(`kroma_users/${userDoc.id}`).delete().catch(() => {});
+        if (data.username) await db.doc(`login_index/${data.username}`).delete().catch(() => {});
+        await userDoc.ref.delete().catch(() => {});
+    }
+
+    await db.doc(`kroma_empresas/${id}`).delete();
+
+    return { ok: true, usuariosEliminados: usersSnap.size };
+});
+
+// ── Editar el nombre de una empresa ─────────────────────────────────────────
+exports.editarEmpresaKroma = onCall({ region: "us-central1" }, async (request) => {
+    await requireKromaMasterAccess(request);
+    const { empresaId, nombre } = request.data || {};
+    const id = String(empresaId || "").trim();
+    const nombreTrim = String(nombre || "").trim();
+    if (!id) throw new HttpsError("invalid-argument", "Falta empresaId.");
+    if (!nombreTrim) throw new HttpsError("invalid-argument", "Falta el nombre.");
+
+    const db = admin.firestore();
+    const ref = db.doc(`kroma_empresas/${id}`);
+    if (!(await ref.get()).exists) throw new HttpsError("not-found", "Esa empresa no existe.");
+    await ref.update({ nombre: nombreTrim });
+    return { ok: true };
+});
