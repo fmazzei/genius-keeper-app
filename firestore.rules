@@ -72,6 +72,13 @@ service cloud.firestore {
     function kromaSameEmpresa(data) {
       return isKromaMaster() || data.get('empresaId', 'lacteoca') == kromaCallerEmpresaId();
     }
+    // Máster global (GK) O la cuenta compartida legacy de Kroma
+    // (produccion@lacteoca.com, rol 'produccion') — es como se llega al
+    // perfil "Master" del picker de Kroma, y desde ahí se administran las
+    // empresas (crearEmpresaConUsuario ya acepta esta misma cuenta).
+    function isKromaMasterAccess() {
+      return isKromaMaster() || isProduccion();
+    }
 
     match /users_metadata/{userId} {
       allow get: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || isMaster());
@@ -446,8 +453,8 @@ service cloud.firestore {
     // alta (ver Cloud Function crearEmpresaConUsuario); cada empresa puede leer
     // únicamente su propio documento (para mostrar su nombre en la UI).
     match /kroma_empresas/{empresaId} {
-      allow read:  if isKromaMaster() || (isKromaAccess() && kromaCallerEmpresaId() == empresaId);
-      allow write: if isKromaMaster();
+      allow read:  if isKromaMasterAccess() || (isKromaAccess() && kromaCallerEmpresaId() == empresaId);
+      allow write: if isKromaMasterAccess();
     }
 
     match /kroma_settings/{docId} {
