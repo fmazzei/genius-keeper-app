@@ -11,9 +11,9 @@ interface SecurityLockScreenProps {
   role: string | null;
 }
 
+// 'produccion' (Kroma) ya no usa esta pantalla -- ver App.tsx.
 const PINS_POR_ROL: { [key: string]: string } = {
     merchandiser: "2017",
-    produccion: "2025",
 };
 
 const KeypadButton: FC<{ children: ReactNode; onClick: () => void }> = ({ children, onClick }) => (

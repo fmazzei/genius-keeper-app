@@ -116,7 +116,14 @@ const AppLayout: React.FC = () => {
         );
     };
 
-    if (isSecurityLocked && (role === 'merchandiser' || role === 'produccion')) {
+    // 'produccion' (la cuenta compartida de Kroma, de Lacteoca o de cualquier
+    // empresa nueva) ya NO pasa por este candado: el PIN de 4 dígitos de la
+    // empresa (loginConPinEmpresa) cumple exactamente ese rol antes de
+    // autenticar. Mantenerlo aquí además era un bug para empresas nuevas —
+    // el PIN de abajo está fijo a "2025" (el de Lacteoca) sin importar la
+    // empresa. 'merchandiser' no cambia: sigue siendo su candado de
+    // dispositivo compartido de siempre.
+    if (isSecurityLocked && role === 'merchandiser') {
         return <SecurityLockScreen onUnlock={() => setIsSecurityLocked(false)} role={role as string} />;
     }
     
