@@ -254,6 +254,20 @@ exports.diagnosticoPinLacteoca = onCall({ region: "us-central1" }, async (reques
     out.empresaDocExists = empresaSnap.exists;
     out.empresaDocData = empresaSnap.exists ? empresaSnap.data() : null;
 
+    // Reproduce EXACTAMENTE lo que hace loginConPinEmpresa con el PIN 2025,
+    // para saber si el problema está en el minteo del token (servidor) o en
+    // el viaje de vuelta al cliente (signInWithCustomToken/CORS/red).
+    if (pinSnap.exists) {
+        try {
+            const token = await admin.auth().createCustomToken(pinSnap.data().uid);
+            out.customTokenMint = "ok";
+            out.customTokenLength = token.length;
+        } catch (err) {
+            out.customTokenMint = "error";
+            out.customTokenError = err.message;
+        }
+    }
+
     return out;
 });
 

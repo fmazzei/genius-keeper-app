@@ -37,6 +37,7 @@ export default function KromaLoginScreen({ onBack }) {
             await signInWithCustomToken(res.data.token);
             // Al autenticar, App.tsx rutea solo según el rol — sigue en la misma pantalla.
         } catch (e) {
+            console.error('loginConPinEmpresa falló:', e?.code, e?.message, e);
             fail('PIN incorrecto');
             setBusy(false);
         }
