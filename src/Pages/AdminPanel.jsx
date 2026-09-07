@@ -5,7 +5,7 @@ import { db, functions, auth } from '../Firebase/config.js';
 import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search } from 'lucide-react';
+import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
@@ -5009,6 +5009,42 @@ const MasterManagement = () => (
     </div>
 );
 
+// Rescate de acceso a Kroma: el PIN de empresa se verifica DENTRO de Kroma
+// (Control del Sistema → Empresas), pero si ese PIN todavía no existe en
+// kroma_empresa_pins (p.ej. justo después de este cambio, antes de correr la
+// migración) no hay forma de entrar a Kroma para correrla — círculo cerrado.
+// Este botón vive en el panel de GK (login de Máster normal, totalmente
+// aparte del PIN de Kroma) para poder desatascarlo sin depender de Kroma.
+const KromaReparacion = () => {
+    const [running, setRunning] = useState(false);
+    const [msg, setMsg] = useState('');
+
+    const runBackfill = async () => {
+        setRunning(true); setMsg('');
+        try {
+            const fn  = httpsCallable(functions, 'backfillEmpresaIdLacteoca', { timeout: 300000 });
+            const res = await fn({});
+            const total = Object.values(res.data.resultado || {}).reduce((s, r) => s + (r.actualizados || 0), 0);
+            setMsg(`✓ Migración aplicada: ${total} documento(s), PIN de Lacteoca: ${res.data.resultado?.pinLacteoca || '?'}.`);
+        } catch (err) { setMsg('Error: ' + (err?.message || err)); }
+        setRunning(false);
+    };
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <h3 className="text-xl font-semibold text-slate-700">Reparación de Kroma</h3>
+                <p className="text-sm text-slate-500 mt-1">Herramienta de rescate: corre la migración de Lacteoca (empresaId + PIN 2025) desde acá, sin depender de poder entrar a Kroma.</p>
+            </div>
+            <button onClick={runBackfill} disabled={running}
+                className="flex items-center gap-2 bg-amber-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm disabled:opacity-50">
+                {running ? 'Migrando…' : 'Migrar datos de Lacteoca (fijar PIN 2025)'}
+            </button>
+            {msg && <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700">{msg}</div>}
+        </div>
+    );
+};
+
 const AdministradoresManagement = () => {
     const [admins, setAdmins] = useState([]);
     useEffect(() => {
@@ -5108,6 +5144,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             items: [
                 { id: 'settings',      label: 'General',        Icon: Settings },
                 { id: 'integraciones', label: 'Integraciones',  Icon: Link2, badge: 'Zoho' },
+                { id: 'kroma_reparacion', label: 'Reparación Kroma', Icon: Wrench },
             ],
         },
     ];
@@ -5155,6 +5192,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             case 'notificaciones': return <NotificacionesSection />;
             case 'settings':       return <GeneralSettings />;
             case 'integraciones':  return <IntegracionesSection />;
+            case 'kroma_reparacion': return <KromaReparacion />;
             default:               return (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-3">
                     <Settings size={40} className="opacity-20" />
