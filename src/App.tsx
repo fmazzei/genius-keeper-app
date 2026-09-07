@@ -28,6 +28,8 @@ const VendedorLayout = lazy(() => import('@/Pages/VendedorLayout.jsx'));
 const AppShell       = lazy(() => import('@/Pages/AppShell.jsx'));
 const KromaShell     = lazy(() => import('@/Kroma/KromaShell.jsx'));
 const AdministracionLayout = lazy(() => import('@/Pages/AdministracionLayout.jsx'));
+// Puerta de entrada independiente de Kroma (ruta /kroma) — sin marca de GK.
+const KromaEntry = lazy(() => import('@/Kroma/KromaEntry.jsx'));
 
 interface AppNotification {
   title: string;
@@ -235,6 +237,11 @@ const App: React.FC = () => {
             />
             <GlobalReportModal />
             <Routes>
+                <Route path="/kroma" element={
+                    <Suspense fallback={<div className="h-screen bg-slate-950 flex items-center justify-center"><LoadingSpinner /></div>}>
+                        <KromaEntry />
+                    </Suspense>
+                } />
                 <Route path="*" element={<AppLayout />} />
             </Routes>
         </Router>
