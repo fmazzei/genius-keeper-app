@@ -5022,6 +5022,10 @@ const KromaReparacion = () => {
     const [diagnosing, setDiagnosing] = useState(false);
     const [diag, setDiag] = useState(null);
 
+    const [pinEmpresa, setPinEmpresa] = useState('');
+    const [diagnosingEmpresa, setDiagnosingEmpresa] = useState(false);
+    const [diagEmpresa, setDiagEmpresa] = useState(null);
+
     const runBackfill = async () => {
         setRunning(true); setMsg(''); setRaw(null);
         try {
@@ -5044,6 +5048,17 @@ const KromaReparacion = () => {
         setDiagnosing(false);
     };
 
+    const runDiagnosticoEmpresa = async () => {
+        if (!/^\d{4}$/.test(pinEmpresa)) { setDiagEmpresa({ error: 'Escribe el PIN de 4 dígitos de la empresa.' }); return; }
+        setDiagnosingEmpresa(true); setDiagEmpresa(null);
+        try {
+            const fn  = httpsCallable(functions, 'diagnosticoEmpresaKroma');
+            const res = await fn({ pin: pinEmpresa });
+            setDiagEmpresa(res.data);
+        } catch (err) { setDiagEmpresa({ error: err?.message || String(err) }); }
+        setDiagnosingEmpresa(false);
+    };
+
     return (
         <div className="space-y-4">
             <div>
@@ -5063,6 +5078,23 @@ const KromaReparacion = () => {
             {msg && <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700">{msg}</div>}
             {raw && <pre className="bg-slate-900 text-emerald-300 rounded-lg p-3 text-xs overflow-x-auto">{JSON.stringify(raw, null, 2)}</pre>}
             {diag && <pre className="bg-slate-900 text-sky-300 rounded-lg p-3 text-xs overflow-x-auto">{JSON.stringify(diag, null, 2)}</pre>}
+
+            <div className="pt-4 border-t border-slate-200">
+                <h4 className="text-base font-semibold text-slate-700">Diagnóstico de otra empresa</h4>
+                <p className="text-sm text-slate-500 mt-1">Escribe el PIN de 4 dígitos de la empresa (visible en Kroma → Control del Sistema → Empresas) para revisar su cuenta, su PIN y sus perfiles.</p>
+                <div className="flex flex-wrap items-center gap-2 mt-2">
+                    <input
+                        type="text" inputMode="numeric" maxLength={4} placeholder="Ej. 4821"
+                        value={pinEmpresa} onChange={e => setPinEmpresa(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        className="border border-slate-300 rounded-lg px-3 py-2 text-sm w-32 tracking-widest font-mono"
+                    />
+                    <button onClick={runDiagnosticoEmpresa} disabled={diagnosingEmpresa}
+                        className="flex items-center gap-2 bg-slate-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-opacity-90 shadow-sm disabled:opacity-50">
+                        {diagnosingEmpresa ? 'Revisando…' : 'Diagnosticar empresa'}
+                    </button>
+                </div>
+                {diagEmpresa && <pre className="bg-slate-900 text-amber-300 rounded-lg p-3 text-xs overflow-x-auto mt-3">{JSON.stringify(diagEmpresa, null, 2)}</pre>}
+            </div>
         </div>
     );
 };

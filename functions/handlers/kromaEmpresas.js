@@ -304,6 +304,60 @@ exports.diagnosticoPinLacteoca = onCall({ region: "us-central1", serviceAccount:
     return out;
 });
 
+// ── Diagnóstico de CUALQUIER empresa Kroma por su PIN (rescate manual) ─────
+// Igual que diagnosticoPinLacteoca pero para una empresa cualquiera: recibe
+// el PIN de 4 dígitos (visible en Control del Sistema → Empresas), y además
+// de lo que ya chequea el de Lacteoca, lista los perfiles (`kroma_users`) de
+// esa empresa para detectar un doc con `empresaId` faltante o distinto al
+// esperado -- la causa más común de "Missing or insufficient permissions"
+// justo al entrar con un perfil recién creado.
+exports.diagnosticoEmpresaKroma = onCall({ region: "us-central1", serviceAccount: CUSTOM_TOKEN_SERVICE_ACCOUNT }, async (request) => {
+    await requireKromaMasterAccess(request);
+    const pin = String(request.data?.pin || "").trim();
+    if (!/^\d{4}$/.test(pin)) throw new HttpsError("invalid-argument", "El PIN debe tener 4 dígitos.");
+
+    const db = admin.firestore();
+    const out = { pin };
+
+    const pinSnap = await db.doc(`kroma_empresa_pins/${pin}`).get();
+    out.pinDocExists = pinSnap.exists;
+    out.pinDocData = pinSnap.exists ? pinSnap.data() : null;
+    if (!pinSnap.exists) return out;
+
+    const { empresaId, uid } = pinSnap.data();
+    out.empresaId = empresaId;
+
+    const empresaSnap = await db.doc(`kroma_empresas/${empresaId}`).get();
+    out.empresaDocExists = empresaSnap.exists;
+    out.empresaDocData = empresaSnap.exists ? empresaSnap.data() : null;
+
+    try {
+        const u = await admin.auth().getUser(uid);
+        out.cuentaCompartida = { uid: u.uid, email: u.email, disabled: u.disabled };
+    } catch (err) {
+        out.cuentaCompartidaError = err.message;
+    }
+
+    try {
+        const token = await admin.auth().createCustomToken(uid);
+        out.customTokenMint = "ok";
+        out.customTokenLength = token.length;
+    } catch (err) {
+        out.customTokenMint = "error";
+        out.customTokenError = err.message;
+    }
+
+    // Perfiles de esa empresa — cada uno debe tener empresaId === el de arriba
+    // para que las reglas de Firestore (kromaSameEmpresa) los dejen operar.
+    const usersSnap = await db.collection("kroma_users").where("empresaId", "==", empresaId).get();
+    out.perfiles = usersSnap.docs.map(d => {
+        const data = d.data();
+        return { id: d.id, name: data.name, role: data.role, empresaId: data.empresaId, active: data.active !== false };
+    });
+
+    return out;
+});
+
 // ── Eliminar una empresa (deshacer un alta por error, p.ej. un duplicado) ──
 // Borra la cuenta de Auth compartida de esa empresa, su PIN, TODAS las
 // cuentas reales de su equipo si las hubiera (Auth + users_metadata +
