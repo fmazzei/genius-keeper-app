@@ -97,14 +97,6 @@ function construirLineas(d) {
             cols: ['Punto de venta', 'En anaquel', 'Faltan'],
             filas: d.anaquelBajo.items.map(i => [i.nombre, `${i.nivel} uds`, `${i.faltan} uds`]),
         },
-        {
-            key: 'despachos', titulo: 'Despachos por realizar',
-            valor: d.despachos.count,
-            nivel: d.despachos.count >= 5 ? 2 : d.despachos.count > 0 ? 1 : 0,
-            nota: 'Pedidos tomados sin despachar',
-            cols: ['Punto de venta', 'Unidades', 'Tomado'],
-            filas: d.despachos.items.map(i => [i.nombre, `${i.cantidad}`, fFecha(i.fecha)]),
-        },
     ].sort((a, b) => b.nivel - a.nivel || b.valor - a.valor);
 }
 

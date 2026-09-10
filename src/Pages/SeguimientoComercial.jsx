@@ -23,7 +23,6 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
     const [vendedores, setVendedores] = useState([]);
     const [sel, setSel]         = useState(TODOS);
     const [facturas, setFacturas] = useState([]);
-    const [pedidos, setPedidos]   = useState([]);
     const [cartera, setCartera]   = useState({});   // vendedorId → Set(posId)
     const [loading, setLoading]   = useState(true);
     const [error, setError]       = useState('');
@@ -48,13 +47,12 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
                 const hace12Meses = new Date();
                 hace12Meses.setMonth(hace12Meses.getMonth() - 12);
 
-                const [uSnap, fRecientes, fAbiertas, pSnap, cSnap] = await Promise.all([
+                const [uSnap, fRecientes, fAbiertas, cSnap] = await Promise.all([
                     getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
                     getDocs(query(collection(db, 'facturas_vendedor'), where('fecha', '>=', Timestamp.fromDate(hace12Meses))))
                         .catch(() => ({ docs: [] })),
                     getDocs(query(collection(db, 'facturas_vendedor'), where('estado', 'in', ['pendiente', 'vencida'])))
                         .catch(() => ({ docs: [] })),
-                    getDocs(collection(db, 'pedidos_mercaderista')).catch(() => ({ docs: [] })),
                     getDocs(collection(db, 'vendor_clients')).catch(() => ({ docs: [] })),
                 ]);
                 if (!alive) return;
@@ -65,7 +63,6 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
                 [...(fRecientes.docs || []), ...(fAbiertas.docs || [])]
                     .forEach(d => porId.set(d.id, { id: d.id, ...d.data() }));
                 setFacturas([...porId.values()]);
-                setPedidos((pSnap.docs || []).map(d => ({ id: d.id, ...d.data() })));
                 // La cartera se asigna por PDV directo o por CADENA completa
                 // (tipoDespacho 'centralizado'): hay que contemplar las dos vías.
                 const mapa = {};
@@ -96,22 +93,27 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
             : pdvTodos.filter(p => c && (c.pos.has(p.id) || (p.chain && c.chains.has(p.chain))));
         const idsPdv = new Set(pdv.map(p => p.id));
         const visitas = (reports || []).filter(r => !r.posId || idsPdv.has(r.posId));
-        const fact = esTodos ? facturas : facturas.filter(f => f.vendedorId === sel);
-        const ped  = esTodos ? pedidos  : pedidos.filter(p => p.vendedorId === sel);
 
         // Fecha de ingreso del vendedor: separa lo HEREDADO (venía frío o vencido
         // antes de que entrara) de lo ocurrido bajo su gestión. En modo "toda la
         // empresa" no aplica: no hay un único responsable.
         const v = esTodos ? null : vendedores.find(x => x.id === sel);
+        // Se pasan TODAS las facturas, no solo las del vendedor: "¿este PDV
+        // compró?" es una pregunta sobre el punto de venta, no sobre a quién se
+        // le acreditó la comisión. Recortarlas por `vendedorId` hacía que un PDV
+        // de su cartera cuyo cliente de Zoho todavía no está asignado a él
+        // apareciera como "Nunca ha facturado" aunque estuviera comprando.
+        // `opts.vendedorId` acota lo que sí es suyo: la cobranza vencida.
         return computeSeguidor({
-            cartera: pdv, visitas, facturas: fact, pedidos: ped,
+            cartera: pdv, visitas, facturas,
             opts: {
                 pisoAnaquel: DEFAULT_COMMISSION_CONFIG.anaquelMinUnits || 12,
                 desde: rango.desde, hasta: rango.hasta,
                 ingreso: v?.fechaIngreso || null,
+                vendedorId: esTodos ? null : sel,
             },
         });
-    }, [sel, posList, reports, facturas, pedidos, cartera, rango, vendedores]);
+    }, [sel, posList, reports, facturas, cartera, rango, vendedores]);
 
     const nombreSel = sel === TODOS
         ? 'Toda la empresa'

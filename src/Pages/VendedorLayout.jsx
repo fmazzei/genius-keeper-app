@@ -35,6 +35,7 @@ import NuevaFacturaSheet from '@/Components/NuevaFacturaSheet.jsx';
 import { computeSeguidor, periodoRango } from '@/utils/seguidorSemanal.js';
 import VendedorAnaquelMap from '@/Components/VendedorAnaquelMap.jsx';
 import VendedorVentasCartera from '@/Components/VendedorVentasCartera.jsx';
+import DevolucionSheet from '@/Components/DevolucionSheet.jsx';
 import { useKpiCalculations } from '@/hooks/useKpiCalculations';
 import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
@@ -1020,7 +1021,6 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [alertas, setAlertas]                       = useState([]);
     const [loadingAlertas, setLoadingAlertas]         = useState(false);
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
-    const [pedidosDocs, setPedidosDocs]               = useState([]); // pedidos de su cartera (seguidor semanal)
     const [showNuevaFactura, setShowNuevaFactura]     = useState(false);
 
     // ── SEGUIDOR ──────────────────────────────────────────────────────────────
@@ -1035,7 +1035,6 @@ const VendedorLayout = ({ user, onLogout }) => {
         cartera:  carteraPosList,
         visitas:  carteraVisitas,
         facturas: carteraFacturas,
-        pedidos:  pedidosDocs,
         opts: {
             // Un piso de 0 haría que "anaquel bajo" fuera lo mismo que "quiebre":
             // si la config no trae un piso válido, se usa el de negocio (12 uds).
@@ -1047,7 +1046,9 @@ const VendedorLayout = ({ user, onLogout }) => {
             // Separa lo heredado (frío o vencido antes de su ingreso) de su gestión.
             ingreso: vendedor.ingreso || null,
         },
-    }), [carteraPosList, carteraVisitas, carteraFacturas, pedidosDocs, commConfig.anaquelMinUnits, segRango, vendedor.ingreso]);
+    }), [carteraPosList, carteraVisitas, carteraFacturas, commConfig.anaquelMinUnits, segRango, vendedor.ingreso]);
+    // PDV sobre el que el vendedor está declarando un retiro desde el seguidor.
+    const [devolucionSel, setDevolucionSel] = useState(null);
     const [reloadKey, setReloadKey]                   = useState(0);
 
     // ── Load alerts (last 24 h) ── filtrado de fecha en cliente (evita índice compuesto uid+createdAt)
@@ -1622,7 +1623,6 @@ const VendedorLayout = ({ user, onLogout }) => {
             query(collection(db, 'pedidos_mercaderista'), where('vendedorId', '==', user.uid)),
             (snap) => {
                 const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                setPedidosDocs(docs);
                 setPedidosPendientesCount(
                     docs.filter(p => p.estado === 'pendiente' || p.estado === 'hold').length
                 );
@@ -1791,6 +1791,11 @@ const VendedorLayout = ({ user, onLogout }) => {
                                 offset: segOffset, setOffset: setSegOffset,
                                 label: segRango.label, actual: segRango.actual,
                             }}
+                            // El vendedor resuelve el producto por vencer con el
+                            // cliente (repone o pide nota de crédito), así que la
+                            // lista es accionable para él. El máster ve el mismo
+                            // tablero en supervisión, sin este botón.
+                            onDevolver={setDevolucionSel}
                         />
                     </PullToRefresh>
                     <div className="snap-center shrink-0 w-full h-full flex flex-col">
@@ -1912,6 +1917,22 @@ const VendedorLayout = ({ user, onLogout }) => {
 
             {showVentas && (
                 <VendedorVentasCartera facturas={carteraFacturas} onClose={() => setShowVentas(false)} />
+            )}
+
+            {/* Retiro/reposición declarado desde "PDV con producto por vencer".
+                Misma hoja que usa el equipo de campo en Devoluciones. */}
+            {devolucionSel && (
+                <DevolucionSheet
+                    theme="dark"
+                    pos={{ id: devolucionSel.posId || devolucionSel.id, name: devolucionSel.nombre, zone: devolucionSel.zona }}
+                    lineasIniciales={devolucionSel.lotes || []}
+                    reporteOrigen={devolucionSel.reporteId
+                        ? { id: devolucionSel.reporteId, batches: devolucionSel.batches || [] }
+                        : null}
+                    actor={{ id: user?.uid || null, nombre: vendedor?.name || 'Vendedor', uid: user?.uid || null }}
+                    onClose={() => setDevolucionSel(null)}
+                    onGuardada={() => { setDevolucionSel(null); setReloadKey(k => k + 1); }}
+                />
             )}
 
             {/* ── FAB: Nuevo Pedido — se oculta en Mi Semana (pág. 0) y en Mis KPIs

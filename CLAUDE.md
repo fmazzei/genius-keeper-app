@@ -385,6 +385,59 @@ la conversión de kilos a unidades de venta: este mes N facturas (+X uds)…".
 El cambio del % de unidades (de +31% a +3,4%) es correcto: la corrección aplica
 a AMBAS ventanas, así que la tendencia quedó comparando peras con peras.
 
+### Seguidor: "PDV sin facturar" mentía, y "por vencer" no se podía cerrar (2026-09) ✅
+
+Auditoría pedida por el dueño al ver, en el Seguimiento Comercial de Carolina,
+sucursales de Central Madeirense marcadas **"Nunca ha facturado"** cuando sí
+estaban comprando. Eran DOS causas distintas, las dos reales:
+
+- **Doble filtro por vendedor (la causa principal).** `SeguimientoComercial`
+  recortaba las facturas a `vendedorId === vendedor` ANTES de preguntarle al
+  motor si el PDV había comprado. Pero la cartera se arma por `vendor_clients`
+  (PDV o cadena) y la atribución de la factura por el CARNET de Zoho
+  (`clientes_zoho.vendedorId`): son dos sistemas que pueden discrepar. Un PDV de
+  su cartera cuyo carnet todavía no está asignado a ella tenía facturas
+  invisibles → "Nunca ha facturado". **"¿Este punto de venta compró?" es una
+  pregunta sobre el PDV, no sobre a quién se le acreditó la comisión**, así que
+  ahora se le pasan TODAS las facturas y el vendedor se acota con
+  `opts.vendedorId`, que solo filtra lo que sí es suyo: la **cobranza vencida**.
+  (En "Mi Semana" del vendedor no aplica: las reglas de Firestore solo lo dejan
+  leer sus propias facturas — ver `facturas_vendedor`.)
+- **Vínculo escrito a mano.** `pos.razonSocialZoho` se elige de una lista en
+  Clientes y PDV, pero también se escribe libre en la ficha del PDV
+  (`AddPosForm`/`EditPosModal`). "Central Madeirense CA (El Marques)" no
+  emparejaba con "Central Madeirense, C.A. (El Marqués)". `ultimaFacturaPorPos`
+  intenta ahora cada nivel en dos pasadas: exacta y **tolerante** (`loose`: sin
+  acentos, sin puntuación, sin forma jurídica). **NO** se relajó el paréntesis de
+  sucursal: esa precisión es deliberada — aflojarla marcaría como surtida una
+  sucursal fría porque otra de la cadena compró.
+- **Y sobre todo, dejó de mentir.** "Nunca ha facturado" tapaba dos cosas
+  distintas. Si la razón social del PDV no aparece en NINGUNA factura, el item
+  sale con `sinCoincidencia` y la ficha dice **"Sin factura a este nombre"** + a
+  qué razón social está vinculado, con un resumen arriba de la lista ("N de estos
+  PDV… no son cartera fría, o el nombre está mal escrito o el cliente de Zoho no
+  está asignado"). Es un dato que corregir, no cartera que salir a activar.
+
+**"Despachos por realizar" se RETIRÓ del seguidor.** Arrastraba pedidos de junio
+que nadie cerraba: el indicador no medía trabajo pendiente real, solo ensuciaba
+el tablero. Se quitó del motor, de la vista y del PDF (`SeguimientoDoc`), junto
+con la carga de `pedidos_mercaderista` que lo alimentaba. La toma de pedidos y su
+badge en la barra del vendedor no cambian.
+
+**"PDV con producto por vencer" ahora es ACCIONABLE — y con un solo formulario.**
+El indicador no se cierra mirándolo: se cierra retirando o reponiendo. La hoja de
+devolución se extrajo a **`src/Components/DevolucionSheet.jsx`** y es la MISMA en
+los dos sitios donde se declara un retiro (equipo de campo → Devoluciones, y
+vendedor → Mi Semana → producto por vencer), con tema claro/oscuro por `theme`.
+Se completó lo que le faltaba a la resolución por **nota de crédito**: antes solo
+guardaba el monto; ahora pide **número** (obligatorio — sin él no hay forma de
+cuadrarla contra Zoho) y **fecha de emisión** (`notaCreditoNumero`,
+`notaCreditoFecha`, `montoNotaCredito`). `porVencer.items` trae `posId`,
+`reporteId`, `batches` y los `lotes` precargados para confirmar en vez de
+escribir. **Solo el VENDEDOR acciona**: `SeguidorSemanalView` recibe `onDevolver`
+únicamente desde `VendedorLayout`; el máster ve el mismo tablero en supervisión,
+sin botón — él no resuelve con el cliente.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

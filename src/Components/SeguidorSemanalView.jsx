@@ -13,8 +13,8 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-    Flame, PackageMinus, AlertOctagon, CalendarClock, Receipt, Truck, Users,
-    ChevronRight, ChevronLeft, X, CheckCircle2, Link2Off, ChevronDown,
+    Flame, PackageMinus, AlertOctagon, CalendarClock, Receipt, Users,
+    ChevronRight, ChevronLeft, X, CheckCircle2, Link2Off, ChevronDown, PackageX,
 } from 'lucide-react';
 
 const THEME = {
@@ -49,17 +49,24 @@ const fmtDia = (d) => d ? d.toLocaleDateString('es-VE', { day: '2-digit', month:
 // periodoCtl (opcional): { gran, setGran, offset, setOffset, label, actual }
 // Permite navegar el histórico por semana o por mes. Sin él, la vista muestra
 // solo el período que le pasen (comportamiento original).
-export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl = null, titulo = null }) {
+//
+// onDevolver (opcional): (item) => void — hace ACCIONABLE "PDV con producto por
+// vencer": abre la hoja de devolución para declarar el retiro ahí mismo. Solo lo
+// pasa el VENDEDOR (es quien resuelve con el cliente); el máster/gerencia ve el
+// mismo tablero en modo supervisión, sin botón.
+export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl = null, titulo = null, onDevolver = null }) {
     const t = THEME[theme] || THEME.dark;
     const [detalle, setDetalle] = useState(null);
     const [verVerdes, setVerVerdes] = useState(false);
 
     if (!data) return null;
-    const { semana, cfg, sinFacturar, anaquelBajo, quiebres, porVencer, cobranza, despachos, mercaderista, cobertura } = data;
+    const { semana, cfg, sinFacturar, anaquelBajo, quiebres, porVencer, cobranza, mercaderista, cobertura } = data;
     // `resumen` (opcional): un bloque JSX que va ARRIBA de la lista en la hoja de
     // detalle — para indicadores que no son solo una lista (p.ej. Cobertura de
     // visitas, que además necesita mostrar la fracción y la barra de progreso).
-    const abrir = (titulo, subtitulo, items, render, resumen = null) => setDetalle({ titulo, subtitulo, items, render, resumen });
+    // `accion` (opcional): { label, onClick(item) } → botón por fila.
+    const abrir = (titulo, subtitulo, items, render, resumen = null, accion = null) =>
+        setDetalle({ titulo, subtitulo, items, render, resumen, accion });
 
     // ── Cada indicador declara su nivel de urgencia; el orden sale de ahí ──
     const peorVencimiento = porVencer.items[0]?.diasParaVencer ?? null;
@@ -81,10 +88,28 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                         {i.heredado && <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-400 align-middle">Heredado</span>}
                     </p>
                     <p className="text-xs opacity-70">{i.zona}</p>
-                    <span className={`text-xs font-black ${i.nunca || i.dias >= 15 ? 'text-red-500' : 'text-amber-500'}`}>
-                        {i.nunca ? 'Nunca ha facturado' : `${i.dias} días`}
-                    </span>
-                </>)),
+                    {/* Un vínculo roto NO es un PDV frío: decirlo evita mandar al
+                        vendedor a "activar" un punto que sí está comprando. */}
+                    {i.sinCoincidencia ? (
+                        <>
+                            <span className="text-xs font-black text-amber-500">Sin factura a este nombre</span>
+                            <p className="text-[11px] opacity-60 leading-snug mt-0.5">
+                                Vinculado a "{i.razonSocial || '—'}" — revisa el cliente de Zoho en la ficha del PDV.
+                            </p>
+                        </>
+                    ) : (
+                        <span className={`text-xs font-black ${i.nunca || i.dias >= 15 ? 'text-red-500' : 'text-amber-500'}`}>
+                            {i.nunca ? 'Nunca ha facturado' : `${i.dias} días`}
+                        </span>
+                    )}
+                </>),
+                sinFacturar.sinCoincidencia > 0 ? (
+                    <p className="text-xs leading-snug">
+                        <b className="text-amber-500">{sinFacturar.sinCoincidencia} de estos PDV</b> están vinculados a una
+                        razón social que no aparece en ninguna factura. No son cartera fría: o el nombre está mal escrito,
+                        o el cliente de Zoho todavía no está asignado. Corrígelo en Clientes y PDV.
+                    </p>
+                ) : null),
         },
         {
             // El número accionable es el de quiebres que quedaron ABIERTOS. Los que
@@ -141,7 +166,11 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                     <span className={`text-xs font-black ${i.diasParaVencer <= 15 ? 'text-red-500' : 'text-amber-500'}`}>
                         {i.diasParaVencer <= 0 ? 'Vencido' : `${i.diasParaVencer} días`}
                     </span>
-                </>)),
+                </>),
+                null,
+                // El indicador no se cierra mirándolo: se cierra retirando o
+                // reponiendo. Misma hoja que usa el equipo de campo.
+                onDevolver ? { label: 'Retirar / reponer', onClick: onDevolver } : null),
         },
         {
             key: 'anaquel', Icon: PackageMinus, label: `Anaquel bajo ${anaquelBajo.piso} uds`,
@@ -153,18 +182,6 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                     <p className="font-bold text-sm">{i.nombre}</p>
                     <p className="text-xs opacity-70">Visto {fmtDia(i.visita)} · {i.zona}</p>
                     <span className="text-xs font-black text-amber-500">{i.nivel} uds · faltan {i.faltan}</span>
-                </>)),
-        },
-        {
-            key: 'despachos', Icon: Truck, label: 'Despachos por realizar',
-            valor: despachos.count,
-            nivel: despachos.count >= 5 ? 2 : despachos.count > 0 ? 1 : 0,
-            accion: 'Pedidos tomados sin despachar',
-            onClick: () => abrir('Despachos por realizar', 'Pedidos pendientes', despachos.items,
-                (i) => (<>
-                    <p className="font-bold text-sm">{i.nombre}</p>
-                    <p className="text-xs opacity-70">Tomado {fmtDia(i.fecha)}</p>
-                    <span className="text-xs font-black text-sky-500">{i.cantidad} uds</span>
                 </>)),
         },
     ];
@@ -435,6 +452,14 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                             {detalle.items.map((i, idx) => (
                                 <div key={idx} className={`rounded-xl px-3 py-2.5 ${t.row} ${t.title}`}>
                                     {detalle.render(i)}
+                                    {detalle.accion && (
+                                        <button
+                                            onClick={() => { setDetalle(null); detalle.accion.onClick(i); }}
+                                            className="mt-2 w-full flex items-center justify-center gap-1.5 text-xs font-bold py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                                        >
+                                            <PackageX size={14} /> {detalle.accion.label}
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </div>
