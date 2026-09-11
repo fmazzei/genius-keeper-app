@@ -465,6 +465,41 @@ fila muestra ahora *bajo qué nombre* se encontró su última factura
 equivocado. **Pendiente/futuro**: soportar varias razones sociales por PDV
 (hoy `pos.razonSocialZoho` es una sola).
 
+### El PDV se vincula al CARNET de Zoho, no al nombre (2026-09) ✅
+
+Caso real que lo destapó: el dueño renombró un cliente en Zoho — nombre de la
+empresa "Inversiones MAXI QUESO, C.A." y **nombre para mostrar "Maxi Quesos"**.
+Zoho manda como `customer_name` **el nombre para mostrar**, así que al conciliar,
+las 45 facturas de ese cliente pasaron a decir "Maxi Quesos" y **el PDV, vinculado
+por el nombre anterior ("Inversiones MAXI 18-12, C.A"), quedó huérfano de sus
+propias facturas en silencio**. Peor: la ficha del cliente reportó "0 PDV / SIN
+PDV", el dueño creó un PDV nuevo "porque no aparecía", y terminó con **dos Maxi
+Quesos duplicados** — ninguno emparejando, porque el segundo se vinculó al nombre
+de la EMPRESA, que tampoco es lo que dicen las facturas.
+
+**La llave estable ya existía y no se estaba usando.** `customer_id` (el "carnet")
+viene en el 100% de las facturas por API, se guarda en cada una como
+`zohoCustomerId` y es la llave que la Fase 4 ya había establecido para atribuir
+comisiones. Lo que faltaba era usarla también para el vínculo PDV ↔ cliente:
+
+- **`pos.zohoCustomerId`** (nuevo) es la LLAVE; `pos.razonSocialZoho` se conserva
+  como etiqueta legible y respaldo para lo no migrado. `ClientesPdvHub.vincularPdv`
+  recibe ahora el CARNET completo (los `<select>` pasaron de `value={customerName}`
+  a `value={customerId}`) y escribe los dos campos.
+- **`ultimaFacturaPorPos`** empareja por carnet ANTES que por nombre, y expone
+  `porCarnet` para que la ficha del PDV distinga "el vínculo está bien, el cliente
+  no tiene facturas" de "vinculado por NOMBRE — vuelve a vincularlo".
+- **El agrupamiento de `ClientesPdvHub`** indexa por carnet además de por nombre.
+  Sin esto la ficha seguiría diciendo "0 PDV" tras un renombre — que es justo lo
+  que indujo el duplicado.
+- **Botón "Amarrar al carnet de Zoho"** (banner ámbar en Clientes y PDV): resuelve
+  nombre actual → carnet y lo escribe en todos los PDV que todavía están vinculados
+  solo por nombre. Omite los nombres ambiguos (uno que apunte a dos carnets). Es la
+  vacuna: sin correrlo, cada renombre futuro vuelve a romper vínculos.
+
+**Regla para el futuro: nunca vincular por `customer_name`.** Es el nombre para
+mostrar, es editable y cambiarlo no avisa a nadie.
+
 **Emparejamiento: sucursal escrita sin paréntesis.** Tercer nivel de
 normalización (`flat` = `loose` + sin `()` ni `-`): "Mi Negocio Supermercados C.A
 San Luis" (escrito a mano en la ficha del PDV) ahora empareja con "Mi Negocio

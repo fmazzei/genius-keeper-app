@@ -132,20 +132,33 @@ function ultimaVisitaPorPos(visitas, corte) {
 //   · su razón social NO aparece en NINGUNA factura: el vínculo está mal escrito
 //     o el cliente de Zoho no está asignado a este vendedor. No es un PDV que
 //     haya que salir a activar: es un dato que hay que arreglar.
+//
+// LA LLAVE BUENA ES EL CARNET, NO EL NOMBRE. Zoho manda como `customer_name` el
+// *nombre para mostrar*, que el dueño puede cambiar cuando quiera — y al
+// cambiarlo, TODAS las facturas pasan a decir el nombre nuevo y cualquier PDV
+// vinculado por el viejo queda huérfano en silencio (caso real: "Inversiones
+// MAXI 18-12, C.A" renombrado a "Maxi Quesos" dejó sus 45 facturas invisibles
+// para su PDV, y la ficha del cliente reportó "0 PDV" — lo que llevó a crear un
+// PDV duplicado). El `customer_id` de Zoho SÍ es estable, viene en cada factura
+// (`zohoCustomerId`) y es la llave que ya usa la atribución de comisiones.
+// Por eso se empareja PRIMERO por carnet; el nombre queda como respaldo para
+// los PDV que todavía no se han re-vinculado.
 function ultimaFacturaPorPos(cartera, facturas, corte) {
     const activas = (facturas || []).filter(f => f.estado !== 'anulada');
     // Índices acotados al corte (para reconstruir el pasado). Cada entrada
     // guarda además el NOMBRE con que se facturó: si el PDV está vinculado a la
     // razón social equivocada, verlo es la única forma de darse cuenta.
-    const idx = { full: {}, fullLoose: {}, fullFlat: {}, canon: {}, canonLoose: {} };
-    // Universo de razones sociales conocidas, SIN corte: para saber si un
-    // vínculo apunta a algo que existe, la fecha no importa.
+    const idx = { carnet: {}, full: {}, fullLoose: {}, fullFlat: {}, canon: {}, canonLoose: {} };
+    // Universo de llaves conocidas, SIN corte: para saber si un vínculo apunta a
+    // algo que existe, la fecha no importa.
     const conocidas = new Set();
 
     activas.forEach(f => {
         const nombre = f.clienteName || '';
         const canonico = f.razonSocialCanonica || stripSucursal(nombre);
+        const carnet = f.zohoCustomerId ? String(f.zohoCustomerId) : '';
         const claves = {
+            carnet,
             full: norm(nombre), fullLoose: loose(nombre), fullFlat: flat(nombre),
             canon: norm(canonico), canonLoose: loose(canonico),
         };
@@ -160,14 +173,19 @@ function ultimaFacturaPorPos(cartera, facturas, corte) {
 
     const res = {};
     (cartera || []).forEach(p => {
+        const carnet = String(p.zohoCustomerId || '').trim();
         const rs = String(p.razonSocialZoho || '').trim();
-        if (!rs) { res[p.id] = { vinculado: false, ultima: null, sinCoincidencia: false }; return; }
+        if (!carnet && !rs) { res[p.id] = { vinculado: false, ultima: null, sinCoincidencia: false }; return; }
 
-        const candidatas = [['full', norm(rs)], ['fullLoose', loose(rs)], ['fullFlat', flat(rs)]];
-        if (!/\([^)]*\)\s*$/.test(rs)) {
-            // El PDV apunta a la razón social completa (sin sucursal) → cadena.
-            const c = stripSucursal(rs);
-            candidatas.push(['canon', norm(c)], ['canonLoose', loose(c)]);
+        // El carnet manda: es estable aunque renombren el cliente en Zoho.
+        const candidatas = carnet ? [['carnet', carnet]] : [];
+        if (rs) {
+            candidatas.push(['full', norm(rs)], ['fullLoose', loose(rs)], ['fullFlat', flat(rs)]);
+            if (!/\([^)]*\)\s*$/.test(rs)) {
+                // El PDV apunta a la razón social completa (sin sucursal) → cadena.
+                const c = stripSucursal(rs);
+                candidatas.push(['canon', norm(c)], ['canonLoose', loose(c)]);
+            }
         }
 
         let hit = null;
@@ -176,6 +194,9 @@ function ultimaFacturaPorPos(cartera, facturas, corte) {
         }
         res[p.id] = {
             vinculado: true,
+            // Vinculado por CARNET = a prueba de renombres en Zoho. Si está así y
+            // aun sin facturas, el vínculo no es el problema: el punto está frío.
+            porCarnet: !!carnet,
             ultima: hit?.t || null,
             facturadoComo: hit?.nombre || null,
             sinCoincidencia: !candidatas.some(([, k]) => k && conocidas.has(k)),
@@ -286,6 +307,7 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], opt
             // asignado. No es cartera que activar, es un dato que corregir.
             sinCoincidencia: !!info.sinCoincidencia,
             razonSocial: p.razonSocialZoho || '',
+            porCarnet: !!info.porCarnet,
             // Bajo qué nombre se encontró la última factura. Si NO es el cliente
             // que el dueño espera, el vínculo está apuntando al lugar equivocado
             // (p.ej. un PDV que hoy se factura bajo otra razón social).

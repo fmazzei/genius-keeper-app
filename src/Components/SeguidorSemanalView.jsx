@@ -122,7 +122,11 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
 
             {i.sinCoincidencia ? (
                 <p className="text-[11px] opacity-60 leading-snug mt-0.5">
-                    Vinculado a "{i.razonSocial || '—'}" — revisa el cliente de Zoho en la ficha del PDV.
+                    {i.porCarnet
+                        // Vinculado por carnet: el vínculo es correcto y sobrevive
+                        // a renombres, así que el problema no es el dato.
+                        ? <>Vinculado por carnet a "{i.razonSocial || '—'}": el vínculo está bien, este cliente no tiene facturas.</>
+                        : <>Vinculado por NOMBRE a "{i.razonSocial || '—'}" — vuelve a vincularlo desde Clientes y PDV para amarrarlo al carnet de Zoho.</>}
                 </p>
             ) : i.facturadoComo ? (
                 <p className="text-[11px] opacity-60 leading-snug mt-0.5">

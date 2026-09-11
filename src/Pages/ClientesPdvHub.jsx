@@ -144,7 +144,11 @@ const ClienteCard = ({ grupo, vendedores, pdvsSinCliente, abierto, onToggle, onA
     const [carnetSel, setCarnetSel]   = useState('');
 
     const vendName = (id) => vendedores.find(v => v.id === id)?.name || 'Vendedor';
-    const carnetPorDefecto = grupo.carnets.length === 1 ? grupo.carnets[0].customerName : (carnetSel || '');
+    // El CARNET completo, no su nombre: el vínculo se guarda por `customerId`,
+    // que sobrevive a que renombren el cliente en Zoho (ver `vincularPdv`).
+    const carnetPorDefecto = grupo.carnets.length === 1
+        ? grupo.carnets[0]
+        : (grupo.carnets.find(c => c.customerId === carnetSel) || null);
 
     return (
         <div className="border border-slate-200 rounded-xl bg-white overflow-hidden">
@@ -248,7 +252,7 @@ const ClienteCard = ({ grupo, vendedores, pdvsSinCliente, abierto, onToggle, onA
                                 <select value={carnetSel} onChange={e => setCarnetSel(e.target.value)}
                                     className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white">
                                     <option value="">¿A cuál sucursal factura?…</option>
-                                    {grupo.carnets.map(c => <option key={c.customerId} value={c.customerName}>{c.customerName}</option>)}
+                                    {grupo.carnets.map(c => <option key={c.customerId} value={c.customerId}>{c.customerName}</option>)}
                                 </select>
                             )}
                             <div className="flex flex-wrap gap-2">
@@ -299,6 +303,7 @@ export default function ClientesPdvHub() {
     const [crearPdv, setCrearPdv]   = useState(false);
     const [editarPdv, setEditarPdv] = useState(null);
     const [verHuerfanos, setVerHuerfanos] = useState(false);
+    const [amarrando, setAmarrando] = useState(false);
 
     // Los PDV se escuchan en vivo (se editan aquí mismo); clientes y vendedores
     // se cargan una vez y se refrescan con las acciones.
@@ -328,7 +333,21 @@ export default function ClientesPdvHub() {
     }, []);
     useEffect(() => { cargar(); }, [cargar]);
 
-    // PDV por razón social vinculada (clave normalizada del nombre completo).
+    // PDV indexados por CARNET (`zohoCustomerId`) y, como respaldo, por el nombre
+    // vinculado. El carnet es lo que sobrevive a un renombre en Zoho: sin él, un
+    // cliente renombrado mostraba "0 PDV" aunque tuviera los suyos, y eso llevaba
+    // a crear un PDV duplicado "porque no aparecía".
+    const pdvPorCarnet = useMemo(() => {
+        const m = new Map();
+        pos.forEach(p => {
+            const k = String(p.zohoCustomerId || '').trim();
+            if (!k) return;
+            if (!m.has(k)) m.set(k, []);
+            m.get(k).push(p);
+        });
+        return m;
+    }, [pos]);
+
     const pdvPorRazon = useMemo(() => {
         const m = new Map();
         pos.forEach(p => {
@@ -341,7 +360,7 @@ export default function ClientesPdvHub() {
     }, [pos]);
 
     const pdvsSinCliente = useMemo(() => pos
-        .filter(p => !(p.razonSocialZoho || '').trim())
+        .filter(p => !(p.razonSocialZoho || '').trim() && !String(p.zohoCustomerId || '').trim())
         .sort((a, b) => (a.name || '').localeCompare(b.name || '')), [pos]);
 
     // Agrupación por razón social canónica: una ficha por CLIENTE, aunque tenga
@@ -364,12 +383,15 @@ export default function ClientesPdvHub() {
             if (x.oficina === total) estado = 'oficina';
             else if (x.vendedorIds.size === 1 && x.oficina === 0 && x.carnets.every(c => c.vendedorId)) estado = 'asignado';
             else if (x.vendedorIds.size >= 1 || x.oficina > 0) estado = 'mixto';
-            // PDV del cliente: los que apuntan a cualquiera de sus carnets, más
-            // los que apuntan al nombre canónico (cliente de una sola sucursal).
+            // PDV del cliente: primero por CARNET (a prueba de renombres), y
+            // además los que todavía apuntan por nombre — a cualquiera de sus
+            // carnets o al nombre canónico (cliente de una sola sucursal).
+            const pdvs = [];
+            const sumar = (p) => { if (!pdvs.includes(p)) pdvs.push(p); };
+            x.carnets.forEach(c => (pdvPorCarnet.get(String(c.customerId)) || []).forEach(sumar));
             const claves = new Set(x.carnets.map(c => norm(c.customerName)));
             claves.add(norm(x.canon));
-            const pdvs = [];
-            claves.forEach(k => (pdvPorRazon.get(k) || []).forEach(p => { if (!pdvs.includes(p)) pdvs.push(p); }));
+            claves.forEach(k => (pdvPorRazon.get(k) || []).forEach(sumar));
             pdvs.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
             return {
                 ...x, sucursales: total, estado, pdvs,
@@ -380,7 +402,7 @@ export default function ClientesPdvHub() {
             const rank = (e) => e === 'pendiente' ? 0 : e === 'mixto' ? 1 : 2;
             return rank(a.estado) - rank(b.estado) || b.facturas - a.facturas;
         });
-    }, [clientes, pdvPorRazon]);
+    }, [clientes, pdvPorRazon, pdvPorCarnet]);
 
     const resumen = useMemo(() => ({
         total:      grupos.length,
@@ -456,10 +478,22 @@ export default function ClientesPdvHub() {
 
     // Vincular un PDV a la razón social del cliente. Escribe `pos.razonSocialZoho`
     // y atribuye el histórico de esa razón social (misma callable que la ficha).
-    const vincularPdv = async (posId, razonSocialZoho) => {
+    // Vincula un PDV a un CARNET de Zoho (`clientes_zoho/{customerId}`).
+    //
+    // Se guardan los dos datos, pero con papeles distintos: `zohoCustomerId` es
+    // la LLAVE (el customer_id de Zoho, estable) y `razonSocialZoho` queda como
+    // etiqueta legible y respaldo para lo que aún no se re-vinculó. Antes solo se
+    // guardaba el nombre, y como Zoho manda el *nombre para mostrar* —que el
+    // dueño puede cambiar— un renombre dejaba al PDV huérfano de sus propias
+    // facturas sin que nada lo avisara.
+    const vincularPdv = async (posId, cliente) => {
+        const customerId = String(cliente?.customerId || cliente?.id || '');
+        const razonSocialZoho = String(cliente?.customerName || '');
+        if (!customerId) { setError('Ese cliente no tiene carnet de Zoho; vuelve a sincronizar las facturas.'); return; }
+
         setSavingPdv(posId); setMsg(''); setError('');
         try {
-            await updateDoc(doc(db, 'pos', posId), { razonSocialZoho });
+            await updateDoc(doc(db, 'pos', posId), { razonSocialZoho, zohoCustomerId: customerId });
             try { await httpsCallable(functions, 'emparejarRazonSocialPDV')({ posId, razonSocialZoho }); } catch { /* el vínculo ya quedó */ }
             setMsg(`✓ Punto de venta vinculado a ${razonSocialZoho}.`);
         } catch (e) {
@@ -469,7 +503,7 @@ export default function ClientesPdvHub() {
 
     const desvincularPdv = async (posId) => {
         setSavingPdv(posId);
-        try { await updateDoc(doc(db, 'pos', posId), { razonSocialZoho: '' }); }
+        try { await updateDoc(doc(db, 'pos', posId), { razonSocialZoho: '', zohoCustomerId: '' }); }
         catch (e) { setError('No se pudo desvincular. ' + (e?.message || e)); }
         finally { setSavingPdv(''); }
     };
@@ -480,6 +514,38 @@ export default function ClientesPdvHub() {
         try { await updateDoc(doc(db, 'pos', posId), { visitInterval: dias, active: dias > 0 }); }
         catch (e) { setError('No se pudo guardar la frecuencia. ' + (e?.message || e)); }
         finally { setSavingPdv(''); }
+    };
+
+    // ── Amarrar al carnet los PDV que todavía están vinculados solo por nombre ──
+    // Un vínculo por nombre se rompe el día que alguien renombre ese cliente en
+    // Zoho, y se rompe EN SILENCIO. Esto resuelve el nombre actual → carnet una
+    // sola vez y deja el vínculo a prueba de renombres. Solo toca los que hoy
+    // emparejan sin ambigüedad; lo que no resuelva se re-vincula a mano.
+    const porAmarrar = useMemo(() => {
+        const porNombre = new Map();
+        clientes.forEach(c => {
+            const k = norm(c.customerName);
+            if (!k) return;
+            // Un nombre que apunta a dos carnets distintos es ambiguo: se omite.
+            porNombre.set(k, porNombre.has(k) ? null : c);
+        });
+        return pos
+            .filter(p => !String(p.zohoCustomerId || '').trim() && (p.razonSocialZoho || '').trim())
+            .map(p => ({ pos: p, cliente: porNombre.get(norm(p.razonSocialZoho)) }))
+            .filter(x => !!x.cliente);
+    }, [pos, clientes]);
+
+    const amarrarCarnets = async () => {
+        setAmarrando(true); setMsg(''); setError('');
+        let ok = 0;
+        for (const { pos: p, cliente } of porAmarrar) {
+            try {
+                await updateDoc(doc(db, 'pos', p.id), { zohoCustomerId: String(cliente.customerId || cliente.id) });
+                ok++;
+            } catch { /* sigue con los demás */ }
+        }
+        setMsg(`✓ ${ok} punto(s) de venta amarrados a su carnet de Zoho. Ya no se rompen si renombras el cliente.`);
+        setAmarrando(false);
     };
 
     if (cargando) {
@@ -510,6 +576,21 @@ export default function ClientesPdvHub() {
                     <b> PDV: lista maestra</b>. Integraciones queda solo para sincronizar y reparar datos.
                 </p>
             </div>
+
+            {porAmarrar.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 mb-3">
+                    <AlertTriangle size={15} className="shrink-0 text-amber-600" />
+                    <span className="flex-1 min-w-[200px] text-amber-900 leading-snug">
+                        <b>{porAmarrar.length} punto(s) de venta</b> están vinculados solo por el NOMBRE del cliente.
+                        Si alguien lo renombra en Zoho, ese vínculo se rompe sin avisar y el PDV aparece como si
+                        nunca hubiera facturado.
+                    </span>
+                    <button onClick={amarrarCarnets} disabled={amarrando}
+                        className="shrink-0 bg-amber-600 text-white font-bold text-xs px-3 py-2 rounded-lg hover:bg-opacity-90 disabled:opacity-50">
+                        {amarrando ? 'Amarrando…' : 'Amarrar al carnet de Zoho'}
+                    </button>
+                </div>
+            )}
 
             {error && (
                 <p className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
@@ -590,14 +671,17 @@ export default function ClientesPdvHub() {
                                             <div className="mt-1.5 min-w-0">
                                                 <select
                                                     value=""
-                                                    onChange={e => e.target.value && vincularPdv(p.id, e.target.value)}
+                                                    onChange={e => {
+                                                        const c = clientes.find(x => x.id === e.target.value);
+                                                        if (c) vincularPdv(p.id, c);
+                                                    }}
                                                     className="block w-full min-w-0 max-w-full p-2 border border-slate-300 rounded-lg text-xs bg-white"
                                                 >
                                                     <option value="">Vincular a un cliente…</option>
                                                     {clientes
                                                         .slice()
                                                         .sort((a, b) => (a.customerName || '').localeCompare(b.customerName || ''))
-                                                        .map(c => <option key={c.id} value={c.customerName}>{c.customerName}</option>)}
+                                                        .map(c => <option key={c.id} value={c.id}>{c.customerName}</option>)}
                                                 </select>
                                             </div>
                                         </div>
