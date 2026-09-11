@@ -34,6 +34,15 @@ const loose = (s) => sinAcentos(s)
     .replace(/\s+/g, ' ')
     .trim();
 
+// Clave PLANA: `loose` + sin los separadores con que se escribe la sucursal.
+// En Zoho la sucursal va entre paréntesis ("Mi Negocio Supermercados, C.A.
+// (San Luis)"), pero quien vincula el PDV a mano suele escribirla suelta al
+// final o tras un guion ("Mi Negocio Supermercados C.A San Luis"). Las PALABRAS
+// de la sucursal se conservan — "san luis" sigue sin ser "el marques" — así que
+// esto NO afloja la precisión por sucursal, solo deja de exigir que el
+// separador se haya escrito igual.
+const flat = (s) => loose(s).replace(/[()\-]/g, ' ').replace(/\s+/g, ' ').trim();
+
 // Lunes 00:00 de la semana de `d` (la semana laboral arranca el lunes).
 export function inicioSemana(d = new Date()) {
     const x = new Date(d);
@@ -125,8 +134,10 @@ function ultimaVisitaPorPos(visitas, corte) {
 //     haya que salir a activar: es un dato que hay que arreglar.
 function ultimaFacturaPorPos(cartera, facturas, corte) {
     const activas = (facturas || []).filter(f => f.estado !== 'anulada');
-    // Índices de fecha, acotados al corte (para reconstruir el pasado).
-    const idx = { full: {}, fullLoose: {}, canon: {}, canonLoose: {} };
+    // Índices acotados al corte (para reconstruir el pasado). Cada entrada
+    // guarda además el NOMBRE con que se facturó: si el PDV está vinculado a la
+    // razón social equivocada, verlo es la única forma de darse cuenta.
+    const idx = { full: {}, fullLoose: {}, fullFlat: {}, canon: {}, canonLoose: {} };
     // Universo de razones sociales conocidas, SIN corte: para saber si un
     // vínculo apunta a algo que existe, la fecha no importa.
     const conocidas = new Set();
@@ -135,15 +146,15 @@ function ultimaFacturaPorPos(cartera, facturas, corte) {
         const nombre = f.clienteName || '';
         const canonico = f.razonSocialCanonica || stripSucursal(nombre);
         const claves = {
-            full: norm(nombre),        fullLoose: loose(nombre),
-            canon: norm(canonico),     canonLoose: loose(canonico),
+            full: norm(nombre), fullLoose: loose(nombre), fullFlat: flat(nombre),
+            canon: norm(canonico), canonLoose: loose(canonico),
         };
         Object.values(claves).forEach(k => { if (k) conocidas.add(k); });
 
         const t = toDate(f.fecha);
         if (!t || (corte && t > corte)) return;   // reconstrucción histórica
         Object.entries(claves).forEach(([nivel, k]) => {
-            if (k && (!idx[nivel][k] || t > idx[nivel][k])) idx[nivel][k] = t;
+            if (k && (!idx[nivel][k] || t > idx[nivel][k].t)) idx[nivel][k] = { t, nombre };
         });
     });
 
@@ -152,20 +163,21 @@ function ultimaFacturaPorPos(cartera, facturas, corte) {
         const rs = String(p.razonSocialZoho || '').trim();
         if (!rs) { res[p.id] = { vinculado: false, ultima: null, sinCoincidencia: false }; return; }
 
-        const candidatas = [['full', norm(rs)], ['fullLoose', loose(rs)]];
+        const candidatas = [['full', norm(rs)], ['fullLoose', loose(rs)], ['fullFlat', flat(rs)]];
         if (!/\([^)]*\)\s*$/.test(rs)) {
             // El PDV apunta a la razón social completa (sin sucursal) → cadena.
             const c = stripSucursal(rs);
             candidatas.push(['canon', norm(c)], ['canonLoose', loose(c)]);
         }
 
-        let ultima = null;
+        let hit = null;
         for (const [nivel, k] of candidatas) {
-            if (k && idx[nivel][k]) { ultima = idx[nivel][k]; break; }
+            if (k && idx[nivel][k]) { hit = idx[nivel][k]; break; }
         }
         res[p.id] = {
             vinculado: true,
-            ultima,
+            ultima: hit?.t || null,
+            facturadoComo: hit?.nombre || null,
             sinCoincidencia: !candidatas.some(([, k]) => k && conocidas.has(k)),
         };
     });
@@ -223,30 +235,81 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], opt
     const ingreso = cfg.ingreso ? toDate(cfg.ingreso) : null;
 
     // ── 1. PDV sin facturar (activación de cartera) — el principal ──
-    const sinFacturarItems = [];
+    //
+    // "No facturó" a secas mezcla tres realidades muy distintas, y tratarlas
+    // igual le carga al vendedor una gestión que no siempre es suya. Se cruza
+    // con la ÚLTIMA VISITA del mercaderista para separarlas:
+    //
+    //   · `sin_visita`     — nadie ha ido (o la visita ya venció su frecuencia).
+    //                        No se sabe si hay producto: ALERTA MÁXIMA, hay que
+    //                        mandar a alguien antes de opinar del punto.
+    //   · `sin_oc`         — visitado, con el anaquel POR DEBAJO del piso, y aun
+    //                        así no salió orden de compra. Acá sí se está
+    //                        perdiendo la venta: es la gestión a reclamar.
+    //   · `con_inventario` — visitado y con producto suficiente. No le tocaba
+    //                        comprar: NO cuenta contra el vendedor (decisión del
+    //                        dueño) — sale del número y se muestra aparte.
+    //   · `sin_ruta`       — foodservice: no lleva visitas por diseño, así que
+    //                        no hay nada que cruzar; se le vende directo.
+    const accionables = [];
+    const conInventario = [];
     let sinVincular = 0;
     pdvActivos.forEach(p => {
         const info = ultFactura[p.id];
         if (!info?.vinculado) { sinVincular++; return; }
         const dias = info.ultima ? Math.floor((corte - info.ultima) / DIA) : null;
-        if (dias === null || dias >= cfg.diasSinFacturar) {
-            // Heredado = nunca compró, o su última compra es ANTERIOR al ingreso
-            // del vendedor: llegó frío, no se enfrió con él.
-            const heredado = !!ingreso && (!info.ultima || info.ultima < ingreso);
-            sinFacturarItems.push({
-                id: p.id, nombre: p.name || p.nombre || '—', zona: p.zone || p.zona || '',
-                dias, nunca: dias === null, heredado,
-                // Su razón social no aparece en NINGUNA factura: el vínculo con
-                // el cliente de Zoho está mal escrito o el cliente no está
-                // asignado. No es cartera que activar, es un dato que corregir.
-                sinCoincidencia: !!info.sinCoincidencia,
-                razonSocial: p.razonSocialZoho || '',
-            });
-        }
+        if (!(dias === null || dias >= cfg.diasSinFacturar)) return;
+
+        const v = ultVisita[p.id];
+        const visita = v?._t || null;
+        const diasSinVisita = visita ? Math.floor((corte - visita) / DIA) : null;
+        const nivelAnaquel = Number(v?.inventoryLevel);
+        const iv = Number(p.visitInterval) || 0;
+        // La lectura de inventario CADUCA con la frecuencia del punto: lo que se
+        // vio hace 40 días en un PDV semanal ya no dice nada de hoy.
+        const visitaVigente = !!visita && iv > 0 && diasSinVisita <= iv;
+
+        let estadoVisita;
+        if (esFoodservice(p))          estadoVisita = 'sin_ruta';
+        else if (!visitaVigente)       estadoVisita = 'sin_visita';
+        else if (Number.isFinite(nivelAnaquel) && nivelAnaquel >= cfg.pisoAnaquel) estadoVisita = 'con_inventario';
+        else                           estadoVisita = 'sin_oc';
+
+        // Heredado = nunca compró, o su última compra es ANTERIOR al ingreso
+        // del vendedor: llegó frío, no se enfrió con él.
+        const heredado = !!ingreso && (!info.ultima || info.ultima < ingreso);
+        const item = {
+            id: p.id, nombre: p.name || p.nombre || '—', zona: p.zone || p.zona || '',
+            dias, nunca: dias === null, heredado,
+            // Su razón social no aparece en NINGUNA factura: el vínculo con
+            // el cliente de Zoho está mal escrito o el cliente no está
+            // asignado. No es cartera que activar, es un dato que corregir.
+            sinCoincidencia: !!info.sinCoincidencia,
+            razonSocial: p.razonSocialZoho || '',
+            // Bajo qué nombre se encontró la última factura. Si NO es el cliente
+            // que el dueño espera, el vínculo está apuntando al lugar equivocado
+            // (p.ej. un PDV que hoy se factura bajo otra razón social).
+            facturadoComo: info.facturadoComo || null,
+            estadoVisita, visita, diasSinVisita,
+            nivelAnaquel: Number.isFinite(nivelAnaquel) ? nivelAnaquel : null,
+            intervalo: iv,
+        };
+        (estadoVisita === 'con_inventario' ? conInventario : accionables).push(item);
     });
-    sinFacturarItems.sort((a, b) => (b.dias ?? 9999) - (a.dias ?? 9999));
-    const sinFacturarHeredados = sinFacturarItems.filter(i => i.heredado).length;
-    const sinFacturarSinCoincidencia = sinFacturarItems.filter(i => i.sinCoincidencia).length;
+
+    // Primero lo que no se puede ni evaluar (sin visita), después la venta que
+    // se está perdiendo, y dentro de cada grupo el más frío arriba.
+    const RANGO = { sin_visita: 0, sin_oc: 1, sin_ruta: 2, con_inventario: 3 };
+    const porUrgencia = (a, b) =>
+        RANGO[a.estadoVisita] - RANGO[b.estadoVisita] || (b.dias ?? 9999) - (a.dias ?? 9999);
+    accionables.sort(porUrgencia);
+    conInventario.sort((a, b) => (b.dias ?? 9999) - (a.dias ?? 9999));
+
+    const sinFacturarHeredados = accionables.filter(i => i.heredado).length;
+    // Calidad del dato: se cuenta sobre TODOS (accionables + con inventario),
+    // porque un vínculo roto hay que arreglarlo caiga donde caiga.
+    const sinFacturarSinCoincidencia =
+        [...accionables, ...conInventario].filter(i => i.sinCoincidencia).length;
 
     // Activados EN EL PERÍODO: facturaron dentro de la ventana.
     const activadosSemana = pdvActivos.filter(p => {
@@ -385,9 +448,16 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], opt
         semana: { desde, hasta, hoy: now, corte, enCurso },
         cfg,
         sinFacturar:  {
-            count: sinFacturarItems.length, items: sinFacturarItems, sinVincular, activadosSemana,
+            // El número que se muestra es lo ACCIONABLE: los visitados con
+            // inventario suficiente no cuentan contra la gestión del vendedor.
+            count: accionables.length, items: accionables,
+            sinVisita: accionables.filter(i => i.estadoVisita === 'sin_visita').length,
+            sinOC:     accionables.filter(i => i.estadoVisita === 'sin_oc').length,
+            conInventario: { count: conInventario.length, items: conInventario },
+            total: accionables.length + conInventario.length,
+            sinVincular, activadosSemana,
             heredados: sinFacturarHeredados,
-            propios: sinFacturarItems.length - sinFacturarHeredados,
+            propios: accionables.length - sinFacturarHeredados,
             // PDV cuya razón social no aparece en ninguna factura: vínculo por
             // revisar, no cartera por activar.
             sinCoincidencia: sinFacturarSinCoincidencia,

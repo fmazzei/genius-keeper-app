@@ -38,8 +38,15 @@ const PRINT_CSS = `
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
 const fFecha = (d) => d ? new Date(d).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-const tonoColor = (n) => (n === 3 ? ROJO : n === 2 ? AMBAR : n === 1 ? AZUL : VERDE);
-const tonoTexto = (n) => (n === 3 ? 'Atender ya' : n === 2 ? 'Esta semana' : n === 1 ? 'Vigilar' : 'En verde');
+// Nivel 4 = alerta máxima (PDV que nadie ha visitado): morado, igual que en la app.
+const MORADO = '#7e22ce';
+const tonoColor = (n) => (n >= 4 ? MORADO : n === 3 ? ROJO : n === 2 ? AMBAR : n === 1 ? AZUL : VERDE);
+const tonoTexto = (n) => (n >= 4 ? 'Visita urgente' : n === 3 ? 'Atender ya' : n === 2 ? 'Esta semana' : n === 1 ? 'Vigilar' : 'En verde');
+
+const ESTADO_VISITA = {
+    sin_visita: 'Sin visita', sin_oc: 'Visitado sin OC',
+    sin_ruta: 'Foodservice', con_inventario: 'Tenía inventario',
+};
 
 // Mismo criterio de urgencia que la pantalla, para que informe y app coincidan.
 function construirLineas(d) {
@@ -49,13 +56,19 @@ function construirLineas(d) {
         {
             key: 'sinFacturar', titulo: `PDV sin facturar +${d.cfg.diasSinFacturar} días`,
             valor: d.sinFacturar.count,
-            nivel: d.sinFacturar.count >= 10 ? 3 : d.sinFacturar.count >= 4 ? 2 : d.sinFacturar.count > 0 ? 1 : 0,
-            nota: d.sinFacturar.heredados > 0
-                ? `${d.sinFacturar.heredados} ya venían fríos · ${d.sinFacturar.propios} de su gestión`
-                : 'Activar la cartera es la prioridad',
-            cols: ['Punto de venta', 'Zona', 'Origen', 'Sin facturar'],
-            filas: d.sinFacturar.items.map(i => [
-                i.nombre, i.zona || '—', i.heredado ? 'Heredado' : 'Su gestión',
+            nivel: d.sinFacturar.sinVisita > 0 ? 4
+                : d.sinFacturar.count >= 10 ? 3 : d.sinFacturar.count >= 4 ? 2 : d.sinFacturar.count > 0 ? 1 : 0,
+            nota: [
+                d.sinFacturar.sinVisita > 0 ? `${d.sinFacturar.sinVisita} SIN VISITA (urgente)` : null,
+                d.sinFacturar.sinOC > 0 ? `${d.sinFacturar.sinOC} visitados sin OC` : null,
+                d.sinFacturar.conInventario?.count > 0
+                    ? `${d.sinFacturar.conInventario.count} tenían inventario (no cuentan)` : null,
+            ].filter(Boolean).join(' · ') || 'Activar la cartera es la prioridad',
+            cols: ['Punto de venta', 'Zona', 'Estado de visita', 'Sin facturar'],
+            // Los que tenían inventario se listan al final y se marcan: el informe
+            // muestra el panorama completo, pero el NÚMERO solo cuenta lo accionable.
+            filas: [...d.sinFacturar.items, ...(d.sinFacturar.conInventario?.items || [])].map(i => [
+                i.nombre, i.zona || '—', ESTADO_VISITA[i.estadoVisita] || '—',
                 i.nunca ? 'Nunca ha facturado' : `${i.dias} días`,
             ]),
         },

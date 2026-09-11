@@ -424,6 +424,54 @@ el tablero. Se quitó del motor, de la vista y del PDF (`SeguimientoDoc`), junto
 con la carga de `pedidos_mercaderista` que lo alimentaba. La toma de pedidos y su
 badge en la barra del vendedor no cambian.
 
+### "PDV sin facturar" cruzado con la visita del mercaderista (2026-09) ✅
+
+Segunda ronda sobre el mismo indicador, con el planteamiento del dueño: **"no
+facturó" a secas es una acusación injusta**. Un punto puede no haber generado
+orden de compra simplemente porque el mercaderista lo visitó y TODAVÍA TENÍA
+INVENTARIO — eso no es gestión floja del vendedor, es un punto que no necesitaba
+comprar. Sin ese cruce, el indicador "pecha" al vendedor por algo que no hizo mal.
+Cada PDV sin facturar se clasifica ahora contra su ÚLTIMA VISITA:
+
+- **`sin_visita`** — nadie ha ido, o la última visita ya venció la frecuencia del
+  propio PDV (`visitInterval`; una lectura de anaquel de hace 40 días en un punto
+  semanal no dice nada de hoy). **Alerta máxima — nivel 4, MORADO**, color propio
+  porque no es "rojo, corre a vender": es "no se sabe ni si hay producto, manda a
+  alguien YA". La tarjeta lo dice expresamente ("N sin visita: manda a alguien YA").
+- **`sin_oc`** — visitado, con el anaquel POR DEBAJO del piso (`pisoAnaquel`, el
+  mismo `anaquelMinUnits` que ya dispara la OC) y aun así sin pedido. Rojo: acá sí
+  se está perdiendo la venta, y es la gestión a reclamar.
+- **`con_inventario`** — visitado y con producto suficiente. **Decisión del dueño:
+  sale del número grande** (`sinFacturar.count` = solo accionables) y se muestra en
+  su propia sección al final de la hoja, para no perder visibilidad sin cargárselo
+  al vendedor. Queda en `sinFacturar.conInventario`.
+- **`sin_ruta`** — foodservice: no lleva mercaderista por diseño, no hay nada que
+  cruzar. Sigue siendo accionable (se le vende directo).
+
+La hoja de detalle pasó a mostrarse por SECCIONES (`abrir({secciones:[…]})`, que
+además obligó a migrar `abrir` de parámetros posicionales a objeto) y cada fila
+declara qué vio la última visita (fecha, días, frecuencia y unidades en anaquel):
+es lo que justifica —o desmonta— el reclamo.
+
+**Un PDV puede facturarse bajo VARIAS razones sociales, y eso el sistema no lo
+adivina.** Casos reales del dueño: Maxi Quesos facturado el 3-sep como
+"Inversiones MAXI QUESO C.A" y Páramo (Libertador) el 10-sep como "Inversiones
+Cold 2024, C.A", mientras el PDV está vinculado a otra razón social — el seguidor
+encontraba facturas VIEJAS (51 y 135 días) y no las nuevas. Ninguna normalización
+de texto puede saber que "Inversiones Cold 2024, C.A" es Páramo: es un vínculo que
+hay que corregir en Clientes y PDV. Lo que sí se hizo es **hacerlo visible**: cada
+fila muestra ahora *bajo qué nombre* se encontró su última factura
+(`facturadoComo`), que es lo único que delata un vínculo apuntando al cliente
+equivocado. **Pendiente/futuro**: soportar varias razones sociales por PDV
+(hoy `pos.razonSocialZoho` es una sola).
+
+**Emparejamiento: sucursal escrita sin paréntesis.** Tercer nivel de
+normalización (`flat` = `loose` + sin `()` ni `-`): "Mi Negocio Supermercados C.A
+San Luis" (escrito a mano en la ficha del PDV) ahora empareja con "Mi Negocio
+Supermercados, C.A. **(San Luis)**" de Zoho. Las PALABRAS de la sucursal se
+conservan, así que "san luis" sigue sin ser "el marques" — no afloja la precisión
+por sucursal, solo deja de exigir que el separador se haya escrito igual.
+
 **"PDV con producto por vencer" ahora es ACCIONABLE — y con un solo formulario.**
 El indicador no se cierra mirándolo: se cierra retirando o reponiendo. La hoja de
 devolución se extrajo a **`src/Components/DevolucionSheet.jsx`** y es la MISMA en

@@ -35,12 +35,24 @@ const THEME = {
     },
 };
 
-// Paleta por nivel de urgencia (3 = quema, 0 = en verde).
+// Paleta por nivel de urgencia (4 = alerta máxima, 0 = en verde).
+// El 4 (morado) es para lo que NO SE PUEDE NI EVALUAR — un PDV que nadie ha
+// visitado: no se sabe si hay producto, así que no es "rojo, corre a vender",
+// es "manda a alguien YA". Por eso lleva color propio y no un rojo más.
 const NIVEL = {
+    4: { txt: 'text-purple-500',  bg: 'bg-purple-500/10',  ring: 'ring-1 ring-purple-500/40',  stripe: 'bg-purple-600' },
     3: { txt: 'text-red-500',     bg: 'bg-red-500/10',     ring: 'ring-1 ring-red-500/30',     stripe: 'bg-red-500' },
     2: { txt: 'text-amber-500',   bg: 'bg-amber-500/10',   ring: 'ring-1 ring-amber-500/25',   stripe: 'bg-amber-500' },
     1: { txt: 'text-sky-500',     bg: 'bg-sky-500/10',     ring: '',                            stripe: 'bg-sky-500' },
     0: { txt: 'text-emerald-500', bg: 'bg-emerald-500/10', ring: '',                            stripe: 'bg-emerald-500' },
+};
+
+// Cómo se lee cada PDV sin facturar según su última visita (ver `seguidorSemanal`).
+const EST_VISITA = {
+    sin_visita:     { label: 'Sin visita vigente', cls: 'text-purple-500' },
+    sin_oc:         { label: 'Visitado sin OC',    cls: 'text-red-500' },
+    sin_ruta:       { label: 'Foodservice',        cls: 'text-slate-400' },
+    con_inventario: { label: 'Tenía inventario',   cls: 'text-slate-400' },
 };
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
@@ -61,55 +73,115 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
 
     if (!data) return null;
     const { semana, cfg, sinFacturar, anaquelBajo, quiebres, porVencer, cobranza, mercaderista, cobertura } = data;
-    // `resumen` (opcional): un bloque JSX que va ARRIBA de la lista en la hoja de
-    // detalle — para indicadores que no son solo una lista (p.ej. Cobertura de
-    // visitas, que además necesita mostrar la fracción y la barra de progreso).
-    // `accion` (opcional): { label, onClick(item) } → botón por fila.
-    const abrir = (titulo, subtitulo, items, render, resumen = null, accion = null) =>
-        setDetalle({ titulo, subtitulo, items, render, resumen, accion });
+    // Hoja de detalle. `resumen` = bloque JSX arriba de la lista (p.ej. la
+    // fracción y barra de Cobertura). `accion` = { label, onClick(item) }, botón
+    // por fila. `secciones` = [{ titulo, nota, items }] cuando la lista no es
+    // homogénea y agruparla dice algo (PDV sin facturar: lo accionable primero,
+    // lo que tenía inventario aparte).
+    const abrir = ({ titulo, subtitulo, items = [], render, resumen = null, accion = null, secciones = null }) =>
+        setDetalle({ titulo, subtitulo, items, render, resumen, accion, secciones });
 
     // ── Cada indicador declara su nivel de urgencia; el orden sale de ahí ──
     const peorVencimiento = porVencer.items[0]?.diasParaVencer ?? null;
     const peorMora = cobranza.items[0]?.diasVencida ?? 0;
 
+    // Fila de "PDV sin facturar": además de cuánto lleva frío, POR QUÉ está así
+    // — qué vio la última visita — y bajo qué razón social se encontró su última
+    // factura, que es lo que delata un vínculo apuntando al cliente equivocado.
+    const renderSinFacturar = (i) => {
+        const est = EST_VISITA[i.estadoVisita] || EST_VISITA.sin_ruta;
+        return (<>
+            <p className="font-bold text-sm">
+                {i.nombre}
+                {i.heredado && <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-400 align-middle">Heredado</span>}
+            </p>
+            <p className="text-xs opacity-70">{i.zona}</p>
+
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mt-0.5">
+                {/* Un vínculo roto NO es un PDV frío: decirlo evita mandar al
+                    vendedor a "activar" un punto que sí está comprando. */}
+                {i.sinCoincidencia ? (
+                    <span className="text-xs font-black text-amber-500">Sin factura a este nombre</span>
+                ) : (
+                    <span className={`text-xs font-black ${i.nunca || i.dias >= 15 ? 'text-red-500' : 'text-amber-500'}`}>
+                        {i.nunca ? 'Nunca ha facturado' : `${i.dias} días`}
+                    </span>
+                )}
+                <span className={`text-[11px] font-bold ${est.cls}`}>· {est.label}</span>
+            </div>
+
+            {/* Qué vio la última visita: es lo que justifica (o no) el reclamo */}
+            <p className="text-[11px] opacity-60 leading-snug">
+                {i.estadoVisita === 'sin_ruta'
+                    ? 'Sin ruta de mercaderista'
+                    : i.visita
+                        ? <>Última visita {fmtDia(i.visita)} ({i.diasSinVisita} d{i.intervalo > 0 ? `, frecuencia ${i.intervalo} d` : ''})
+                            {i.nivelAnaquel !== null && ` · ${i.nivelAnaquel} uds en anaquel`}</>
+                        : 'Nunca se ha visitado'}
+            </p>
+
+            {i.sinCoincidencia ? (
+                <p className="text-[11px] opacity-60 leading-snug mt-0.5">
+                    Vinculado a "{i.razonSocial || '—'}" — revisa el cliente de Zoho en la ficha del PDV.
+                </p>
+            ) : i.facturadoComo ? (
+                <p className="text-[11px] opacity-60 leading-snug mt-0.5">
+                    Última factura a nombre de "{i.facturadoComo}".
+                </p>
+            ) : null}
+        </>);
+    };
+
     const LINEAS = [
         {
             key: 'sinFacturar', Icon: Flame, label: `PDV sin facturar +${cfg.diasSinFacturar} días`,
             valor: sinFacturar.count,
-            nivel: sinFacturar.count >= 10 ? 3 : sinFacturar.count >= 4 ? 2 : sinFacturar.count > 0 ? 1 : 0,
-            accion: 'Activa la cartera: llama o visita',
-            desglose: sinFacturar.heredados > 0
-                ? `${sinFacturar.heredados} ya venían fríos · ${sinFacturar.propios} de su gestión`
-                : null,
-            onClick: () => abrir('PDV sin facturar', 'Del más frío al más reciente', sinFacturar.items,
-                (i) => (<>
-                    <p className="font-bold text-sm">
-                        {i.nombre}
-                        {i.heredado && <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-400 align-middle">Heredado</span>}
-                    </p>
-                    <p className="text-xs opacity-70">{i.zona}</p>
-                    {/* Un vínculo roto NO es un PDV frío: decirlo evita mandar al
-                        vendedor a "activar" un punto que sí está comprando. */}
-                    {i.sinCoincidencia ? (
-                        <>
-                            <span className="text-xs font-black text-amber-500">Sin factura a este nombre</span>
-                            <p className="text-[11px] opacity-60 leading-snug mt-0.5">
-                                Vinculado a "{i.razonSocial || '—'}" — revisa el cliente de Zoho en la ficha del PDV.
-                            </p>
-                        </>
-                    ) : (
-                        <span className={`text-xs font-black ${i.nunca || i.dias >= 15 ? 'text-red-500' : 'text-amber-500'}`}>
-                            {i.nunca ? 'Nunca ha facturado' : `${i.dias} días`}
-                        </span>
-                    )}
-                </>),
-                sinFacturar.sinCoincidencia > 0 ? (
+            // Un PDV que nadie visitó pesa más que uno frío pero vigilado: no se
+            // sabe siquiera si tiene producto.
+            nivel: sinFacturar.sinVisita > 0 ? 4
+                : sinFacturar.count >= 10 ? 3 : sinFacturar.count >= 4 ? 2 : sinFacturar.count > 0 ? 1 : 0,
+            accion: sinFacturar.sinVisita > 0
+                ? `${sinFacturar.sinVisita} sin visita: manda a alguien YA`
+                : 'Activa la cartera: llama o visita',
+            desglose: [
+                sinFacturar.sinVisita > 0 ? `${sinFacturar.sinVisita} sin visita` : null,
+                sinFacturar.sinOC > 0 ? `${sinFacturar.sinOC} visitado${sinFacturar.sinOC === 1 ? '' : 's'} sin OC` : null,
+                sinFacturar.conInventario.count > 0 ? `${sinFacturar.conInventario.count} tenía${sinFacturar.conInventario.count === 1 ? '' : 'n'} inventario` : null,
+            ].filter(Boolean).join(' · ') || null,
+            onClick: () => abrir({
+                titulo: 'PDV sin facturar',
+                subtitulo: 'Cruzado con la última visita',
+                render: renderSinFacturar,
+                secciones: [
+                    {
+                        titulo: 'Sin visita vigente · atender YA',
+                        nota: 'Nadie ha ido, o la visita ya venció su frecuencia. No se sabe si hay producto en el anaquel.',
+                        items: sinFacturar.items.filter(i => i.estadoVisita === 'sin_visita'),
+                    },
+                    {
+                        titulo: 'Visitado y sin orden de compra',
+                        nota: `El anaquel estaba por debajo de ${cfg.pisoAnaquel} uds y aun así no salió pedido: acá se está perdiendo la venta.`,
+                        items: sinFacturar.items.filter(i => i.estadoVisita === 'sin_oc'),
+                    },
+                    {
+                        titulo: 'Foodservice',
+                        nota: 'No lleva visitas de mercaderista por diseño: se le vende directo.',
+                        items: sinFacturar.items.filter(i => i.estadoVisita === 'sin_ruta'),
+                    },
+                    {
+                        titulo: 'Tenían inventario · no cuentan',
+                        nota: 'Visitados y con producto suficiente en anaquel: no les tocaba comprar, así que no se cargan a la gestión del vendedor.',
+                        items: sinFacturar.conInventario.items,
+                    },
+                ].filter(s => s.items.length > 0),
+                resumen: sinFacturar.sinCoincidencia > 0 ? (
                     <p className="text-xs leading-snug">
                         <b className="text-amber-500">{sinFacturar.sinCoincidencia} de estos PDV</b> están vinculados a una
                         razón social que no aparece en ninguna factura. No son cartera fría: o el nombre está mal escrito,
                         o el cliente de Zoho todavía no está asignado. Corrígelo en Clientes y PDV.
                     </p>
-                ) : null),
+                ) : null,
+            }),
         },
         {
             // El número accionable es el de quiebres que quedaron ABIERTOS. Los que
@@ -122,8 +194,11 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
             desglose: quiebres.repuestos > 0
                 ? `${quiebres.count} quiebre${quiebres.count === 1 ? '' : 's'} · ${quiebres.repuestos} repuesto${quiebres.repuestos === 1 ? '' : 's'} en la visita (R)`
                 : null,
-            onClick: () => abrir('Quiebres de stock', `${quiebres.abiertos ?? 0} sin reponer · ${quiebres.repuestos ?? 0} atendidos (R)`, quiebres.items,
-                (i) => (<>
+            onClick: () => abrir({
+                titulo: 'Quiebres de stock',
+                subtitulo: `${quiebres.abiertos ?? 0} sin reponer · ${quiebres.repuestos ?? 0} atendidos (R)`,
+                items: quiebres.items,
+                render: (i) => (<>
                     <p className="font-bold text-sm">
                         {i.nombre}
                         {i.atendido && <span className="ml-1.5 text-[10px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 align-middle">R</span>}
@@ -132,7 +207,8 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                     <span className={`text-xs font-black ${i.atendido ? 'text-emerald-400' : 'text-red-500'}`}>
                         {i.atendido ? `Repuesto ${i.repuesto} uds` : '0 uds'}
                     </span>
-                </>)),
+                </>),
+            }),
         },
         {
             key: 'cobranza', Icon: Receipt, label: 'Facturas vencidas por cobrar',
@@ -142,15 +218,19 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
             desglose: cobranza.heredadas > 0
                 ? `${cobranza.heredadas} heredadas (${money(cobranza.montoHeredado)}) · ${cobranza.propias} suyas (${money(cobranza.montoPropio)})`
                 : null,
-            onClick: () => abrir('Facturas vencidas', `${money(cobranza.monto)} por cobrar`, cobranza.items,
-                (i) => (<>
+            onClick: () => abrir({
+                titulo: 'Facturas vencidas',
+                subtitulo: `${money(cobranza.monto)} por cobrar`,
+                items: cobranza.items,
+                render: (i) => (<>
                     <p className="font-bold text-sm">
                         {i.cliente}
                         {i.heredada && <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-500/20 text-slate-400 align-middle">Heredada</span>}
                     </p>
                     <p className="text-xs opacity-70">{i.id}</p>
                     <span className="text-xs font-black text-red-500">{money(i.monto)} · {i.diasVencida} d</span>
-                </>)),
+                </>),
+            }),
         },
         {
             key: 'porVencer', Icon: CalendarClock, label: 'PDV con producto por vencer',
@@ -159,36 +239,43 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
             accion: (peorVencimiento !== null && peorVencimiento <= 0)
                 ? 'Hay producto VENCIDO en anaquel'
                 : 'Rota, promociona o retira',
-            onClick: () => abrir('Producto por vencer', 'Según el último reporte de visita', porVencer.items,
-                (i) => (<>
+            onClick: () => abrir({
+                titulo: 'Producto por vencer',
+                subtitulo: 'Según el último reporte de visita',
+                items: porVencer.items,
+                render: (i) => (<>
                     <p className="font-bold text-sm">{i.nombre}</p>
                     <p className="text-xs opacity-70">Vence {i.vence}{i.unidades ? ` · ${i.unidades} uds` : ''} · {i.zona}</p>
                     <span className={`text-xs font-black ${i.diasParaVencer <= 15 ? 'text-red-500' : 'text-amber-500'}`}>
                         {i.diasParaVencer <= 0 ? 'Vencido' : `${i.diasParaVencer} días`}
                     </span>
                 </>),
-                null,
                 // El indicador no se cierra mirándolo: se cierra retirando o
                 // reponiendo. Misma hoja que usa el equipo de campo.
-                onDevolver ? { label: 'Retirar / reponer', onClick: onDevolver } : null),
+                accion: onDevolver ? { label: 'Retirar / reponer', onClick: onDevolver } : null,
+            }),
         },
         {
             key: 'anaquel', Icon: PackageMinus, label: `Anaquel bajo ${anaquelBajo.piso} uds`,
             valor: anaquelBajo.count,
             nivel: anaquelBajo.count >= 5 ? 2 : anaquelBajo.count > 0 ? 1 : 0,
             accion: 'Mete la próxima OC antes del quiebre',
-            onClick: () => abrir('Anaquel bajo el piso', `Menos de ${anaquelBajo.piso} unidades en la última visita`, anaquelBajo.items,
-                (i) => (<>
+            onClick: () => abrir({
+                titulo: 'Anaquel bajo el piso',
+                subtitulo: `Menos de ${anaquelBajo.piso} unidades en la última visita`,
+                items: anaquelBajo.items,
+                render: (i) => (<>
                     <p className="font-bold text-sm">{i.nombre}</p>
                     <p className="text-xs opacity-70">Visto {fmtDia(i.visita)} · {i.zona}</p>
                     <span className="text-xs font-black text-amber-500">{i.nivel} uds · faltan {i.faltan}</span>
-                </>)),
+                </>),
+            }),
         },
     ];
 
     // Orden dinámico: más urgente primero; a igual urgencia, el número más grande.
     const orden = [...LINEAS].sort((a, b) => b.nivel - a.nivel || b.valor - a.valor);
-    const urgentes = orden.filter(l => l.nivel === 3);
+    const urgentes = orden.filter(l => l.nivel >= 3);
     const medios   = orden.filter(l => l.nivel === 1 || l.nivel === 2);
     const verdes   = orden.filter(l => l.nivel === 0);
 
@@ -309,15 +396,17 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                 );
                 return (
                     <button
-                        onClick={() => abrir(
-                            'Cobertura de visitas', 'Según la frecuencia de cada PDV', mercaderista.items,
-                            (i) => (<>
+                        onClick={() => abrir({
+                            titulo: 'Cobertura de visitas',
+                            subtitulo: 'Según la frecuencia de cada PDV',
+                            items: mercaderista.items,
+                            render: (i) => (<>
                                 <p className="font-bold text-sm">{i.nombre}</p>
                                 <p className="text-xs opacity-70">Cada {i.intervalo} días · {i.zona}</p>
                                 <span className="text-xs font-black text-indigo-400">{i.visitas}/{i.meta} · faltan {i.faltan}</span>
                             </>),
-                            resumenCobertura,
-                        )}
+                            resumen: resumenCobertura,
+                        })}
                         className={`w-full flex items-center gap-3 rounded-2xl px-4 py-3 text-left ${t.card}`}
                     >
                         <Users size={18} className={`shrink-0 ${ok ? 'text-emerald-500' : 'text-indigo-400'}`} />
@@ -438,7 +527,11 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                         <div className="flex items-start justify-between px-5 py-4 shrink-0">
                             <div>
                                 <h3 className={`text-base font-black ${t.title}`}>{detalle.titulo}</h3>
-                                <p className={`text-xs ${t.meta}`}>{detalle.subtitulo} · {detalle.items.length}</p>
+                                <p className={`text-xs ${t.meta}`}>
+                                    {detalle.subtitulo} · {detalle.secciones
+                                        ? detalle.secciones.reduce((s, x) => s + x.items.length, 0)
+                                        : detalle.items.length}
+                                </p>
                             </div>
                             <button onClick={() => setDetalle(null)} className={`p-1 ${t.meta}`}><X size={18} /></button>
                         </div>
@@ -446,22 +539,41 @@ export default function SeguidorSemanalView({ data, theme = 'dark', periodoCtl =
                             {detalle.resumen && (
                                 <div className={`rounded-xl p-3 mb-1 ${t.mini}`}>{detalle.resumen}</div>
                             )}
-                            {detalle.items.length === 0 && !detalle.resumen && (
-                                <p className={`text-sm text-center py-6 ${t.meta}`}>Sin pendientes.</p>
-                            )}
-                            {detalle.items.map((i, idx) => (
-                                <div key={idx} className={`rounded-xl px-3 py-2.5 ${t.row} ${t.title}`}>
-                                    {detalle.render(i)}
-                                    {detalle.accion && (
-                                        <button
-                                            onClick={() => { setDetalle(null); detalle.accion.onClick(i); }}
-                                            className="mt-2 w-full flex items-center justify-center gap-1.5 text-xs font-bold py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
-                                        >
-                                            <PackageX size={14} /> {detalle.accion.label}
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
+                            {(() => {
+                                const fila = (i, idx) => (
+                                    <div key={idx} className={`rounded-xl px-3 py-2.5 ${t.row} ${t.title}`}>
+                                        {detalle.render(i)}
+                                        {detalle.accion && (
+                                            <button
+                                                onClick={() => { setDetalle(null); detalle.accion.onClick(i); }}
+                                                className="mt-2 w-full flex items-center justify-center gap-1.5 text-xs font-bold py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                                            >
+                                                <PackageX size={14} /> {detalle.accion.label}
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                                if (detalle.secciones) {
+                                    if (detalle.secciones.length === 0) {
+                                        return <p className={`text-sm text-center py-6 ${t.meta}`}>Sin pendientes.</p>;
+                                    }
+                                    return detalle.secciones.map((sec, si) => (
+                                        <div key={si} className={si > 0 ? 'pt-3' : ''}>
+                                            <p className={`text-[11px] font-black uppercase tracking-wider mb-1 ${t.soft}`}>
+                                                {sec.titulo} · {sec.items.length}
+                                            </p>
+                                            {sec.nota && (
+                                                <p className={`text-[11px] leading-snug mb-2 ${t.meta}`}>{sec.nota}</p>
+                                            )}
+                                            <div className="space-y-2">{sec.items.map(fila)}</div>
+                                        </div>
+                                    ));
+                                }
+                                if (detalle.items.length === 0 && !detalle.resumen) {
+                                    return <p className={`text-sm text-center py-6 ${t.meta}`}>Sin pendientes.</p>;
+                                }
+                                return detalle.items.map(fila);
+                            })()}
                         </div>
                     </div>
                 </div>,
