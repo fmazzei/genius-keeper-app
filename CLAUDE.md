@@ -500,6 +500,22 @@ comisiones. Lo que faltaba era usarla también para el vínculo PDV ↔ cliente:
 **Regla para el futuro: nunca vincular por `customer_name`.** Es el nombre para
 mostrar, es editable y cambiarlo no avisa a nadie.
 
+**Bug que hacía imposible arreglarlo a mano: los PDV con vínculo roto quedaban
+VARADOS.** `pdvsSinCliente` se definía como "PDV con `razonSocialZoho` vacío", así
+que un PDV que apunta a un nombre que ya no existe **no salía bajo ninguna ficha
+de cliente NI en el panel de huérfanos** — las dos únicas puertas para
+re-vincularlo. El dueño hizo los pasos indicados y nada cambiaba, con razón: la
+app no le daba dónde hacerlo. Ahora `pdvsSinCliente` = *los PDV que no aparecen
+bajo NINGÚN cliente* (se calcula desde `grupos`, que es la definición correcta), y
+cada fila declara `vinculoRoto` con el nombre al que apunta — sin eso es imposible
+distinguir dos PDV homónimos y saber cuál conservar.
+
+**Límite honesto:** si el nombre viejo ya no existe en ningún lado (p.ej.
+"Inversiones MAXI 18-12, C.A" tras el renombre), **ningún algoritmo puede saber a
+qué carnet pertenecía** — esa información se perdió al renombrar en Zoho. Lo que
+el sistema sí puede y ahora hace es **no esconder el PDV** y decir exactamente por
+qué está suelto, para que se re-vincule en dos clics.
+
 **Emparejamiento: sucursal escrita sin paréntesis.** Tercer nivel de
 normalización (`flat` = `loose` + sin `()` ni `-`): "Mi Negocio Supermercados C.A
 San Luis" (escrito a mano en la ficha del PDV) ahora empareja con "Mi Negocio

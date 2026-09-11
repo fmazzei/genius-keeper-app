@@ -359,9 +359,12 @@ export default function ClientesPdvHub() {
         return m;
     }, [pos]);
 
-    const pdvsSinCliente = useMemo(() => pos
-        .filter(p => !(p.razonSocialZoho || '').trim() && !String(p.zohoCustomerId || '').trim())
-        .sort((a, b) => (a.name || '').localeCompare(b.name || '')), [pos]);
+    // `pdvsSinCliente` se calcula MÁS ABAJO, a partir de `grupos`: son los PDV que
+    // no aparecen bajo NINGÚN cliente. Antes se definía como "sin razón social
+    // escrita", y eso dejaba varados a los PDV con vínculo ROTO (apuntan a un
+    // nombre que ya no existe porque renombraron el cliente en Zoho): no salían
+    // bajo ninguna ficha NI en este panel, así que no había forma de
+    // re-vincularlos desde la app. Es exactamente lo que pasó con "Maxi Quesos".
 
     // Agrupación por razón social canónica: una ficha por CLIENTE, aunque tenga
     // varias sucursales en Zoho.
@@ -403,6 +406,19 @@ export default function ClientesPdvHub() {
             return rank(a.estado) - rank(b.estado) || b.facturas - a.facturas;
         });
     }, [clientes, pdvPorRazon, pdvPorCarnet]);
+
+    // PDV que no aparecen bajo ningún cliente: los nunca vinculados Y los que
+    // tienen un vínculo ROTO. Estos últimos se marcan (`vinculoRoto`) para poder
+    // decir a qué nombre apuntan — sin eso, el dueño no tiene cómo saber por qué
+    // ese PDV no sale bajo su cliente.
+    const pdvsSinCliente = useMemo(() => {
+        const asignados = new Set();
+        grupos.forEach(g => g.pdvs.forEach(p => asignados.add(p.id)));
+        return pos
+            .filter(p => !asignados.has(p.id))
+            .map(p => ({ ...p, vinculoRoto: !!String(p.razonSocialZoho || '').trim() }))
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }, [pos, grupos]);
 
     const resumen = useMemo(() => ({
         total:      grupos.length,
@@ -640,6 +656,11 @@ export default function ClientesPdvHub() {
                             : <Link2 size={15} className="text-emerald-500 shrink-0" />}
                         <span className="text-sm font-semibold text-slate-700 flex-1 min-w-0">
                             Puntos de venta sin cliente ({pdvsSinCliente.length})
+                            {pdvsSinCliente.some(p => p.vinculoRoto) && (
+                                <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 align-middle">
+                                    {pdvsSinCliente.filter(p => p.vinculoRoto).length} con vínculo roto
+                                </span>
+                            )}
                         </span>
                         {verHuerfanos ? <ChevronDown size={15} className="text-slate-300 shrink-0" /> : <ChevronRight size={15} className="text-slate-300 shrink-0" />}
                     </button>
@@ -655,8 +676,11 @@ export default function ClientesPdvHub() {
                         ) : (
                             <>
                                 <p className="text-[11px] text-slate-400 mb-2">
-                                    Sin razón social no se puede cruzar el PDV con su facturación (ni medir sus días sin
-                                    facturar). En cadenas elige el nombre <b>con su sucursal</b>.
+                                    Sin cliente no se puede cruzar el PDV con su facturación (ni medir sus días sin
+                                    facturar). En cadenas elige el nombre <b>con su sucursal</b>. Los marcados como
+                                    <b> vínculo roto</b> apuntan a un cliente que ya no existe con ese nombre —
+                                    típicamente porque lo renombraron en Zoho: vuelve a elegirlo aquí y queda amarrado
+                                    al carnet, que no cambia nunca.
                                 </p>
                                 <div className="space-y-1.5 max-h-80 overflow-y-auto">
                                     {pdvsSinCliente.map(p => (
@@ -665,6 +689,13 @@ export default function ClientesPdvHub() {
                                                 <button type="button" onClick={() => setEditarPdv(p)} className="min-w-0 text-left flex-1">
                                                     <p className="text-sm font-semibold text-slate-800 break-words leading-snug">{p.name || '(sin nombre)'}</p>
                                                     <p className="text-[11px] text-slate-400 break-words">{[p.chain, p.zone].filter(Boolean).join(' · ') || 'Sin zona'}</p>
+                                                    {/* Decir a QUÉ apunta es lo único que permite distinguir dos PDV
+                                                        con el mismo nombre y saber cuál conservar. */}
+                                                    {p.vinculoRoto && (
+                                                        <p className="text-[11px] text-amber-700 break-words leading-snug mt-0.5">
+                                                            Vínculo roto: apunta a "{p.razonSocialZoho}", que ya no existe con ese nombre.
+                                                        </p>
+                                                    )}
                                                 </button>
                                                 {savingPdv === p.id && <Loader size={13} className="animate-spin text-brand-blue shrink-0 mt-1" />}
                                             </div>
