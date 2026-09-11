@@ -107,7 +107,13 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
         return computeSeguidor({
             cartera: pdv, visitas, facturas,
             opts: {
-                pisoAnaquel: DEFAULT_COMMISSION_CONFIG.anaquelMinUnits || 12,
+                // El piso sale de la config del PROPIO vendedor, igual que en su
+                // "Mi Semana": con el default fijo, el máster clasificaba
+                // sin_oc/con_inventario con un umbral distinto al que ve el
+                // vendedor, y los dos tableros no coincidían.
+                pisoAnaquel: Number(v?.commissionConfig?.anaquelMinUnits) > 0
+                    ? Number(v.commissionConfig.anaquelMinUnits)
+                    : (DEFAULT_COMMISSION_CONFIG.anaquelMinUnits || 12),
                 desde: rango.desde, hasta: rango.hasta,
                 ingreso: v?.fechaIngreso || null,
                 vendedorId: esTodos ? null : sel,

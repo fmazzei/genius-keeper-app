@@ -1333,6 +1333,13 @@ const VendedorLayout = ({ user, onLogout }) => {
 
                 // Despachos de esta semana con mínimo de unidades, cruzados contra cartera
                 const carteraPosIds = new Set(cartera.map(c => c.posId).filter(Boolean));
+                // La cartera se asigna por PDV directo O por CADENA completa — igual
+                // que lo resuelve el máster en `SeguimientoComercial`. Sin las cadenas,
+                // "Mi Semana" del vendedor ignoraba todos los PDV que tiene asignados
+                // por cadena y mostraba un tablero distinto al que ve su jefe.
+                const carteraChains = new Set(
+                    cartera.map(c => c.chain).filter(ch => ch && ch !== 'Automercados Individuales')
+                );
                 const puntosActivacion = despachos
                     .filter(d => {
                         const t = d.createdAt?.toDate?.() || new Date(d.createdAt);
@@ -1428,7 +1435,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 clearTimeout(timeoutId);
                 setLoading(false);
 
-                if (carteraPosIds.size === 0) {
+                if (carteraPosIds.size === 0 && carteraChains.size === 0) {
                     setPosList([]);
                     syncAlertas(user.uid, heroStats).then(() => loadAlertas(user.uid));
                     return;
@@ -1442,27 +1449,46 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //    → un único tramo de red en vez de varios encadenados. Alimenta
                 //    el Bono Anaquel, el Radar y la lista de despacho por cadena.
                 try {
-                    const idsArr = [...carteraPosIds];
+                    // UNA sola lectura de `pos` en vez de N `getDoc` sueltos: además de
+                    // ser menos round-trips, es la única forma de resolver la cartera
+                    // por CADENA (hay que mirar el `chain` de cada PDV, no solo los
+                    // posId que trae `vendor_clients`). Es la MISMA resolución que usa
+                    // el máster, para que los dos tableros salgan iguales.
+                    const posSnap = await getDocs(collection(db, 'pos'));
+                    const carteraPos = posSnap.docs
+                        .map(d => ({ id: d.id, ...d.data() }))
+                        // Los DEPÓSITOS no son puntos de venta: el máster ya los
+                        // excluye (`type !== 'depot'`) y aquí hay que hacer lo mismo,
+                        // porque ahora se lee la colección completa y no una lista
+                        // de ids ya filtrada.
+                        .filter(p => p.type !== 'depot')
+                        .filter(p => carteraPosIds.has(p.id) || (p.chain && carteraChains.has(p.chain)))
+                        .map(p => ({ ...p, type: 'pos' }));
+
+                    const idsArr = carteraPos.map(p => p.id);
                     const posChunks = [];
                     for (let i = 0; i < idsArr.length; i += 10) posChunks.push(idsArr.slice(i, i + 10));
 
-                    const [posSnaps, ...visitasSnaps] = await Promise.all([
-                        Promise.all(idsArr.map(id => getDoc(doc(db, 'pos', id)))),
-                        ...posChunks.map(chunk =>
+                    const visitasSnaps = await Promise.all(
+                        posChunks.map(chunk =>
                             getDocs(query(collection(db, 'visit_reports'), where('posId', 'in', chunk)))
                                 .catch(e => { console.warn('visit_reports (cartera) load error:', e); return null; })
                         ),
-                    ]);
+                    );
 
                     const posDocsMap = {};
-                    posSnaps.forEach(snap => { if (snap.exists()) posDocsMap[snap.id] = snap.data(); });
+                    carteraPos.forEach(p => { posDocsMap[p.id] = p; });
 
                     const visitasCartera = [];
-                    visitasSnaps.forEach(snap => { if (snap) visitasCartera.push(...snap.docs.map(d => d.data())); });
+                    // Con su `id`: el seguidor lo necesita para marcar los lotes como
+                    // devueltos en el reporte de origen cuando el vendedor declara un
+                    // retiro. Sin él la devolución se guardaba pero el producto seguía
+                    // contando como "por vencer" para siempre.
+                    visitasSnaps.forEach(snap => { if (snap) visitasCartera.push(...snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
                     // Reportes y PDV de su cartera para el Mapa de Anaquel y los KPIs
                     // de ejecución (no se cachean en localStorage: pueden ser grandes).
                     setCarteraVisitas(visitasCartera);
-                    setCarteraPosList(Object.entries(posDocsMap).map(([id, d]) => ({ id, ...d, type: 'pos' })));
+                    setCarteraPosList(carteraPos);
 
                     // Bono "Disponibilidad en Anaquel" — sustituye al Bono Activación
                     // para cuentas con `pos.regimenComision === 'anaquel'` (despacho

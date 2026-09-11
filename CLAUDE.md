@@ -537,6 +537,41 @@ escribir. **Solo el VENDEDOR acciona**: `SeguidorSemanalView` recibe `onDevolver
 únicamente desde `VendedorLayout`; el máster ve el mismo tablero en supervisión,
 sin botón — él no resuelve con el cliente.
 
+### Vendedor y máster deben ver lo MISMO en el seguidor (2026-09) ✅
+
+Pedido del dueño: "Mi Semana" del vendedor y el Seguimiento Comercial del máster
+tienen que coincidir. Usan el mismo componente y el mismo motor, pero se les
+estaba dando **datos distintos**. Tres diferencias reales encontradas y cerradas:
+
+- **La cartera por CADENA no existía para el vendedor (la grande).** El máster
+  resuelve la cartera por PDV directo **Y** por cadena (`c.pos.has(p.id) ||
+  c.chains.has(p.chain)`); `VendedorLayout` armaba `carteraPosIds` solo con los
+  `posId` de `vendor_clients`. Un vendedor con cadenas asignadas **no veía
+  ninguno de esos PDV** en su propio tablero mientras su jefe los veía todos.
+  Ahora resuelve igual, con las mismas cadenas y excluyendo depósitos.
+  De paso, la carga pasó de **N `getDoc(pos/{id})` a UNA sola lectura de `pos`**
+  (menos round-trips, y es la única forma de mirar el `chain` de cada PDV). Sigue
+  en la fase de segundo plano, así que no toca el "relámpago" del hero.
+- **Las visitas del vendedor se cargaban SIN su `id`** (`d.data()` pelado). El
+  seguidor necesita `reporteId` para marcar los lotes como `devuelto` en el
+  reporte de origen: sin él, el vendedor podía declarar la devolución pero el
+  producto **seguía contando como "por vencer" para siempre**. Bug de la propia
+  función de retiro recién entregada. Ahora `{ id: d.id, ...d.data() }`.
+- **Piso de anaquel distinto en cada vista.** El máster usaba el default fijo
+  (`DEFAULT_COMMISSION_CONFIG.anaquelMinUnits`) y el vendedor su propia
+  `commissionConfig`. Como ese piso decide `sin_oc` vs `con_inventario`, los dos
+  clasificaban distinto. El máster usa ahora la config del vendedor seleccionado.
+
+**Diferencia que NO se puede cerrar sin exponer datos (y por qué):** las reglas
+de Firestore solo dejan al vendedor listar **sus propias** facturas
+(`facturas_vendedor … resource.data.vendedorId == request.auth.uid`), mientras el
+máster las lee todas. Así que si un PDV de su cartera tiene facturas atribuidas a
+OTRO vendedor —o a ninguno, por un carnet sin asignar—, el vendedor lo ve como
+"sin facturar" y el máster no. Abrirle todas las facturas le mostraría montos y
+comisiones ajenas, así que **no se hizo**. La vía correcta es de datos, no de
+código: **asignar el carnet del cliente al vendedor** en Clientes y PDV — hecho
+eso, las facturas llevan su `vendedorId` y las dos vistas convergen solas.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al
