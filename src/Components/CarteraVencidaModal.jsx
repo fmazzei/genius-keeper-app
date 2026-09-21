@@ -9,9 +9,11 @@
 //      Por eso el modal declara el cuadre de la última conciliación y, si hay
 //      diferencia, dice cuántas facturas y por qué.
 //
-// `minDias` filtra por días desde la EMISIÓN (ventana de riesgo del negocio):
-// 0 = toda la cartera abierta (entrada desde la tarjeta "Por cobrar"),
-// 46 = solo lo de +45 días (entrada desde la alerta de cartera en riesgo).
+// El modal SIEMPRE carga la cartera COMPLETA: `minDias` solo PRESELECCIONA un
+// tramo (46 = entra con "+45 días" marcado, desde la alerta de cartera en
+// riesgo; 0 = sin filtro, desde la tarjeta "Por cobrar"). Antes `minDias`
+// recortaba los datos, así que al entrar desde la alerta los tramos 0–30 y
+// 31–45 salían en $0 y no había forma de ver el resto de la cartera.
 // Tema claro (gerencial/máster).
 
 import React, { useMemo, useState } from 'react';
@@ -42,7 +44,7 @@ export default function CarteraVencidaModal({
     onClose,
 }) {
     const [term, setTerm] = useState('');
-    const [tramoSel, setTramoSel] = useState(null);
+    const [tramoSel, setTramoSel] = useState(minDias >= 46 ? 'd45p' : minDias >= 31 ? 'd31_45' : null);
     const { zohoCuadre } = useAppConfig();
 
     const { filas, totalSaldo, nClientes, porTramo } = useMemo(() => {
@@ -64,8 +66,7 @@ export default function CarteraVencidaModal({
                     tramo: tramoDe(edad),
                 };
             })
-            // Días desde emisión = ventana de riesgo del negocio (31–45 / +45).
-            .filter(f => f.edad !== null && f.edad >= minDias && f.saldo > 0.005)
+            .filter(f => f.edad !== null && f.saldo > 0.005)
             .sort((a, b) => (b.diasVencida ?? b.edad) - (a.diasVencida ?? a.edad));
 
         const porTramo = {};
@@ -79,7 +80,7 @@ export default function CarteraVencidaModal({
             nClientes: clientes.size,
             porTramo,
         };
-    }, [facturas, minDias]);
+    }, [facturas]);
 
     const visibles = filas.filter(f =>
         (!tramoSel || f.tramo.key === tramoSel) &&
@@ -91,7 +92,7 @@ export default function CarteraVencidaModal({
     // compara los dos números.
     const difZoho = zohoCuadre && Number.isFinite(Number(zohoCuadre.zohoPorCobrar))
         ? (totalSaldo - Number(zohoCuadre.zohoPorCobrar)) : null;
-    const descuadra = difZoho !== null && Math.abs(difZoho) > 1 && minDias === 0;
+    const descuadra = difZoho !== null && Math.abs(difZoho) > 1;
 
     return createPortal(
         <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
@@ -105,7 +106,7 @@ export default function CarteraVencidaModal({
                         <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
                             <AlertTriangle size={18} className="text-red-500" /> {titulo}
                         </h2>
-                        <p className="text-xs text-slate-500">Color por antigüedad desde la emisión · toca un tramo para filtrar</p>
+                        <p className="text-xs text-slate-500">Toda la cartera abierta · color por antigüedad desde la emisión · toca un tramo para filtrar (o para quitarlo)</p>
                     </div>
                     <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-200 text-slate-500 shrink-0"><X size={20} /></button>
                 </div>
@@ -156,7 +157,7 @@ export default function CarteraVencidaModal({
 
                     {/* CUADRE CON ZOHO: el total de arriba tiene que ser el mismo
                         que el de Zoho Books. Si no lo es, se dice. */}
-                    {zohoCuadre && minDias === 0 && (
+                    {zohoCuadre && (
                         <div className={`rounded-xl px-3 py-2 text-[11px] leading-snug border ${
                             descuadra ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
                         }`}>

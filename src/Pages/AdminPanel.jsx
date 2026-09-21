@@ -4541,6 +4541,15 @@ const IntegracionesSection = () => {
             const fn = httpsCallable(functions, 'reconciliarFacturasZoho', { timeout: 540000 });
             const { data } = await fn({});
             setReconResult(data);
+            // La marca de tiempo se leía UNA sola vez al abrir la pantalla, así
+            // que tras conciliar seguía mostrando la hora de la corrida ANTERIOR
+            // — y parecía que el barrido no había hecho nada. Se relee.
+            const snap = await getDoc(doc(db, 'settings', 'appConfig'));
+            if (snap.exists()) {
+                const d = snap.data();
+                setUltimaConcil(d.zohoUltimaConciliacion || null);
+                setAuto(a => ({ ...a, ultima: d.zohoAutoUltima || a.ultima }));
+            }
         } catch (e) {
             setReconError(e.message || 'Error al conciliar con Zoho.');
         } finally { setReconciling(false); }
@@ -4727,6 +4736,15 @@ const IntegracionesSection = () => {
                     <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-slate-700 mb-2">
                         <p className="font-bold text-emerald-800 mb-1">Conciliación lista</p>
                         <p>Revisadas: <b>{reconResult.revisadas}</b> · Marcadas como pagadas: <b className="text-emerald-700">{reconResult.marcadasPagadas}</b> · Anuladas: <b>{reconResult.anuladas ?? 0}</b> · Borradores retirados: <b>{reconResult.borradores ?? 0}</b> · Creadas: <b>{reconResult.creadas}</b> · Sin vendedor: <b>{reconResult.sinVendedor}</b> · Ausentes en Zoho: <b className={reconResult.ausentes ? 'text-amber-600' : ''}>{reconResult.ausentes ?? 0}</b>{reconResult.errores ? <> · Errores: <b className="text-red-600">{reconResult.errores}</b></> : null}</p>
+                        {/* Las SALTADAS explican por qué una factura que Zoho ya
+                            cobró puede seguir apareciendo abierta en GK. */}
+                        {(reconResult.bloqueadas || reconResult.ajenas || reconResult.omitidas) ? (
+                            <p className="mt-0.5 text-slate-600">
+                                Saltadas: bloqueadas por borrado previo <b className={reconResult.bloqueadas ? 'text-amber-600' : ''}>{reconResult.bloqueadas ?? 0}</b>
+                                {' · '}de otra organización <b>{reconResult.ajenas ?? 0}</b>
+                                {' · '}sin efecto <b>{reconResult.omitidas ?? 0}</b>
+                            </p>
+                        ) : null}
                         {/* CUADRE DE CUENTAS POR COBRAR — la pregunta del dueño:
                             "¿por qué GK dice que esto está vencido si en Zoho no
                             aparece?". Se responde factura por factura. */}
@@ -4747,7 +4765,7 @@ const IntegracionesSection = () => {
                                 {reconResult.cuadre.gkSoloEnGk > 0 && (
                                     <p className="mt-0.5 text-amber-700">
                                         <b>{reconResult.cuadre.gkSoloEnGk}</b> facturas (${(reconResult.cuadre.gkSoloEnGkMonto || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}) las cobraba GK y Zoho no:{' '}
-                                        {Object.entries(reconResult.cuadre.porMotivo || {}).map(([m, n]) => `${n} ${m.replace(/_/g, ' ')}`).join(' · ')}. Ya quedaron fuera de la cartera.
+                                        {Object.entries(reconResult.cuadre.porMotivo || {}).map(([m, n]) => `${n} ${m.replace(/_/g, ' ')}`).join(' · ')}.
                                     </p>
                                 )}
                                 {/* MISMA factura de los dos lados con saldo distinto.

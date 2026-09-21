@@ -356,7 +356,7 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                 <CarteraVencidaModal
                     facturas={fin.facturas || []}
                     minDias={d45p > 0 ? 46 : 31}
-                    titulo={d45p > 0 ? 'Cartera vencida +45 días' : 'Cartera vencida 31–45 días'}
+                    titulo="Cuentas por cobrar"
                     onClose={() => setShowVencidas(false)}
                 />
             )}

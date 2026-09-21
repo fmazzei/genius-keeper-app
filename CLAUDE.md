@@ -695,6 +695,35 @@ toda la cartera; 46 sigue siendo la entrada desde la alerta de +45 días):
 - `Tile` acepta `onClick` y entonces se renderiza como `<button>` (accesible por
   teclado), no como un div con handler encima.
 
+### El $201,60 eran 2 facturas ya cobradas que el tombstone congelaba (2026-09) ✅
+
+El cuadre nuevo lo resolvió en una corrida: **Zoho $3.837 en 27 facturas · GK
+$3.837 en 27**. De las 5 que solo GK cobraba ($214): 3 fantasmas ($13, que el
+frontend ya excluía) y **2 pagadas en Zoho ($201,60)** — exactamente la brecha.
+
+**Por qué el barrido NO las corregía ("Marcadas como pagadas: 0").** El
+tombstone `facturas_bloqueadas/{numero}` existe para no RESUCITAR una factura
+que el admin borró a propósito, pero `upsertFacturaFromZoho` lo consultaba
+ANTES de mirar si el documento seguía en GK y devolvía `blocked` sin tocar
+nada. Resultado: una factura con tombstone **y** documento vivo quedaba
+congelada para siempre en el estado que tuviera — reportada por cobrar aunque
+Zoho ya la hubiera cobrado. Ahora el tombstone solo bloquea lo que habría que
+**crear de cero** (`blockSnap.exists && !existingData`); si el documento
+existe, se actualiza normal. Las saltadas (`bloqueadas`/`ajenas`/`omitidas`)
+se muestran en el resultado: una factura que no se tocó tiene que poder verse.
+
+**Dos correcciones de la UI que hacían parecer que nada pasaba:**
+- **La hora no se refrescaba.** `zohoUltimaConciliacion` se leía UNA sola vez al
+  abrir la pantalla, así que tras conciliar seguía mostrando la hora de la
+  corrida anterior ("lo corrí a las 3 y dice 2:39"). Ahora se relee al terminar.
+- **El modal recortaba los datos.** `minDias` filtraba la cartera ANTES de
+  calcular los tramos, así que al entrar desde la alerta de +45 días los tiles
+  de 0–30 y 31–45 salían en **$0** y no había forma de ver el resto. Ahora el
+  modal SIEMPRE carga la cartera completa y `minDias` solo **preselecciona** el
+  tramo (se quita tocándolo). El texto "Ya quedaron fuera de la cartera" también
+  mentía: solo vale para las ausentes — una "pagada en zoho" sigue abierta en GK
+  hasta que el barrido la corrija.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

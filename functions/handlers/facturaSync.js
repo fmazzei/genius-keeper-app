@@ -211,10 +211,11 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         return { status: 'other_vendor' };
     }
 
-    // Tombstone: factura eliminada/anulada por un admin → no resucitar.
+    // Tombstone: factura eliminada por un admin. La decisión se toma MÁS ABAJO,
+    // cuando ya se sabe si el documento existe todavía en GK (ver el bloque
+    // "Tombstone" junto a `existingData`).
     const blockKey = String(invoice.invoice_number).trim().replace(/\//g, '-');
     const blockSnap = await admin.firestore().doc(`facturas_bloqueadas/${blockKey}`).get();
-    if (blockSnap.exists) return { status: 'blocked' };
 
     const estado = invoice.status === 'paid' ? 'pagada'
         : invoice.status === 'overdue' ? 'vencida'
@@ -282,6 +283,14 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         if (!legacySnap.empty) { existing = legacySnap.docs[0]; targetRef = existing.ref; }
     }
     const existingData = existing.exists ? existing.data() : null;
+
+    // Tombstone: el registro existe para NO RESUCITAR una factura que el admin
+    // borró a propósito. Pero si el documento TODAVÍA está en GK, bloquear su
+    // actualización no protege nada: congela un dato equivocado para siempre
+    // —una factura que Zoho ya cobró y GK sigue reportando por cobrar— y el
+    // barrido la reporta como "no se pudo tocar" sin que nadie lo vea.
+    // Solo se bloquea lo que de verdad habría que CREAR de cero.
+    if (blockSnap.exists && !existingData) return { status: 'blocked' };
 
     // Unidades: del detalle de la factura (line_items). El endpoint de LISTA de la
     // API de Zoho no trae line_items → en la conciliación bajo demanda no vienen;
