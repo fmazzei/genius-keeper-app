@@ -1,111 +1,95 @@
 // RUTA: src/Components/PullToRefresh.jsx
 //
-// "Halar para recargar": envuelve un contenedor con scroll vertical y dispara
-// onRefresh cuando el usuario arrastra hacia abajo estando arriba del todo.
-// Sustituye al botón de recarga del header (gana espacio en la barra superior).
+// "Tirar hacia abajo para actualizar" — el gesto que todo el mundo ya conoce de
+// su teléfono. El gerente abre el tablero y quiere los números de AHORA, no los
+// de cuando cargó la página; el botón de recargar del navegador no existe en la
+// app instalada y recargar entera es lento y pierde el scroll.
 //
-// Sin librerías de gestos (frágiles en webview): listeners táctiles nativos.
-// Defensas:
-//  · `passive:false` SOLO en touchmove (necesario para preventDefault); si el
-//    navegador no lo soporta, todo va en try/catch y la vista sigue funcionando
-//    normal, solo sin el gesto.
-//  · Si el movimiento es más horizontal que vertical NO se activa: convive con
-//    el deslizamiento entre páginas (Mi Semana · Inicio · Mis KPIs).
-//  · Solo actúa con scrollTop === 0.
+// SIN LIBRERÍAS y con eventos `touch` a secas: este proyecto corre en WebViews
+// viejos de Android (ver "Compatibilidad Android / WebView" en CLAUDE.md) donde
+// las libs de gestos han dado problemas. Solo se activa cuando el contenedor
+// está ARRIBA del todo (`scrollTop <= 0`), así que nunca le roba el scroll al
+// contenido ni interfiere con el desplazamiento normal.
 
-import React, { useRef, useEffect, useState } from 'react';
-import { RefreshCw, ArrowDown } from 'lucide-react';
+import React, { useRef, useState, useCallback } from 'react';
+import { RefreshCw } from 'lucide-react';
 
-const UMBRAL = 64;   // px arrastrados (ya con resistencia) para disparar
-const MAX    = 96;   // tope visual del arrastre
+const UMBRAL = 70;        // px que hay que tirar para que dispare
+const MAX    = 110;       // tope del estiramiento (resistencia)
 
-export default function PullToRefresh({ onRefresh, refreshing = false, className = '', children }) {
+export default function PullToRefresh({ onRefresh, children, className = '' }) {
     const ref = useRef(null);
-    const [pull, setPull] = useState(0);
-    const st = useRef({ y0: 0, x0: 0, activo: false, pull: 0 });
+    const inicio = useRef(null);     // Y del dedo al empezar (null = no estamos tirando)
+    const [dist, setDist] = useState(0);
+    const [cargando, setCargando] = useState(false);
 
-    useEffect(() => {
-        const el = ref.current;
-        if (!el) return undefined;
-        let quitar = () => {};
+    const onTouchStart = useCallback((e) => {
+        if (cargando) return;
+        // El gesto solo existe si ya estamos arriba del todo; si no, es scroll normal.
+        const cont = ref.current;
+        const top = cont ? cont.scrollTop : 0;
+        inicio.current = top <= 0 ? e.touches[0].clientY : null;
+    }, [cargando]);
 
+    const onTouchMove = useCallback((e) => {
+        if (inicio.current === null || cargando) return;
+        const delta = e.touches[0].clientY - inicio.current;
+        if (delta <= 0) { setDist(0); return; }   // tirando hacia arriba = scroll
+        // Resistencia: cuesta cada vez más estirar, como en iOS.
+        setDist(Math.min(MAX, delta * 0.5));
+    }, [cargando]);
+
+    const onTouchEnd = useCallback(async () => {
+        const disparar = inicio.current !== null && dist >= UMBRAL;
+        inicio.current = null;
+        if (!disparar) { setDist(0); return; }
+        setCargando(true);
+        setDist(UMBRAL);          // se queda enganchado mientras carga
         try {
-            const onStart = (e) => {
-                const tocar = e.touches && e.touches[0];
-                if (!tocar || el.scrollTop > 0) { st.current.activo = false; return; }
-                st.current.y0 = tocar.clientY;
-                st.current.x0 = tocar.clientX;
-                st.current.activo = true;
-            };
-
-            const onMove = (e) => {
-                if (!st.current.activo) return;
-                const tocar = e.touches && e.touches[0];
-                if (!tocar) return;
-                const dy = tocar.clientY - st.current.y0;
-                const dx = tocar.clientX - st.current.x0;
-                // Gesto horizontal (cambio de página) o ya no estamos arriba: cancelar.
-                if (Math.abs(dx) > Math.abs(dy) || dy <= 0 || el.scrollTop > 0) {
-                    st.current.activo = false; st.current.pull = 0; setPull(0);
-                    return;
-                }
-                const d = Math.min(MAX, dy * 0.45); // resistencia
-                if (d > 3) {
-                    if (e.cancelable) e.preventDefault();
-                    st.current.pull = d;
-                    setPull(d);
-                }
-            };
-
-            const onEnd = () => {
-                if (!st.current.activo) return;
-                st.current.activo = false;
-                const disparar = st.current.pull >= UMBRAL;
-                st.current.pull = 0;
-                setPull(0);
-                if (disparar) onRefresh?.();
-            };
-
-            el.addEventListener('touchstart', onStart, { passive: true });
-            el.addEventListener('touchmove', onMove, { passive: false });
-            el.addEventListener('touchend', onEnd, { passive: true });
-            el.addEventListener('touchcancel', onEnd, { passive: true });
-            quitar = () => {
-                el.removeEventListener('touchstart', onStart);
-                el.removeEventListener('touchmove', onMove);
-                el.removeEventListener('touchend', onEnd);
-                el.removeEventListener('touchcancel', onEnd);
-            };
-        } catch {
-            /* WebView sin soporte de listeners con opciones: sin gesto, pero la
-               pantalla funciona igual (el contenido sigue desplazándose). */
+            await onRefresh?.();
+        } catch (e) {
+            // Un fallo del refresco no rompe la pantalla: los datos viejos siguen ahí.
+            console.error('Pull to refresh:', e);
+        } finally {
+            setCargando(false);
+            setDist(0);
         }
+    }, [dist, onRefresh]);
 
-        return () => quitar();
-    }, [onRefresh]);
-
-    const listo = pull >= UMBRAL;
-    const altura = refreshing ? 44 : pull;
+    const listo = dist >= UMBRAL;
 
     return (
-        <div ref={ref} className={className} style={{ overscrollBehaviorY: 'contain' }}>
-            {/* Zona que se abre al halar (y mientras recarga) */}
+        <div
+            ref={ref}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={onTouchEnd}
+            className={`relative overflow-y-auto ${className}`}
+        >
+            {/* Indicador: aparece desde arriba conforme se tira */}
             <div
-                className="flex items-center justify-center overflow-hidden"
-                style={{ height: altura, transition: st.current.activo ? 'none' : 'height 180ms ease-out' }}
+                className="absolute left-0 right-0 flex items-center justify-center pointer-events-none z-10"
+                style={{
+                    top: 0,
+                    height: `${dist}px`,
+                    opacity: dist > 8 ? 1 : 0,
+                    transition: inicio.current === null ? 'height .2s ease, opacity .2s ease' : 'none',
+                }}
             >
-                {refreshing ? (
-                    <span className="flex items-center gap-2 text-xs font-bold text-emerald-400">
-                        <RefreshCw size={16} className="animate-spin" /> Actualizando…
-                    </span>
-                ) : pull > 0 ? (
-                    <span className={`flex items-center gap-2 text-xs font-bold ${listo ? 'text-emerald-400' : 'text-slate-500'}`}>
-                        <ArrowDown size={16} className={`transition-transform ${listo ? 'rotate-180' : ''}`} />
-                        {listo ? 'Suelta para actualizar' : 'Hala para actualizar'}
-                    </span>
-                ) : null}
+                <span className="flex items-center gap-2 text-xs font-bold text-slate-500 bg-white border border-slate-200 rounded-full px-3 py-1.5 shadow-sm">
+                    <RefreshCw size={13} className={cargando ? 'animate-spin' : ''}
+                        style={{ transform: cargando ? undefined : `rotate(${dist * 3}deg)` }} />
+                    {cargando ? 'Actualizando…' : listo ? 'Suelta para actualizar' : 'Tira para actualizar'}
+                </span>
             </div>
-            {children}
+
+            <div style={{
+                transform: `translateY(${dist}px)`,
+                transition: inicio.current === null ? 'transform .2s ease' : 'none',
+            }}>
+                {children}
+            </div>
         </div>
     );
 }

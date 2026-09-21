@@ -724,6 +724,41 @@ se muestran en el resultado: una factura que no se tocó tiene que poder verse.
   mentía: solo vale para las ausentes — una "pagada en zoho" sigue abierta en GK
   hasta que el barrido la corrija.
 
+### El barrido CORRIGE lo que detecta, no solo lo reporta (2026-09) ✅
+
+Pedido del dueño: *"ese resultado debe ser exacto y preciso como un reloj suizo"*.
+Tras el arreglo del tombstone la brecha bajó de $201,60 a **$67,20** — justo el
+tramo 31–45 días de la banda. Seguía siendo el mismo patrón: el cuadre
+**detectaba** la factura descuadrada y la dejaba así.
+
+**El cuadre ahora tiene una SEGUNDA PASADA que corrige.** Toda factura abierta en
+GK que Zoho reporta como pagada / anulada / con saldo cero vuelve a pasar por
+`upsertFacturaFromZoho` (la misma vía del barrido, con toda la lógica de
+comisión). Son unas pocas por corrida, así que es barato. Se reporta
+`cuadre.corregidas` y, si alguna NO se pudo, `cuadre.noCorregidas` con su motivo
+— en rojo en la pantalla. `zohoByNumero` guarda ahora una REFERENCIA a la factura
+cruda de Zoho (no una copia: el arreglo ya está en memoria), que es lo que
+permite re-aplicar el upsert. Las `no_existe_en_zoho` NO se tocan: ya salen de la
+cartera por `ausenteEnZoho` y borrarlas es decisión del admin.
+
+**Horario del barrido automático**, a pedido del dueño: **cada hora de 7:00 a
+20:00 y cada 4 h fuera de ese rango** (`0 0,4,7-20 * * *`, 16 corridas/día). De
+día se emiten y se cobran facturas y el gerente mira el tablero; de madrugada no
+pasa nada que justifique preguntarle a Zoho cada hora. El cartel de Integraciones
+se pone en rojo a partir de **5 h** sin corrida (antes 9 h: con cadencia horaria,
+5 h sin correr ya es anormal).
+
+**"Tirar para actualizar" en el tablero gerencial** (`src/Components/PullToRefresh.jsx`):
+el gerente arrastra la pantalla hacia abajo estando arriba del todo y se relee la
+facturación. **Sin librerías de gestos**, solo eventos `touch` — este proyecto
+corre en WebViews viejos de Android (ver "Compatibilidad Android / WebView") donde
+esas libs han dado problemas. Solo se arma si `scrollTop <= 0`, así que nunca le
+roba el scroll al contenido; tiene resistencia al estirar, umbral de 70 px y un
+indicador que pasa de "Tira" → "Suelta" → "Actualizando…". Lo único que se relee
+es `useFinancialKpis` (ahora expone `refetch`, disparado por el prop `refreshKey`
+que baja `ManagerLayout` → `GerencialDashboard` → `BandasFinancieras`): los PDV y
+las visitas ya llegan por `onSnapshot` y son tiempo real.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

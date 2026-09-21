@@ -5,7 +5,7 @@
 // cobranza de verdad, no un proxy de visitas. Mes en curso vs. mes anterior para
 // las tendencias, y un snapshot de cartera abierta para la cobranza.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { unidadesReales, buildCanalResolver } from '@/utils/unidadesFactura.js';
@@ -88,6 +88,10 @@ export function useFinancialKpis() {
     const [clientes, setClientes] = useState([]);
     const [loading, setLoading]   = useState(true);
     const [error, setError]       = useState('');
+    // `nonce` fuerza una relectura: el gerente tira de la pantalla hacia abajo y
+    // espera datos nuevos, no los de cuando abrió la app hace dos horas.
+    const [nonce, setNonce]       = useState(0);
+    const refetch = useCallback(() => setNonce(n => n + 1), []);
 
     useEffect(() => {
         let alive = true;
@@ -113,7 +117,7 @@ export function useFinancialKpis() {
             }
         })();
         return () => { alive = false; };
-    }, []);
+    }, [nonce]);
 
     const kpis = useMemo(() => {
         const now = new Date();
@@ -250,5 +254,5 @@ export function useFinancialKpis() {
         };
     }, [facturas, clientes]);
 
-    return { ...kpis, loading, error };
+    return { ...kpis, loading, error, refetch };
 }

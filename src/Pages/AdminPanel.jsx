@@ -4670,7 +4670,7 @@ const IntegracionesSection = () => {
                 )}
             </div>
 
-            <SectionTitle n="2" title="Conciliación con Zoho (API)" desc="GK le pregunta a Zoho el estado real de cada factura. Corre SOLA cada 4 horas; el botón es para cuando no quieres esperar." />
+            <SectionTitle n="2" title="Conciliación con Zoho (API)" desc="GK le pregunta a Zoho el estado real de cada factura. Corre SOLA cada hora de 7am a 8pm (y cada 4 h de noche); el botón es para cuando no quieres esperar." />
 
             <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
                 {/* ESTADO DEL BARRIDO AUTOMÁTICO.
@@ -4681,7 +4681,7 @@ const IntegracionesSection = () => {
                 {(() => {
                     const ult = auto.ultima?.toDate?.() || (ultimaConcil?.toDate?.() || null);
                     const horas = ult ? (Date.now() - ult.getTime()) / 3600000 : null;
-                    const viejo = horas === null || horas > 9;   // 2 ciclos perdidos
+                    const viejo = horas === null || horas > 5;   // en jornada corre cada hora: 5 h sin corrida ya es anormal
                     const fallo = auto.estado === 'error';
                     const tono = (!auto.activo || fallo || viejo)
                         ? 'bg-red-50 border-red-200 text-red-800'
@@ -4694,7 +4694,7 @@ const IntegracionesSection = () => {
                                     ? 'Actualización automática DESACTIVADA'
                                     : fallo ? 'La última actualización automática FALLÓ'
                                     : viejo ? 'Las facturas pueden estar desactualizadas'
-                                    : 'Se actualiza sola cada 4 horas'}
+                                    : 'Se actualiza sola cada hora (7am–8pm)'}
                             </p>
                             <p className="mt-0.5">
                                 {ult
@@ -4735,7 +4735,7 @@ const IntegracionesSection = () => {
                 {reconResult && (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-slate-700 mb-2">
                         <p className="font-bold text-emerald-800 mb-1">Conciliación lista</p>
-                        <p>Revisadas: <b>{reconResult.revisadas}</b> · Marcadas como pagadas: <b className="text-emerald-700">{reconResult.marcadasPagadas}</b> · Anuladas: <b>{reconResult.anuladas ?? 0}</b> · Borradores retirados: <b>{reconResult.borradores ?? 0}</b> · Creadas: <b>{reconResult.creadas}</b> · Sin vendedor: <b>{reconResult.sinVendedor}</b> · Ausentes en Zoho: <b className={reconResult.ausentes ? 'text-amber-600' : ''}>{reconResult.ausentes ?? 0}</b>{reconResult.errores ? <> · Errores: <b className="text-red-600">{reconResult.errores}</b></> : null}</p>
+                        <p>Revisadas: <b>{reconResult.revisadas}</b> · Marcadas como pagadas: <b className="text-emerald-700">{reconResult.marcadasPagadas}</b> · Anuladas: <b>{reconResult.anuladas ?? 0}</b> · Borradores retirados: <b>{reconResult.borradores ?? 0}</b> · Creadas: <b>{reconResult.creadas}</b> · Sin vendedor: <b>{reconResult.sinVendedor}</b> · Ausentes en Zoho: <b className={reconResult.ausentes ? 'text-amber-600' : ''}>{reconResult.ausentes ?? 0}</b>{reconResult.corregidas ? <> · <b className="text-emerald-700">{reconResult.corregidas} corregidas al cuadrar</b></> : null}{reconResult.errores ? <> · Errores: <b className="text-red-600">{reconResult.errores}</b></> : null}</p>
                         {/* Las SALTADAS explican por qué una factura que Zoho ya
                             cobró puede seguir apareciendo abierta en GK. */}
                         {(reconResult.bloqueadas || reconResult.ajenas || reconResult.omitidas) ? (
@@ -4793,6 +4793,11 @@ const IntegracionesSection = () => {
                                             </details>
                                         )}
                                     </div>
+                                )}
+                                {Array.isArray(reconResult.cuadre.noCorregidas) && reconResult.cuadre.noCorregidas.length > 0 && (
+                                    <p className="mt-0.5 text-red-600">
+                                        No se pudieron corregir: {reconResult.cuadre.noCorregidas.map(x => `${x.numero} (${x.motivo})`).join(' · ')}
+                                    </p>
                                 )}
                                 {reconResult.cuadre.zohoAbiertasSinGk > 0 && (
                                     <p className="mt-0.5 text-amber-700"><b>{reconResult.cuadre.zohoAbiertasSinGk}</b> facturas abiertas en Zoho que GK no tiene registradas.</p>

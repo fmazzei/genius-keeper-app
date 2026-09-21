@@ -246,7 +246,10 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
 // pueda decir cuándo corrió y si falló: un barrido automático roto en silencio
 // es exactamente el problema que se está resolviendo.
 exports.conciliarZohoAutomatico = onSchedule({
-    schedule: "0 */4 * * *",          // cada 4 horas
+    // Cada HORA en jornada comercial (7:00–20:00) y cada 4 h fuera de ella:
+    // de día las facturas se cobran y se emiten, y el gerente mira el tablero;
+    // de madrugada no pasa nada que justifique preguntarle a Zoho cada hora.
+    schedule: "0 0,4,7-20 * * *",
     timeZone: "America/Caracas",
     region: "us-central1",
     timeoutSeconds: 540,
@@ -473,6 +476,7 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
                 balance: inv.balance != null ? Number(inv.balance) : (Number(inv.total) || 0),
                 total:   Number(inv.total) || 0,
                 cliente: inv.customer_name || '',
+                inv,     // referencia a la factura cruda (no copia): permite re-aplicar el upsert
             });
         }
 
@@ -648,6 +652,7 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
         }
 
         const gkNumeros = new Set();
+        const aCorregir = [];   // facturas abiertas en GK que Zoho ya no cobra
         gkSnap.docs.forEach(d => {
             const f = d.data();
             const num = String(f.numero || '').trim();
@@ -679,6 +684,10 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
             else if (!(Number(z.balance) > 0.005)) motivo = 'saldo_cero_en_zoho';
 
             if (motivo) {
+                // Detectar no basta: si Zoho dice que ya la cobró, anuló o dejó
+                // en cero, GK tiene que reflejarlo. Se corrigen en una segunda
+                // pasada (son unas pocas), reusando la MISMA vía del barrido.
+                if (motivo !== 'no_existe_en_zoho' && z?.inv) aCorregir.push(z.inv);
                 cuadre.gkSoloEnGk++;
                 cuadre.gkSoloEnGkMonto += saldoGk;
                 cuadre.porMotivo[motivo] = (cuadre.porMotivo[motivo] || 0) + 1;
@@ -719,6 +728,30 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
                 }
             }
         }
+        // ── SEGUNDA PASADA: corregir lo que el cuadre encontró ──────────────
+        // El barrido normal pudo haber saltado estas facturas (tombstone, un
+        // fallo puntual de Zoho, una que entró por webhook sin pasar por aquí).
+        // Reportarlas y dejarlas mal es lo que mantenía la brecha: se corrigen.
+        cuadre.corregidas = 0;
+        cuadre.noCorregidas = [];
+        for (const inv of aCorregir) {
+            try {
+                const r = await upsertFacturaFromZoho(inv, appConfig, {
+                    body: inv, onlyVendedorId: vendedorId, preload, fetchLineItems, stats: zstats, rif: null,
+                });
+                if (r.status === 'ok') { cuadre.corregidas++; res.corregidas = (res.corregidas || 0) + 1; }
+                else if (cuadre.noCorregidas.length < 20) {
+                    cuadre.noCorregidas.push({ numero: inv.invoice_number, motivo: r.status });
+                }
+            } catch (e) {
+                if (cuadre.noCorregidas.length < 20) {
+                    cuadre.noCorregidas.push({ numero: inv.invoice_number, motivo: String(e?.message || e).slice(0, 80) });
+                }
+            }
+        }
+        // El total de GK del cuadre ya excluía estas facturas, así que tras
+        // corregirlas los dos lados quedan diciendo lo mismo de verdad.
+
         res.cuadre = cuadre;
 
         // Commit en lotes de 400.

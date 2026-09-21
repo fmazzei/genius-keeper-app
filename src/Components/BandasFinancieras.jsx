@@ -5,7 +5,7 @@
 // anterior y una línea de acción. Se muestran arriba del dashboard para
 // máster/gerencia. Diseño "Tablero de 4 Preguntas" (validado en mockup).
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TrendingUp, AlertTriangle, Clock, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { useFinancialKpis } from '@/hooks/useFinancialKpis.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
@@ -98,8 +98,12 @@ const Tile = ({ label, children, className = '', onClick = null }) => {
         : <div className={base}>{cuerpo}</div>;
 };
 
-export default function BandasFinancieras({ rotacion = null, rotacionReports = null, rotacionVentanaLabel = '', onMapa = null, onAnaquel = null }) {
+export default function BandasFinancieras({ rotacion = null, rotacionReports = null, rotacionVentanaLabel = '', onMapa = null, onAnaquel = null, refreshKey = 0 }) {
     const fin = useFinancialKpis();
+    // Las visitas/PDV llegan por onSnapshot (siempre vivas); la facturación se
+    // lee una sola vez al montar. Al tirar de la pantalla hay que releerla.
+    const refetch = fin.refetch;
+    useEffect(() => { if (refreshKey > 0) refetch?.(); }, [refreshKey, refetch]);
     const { metaVentasGeneral, zohoSyncAt } = useAppConfig();
     const [showDiasPago, setShowDiasPago] = useState(false);
     const [showVencidas, setShowVencidas] = useState(false);

@@ -23,6 +23,7 @@ import ReportesAnaquelView from './ReportesAnaquelView.jsx';
 import ExportesView from './ExportesView.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
+import PullToRefresh from '@/Components/PullToRefresh.jsx';
 
 // ✅ Se importan ambos componentes del planificador
 import MonthlyPlanner from './Planner/MonthlyPlanner.jsx';
@@ -30,6 +31,7 @@ import Planner from './Planner/Planner.jsx';
 
 const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     const { posList, reports, loading: geniusLoading } = useGeniusEngine(role);
+    const [refreshKey, setRefreshKey] = useState(0);   // "tirar para actualizar" del tablero
     const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole(role);
@@ -192,9 +194,19 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                         className="flex-1 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory"
                         style={{ scrollbarWidth: 'none' }}
                     >
-                        <div className="snap-center shrink-0 w-full h-full overflow-y-auto">
-                            <GerencialDashboard {...commonProps} role={role} readOnly={readOnly} onNavigate={setCurrentView} />
-                        </div>
+                        {/* Tirar hacia abajo = actualizar. Los PDV y las visitas
+                            llegan por onSnapshot (ya son tiempo real); lo que se
+                            relee es la facturación de Zoho, que se carga una sola
+                            vez al montar. */}
+                        <PullToRefresh
+                            className="snap-center shrink-0 w-full h-full"
+                            onRefresh={async () => {
+                                setRefreshKey(k => k + 1);
+                                await new Promise(r => setTimeout(r, 600));   // deja ver que pasó algo
+                            }}
+                        >
+                            <GerencialDashboard {...commonProps} role={role} readOnly={readOnly} onNavigate={setCurrentView} refreshKey={refreshKey} />
+                        </PullToRefresh>
                         <div className="snap-center shrink-0 w-full h-full overflow-y-auto">
                             <div className="w-full max-w-5xl mx-auto">
                                 <FacturacionClientes />

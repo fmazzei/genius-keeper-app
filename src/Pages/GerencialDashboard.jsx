@@ -283,7 +283,7 @@ const BAND_EJECUCION   = ['visit_count', 'pdv_coverage', 'reporter_count', 'comp
 const BAND_COMPETENCIA = ['price_index', 'new_entrants', 'promo_activity'];
 
 // ── Main dashboard ─────────────────────────────────────────────────────────────
-const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => {
+const GerencialDashboard = ({ reports, posList, loading, role, onNavigate, refreshKey = 0 }) => {
     const { getEnabledWidgets, loading: configLoading } = useDashboardConfig();
     const { ourProductWeight_g } = useAppConfig();
     const [timeRange, setTimeRange]   = useState('30d');
@@ -374,6 +374,7 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate }) => 
             {/* ── 01 ¿Vendemos? · 02 ¿Cobramos? — datos reales de facturas_vendedor.
                  Rotación estimada y Mapa de Calor van dentro de ¿Vendemos? (trade). ── */}
             <BandasFinancieras
+                refreshKey={refreshKey}
                 rotacion={enabledSet.has('rotation') ? (kpis.productRotation?.averageDaily ?? null) : null}
                 /* Reportes completos: el modal calcula la rotación mes a mes con
                    la MISMA fórmula, sin depender de la ventana del dashboard. */
