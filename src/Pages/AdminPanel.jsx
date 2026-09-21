@@ -4682,6 +4682,11 @@ const IntegracionesSection = () => {
                         {/* CUADRE DE CUENTAS POR COBRAR — la pregunta del dueño:
                             "¿por qué GK dice que esto está vencido si en Zoho no
                             aparece?". Se responde factura por factura. */}
+                        {reconResult.cuadreError && (
+                            <p className="mt-2 pt-2 border-t border-emerald-200 text-red-600">
+                                El cuadre con Zoho no se pudo calcular: {reconResult.cuadreError}. La conciliación de facturas sí se aplicó.
+                            </p>
+                        )}
                         {reconResult.cuadre && (reconResult.cuadre.zohoFacturas > 0 || reconResult.cuadre.gkSoloEnGk > 0) && (
                             <div className="mt-2 pt-2 border-t border-emerald-200">
                                 <p className="font-bold text-slate-800">Cuentas por cobrar · GK vs Zoho</p>

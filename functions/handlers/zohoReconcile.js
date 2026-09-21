@@ -12,6 +12,7 @@
 // escriben con la callable `guardarCredencialesZoho`, solo master).
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const { getAccessToken, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
 const { upsertFacturaFromZoho, resolveVendedorFromPreload, esClienteOficina, extraerRif, stripSucursal } = require('./facturaSync');
@@ -33,12 +34,16 @@ const { upsertClientesRegistry, loadClienteMap } = require('./clientesRegistry')
  */
 async function retirarFacturaSiExiste(inv, onlyVendedorId, estadoDestino = 'anulada') {
     const facturasRef = admin.firestore().collection('facturas_vendedor');
-    const blockKey = String(inv.invoice_number).trim().replace(/\//g, '-');
+    // Zoho deja el número VACÍO en muchos borradores. Sin número no hay nada que
+    // buscar — y `doc('')` truena, que es justo cómo se pierde una corrida entera.
+    const numero = String(inv.invoice_number || '').trim();
+    if (!numero) return 'noexiste';
+    const blockKey = numero.replace(/\//g, '-');
     let snap = await facturasRef.doc(blockKey).get();
     let ref = snap.exists ? snap.ref : null;
     let data = snap.exists ? snap.data() : null;
     if (!ref) {
-        const legacy = await facturasRef.where('numero', '==', inv.invoice_number).limit(1).get();
+        const legacy = await facturasRef.where('numero', '==', numero).limit(1).get();
         if (!legacy.empty) { ref = legacy.docs[0].ref; data = legacy.docs[0].data(); }
     }
     if (!ref || !data) return 'noexiste';
@@ -167,7 +172,23 @@ exports.probarConexionZoho = onCall({ region: "us-central1", timeoutSeconds: 120
  *
  * @returns {Promise<{ok, revisadas, creadas, marcadasPagadas, sinVendedor, bloqueadas, ajenas, errores, detalles}>}
  */
-exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds: 540, memory: "512MiB" }, async (request) => {
+// El wrapper existe para NO devolver un "internal" pelado: si algo truena, el
+// dueño tiene que poder leer QUÉ truenó desde la pantalla, sin ir a los logs de
+// Cloud Functions. La memoria subió a 1 GiB: la función carga en RAM el universo
+// completo de facturas de Zoho MÁS toda la colección `facturas_vendedor`, y un
+// OOM se ve exactamente igual que un "internal" sin causa.
+exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds: 540, memory: "1GiB" }, async (request) => {
+    try {
+        return await ejecutarConciliacion(request);
+    } catch (e) {
+        if (e instanceof HttpsError) throw e;
+        logger.error('reconciliarFacturasZoho falló:', e);
+        const linea = String(e?.stack || '').split('\n')[1]?.trim() || '';
+        throw new HttpsError("internal", `Conciliación: ${e?.message || e}${linea ? ` — ${linea}` : ''}`.slice(0, 400));
+    }
+});
+
+async function ejecutarConciliacion(request) {
     if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
     await requireRole(request.auth.uid, ["master", "administrador"]);
 
@@ -480,7 +501,7 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     // tope de páginas, no se marca nada, para no señalar falsos ausentes). NUNCA se
     // borra: solo se marca `ausenteEnZoho` para que el admin la revise y confirme.
     res.ausentesEvaluado = complete;
-    {
+    try {
         const gkQuery = vendedorId
             ? admin.firestore().collection('facturas_vendedor').where('vendedorId', '==', vendedorId)
             : admin.firestore().collection('facturas_vendedor');
@@ -574,9 +595,13 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
             updates.slice(i, i + 400).forEach(u => batch.update(u.ref, u.data));
             await batch.commit();
         }
+    } catch (e) {
+        // Se declara, no se esconde: el resto del resultado sigue siendo válido.
+        res.cuadreError = String(e?.message || e).slice(0, 300);
     }
 
     // Marca de tiempo de la última conciliación (visible en Integraciones).
+    try {
     await admin.firestore().doc('settings/appConfig').set({
         zohoUltimaConciliacion: admin.firestore.FieldValue.serverTimestamp(),
         zohoTotalFacturas: diag.zohoTotal,          // universo total de Zoho (barrido)
@@ -595,6 +620,7 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
             porMotivo: res.cuadre.porMotivo, zohoAbiertasSinGk: res.cuadre.zohoAbiertasSinGk,
         } } : {}),
     }, { merge: true });
+    } catch (e) { res.resumenError = String(e?.message || e).slice(0, 200); }
 
     // Top clientes que aportan facturas heredadas (para ubicar cartera mal asignada).
     diag.topHeredadas = Object.entries(diag.topHeredadasPorCliente)
@@ -623,4 +649,4 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         ejemplos: campos.ejemplos,
     };
     return res;
-});
+}
