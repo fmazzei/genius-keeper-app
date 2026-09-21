@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import EstadoCuentaDoc from '@/Components/EstadoCuentaDoc.jsx';
 import PosList from '@/Pages/PosList.jsx';
+import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 import PedidoForm from '@/Pages/PedidoForm.jsx';
 import TomarPedidoForm from '@/Pages/TomarPedidoForm.jsx';
 import VendedorCartera from '@/Pages/VendedorCartera.jsx';
@@ -1297,7 +1298,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     return t && t >= periodStart && t < periodEnd;
                 };
                 const unidadesDelMes = facturasVend
-                    .filter(f => f.estado !== 'anulada' && enPeriodo(f))
+                    .filter(f => cuentaEnCartera(f) && enPeriodo(f))
                     .reduce((s, f) => s + (Number(f.unidades) || 0), 0);
 
                 // 2c. Velocidad de Venta — ritmo actual vs. ritmo necesario, medido
@@ -1366,7 +1367,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     const tresDias = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
 
                     facturas.forEach(f => {
-                        if (f.estado === 'anulada') return;
+                        if (!cuentaEnCartera(f)) return;
                         const venc = f.vencimiento?.toDate?.() || (f.vencimiento ? new Date(f.vencimiento) : null);
                         const vencida = venc && venc <= now;
                         const pagada = f.estado === 'pagada';

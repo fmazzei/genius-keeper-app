@@ -9,6 +9,7 @@ import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Building2, Store, FileDown, TrendingUp } from 'lucide-react';
 import FacturacionDoc from '@/Components/FacturacionDoc.jsx';
+import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
@@ -19,7 +20,7 @@ function aggregate(facturas, modo) {
     const now = new Date();
     const map = new Map();
     for (const f of facturas || []) {
-        if (f.estado === 'anulada') continue;
+        if (!cuentaEnCartera(f)) continue;
         const key = modo === 'cliente'
             ? (f.razonSocialCanonica || f.clienteName || '—')
             : (f.clienteName || f.razonSocialCanonica || '—');

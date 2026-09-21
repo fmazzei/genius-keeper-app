@@ -7,6 +7,7 @@ import { Users, Trophy, RefreshCw, ChevronDown, ChevronUp, FileText, AlertTriang
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import { computeMetaMensual, tierParaPct } from '@/utils/vendedorMeta.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
+import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 
 // Estilos visuales por nombre de nivel — el nivel/tasa se derivan del % del
 // período de empleo del vendedor (tierParaPct, mismo cálculo que su Home), así
@@ -100,7 +101,7 @@ const RendimientoComercialView = () => {
                     return t && t >= periodStart && t < periodEnd;
                 };
                 const facturasPeriodo = facturas.filter(enPeriodo);              // incl. anuladas, para el detalle
-                const delPeriodo = facturasPeriodo.filter(f => f.estado !== 'anulada'); // cuenta a unidades/monto
+                const delPeriodo = facturasPeriodo.filter(cuentaEnCartera); // cuenta a unidades/monto
                 const units  = delPeriodo.reduce((s, f) => s + (Number(f.unidades) || 0), 0);
                 const monto  = delPeriodo.reduce((s, f) => s + (Number(f.monto) || 0), 0);
                 const ratio  = goal > 0 ? units / goal : 0;
@@ -141,7 +142,7 @@ const RendimientoComercialView = () => {
     const teamPct    = Math.round(teamRatio * 100);
     // Unidades de las facturas sin vendedor (para transparencia en la alerta):
     // NO cuentan en la Meta Global hasta que se vinculen a un vendedor.
-    const sinAsignarUds = sinAsignar.filter(f => f.estado !== 'anulada').reduce((s, f) => s + (Number(f.unidades) || 0), 0);
+    const sinAsignarUds = sinAsignar.filter(cuentaEnCartera).reduce((s, f) => s + (Number(f.unidades) || 0), 0);
 
     if (loading) return <div className="flex items-center justify-center h-full"><LoadingSpinner /></div>;
 

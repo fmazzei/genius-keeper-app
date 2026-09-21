@@ -1,6 +1,7 @@
 // RUTA: src/utils/vendedorMeta.js
 
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
+import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 
 const MS_DIA = 86400000;
 
@@ -169,7 +170,7 @@ function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minU
         const we = ws + MS_SEMANA;
         const porCliente = {};
         facturas.forEach(f => {
-            if (f.estado === 'anulada' || f.recuperada || f.categoria === 'foodservice') return;
+            if (!cuentaEnCartera(f) || f.recuperada || f.categoria === 'foodservice') return;
             const t = toDate(f.fecha);
             if (!t) return;
             const tm = t.getTime();
@@ -270,7 +271,7 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
         // COBRADO A TIEMPO (factura por factura), no por un umbral todo-o-nada.
         let unidades = 0, cobradoRegular = 0, cobradoRegularATiempo = 0, cobradoRecup = 0, cobradoFood = 0, cobrDen = 0, cobrATiempo = 0;
         facturas.forEach(f => {
-            if (f.estado === 'anulada') return;
+            if (!cuentaEnCartera(f)) return;
             const pagada = f.estado === 'pagada';
             const esRecup = f.recuperada === true;
             const esFood  = f.categoria === 'foodservice';
@@ -444,7 +445,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const regulares = [];   // no recuperadas, no anuladas
     const recuperadas = [];
     facturas.forEach(f => {
-        if (f.estado === 'anulada') return;
+        if (!cuentaEnCartera(f)) return;
         const t = toDate(f.fecha);
         const pagada = f.estado === 'pagada';
         const esRecup = f.recuperada === true;

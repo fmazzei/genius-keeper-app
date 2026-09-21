@@ -23,7 +23,15 @@ const { upsertClientesRegistry, loadClienteMap } = require('./clientesRegistry')
  * vendedor, si le pertenece): revierte sus unidades/comisión y la marca anulada.
  * No la crea si no existe (una anulada nueva no aporta nada).
  */
-async function anularFacturaSiExiste(inv, onlyVendedorId) {
+/**
+ * Retira de la cartera una factura que Zoho ya NO reconoce como cuenta por
+ * cobrar: `void` (anulada) o `draft` (volvió a borrador). En ambos casos se
+ * revierten las unidades/comisión acumuladas — un borrador no es una venta —
+ * y el documento queda visible para auditoría, pero fuera de las cuentas por
+ * cobrar. NUNCA se borra.
+ * @param {'anulada'|'borrador'} estadoDestino
+ */
+async function retirarFacturaSiExiste(inv, onlyVendedorId, estadoDestino = 'anulada') {
     const facturasRef = admin.firestore().collection('facturas_vendedor');
     const blockKey = String(inv.invoice_number).trim().replace(/\//g, '-');
     let snap = await facturasRef.doc(blockKey).get();
@@ -36,14 +44,16 @@ async function anularFacturaSiExiste(inv, onlyVendedorId) {
     if (!ref || !data) return 'noexiste';
     if (onlyVendedorId && data.vendedorId !== onlyVendedorId) return 'other_vendor';
     if (data.estado === 'anulada') return 'ya_anulada';
+    if (data.estado === estadoDestino) return 'ya_retirada';
     await revertirAcumulados({ id: ref.id, ...data });
     await ref.update({
-        estado: 'anulada', comisionGenerada: 0, comisionAnulada: true,
+        estado: estadoDestino, comisionGenerada: 0, comisionAnulada: true,
         pagadaDentroDePlazo: null, tasaCohorte: null, tierCohorte: null,
-        unidadesContabilizadas: false, anuladaEnZoho: true,
+        unidadesContabilizadas: false,
+        ...(estadoDestino === 'anulada' ? { anuladaEnZoho: true } : { borradorEnZoho: true }),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    return 'anulada';
+    return estadoDestino === 'anulada' ? 'anulada' : 'borrador';
 }
 
 // Parsea "YYYY-MM-DD" en local (sin corrimiento UTC).
@@ -259,13 +269,18 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         sinVendedor: 0,
         bloqueadas: 0,
         ajenas: 0,
-        omitidas: 0,         // borradores
+        omitidas: 0,         // sin efecto (ya estaban como Zoho las reporta)
+        borradores: 0,       // draft en Zoho → retiradas de la cartera de GK
         ausentes: 0,         // en GK pero ya no en Zoho (posible eliminada)
         errores: 0,
         detalles: [],        // resumen de las que se marcaron pagadas
     };
 
     const seen = new Set(); // números vistos en Zoho (para detectar ausentes)
+    // Vista cruda de Zoho por número de factura: es la VERDAD contra la que se
+    // compara la cartera de GK al final del barrido ("¿por qué GK dice que esto
+    // está vencido si en Zoho no aparece?").
+    const zohoByNumero = new Map(); // numero -> { status, balance, total, cliente }
 
     // DIAGNÓSTICO TRANSPARENTE: qué dice Zoho realmente, para no adivinar. Cuenta
     // los estatus crudos de Zoho y, de las PAGADAS, a quién se atribuyen (al
@@ -315,7 +330,16 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     };
 
     for (const inv of invoices) {
-        if (inv.invoice_number) seen.add(String(inv.invoice_number).trim());
+        if (inv.invoice_number) {
+            const n = String(inv.invoice_number).trim();
+            seen.add(n);
+            zohoByNumero.set(n, {
+                status:  inv.status || 'pendiente',
+                balance: inv.balance != null ? Number(inv.balance) : (Number(inv.total) || 0),
+                total:   Number(inv.total) || 0,
+                cliente: inv.customer_name || '',
+            });
+        }
 
         // Recolección de campos (de todas las facturas del alcance).
         Object.keys(inv || {}).forEach(k => campos.keys.add(k));
@@ -399,12 +423,23 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
             }
         }
 
-        if (inv.status === 'draft') { res.omitidas++; continue; }
+        // Borrador en Zoho → NO es una cuenta por cobrar. No se crea en GK; si ya
+        // existía (entró por webhook o dejó de estar emitida), se retira de la
+        // cartera. Antes solo se omitía y el documento quedaba "vencido" para
+        // siempre en GK aunque Zoho ya no la contara.
+        if (inv.status === 'draft') {
+            try {
+                const b = await retirarFacturaSiExiste(inv, vendedorId, 'borrador');
+                if (b === 'borrador') res.borradores++;
+                else res.omitidas++;
+            } catch (e) { res.errores++; }
+            continue;
+        }
 
         // Anulada en Zoho → anular en GK (revierte comisión). No crea nuevas.
         if (inv.status === 'void') {
             try {
-                const a = await anularFacturaSiExiste(inv, vendedorId);
+                const a = await retirarFacturaSiExiste(inv, vendedorId, 'anulada');
                 if (a === 'anulada') res.anuladas++;
                 else res.omitidas++;
             } catch (e) { res.errores++; }
@@ -445,25 +480,94 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
     // tope de páginas, no se marca nada, para no señalar falsos ausentes). NUNCA se
     // borra: solo se marca `ausenteEnZoho` para que el admin la revise y confirme.
     res.ausentesEvaluado = complete;
-    if (complete) {
+    {
         const gkQuery = vendedorId
             ? admin.firestore().collection('facturas_vendedor').where('vendedorId', '==', vendedorId)
             : admin.firestore().collection('facturas_vendedor');
         const gkSnap = await gkQuery.get();
         const updates = [];
+
+        // CUADRE DE CUENTAS POR COBRAR (GK vs Zoho). La cartera de GK tiene que
+        // decir lo mismo que Zoho: si no, hay que poder señalar factura por
+        // factura POR QUÉ difiere, en vez de discutir totales.
+        const ZOHO_ABIERTA = (z) => z && z.status !== 'paid' && z.status !== 'void'
+            && z.status !== 'draft' && Number(z.balance) > 0.005;
+        const cuadre = {
+            zohoPorCobrar: 0, zohoFacturas: 0,           // la verdad (Zoho)
+            gkPorCobrar: 0,   gkFacturas: 0,             // lo que GK considera abierto HOY
+            gkSoloEnGk: 0,    gkSoloEnGkMonto: 0,        // la diferencia, por motivo
+            porMotivo: {}, ejemplos: [],
+            zohoAbiertasSinGk: 0, ejemplosSinGk: [],     // Zoho la cobra y GK ni la tiene
+        };
+        // Solo tiene sentido comparar el universo completo: en modo por vendedor,
+        // GK solo ve las suyas y Zoho no sabe de vendedores.
+        if (!vendedorId) {
+            for (const [num, z] of zohoByNumero) {
+                if (ZOHO_ABIERTA(z)) { cuadre.zohoPorCobrar += Number(z.balance) || 0; cuadre.zohoFacturas++; }
+                void num;
+            }
+        }
+
+        const gkNumeros = new Set();
         gkSnap.docs.forEach(d => {
             const f = d.data();
-            if (f.estado === 'anulada') return;
             const num = String(f.numero || '').trim();
             if (!num) return;
+            gkNumeros.add(num);
             const ausente = !seen.has(num);
-            if (ausente && f.ausenteEnZoho !== true) {
-                updates.push({ ref: d.ref, data: { ausenteEnZoho: true, ausenteEnZohoEn: admin.firestore.FieldValue.serverTimestamp() } });
-                res.ausentes++;
-            } else if (!ausente && f.ausenteEnZoho === true) {
-                updates.push({ ref: d.ref, data: { ausenteEnZoho: false } }); // reapareció
+
+            // 1) Marcado de ausentes (solo si el barrido fue COMPLETO: si se cortó
+            //    por el tope de páginas, marcaríamos falsos ausentes).
+            if (complete && f.estado !== 'anulada') {
+                if (ausente && f.ausenteEnZoho !== true) {
+                    updates.push({ ref: d.ref, data: { ausenteEnZoho: true, ausenteEnZohoEn: admin.firestore.FieldValue.serverTimestamp() } });
+                    res.ausentes++;
+                } else if (!ausente && f.ausenteEnZoho === true) {
+                    updates.push({ ref: d.ref, data: { ausenteEnZoho: false } }); // reapareció
+                }
+            }
+
+            // 2) Cuadre: ¿GK la cuenta como por cobrar y Zoho no?
+            const gkAbierta = f.estado !== 'anulada' && f.estado !== 'borrador' && f.estado !== 'pagada';
+            if (!gkAbierta) return;
+            const saldoGk = Number(f.balance != null ? f.balance : f.monto) || 0;
+            const z = zohoByNumero.get(num);
+            let motivo = null;
+            if (ausente)                     motivo = 'no_existe_en_zoho';
+            else if (z.status === 'paid')    motivo = 'pagada_en_zoho';
+            else if (z.status === 'void')    motivo = 'anulada_en_zoho';
+            else if (z.status === 'draft')   motivo = 'borrador_en_zoho';
+            else if (!(Number(z.balance) > 0.005)) motivo = 'saldo_cero_en_zoho';
+
+            if (motivo) {
+                cuadre.gkSoloEnGk++;
+                cuadre.gkSoloEnGkMonto += saldoGk;
+                cuadre.porMotivo[motivo] = (cuadre.porMotivo[motivo] || 0) + 1;
+                if (cuadre.ejemplos.length < 60) {
+                    cuadre.ejemplos.push({
+                        numero: num, cliente: f.clienteName || (z && z.cliente) || '—',
+                        saldoGk, estadoGk: f.estado || 'pendiente',
+                        zoho: z ? z.status : 'no_existe', motivo,
+                    });
+                }
+            } else {
+                cuadre.gkPorCobrar += saldoGk;
+                cuadre.gkFacturas++;
             }
         });
+
+        // 3) El sentido inverso: Zoho la cobra y GK ni la tiene registrada.
+        if (!vendedorId) {
+            for (const [num, z] of zohoByNumero) {
+                if (!ZOHO_ABIERTA(z) || gkNumeros.has(num)) continue;
+                cuadre.zohoAbiertasSinGk++;
+                if (cuadre.ejemplosSinGk.length < 40) {
+                    cuadre.ejemplosSinGk.push({ numero: num, cliente: z.cliente, saldo: Number(z.balance) || 0 });
+                }
+            }
+        }
+        res.cuadre = cuadre;
+
         // Commit en lotes de 400.
         for (let i = 0; i < updates.length; i += 400) {
             const batch = admin.firestore().batch();
@@ -479,8 +583,17 @@ exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds
         zohoBarridoCompleto: diag.zohoLeidoCompleto,
         zohoUltimaConciliacionResumen: {
             revisadas: res.revisadas, creadas: res.creadas, marcadasPagadas: res.marcadasPagadas,
-            anuladas: res.anuladas, ausentes: res.ausentes, sinVendedor: res.sinVendedor, errores: res.errores,
+            anuladas: res.anuladas, borradores: res.borradores, ausentes: res.ausentes,
+            sinVendedor: res.sinVendedor, errores: res.errores,
         },
+        // Cuadre de cuentas por cobrar GK vs Zoho de la última corrida (solo el
+        // barrido global lo calcula): permite ver la diferencia sin re-conciliar.
+        ...(res.cuadre && !vendedorId ? { zohoCuadreCartera: {
+            zohoPorCobrar: res.cuadre.zohoPorCobrar, zohoFacturas: res.cuadre.zohoFacturas,
+            gkPorCobrar: res.cuadre.gkPorCobrar, gkFacturas: res.cuadre.gkFacturas,
+            soloEnGk: res.cuadre.gkSoloEnGk, soloEnGkMonto: res.cuadre.gkSoloEnGkMonto,
+            porMotivo: res.cuadre.porMotivo, zohoAbiertasSinGk: res.cuadre.zohoAbiertasSinGk,
+        } } : {}),
     }, { merge: true });
 
     // Top clientes que aportan facturas heredadas (para ubicar cartera mal asignada).

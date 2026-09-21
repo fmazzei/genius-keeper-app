@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { computeMetaMensual } from '@/utils/vendedorMeta.js';
+import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 
 const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 
@@ -43,7 +44,7 @@ export function useTeamFacturado() {
                     const { periodStart, periodEnd } = computeMetaMensual(v);
                     (byVend[v.id] || []).forEach(f => {
                         const t = f.fecha?.toDate?.() || (f.fecha ? new Date(f.fecha) : null);
-                        if (f.estado !== 'anulada' && t && t >= periodStart && t < periodEnd) {
+                        if (cuentaEnCartera(f) && t && t >= periodStart && t < periodEnd) {
                             const u = Number(f.unidades) || 0;
                             teamUnits += u;
                             facturas.push({ fecha: t, unidades: u });

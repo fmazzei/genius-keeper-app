@@ -274,6 +274,15 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                             <span><i className="inline-block w-2 h-2 rounded-sm bg-amber-500 mr-1 align-middle" />31–45 d · {money0(d31_45)}</span>
                             <span><i className="inline-block w-2 h-2 rounded-sm bg-red-500 mr-1 align-middle" />+45 d · {money0(d45p)}</span>
                         </div>
+                        {/* Transparencia del cuadre con Zoho: si hay documentos que
+                            Zoho ya no reconoce, se declara cuánto NO se está
+                            contando y por qué — antes engordaban el por cobrar. */}
+                        {fin.fantasmas?.length > 0 && (
+                            <p className="mt-2 pt-2 border-t border-slate-200 text-[11px] text-slate-500 leading-snug">
+                                No se cuentan <b className="tabular-nums">{fin.fantasmas.length}</b> factura{fin.fantasmas.length === 1 ? '' : 's'} ({money0(fin.fantasmasMonto)}) que Zoho ya no reconoce
+                                {' '}({[...new Set(fin.fantasmas.map(f => f.motivo))].join(' · ').toLowerCase()}).
+                            </p>
+                        )}
                     </Tile>
                     <button type="button" onClick={() => setShowDiasPago(true)}
                         className="text-left bg-slate-50 border border-slate-200 rounded-xl p-4 hover:shadow-md hover:border-slate-300 transition-all">

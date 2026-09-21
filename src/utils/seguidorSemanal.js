@@ -10,6 +10,8 @@
 // y `facturas_vendedor`. Función pura y testeable: recibe los arreglos ya
 // cargados y devuelve los indicadores con sus listas.
 
+import { cuentaEnCartera, saldoAbierto } from './facturaEstado.js';
+
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 // "Central Madeirense, C.A. (Santa Marta)" → "central madeirense, c.a."
 const stripSucursal = (s) => String(s || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
@@ -144,7 +146,7 @@ function ultimaVisitaPorPos(visitas, corte) {
 // Por eso se empareja PRIMERO por carnet; el nombre queda como respaldo para
 // los PDV que todavía no se han re-vinculado.
 function ultimaFacturaPorPos(cartera, facturas, corte) {
-    const activas = (facturas || []).filter(f => f.estado !== 'anulada');
+    const activas = (facturas || []).filter(cuentaEnCartera);
     // Índices acotados al corte (para reconstruir el pasado). Cada entrada
     // guarda además el NOMBRE con que se facturó: si el PDV está vinculado a la
     // razón social equivocada, verlo es la única forma de darse cuenta.
@@ -407,9 +409,13 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], opt
     // aún no estaba pagada (se cobró después o sigue sin cobrarse).
     // A diferencia de "PDV sin facturar", la cobranza SÍ es del vendedor: son
     // SUS cuentas por cobrar, así que se acota a las facturas atribuidas a él.
+    // Una factura que Zoho ya no reconoce (borrada allá → `ausenteEnZoho`, o
+    // devuelta a borrador) NO es cartera por cobrar, por vieja que sea: GK la
+    // conserva para auditoría, pero cobrarla no es una tarea del vendedor.
+    // Sin esto, GK listaba vencidas que en Zoho no existen.
     const abiertaAlCorte = (f) => {
-        if (f.estado === 'anulada') return false;
-        if (f.estado !== 'pagada') return true;
+        if (!cuentaEnCartera(f)) return false;
+        if (f.estado !== 'pagada') return saldoAbierto(f) > 0.005;
         const fp = toDate(f.fechaPago);
         return fp ? fp > corte : false;
     };

@@ -9,7 +9,7 @@
 import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, AlertTriangle } from 'lucide-react';
-import { saldoAbierto } from '@/hooks/useFinancialKpis.js';
+import { saldoAbierto, cuentaEnCartera } from '@/utils/facturaEstado.js';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
@@ -19,7 +19,9 @@ export default function CarteraVencidaModal({ facturas = [], minDias = 46, titul
     const { filas, totalSaldo, nClientes } = useMemo(() => {
         const now = new Date();
         const abiertas = (facturas || [])
-            .filter(f => f.estado !== 'anulada' && f.estado !== 'pagada')
+            // `cuentaEnCartera` deja fuera lo que Zoho ya no reconoce (borrado
+            // allá o devuelto a borrador): no es cartera por cobrar de la empresa.
+            .filter(f => cuentaEnCartera(f) && f.estado !== 'pagada')
             .map(f => {
                 const emis = toDate(f.fecha);
                 const venc = toDate(f.vencimiento);

@@ -572,6 +572,55 @@ comisiones ajenas, así que **no se hizo**. La vía correcta es de datos, no de
 código: **asignar el carnet del cliente al vendedor** en Clientes y PDV — hecho
 eso, las facturas llevan su `vendedorId` y las dos vistas convergen solas.
 
+### Cuentas por cobrar: GK cobraba facturas que en Zoho no existen (2026-09) ✅
+
+Reporte del dueño con dos capturas lado a lado: la lista de VENCIDAS de Zoho (la
+realidad) contra la de GK. GK metía facturas que allá no estaban — Francisco
+Bianco entre ellas. Causa: **la conciliación YA detectaba el problema y lo
+escribía, pero ningún consumidor lo miraba.**
+
+- **`ausenteEnZoho: true`** — la factura se borró en Zoho. `reconciliarFacturasZoho`
+  la marca (a propósito NUNCA la borra, para que el admin la revise) y ahí moría:
+  el único sitio que leía la bandera era la pill "Ausentes" de la conciliación en
+  AdminPanel. Para el dashboard, el seguidor, "Mis Facturas" y la cartera vencida
+  seguía siendo una cuenta por cobrar viva, para siempre.
+- **`draft` en Zoho** — el barrido hacía `omitidas++; continue;`. Una factura que
+  ya estaba en GK (por webhook) y volvió a borrador quedaba **vencida en GK para
+  siempre**, y encima NO se marcaba ausente (su número sí aparece en el listado).
+  Ahora `retirarFacturaSiExiste(inv, vendedorId, 'borrador')` —la misma función
+  que atiende los `void`, generalizada— la retira de la cartera y revierte
+  unidades/comisión (`estado:'borrador'`, `borradorEnZoho:true`).
+- **Saldo cero** — factura compensada por completo (nota de crédito) cuyo estatus
+  no llegó a `paid`: Zoho no la cobra, GK sí la contaba como abierta.
+
+**Una sola definición, `src/utils/facturaEstado.js`.** Cada pantalla tenía su
+propio filtro (`estado !== 'anulada'`, `estado !== 'pagada'`) y ninguna miraba las
+banderas. Ahora hay una sola fuente: `cuentaEnCartera` (fuera anuladas y
+"fantasma"), `saldoAbierto`, `esPorCobrar` y `motivoFuera` (para poder DECIRLO en
+pantalla). Cableada en `useFinancialKpis` (bandas ¿Vendemos?/¿Cobramos?),
+`seguidorSemanal` (cobranza vencida y "¿este PDV compró?" — una factura borrada
+no es una compra), `CarteraVencidaModal`, `MisFacturasView`, `vendedorMeta`
+(meta/comisión), `RendimientoComercialView`, `FacturacionClientes`,
+`VendedorVentasCartera`, `useTeamFacturado` y los informes del AdminPanel.
+`MisFacturasView` pasó su pestaña a **"Anuladas / fuera"** y cada fila dice el
+motivo ("Ya no existe en Zoho" / "Volvió a borrador en Zoho") en vez de
+esconderlas: se conservan para auditoría, no se cobran.
+
+**Y sobre todo, el cuadre es ahora verificable sin discutir totales.** El barrido
+global compara su propia lectura de Zoho contra la cartera de GK y devuelve
+`res.cuadre`: por cobrar de Zoho vs. de GK (monto y nº de facturas), las que
+**solo GK cobraba** con el motivo de cada una (`no_existe_en_zoho`,
+`pagada_en_zoho`, `anulada_en_zoho`, `borrador_en_zoho`, `saldo_cero_en_zoho`) y
+el sentido inverso (abiertas en Zoho que GK no tiene). Se muestra en AdminPanel →
+Integraciones tras conciliar, con el detalle factura por factura, y se guarda en
+`settings/appConfig.zohoCuadreCartera`. La banda ¿Cobramos? declara además cuánto
+NO está contando y por qué.
+
+**Operativo:** el cuadre y el retiro de fantasmas necesitan el **barrido GLOBAL**
+(AdminPanel → Integraciones, sin vendedor). El botón por vendedor de
+`ConciliacionFacturas` salta las facturas que no resuelven a ese vendedor
+(`other_vendor`), así que no refresca el estado de las demás.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

@@ -9,6 +9,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { unidadesReales, buildCanalResolver } from '@/utils/unidadesFactura.js';
+import { cuentaEnCartera as _cuentaEnCartera, saldoAbierto as _saldoAbierto, motivoFuera } from '@/utils/facturaEstado.js';
 
 const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 const sum = (arr, sel) => arr.reduce((s, f) => s + (Number(sel(f)) || 0), 0);
@@ -78,10 +79,9 @@ export function computeDiasPago(facturas, start, end, modo = 'vencimiento') {
 // falta cobrar tras abonos parciales); si aún no se ha conciliado y no existe,
 // cae al monto total. Esto evita sobre-contar "Por Cobrar" cuando hay pagos
 // parciales (GK marcaba el total mientras Zoho ya mostraba el saldo restante).
-export const saldoAbierto = (f) => {
-    const b = Number(f.balance);
-    return (f.balance != null && Number.isFinite(b)) ? b : (Number(f.monto) || 0);
-};
+// La definición vive en utils/facturaEstado (única fuente); se re-exporta para
+// no romper los imports existentes.
+export { saldoAbierto, cuentaEnCartera, esPorCobrar } from '@/utils/facturaEstado.js';
 
 export function useFinancialKpis() {
     const [facturas, setFacturas] = useState([]);
@@ -131,7 +131,11 @@ export function useFinancialKpis() {
             now.getHours(), now.getMinutes(), now.getSeconds(),
         );
 
-        const activas = facturas.filter(f => f.estado !== 'anulada');
+        // Cartera REAL: fuera las anuladas y las "fantasma" — las que Zoho ya no
+        // reconoce (borradas en Zoho → `ausenteEnZoho`, o devueltas a borrador).
+        // Sin este filtro GK reportaba cuentas por cobrar que en Zoho no existen.
+        const activas   = facturas.filter(_cuentaEnCartera);
+        const fantasmas = facturas.filter(f => f.estado !== 'anulada' && !_cuentaEnCartera(f));
         const inWin = (f, a, b) => { const t = toDate(f.fecha); return t && t >= a && t < b; };
 
         // Unidades de VENTA reales: Zoho factura foodservice por kilo, así que la
@@ -189,13 +193,13 @@ export function useFinancialKpis() {
         // Se usa el SALDO real (balance de Zoho) por factura, no el monto total,
         // para cuadrar con "Total de cuentas por cobrar" de Zoho Books cuando hay
         // abonos parciales.
-        const abiertas = activas.filter(f => f.estado !== 'pagada');
-        const porCobrar = sum(abiertas, saldoAbierto);
+        const abiertas = activas.filter(f => f.estado !== 'pagada' && _saldoAbierto(f) > 0.005);
+        const porCobrar = sum(abiertas, _saldoAbierto);
         // Antigüedad por DÍAS DESDE LA FACTURA (ventanas de cobro del negocio:
         // 0–30 a tiempo · 31–45 sin bono · >45 en riesgo de anularse la comisión).
         let a0 = 0, a1 = 0, a2 = 0;
         abiertas.forEach(f => {
-            const t = toDate(f.fecha); const monto = saldoAbierto(f);
+            const t = toDate(f.fecha); const monto = _saldoAbierto(f);
             const age = t ? (now - t) / 86400000 : 0;
             if (age <= 30) a0 += monto; else if (age <= 45) a1 += monto; else a2 += monto;
         });
@@ -232,6 +236,16 @@ export function useFinancialKpis() {
             porCobrar, aging: { d0_30: a0, d31_45: a1, d45p: a2 }, clientesMas45,
             diasTrasVencimiento, dso: diasTrasVencimiento, diasPagoAnio, aTiempoPct,
             facturas,
+            // Facturas EXCLUIDAS de la cartera por no existir ya en Zoho (o haber
+            // vuelto a borrador). Se exponen para poder declararlo en pantalla:
+            // "GK no las cuenta, y esta es la razón" — antes inflaban el por cobrar.
+            fantasmas: fantasmas.map(f => ({
+                numero: f.numero || '—',
+                cliente: f.razonSocialCanonica || f.clienteName || '—',
+                monto: _saldoAbierto(f),
+                motivo: motivoFuera(f) || 'Fuera de Zoho',
+            })),
+            fantasmasMonto: sum(fantasmas, _saldoAbierto),
             tieneFacturas: facturas.length > 0,
         };
     }, [facturas, clientes]);

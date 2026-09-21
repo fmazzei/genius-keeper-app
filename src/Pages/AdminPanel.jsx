@@ -8,6 +8,7 @@ import { httpsCallable } from 'firebase/functions';
 import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
+import { cuentaEnCartera, motivoFuera } from '../utils/facturaEstado.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
 import InformeVerificacionDoc from '../Components/InformeVerificacionDoc.jsx';
@@ -3641,7 +3642,10 @@ function buildInformeVendedor(facturas, metaVend, catMap) {
     const key = (f) => String(f.clienteName || f.customerName || '').toLowerCase().trim();
     const catOf = (f) => catMap[key(f)] || 'retail';
 
-    const noAnul   = facturas.filter(f => f.estado !== 'anulada');
+    // Fuera de la cartera: anuladas Y "fantasma" (ya no existen en Zoho o
+    // volvieron a borrador). El informe del vendedor mide su gestión, no
+    // documentos que Zoho ya no reconoce.
+    const noAnul   = facturas.filter(cuentaEnCartera);
     const anuladas = facturas.filter(f => f.estado === 'anulada').length;
     const ausentes = facturas.filter(f => f.ausenteEnZoho === true && f.estado !== 'anulada').length;
 
@@ -3931,7 +3935,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
     const facturasVis = facturas.filter(f => !esHistoricoAjeno(f));
     const ocultasHistoricas = facturas.length - facturasVis.length;
 
-    const activas = facturasVis.filter(f => f.estado !== 'anulada');
+    const activas = facturasVis.filter(cuentaEnCartera);
     // Duplicados: número repetido en TODO el set activo del vendedor.
     const countByNum = {};
     activas.forEach(f => { if (f.numero) countByNum[f.numero] = (countByNum[f.numero] || 0) + 1; });
@@ -4014,7 +4018,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
         const pdvActivos = tiendasVendedor.size;          // tiendas reales (Río = 4)
         const universoPdv = allPos.length;                // TODAS las tiendas de Lacteoca (asignadas o no)
         const retirados  = allVc.filter(c => c.vendedorId === vendedorId && c.active === false);
-        const activasF   = facturas.filter(f => f.estado !== 'anulada');
+        const activasF   = facturas.filter(cuentaEnCartera);
         const heredadasAbiertas = activasF.filter(f => f.recuperada === true && f.estado !== 'pagada').length;
         const vencidas   = activasF.filter(f => (f.estado || 'pendiente') === 'vencida').length;
         const porVencer  = activasF.filter(esPorVencer).length;
@@ -4674,7 +4678,43 @@ const IntegracionesSection = () => {
                 {reconResult && (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-slate-700 mb-2">
                         <p className="font-bold text-emerald-800 mb-1">Conciliación lista</p>
-                        <p>Revisadas: <b>{reconResult.revisadas}</b> · Marcadas como pagadas: <b className="text-emerald-700">{reconResult.marcadasPagadas}</b> · Anuladas: <b>{reconResult.anuladas ?? 0}</b> · Creadas: <b>{reconResult.creadas}</b> · Sin vendedor: <b>{reconResult.sinVendedor}</b> · Ausentes en Zoho: <b className={reconResult.ausentes ? 'text-amber-600' : ''}>{reconResult.ausentes ?? 0}</b>{reconResult.errores ? <> · Errores: <b className="text-red-600">{reconResult.errores}</b></> : null}</p>
+                        <p>Revisadas: <b>{reconResult.revisadas}</b> · Marcadas como pagadas: <b className="text-emerald-700">{reconResult.marcadasPagadas}</b> · Anuladas: <b>{reconResult.anuladas ?? 0}</b> · Borradores retirados: <b>{reconResult.borradores ?? 0}</b> · Creadas: <b>{reconResult.creadas}</b> · Sin vendedor: <b>{reconResult.sinVendedor}</b> · Ausentes en Zoho: <b className={reconResult.ausentes ? 'text-amber-600' : ''}>{reconResult.ausentes ?? 0}</b>{reconResult.errores ? <> · Errores: <b className="text-red-600">{reconResult.errores}</b></> : null}</p>
+                        {/* CUADRE DE CUENTAS POR COBRAR — la pregunta del dueño:
+                            "¿por qué GK dice que esto está vencido si en Zoho no
+                            aparece?". Se responde factura por factura. */}
+                        {reconResult.cuadre && (reconResult.cuadre.zohoFacturas > 0 || reconResult.cuadre.gkSoloEnGk > 0) && (
+                            <div className="mt-2 pt-2 border-t border-emerald-200">
+                                <p className="font-bold text-slate-800">Cuentas por cobrar · GK vs Zoho</p>
+                                {reconResult.cuadre.zohoFacturas > 0 && (
+                                    <p className="mt-0.5">
+                                        Zoho: <b className="tabular-nums">${(reconResult.cuadre.zohoPorCobrar || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}</b> en <b>{reconResult.cuadre.zohoFacturas}</b> facturas
+                                        {' · '}GK: <b className="tabular-nums">${(reconResult.cuadre.gkPorCobrar || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}</b> en <b>{reconResult.cuadre.gkFacturas}</b> facturas
+                                    </p>
+                                )}
+                                {reconResult.cuadre.gkSoloEnGk > 0 && (
+                                    <p className="mt-0.5 text-amber-700">
+                                        <b>{reconResult.cuadre.gkSoloEnGk}</b> facturas (${(reconResult.cuadre.gkSoloEnGkMonto || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}) las cobraba GK y Zoho no:{' '}
+                                        {Object.entries(reconResult.cuadre.porMotivo || {}).map(([m, n]) => `${n} ${m.replace(/_/g, ' ')}`).join(' · ')}. Ya quedaron fuera de la cartera.
+                                    </p>
+                                )}
+                                {reconResult.cuadre.zohoAbiertasSinGk > 0 && (
+                                    <p className="mt-0.5 text-amber-700"><b>{reconResult.cuadre.zohoAbiertasSinGk}</b> facturas abiertas en Zoho que GK no tiene registradas.</p>
+                                )}
+                                {Array.isArray(reconResult.cuadre.ejemplos) && reconResult.cuadre.ejemplos.length > 0 && (
+                                    <details className="mt-1">
+                                        <summary className="cursor-pointer text-slate-600 font-semibold">Ver las facturas de la diferencia</summary>
+                                        <ul className="mt-1 space-y-0.5 max-h-60 overflow-y-auto">
+                                            {reconResult.cuadre.ejemplos.map((e, i) => (
+                                                <li key={i} className="flex justify-between gap-2 border-b border-emerald-100 py-0.5">
+                                                    <span className="truncate"><b>{e.numero}</b> · {e.cliente}</span>
+                                                    <span className="shrink-0 tabular-nums text-slate-500">${(e.saldoGk || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })} · {e.motivo.replace(/_/g, ' ')}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </details>
+                                )}
+                            </div>
+                        )}
                         {reconResult.unidades && (
                             <p className="mt-1 pt-1 border-t border-emerald-200">
                                 Unidades: detalle consultado <b>{reconResult.unidades.detalleConsultados ?? 0}</b> · rellenadas <b className="text-emerald-700">{reconResult.unidades.detalleRellenadas ?? 0}</b> · derivadas del monto <b className="text-emerald-700">{reconResult.unidades.derivadasDeMonto ?? 0}</b>

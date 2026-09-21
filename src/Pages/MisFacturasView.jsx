@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, query, where, getDocs, getDocsFromCache } from 'firebase/firestore';
 import { Receipt, RefreshCw, Link2, AlertCircle, Search } from 'lucide-react';
+import { cuentaEnCartera, motivoFuera, saldoAbierto } from '@/utils/facturaEstado.js';
 
 const PROXIMO_A_VENCER_DIAS = 3;
 
@@ -17,7 +18,7 @@ const TABS = [
     { id: 'porVencer', label: 'Por vencer' },
     { id: 'vigentes', label: 'Vigentes' },
     { id: 'pagadas', label: 'Pagadas' },
-    { id: 'anuladas', label: 'Anuladas' },
+    { id: 'anuladas', label: 'Anuladas / fuera' },
 ];
 
 const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
@@ -86,7 +87,11 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
         const groups = { vencidas: [], porVencer: [], vigentes: [], pagadas: [], anuladas: [] };
         for (const f of facturas) {
             const vencimiento = f.vencimiento?.toDate?.();
-            if (f.estado === 'anulada') {
+            // Anuladas y "fantasma" (ya no existen en Zoho o volvieron a
+            // borrador) van juntas: quedan visibles para auditoría, pero NO son
+            // cobranza. Antes las fantasma aparecían como vencidas — cuentas por
+            // cobrar que en Zoho no existen.
+            if (!cuentaEnCartera(f)) {
                 groups.anuladas.push(f);
                 continue;
             }
@@ -129,8 +134,8 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
     }, [facturas, now, ingresoDate]);
 
     const totalPorCobrar = facturas
-        .filter(f => f.estado !== 'pagada' && f.estado !== 'anulada')
-        .reduce((acc, f) => acc + Number(f.monto || 0), 0);
+        .filter(f => cuentaEnCartera(f) && f.estado !== 'pagada')
+        .reduce((acc, f) => acc + saldoAbierto(f), 0);
 
     const visibleFacturas = useMemo(() => {
         const list = categorized[activeTab] || [];
@@ -251,13 +256,14 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
                         const vencStr = vencimiento
                             ? vencimiento.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })
                             : null;
-                        const vencida = vencimiento && vencimiento < now && f.estado !== 'pagada' && f.estado !== 'anulada';
+                        const fuera = motivoFuera(f);   // anulada / fuera de Zoho
+                        const vencida = vencimiento && vencimiento < now && f.estado !== 'pagada' && !fuera;
                         const diasParaVencer = vencimiento
                             ? Math.ceil((vencimiento - now) / (1000 * 60 * 60 * 24))
                             : null;
-                        const porVencer = !vencida && f.estado !== 'pagada' && f.estado !== 'anulada' && diasParaVencer !== null && diasParaVencer <= PROXIMO_A_VENCER_DIAS;
+                        const porVencer = !vencida && f.estado !== 'pagada' && !fuera && diasParaVencer !== null && diasParaVencer <= PROXIMO_A_VENCER_DIAS;
 
-                        const estadoStyle = f.estado === 'anulada'
+                        const estadoStyle = fuera
                             ? 'bg-slate-600/40 text-slate-400 border-slate-500/30'
                             : f.estado === 'pagada'
                             ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
@@ -266,8 +272,8 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
                             : porVencer
                             ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                             : 'bg-slate-700/40 text-slate-300 border-slate-600/40';
-                        const estadoLabel = f.estado === 'anulada'
-                            ? 'Anulada'
+                        const estadoLabel = fuera
+                            ? fuera
                             : f.estado === 'pagada'
                             ? 'Pagada'
                             : vencida

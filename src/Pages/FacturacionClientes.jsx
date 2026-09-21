@@ -11,6 +11,7 @@ import { db } from '@/Firebase/config.js';
 import { collection, getDocs } from 'firebase/firestore';
 import { RefreshCw, FileDown, Search, Store, Building2, AlertCircle, Calendar } from 'lucide-react';
 import FacturacionDoc from '@/Components/FacturacionDoc.jsx';
+import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
@@ -77,7 +78,7 @@ export default function FacturacionClientes() {
     const grupos = useMemo(() => {
         const map = new Map();
         for (const f of facturas) {
-            if (f.estado === 'anulada') continue;
+            if (!cuentaEnCartera(f)) continue;
             const t = toDate(f.fecha);
             if (!t || t < winStart || t >= winEnd) continue; // ← filtro de período
             const key = groupBy === 'razon'
