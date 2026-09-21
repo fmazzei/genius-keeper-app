@@ -29,6 +29,9 @@ interface AppConfigContextType {
   /** Cuándo se sincronizó GK con Zoho por última vez. Permite que una pantalla
    *  de dinero declare que su número puede estar viejo en vez de mentir. */
   zohoSyncAt: Date | null;
+  /** Cuadre GK vs Zoho de la última conciliación (settings/appConfig.zohoCuadreCartera).
+   *  Permite que la pantalla de cobranza declare si su total coincide con Zoho. */
+  zohoCuadre: any | null;
   configLoading: boolean;
   updateModule: (moduleName: keyof ModulesConfig, enabled: boolean) => Promise<void>;
   updateRoleModule: (role: string, moduleName: keyof ModulesConfig, enabled: boolean) => Promise<void>;
@@ -67,6 +70,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [competitorFrequencyDays, setCompetitorFrequencyDays] = useState<number>(15);
   const [metaVentasGeneral, setMetaVentasGeneral] = useState<number>(0);
   const [zohoSyncAt, setZohoSyncAt] = useState<Date | null>(null);
+  const [zohoCuadre, setZohoCuadre] = useState<any | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
 
   useEffect(() => {
@@ -100,6 +104,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
               setMetaVentasGeneral(typeof data.metaVentasGeneral === 'number' ? data.metaVentasGeneral : 0);
               const sync = (data.zohoAutoUltima as any) || (data.zohoUltimaConciliacion as any);
               setZohoSyncAt(sync?.toDate ? sync.toDate() : null);
+              setZohoCuadre((data.zohoCuadreCartera as any) || null);
             } else {
               setModules(defaultModules);
               setMetaVentasGeneral(0);
@@ -143,7 +148,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   return (
-    <AppConfigContext.Provider value={{ modules, roleModules, ourProductWeight_g, competitorFrequencyDays, metaVentasGeneral, zohoSyncAt, configLoading, updateModule, updateRoleModule, updateMetaVentasGeneral, getModulesForRole }}>
+    <AppConfigContext.Provider value={{ modules, roleModules, ourProductWeight_g, competitorFrequencyDays, metaVentasGeneral, zohoSyncAt, zohoCuadre, configLoading, updateModule, updateRoleModule, updateMetaVentasGeneral, getModulesForRole }}>
       {children}
     </AppConfigContext.Provider>
   );

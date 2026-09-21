@@ -667,6 +667,34 @@ lo que Zoho nunca anuncia.
   ahora sale temprano. El cuadre y la marca de tiempo van en try/catch — son
   diagnóstico, no pueden tumbar una corrida que ya aplicó sus cambios.
 
+### El cuadre no veía la diferencia de SALDO, y "Por cobrar" no se podía abrir (2026-09) ✅
+
+Tras la primera conciliación limpia seguía habiendo brecha: Zoho $3.836,84 y GK
+$4.038,44 — **$201,60** exactos. Las fantasmas ya estaban fuera (3 facturas, $13,
+declaradas en la banda), así que la diferencia era de otra naturaleza.
+
+**Lo que al cuadre se le escapaba.** Comparaba *qué facturas* estaban abiertas de
+cada lado (`no_existe_en_zoho`, `pagada_en_zoho`, …) pero NO el **saldo** de las
+que están abiertas en AMBOS: la misma factura con distinto monto sumaba distinto
+sin que nada lo señalara. Un abono parcial que GK no registró, o una factura
+editada en Zoho, caen exactamente ahí. Ahora, por cada factura abierta en los dos
+lados, se compara `saldoGk` vs `balance` de Zoho y se reporta `saldoDistinto` /
+`saldoDistintoDelta` + la lista factura por factura (GK $X · Zoho $Y) en
+AdminPanel → Integraciones. Se persiste en `settings/appConfig.zohoCuadreCartera`.
+
+**"Por cobrar" ahora se abre.** Era un total muerto: ni accionable ni verificable.
+`CarteraVencidaModal` se generalizó a **modal de cobranza** (`minDias = 0` para
+toda la cartera; 46 sigue siendo la entrada desde la alerta de +45 días):
+- **Color por antigüedad** en cada fila (borde izquierdo) con los MISMOS tramos y
+  colores que la barra de la banda: 0–30 verde · 31–45 ámbar · +45 rojo.
+- Los tres tramos son **filtros** (monto y nº de facturas por tramo), buscador por
+  cliente/número, y días vencida vs. días desde emisión declarados aparte.
+- **Cuadre con Zoho dentro del modal**: lee `zohoCuadre` del `AppConfigContext` y
+  dice si el total coincide con Zoho o cuánto difiere y por qué — es la pantalla
+  donde el dueño compara los dos números, así que es donde tiene que decirlo.
+- `Tile` acepta `onClick` y entonces se renderiza como `<button>` (accesible por
+  teclado), no como un div con handler encima.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

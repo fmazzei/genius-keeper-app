@@ -633,6 +633,10 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
             gkSoloEnGk: 0,    gkSoloEnGkMonto: 0,        // la diferencia, por motivo
             porMotivo: {}, ejemplos: [],
             zohoAbiertasSinGk: 0, ejemplosSinGk: [],     // Zoho la cobra y GK ni la tiene
+            // MISMA factura abierta de los dos lados, SALDO distinto: es la
+            // diferencia que no se ve comparando listas, solo montos (un abono
+            // parcial que GK no registró, una factura editada en Zoho…).
+            saldoDistinto: 0, saldoDistintoDelta: 0, ejemplosSaldo: [],
         };
         // Solo tiene sentido comparar el universo completo: en modo por vendedor,
         // GK solo ve las suyas y Zoho no sabe de vendedores.
@@ -688,6 +692,20 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
             } else {
                 cuadre.gkPorCobrar += saldoGk;
                 cuadre.gkFacturas++;
+                // Abierta en ambos: ¿coincide el saldo? Sumar los dos totales y
+                // compararlos solo dice QUE no cuadra; esto dice EN CUÁL.
+                const saldoZoho = Number(z.balance) || 0;
+                const delta = saldoGk - saldoZoho;
+                if (Math.abs(delta) > 0.005) {
+                    cuadre.saldoDistinto++;
+                    cuadre.saldoDistintoDelta += delta;
+                    if (cuadre.ejemplosSaldo.length < 60) {
+                        cuadre.ejemplosSaldo.push({
+                            numero: num, cliente: f.clienteName || z.cliente || '—',
+                            saldoGk, saldoZoho, delta, zoho: z.status,
+                        });
+                    }
+                }
             }
         });
 
@@ -732,6 +750,7 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
             gkPorCobrar: res.cuadre.gkPorCobrar, gkFacturas: res.cuadre.gkFacturas,
             soloEnGk: res.cuadre.gkSoloEnGk, soloEnGkMonto: res.cuadre.gkSoloEnGkMonto,
             porMotivo: res.cuadre.porMotivo, zohoAbiertasSinGk: res.cuadre.zohoAbiertasSinGk,
+            saldoDistinto: res.cuadre.saldoDistinto, saldoDistintoDelta: res.cuadre.saldoDistintoDelta,
         } } : {}),
     }, { merge: true });
     } catch (e) { res.resumenError = String(e?.message || e).slice(0, 200); }

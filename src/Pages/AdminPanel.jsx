@@ -4750,6 +4750,32 @@ const IntegracionesSection = () => {
                                         {Object.entries(reconResult.cuadre.porMotivo || {}).map(([m, n]) => `${n} ${m.replace(/_/g, ' ')}`).join(' · ')}. Ya quedaron fuera de la cartera.
                                     </p>
                                 )}
+                                {/* MISMA factura de los dos lados con saldo distinto.
+                                    Es la diferencia que no aparece comparando listas:
+                                    hay que comparar montos factura por factura. */}
+                                {reconResult.cuadre.saldoDistinto > 0 && (
+                                    <div className="mt-1">
+                                        <p className="text-amber-700">
+                                            <b>{reconResult.cuadre.saldoDistinto}</b> factura{reconResult.cuadre.saldoDistinto === 1 ? '' : 's'} abiertas en ambos pero con <b>saldo distinto</b>
+                                            {' '}({(reconResult.cuadre.saldoDistintoDelta || 0) >= 0 ? '+' : ''}${(reconResult.cuadre.saldoDistintoDelta || 0).toLocaleString('es-VE', { maximumFractionDigits: 2 })} en GK respecto a Zoho).
+                                        </p>
+                                        {Array.isArray(reconResult.cuadre.ejemplosSaldo) && reconResult.cuadre.ejemplosSaldo.length > 0 && (
+                                            <details className="mt-1">
+                                                <summary className="cursor-pointer text-slate-600 font-semibold">Ver cuáles</summary>
+                                                <ul className="mt-1 space-y-0.5 max-h-60 overflow-y-auto">
+                                                    {reconResult.cuadre.ejemplosSaldo.map((e, i) => (
+                                                        <li key={i} className="flex justify-between gap-2 border-b border-emerald-100 py-0.5">
+                                                            <span className="truncate"><b>{e.numero}</b> · {e.cliente}</span>
+                                                            <span className="shrink-0 tabular-nums text-slate-500">
+                                                                GK ${(e.saldoGk || 0).toLocaleString('es-VE', { maximumFractionDigits: 2 })} · Zoho ${(e.saldoZoho || 0).toLocaleString('es-VE', { maximumFractionDigits: 2 })}
+                                                            </span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </details>
+                                        )}
+                                    </div>
+                                )}
                                 {reconResult.cuadre.zohoAbiertasSinGk > 0 && (
                                     <p className="mt-0.5 text-amber-700"><b>{reconResult.cuadre.zohoAbiertasSinGk}</b> facturas abiertas en Zoho que GK no tiene registradas.</p>
                                 )}

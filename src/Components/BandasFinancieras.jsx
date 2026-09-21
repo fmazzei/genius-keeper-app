@@ -82,18 +82,28 @@ const Band = ({ num: n, title, status, statusLabel, action, actionTone = 'neutra
 // `min-w-0`: dentro de una rejilla, las celdas no encogen por debajo de su
 // contenido salvo que se les indique. Sin esto, un nombre largo o una cifra
 // grande desbordaban la tarjeta y quedaban cortados fuera de la pantalla.
-const Tile = ({ label, children, className = '' }) => (
-    <div className={`bg-slate-50 border border-slate-200 rounded-xl p-4 min-w-0 overflow-hidden ${className}`}>
-        <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">{label}</p>
-        {children}
-    </div>
-);
+const Tile = ({ label, children, className = '', onClick = null }) => {
+    const base = `bg-slate-50 border border-slate-200 rounded-xl p-4 min-w-0 overflow-hidden ${className}`;
+    const cuerpo = (
+        <>
+            <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">{label}</p>
+            {children}
+        </>
+    );
+    // Con `onClick` la tarjeta es un botón de verdad (accesible por teclado),
+    // no un div con un handler encima.
+    return onClick
+        ? <button type="button" onClick={onClick}
+            className={`${base} text-left w-full hover:shadow-md hover:border-slate-300 transition-all`}>{cuerpo}</button>
+        : <div className={base}>{cuerpo}</div>;
+};
 
 export default function BandasFinancieras({ rotacion = null, rotacionReports = null, rotacionVentanaLabel = '', onMapa = null, onAnaquel = null }) {
     const fin = useFinancialKpis();
     const { metaVentasGeneral, zohoSyncAt } = useAppConfig();
     const [showDiasPago, setShowDiasPago] = useState(false);
     const [showVencidas, setShowVencidas] = useState(false);
+    const [showCartera, setShowCartera]   = useState(false);   // toda la cartera abierta
     const [showRotacion, setShowRotacion] = useState(false);
 
     if (fin.loading) {
@@ -262,7 +272,8 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                   action={cobAction} actionTone={cobStatus === 'bad' ? 'bad' : cobStatus === 'warn' ? 'warn' : 'neutral'}
                   onAction={cobHasVencidas ? () => setShowVencidas(true) : null}>
                 <div className="grid gap-4 md:grid-cols-3">
-                    <Tile label="Por cobrar" className="bg-gradient-to-br from-slate-50 to-slate-100">
+                    <Tile label="Por cobrar" onClick={fin.porCobrar > 0 ? () => setShowCartera(true) : null}
+                          className="bg-gradient-to-br from-slate-50 to-slate-100">
                         <p className="text-3xl font-black text-slate-800 tracking-tight tabular-nums mt-1">{money(fin.porCobrar)}</p>
                         <div className="flex h-3.5 rounded-lg overflow-hidden my-2">
                             <span className="bg-emerald-500" style={{ width: `${(d0_30 / totalAging) * 100}%` }} />
@@ -274,6 +285,9 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                             <span><i className="inline-block w-2 h-2 rounded-sm bg-amber-500 mr-1 align-middle" />31–45 d · {money0(d31_45)}</span>
                             <span><i className="inline-block w-2 h-2 rounded-sm bg-red-500 mr-1 align-middle" />+45 d · {money0(d45p)}</span>
                         </div>
+                        {fin.porCobrar > 0 && (
+                            <p className="text-xs text-brand-blue mt-1 font-semibold">Ver las facturas una por una →</p>
+                        )}
                         {/* Transparencia del cuadre con Zoho: si hay documentos que
                             Zoho ya no reconoce, se declara cuánto NO se está
                             contando y por qué — antes engordaban el por cobrar. */}
@@ -330,6 +344,14 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                 <RotacionModal reports={rotacionReports} rotacionVentana={rotacion} ventanaLabel={rotacionVentanaLabel} onClose={() => setShowRotacion(false)} />
             )}
 
+            {showCartera && (
+                <CarteraVencidaModal
+                    facturas={fin.facturas || []}
+                    minDias={0}
+                    titulo="Cuentas por cobrar"
+                    onClose={() => setShowCartera(false)}
+                />
+            )}
             {showVencidas && (
                 <CarteraVencidaModal
                     facturas={fin.facturas || []}
