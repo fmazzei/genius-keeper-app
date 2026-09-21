@@ -4794,6 +4794,21 @@ const IntegracionesSection = () => {
                                         )}
                                     </div>
                                 )}
+                                {reconResult.cuadre.duplicados > 0 && (
+                                    <div className="mt-1">
+                                        <p className="text-amber-700">
+                                            <b>{reconResult.cuadre.duplicados}</b> documento{reconResult.cuadre.duplicados === 1 ? '' : 's'} DUPLICADO{reconResult.cuadre.duplicados === 1 ? '' : 'S'} en GK
+                                            {' '}(misma factura guardada dos veces): se retiraron de la cartera. Conviene borrarlos.
+                                        </p>
+                                        {Array.isArray(reconResult.cuadre.ejemplosDuplicados) && reconResult.cuadre.ejemplosDuplicados.length > 0 && (
+                                            <ul className="mt-1 space-y-0.5">
+                                                {reconResult.cuadre.ejemplosDuplicados.map((e, i) => (
+                                                    <li key={i} className="truncate"><b>{e.numero}</b> · copia <code>{e.docDuplicado}</code> · buena <code>{e.docBueno}</code></li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
+                                )}
                                 {Array.isArray(reconResult.cuadre.noCorregidas) && reconResult.cuadre.noCorregidas.length > 0 && (
                                     <p className="mt-0.5 text-red-600">
                                         No se pudieron corregir: {reconResult.cuadre.noCorregidas.map(x => `${x.numero} (${x.motivo})`).join(' · ')}

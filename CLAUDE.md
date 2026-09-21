@@ -759,6 +759,40 @@ es `useFinancialKpis` (ahora expone `refetch`, disparado por el prop `refreshKey
 que baja `ManagerLayout` → `GerencialDashboard` → `BandasFinancieras`): los PDV y
 las visitas ya llegan por `onSnapshot` y son tiempo real.
 
+### "El barrido da perfecto pero la tarjeta muestra otro monto" (2026-09) ✅
+
+Diagnóstico del dueño, exacto: *"Hay un problema de conexión o comunicación con
+esa vista o tarjeta de la app"*. El barrido reportaba **GK $3.837 en 27 = Zoho
+$3.837 en 27** y la banda seguía mostrando **$3.904,04**. Eran DOS cosas:
+
+**1. La tarjeta no estaba conectada — era una foto.** Todo el tablero llega por
+`onSnapshot` (tiempo real) menos la facturación, que `useFinancialKpis` leía UNA
+vez al montar. El barrido dejaba los datos bien en Firestore y la tarjeta seguía
+mostrando el número viejo: parecía error de cálculo y era de refresco. **No** se
+puso un listener sobre `facturas_vendedor` — son ~1.700 documentos y cada barrido
+los reescribe todos, así que sería una avalancha de lecturas en cada cliente
+abierto. Se escucha la **señal**: `settings/appConfig` ya viene por `onSnapshot`
+y el barrido estampa ahí su marca de tiempo al terminar; cuando esa marca cambia
+—manual o automático— la tarjeta se relee sola en cualquier pantalla abierta.
+`AppConfigContext.zohoSyncAt` pasó a ser el **máximo** de `zohoAutoUltima` y
+`zohoUltimaConciliacion` (con `||` el barrido manual no movía la señal si ya
+existía la automática). El esqueleto de carga solo aparece en la PRIMERA carga:
+al refrescar se conservan los datos viejos en pantalla, si no la banda entera
+parpadeaba y desaparecía sola cada hora. La tarjeta declara además **"Al corte de
+Zoho de las HH:MM"**, que termina con la duda de si el número es de ahora.
+
+**2. Documentos DUPLICADOS: el barrido "corregía 1" en cada corrida y el total no
+se movía nunca.** `upsertFacturaFromZoho` escribe en el documento CANÓNICO
+(`facturas_vendedor/{nº}`). Si en GK hay DOS documentos con el mismo número
+—entraron por vías distintas—, el upsert arregla el bueno y **el duplicado sigue
+abierto para siempre**; el cuadre lo vuelve a encontrar, lo vuelve a "corregir" y
+vuelve a quedar igual. Ahora la segunda pasada guarda la **referencia del
+documento que el cuadre vio abierto** y, tras el upsert, comprueba si ese doc
+quedó arreglado: si el upsert escribió en OTRO id, el duplicado se retira de la
+cartera (`estado:'anulada'`, `duplicadoDe:<id bueno>`) **sin tocar comisiones**
+—la factura buena ya las tiene— y se DECLARA en pantalla con los dos ids, para
+que el admin borre la copia.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

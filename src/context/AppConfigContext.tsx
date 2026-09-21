@@ -102,8 +102,13 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
                 setOurProductWeight_g(data.ourProductWeight_g);
               }
               setMetaVentasGeneral(typeof data.metaVentasGeneral === 'number' ? data.metaVentasGeneral : 0);
-              const sync = (data.zohoAutoUltima as any) || (data.zohoUltimaConciliacion as any);
-              setZohoSyncAt(sync?.toDate ? sync.toDate() : null);
+              // La MÁS RECIENTE de las dos: el barrido automático estampa
+              // `zohoAutoUltima` y el botón manual `zohoUltimaConciliacion`.
+              // Con un `||` el manual no movía la señal si ya existía la
+              // automática, y la tarjeta no se enteraba de la corrida a mano.
+              const msDe = (v: any) => (v?.toDate ? v.toDate().getTime() : 0);
+              const ultMs = Math.max(msDe(data.zohoAutoUltima), msDe(data.zohoUltimaConciliacion));
+              setZohoSyncAt(ultMs > 0 ? new Date(ultMs) : null);
               setZohoCuadre((data.zohoCuadreCartera as any) || null);
             } else {
               setModules(defaultModules);

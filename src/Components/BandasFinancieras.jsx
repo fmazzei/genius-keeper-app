@@ -5,7 +5,7 @@
 // anterior y una línea de acción. Se muestran arriba del dashboard para
 // máster/gerencia. Diseño "Tablero de 4 Preguntas" (validado en mockup).
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TrendingUp, AlertTriangle, Clock, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { useFinancialKpis } from '@/hooks/useFinancialKpis.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
@@ -100,17 +100,40 @@ const Tile = ({ label, children, className = '', onClick = null }) => {
 
 export default function BandasFinancieras({ rotacion = null, rotacionReports = null, rotacionVentanaLabel = '', onMapa = null, onAnaquel = null, refreshKey = 0 }) {
     const fin = useFinancialKpis();
-    // Las visitas/PDV llegan por onSnapshot (siempre vivas); la facturación se
-    // lee una sola vez al montar. Al tirar de la pantalla hay que releerla.
+    const { metaVentasGeneral, zohoSyncAt, zohoCuadre } = useAppConfig();
     const refetch = fin.refetch;
+
+    // ── La tarjeta tiene que estar CONECTADA, no ser una foto ────────────────
+    // Todo lo demás del tablero llega por `onSnapshot` (tiempo real); la
+    // facturación se leía UNA sola vez al montar, así que tras conciliar el
+    // barrido dejaba los datos bien en Firestore y la tarjeta seguía mostrando
+    // el número viejo — parecía un error de cálculo y era de refresco.
+    //
+    // No se pone un listener sobre `facturas_vendedor` (son ~1.700 documentos y
+    // cada barrido los reescribe todos: sería una avalancha de lecturas en cada
+    // cliente abierto). Se escucha la SEÑAL: `settings/appConfig` ya viene por
+    // onSnapshot, y el barrido estampa ahí su marca de tiempo al terminar.
+    // Cuando esa marca cambia —barrido manual o automático— la tarjeta se
+    // relee sola, en cualquier pantalla abierta, sin que nadie toque nada.
+    const syncMs = zohoSyncAt ? zohoSyncAt.getTime() : 0;
+    const syncVisto = useRef(null);
+    useEffect(() => {
+        if (!syncMs) return;
+        if (syncVisto.current === null) { syncVisto.current = syncMs; return; }  // primera carga: ya está fresco
+        if (syncMs !== syncVisto.current) { syncVisto.current = syncMs; refetch?.(); }
+    }, [syncMs, refetch]);
+
+    // "Tirar para actualizar" (gesto del gerente) — releer a demanda.
     useEffect(() => { if (refreshKey > 0) refetch?.(); }, [refreshKey, refetch]);
-    const { metaVentasGeneral, zohoSyncAt } = useAppConfig();
     const [showDiasPago, setShowDiasPago] = useState(false);
     const [showVencidas, setShowVencidas] = useState(false);
     const [showCartera, setShowCartera]   = useState(false);   // toda la cartera abierta
     const [showRotacion, setShowRotacion] = useState(false);
 
-    if (fin.loading) {
+    // El esqueleto solo en la PRIMERA carga. Al refrescar (gesto o fin de un
+    // barrido) los datos viejos siguen en pantalla hasta que llegan los nuevos:
+    // si no, la banda entera parpadea y desaparece sola cada hora.
+    if (fin.loading && !fin.tieneFacturas) {
         return <div className="h-24 rounded-2xl bg-white border border-slate-200 animate-pulse" />;
     }
     if (!fin.tieneFacturas) return null; // sin facturas de Zoho todavía → no ocupamos espacio
@@ -291,6 +314,13 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                         </div>
                         {fin.porCobrar > 0 && (
                             <p className="text-xs text-brand-blue mt-1 font-semibold">Ver las facturas una por una →</p>
+                        )}
+                        {/* Al corte de: acaba con la duda de "¿este número es de
+                            ahora o de cuando abrí la app?". */}
+                        {zohoSyncAt && (
+                            <p className="text-[10px] text-slate-400 mt-1 tabular-nums">
+                                {fin.loading ? 'Actualizando…' : `Al corte de Zoho de las ${zohoSyncAt.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}`}
+                            </p>
                         )}
                         {/* Transparencia del cuadre con Zoho: si hay documentos que
                             Zoho ya no reconoce, se declara cuánto NO se está

@@ -687,7 +687,7 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
                 // Detectar no basta: si Zoho dice que ya la cobró, anuló o dejó
                 // en cero, GK tiene que reflejarlo. Se corrigen en una segunda
                 // pasada (son unas pocas), reusando la MISMA vía del barrido.
-                if (motivo !== 'no_existe_en_zoho' && z?.inv) aCorregir.push(z.inv);
+                if (motivo !== 'no_existe_en_zoho' && z?.inv) aCorregir.push({ inv: z.inv, ref: d.ref, numero: num });
                 cuadre.gkSoloEnGk++;
                 cuadre.gkSoloEnGkMonto += saldoGk;
                 cuadre.porMotivo[motivo] = (cuadre.porMotivo[motivo] || 0) + 1;
@@ -733,19 +733,47 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
         // fallo puntual de Zoho, una que entró por webhook sin pasar por aquí).
         // Reportarlas y dejarlas mal es lo que mantenía la brecha: se corrigen.
         cuadre.corregidas = 0;
+        cuadre.duplicados = 0;
+        cuadre.ejemplosDuplicados = [];
         cuadre.noCorregidas = [];
-        for (const inv of aCorregir) {
+        for (const { inv, ref, numero } of aCorregir) {
             try {
                 const r = await upsertFacturaFromZoho(inv, appConfig, {
                     body: inv, onlyVendedorId: vendedorId, preload, fetchLineItems, stats: zstats, rif: null,
                 });
-                if (r.status === 'ok') { cuadre.corregidas++; res.corregidas = (res.corregidas || 0) + 1; }
-                else if (cuadre.noCorregidas.length < 20) {
-                    cuadre.noCorregidas.push({ numero: inv.invoice_number, motivo: r.status });
+                if (r.status !== 'ok') {
+                    if (cuadre.noCorregidas.length < 20) cuadre.noCorregidas.push({ numero, motivo: r.status });
+                    continue;
+                }
+                cuadre.corregidas++; res.corregidas = (res.corregidas || 0) + 1;
+
+                // ¿Quedó arreglado el documento que el cuadre vio abierto? El
+                // upsert escribe en el doc CANÓNICO (`facturas_vendedor/{nº}`).
+                // Si en GK hay DOS documentos con el mismo número —pasa: entraron
+                // por vías distintas— el upsert arregla uno y el otro sigue
+                // abierto para siempre: el barrido reportaba "1 corregida" en
+                // cada corrida y el total no se movía nunca.
+                if (r.facturaId && ref.id !== r.facturaId) {
+                    const dup = await ref.get();
+                    const dd = dup.exists ? dup.data() : null;
+                    if (dd && dd.estado !== 'anulada' && dd.estado !== 'pagada') {
+                        // NO se le recalcula comisión: la factura buena ya la tiene.
+                        // Este documento es una copia — se retira de la cartera y
+                        // se declara, para que el admin la borre.
+                        await ref.update({
+                            estado: 'anulada', duplicadoDe: r.facturaId, comisionGenerada: 0,
+                            comisionAnulada: true, unidadesContabilizadas: false,
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        });
+                        cuadre.duplicados++;
+                        if (cuadre.ejemplosDuplicados.length < 20) {
+                            cuadre.ejemplosDuplicados.push({ numero, docDuplicado: ref.id, docBueno: r.facturaId });
+                        }
+                    }
                 }
             } catch (e) {
                 if (cuadre.noCorregidas.length < 20) {
-                    cuadre.noCorregidas.push({ numero: inv.invoice_number, motivo: String(e?.message || e).slice(0, 80) });
+                    cuadre.noCorregidas.push({ numero, motivo: String(e?.message || e).slice(0, 80) });
                 }
             }
         }
