@@ -4488,6 +4488,9 @@ const IntegracionesSection = () => {
     const [reconResult, setReconResult]   = useState(null);
     const [reconError, setReconError]     = useState('');
     const [ultimaConcil, setUltimaConcil] = useState(null);
+    // Estado del barrido AUTOMÁTICO. Un barrido automático roto en silencio es
+    // exactamente el problema que se está resolviendo, así que se muestra.
+    const [auto, setAuto] = useState({ ultima: null, estado: null, error: null, resumen: null, activo: true });
 
     // Reparación cartera ↔ atribución (una sola fuente de la verdad).
     const [reparando, setReparando]       = useState(false);
@@ -4550,6 +4553,13 @@ const IntegracionesSection = () => {
                 setZohoSales(d.zohoSalesWebhookActive === true);
                 setZohoOrgId(d.zohoOrgIdLacteoca || '');
                 setUltimaConcil(d.zohoUltimaConciliacion || null);
+                setAuto({
+                    ultima:  d.zohoAutoUltima || null,
+                    estado:  d.zohoAutoEstado || null,
+                    error:   d.zohoAutoError || null,
+                    resumen: d.zohoAutoResumen || null,
+                    activo:  d.zohoConciliacionAuto !== false,
+                });
             }
             setLoading(false);
         }).catch(() => setLoading(false));
@@ -4651,9 +4661,47 @@ const IntegracionesSection = () => {
                 )}
             </div>
 
-            <SectionTitle n="2" title="Conciliación automática con Zoho (API)" desc="GK consulta a Zoho el estado real de las facturas y actualiza las que se pagaron. Úsalo cuando quieras — resuelve el que Zoho no siempre avise los pagos." />
+            <SectionTitle n="2" title="Conciliación con Zoho (API)" desc="GK le pregunta a Zoho el estado real de cada factura. Corre SOLA cada 4 horas; el botón es para cuando no quieres esperar." />
 
             <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
+                {/* ESTADO DEL BARRIDO AUTOMÁTICO.
+                    Zoho solo avisa de factura creada, vencida y pagada — nunca de
+                    una borrada, anulada, devuelta a borrador o editada. Por eso GK
+                    pregunta cada 4 horas. Si ese barrido se rompe, la cartera se
+                    congela en silencio: aquí se declara. */}
+                {(() => {
+                    const ult = auto.ultima?.toDate?.() || (ultimaConcil?.toDate?.() || null);
+                    const horas = ult ? (Date.now() - ult.getTime()) / 3600000 : null;
+                    const viejo = horas === null || horas > 9;   // 2 ciclos perdidos
+                    const fallo = auto.estado === 'error';
+                    const tono = (!auto.activo || fallo || viejo)
+                        ? 'bg-red-50 border-red-200 text-red-800'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-900';
+                    return (
+                        <div className={`border rounded-lg p-3 mb-3 text-xs ${tono}`}>
+                            <p className="font-bold flex items-center gap-1.5">
+                                <RefreshCw size={13} />
+                                {!auto.activo
+                                    ? 'Actualización automática DESACTIVADA'
+                                    : fallo ? 'La última actualización automática FALLÓ'
+                                    : viejo ? 'Las facturas pueden estar desactualizadas'
+                                    : 'Se actualiza sola cada 4 horas'}
+                            </p>
+                            <p className="mt-0.5">
+                                {ult
+                                    ? <>Última actualización con Zoho: <b>{ult.toLocaleString('es-VE')}</b>{horas !== null && horas >= 1 ? ` (hace ${Math.round(horas)} h)` : ''}.</>
+                                    : <>Todavía no se ha registrado ninguna actualización.</>}
+                                {auto.resumen && auto.estado === 'ok' && (
+                                    <> Revisó <b>{auto.resumen.revisadas ?? 0}</b> · cobradas <b>{auto.resumen.marcadasPagadas ?? 0}</b> · ausentes <b>{auto.resumen.ausentes ?? 0}</b>.</>
+                                )}
+                            </p>
+                            {fallo && auto.error && <p className="mt-0.5">Causa: {auto.error}</p>}
+                            {(fallo || viejo) && auto.activo && (
+                                <p className="mt-0.5">Mientras no corra, las cuentas por cobrar quedan congeladas en la última lectura. Puedes forzarla con el botón de abajo.</p>
+                            )}
+                        </div>
+                    );
+                })()}
                 {/* Botón principal: conciliar ahora */}
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-2">
                     <button
@@ -4671,7 +4719,7 @@ const IntegracionesSection = () => {
                     )}
                 </div>
                 <p className="text-xs text-slate-400 mb-2">
-                    Trae de Zoho el estado de cada factura y actualiza GK: marca las cobradas (calcula su comisión, incluidas las Cuentas Recuperadas) y crea las que falten. Es seguro correrlo las veces que necesites.
+                    Trae de Zoho el estado de cada factura y actualiza GK: marca las cobradas (calcula su comisión, incluidas las Cuentas Recuperadas), retira las que Zoho ya no reconoce y crea las que falten. Es seguro correrlo las veces que necesites; si el barrido automático está corriendo, espera a que termine.
                 </p>
 
                 {reconError && <p className="text-red-500 text-xs mb-2">{reconError}</p>}

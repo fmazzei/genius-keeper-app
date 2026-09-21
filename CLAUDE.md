@@ -621,6 +621,52 @@ NO está contando y por qué.
 `ConciliacionFacturas` salta las facturas que no resuelven a ese vendedor
 (`other_vendor`), así que no refresca el estado de las demás.
 
+### La conciliación con Zoho corre SOLA (2026-09) ✅
+
+Planteamiento del dueño al ver que había que pulsar un botón: *"la idea es que no
+haya que hacer ese barrido continuamente sino que existan esos gatillos que
+disparan la actualización y mantienen la app completamente actualizada"*. Tiene
+razón, y el detonante lo prueba: el último barrido exitoso era de **hacía 10
+días**, así que GK llevaba diez días reportando como vencidas facturas que en
+Zoho ya estaban cobradas o borradas — y nadie lo sabía.
+
+**Por qué los webhooks solos NO alcanzan (y nunca van a alcanzar).** Zoho avisa
+de TRES cosas: factura creada, vencida y pagada. **Nunca** avisa cuando borran
+una factura, la anulan, la devuelven a borrador, le cambian el monto o le
+aplican un pago por una vía que no dispara el evento. Todo eso es justo lo que
+descuadraba las cuentas por cobrar. La única forma de cubrirlo es que GK
+**pregunte**, no que espere: webhooks para lo inmediato + barrido periódico para
+lo que Zoho nunca anuncia.
+
+- **`conciliarZohoAutomatico`** (`onSchedule`, cada 4 h, `America/Caracas`,
+  540 s, 1 GiB, `retryCount: 0` — reintentar un barrido a medias no ayuda, el
+  siguiente ciclo lo cubre). Corre el barrido GLOBAL completo. El núcleo se
+  extrajo a `ejecutarConciliacion({vendedorId, origen})`, compartido con el
+  botón manual: una sola lógica, sin drift. Se puede apagar con
+  `settings/appConfig.zohoConciliacionAuto = false`.
+- **Candado `settings/zohoConciliacionLock`** (transacción, TTL 12 min): dos
+  barridos simultáneos —el botón manual mientras corre el automático— leen la
+  misma factura con `unidadesContabilizadas:false` y **los dos** congelan su
+  tasa-cohorte ⇒ las unidades se cuentan DOS VECES. El manual avisa "ya hay una
+  conciliación en curso"; el automático simplemente se salta el turno.
+- **Nunca más en silencio.** El barrido escribe su resultado en
+  `settings/appConfig` (`zohoAutoUltima`/`zohoAutoEstado`/`zohoAutoError`/
+  `zohoAutoResumen`). AdminPanel → Integraciones §2 abre con un cartel que dice
+  si corre sola, cuándo fue la última vez y **la causa si falló**; se pone en
+  rojo si pasaron más de 9 h (dos ciclos perdidos) o si está desactivada.
+  `AppConfigContext` expone `zohoSyncAt` y la banda **¿Cobramos?** declara
+  "Dato de hace N h/días: GK no logra actualizarse con Zoho" — la pantalla donde
+  se ve el número equivocado es la que tiene que confesar que es una foto vieja.
+- **El "internal" pelado se acabó.** `reconciliarFacturasZoho` envuelve todo su
+  cuerpo: cualquier excepción sale como `HttpsError` con el mensaje real y la
+  primera línea del stack (y queda en los logs). Memoria 512 MiB → **1 GiB**: la
+  función carga en RAM el universo completo de facturas de Zoho MÁS toda la
+  colección `facturas_vendedor`, y un OOM se ve exactamente igual que un
+  "internal" sin causa. Zoho deja el `invoice_number` VACÍO en muchos
+  borradores: `retirarFacturaSiExiste` hacía `doc('')` con ese valor (truena) y
+  ahora sale temprano. El cuadre y la marca de tiempo van en try/catch — son
+  diagnóstico, no pueden tumbar una corrida que ya aplicó sus cambios.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

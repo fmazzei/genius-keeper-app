@@ -12,6 +12,7 @@
 // escriben con la callable `guardarCredencialesZoho`, solo master).
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 const { getAccessToken, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
@@ -59,6 +60,38 @@ async function retirarFacturaSiExiste(inv, onlyVendedorId, estadoDestino = 'anul
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     return estadoDestino === 'anulada' ? 'anulada' : 'borrador';
+}
+
+// ── CANDADO de conciliación ─────────────────────────────────────────────────
+// Dos barridos simultáneos (el botón manual mientras corre el automático) leen
+// la misma factura con `unidadesContabilizadas:false` y los dos congelan su
+// tasa-cohorte: las unidades se cuentan DOS VECES. El candado lo impide.
+// Se libera solo a los LOCK_TTL_MS por si una corrida muere sin soltarlo.
+const LOCK_REF = () => admin.firestore().doc('settings/zohoConciliacionLock');
+const LOCK_TTL_MS = 12 * 60 * 1000;   // > el timeout de la función (9 min)
+
+async function tomarLock(origen) {
+    return admin.firestore().runTransaction(async (tx) => {
+        const snap = await tx.get(LOCK_REF());
+        const d = snap.exists ? snap.data() : null;
+        const desde = d?.startedAt?.toDate?.() || null;
+        const vivo = d?.running === true && desde && (Date.now() - desde.getTime()) < LOCK_TTL_MS;
+        if (vivo) return { ok: false, origen: d.origen || '—', desde };
+        tx.set(LOCK_REF(), {
+            running: true, origen,
+            startedAt: admin.firestore.Timestamp.fromDate(new Date()),
+        }, { merge: true });
+        return { ok: true };
+    });
+}
+
+async function soltarLock() {
+    try {
+        await LOCK_REF().set({
+            running: false,
+            finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    } catch (e) { /* soltar el candado nunca debe tumbar la corrida */ }
 }
 
 // Parsea "YYYY-MM-DD" en local (sin corrimiento UTC).
@@ -178,23 +211,103 @@ exports.probarConexionZoho = onCall({ region: "us-central1", timeoutSeconds: 120
 // completo de facturas de Zoho MÁS toda la colección `facturas_vendedor`, y un
 // OOM se ve exactamente igual que un "internal" sin causa.
 exports.reconciliarFacturasZoho = onCall({ region: "us-central1", timeoutSeconds: 540, memory: "1GiB" }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
+    await requireRole(request.auth.uid, ["master", "administrador"]);
+    // vendedorId (opcional): si viene, concilia SOLO las facturas de ese vendedor.
+    // Sin él, barrido general de toda la organización.
+    const vendedorId = (request.data && request.data.vendedorId) || null;
+    const lock = await tomarLock('manual');
+    if (!lock.ok) {
+        throw new HttpsError("failed-precondition",
+            `Ya hay una conciliación en curso (${lock.origen}, desde ${lock.desde ? lock.desde.toLocaleTimeString('es-VE') : '—'}). Espera a que termine.`);
+    }
     try {
-        return await ejecutarConciliacion(request);
+        return await ejecutarConciliacion({ vendedorId, origen: 'manual' });
     } catch (e) {
         if (e instanceof HttpsError) throw e;
         logger.error('reconciliarFacturasZoho falló:', e);
         const linea = String(e?.stack || '').split('\n')[1]?.trim() || '';
         throw new HttpsError("internal", `Conciliación: ${e?.message || e}${linea ? ` — ${linea}` : ''}`.slice(0, 400));
+    } finally {
+        await soltarLock();
     }
 });
 
-async function ejecutarConciliacion(request) {
-    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
-    await requireRole(request.auth.uid, ["master", "administrador"]);
+// ── BARRIDO AUTOMÁTICO ──────────────────────────────────────────────────────
+// Zoho solo avisa de TRES cosas: factura creada, vencida y pagada. NUNCA avisa
+// cuando borran una factura, la anulan, la devuelven a borrador, le cambian el
+// monto o le aplican un pago por una vía que no dispara el evento. Por eso los
+// webhooks solos no pueden mantener la cartera al día: hace falta que GK
+// PREGUNTE cada cierto tiempo. Esto es lo que antes había que acordarse de
+// pulsar a mano — y cuando nadie lo pulsaba, GK reportaba como vencidas
+// facturas que en Zoho ya estaban cobradas o borradas.
+//
+// Deja su resultado en `settings/appConfig` (`zohoAuto*`) para que la pantalla
+// pueda decir cuándo corrió y si falló: un barrido automático roto en silencio
+// es exactamente el problema que se está resolviendo.
+exports.conciliarZohoAutomatico = onSchedule({
+    schedule: "0 */4 * * *",          // cada 4 horas
+    timeZone: "America/Caracas",
+    region: "us-central1",
+    timeoutSeconds: 540,
+    memory: "1GiB",
+    retryCount: 0,                    // reintentar un barrido a medias no ayuda: el próximo lo cubre
+}, async () => {
+    const cfgRef = admin.firestore().doc('settings/appConfig');
+    const marcar = async (data) => {
+        try { await cfgRef.set(data, { merge: true }); } catch (e) { /* no bloquear */ }
+    };
 
-    // vendedorId (opcional): si viene, concilia SOLO las facturas de ese vendedor.
-    // Sin él, barrido general de toda la organización.
-    const vendedorId = (request.data && request.data.vendedorId) || null;
+    const cfg = (await cfgRef.get()).data() || {};
+    if (cfg.zohoConciliacionAuto === false) {
+        logger.log('Conciliación automática desactivada por configuración.');
+        return;
+    }
+    if (!cfg.zohoOrgIdLacteoca) {
+        await marcar({ zohoAutoUltima: admin.firestore.FieldValue.serverTimestamp(),
+                       zohoAutoEstado: 'error', zohoAutoError: 'Falta el ID de organización de Zoho.' });
+        return;
+    }
+
+    const lock = await tomarLock('auto');
+    if (!lock.ok) {
+        logger.log(`Barrido automático omitido: ya hay uno en curso (${lock.origen}).`);
+        return;   // el manual en curso hace el mismo trabajo
+    }
+    const t0 = Date.now();
+    try {
+        const res = await ejecutarConciliacion({ vendedorId: null, origen: 'auto' });
+        await marcar({
+            zohoAutoUltima: admin.firestore.FieldValue.serverTimestamp(),
+            zohoAutoEstado: 'ok',
+            zohoAutoError: null,
+            zohoAutoSegundos: Math.round((Date.now() - t0) / 1000),
+            zohoAutoResumen: {
+                revisadas: res.revisadas, marcadasPagadas: res.marcadasPagadas,
+                creadas: res.creadas, anuladas: res.anuladas, borradores: res.borradores,
+                ausentes: res.ausentes, errores: res.errores,
+            },
+        });
+        logger.log(`Conciliación automática lista en ${Math.round((Date.now() - t0) / 1000)}s`, res.cuadre || {});
+    } catch (e) {
+        logger.error('Conciliación automática falló:', e);
+        await marcar({
+            zohoAutoUltima: admin.firestore.FieldValue.serverTimestamp(),
+            zohoAutoEstado: 'error',
+            zohoAutoError: String(e?.message || e).slice(0, 300),
+        });
+        // No se relanza: el schedule no debe quedar en bucle de reintentos.
+    } finally {
+        await soltarLock();
+    }
+});
+
+/**
+ * NÚCLEO de la conciliación, compartido por el botón manual y el barrido
+ * automático. Sin `request`: recibe solo lo que necesita.
+ * @param {{vendedorId?: string|null, origen?: 'manual'|'auto'}} opciones
+ */
+async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {}) {
 
     const [credsSnap, cfgSnap] = await Promise.all([
         admin.firestore().doc('zoho_secure/creds').get(),
@@ -282,6 +395,7 @@ async function ejecutarConciliacion(request) {
     const res = {
         ok: true,
         vendedorIdRecibido: vendedorId,  // para confirmar que llegó el alcance
+        origen,              // 'manual' (botón) o 'auto' (barrido programado)
         revisadas: 0,        // facturas del alcance (del vendedor) conciliadas
         otrosVendedores: 0,  // saltadas por ser de otro vendedor / sin vincular
         creadas: 0,

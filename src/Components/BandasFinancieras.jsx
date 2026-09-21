@@ -91,7 +91,7 @@ const Tile = ({ label, children, className = '' }) => (
 
 export default function BandasFinancieras({ rotacion = null, rotacionReports = null, rotacionVentanaLabel = '', onMapa = null, onAnaquel = null }) {
     const fin = useFinancialKpis();
-    const { metaVentasGeneral } = useAppConfig();
+    const { metaVentasGeneral, zohoSyncAt } = useAppConfig();
     const [showDiasPago, setShowDiasPago] = useState(false);
     const [showVencidas, setShowVencidas] = useState(false);
     const [showRotacion, setShowRotacion] = useState(false);
@@ -277,6 +277,19 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                         {/* Transparencia del cuadre con Zoho: si hay documentos que
                             Zoho ya no reconoce, se declara cuánto NO se está
                             contando y por qué — antes engordaban el por cobrar. */}
+                        {/* Si GK lleva mucho sin hablar con Zoho, este número es
+                            una foto vieja. Decirlo es mejor que mostrarlo como si
+                            fuera de hoy. */}
+                        {(() => {
+                            if (!zohoSyncAt) return null;
+                            const h = (Date.now() - zohoSyncAt.getTime()) / 3600000;
+                            if (h <= 9) return null;   // dos ciclos del barrido automático
+                            return (
+                                <p className="mt-2 text-[11px] text-red-600 leading-snug">
+                                    Dato de hace {h < 48 ? `${Math.round(h)} h` : `${Math.round(h / 24)} días`}: GK no logra actualizarse con Zoho.
+                                </p>
+                            );
+                        })()}
                         {fin.fantasmas?.length > 0 && (
                             <p className="mt-2 pt-2 border-t border-slate-200 text-[11px] text-slate-500 leading-snug">
                                 No se cuentan <b className="tabular-nums">{fin.fantasmas.length}</b> factura{fin.fantasmas.length === 1 ? '' : 's'} ({money0(fin.fantasmasMonto)}) que Zoho ya no reconoce
