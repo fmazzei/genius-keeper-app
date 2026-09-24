@@ -2306,3 +2306,41 @@ precisión. "Desde acá confío" es un juicio del dueño, no un cálculo.
   dice en ámbar en vez de callar.
 
 Con esto queda cerrado el programa completo (Fases 0 a 6).
+
+### Leche fantasma en el inicio del operario, y las producciones sin cerrar (2026-09) ✅
+
+Reportado por el dueño con dos capturas lado a lado: el inicio del operario
+decía **"1107 L de leche en tanque"** y la pantalla de Leche, **"0 L · Sin
+recepciones activas"** (14 en el historial). Esa leche no existía.
+
+**Causa: dos copias del mismo cálculo, y una se olvidaba de un estado.** La
+pantalla de Leche define el tanque como `status !== 'completada'` **y** no
+`en_proceso` **y** no `inactivo`; el inicio del operario repetía el filtro sin
+el primer término, así que sumaba las catorce recepciones ya procesadas. Lo
+heredé tal cual del inicio anterior al reescribirlo en la Fase 2 — estaba ahí
+desde antes, pero lo copié sin verificarlo contra la pantalla que manda. Peor
+que el número: el hero invitaba a **arrancar una producción con leche que no
+existe**.
+
+**`src/Kroma/estadoPlanta.js` (NUEVO)** — una sola definición de qué está
+abierto en la planta: `esLecheEnTanque` / `litrosEnTanque`,
+`esProduccionAbierta` y `faltaEmpacar`. La usan la pantalla de Leche, el inicio
+del operario y la Producción. Es el mismo patrón que ya había mordido con
+`DEFAULT_MODULES` duplicado: **si un cálculo vive en dos archivos, se separan.**
+
+**Las producciones SIN CERRAR ahora se ven.** Pregunta del dueño: *"¿dónde ve el
+operario los procesos en curso y los procesos sin cerrar?"*. Los en curso ya
+salían; los **sin cerrar** (terminados con `disposicion: 'guardar_todo'` o
+`'mixto'` y `empaqueFinalizado: false` — el queso se guardó para empacar
+después) **no salían en ninguna lista de "abierto"**: `estado === 'completada'`
+los excluía de todas, y la única sección que los mostraba vivía enterrada bajo
+el historial DENTRO del módulo de Producción. Ahora tienen su propia sección en
+el inicio ("Sin cerrar · falta empacar") y entran en el orden de urgencia del
+hero **antes** de "puedes arrancar una producción": queso hecho a medias que
+ocupa cava pesa más que una producción nueva.
+
+Texto corregido a las palabras del dueño: **"No hay leche esperando por
+proceso"** en vez de "Sin leche en tanque".
+
+Verificado con trece casos de la lógica pura, incluido el del reporte
+(14 recepciones procesadas ⇒ 0 L).

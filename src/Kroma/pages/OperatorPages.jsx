@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useKroma } from '../KromaContext';
+import { litrosEnTanque, esProduccionAbierta, faltaEmpacar } from '../estadoPlanta.js';
 import FichaBuilderPageImpl from './operator/FichaBuilderPage';
 import MaterialsInventoryPageImpl from './operator/MaterialsInventoryPage';
 import MilkInventoryPageImpl from './operator/MilkInventoryPage';
@@ -79,20 +80,29 @@ export function OperatorHome({ onNavigate }) {
                 if (!vivo) return;
                 const vivos = (snap) => (snap.docs || []).map(d => ({ id: d.id, ...d.data() })).filter(x => x.active !== false);
 
-                const milkDocs = vivos(milkSnap);
-                const litrosTanque = milkDocs
-                    .filter(r => r.enrutamiento === 'tanque' && r.status !== 'en_proceso' && r.status !== 'inactivo')
-                    .reduce((s, r) => s + (r.litros || 0), 0);
+                // Definición compartida con la pantalla de Leche. Acá se
+                // calculaba aparte y se olvidaba de excluir las recepciones ya
+                // PROCESADAS: el inicio mostraba 1107 L de leche que no existía
+                // y encima invitaba a producir con ella.
+                const litrosTanque = litrosEnTanque(vivos(milkSnap));
 
-                const abiertas = vivos(logsSnap)
-                    .filter(l => l.estado !== 'completada')
-                    .sort((a, b) => (b.fechaInicio?.seconds || 0) - (a.fechaInicio?.seconds || 0));
+                const todosLogs = vivos(logsSnap);
+                const porFecha = (a, b) => (b.fechaInicio?.seconds || 0) - (a.fechaInicio?.seconds || 0);
+                const abiertas = todosLogs.filter(esProduccionAbierta).sort(porFecha);
+                // Terminadas pero sin cerrar: el queso se guardó para empacar
+                // después. Es trabajo pendiente del operario y no aparecía en
+                // ninguna lista de "abierto" — vivía enterrado bajo el historial
+                // dentro del módulo de Producción.
+                const sinEmpacar = todosLogs
+                    .filter(l => !esProduccionAbierta(l) && faltaEmpacar(l))
+                    .sort(porFecha);
 
                 setData({
                     litrosTanque,
                     insumos: vivos(matSnap).length,
                     fichas:  vivos(fichasSnap).length,
                     abiertas,
+                    sinEmpacar,
                     // Más recientes primero: sin ordenar salían en el orden que
                     // devolviera Firestore, así que un aviso viejo podía tapar
                     // al de hoy. Se ordena en cliente a propósito — sumar
@@ -102,14 +112,15 @@ export function OperatorHome({ onNavigate }) {
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
                         .slice(0, 4),
                 });
-            } catch { if (vivo) setData({ litrosTanque: 0, insumos: 0, fichas: 0, abiertas: [], alertas: [] }); }
+            } catch { if (vivo) setData({ litrosTanque: 0, insumos: 0, fichas: 0, abiertas: [], sinEmpacar: [], alertas: [] }); }
         };
         load();
         return () => { vivo = false; };
     }, [empresaId]);
 
     const cargando = !data;
-    const abiertas = data?.abiertas || [];
+    const abiertas   = data?.abiertas || [];
+    const sinEmpacar = data?.sinEmpacar || [];
     const ahora    = Date.now();
 
     // Un hold cuyo plazo ya venció es lo MÁS urgente: el queso está esperando.
@@ -136,6 +147,14 @@ export function OperatorHome({ onNavigate }) {
             ? `Lote ${l.lote || '—'}${l.estado === 'en_hold' ? ' · en espera' : ''}`
             : 'Retómalas donde las dejaste.';
         accion  = { label: 'Ir a producción', view: 'production' };
+    } else if (sinEmpacar.length > 0) {
+        // Va antes que "arranca una producción": el queso ya hecho y sin
+        // empacar es trabajo terminado a medias, y ocupa cava.
+        titular = sinEmpacar.length === 1
+            ? `Falta empacar ${sinEmpacar[0].productoNombre}`
+            : `${sinEmpacar.length} producciones sin empacar`;
+        detalle = 'El queso está hecho y guardado, pero la producción no se cerró.';
+        accion  = { label: 'Ir a producción', view: 'production' };
     } else if (data.fichas === 0) {
         titular = 'Todavía no hay fichas técnicas';
         detalle = 'Sin una ficha no se puede arrancar una producción.';
@@ -145,7 +164,7 @@ export function OperatorHome({ onNavigate }) {
         detalle = 'No tienes nada abierto: puedes arrancar una producción.';
         accion  = { label: 'Nueva producción', view: 'production' };
     } else {
-        titular = 'Sin leche en tanque';
+        titular = 'No hay leche esperando por proceso';
         detalle = 'Registra una recepción para poder producir.';
         accion  = { label: 'Recepción de leche', view: 'milk' };
     }
@@ -206,6 +225,30 @@ export function OperatorHome({ onNavigate }) {
                                 </button>
                             );
                         })}
+                    </div>
+                </section>
+            )}
+
+            {/* ── Sin cerrar ── */}
+            {sinEmpacar.length > 0 && (
+                <section className="mb-6">
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Sin cerrar · falta empacar</p>
+                    <div className="space-y-2">
+                        {sinEmpacar.slice(0, 5).map(l => (
+                            <button key={l.id} onClick={() => onNavigate?.('production')}
+                                className="w-full text-left bg-slate-900 hover:bg-slate-800 border border-amber-500/30 hover:border-amber-500/50 rounded-xl p-4 transition-colors flex items-center gap-3">
+                                <Package size={16} className="text-amber-400 shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-white font-semibold text-sm truncate">{l.productoNombre}</p>
+                                    <p className="text-slate-500 text-xs mt-0.5">
+                                        Lote {l.lote || '—'}
+                                        {l.fechaInicio && ` · ${fmtFecha(l.fechaInicio)}`}
+                                        {l.disposicion === 'mixto' && ' · empacado a medias'}
+                                    </p>
+                                </div>
+                                <ChevronRight size={15} className="text-slate-600 shrink-0" />
+                            </button>
+                        ))}
                     </div>
                 </section>
             )}

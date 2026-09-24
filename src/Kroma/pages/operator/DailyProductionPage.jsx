@@ -6,6 +6,7 @@ import {
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
+import { faltaEmpacar } from '@/Kroma/estadoPlanta.js';
 import { scheduleHoldNotif, cancelHoldNotif, getNotifConfig, saveNotifConfig, NOTIF_BLOCKS, getNotifPermission, requestNotifPermission } from '../../utils/kromaNotifScheduler';
 import { createFirestoreScheduledNotif, cancelFirestoreScheduledNotif } from '../../utils/kromaFCM';
 import {
@@ -3711,9 +3712,7 @@ export default function DailyProductionPage({ onNavigate }) {
 
                 {/* ── Pendientes de empacar (siempre visibles) ── */}
                 {(() => {
-                    const pendientes = historial.filter(l =>
-                        !l.empaqueFinalizado && (l.disposicion === 'guardar_todo' || l.disposicion === 'mixto')
-                    );
+                    const pendientes = historial.filter(faltaEmpacar);
                     if (pendientes.length === 0) return null;
                     return (
                         <div className="mt-6">

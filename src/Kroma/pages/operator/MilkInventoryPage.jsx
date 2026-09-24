@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, query, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
+import { esLecheEnTanque } from '@/Kroma/estadoPlanta.js';
 import {
     Droplets, Plus, ChevronLeft, ChevronRight, Check,
     Snowflake, Zap, Pencil, Trash2, Lock, Settings, X,
@@ -598,9 +599,7 @@ export default function MilkInventoryPage({ onNavigate }) {
     const historial = allReceptions.filter(r => r.status === 'completada');
     const displayed = tab === 'activas' ? activas : historial;
 
-    const recepcionesEnTanque = activas.filter(r =>
-        r.enrutamiento === 'tanque' && r.status !== 'en_proceso' && r.status !== 'inactivo'
-    );
+    const recepcionesEnTanque = allReceptions.filter(esLecheEnTanque);
     const litrosEnTanque = recepcionesEnTanque.reduce((s, r) => s + (r.litros || 0), 0);
 
     const recepcionesEnProceso = allReceptions.filter(r => r.status === 'en_proceso');
