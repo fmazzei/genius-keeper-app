@@ -10,6 +10,8 @@ import {
     PackageOpen, Scale, Calendar, Hash,
 } from 'lucide-react';
 import { useKroma } from '@/Kroma/KromaContext.jsx';
+import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
+import { eliminarProduccionCompleta, cantidadDePartida, esPartidaDe } from '@/Kroma/eliminarProduccion.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1588,6 +1590,9 @@ export default function WarehousesPage() {
 
     const [warehouses,   setWarehouses]   = useState([]);
     const [inventoryPT,  setInventoryPT]  = useState([]);
+    // Partida de cava cuya producción se está por retirar (modal compartido).
+    const [borrarProduccion,   setBorrarProduccion]   = useState(null);
+    const [borrandoProduccion, setBorrandoProduccion] = useState(false);
     const [inventarioComercial, setInventarioComercial] = useState([]);
     const [inventoryMat, setInventoryMat] = useState([]);
     const [movements,    setMovements]    = useState([]);
@@ -1849,7 +1854,27 @@ export default function WarehousesPage() {
         setInventoryPT(prev => prev.map(i => i.id === documentId ? { ...i, ...updateData } : i));
     }
 
+    /**
+     * Borrar del almacén una partida que VIENE DE UNA PRODUCCIÓN no es un acto
+     * de almacén: es sacar de circulación esa producción. Antes se borraba el
+     * ítem y la planilla seguía abierta ("falta empacar") para siempre, sin
+     * forma de cerrarla. Ahora se pregunta, con el mismo modal de Producción,
+     * y la opción de conservar los registros de recepción y proceso.
+     */
     async function handleDeleteInventoryItem(item) {
+        if (item.logId) {
+            let log = null;
+            try {
+                const snap = await getDoc(doc(db, 'kroma_production_logs', item.logId));
+                if (snap.exists()) log = { id: snap.id, ...snap.data() };
+            } catch { /* sin la planilla se cae al borrado simple de abajo */ }
+            if (log) { setBorrarProduccion({ log, item }); return; }
+        }
+        await borrarSoloPartida(item);
+    }
+
+    /** El caso chico: una caja dañada, un conteo mal cargado. No toca la planilla. */
+    async function borrarSoloPartida(item) {
         try {
             await updateDoc(doc(db, 'kroma_inventory_pt', item.id), { active: false });
             // Antes esto desaparecía el ítem del inventario sin dejar rastro en
@@ -1872,30 +1897,28 @@ export default function WarehousesPage() {
                 createdAt:      serverTimestamp(),
             });
 
-            // Si lo que se borró era el queso EN CAVA SIN ENVASAR de una
-            // producción, esa producción ya no se puede empacar: su queso no
-            // existe. Antes se quedaba abierta para siempre ("falta empacar")
-            // aunque el almacén estuviera vacío — se borraba el ítem y el
-            // trabajo pendiente seguía ahí, sin forma de cerrarlo.
-            if (item.tipo === 'sin_envasar' && item.logId) {
-                try {
-                    await updateDoc(doc(db, 'kroma_production_logs', item.logId), {
-                        empaqueFinalizado: true,
-                        kgSinEnvasar:      0,
-                        cierreMotivo:      'El queso sin envasar se eliminó del almacén.',
-                        cierrePorId:       kromaUser?.id || null,
-                        cierrePorNombre:   kromaUser?.name || null,
-                        updatedAt:         serverTimestamp(),
-                    });
-                } catch (e) {
-                    // El ítem ya salió del almacén; que la planilla no se pueda
-                    // cerrar es un problema menor, pero no se calla.
-                    alert(`Se eliminó del almacén, pero no se pudo cerrar la producción de origen: ${e.message}`);
-                }
-            }
-
             setInventoryPT(prev => prev.filter(i => i.id !== item.id));
+            setBorrarProduccion(null);
         } catch (e) { alert(e.message); }
+    }
+
+    /** Retira la producción entera (y su queso) desde el almacén. */
+    async function confirmarBorrarProduccion(conservarRegistros) {
+        if (!borrarProduccion) return;
+        setBorrandoProduccion(true);
+        try {
+            const { log } = borrarProduccion;
+            await eliminarProduccionCompleta(db, {
+                log,
+                empresaId: kromaUser?.empresaId || 'lacteoca',
+                actor: kromaUser,
+                conservarRegistros,
+            });
+            // Se va TODO el PT de ese lote, no solo la partida que se tocó.
+            setInventoryPT(prev => prev.filter(i => !esPartidaDe(i, { logId: log.id, lote: log.lote })));
+            setBorrarProduccion(null);
+        } catch (e) { alert(e.message); }
+        finally { setBorrandoProduccion(false); }
     }
 
     async function addInventoryItem(data) {
@@ -2048,6 +2071,19 @@ export default function WarehousesPage() {
                         onSave={addInventoryItem}
                     />
                 )}
+                {borrarProduccion && (() => {
+                    const { cantidad, unidad } = cantidadDePartida(borrarProduccion.item);
+                    return (
+                        <EliminarProduccionModal
+                            log={borrarProduccion.log}
+                            guardando={borrandoProduccion}
+                            soloPartida={`${cantidad.toLocaleString()} ${unidad}`}
+                            onClose={() => setBorrarProduccion(null)}
+                            onConfirm={confirmarBorrarProduccion}
+                            onSoloPartida={() => borrarSoloPartida(borrarProduccion.item)}
+                        />
+                    );
+                })()}
                 {transferItem && (
                     <TransferModal
                         item={transferItem}

@@ -1056,8 +1056,20 @@ export function ManagerHome({ onNavigate }) {
                                                 {sinEnvLogs.map(log => {
                                                     const d = logDate(log);
                                                     const daysAgo = d ? Math.floor((now - d) / 86400000) : null;
+                                                    // Un lote de hace 89 días no es trabajo pendiente: es un lote
+                                                    // que quedó colgado. La lista tiene que LLEVAR a él para poder
+                                                    // cerrarlo, no solo mostrarlo. El destino es Producción —
+                                                    // el Historial filtra `estado === 'completada'` y estos no
+                                                    // siempre lo están — y solo si el rol ve ese módulo.
+                                                    const destino = veProduccion ? 'production' : null;
                                                     return (
-                                                        <div key={log.id} className="py-3 flex items-center gap-3">
+                                                        <button key={log.id} type="button"
+                                                            onClick={() => { if (!destino) return; close(); onNavigate?.(destino, { logId: log.id }); }}
+                                                            disabled={!destino}
+                                                            title={destino ? undefined : 'Se abre desde Producción'}
+                                                            className={`w-full text-left py-3 flex items-center gap-3 rounded-lg transition-colors ${
+                                                                destino ? 'hover:bg-slate-700/30 active:bg-slate-700/50' : 'cursor-default'
+                                                            }`}>
                                                             <div className="flex-1 min-w-0">
                                                                 <p className="text-white text-sm font-semibold truncate">{log.productoNombre || '—'}</p>
                                                                 <p className="text-slate-500 text-xs font-mono">{(log.lote || log.id).slice(0, 20)}</p>
@@ -1070,7 +1082,8 @@ export function ManagerHome({ onNavigate }) {
                                                                     </p>
                                                                 )}
                                                             </div>
-                                                        </div>
+                                                            {destino && <ChevronRight size={14} className="text-slate-600 shrink-0" />}
+                                                        </button>
                                                     );
                                                 })}
                                             </div>

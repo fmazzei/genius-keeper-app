@@ -8,6 +8,8 @@ import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import { faltaEmpacar } from '@/Kroma/estadoPlanta.js';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
+import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
+import { eliminarProduccionCompleta } from '@/Kroma/eliminarProduccion.js';
 import CargaPlanillaSheet from './CargaPlanillaSheet.jsx';
 import { scheduleHoldNotif, cancelHoldNotif, getNotifConfig, saveNotifConfig, NOTIF_BLOCKS, getNotifPermission, requestNotifPermission } from '../../utils/kromaNotifScheduler';
 import { createFirestoreScheduledNotif, cancelFirestoreScheduledNotif } from '../../utils/kromaFCM';
@@ -1385,77 +1387,6 @@ function BlockPendingCard({ bloque, idx, totalBlocks }) {
 
 // ─── Master Delete Modal ──────────────────────────────────────────────────────
 
-function MasterDeleteModal({ log, saving, onClose, onConfirm }) {
-    const recCount = (log.recepcionIds || []).length;
-    const totalL   = log.litrosIngresados || 0;
-    // Si esta producción ya dio queso, su leche NO vuelve al tanque: se consumió.
-    const huboQueso = (log.totalKgProducido || 0) > 0 || (log.rendimientoKg || 0) > 0
-        || (log.kgSinEnvasar || 0) > 0 || log.empaqueFinalizado === true;
-    return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 px-6">
-            <div className="bg-slate-900 border border-red-800/60 rounded-2xl p-5 space-y-4 max-w-sm w-full">
-                <div className="flex items-center gap-2">
-                    <Trash2 size={18} className="text-red-400" />
-                    <p className="text-white font-bold">Eliminar planilla de producción</p>
-                </div>
-                <p className="text-slate-400 text-sm leading-relaxed">
-                    ¿Eliminar <strong className="text-white">{log.productoNombre}</strong>
-                    {log.lote && <> — lote <span className="font-mono text-slate-300">{log.lote}</span></>}?
-                </p>
-                <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 space-y-1.5">
-                    <p className="text-slate-300 text-xs font-semibold">Se elimina en toda la app:</p>
-                    <p className="text-slate-500 text-xs leading-snug">
-                        · La planilla y <strong className="text-slate-300">el producto terminado de este lote
-                        que esté en el almacén</strong>, esté empacado o en cava sin envasar.
-                    </p>
-                    <p className="text-slate-500 text-xs leading-snug">
-                        · Queda el evento en el <strong className="text-slate-300">libro de movimientos</strong>,
-                        con quién lo hizo y cuándo. El libro no se edita desde la app.
-                    </p>
-                    <p className="text-slate-500 text-xs leading-snug">
-                        · Los insumos consumidos <strong className="text-slate-300">NO se devuelven</strong> al
-                        inventario. Si esta producción nunca ocurrió, corrige el stock de esos insumos aparte.
-                    </p>
-                </div>
-                {recCount > 0 && (
-                    <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl px-4 py-3 space-y-1">
-                        {huboQueso ? (
-                            <>
-                                <p className="text-amber-300 text-xs font-semibold">
-                                    La leche NO vuelve al tanque ({recCount} recepción{recCount > 1 ? 'es' : ''}, {totalL} L)
-                                </p>
-                                <p className="text-slate-500 text-xs leading-snug">
-                                    Esta producción ya dio queso: esos litros se consumieron. Devolverlos
-                                    mostraría leche disponible que no existe.
-                                </p>
-                            </>
-                        ) : (
-                            <>
-                                <p className="text-amber-300 text-xs font-semibold">
-                                    Se liberarán {recCount} recepción{recCount > 1 ? 'es' : ''} de leche ({totalL} L)
-                                </p>
-                                <p className="text-slate-500 text-xs">
-                                    Quedarán disponibles para un nuevo proceso. Se enviará notificación a los responsables.
-                                </p>
-                            </>
-                        )}
-                    </div>
-                )}
-                <div className="flex gap-3">
-                    <button onClick={onClose}
-                        className="flex-1 py-3 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
-                        Cancelar
-                    </button>
-                    <button onClick={onConfirm} disabled={saving}
-                        className="flex-1 py-3 rounded-xl bg-red-700 hover:bg-red-600 text-white text-sm font-bold disabled:opacity-40 transition-colors">
-                        {saving ? 'Eliminando…' : 'Eliminar'}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
 // ─── Production Card (list view) ─────────────────────────────────────────────
 
 function ProductionCard({ log, onOpen, onDelete, isMaster }) {
@@ -1638,7 +1569,7 @@ function ReportBlockSummary({ bloque, data, litrosNetos = 0 }) {
     );
 }
 
-function ReportView({ log, kromaUser, kromaRole, onClose }) {
+function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
     const [firmas, setFirmas] = useState(log.firmas || {});
     const [almacenNombre, setAlmacenNombre] = useState('');
     const [signing, setSigning] = useState(false);
@@ -1747,6 +1678,15 @@ function ReportView({ log, kromaUser, kromaRole, onClose }) {
                     <Share2 size={13} />
                     <span>Compartir</span>
                 </button>
+                {/* Un lote colgado se abre desde el tablero de gerencia y se
+                    cierra ACÁ. Sin este botón había que volver a la lista de
+                    Producción y buscarlo otra vez para poder retirarlo. */}
+                {kromaRole === 'master' && onEliminar && (
+                    <button onClick={() => onEliminar(log)} title="Eliminar o retirar del almacén"
+                        className="w-9 h-9 shrink-0 rounded-lg bg-red-900/30 hover:bg-red-900/60 border border-red-800/50 text-red-400 flex items-center justify-center transition-colors">
+                        <Trash2 size={15} />
+                    </button>
+                )}
             </div>
 
             {shareMsg && (
@@ -3053,155 +2993,41 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
 
     // ── Master: soft-delete any production log ────────────────────────────────
     /**
-     * Saca del almacén el producto terminado de una producción que se borra y
-     * deja el evento en el libro de movimientos. Devuelve lo que sacó.
-     *
-     * Se busca por `logId`, no por lote: es la llave que `createInventoryPT`
-     * estampa en cada doc de PT, y un lote puede repetirse (el sufijo `-H` de
-     * la carga histórica, o dos producciones del mismo producto el mismo día).
-     * Son dos filtros de IGUALDAD, que Firestore sirve sin índice compuesto.
+     * Borrar una producción es UNA sola operación, compartida con el almacén
+     * (`src/Kroma/eliminarProduccion.js`): saca su producto terminado, escribe
+     * el evento en el libro de movimientos y, según el check del modal, borra la
+     * planilla o la CONSERVA en el histórico y solo la cierra.
      */
-    async function eliminarPTDeProduccion(log) {
-        const empresaId = kromaUser?.empresaId || 'lacteoca';
-        let items = [];
-        try {
-            const snap = await getDocs(query(
-                collection(db, 'kroma_inventory_pt'),
-                where('empresaId', '==', empresaId),
-                where('logId', '==', log.id),
-            ));
-            items = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => i.active !== false);
-        } catch (e) {
-            // Si no se puede leer el almacén, NO se sigue: borrar la planilla y
-            // dejar el queso adentro es justo el descuadre que esto viene a
-            // cerrar. Se aborta con la causa a la vista.
-            throw new Error(`No se pudo revisar el almacén de este lote: ${e.message}`);
-        }
-
-        const movimiento = (extra) => addDoc(collection(db, 'kroma_warehouse_movements'), {
-            empresaId,
-            tipo:            'eliminacion_produccion',
-            origenId:        null,
-            destinoId:       null,
-            destinoNombre:   'Eliminado con la producción',
-            productoNombre:  log.productoNombre || '',
-            lote:            log.lote || log.id,
-            logId:           log.id,
-            creadoPorId:     kromaUser?.id || null,
-            creadoPorNombre: kromaUser?.name || null,
-            createdAt:       serverTimestamp(),
-            ...extra,
-        });
-
-        // El PT guarda solo `warehouseId`; el libro se lee por NOMBRE de almacén,
-        // así que se resuelven una vez (una consulta chica, solo al borrar).
-        const nombreAlmacen = {};
-        if (items.some(i => i.warehouseId)) {
-            try {
-                const whs = await getDocs(query(
-                    collection(db, 'kroma_warehouses'),
-                    where('empresaId', '==', empresaId),
-                ));
-                whs.docs.forEach(d => { nombreAlmacen[d.id] = d.data()?.nombre || ''; });
-            } catch { /* sin nombres el movimiento igual se escribe: lleva el id */ }
-        }
-
-        await Promise.all(items.map(async (i) => {
-            await updateDoc(doc(db, 'kroma_inventory_pt', i.id), {
-                active: false, deletedAt: serverTimestamp(),
-                deletedPorId: kromaUser?.id || null, deletedPorNombre: kromaUser?.name || null,
-            });
-            await movimiento({
-                origenId:     i.warehouseId || null,
-                origenNombre: nombreAlmacen[i.warehouseId] || (i.warehouseId ? '' : 'Cava / sin asignar'),
-                presentacion: i.presentacion || (i.tipo === 'sin_envasar' ? 'Sin envasar' : ''),
-                fechaVencimiento: i.fechaVencimiento || null,
-                cantidad:     i.tipo === 'empacado' ? (i.unidades || 0) : (i.kgTotales || 0),
-                unidad:       i.tipo === 'empacado' ? 'unidades' : 'kg',
-            });
-        }));
-
-        // Aunque no hubiera nada en el almacén (una producción que se abrió por
-        // error y nunca llegó a queso), el evento se registra igual: el libro
-        // tiene que poder contar por qué desapareció un lote.
-        if (items.length === 0) {
-            await movimiento({ origenNombre: 'Producción', cantidad: 0, unidad: '—',
-                nota: 'La producción se eliminó sin producto terminado en almacén.' });
-        }
-        return items;
-    }
-
-    async function confirmMasterDelete() {
+    async function confirmMasterDelete(conservarRegistros) {
         if (!masterDeleteLog) return;
         setMasterDeleting(true);
         try {
             const logToDelete = masterDeleteLog;
-            await updateDoc(doc(db, 'kroma_production_logs', logToDelete.id), {
-                active:    false,
-                deletedAt: serverTimestamp(),
+            const res = await eliminarProduccionCompleta(db, {
+                log: logToDelete,
+                empresaId: kromaUser?.empresaId || 'lacteoca',
+                actor: kromaUser,
+                conservarRegistros,
             });
 
-            // ── El queso que esta producción dejó en cava sale TAMBIÉN ──
-            //
-            // Antes esto borraba la planilla y nada más: su producto terminado
-            // seguía en el almacén, y al revés —borrando el ítem del almacén— la
-            // producción seguía apareciendo abierta ("falta empacar"). Quedaban
-            // las dos mitades sueltas, cada una sin la otra. Se borran juntas, y
-            // CADA salida queda en el libro de movimientos: un almacén no puede
-            // perder existencias sin un evento que lo explique.
-            const ptEliminado = await eliminarPTDeProduccion(logToDelete);
-
-            // Free any linked milk receptions back to 'pendiente'
-            // …pero SOLO si esa leche no llegó a convertirse en queso. Devolver
-            // al tanque los 880 L de una producción ya cerrada inventaría leche
-            // que se consumió hace meses — la misma "leche fantasma" que ya se
-            // corrigió una vez. Si hubo queso, las recepciones quedan
-            // `inactivo`: ni disponibles, ni colgando de una planilla borrada.
-            const huboQueso = ptEliminado.length > 0
-                || (logToDelete.totalKgProducido || 0) > 0
-                || (logToDelete.rendimientoKg || 0) > 0;
-            const recIds = logToDelete.recepcionIds || [];
-            if (huboQueso && recIds.length > 0) {
-                await Promise.all(recIds.map(rid =>
-                    updateDoc(doc(db, 'kroma_milk_reception', rid), {
-                        status:    'inactivo',
-                        logId:     null,
-                        updatedAt: serverTimestamp(),
-                    })
-                ));
-            }
-            if (!huboQueso && recIds.length > 0) {
-                await Promise.all(recIds.map(rid =>
-                    updateDoc(doc(db, 'kroma_milk_reception', rid), {
-                        status:    'pendiente',
-                        logId:     null,
-                        updatedAt: serverTimestamp(),
-                    })
-                ));
-                // Push notification: milk freed and waiting for a new process
-                const totalL = (logToDelete.litrosIngresados || 0);
+            if (res.lecheLiberada) {
+                const totalL   = logToDelete.litrosIngresados || 0;
                 const provName = logToDelete.proveedorNombre || '';
                 addDoc(collection(db, 'kroma_notifications'), {
+                    empresaId:      kromaUser?.empresaId || 'lacteoca',
                     tipo:           'leche_liberada',
                     logId:          logToDelete.id,
                     lote:           logToDelete.lote || logToDelete.id,
                     productoNombre: logToDelete.productoNombre,
-                    mensaje:        `Proceso eliminado por master — ${totalL} L de leche (${provName}) liberados y disponibles para nueva producción.`,
+                    mensaje:        `Proceso eliminado — ${totalL} L de leche (${provName}) liberados y disponibles para nueva producción.`,
                     destinatarios:  ['kroma_admin', 'produccion', 'master'],
                     leida:          false,
                     leidaPor:       [],
                     createdAt:      serverTimestamp(),
                 }).catch(() => {});
-                tryBrowserNotification(
-                    'Leche liberada',
-                    `${totalL} L (${provName}) disponibles para nuevo proceso.`
-                );
-            }
+                tryBrowserNotification('Leche liberada',
+                    `${totalL} L (${provName}) disponibles para nuevo proceso.`);
 
-            setLogs(prev => prev.filter(l => l.id !== logToDelete.id));
-            setHistorial(prev => prev.filter(l => l.id !== logToDelete.id));
-            // Re-add freed receptions to the pending list
-            if (!huboQueso && recIds.length > 0) {
                 const freed = (logToDelete.recepciones || []).map(r => ({
                     id: r.recepcionId,
                     proveedorId: r.proveedorId,
@@ -3215,7 +3041,20 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 if (freed.length > 0) setMilkReceptions(prev => [...freed, ...prev]);
             }
 
-            // Cancel any scheduled notifications for this log
+            if (conservarRegistros) {
+                // La planilla se queda: sale de "abiertas" y pasa al histórico ya
+                // cerrada, para que deje de pedir empaque en el acto.
+                const cerrada = {
+                    ...logToDelete, estado: 'completada', empaqueFinalizado: true,
+                    kgSinEnvasar: 0, retiradaDelAlmacen: true,
+                };
+                setLogs(prev => prev.filter(l => l.id !== logToDelete.id));
+                setHistorial(prev => [cerrada, ...prev.filter(l => l.id !== logToDelete.id)]);
+            } else {
+                setLogs(prev => prev.filter(l => l.id !== logToDelete.id));
+                setHistorial(prev => prev.filter(l => l.id !== logToDelete.id));
+            }
+
             cancelHoldNotif(logToDelete.id);
             cancelFirestoreScheduledNotif(db, logToDelete.id).catch(() => {});
 
@@ -3250,12 +3089,31 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     // ── VIEW: report ─────────────────────────────────────────────────────────
 
     if (view === 'report' && reportLog) {
-        return <ReportView
-            log={reportLog}
-            kromaUser={kromaUser}
-            kromaRole={kromaRole}
-            onClose={() => { setView('list'); setReportLog(null); }}
-        />;
+        return (
+            <>
+                <ReportView
+                    log={reportLog}
+                    kromaUser={kromaUser}
+                    kromaRole={kromaRole}
+                    onClose={() => { setView('list'); setReportLog(null); }}
+                    onEliminar={l => setMasterDeleteLog(l)}
+                />
+                {/* Esta rama retorna ANTES que las otras vistas, así que el modal
+                    tiene que montarse también acá o el botón no haría nada. */}
+                {masterDeleteLog && (
+                    <EliminarProduccionModal
+                        log={masterDeleteLog}
+                        guardando={masterDeleting}
+                        onClose={() => setMasterDeleteLog(null)}
+                        onConfirm={async (conservar) => {
+                            const eraEste = masterDeleteLog.id === reportLog.id;
+                            await confirmMasterDelete(conservar);
+                            if (eraEste) { setView('list'); setReportLog(null); }
+                        }}
+                    />
+                )}
+            </>
+        );
     }
 
     // ── VIEW: select ficha ────────────────────────────────────────────────────
@@ -3771,9 +3629,9 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
 
                 {/* Master delete confirmation */}
                 {masterDeleteLog && (
-                    <MasterDeleteModal
+                    <EliminarProduccionModal
                         log={masterDeleteLog}
-                        saving={masterDeleting}
+                        guardando={masterDeleting}
                         onClose={() => setMasterDeleteLog(null)}
                         onConfirm={confirmMasterDelete}
                     />
@@ -4035,9 +3893,9 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
 
             {/* ── Master: delete confirmation ── */}
             {masterDeleteLog && (
-                <MasterDeleteModal
+                <EliminarProduccionModal
                     log={masterDeleteLog}
-                    saving={masterDeleting}
+                    guardando={masterDeleting}
                     onClose={() => setMasterDeleteLog(null)}
                     onConfirm={confirmMasterDelete}
                 />
