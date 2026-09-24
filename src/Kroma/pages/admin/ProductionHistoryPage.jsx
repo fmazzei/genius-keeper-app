@@ -1,4 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { kgProducidos, rendimientoLkg } from '@/Kroma/estadoPlanta.js';
+import {
+    calcCostoTeoricoLote, indexById, indexPackagingAssignments, buildMilkPriceLookup,
+} from '@/Kroma/costeoLote.js';
 import { fmtL, fmtNum } from '@/Kroma/formato.js';
 import Lote from '@/Kroma/Components/Lote.jsx';
 import { soloVivos } from '@/Kroma/estadoPlanta.js';
@@ -50,6 +54,7 @@ function getMerma(log) {
     return null;
 }
 function getTotalKg(log) {
+    // Primero lo que declaró el bloque de empaque, si esa corrida lo tiene…
     const bloques = log.bloquesSnapshot || [];
     const empIdx = bloques.findIndex(b => b.tipo === 'empaque');
     if (empIdx >= 0) {
@@ -57,7 +62,12 @@ function getTotalKg(log) {
         const total = items.reduce((s, it) => s + (it.unidades || 0) * (it.pesoKg || 0), 0);
         if (total > 0) return total;
     }
-    return null;
+    // …y si no, el campo canónico del lote. Antes esto devolvía `null` y con él
+    // se iban los "Kg producidos" y el "Rendimiento" de TODO lote que no tuviera
+    // esa forma exacta de registro — incluidas las planillas de papel, que no
+    // pasan por el runner de bloques.
+    const kg = kgProducidos(log);
+    return kg > 0 ? kg : null;
 }
 function getRendimiento(log) {
     const l = getLitrosNetos(log);
@@ -144,7 +154,7 @@ function Sec({ title }) {
     return <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-5 mb-2">{title}</p>;
 }
 
-function LogDetail({ log, onClose }) {
+function LogDetail({ log, materials = [], verCostos = false, onClose }) {
     const litrosIngresados = log.litrosIngresados || 0;
     const merma            = getMerma(log);
     const litrosNetos      = getLitrosNetos(log);
@@ -160,6 +170,15 @@ function LogDetail({ log, onClose }) {
     const cuajData = cuajIdx >= 0 ? bData[String(cuajIdx)] : null;
     const cuajDosis = cuajIdx >= 0 ? (bloques[cuajIdx]?.dosis || {}) : {};
     const cuajReg  = cuajData?.registros || {};
+    // Mismo cálculo que usa gerencia: un lote no puede costar dos cosas según
+    // desde qué pantalla se mire.
+    const costo = useMemo(() => {
+        if (!verCostos || !materials.length) return null;
+        return calcCostoTeoricoLote(
+            log, indexById(materials), indexPackagingAssignments(materials),
+            buildMilkPriceLookup(materials));
+    }, [log, materials, verCostos]);
+
     const insumosCuajado = [
         cuajDosis.calcio    && { nombre: 'Cloruro de Calcio', teorico: cuajDosis.calcio,    real: cuajReg.calcioReal },
         cuajDosis.cuajo     && { nombre: 'Cuajo',             teorico: cuajDosis.cuajo,     real: cuajReg.cuajoReal },
@@ -196,13 +215,40 @@ function LogDetail({ log, onClose }) {
                     <div className="bg-slate-800 rounded-xl p-4">
                         <Row label="Litros recibidos"        value={fmtL(litrosIngresados)} />
                         {merma != null && (
-                            <Row label="Merma pasteurizador" value={`${merma} L`}
+                            <Row label="Merma pasteurizador" value={fmtL(merma)}
                                 sub={`${((merma / litrosIngresados) * 100).toFixed(1)}% de los litros`} />
                         )}
-                        <Row label="Litros netos a proceso"  value={`${litrosNetos} L`} />
-                        {totalKg  && <Row label="Kg producidos"        value={`${totalKg.toFixed(2)} kg`} />}
-                        {rendimiento && <Row label="Rendimiento"        value={`${rendimiento} L/kg`} />}
+                        <Row label="Litros netos a proceso"  value={fmtL(litrosNetos)} />
+                        <Row label="Kg producidos"  value={totalKg ? `${fmtNum(totalKg, 3)} kg` : '—'} />
+                        <Row label="Rendimiento"    value={rendimiento ? `${rendimiento} L/kg` : '—'} />
                     </div>
+
+                    {/* Costo del lote. La pregunta "¿cuánto costó este queso?" se
+                        respondía SOLO en el tablero de gerencia; en la ficha del
+                        lote, que es donde se mira un lote, no estaba. */}
+                    {verCostos && (
+                        <>
+                            <Sec title="Costo del lote" />
+                            <div className="bg-slate-800 rounded-xl p-4">
+                                {costo?.costoPorKg > 0 ? (
+                                    <>
+                                        <Row label="Costo por kg" value={`$${fmtNum(costo.costoPorKg)} / kg`} />
+                                        <Row label="Leche"        value={`$${fmtNum(costo.costoLeche)}`} />
+                                        <Row label="Insumos"      value={`$${fmtNum(costo.costoInsumos)}`}
+                                            sub={costo.costoInsumos > 0 ? 'dosis de la ficha × precio actual' : 'sin ficha o sin precios cargados'} />
+                                        <Row label="Empaque"      value={`$${fmtNum(costo.costoEmpaque)}`} />
+                                        <Row label="Costo total"  value={`$${fmtNum(costo.costoTotal)}`} />
+                                    </>
+                                ) : (
+                                    <p className="text-slate-500 text-xs leading-snug">
+                                        No se puede costear este lote. Hace falta que tenga kilos
+                                        producidos y que su leche o sus insumos tengan precio en el
+                                        Maestro de Materiales.
+                                    </p>
+                                )}
+                            </div>
+                        </>
+                    )}
 
                     {insumosCuajado.length > 0 && (
                         <>
@@ -286,8 +332,9 @@ function statusBadge(log) {
 }
 
 export default function ProductionHistoryPage({ params = null }) {
-    const { kromaUser } = useKroma();
+    const { kromaUser, verCostos } = useKroma();
     const [logs,       setLogs]       = useState([]);
+    const [materials,  setMaterials]  = useState([]);
     const [loading,    setLoading]    = useState(true);
     const [error,      setError]      = useState(null);
     const [calYear,    setCalYear]    = useState(new Date().getFullYear());
@@ -312,7 +359,16 @@ export default function ProductionHistoryPage({ params = null }) {
     const load = useCallback(async () => {
         setLoading(true); setError(null);
         try {
-            const snap = await getDocs(query(collection(db, 'kroma_production_logs'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
+            const empresaId = kromaUser?.empresaId || 'lacteoca';
+            const [snap, matSnap] = await Promise.all([
+                getDocs(query(collection(db, 'kroma_production_logs'), where('empresaId', '==', empresaId))),
+                // Los precios del Maestro son lo que permite costear el lote.
+                // Si fallan, el historial igual se abre: el costo dirá que no
+                // se puede calcular, que es la verdad.
+                getDocs(query(collection(db, 'kroma_materials'), where('empresaId', '==', empresaId)))
+                    .catch(() => ({ docs: [] })),
+            ]);
+            setMaterials(matSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false));
             setLogs(
                 soloVivos(snap.docs.map(d => ({ id: d.id, ...d.data() })))
                     .filter(l => l.estado === 'completada')
@@ -327,16 +383,46 @@ export default function ProductionHistoryPage({ params = null }) {
 
     useEffect(() => { load(); }, [load]);
 
+    // El calendario abría SIEMPRE en el mes de hoy. Con producciones cargadas en
+    // diferido —una planilla de mayo— eso significa abrir en una pantalla vacía
+    // que además dice "sin producciones en este mes", sin una sola pista de
+    // dónde sí hay. Se abre en el mes del lote más reciente; después el usuario
+    // navega libre (por eso solo se hace una vez).
+    const yaUbicado = useRef(false);
+    useEffect(() => {
+        if (yaUbicado.current || loading || logs.length === 0) return;
+        yaUbicado.current = true;
+        const d = logDate(logs[0]);   // vienen ordenados de más nuevo a más viejo
+        if (d) { setCalYear(d.getFullYear()); setCalMonth(d.getMonth()); }
+    }, [loading, logs]);
+
+    // Los meses que TIENEN producción, para poder saltar a ellos.
+    const mesesConDatos = useMemo(() => {
+        const vistos = new Map();
+        logs.forEach(l => {
+            const d = logDate(l);
+            if (!d) return;
+            const k = `${d.getFullYear()}-${d.getMonth()}`;
+            if (!vistos.has(k)) vistos.set(k, { y: d.getFullYear(), m: d.getMonth(), n: 0 });
+            vistos.get(k).n += 1;
+        });
+        return [...vistos.values()].sort((a, b) => (b.y - a.y) || (b.m - a.m));
+    }, [logs]);
+
     const monthLogs = logs.filter(l => {
         const d = logDate(l);
         return d && d.getFullYear() === calYear && d.getMonth() === calMonth;
     });
     const activeDays = new Set(monthLogs.map(l => logDate(l)?.getDate()).filter(Boolean));
 
-    const filtered = monthLogs.filter(l => {
-        if (selectedDay && logDate(l)?.getDate() !== selectedDay) return false;
-        if (search) {
-            const q = search.toLowerCase();
+    // Buscar recorre TODO el historial, no solo el mes abierto: buscar un lote
+    // por su código y que no aparezca porque está en otro mes no es una
+    // búsqueda, es una trampa.
+    const buscando = search.trim().length > 0;
+    const filtered = (buscando ? logs : monthLogs).filter(l => {
+        if (!buscando && selectedDay && logDate(l)?.getDate() !== selectedDay) return false;
+        if (buscando) {
+            const q = search.trim().toLowerCase();
             return (l.lote || '').toLowerCase().includes(q) ||
                    (l.productoNombre || '').toLowerCase().includes(q) ||
                    (l.proveedorNombre || '').toLowerCase().includes(q);
@@ -385,9 +471,9 @@ export default function ProductionHistoryPage({ params = null }) {
             {/* Stats */}
             <div className="grid grid-cols-3 gap-3 mb-5">
                 {[
-                    { label: 'Producciones', value: monthLogs.length, Icon: ClipboardList, c: 'text-emerald-400' },
-                    { label: 'Litros proc.', value: totalLitros ? `${totalLitros} L` : '—', Icon: Droplets, c: 'text-blue-400' },
-                    { label: 'Rend. prom.', value: avgRendimiento ? `${avgRendimiento} L/kg` : '—', Icon: BarChart3, c: 'text-amber-400' },
+                    { label: 'Producciones del mes', value: monthLogs.length, Icon: ClipboardList, c: 'text-emerald-400' },
+                    { label: 'Litros proc. del mes', value: totalLitros ? fmtL(totalLitros) : '—', Icon: Droplets, c: 'text-blue-400' },
+                    { label: 'Rend. prom. del mes', value: avgRendimiento ? `${avgRendimiento} L/kg` : '—', Icon: BarChart3, c: 'text-amber-400' },
                 ].map(({ label, value, Icon, c }) => (
                     <div key={label} className="bg-slate-800 border border-slate-700 rounded-xl p-3">
                         <Icon size={14} className={`${c} mb-2`} />
@@ -426,13 +512,31 @@ export default function ProductionHistoryPage({ params = null }) {
 
             {/* List */}
             {filtered.length === 0 ? (
-                <div className="text-center py-16">
+                <div className="text-center py-12">
                     <ClipboardList size={32} className="text-slate-700 mx-auto mb-3" />
                     <p className="text-slate-500 text-sm">
-                        {selectedDay
-                            ? `Sin producciones el día ${selectedDay}`
-                            : 'Sin producciones en este mes'}
+                        {buscando
+                            ? `Nada que coincida con "${search.trim()}"`
+                            : selectedDay
+                                ? `Sin producciones el día ${selectedDay}`
+                                : 'Sin producciones en este mes'}
                     </p>
+                    {/* Un mes vacío sin decir dónde SÍ hay deja al gerente
+                        adivinando mes por mes. Los que tienen datos se ofrecen. */}
+                    {!buscando && mesesConDatos.length > 0 && (
+                        <div className="mt-4">
+                            <p className="text-slate-600 text-xs mb-2">Meses con producción:</p>
+                            <div className="flex flex-wrap gap-1.5 justify-center">
+                                {mesesConDatos.slice(0, 8).map(({ y, m, n }) => (
+                                    <button key={`${y}-${m}`} type="button"
+                                        onClick={() => { setSelectedDay(null); setCalYear(y); setCalMonth(m); }}
+                                        className="bg-slate-800 border border-slate-700 hover:border-emerald-500/50 text-slate-300 hover:text-emerald-400 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                                        {new Date(y, m, 1).toLocaleDateString('es-VE', { month: 'short' })} {y} <span className="text-slate-500">· {n}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <div className="space-y-3">
@@ -487,7 +591,7 @@ export default function ProductionHistoryPage({ params = null }) {
                 </div>
             )}
 
-            {detail && <LogDetail log={detail} onClose={() => setDetail(null)} />}
+            {detail && <LogDetail log={detail} materials={materials} verCostos={verCostos} onClose={() => setDetail(null)} />}
         </div>
     );
 }

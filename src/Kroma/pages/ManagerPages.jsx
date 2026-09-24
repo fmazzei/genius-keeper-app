@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { kgProducidos, rendimientoLkg } from '@/Kroma/estadoPlanta.js';
+import { kgDePartida, tieneExistencia, conExistencia } from '@/Kroma/inventarioPT.js';
 import { fmtL, fmtNum } from '@/Kroma/formato.js';
 import Lote from '@/Kroma/Components/Lote.jsx';
 import { db } from '@/Firebase/config.js';
@@ -16,6 +18,11 @@ import {
 import { useKroma } from '../KromaContext';
 import { moduloVisible } from '../permisos.js';
 import { soloVivos } from '../estadoPlanta.js';
+import {
+    pricePerBaseUnit, indexById, costoPorLitroDesdeFicha, indexPackagingAssignments,
+    packagingCostForItem, buildMilkPriceLookup, calcCostoTeoricoLote,
+    getLitrosNetos, getTotalKg, RENDIMIENTO_FALLBACK_L_PER_KG,
+} from '../costeoLote.js';
 import { leerSello, fmtSello } from '../selloDatos.js';
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
@@ -32,27 +39,6 @@ function logDate(log) {
     const ts = log.fechaCierre || log.createdAt;
     if (!ts) return null;
     return ts?.toDate ? ts.toDate() : new Date(ts);
-}
-function getLitrosNetos(log) {
-    const bloques = log.bloquesSnapshot || [];
-    const idx = bloques.findIndex(b => b.tipo === 'pasteurizacion');
-    if (idx >= 0) {
-        const pd = (log.bloquesData || {})[String(idx)];
-        if (pd?.completado) return Math.max(0, (log.litrosIngresados || 0) - (pd.registros?.merma ?? 10));
-    }
-    return log.litrosNetos ?? log.litrosIngresados ?? 0;
-}
-function getMermaL(log) {
-    const bloques = log.bloquesSnapshot || [];
-    const idx = bloques.findIndex(b => b.tipo === 'pasteurizacion');
-    if (idx >= 0) {
-        const pd = (log.bloquesData || {})[String(idx)];
-        if (pd?.completado) return pd.registros?.merma ?? 10;
-    }
-    return 0;
-}
-function getTotalKg(log) {
-    return log.totalKgProducido > 0 ? log.totalKgProducido : null;
 }
 function getRendimiento(log) {
     const l = getLitrosNetos(log);
@@ -73,133 +59,6 @@ function isGranelInv(inv) {
 function totalBaseQty(inv) {
     if (isGranelInv(inv)) return inv?.stockEnUso ?? 0;
     return ((inv.stockCerrado ?? 0) * (inv.cantidadPorUnidad || 0)) + (inv.stockEnUso ?? 0);
-}
-function pricePerBaseUnit(mat) {
-    const cost = parseFloat(mat?.costoUSD);
-    const qty  = parseFloat(mat?.cantidadPresentacion);
-    if (!cost || !qty || cost <= 0 || qty <= 0) return 0;
-    return cost / qty;
-}
-function indexById(arr) {
-    const byId = {};
-    (arr || []).forEach(x => { byId[x.id] = x; });
-    return byId;
-}
-function materialValue(inv, materialsById) {
-    const mat = materialsById[inv.materialId];
-    return mat ? totalBaseQty(inv) * pricePerBaseUnit(mat) : 0;
-}
-// ─── Theoretical lot/SKU costing (Producto Terminado capital) ────────────────
-// Production fichas (kroma_fichas, the live architecture behind DailyProductionPage
-// — la colección kroma_recipes quedó sin uso) embeben los ingredientes
-// dosing directly per block as `dosis` expressed per liter of milk. We read the
-// reference dose from bloquesSnapshot (frozen at lot creation) and price it
-// against the current Maestro de Materiales — same g↔kg, ml↔l and density≈1
-// conversion shortcuts used across the app for unit-aware costing.
-function unitConversionFactor(from, to) {
-    if (from === to)                      return 1;
-    if (from === 'g'  && to === 'kg')     return 0.001;
-    if (from === 'kg' && to === 'g')      return 1000;
-    if (from === 'ml' && to === 'l')      return 0.001;
-    if (from === 'l'  && to === 'ml')     return 1000;
-    if (from === 'g'  && to === 'l')      return 0.001;
-    if (from === 'ml' && to === 'g')      return 1;
-    return null;
-}
-function extractFichaDoseRefs(bloquesSnapshot) {
-    const out = [];
-    (bloquesSnapshot || []).forEach(bloque => {
-        const d = bloque?.dosis;
-        if (!d) return;
-        if (bloque.tipo === 'agregar_insumo' || bloque.tipo === 'inoculacion') {
-            if (d.materialId && (d.cantidad ?? 0) > 0)
-                out.push({ materialId: d.materialId, cantidad: d.cantidad, unidad: d.unidad || 'g' });
-        } else if (bloque.tipo === 'cuajado') {
-            ['calcio', 'conservante', 'cuajo', 'fermento'].forEach(key => {
-                const ref = d[key];
-                if (ref?.materialId && (ref.cantidad ?? 0) > 0)
-                    out.push({ materialId: ref.materialId, cantidad: ref.cantidad, unidad: ref.unidad || 'g' });
-            });
-        }
-    });
-    return out;
-}
-function costoPorLitroDesdeFicha(bloquesSnapshot, materialsById) {
-    return extractFichaDoseRefs(bloquesSnapshot).reduce((sum, { materialId, cantidad, unidad }) => {
-        const mat = materialsById[materialId];
-        const price = mat ? pricePerBaseUnit(mat) : 0;
-        if (!price) return sum;
-        const factor = unitConversionFactor(unidad, mat.unidad);
-        if (factor == null) return sum;
-        return sum + price * cantidad * factor;
-    }, 0);
-}
-function indexPackagingAssignments(materials) {
-    const map = {};
-    (materials || []).forEach(mat => {
-        (mat.asignaciones || []).forEach(a => {
-            if (!a?.productoId || !a?.presentacionId) return;
-            const key = `${a.productoId}__${a.presentacionId}`;
-            (map[key] || (map[key] = [])).push({ material: mat, asignacion: a });
-        });
-    });
-    return map;
-}
-function packagingCostForItem(productoId, item, packagingByKey) {
-    const assigns = packagingByKey[`${productoId}__${item.catalogId}`] || [];
-    const unidades = item.unidades || 0;
-    return assigns.reduce((sum, { material, asignacion }) => {
-        const price = pricePerBaseUnit(material);
-        if (!price) return sum;
-        if (asignacion.tipoConsumo === 'grupal') {
-            const porGrupo = asignacion.unidadesPorGrupo || 0;
-            if (!porGrupo) return sum;
-            const grupos = Math.ceil(unidades / porGrupo);
-            return sum + grupos * (asignacion.cantidadPorGrupo || 0) * price;
-        }
-        return sum + unidades * (asignacion.cantidadPorUnidad || 0) * price;
-    }, 0);
-}
-// Builds a milk-price lookup from the Maestro de Materiales (kroma_materials):
-// per-supplier price and a single fallback. Used to value milk when a receipt
-// never stored costoUsdLitro (same fallback strategy as computeBackfillCosts).
-function buildMilkPriceLookup(materials) {
-    const milkMats = (materials || []).filter(m => m.categoria === 'leche' && m.active !== false);
-    const milkByProv = {};
-    milkMats.forEach(m => { const p = pricePerBaseUnit(m); if (p > 0 && m.proveedorId) milkByProv[m.proveedorId] = p; });
-    const fallbackMilkPrice = milkMats.map(m => pricePerBaseUnit(m)).find(p => p > 0) ?? 0;
-    return { milkByProv, fallbackMilkPrice };
-}
-
-// Combines milk + ficha ingredients + packaging into a theoretical cost for
-// a completed production lot, and derives a $/kg to value finished-goods stock.
-// milkLookup (optional) closes the gap for lots whose receipts never recorded
-// costoUsdLitro — milk is then priced from the current Maestro de Materiales.
-function calcCostoTeoricoLote(log, materialsById, packagingByKey, milkLookup = null) {
-    let litrosNetos = getLitrosNetos(log);
-    const totalKg = getTotalKg(log);
-
-    let costoLeche = (log.recepciones || []).reduce((sum, r) => {
-        const price = parseFloat(r.costoUsdLitro);
-        return price > 0 ? sum + price * (r.litros || 0) : sum;
-    }, 0);
-    if (costoLeche === 0 && milkLookup) {
-        if (!litrosNetos && totalKg > 0) litrosNetos = totalKg * RENDIMIENTO_FALLBACK_L_PER_KG;
-        const provId    = log.recepciones?.[0]?.proveedorId;
-        const milkPrice = (provId && milkLookup.milkByProv[provId]) ?? milkLookup.fallbackMilkPrice;
-        costoLeche = milkPrice * litrosNetos;
-    }
-
-    const costoPorLitroInsumos = costoPorLitroDesdeFicha(log.bloquesSnapshot, materialsById);
-    const costoInsumos = costoPorLitroInsumos * litrosNetos;
-
-    const costoEmpaque = (log.productosFinales || []).reduce(
-        (sum, item) => sum + packagingCostForItem(log.productoId, item, packagingByKey), 0);
-
-    const costoTotal = costoLeche + costoInsumos + costoEmpaque;
-    const costoPorKg = totalKg > 0 ? costoTotal / totalKg : null;
-
-    return { costoLeche, costoInsumos, costoEmpaque, costoTotal, litrosNetos, totalKg, costoPorKg };
 }
 function monthKey(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -450,10 +309,12 @@ export function ManagerHome({ onNavigate }) {
             : null;
 
         // PT capital (cost-based) — stored costoUnitarioUsd + backfill estimate
+        // Solo partidas CON existencia: una partida empacada en 0 unidades es un
+        // registro vacío, aunque conserve su `totalKg` del día que se empacó.
+        const ptVivos = conExistencia(ptItems || []);
         let capitalPT = 0;
-        (ptItems || []).forEach(item => {
-            if (item.active === false) return;
-            const kg = item.totalKg ?? item.kgTotales ?? 0;
+        ptVivos.forEach(item => {
+            const kg = kgDePartida(item);
             if (!kg) return;
             if (item.costoUnitarioUsd != null && item.costoUnitarioUsd > 0) {
                 capitalPT += item.tipo === 'empacado'
@@ -461,18 +322,14 @@ export function ManagerHome({ onNavigate }) {
                     : item.costoUnitarioUsd * kg;
             }
         });
-        computeBackfillCosts(ptItems || [], allLogs || logs, materials).forEach(r => { capitalPT += r.valorTotal; });
+        computeBackfillCosts(ptVivos, allLogs || logs, materials).forEach(r => { capitalPT += r.valorTotal; });
 
         // PT sale value — qty × precioVentaUSD from kroma_products catalog
-        const valorVentaPT = (ptItems || []).reduce((s, item) => {
-            if (item.active === false) return s;
+        const valorVentaPT = ptVivos.reduce((s, item) => {
             const prod = ptCatalogById[item.productoId];
             const precio = parseFloat(prod?.precioVentaUSD);
             if (!(precio > 0)) return s;
-            const kg = item.tipo === 'sin_envasar'
-                ? (item.kgTotales || 0)
-                : (item.totalKg ?? (item.unidades || 0) * (item.pesoPorUnidad || 0));
-            return s + kg * precio;
+            return s + kgDePartida(item) * precio;
         }, 0);
         const hayPrecioVenta = valorVentaPT > 0;
 
@@ -1143,8 +1000,8 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
 
     const kgByLogId = {};
     (ptItems || []).forEach(item => {
-        if (item.active === false || !item.logId) return;
-        const k = item.totalKg ?? item.kgTotales ?? 0;
+        if (!tieneExistencia(item) || !item.logId) return;
+        const k = kgDePartida(item);
         if (k > 0) kgByLogId[item.logId] = (kgByLogId[item.logId] || 0) + k;
     });
 
@@ -1164,8 +1021,8 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
 
     const results = [];
     (ptItems || []).forEach(item => {
-        if (item.active === false) return;
-        const kgItem = item.totalKg ?? item.kgTotales ?? 0;
+        if (!tieneExistencia(item)) return;   // partida vacía: 0 unidades
+        const kgItem = kgDePartida(item);
         const hasStoredCost = item.costoUnitarioUsd != null && item.costoUnitarioUsd > 0;
 
         const directLog = logById[item.logId];
@@ -1268,7 +1125,6 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
 // Returns an array of { id, productoNombre, tipo, kgItem, costoUnitarioUsd,
 //   valorTotal, desglose } — no Firestore writes until the user confirms.
 // Standard Kroma yield used when the production log lacks litrosIngresados / merma data
-const RENDIMIENTO_FALLBACK_L_PER_KG = 6.2;
 
 function computeBackfillCosts(ptItems, logs, materials) {
     const materialsById   = indexById(materials);
@@ -1278,8 +1134,8 @@ function computeBackfillCosts(ptItems, logs, materials) {
     // Sum kg across all PT items per logId — fallback when log.totalKgProducido is 0/null
     const kgByLogId = {};
     (ptItems || []).forEach(item => {
-        if (item.active === false || !item.logId) return;
-        const k = item.totalKg ?? item.kgTotales ?? 0;
+        if (!tieneExistencia(item) || !item.logId) return;
+        const k = kgDePartida(item);
         if (k > 0) kgByLogId[item.logId] = (kgByLogId[item.logId] || 0) + k;
     });
 
@@ -1304,7 +1160,7 @@ function computeBackfillCosts(ptItems, logs, materials) {
     (ptItems || []).forEach(item => {
         if (item.costoUnitarioUsd != null || item.active === false) return;
 
-        const kgItem = item.totalKg ?? item.kgTotales ?? 0;
+        const kgItem = kgDePartida(item);
 
         // Try direct log match; fall back to product reference log for items without logId
         const directLog = logById[item.logId];
@@ -1421,8 +1277,8 @@ export function FinancialBoard() {
         // computeBackfillCosts (includes milk-price fallback for historical lots).
         let totalPT = 0; let kgValuados = 0; let hayEstimadoPT = false;
         (ptItems || []).forEach(item => {
-            if (item.active === false) return;
-            const kg = item.totalKg ?? item.kgTotales ?? 0;
+            if (!tieneExistencia(item)) return;   // partida vacía: 0 unidades
+            const kg = kgDePartida(item);
             if (!kg) return;
             if (item.costoUnitarioUsd != null && item.costoUnitarioUsd > 0) {
                 totalPT += item.tipo === 'empacado'

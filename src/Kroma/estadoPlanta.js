@@ -58,3 +58,29 @@ export const vivo = (d) => d?.active !== false;
 
 /** Los documentos que siguen existiendo, de una lista o de un snapshot. */
 export const soloVivos = (arr = []) => arr.filter(vivo);
+
+/**
+ * Kilos producidos por un lote.
+ *
+ * El campo canónico es `totalKgProducido`. La primera versión de la carga de
+ * planillas de papel guardó los KILOS en `rendimientoKg` (que en toda la app
+ * significa la razón L/kg) e inventó `rendimientoLitrosPorKg` — así que esas
+ * planillas entraron sin kilos y no mostraban ni rendimiento ni costo. Esa
+ * clave inventada es la huella que las delata, y se usa para leerlas bien sin
+ * tener que volver a cargarlas a mano.
+ */
+export const kgProducidos = (log) => {
+    if (!log) return 0;
+    if (log.totalKgProducido > 0) return log.totalKgProducido;
+    if (log.rendimientoLitrosPorKg !== undefined) return log.rendimientoKg || 0;
+    return 0;
+};
+
+/** Rendimiento del lote en L/kg. */
+export const rendimientoLkg = (log, litrosNetos) => {
+    if (!log) return null;
+    if (log.rendimientoLitrosPorKg !== undefined) return log.rendimientoLitrosPorKg || null;
+    const kg = kgProducidos(log);
+    const l  = litrosNetos ?? log.litrosNetos ?? log.litrosIngresados ?? 0;
+    return kg > 0 && l > 0 ? +(l / kg).toFixed(2) : null;
+};
