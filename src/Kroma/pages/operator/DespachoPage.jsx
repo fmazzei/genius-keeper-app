@@ -5,6 +5,7 @@ import {
     serverTimestamp, query, where,
 } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
+import CampoFecha, { hoyInput } from '@/Kroma/Components/CampoFecha.jsx';
 import {
     Truck, Plus, Trash2, Loader, CheckCircle,
     MapPin, Clock, ChevronDown, Search, X, Package, RefreshCw,
@@ -884,15 +885,18 @@ export default function DespachoPage({ onNavigate }) {
 
                     {/* Meta strip */}
                     <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 text-xs text-slate-400">
-                        <div className="flex items-center gap-2 mb-2">
-                            <span>Fecha del despacho:</span>
-                            <input
-                                type="date"
+                        {/* La fecha en su propio bloque: apretada en una línea con
+                            el rótulo y la explicación, el control nativo empujaba
+                            el texto fuera de la tarjeta en el teléfono. */}
+                        <div className="mb-3 max-w-[16rem]">
+                            <CampoFecha
+                                label="Fecha del despacho"
                                 value={fechaDespacho}
-                                onChange={e => setFechaDespacho(e.target.value)}
-                                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-emerald-500"
+                                onChange={setFechaDespacho}
+                                acento="emerald"
+                                max={hoyInput()}
+                                ayuda="Déjala en hoy salvo que estés cargando un despacho anterior."
                             />
-                            <span className="text-slate-600">déjala en hoy salvo que cargues uno anterior</span>
                         </div>
                         Responsable: <span className="text-white font-medium">{kromaUser?.name || '—'}</span>
                         {loadingInv && <span className="ml-3 text-slate-600">Cargando inventario…</span>}

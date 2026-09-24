@@ -3,6 +3,7 @@ import { db } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
+import { usePasoSostenido, SIN_SELECCION } from '@/Kroma/pasoSostenido.js';
 import {
     ClipboardList, Plus, X, ChevronUp, ChevronDown, Edit2, Trash2, Loader,
     Thermometer, Snowflake, FlaskConical, Clock, Scissors, RotateCcw,
@@ -286,18 +287,22 @@ const SliderField = ({ label, value, min, max, step = 1, unit = '', decimals = 0
     </div>
 );
 
-const StepperField = ({ label, value, min, max, step = 1, onChange }) => (
-    <div>
-        {label && <span className="block text-xs font-medium text-slate-400 mb-2">{label}</span>}
-        <div className="flex items-center gap-3">
-            <button type="button" onClick={() => onChange(Math.max(min, value - step))}
-                className="w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none">−</button>
-            <span className="text-white font-bold text-2xl w-16 text-center tabular-nums">{value}</span>
-            <button type="button" onClick={() => onChange(Math.min(max, value + step))}
-                className="w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none">+</button>
+const StepperField = ({ label, value, min, max, step = 1, onChange }) => {
+    const menos = usePasoSostenido(() => onChange(Math.max(min, value - step)));
+    const mas   = usePasoSostenido(() => onChange(Math.min(max, value + step)));
+    return (
+        <div>
+            {label && <span className="block text-xs font-medium text-slate-400 mb-2">{label}</span>}
+            <div className="flex items-center gap-3">
+                <button type="button" {...menos}
+                    className={`w-14 h-14 shrink-0 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors ${SIN_SELECCION}`}>−</button>
+                <span className="text-white font-bold text-2xl w-16 text-center tabular-nums">{value}</span>
+                <button type="button" {...mas}
+                    className={`w-14 h-14 shrink-0 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors ${SIN_SELECCION}`}>+</button>
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 const TiempoRow = ({ value, unidad, onValueChange, onUnidadChange, min = 1, max = 120, units }) => {
     const UNITS = units || [{ id: 'min', label: 'min' }, { id: 'h', label: 'h' }];
@@ -312,12 +317,14 @@ const TiempoRow = ({ value, unidad, onValueChange, onUnidadChange, min = 1, max 
 function PrecisionStepper({ label, value, onChange }) {
     const [step, setStep] = useState(0.01);
     const STEPS = [0.001, 0.01, 0.1, 1];
+    const menos = usePasoSostenido(() => onChange(Math.max(0, parseFloat((value - step).toFixed(6)))));
+    const mas   = usePasoSostenido(() => onChange(parseFloat((value + step).toFixed(6))));
     return (
         <div>
             {label && <SecLabel>{label}</SecLabel>}
             <div className="flex items-center gap-3 mb-3">
-                <button type="button" onClick={() => onChange(Math.max(0, parseFloat((value - step).toFixed(6))))}
-                    className="w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none shrink-0">−</button>
+                <button type="button" {...menos}
+                    className={`w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors shrink-0 ${SIN_SELECCION}`}>−</button>
                 <input
                     type="number" min="0" step={step} value={value}
                     onChange={e => {
@@ -326,8 +333,8 @@ function PrecisionStepper({ label, value, onChange }) {
                     }}
                     className="flex-1 min-w-0 bg-slate-700 border border-slate-600 rounded-xl text-white font-bold text-xl text-center px-2 py-3 focus:outline-none focus:border-emerald-500 tabular-nums transition-colors"
                 />
-                <button type="button" onClick={() => onChange(parseFloat((value + step).toFixed(6)))}
-                    className="w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors select-none shrink-0">+</button>
+                <button type="button" {...mas}
+                    className={`w-14 h-14 bg-slate-600 hover:bg-slate-500 text-white rounded-xl flex items-center justify-center text-2xl font-bold transition-colors shrink-0 ${SIN_SELECCION}`}>+</button>
             </div>
             <div className="flex gap-2">
                 {STEPS.map(s => (

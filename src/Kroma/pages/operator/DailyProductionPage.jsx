@@ -7,6 +7,7 @@ import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import { faltaEmpacar } from '@/Kroma/estadoPlanta.js';
+import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import CargaPlanillaSheet from './CargaPlanillaSheet.jsx';
 import { scheduleHoldNotif, cancelHoldNotif, getNotifConfig, saveNotifConfig, NOTIF_BLOCKS, getNotifPermission, requestNotifPermission } from '../../utils/kromaNotifScheduler';
 import { createFirestoreScheduledNotif, cancelFirestoreScheduledNotif } from '../../utils/kromaFCM';
@@ -1387,6 +1388,9 @@ function BlockPendingCard({ bloque, idx, totalBlocks }) {
 function MasterDeleteModal({ log, saving, onClose, onConfirm }) {
     const recCount = (log.recepcionIds || []).length;
     const totalL   = log.litrosIngresados || 0;
+    // Si esta producción ya dio queso, su leche NO vuelve al tanque: se consumió.
+    const huboQueso = (log.totalKgProducido || 0) > 0 || (log.rendimientoKg || 0) > 0
+        || (log.kgSinEnvasar || 0) > 0 || log.empaqueFinalizado === true;
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 px-6">
             <div className="bg-slate-900 border border-red-800/60 rounded-2xl p-5 space-y-4 max-w-sm w-full">
@@ -1398,14 +1402,43 @@ function MasterDeleteModal({ log, saving, onClose, onConfirm }) {
                     ¿Eliminar <strong className="text-white">{log.productoNombre}</strong>
                     {log.lote && <> — lote <span className="font-mono text-slate-300">{log.lote}</span></>}?
                 </p>
+                <div className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 space-y-1.5">
+                    <p className="text-slate-300 text-xs font-semibold">Se elimina en toda la app:</p>
+                    <p className="text-slate-500 text-xs leading-snug">
+                        · La planilla y <strong className="text-slate-300">el producto terminado de este lote
+                        que esté en el almacén</strong>, esté empacado o en cava sin envasar.
+                    </p>
+                    <p className="text-slate-500 text-xs leading-snug">
+                        · Queda el evento en el <strong className="text-slate-300">libro de movimientos</strong>,
+                        con quién lo hizo y cuándo. El libro no se edita desde la app.
+                    </p>
+                    <p className="text-slate-500 text-xs leading-snug">
+                        · Los insumos consumidos <strong className="text-slate-300">NO se devuelven</strong> al
+                        inventario. Si esta producción nunca ocurrió, corrige el stock de esos insumos aparte.
+                    </p>
+                </div>
                 {recCount > 0 && (
                     <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl px-4 py-3 space-y-1">
-                        <p className="text-amber-300 text-xs font-semibold">
-                            Se liberarán {recCount} recepción{recCount > 1 ? 'es' : ''} de leche ({totalL} L)
-                        </p>
-                        <p className="text-slate-500 text-xs">
-                            Quedarán disponibles para un nuevo proceso. Se enviará notificación a los responsables.
-                        </p>
+                        {huboQueso ? (
+                            <>
+                                <p className="text-amber-300 text-xs font-semibold">
+                                    La leche NO vuelve al tanque ({recCount} recepción{recCount > 1 ? 'es' : ''}, {totalL} L)
+                                </p>
+                                <p className="text-slate-500 text-xs leading-snug">
+                                    Esta producción ya dio queso: esos litros se consumieron. Devolverlos
+                                    mostraría leche disponible que no existe.
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <p className="text-amber-300 text-xs font-semibold">
+                                    Se liberarán {recCount} recepción{recCount > 1 ? 'es' : ''} de leche ({totalL} L)
+                                </p>
+                                <p className="text-slate-500 text-xs">
+                                    Quedarán disponibles para un nuevo proceso. Se enviará notificación a los responsables.
+                                </p>
+                            </>
+                        )}
                     </div>
                 )}
                 <div className="flex gap-3">
@@ -1938,13 +1971,6 @@ function ReportView({ log, kromaUser, kromaRole, onClose }) {
     );
 }
 
-// Fecha local en el formato que pide <input type="datetime-local"> (sin zona:
-// el operario piensa en hora de planta, no en UTC).
-function toLocalInput(d) {
-    const p = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
 // ─── Finalizar Empaque Modal ──────────────────────────────────────────────────
 
 function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, onConfirm }) {
@@ -2190,11 +2216,6 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     const [milkReceptions, setMilkReceptions]   = useState([]); // active pending receptions from kroma_milk_reception
     const [selectedMilkIds, setSelectedMilkIds] = useState([]);
     const [showQuickMilkForm, setShowQuickMilkForm] = useState(false);
-    // Fecha de la producción. Arranca en AHORA —que es lo correcto para el día
-    // a día— pero es editable, porque sin esto no había forma de cargar la
-    // producción del martes pasado: `fechaInicio` se estampaba con la hora del
-    // servidor y no existía alternativa. Era el tapón para poner la app al día.
-    const [fechaProd, setFechaProd] = useState(() => toLocalInput(new Date()));
     const [quickMilk, setQuickMilk]             = useState({ proveedorId: '', litros: 100, temperatura: 4.0, pH: 6.7 });
     const [quickMilkSaving, setQuickMilkSaving] = useState(false);
 
@@ -2369,12 +2390,6 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         const litrosTotal = selected.reduce((s, r) => s + (r.litros || 0), 0);
         if (litrosTotal <= 0) return;
         const rutaLeche = selected.some(r => r.enrutamiento === 'tanque') ? 'tanque' : 'directo';
-        // "Es hoy" con holgura de un minuto: el valor arranca en `new Date()` y
-        // para cuando el operario pulsa Iniciar ya pasaron segundos. Sin esa
-        // holgura, toda producción normal quedaría marcada como diferida.
-        const fechaElegida = new Date(fechaProd);
-        const fechaEsHoy   = !Number.isFinite(fechaElegida.getTime())
-            || Math.abs(Date.now() - fechaElegida.getTime()) < 60 * 1000;
         const proveedorNombre = [...new Set(selected.map(r => r.proveedorNombre).filter(Boolean))].join(', ');
         const recepciones = selected.map(r => ({
             proveedorId:     r.proveedorId || '',
@@ -2416,16 +2431,19 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 rendimientoKg: 0,
                 operarioId:     kromaUser?.id || '',
                 operarioNombre: kromaUser?.name || '',
-                // Si el operario dejó la fecha en ahora, se guarda la del
-                // servidor (más confiable que el reloj del teléfono). Si la
-                // movió, manda la suya: está cargando algo que ya ocurrió.
-                fechaInicio: fechaEsHoy ? serverTimestamp() : fechaElegida,
-                cargadaEnDiferido: !fechaEsHoy,
+                // La marca de arranque la pone el SERVIDOR, siempre. Kroma
+                // cronometra el proceso (el intervalo entre una etapa y la
+                // siguiente), así que esta fecha no es un dato que se declara:
+                // es el punto cero de esa medición.
+                fechaInicio: serverTimestamp(),
                 fechaCierre: null,
                 active: true,
                 createdAt: serverTimestamp(),
             };
-            const ref = await addDoc(collection(db, 'kroma_production_logs'), data);
+            // `sinUndefined`: una recepción sin parámetros de leche (leche
+            // directa, o la que no se midió) deja temperatura/densidad/pH/Brix
+            // en `undefined`, y Firestore rechaza el documento completo.
+            const ref = await addDoc(collection(db, 'kroma_production_logs'), sinUndefined(data));
             const newLogId = ref.id;
 
             // Mark selected receptions as en_proceso
@@ -2436,10 +2454,9 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             ));
             setMilkReceptions(prev => prev.filter(r => !selectedMilkIds.includes(r.id)));
 
-            // La copia optimista debe llevar la fecha ELEGIDA, no la de hoy: si
-            // no, una producción cargada en diferido aparecería con la fecha de
-            // hoy en la lista hasta que alguien recargara la pantalla.
-            const newLog = { id: newLogId, ...data, fechaInicio: fechaEsHoy ? new Date() : fechaElegida, createdAt: new Date() };
+            // La copia optimista lleva la hora del cliente solo para pintar la
+            // lista; el documento real tiene la del servidor.
+            const newLog = { id: newLogId, ...data, fechaInicio: new Date(), createdAt: new Date() };
             setLogs(prev => [newLog, ...prev]);
             openLog(newLog);
         } catch (e) { setSaveError(e.message); }
@@ -3035,6 +3052,85 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     }
 
     // ── Master: soft-delete any production log ────────────────────────────────
+    /**
+     * Saca del almacén el producto terminado de una producción que se borra y
+     * deja el evento en el libro de movimientos. Devuelve lo que sacó.
+     *
+     * Se busca por `logId`, no por lote: es la llave que `createInventoryPT`
+     * estampa en cada doc de PT, y un lote puede repetirse (el sufijo `-H` de
+     * la carga histórica, o dos producciones del mismo producto el mismo día).
+     * Son dos filtros de IGUALDAD, que Firestore sirve sin índice compuesto.
+     */
+    async function eliminarPTDeProduccion(log) {
+        const empresaId = kromaUser?.empresaId || 'lacteoca';
+        let items = [];
+        try {
+            const snap = await getDocs(query(
+                collection(db, 'kroma_inventory_pt'),
+                where('empresaId', '==', empresaId),
+                where('logId', '==', log.id),
+            ));
+            items = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => i.active !== false);
+        } catch (e) {
+            // Si no se puede leer el almacén, NO se sigue: borrar la planilla y
+            // dejar el queso adentro es justo el descuadre que esto viene a
+            // cerrar. Se aborta con la causa a la vista.
+            throw new Error(`No se pudo revisar el almacén de este lote: ${e.message}`);
+        }
+
+        const movimiento = (extra) => addDoc(collection(db, 'kroma_warehouse_movements'), {
+            empresaId,
+            tipo:            'eliminacion_produccion',
+            origenId:        null,
+            destinoId:       null,
+            destinoNombre:   'Eliminado con la producción',
+            productoNombre:  log.productoNombre || '',
+            lote:            log.lote || log.id,
+            logId:           log.id,
+            creadoPorId:     kromaUser?.id || null,
+            creadoPorNombre: kromaUser?.name || null,
+            createdAt:       serverTimestamp(),
+            ...extra,
+        });
+
+        // El PT guarda solo `warehouseId`; el libro se lee por NOMBRE de almacén,
+        // así que se resuelven una vez (una consulta chica, solo al borrar).
+        const nombreAlmacen = {};
+        if (items.some(i => i.warehouseId)) {
+            try {
+                const whs = await getDocs(query(
+                    collection(db, 'kroma_warehouses'),
+                    where('empresaId', '==', empresaId),
+                ));
+                whs.docs.forEach(d => { nombreAlmacen[d.id] = d.data()?.nombre || ''; });
+            } catch { /* sin nombres el movimiento igual se escribe: lleva el id */ }
+        }
+
+        await Promise.all(items.map(async (i) => {
+            await updateDoc(doc(db, 'kroma_inventory_pt', i.id), {
+                active: false, deletedAt: serverTimestamp(),
+                deletedPorId: kromaUser?.id || null, deletedPorNombre: kromaUser?.name || null,
+            });
+            await movimiento({
+                origenId:     i.warehouseId || null,
+                origenNombre: nombreAlmacen[i.warehouseId] || (i.warehouseId ? '' : 'Cava / sin asignar'),
+                presentacion: i.presentacion || (i.tipo === 'sin_envasar' ? 'Sin envasar' : ''),
+                fechaVencimiento: i.fechaVencimiento || null,
+                cantidad:     i.tipo === 'empacado' ? (i.unidades || 0) : (i.kgTotales || 0),
+                unidad:       i.tipo === 'empacado' ? 'unidades' : 'kg',
+            });
+        }));
+
+        // Aunque no hubiera nada en el almacén (una producción que se abrió por
+        // error y nunca llegó a queso), el evento se registra igual: el libro
+        // tiene que poder contar por qué desapareció un lote.
+        if (items.length === 0) {
+            await movimiento({ origenNombre: 'Producción', cantidad: 0, unidad: '—',
+                nota: 'La producción se eliminó sin producto terminado en almacén.' });
+        }
+        return items;
+    }
+
     async function confirmMasterDelete() {
         if (!masterDeleteLog) return;
         setMasterDeleting(true);
@@ -3045,9 +3141,36 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 deletedAt: serverTimestamp(),
             });
 
+            // ── El queso que esta producción dejó en cava sale TAMBIÉN ──
+            //
+            // Antes esto borraba la planilla y nada más: su producto terminado
+            // seguía en el almacén, y al revés —borrando el ítem del almacén— la
+            // producción seguía apareciendo abierta ("falta empacar"). Quedaban
+            // las dos mitades sueltas, cada una sin la otra. Se borran juntas, y
+            // CADA salida queda en el libro de movimientos: un almacén no puede
+            // perder existencias sin un evento que lo explique.
+            const ptEliminado = await eliminarPTDeProduccion(logToDelete);
+
             // Free any linked milk receptions back to 'pendiente'
+            // …pero SOLO si esa leche no llegó a convertirse en queso. Devolver
+            // al tanque los 880 L de una producción ya cerrada inventaría leche
+            // que se consumió hace meses — la misma "leche fantasma" que ya se
+            // corrigió una vez. Si hubo queso, las recepciones quedan
+            // `inactivo`: ni disponibles, ni colgando de una planilla borrada.
+            const huboQueso = ptEliminado.length > 0
+                || (logToDelete.totalKgProducido || 0) > 0
+                || (logToDelete.rendimientoKg || 0) > 0;
             const recIds = logToDelete.recepcionIds || [];
-            if (recIds.length > 0) {
+            if (huboQueso && recIds.length > 0) {
+                await Promise.all(recIds.map(rid =>
+                    updateDoc(doc(db, 'kroma_milk_reception', rid), {
+                        status:    'inactivo',
+                        logId:     null,
+                        updatedAt: serverTimestamp(),
+                    })
+                ));
+            }
+            if (!huboQueso && recIds.length > 0) {
                 await Promise.all(recIds.map(rid =>
                     updateDoc(doc(db, 'kroma_milk_reception', rid), {
                         status:    'pendiente',
@@ -3078,7 +3201,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             setLogs(prev => prev.filter(l => l.id !== logToDelete.id));
             setHistorial(prev => prev.filter(l => l.id !== logToDelete.id));
             // Re-add freed receptions to the pending list
-            if (recIds.length > 0) {
+            if (!huboQueso && recIds.length > 0) {
                 const freed = (logToDelete.recepciones || []).map(r => ({
                     id: r.recepcionId,
                     proveedorId: r.proveedorId,
@@ -3223,24 +3346,13 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                         </div>
                     </div>
 
-                    {/* ── Fecha de la producción ──
-                        Arranca en ahora, que es lo correcto para el día a día.
-                        Se mueve solo para cargar algo que ya ocurrió: sin este
-                        campo no había forma de registrar la producción de la
-                        semana pasada, ni de poner la planta al día al arrancar. */}
-                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                        <SecLabel>Fecha y hora de la producción</SecLabel>
-                        <input
-                            type="datetime-local"
-                            value={fechaProd}
-                            onChange={e => setFechaProd(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500"
-                        />
-                        <p className="text-slate-500 text-xs mt-2 leading-snug">
-                            Déjala como está si estás produciendo ahora. Cámbiala solo si estás
-                            cargando una producción anterior.
-                        </p>
-                    </div>
+                    {/* La fecha y hora NO se piden acá: la pone la app.
+                        Una producción en curso es un proceso que Kroma
+                        cronometra —mide el intervalo entre una etapa y la
+                        siguiente—, así que su reloj tiene que ser el del
+                        servidor, no un campo que alguien pueda mover. Para
+                        cargar una producción que ya ocurrió está el botón
+                        "Planilla", que es otro acto: transcribir papel. */}
 
                     {/* ── Leche a Procesar ── */}
                     <div>

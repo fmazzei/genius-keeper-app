@@ -1871,6 +1871,29 @@ export default function WarehousesPage() {
                 creadoPorNombre: kromaUser?.name || null,
                 createdAt:      serverTimestamp(),
             });
+
+            // Si lo que se borró era el queso EN CAVA SIN ENVASAR de una
+            // producción, esa producción ya no se puede empacar: su queso no
+            // existe. Antes se quedaba abierta para siempre ("falta empacar")
+            // aunque el almacén estuviera vacío — se borraba el ítem y el
+            // trabajo pendiente seguía ahí, sin forma de cerrarlo.
+            if (item.tipo === 'sin_envasar' && item.logId) {
+                try {
+                    await updateDoc(doc(db, 'kroma_production_logs', item.logId), {
+                        empaqueFinalizado: true,
+                        kgSinEnvasar:      0,
+                        cierreMotivo:      'El queso sin envasar se eliminó del almacén.',
+                        cierrePorId:       kromaUser?.id || null,
+                        cierrePorNombre:   kromaUser?.name || null,
+                        updatedAt:         serverTimestamp(),
+                    });
+                } catch (e) {
+                    // El ítem ya salió del almacén; que la planilla no se pueda
+                    // cerrar es un problema menor, pero no se calla.
+                    alert(`Se eliminó del almacén, pero no se pudo cerrar la producción de origen: ${e.message}`);
+                }
+            }
+
             setInventoryPT(prev => prev.filter(i => i.id !== item.id));
         } catch (e) { alert(e.message); }
     }

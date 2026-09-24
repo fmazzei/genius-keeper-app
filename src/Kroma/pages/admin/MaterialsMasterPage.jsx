@@ -29,6 +29,9 @@ const UNITS = [
     { id: 'l',   label: 'L',   base: 'l',  derivedId: null,  derivedLabel: null,  factor: 1 },
     { id: 'm',   label: 'm',   base: 'm',  derivedId: null,  derivedLabel: null,  factor: 1 },
     { id: 'und', label: 'und', base: 'und',derivedId: null,  derivedLabel: null,  factor: 1 },
+    // Los guantes vienen y se cuentan por PARES: contarlos en "und" obliga a
+    // llevar la cuenta al doble en la cabeza y a equivocarse al reponer.
+    { id: 'par', label: 'par', base: 'par',derivedId: null,  derivedLabel: null,  factor: 1 },
 ];
 
 const EMPTY_FORM = {

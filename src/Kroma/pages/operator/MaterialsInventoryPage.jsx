@@ -5,13 +5,20 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
+import { usePasoSostenido, SIN_SELECCION } from '@/Kroma/pasoSostenido.js';
+import CampoFecha, { hoyInput, fechaDesdeInput, esHoyInput } from '@/Kroma/Components/CampoFecha.jsx';
 import { Package, Plus, AlertTriangle, X, Check, TrendingDown, Bell, Settings, Trash2 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const PRES_TIPOS = ['sobre', 'saco', 'envase', 'bolsa', 'bulto', 'granel'];
 
-const UNIDADES_BASE = ['g', 'kg', 'ml', 'l', 'm', 'und'];
+const UNIDADES_BASE = ['g', 'kg', 'ml', 'l', 'm', 'und', 'par'];
+
+// Unidades que se cuentan DE A UNO (no se fraccionan): mismo trato en steppers y
+// mínimos. Los guantes van en PARES —vienen y se cuentan así—, y contarlos en
+// "und" obligaba a llevar el doble en la cabeza al reponer.
+const esConteo = (u) => u === 'und' || u === 'par';
 
 const SECTION_GROUPS = [
     { id: 'produccion', label: 'Producción', cats: ['cultivos', 'coagulantes', 'sales'] },
@@ -89,6 +96,7 @@ function fmtBase(n, unit) {
     n = +n;
     if (unit === 'g'  && n >= 1000) return `${(n / 1000).toFixed(2)} kg`;
     if (unit === 'ml' && n >= 1000) return `${(n / 1000).toFixed(2)} L`;
+    if (unit === 'par') return `${n % 1 === 0 ? n : n.toFixed(2)} ${n === 1 ? 'par' : 'pares'}`;
     return `${n % 1 === 0 ? n : n.toFixed(2)} ${unit || ''}`;
 }
 
@@ -145,6 +153,8 @@ function PillGroup({ options, value, onChange }) {
 function WholeStepper({ label, value, onChange, unit, min = 0, steps = [1] }) {
     const [stepIdx, setStepIdx] = useState(0);
     const step = steps[stepIdx];
+    const menos = usePasoSostenido(() => onChange(Math.max(min, value - step)));
+    const mas   = usePasoSostenido(() => onChange(value + step));
     return (
         <div>
             {label && <SecLabel>{label}</SecLabel>}
@@ -159,14 +169,14 @@ function WholeStepper({ label, value, onChange, unit, min = 0, steps = [1] }) {
                 </div>
             )}
             <div className="flex items-center gap-3">
-                <button type="button" onClick={() => onChange(Math.max(min, value - step))}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">−</button>
-                <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3.5 text-center">
+                <button type="button" {...menos}
+                    className={`w-14 h-14 shrink-0 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold ${SIN_SELECCION}`}>−</button>
+                <div className="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3.5 text-center">
                     <span className="text-white text-xl font-mono font-semibold">{value.toLocaleString()}</span>
                     {unit && <span className="text-slate-400 text-sm ml-1.5">{unit}</span>}
                 </div>
-                <button type="button" onClick={() => onChange(value + step)}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">+</button>
+                <button type="button" {...mas}
+                    className={`w-14 h-14 shrink-0 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold ${SIN_SELECCION}`}>+</button>
             </div>
         </div>
     );
@@ -176,6 +186,8 @@ function PrecisionStepper({ label, value, onChange, unit }) {
     const STEPS = [0.001, 0.01, 0.1, 1];
     const [stepIdx, setStepIdx] = useState(2);
     const step = STEPS[stepIdx];
+    const menos = usePasoSostenido(() => onChange(Math.max(0, +(value - step).toFixed(6))));
+    const mas   = usePasoSostenido(() => onChange(+(value + step).toFixed(6)));
     return (
         <div>
             {label && <SecLabel>{label}</SecLabel>}
@@ -188,16 +200,16 @@ function PrecisionStepper({ label, value, onChange, unit }) {
                 ))}
             </div>
             <div className="flex items-center gap-3">
-                <button type="button" onClick={() => onChange(Math.max(0, +(value - step).toFixed(6)))}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">−</button>
-                <div className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3.5 text-center">
+                <button type="button" {...menos}
+                    className={`w-14 h-14 shrink-0 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold ${SIN_SELECCION}`}>−</button>
+                <div className="flex-1 min-w-0 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3.5 text-center">
                     <span className="text-white text-xl font-mono font-semibold">
                         {value % 1 === 0 ? value : value.toFixed(3)}
                     </span>
                     {unit && <span className="text-slate-400 text-sm ml-1.5">{unit}</span>}
                 </div>
-                <button type="button" onClick={() => onChange(+(value + step).toFixed(6))}
-                    className="w-14 h-14 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold">+</button>
+                <button type="button" {...mas}
+                    className={`w-14 h-14 shrink-0 rounded-xl bg-slate-700 hover:bg-slate-600 active:scale-95 flex items-center justify-center text-white text-2xl font-bold ${SIN_SELECCION}`}>+</button>
             </div>
         </div>
     );
@@ -323,11 +335,17 @@ function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo, isMaster, 
     );
 }
 
-// Fecha local para <input type="datetime-local">.
-function toLocalInput(d) {
-    const p = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
+/**
+ * Precio con DECIMALES. `<input type="number">` no los acepta con coma: en un
+ * teléfono con teclado en español, escribir "9,99" deja el input en estado
+ * inválido y el navegador devuelve `value === ''` — el precio se perdía y había
+ * que redondear a 9 o a 10. Se usa texto con teclado decimal y se normaliza la
+ * coma, que es lo que la gente escribe.
+ */
+const aNumero = (v) => {
+    const n = parseFloat(String(v ?? '').replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+};
 
 // ─── Entrada Bottom Sheet ─────────────────────────────────────────────────────
 
@@ -352,10 +370,10 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
     // Solo aplica en "+ Entrada" — "Corregir stock" es un conteo, no una compra.
     const [costoEntrada, setCostoEntrada] = useState('');
     const [omitirCosto, setOmitirCosto]   = useState(false);
-    // Fecha de la COMPRA. Por defecto ahora; se mueve para cargar compras
+    // Fecha de la COMPRA. Por defecto hoy; se mueve para cargar compras
     // anteriores — el libro `kroma_compras` arrancaba "hoy" en parte porque no
     // había dónde escribir la fecha de una compra vieja.
-    const [fechaCompra, setFechaCompra]   = useState(() => toLocalInput(new Date()));
+    const [fechaCompra, setFechaCompra]   = useState(hoyInput);
     // Regla de negocio transversal: el maestro quesero NUNCA ve costos. No es un
     // permiso que se pueda conceder, así que el bloque de costo no se oculta
     // "por ahora": directamente no existe para quien no puede verlos, y con él
@@ -372,7 +390,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
         : initEnUso;
 
     // Whole-number materials use large step options instead of precision stepper
-    const isUnd    = config.unidadBase === 'und';
+    const isUnd    = esConteo(config.unidadBase);
     const isMetros = config.unidadBase === 'm';
     const undSteps   = [1, 100, 1000];
     const metroSteps = [1, 10, 100];
@@ -385,12 +403,12 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
     // El costo es obligatorio en "+ Entrada" (así se mantiene el promedio
     // ponderado al día); "Corregir stock" no lo pide porque no es una compra.
     // "Omitir costo por ahora" es la única salida — deja el costoUSD como está.
-    const costoFaltante = !modoAjuste && puedeCostear && !omitirCosto && !(Number(costoEntrada) > 0);
+    const costoFaltante = !modoAjuste && puedeCostear && !omitirCosto && !(aNumero(costoEntrada) > 0);
 
     async function handleSave() {
         if (addCerrado <= 0 || saving || costoFaltante) return;
         setSaving(true);
-        const costoTotal = !modoAjuste && !omitirCosto ? Number(costoEntrada) || 0 : 0;
+        const costoTotal = !modoAjuste && !omitirCosto ? aNumero(costoEntrada) : 0;
         await onSave(mat, config, addCerrado, initEnUso, notas.trim(), modoAjuste, costoTotal, fechaCompra);
         setSaving(false);
         onClose();
@@ -507,17 +525,13 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
                         es un ajuste de hoy, no una compra con fecha propia. */}
                     {!modoAjuste && (
                         <div className="mb-4">
-                            <SecLabel>Fecha de la compra</SecLabel>
-                            <input
-                                type="datetime-local"
+                            <CampoFecha
+                                label="Fecha de la compra"
                                 value={fechaCompra}
-                                onChange={e => setFechaCompra(e.target.value)}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-teal-500"
+                                onChange={setFechaCompra}
+                                max={hoyInput()}
+                                ayuda="Déjala como está si la compra es de hoy. Cámbiala para cargar compras anteriores."
                             />
-                            <p className="text-slate-500 text-xs mt-1.5">
-                                Déjala como está si la compra es de hoy. Cámbiala para cargar
-                                compras anteriores.
-                            </p>
                         </div>
                     )}
 
@@ -527,11 +541,18 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
                     {!modoAjuste && puedeCostear && (
                         <div className="mb-4">
                             <SecLabel>Costo total de esta entrada (USD)</SecLabel>
+                            {/* Texto, NO `type="number"`: con el teclado en español
+                                "9,99" dejaba el input inválido y el valor llegaba
+                                vacío, así que había que redondear. */}
                             <input
-                                type="number" min="0" step="0.01" inputMode="decimal"
+                                type="text" inputMode="decimal"
                                 value={costoEntrada}
-                                onChange={e => { setCostoEntrada(e.target.value); if (e.target.value) setOmitirCosto(false); }}
-                                placeholder="Ej: 45.00"
+                                onChange={e => {
+                                    const v = e.target.value.replace(/[^0-9.,]/g, '');
+                                    setCostoEntrada(v);
+                                    if (v) setOmitirCosto(false);
+                                }}
+                                placeholder="Ej: 9,99"
                                 disabled={omitirCosto}
                                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-teal-500 disabled:opacity-40"
                             />
@@ -608,10 +629,10 @@ function EnUsoSheet({ mat, invDoc, onClose, onSave }) {
                     </p>
 
                     <div className="mb-4">
-                        {unit === 'und' || unit === 'm' ? (
+                        {esConteo(unit) || unit === 'm' ? (
                             <WholeStepper label={`Cantidad en uso (${unit})`}
                                 value={enUso} onChange={setEnUso} unit={unit}
-                                steps={unit === 'und' ? [1, 100, 1000] : [1, 10, 100]} />
+                                steps={esConteo(unit) ? [1, 100, 1000] : [1, 10, 100]} />
                         ) : (
                             <PrecisionStepper label={`Cantidad en uso (${unit})`}
                                 value={enUso} onChange={setEnUso} unit={unit} />
@@ -724,7 +745,7 @@ function MinimoSheet({ mat, invDoc, onClose, onSave }) {
 
                     <div className="mb-6">
                         {(!invDoc || granel || useBase) ? (
-                            unit === 'und' ? (
+                            esConteo(unit) ? (
                                 <WholeStepper label={`Umbral mínimo (${unit})`}
                                     value={minimo} onChange={setMinimo} unit={unit} steps={[1, 100, 1000]} />
                             ) : (
@@ -734,7 +755,7 @@ function MinimoSheet({ mat, invDoc, onClose, onSave }) {
                         ) : (
                             <WholeStepper label={`Umbral mínimo (${pres})`}
                                 value={minimo} onChange={setMinimo} unit={pres}
-                                steps={unit === 'und' ? [1, 100, 1000] : [1]} />
+                                steps={esConteo(unit) ? [1, 100, 1000] : [1]} />
                         )}
                         {/* Conversion hint */}
                         {!granel && cpu > 0 && minimo > 0 && (
@@ -907,13 +928,11 @@ export default function MaterialsInventoryPage() {
             setMaterials(prev => prev.map(m => m.id === mat.id ? { ...m, costoUSD: matUpdate.costoUSD } : m));
         }
 
-        // Holgura de un minuto: el campo nace en `new Date()` y siempre pasan
-        // segundos hasta que se guarda; sin ella toda compra normal quedaría
-        // marcada como cargada en diferido.
-        const fechaCompraElegida = fechaCompraInput ? new Date(fechaCompraInput) : null;
-        const fechaCompraEsHoy   = !fechaCompraElegida
-            || !Number.isFinite(fechaCompraElegida.getTime())
-            || Math.abs(Date.now() - fechaCompraElegida.getTime()) < 60 * 1000;
+        // El campo es una FECHA sola ("YYYY-MM-DD"), así que "es hoy" se decide
+        // comparando el día, no con una holgura de minutos. Si es hoy manda el
+        // reloj del servidor; si la movió, es una compra anterior.
+        const fechaCompraEsHoy   = esHoyInput(fechaCompraInput);
+        const fechaCompraElegida = fechaCompraEsHoy ? null : fechaDesdeInput(fechaCompraInput);
 
         // LIBRO DE COMPRAS. Hasta ahora una entrada actualizaba el stock y el
         // costo promedio y no dejaba NINGÚN rastro de la compra en sí: no había
@@ -940,8 +959,8 @@ export default function MaterialsInventoryPage() {
                     registradoPorNombre: kromaUser?.name || '',
                     // Igual que en producción: si la dejó en ahora se usa la
                     // hora del servidor; si la movió, manda la suya.
-                    fecha:     fechaCompraEsHoy ? serverTimestamp() : fechaCompraElegida,
-                    cargadaEnDiferido: !fechaCompraEsHoy,
+                    fecha:     (fechaCompraEsHoy || !fechaCompraElegida) ? serverTimestamp() : fechaCompraElegida,
+                    cargadaEnDiferido: !fechaCompraEsHoy && !!fechaCompraElegida,
                     createdAt: serverTimestamp(),
                 });
             } catch (e) {

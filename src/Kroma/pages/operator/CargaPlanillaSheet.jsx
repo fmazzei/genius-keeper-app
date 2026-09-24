@@ -39,6 +39,8 @@ import React, { useState, useMemo } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
+import { sinUndefined } from '@/Kroma/sinUndefined.js';
+import CampoFecha, { hoyInput, fechaDesdeInput } from '@/Kroma/Components/CampoFecha.jsx';
 
 const MERMA_SUGERIDA = 10;   // lo que traen las planillas revisadas
 
@@ -60,6 +62,12 @@ const num = (v) => {
     return Number.isFinite(n) ? n : 0;
 };
 
+// En esta pantalla los campos en blanco son lo NORMAL (la planilla del 12-09 no
+// trae ni un parámetro de leche), y Firestore rechaza `undefined`: cada opcional
+// sin llenar tumbaba el guardado entero. Se limpia el documento antes de
+// escribir — red de seguridad para TODO el formulario, no solo para los campos
+// que hoy fallan. Ver `src/Kroma/sinUndefined.js`.
+
 /** Lote con la fecha REAL de la producción, no la de hoy. */
 function loteHistorico(productoNombre, fecha) {
     const p = (n) => String(n).padStart(2, '0');
@@ -69,9 +77,7 @@ function loteHistorico(productoNombre, fecha) {
 }
 
 export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaUser, onClose, onSaved }) {
-    const hoy = new Date().toISOString().split('T')[0];
-
-    const [fecha, setFecha]       = useState(hoy);
+    const [fecha, setFecha]       = useState(hoyInput);
     const [fichaId, setFichaId]   = useState('');
     const [entregas, setEntregas] = useState([
         { proveedorId: '', litros: '', temperatura: '', pH: '', densidad: '' },
@@ -110,10 +116,10 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
         if (!puedeGuardar) return;
         setGuardando(true); setError('');
         try {
-            const [a, m, d] = fecha.split('-').map(Number);
             // Partes locales: `new Date('2026-07-22')` se lee como UTC y en
             // Venezuela retrocede un día.
-            const fechaDate = new Date(a, m - 1, d, 12, 0, 0);
+            const fechaDate = fechaDesdeInput(fecha);
+            if (!fechaDate) throw new Error('La fecha de la planilla no es válida.');
             const empresaId = kromaUser?.empresaId || 'lacteoca';
             const base = {
                 empresaId,
@@ -146,17 +152,19 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                     active: true,
                     createdAt: serverTimestamp(),
                 };
-                const ref = await addDoc(collection(db, 'kroma_milk_reception'), rec);
-                recepciones.push({
+                const ref = await addDoc(collection(db, 'kroma_milk_reception'), sinUndefined(rec));
+                recepciones.push(sinUndefined({
                     recepcionId:     ref.id,
                     proveedorId:     rec.proveedorId,
                     proveedorNombre: rec.proveedorNombre,
                     litros,
                     rutaLeche:       'tanque',
+                    // `parametros` solo trae lo que el papel anotó, así que estos
+                    // tres pueden no existir — se van con el resto de vacíos.
                     temperatura:     parametros.temperatura,
                     densidad:        parametros.densidad,
                     pH:              parametros.pH,
-                });
+                }));
             }
 
             // 2) La producción, ya cerrada.
@@ -169,7 +177,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
             if (Object.keys(ph).length) curva.pH = ph;
             if (Object.keys(tp).length) curva.temperatura = tp;
 
-            await addDoc(collection(db, 'kroma_production_logs'), {
+            await addDoc(collection(db, 'kroma_production_logs'), sinUndefined({
                 ...base,
                 fichaId:        ficha.id,
                 productoId:     ficha.productoId,
@@ -191,7 +199,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                 insumosDeclarados,     // tal como los anotó el papel, SIN descontar stock
                 curvaMaduracion: curva,
                 rendimientoKg: kilosNum,
-                rendimientoLitrosPorKg: rendimiento,
+                rendimientoLitrosPorKg: rendimiento,   // null si falta un dato, nunca undefined
                 notas: notas.trim(),
                 // Cerrada y empacada: si quedara como "guardar_todo" sin empacar,
                 // las 32 planillas aparecerían como trabajo pendiente en el
@@ -206,7 +214,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                 fechaCierre: fechaDate,
                 active: true,
                 createdAt: serverTimestamp(),
-            });
+            }));
 
             onSaved?.();
         } catch (e) {
@@ -246,15 +254,17 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                 <section>
                     <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">Recepción de leche</p>
 
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                        <div>
-                            <Lbl>Fecha</Lbl>
-                            <Inp type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
-                        </div>
+                    {/* Cada uno en su propia fila: el control nativo de fecha no
+                        se encoge, y en media columna desbordaba la tarjeta. */}
+                    <div className="space-y-3 mb-4">
+                        <CampoFecha
+                            label="Fecha de la planilla" value={fecha} onChange={setFecha}
+                            acento="emerald" max={hoyInput()}
+                        />
                         <div>
                             <Lbl>Producto</Lbl>
                             <select value={fichaId} onChange={e => setFichaId(e.target.value)}
-                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500">
+                                className="block w-full min-w-0 h-11 bg-slate-800 border border-slate-700 rounded-xl px-3 text-white text-sm focus:outline-none focus:border-emerald-500">
                                 <option value="">Seleccionar…</option>
                                 {fichas.map(f => <option key={f.id} value={f.id}>{f.productoNombre}</option>)}
                             </select>
