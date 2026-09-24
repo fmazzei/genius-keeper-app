@@ -2503,15 +2503,54 @@ export default function DailyProductionPage() {
                 let newCerrado = inv.stockCerrado ?? 0;
                 let newEnUso   = (inv.stockEnUso  ?? 0) - amountInBase;
 
-                // Auto-open a sealed package if in-use stock runs out
-                if (newEnUso < 0 && !isGranelInv(inv) && newCerrado > 0) {
-                    newCerrado -= 1;
-                    newEnUso   += (inv.cantidadPorUnidad || 0);
+                // Abrir envases sellados MIENTRAS haga falta. Antes se abría uno
+                // solo, así que un consumo que se llevara más de un envase
+                // quedaba en negativo y el resto se perdía en el recorte de
+                // abajo. `porEnvase > 0` no es paranoia: sin esa guarda, un
+                // material con `cantidadPorUnidad` en 0 colgaría el bucle.
+                const porEnvase = Number(inv.cantidadPorUnidad) || 0;
+                if (!isGranelInv(inv) && porEnvase > 0) {
+                    while (newEnUso < 0 && newCerrado > 0) {
+                        newCerrado -= 1;
+                        newEnUso   += porEnvase;
+                    }
                 }
+
+                // Lo que no alcanzó a cubrirse. `Math.max(0, …)` lo borraba en
+                // SILENCIO: la producción se guardaba igual, el consumo quedaba
+                // sub-registrado y, al cargar después la compra de ese mes, el
+                // stock subía sin haberse restado lo que faltaba — terminaba
+                // sobrestimado sin un solo error a la vista. Aparece sobre todo
+                // al cargar historia fuera de orden, que es justo cuando nadie
+                // lo está mirando.
+                const faltanteBase = newEnUso < 0 ? -newEnUso : 0;
                 newEnUso   = Math.max(0, newEnUso);
                 newCerrado = Math.max(0, newCerrado);
 
                 await updateDoc(invRef, { stockCerrado: newCerrado, stockEnUso: newEnUso, updatedAt: serverTimestamp() });
+
+                if (faltanteBase > 0) {
+                    const uni = inv.unidadBase || 'g';
+                    const msg = `⚠ Faltó inventario de ${nombre || inv.materialNombre}: se necesitaban `
+                        + `${amountInBase.toFixed(2)} ${uni} y quedaron ${faltanteBase.toFixed(2)} ${uni} sin descontar. `
+                        + `El stock de este material queda SOBRESTIMADO hasta que se cargue la compra que faltaba.`;
+                    newAlerts.push(msg);
+                    tryBrowserNotification('Faltó inventario', msg);
+                    await addDoc(collection(db, 'kroma_alerts'), {
+                        tipo: 'faltante_inventario',
+                        empresaId:      kromaUser?.empresaId || 'lacteoca',
+                        materialId,
+                        materialNombre: inv.materialNombre,
+                        categoria:      inv.categoria,
+                        requerido:      amountInBase,
+                        faltante:       faltanteBase,
+                        unidadBase:     uni,
+                        mensaje:        msg,
+                        createdAt:      serverTimestamp(),
+                        leidaPor:       [],
+                        active:         true,
+                    });
+                }
 
                 const updatedInv = { ...inv, stockCerrado: newCerrado, stockEnUso: newEnUso };
                 const st = invStatus(updatedInv);

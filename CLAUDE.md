@@ -2131,3 +2131,26 @@ defecto, `cargadaEnDiferido` si la mueven—.
 
 **Pendiente de esta fase**: el sello explícito "datos confiables desde tal fecha"
 que le serviría a gerencia para saber desde cuándo creerle a un indicador.
+
+### El inventario se descuadraba en silencio al cargar historia (2026-09) ✅
+
+Detectado al verificar un consejo que se le había dado al dueño ("si cargas
+producciones antes que las compras el inventario queda negativo o falla"). Era
+falso, y la realidad era peor. `decrementInventory` (`DailyProductionPage`)
+tenía dos huecos:
+
+- **Solo abría UN envase sellado.** Si el consumo se llevaba más de un envase,
+  `newEnUso` seguía negativo y el resto se perdía. Ahora abre envases **mientras
+  haga falta**, con guarda `cantidadPorUnidad > 0` — sin ella un material con
+  ese campo en 0 colgaría el bucle.
+- **El faltante se borraba con `Math.max(0, …)`, sin avisar.** La producción se
+  guardaba, el consumo quedaba sub-registrado y, al cargar después la compra de
+  ese mes, el stock subía sin haberse restado lo que faltaba: **terminaba
+  sobrestimado sin un solo error a la vista.** El caso "no hay registro de
+  inventario" sí avisaba; el caso "hay registro pero no alcanza" no.
+
+Ahora el faltante se calcula (`faltanteBase`), se declara en pantalla y se
+persiste en `kroma_alerts` con `tipo:'faltante_inventario'` (requerido, faltante
+y unidad), diciendo explícitamente que **el stock queda sobrestimado hasta que
+se cargue la compra que faltaba**. Importa sobre todo al cargar historia fuera
+de orden, que es justo cuando nadie lo está mirando.
