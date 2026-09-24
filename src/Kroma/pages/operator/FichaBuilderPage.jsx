@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
+import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import {
     ClipboardList, Plus, X, ChevronUp, ChevronDown, Edit2, Trash2, Loader,
     Thermometer, Snowflake, FlaskConical, Clock, Scissors, RotateCcw,
@@ -1130,7 +1131,7 @@ function loadDraft() {
 
 // ─── Main component ─────────────────────────────────────────────────────────────
 
-export default function FichaBuilderPage() {
+export default function FichaBuilderPage({ onNavigate }) {
     const { kromaUser, canEdit } = useKroma();
     // La ficha técnica es del maestro quesero: define el proceso.
     const canEditar = canEdit('constructores');
@@ -1328,11 +1329,14 @@ export default function FichaBuilderPage() {
                     </button>
                 </div>
             ) : products.length === 0 ? (
-                <div className="text-center py-16">
-                    <ClipboardList size={36} className="text-slate-700 mx-auto mb-3" />
-                    <p className="text-slate-500 text-sm">El Catálogo de Productos está vacío.</p>
-                    <p className="text-slate-600 text-xs mt-1">Pide al Administrador que lo complete primero.</p>
-                </div>
+                <FaltaAlgo
+                    Icon={ClipboardList}
+                    titulo="El catálogo de productos está vacío"
+                    detalle="Una ficha técnica se construye sobre un producto: primero hay que darlo de alta con sus presentaciones."
+                    destinoVista="products" destinoModulo="catalogos"
+                    destinoEtiqueta="Catálogo de Productos" rol="Administrador"
+                    onNavigate={onNavigate}
+                />
             ) : fichas.length === 0 ? (
                 <div className="text-center py-16">
                     <ClipboardList size={36} className="text-slate-700 mx-auto mb-3" />

@@ -518,8 +518,8 @@ function ReceptionCard({ rec, paramConfig, isMaster, kromaRole, onEdit, onDelete
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function MilkInventoryPage() {
-    const { kromaUser, kromaRole } = useKroma();
+export default function MilkInventoryPage({ onNavigate }) {
+    const { kromaUser, kromaRole, canEdit } = useKroma();
     const isMaster = kromaRole === 'master';
 
     const [allReceptions, setAllReceptions] = useState([]);
@@ -818,8 +818,20 @@ export default function MilkInventoryPage() {
                             <div>
                                 <SecLabel>Proveedor</SecLabel>
                                 {suppliers.length === 0 ? (
-                                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-xl px-4 py-3 text-amber-300 text-sm">
-                                        No hay proveedores. Agrégalos desde el panel de Administrador.
+                                    <div className="bg-amber-900/30 border border-amber-700/50 rounded-xl px-4 py-3">
+                                        <p className="text-amber-300 text-sm">No hay proveedores cargados.</p>
+                                        <p className="text-amber-400/70 text-xs mt-1">
+                                            Toda recepción de leche se registra contra un proveedor.
+                                        </p>
+                                        {canEdit('catalogos') && onNavigate && (
+                                            <button type="button" onClick={() => onNavigate('suppliers')}
+                                                className="mt-3 inline-flex items-center gap-1 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors">
+                                                Ir a Proveedores
+                                            </button>
+                                        )}
+                                        {!canEdit('catalogos') && (
+                                            <p className="text-amber-400/60 text-xs mt-2">Le toca al administrador cargarlos.</p>
+                                        )}
                                     </div>
                                 ) : (
                                     <select value={proveedorId} onChange={e => setProveedorId(e.target.value)}

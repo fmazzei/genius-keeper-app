@@ -2204,3 +2204,34 @@ Quedan en git. Las colecciones `kroma_recipes`/`kroma_processes` NO se tocaron.
 **Pendiente (Fase 4)**: el mensaje de "todavía no hay fichas técnicas" ahora
 nombra bien el destino pero sigue sin llevar — `DailyProductionPage` no recibe
 `onNavigate`. Es exactamente el patrón de "callejón sin botón" que toca resolver.
+
+### Fase 4 — cada callejón con botón (2026-09) ✅
+
+Kroma es una cadena y cada pantalla necesita que la anterior tenga datos. Cuando
+faltaban, los mensajes **nombraban el destino pero no llevaban**: *"Crea una
+Plantilla en el módulo de Plantillas primero"*, *"Pide al Administrador que lo
+complete primero"*, *"No hay proveedores. Agrégalos desde el panel de
+Administrador"*. La persona quedaba parada frente a un cartel.
+
+**`src/Kroma/Components/FaltaAlgo.jsx` (NUEVO)** resuelve el patrón con piezas
+que YA existían y no se estaban usando:
+- **`onNavigate` de `KromaShell` guarda el camino de vuelta** (`prevView`) y
+  pinta un botón "Volver" en el encabezado. Por eso el *"y regresa"* salió
+  gratis: no hubo que construir ninguna pila de navegación, solo **pasarle el
+  prop a las pantallas operativas**, que nunca lo habían recibido (solo lo
+  tenían los *home*). `OperatorPages` re-exportaba con `() => <Impl />`, que
+  se comía cualquier prop: ahora es `(props) => <Impl {...props} />`.
+- **`canEdit`** decide si ofrecer el botón: mandar a alguien a una pantalla
+  donde no podrá crear nada es otro callejón, con más pasos. Si no le toca, se
+  le dice de quién es — la misma regla del tablero de Puesta en marcha, para
+  que la app hable con una sola voz.
+
+Cableado en: **Producción sin fichas** → Fichas técnicas; **Ficha sin productos**
+→ Catálogo de Productos; **Recepción de leche sin proveedores** → Proveedores;
+**Despacho sin producto terminado** → Producción.
+
+**Qué NO se tocó y por qué**: el estado vacío del *selector* de inventario
+dentro de Despachos dice "Sin inventario disponible", pero esa lista está
+filtrada por el buscador — el mensaje puede significar "no hay coincidencias",
+y un botón ahí estaría fuera de lugar además de dentro de un modal. El aviso
+accionable se puso al nivel de la página, donde sí corresponde.

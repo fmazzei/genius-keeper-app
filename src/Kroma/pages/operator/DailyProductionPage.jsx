@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
+import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import { scheduleHoldNotif, cancelHoldNotif, getNotifConfig, saveNotifConfig, NOTIF_BLOCKS, getNotifPermission, requestNotifPermission } from '../../utils/kromaNotifScheduler';
 import { createFirestoreScheduledNotif, cancelFirestoreScheduledNotif } from '../../utils/kromaFCM';
 import {
@@ -2150,7 +2151,7 @@ function NotifConfigModal({ userId, onClose }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function DailyProductionPage() {
+export default function DailyProductionPage({ onNavigate }) {
     const { kromaUser, kromaRole, canEdit } = useKroma();
     // Correr la planilla es del maestro quesero. Quien solo consulta
     // (p. ej. gerencia mirando lo que hay en curso) no la inicia.
@@ -3128,11 +3129,14 @@ export default function DailyProductionPage() {
 
             <div className="flex-1 overflow-y-auto px-5 py-4">
                 {fichas.length === 0 ? (
-                    <div className="text-center py-16">
-                        <FlaskConical size={32} className="text-slate-700 mx-auto mb-3" />
-                        <p className="text-slate-500 text-sm">Todavía no hay fichas técnicas.</p>
-                        <p className="text-slate-600 text-xs mt-1">Sin una ficha técnica no se puede arrancar una producción. Se crean en <span className="text-slate-400 font-medium">Fichas técnicas</span>.</p>
-                    </div>
+                    <FaltaAlgo
+                        Icon={FlaskConical}
+                        titulo="Todavía no hay fichas técnicas"
+                        detalle="La ficha define el proceso del producto: bloques, dosis y materiales. Sin una, no hay nada que correr."
+                        destinoVista="fichas" destinoModulo="constructores"
+                        destinoEtiqueta="Fichas técnicas" rol="Operario"
+                        onNavigate={onNavigate}
+                    />
                 ) : (
                     <div className="space-y-3">
                         {fichas.map(f => (

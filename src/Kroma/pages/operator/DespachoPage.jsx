@@ -516,7 +516,7 @@ function DespachoCard({ despacho, onMarkEntregado, onApplyTransfer, onSyncGK }) 
 let lineaSeq = 0;
 const newLinea = () => ({ _id: ++lineaSeq, item: null, cantidad: 1, destino: null });
 
-export default function DespachoPage() {
+export default function DespachoPage({ onNavigate }) {
     const { kromaUser, canEdit } = useKroma();
     const canEditar = canEdit('despachos');
     // Quien no despacha entra directo al historial: si no, la pestaña activa
@@ -897,7 +897,21 @@ export default function DespachoPage() {
                         Responsable: <span className="text-white font-medium">{kromaUser?.name || '—'}</span>
                         {loadingInv && <span className="ml-3 text-slate-600">Cargando inventario…</span>}
                         {!loadingInv && inventory.length === 0 && (
-                            <span className="ml-3 text-amber-500">Sin inventario disponible</span>
+                            <div className="mt-2 pt-2 border-t border-slate-700">
+                                <p className="text-amber-400">No hay producto terminado para despachar.</p>
+                                <p className="text-slate-500 mt-0.5">
+                                    El producto terminado entra al almacén al cerrar una producción.
+                                </p>
+                                {canEdit('produccionDiaria') && onNavigate && (
+                                    <button type="button" onClick={() => onNavigate('production')}
+                                        className="mt-2 inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-lg transition-colors">
+                                        Ir a Producción
+                                    </button>
+                                )}
+                                {!canEdit('produccionDiaria') && (
+                                    <p className="text-slate-600 mt-1">Le toca al operario producir primero.</p>
+                                )}
+                            </div>
                         )}
                     </div>
 

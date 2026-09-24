@@ -272,12 +272,12 @@ export function OperatorHome({ onNavigate }) {
     );
 }
 
-export const MilkInventoryPage = () => <MilkInventoryPageImpl />;
+export const MilkInventoryPage = (props) => <MilkInventoryPageImpl {...props} />;
 
 export const MaterialsInventoryPage = () => <MaterialsInventoryPageImpl />;
 
-export const FichaBuilderPage = () => <FichaBuilderPageImpl />;
+export const FichaBuilderPage = (props) => <FichaBuilderPageImpl {...props} />;
 
-export const DailyProductionPage = () => <DailyProductionPageImpl />;
+export const DailyProductionPage = (props) => <DailyProductionPageImpl {...props} />;
 
-export const DespachoPage = () => <DespachoPageImpl />;
+export const DespachoPage = (props) => <DespachoPageImpl {...props} />;
