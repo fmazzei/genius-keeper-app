@@ -41,6 +41,7 @@ import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import CampoFecha, { hoyInput, fechaDesdeInput } from '@/Kroma/Components/CampoFecha.jsx';
+import { redondear, fmtNum } from '@/Kroma/formato.js';
 
 const MERMA_SUGERIDA = 10;   // lo que traen las planillas revisadas
 
@@ -76,7 +77,7 @@ function loteHistorico(productoNombre, fecha) {
     return `${iniciales}${fecha.getFullYear()}${p(fecha.getMonth() + 1)}${p(fecha.getDate())}-H`;
 }
 
-export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaUser, onClose, onSaved }) {
+export default function CargaPlanillaSheet({ fichas = [], suppliers = [], productsMap = {}, verCostos = false, kromaUser, onClose, onSaved }) {
     const [fecha, setFecha]       = useState(hoyInput);
     const [fichaId, setFichaId]   = useState('');
     const [entregas, setEntregas] = useState([
@@ -87,13 +88,17 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
     const [curvaPh, setCurvaPh]     = useState({ inicial: '', h24: '', h72: '' });
     const [curvaTemp, setCurvaTemp] = useState({ inicial: '', h24: '', h72: '' });
     const [kilos, setKilos]   = useState('');
+    const [empaques, setEmpaques] = useState([]);   // lo que se envasó, declarado
+    const [precioLeche, setPrecioLeche] = useState('');  // $/L, opcional
     const [notas, setNotas]   = useState('');
 
     const [guardando, setGuardando] = useState(false);
     const [error, setError]         = useState('');
 
+    // `redondear` en la SUMA, no solo al mostrar: sumar 591,37 + 153,73 en coma
+    // flotante da 745.0999999999999, y ese número se guardaba tal cual.
     const totalRecibido = useMemo(
-        () => entregas.reduce((s, e) => s + num(e.litros), 0), [entregas]);
+        () => redondear(entregas.reduce((s, e) => s + num(e.litros), 0)), [entregas]);
 
     // El papel escribe los litros a proceso; la merma es la diferencia. Se
     // sugiere el total − 10 L porque es lo que traen las planillas, pero manda
@@ -107,6 +112,28 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
         ? +(litrosProcesoNum / kilosNum).toFixed(2) : null;
 
     const ficha = fichas.find(f => f.id === fichaId);
+    // Presentaciones del producto de esa ficha, para no tener que escribirlas.
+    const skus = (productsMap[ficha?.productoId]?.presentaciones || []);
+    const kgEnvasados = redondear(
+        empaques.reduce((s, e) => s + num(e.kgPorUnidad) * num(e.unidades), 0), 3);
+    const precioLecheNum = num(precioLeche);
+    // Costo del lote por kg: leche declarada ÷ kilos. Los insumos los pone
+    // gerencia desde la ficha (dosis teórica × precio del Maestro), por eso acá
+    // solo se pide lo que el papel puede aportar: el precio de esa leche.
+    const costoLecheHist = precioLecheNum > 0 ? redondear(precioLecheNum * totalRecibido) : null;
+    const costoPorKgHist = costoLecheHist && kilosNum > 0
+        ? redondear(costoLecheHist / kilosNum) : null;
+
+    const agregarSku = (sku) => {
+        const kg = sku.unidad === 'kg' ? (sku.pesoNeto || 0) : (sku.pesoNeto || 0) / 1000;
+        setEmpaques(prev => [...prev, {
+            catalogId: sku.id, nombre: sku.nombre || 'Presentación',
+            kgPorUnidad: String(kg), unidades: '',
+        }]);
+    };
+    const setEmpaque = (i, campo, valor) =>
+        setEmpaques(prev => prev.map((e, j) => j === i ? { ...e, [campo]: valor } : e));
+
     const puedeGuardar = fecha && ficha && totalRecibido > 0 && kilosNum > 0 && !guardando;
 
     const setEntrega = (i, campo, valor) =>
@@ -146,6 +173,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                     proveedorNombre: prov?.nombreComercial || prov?.nombre || 'Sin productor',
                     litros,
                     fecha: fechaDate,
+                    ...(precioLecheNum > 0 && { costoUsdLitro: precioLecheNum }),
                     parametros,
                     enrutamiento: 'tanque',
                     status: 'completada',   // NO es leche disponible: ya se procesó
@@ -159,6 +187,10 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                     proveedorNombre: rec.proveedorNombre,
                     litros,
                     rutaLeche:       'tanque',
+                    // El $/L declarado viaja EN la recepción porque es ahí donde
+                    // el costeo de gerencia lo busca (`recepciones[].costoUsdLitro`);
+                    // si no se declara, cae al precio del Maestro de Materiales.
+                    ...(precioLecheNum > 0 && { costoUsdLitro: precioLecheNum }),
                     // `parametros` solo trae lo que el papel anotó, así que estos
                     // tres pueden no existir — se van con el resto de vacíos.
                     temperatura:     parametros.temperatura,
@@ -198,8 +230,14 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                 } : {},
                 insumosDeclarados,     // tal como los anotó el papel, SIN descontar stock
                 curvaMaduracion: curva,
-                rendimientoKg: kilosNum,
-                rendimientoLitrosPorKg: rendimiento,   // null si falta un dato, nunca undefined
+                // ⚠️ Los nombres son los que usa TODA la app, no unos propios.
+                // `totalKgProducido` son los KILOS y `rendimientoKg` es la razón
+                // L/kg — al cargarlos con nombres cambiados, una planilla entraba
+                // sin kilos para el resto del sistema: no salía el rendimiento,
+                // ni el costo por kg, ni contaba en los promedios de la planta.
+                totalKgProducido: kilosNum,
+                rendimientoKg:    rendimiento,   // null si falta un dato, nunca undefined
+                kgSinEnvasar:     0,
                 notas: notas.trim(),
                 // Cerrada y empacada: si quedara como "guardar_todo" sin empacar,
                 // las 32 planillas aparecerían como trabajo pendiente en el
@@ -207,9 +245,21 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                 estado: 'completada',
                 disposicion: 'historico',
                 empaqueFinalizado: true,
-                bloquesSnapshot: [],
+                // La ficha SÍ se guarda: es lo que le permite a gerencia costear
+                // el lote (insumos teóricos por litro × litros). `bloquesData`
+                // queda vacío porque el papel no trae la corrida bloque a bloque.
+                bloquesSnapshot: ficha.bloques || [],
                 bloquesData: {},
-                productosFinales: [],
+                // El empaque declarado. NO entra a cava —ese queso ya salió—
+                // pero sin él no hay kg envasados ni costo de empaque del lote.
+                productosFinales: empaques
+                    .filter(e => num(e.unidades) > 0 && num(e.kgPorUnidad) > 0)
+                    .map(e => ({
+                        catalogId:     e.catalogId || null,
+                        nombre:        e.nombre || 'Presentación',
+                        pesoPorUnidad: redondear(num(e.kgPorUnidad), 3),
+                        unidades:      Math.round(num(e.unidades)),
+                    })),
                 fechaInicio: fechaDate,
                 fechaCierre: fechaDate,
                 active: true,
@@ -310,7 +360,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
 
                     {totalRecibido > 0 && (
                         <p className="text-slate-400 text-xs mt-2.5 text-right font-mono">
-                            Total recibido: <span className="text-white font-bold">{totalRecibido.toFixed(2)} L</span>
+                            Total recibido: <span className="text-white font-bold">{fmtNum(totalRecibido)} L</span>
                         </p>
                     )}
                 </section>
@@ -323,14 +373,14 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                         <div>
                             <Lbl>Litros a proceso</Lbl>
                             <Inp inputMode="decimal"
-                                placeholder={totalRecibido > 0 ? String((totalRecibido - MERMA_SUGERIDA).toFixed(2)) : '—'}
+                                placeholder={totalRecibido > 0 ? fmtNum(totalRecibido - MERMA_SUGERIDA) : '—'}
                                 value={litrosProceso} onChange={e => setLitrosProceso(e.target.value)} />
                         </div>
                         <div>
                             <Lbl>Merma</Lbl>
                             <div className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5">
                                 <span className={`text-sm font-mono ${merma < 0 ? 'text-rose-400' : 'text-slate-300'}`}>
-                                    {totalRecibido > 0 ? `${merma.toFixed(2)} L` : '—'}
+                                    {totalRecibido > 0 ? `${fmtNum(merma)} L` : '—'}
                                 </span>
                             </div>
                         </div>
@@ -385,6 +435,98 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], kromaU
                             placeholder="Lo que diga la planilla" />
                     </div>
                 </section>
+
+                {/* ── Empaque ──
+                    Declarado, NO entra a cava: ese queso ya salió hace meses.
+                    Pero sin él el lote no tiene kg envasados ni costo de empaque,
+                    y el costo por kg del histórico queda incompleto. */}
+                <section>
+                    <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-1">Empaque</p>
+                    <p className="text-slate-500 text-xs leading-snug mb-3">
+                        Lo que se envasó de este lote. <strong className="text-slate-400">No entra al
+                        almacén</strong> — ya se despachó. Sirve para el rendimiento y el costo por kg.
+                    </p>
+
+                    {skus.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                            {skus.map(sku => (
+                                <button key={sku.id} type="button" onClick={() => agregarSku(sku)}
+                                    className="flex items-center gap-1 bg-slate-800 border border-slate-700 hover:border-emerald-500/50 text-slate-300 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
+                                    <Plus size={11} /> {sku.nombre}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {empaques.map((e, i) => (
+                        <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2.5">
+                            <div className="flex items-center gap-2 mb-2.5">
+                                <Inp value={e.nombre} placeholder="Presentación (ej. Bolsa 1 Kg)"
+                                    onChange={ev => setEmpaque(i, 'nombre', ev.target.value)} />
+                                <button onClick={() => setEmpaques(prev => prev.filter((_, j) => j !== i))}
+                                    className="text-slate-600 hover:text-rose-400 p-1 shrink-0"><Trash2 size={13} /></button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2.5">
+                                <Inp inputMode="decimal" placeholder="Kg por unidad" value={e.kgPorUnidad}
+                                    onChange={ev => setEmpaque(i, 'kgPorUnidad', ev.target.value)} />
+                                <Inp inputMode="numeric" placeholder="Unidades" value={e.unidades}
+                                    onChange={ev => setEmpaque(i, 'unidades', ev.target.value)} />
+                            </div>
+                        </div>
+                    ))}
+
+                    <button
+                        onClick={() => setEmpaques(prev => [...prev, { nombre: '', kgPorUnidad: '', unidades: '' }])}
+                        className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-emerald-500/50 text-slate-500 hover:text-emerald-400 rounded-xl py-2.5 text-xs font-semibold transition-colors">
+                        <Plus size={13} /> Otra presentación
+                    </button>
+
+                    {kgEnvasados > 0 && (
+                        <p className="text-slate-400 text-xs mt-2.5 text-right font-mono">
+                            Envasado: <span className="text-white font-bold">{fmtNum(kgEnvasados, 3)} kg</span>
+                            {kilosNum > 0 && kgEnvasados > kilosNum && (
+                                <span className="block text-amber-400 mt-1">
+                                    Más de lo producido ({fmtNum(kilosNum, 3)} kg) — revisa las cantidades.
+                                </span>
+                            )}
+                        </p>
+                    )}
+                </section>
+
+                {/* ── Costo de la leche ──
+                    Regla transversal: el operario NUNCA ve costos. Acá sirve para
+                    que el histórico tenga costo por kg real en vez de heredar el
+                    precio de hoy del Maestro de Materiales. */}
+                {verCostos && (
+                    <section>
+                        <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-1">Costo de esa leche</p>
+                        <p className="text-slate-500 text-xs leading-snug mb-3">
+                            Opcional. Sin este dato el lote se costea con el precio de leche
+                            que hoy tiene el Maestro de Materiales, que no es el que se pagó entonces.
+                        </p>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <Lbl>USD por litro</Lbl>
+                                <Inp inputMode="decimal" placeholder="0,55" value={precioLeche}
+                                    onChange={e => setPrecioLeche(e.target.value)} />
+                            </div>
+                            <div>
+                                <Lbl>Costo por kg</Lbl>
+                                <div className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5">
+                                    <span className="text-sm font-mono text-emerald-400">
+                                        {costoPorKgHist != null ? `$${fmtNum(costoPorKgHist)}` : '—'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        {costoLecheHist != null && (
+                            <p className="text-slate-500 text-xs mt-2">
+                                Leche del lote: ${fmtNum(costoLecheHist)} · solo leche, los insumos los
+                                suma gerencia desde la ficha.
+                            </p>
+                        )}
+                    </section>
+                )}
             </div>
 
             <div className="px-5 py-4 bg-slate-900 border-t border-slate-800 shrink-0">

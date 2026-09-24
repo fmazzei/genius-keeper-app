@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Lote from '@/Kroma/Components/Lote.jsx';
 import {
     collection, getDocs, getDoc, addDoc, updateDoc, doc, query, where, serverTimestamp,
 } from 'firebase/firestore';
@@ -1868,7 +1869,10 @@ export default function WarehousesPage() {
                 const snap = await getDoc(doc(db, 'kroma_production_logs', item.logId));
                 if (snap.exists()) log = { id: snap.id, ...snap.data() };
             } catch { /* sin la planilla se cae al borrado simple de abajo */ }
-            if (log) { setBorrarProduccion({ log, item }); return; }
+            // Si la producción YA fue eliminada, esto es una partida huérfana:
+            // preguntar "¿eliminar esta producción?" por algo que ya no existe
+            // solo confunde. Se limpia directo.
+            if (log && log.active !== false) { setBorrarProduccion({ log, item }); return; }
         }
         await borrarSoloPartida(item);
     }
@@ -2174,7 +2178,7 @@ export default function WarehousesPage() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-white text-xs font-semibold truncate">{mov.productoNombre}</p>
-                                        {mov.lote && <p className="text-slate-600 text-xs font-mono truncate">{mov.lote}</p>}
+                                        {mov.lote && <p className="truncate"><Lote size="xs">{mov.lote}</Lote></p>}
                                         <p className={`text-xs ${borrado ? 'text-red-300/80' : 'text-slate-500'}`}>
                                             {mov.tipo === 'eliminacion_produccion'
                                                 ? (mov.registrosConservados

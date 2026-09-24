@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { fmtL, fmtNum } from '@/Kroma/formato.js';
+import Lote from '@/Kroma/Components/Lote.jsx';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, doc, query, where, writeBatch, serverTimestamp } from 'firebase/firestore';
 import {
@@ -595,10 +597,10 @@ export function ManagerHome({ onNavigate }) {
                                             }`}>
                                             <div className="min-w-0 flex-1">
                                                 <p className="text-white text-sm font-semibold truncate">{log.productoNombre || '—'}</p>
-                                                <p className="text-slate-500 text-xs font-mono">{log.lote || log.id.slice(0, 16)}</p>
+                                                <p><Lote>{log.lote || log.id.slice(0, 16)}</Lote></p>
                                             </div>
                                             <div className="text-right shrink-0 text-xs text-slate-400">
-                                                <p>{log.litrosIngresados || 0} L → {getLitrosNetos(log)} L</p>
+                                                <p>{fmtL(log.litrosIngresados || 0)} → {fmtL(getLitrosNetos(log))}</p>
                                                 {kg && <p className="text-slate-500">{kg.toFixed(1)} kg{rend ? ` · ${rend.toFixed(2)} L/kg` : ''}</p>}
                                             </div>
                                             <div className="shrink-0">
@@ -701,10 +703,10 @@ export function ManagerHome({ onNavigate }) {
                                                     <div key={log.id} className="py-3 flex items-start gap-3">
                                                         <div className="flex-1 min-w-0">
                                                             <p className="text-white text-sm font-semibold truncate">{log.productoNombre || '—'}</p>
-                                                            <p className="text-slate-500 text-xs font-mono">{(log.lote || log.id).slice(0, 20)}</p>
+                                                            <p><Lote>{(log.lote || log.id).slice(0, 20)}</Lote></p>
                                                         </div>
                                                         <div className="text-right shrink-0 text-xs space-y-0.5">
-                                                            <p className="text-slate-300">{log.litrosIngresados || 0} L → {getLitrosNetos(log)} L netos</p>
+                                                            <p className="text-slate-300">{fmtL(log.litrosIngresados || 0)} → {fmtL(getLitrosNetos(log))} netos</p>
                                                             {kg && <p className="text-slate-500">{kg.toFixed(1)} kg{rend ? ` · ${rend.toFixed(2)} L/kg` : ''}</p>}
                                                             {sinEnv && <p className="text-amber-400">Sin envasar</p>}
                                                         </div>
@@ -904,7 +906,7 @@ export function ManagerHome({ onNavigate }) {
                                                             <div key={log.id} className="py-2.5 flex items-center gap-3">
                                                                 <div className="min-w-0 flex-1">
                                                                     <p className="text-slate-300 text-sm truncate">{log.productoNombre || '—'}</p>
-                                                                    <p className="text-slate-600 text-xs font-mono">{(log.lote || log.id).slice(-10)}</p>
+                                                                    <p><Lote size="xs">{(log.lote || log.id).slice(-10)}</Lote></p>
                                                                 </div>
                                                                 <div className="text-right text-xs">
                                                                     <p className="text-violet-400 font-bold">${r.costoPorKg.toFixed(2)}/kg</p>
@@ -947,9 +949,26 @@ export function ManagerHome({ onNavigate }) {
                         const totalValor = rows.reduce((s, r) => s + r.valor, 0);
                         const totalVenta = rows.reduce((s, r) => s + precioDe(r), 0);
                         const totalKg    = rows.reduce((s, r) => s + r.kgItem, 0);
+                        // Producto que sigue en el almacén sin producción que lo
+                        // respalde. Es la explicación de un "$0 a costo" con un
+                        // precio de planta grande al lado: no se puede costear
+                        // porque su lote ya no existe.
+                        const huerfanas = rows.filter(r => r.huerfano);
                         return (
                             <KpiModal title="Inventario de Producto Terminado" onClose={close}>
                                 <div className="space-y-1">
+                                    {huerfanas.length > 0 && (
+                                        <div className="bg-red-950/30 border border-red-900/50 rounded-xl px-4 py-3 mb-3">
+                                            <p className="text-red-300 text-xs font-semibold">
+                                                {huerfanas.length} partida{huerfanas.length > 1 ? 's' : ''} sin producción
+                                            </p>
+                                            <p className="text-slate-400 text-xs leading-snug mt-1">
+                                                Su producción fue eliminada pero el producto quedó en el almacén.
+                                                No se puede costear —por eso la valoración a costo queda corta— y
+                                                sí suma al precio de planta. Sácalas desde Almacenes.
+                                            </p>
+                                        </div>
+                                    )}
                                     {/* Header — dual valuation */}
                                     <div className="grid grid-cols-2 gap-3 pb-3 mb-2 border-b border-slate-800">
                                         <div className="bg-slate-800 border border-slate-700 rounded-xl p-3 text-center">
@@ -981,12 +1000,16 @@ export function ManagerHome({ onNavigate }) {
                                                         <div className="min-w-0 flex-1">
                                                             <p className="text-white text-sm font-semibold truncate leading-snug">{row.productoNombre}</p>
                                                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                                                <span className="text-slate-500 text-xs font-mono">{row.lote}</span>
+                                                                <Lote>{row.lote}</Lote>
                                                                 <span className="text-slate-600 text-xs">·</span>
                                                                 <span className="text-slate-500 text-xs">
                                                                     {row.tipo === 'sin_envasar' ? 'Sin envasar' : 'Empacado'}
                                                                 </span>
-                                                                {row.estimado && (
+                                                                {row.huerfano ? (
+                                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/25">
+                                                                        producción eliminada
+                                                                    </span>
+                                                                ) : row.estimado && (
                                                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
                                                                         ~est.
                                                                     </span>
@@ -999,11 +1022,15 @@ export function ManagerHome({ onNavigate }) {
                                                             </p>
                                                         </div>
                                                         <div className="text-right shrink-0">
-                                                            <p className="text-white font-bold text-sm">${row.valor.toFixed(0)}</p>
+                                                            <p className="text-white font-bold text-sm">
+                                                                {row.valor > 0 ? `$${row.valor.toFixed(0)}` : '—'}
+                                                            </p>
                                                             <p className="text-slate-500 text-xs">
-                                                                {row.tipo === 'sin_envasar'
-                                                                    ? `$${row.costoUnit.toFixed(2)}/kg costo`
-                                                                    : `$${row.costoUnit.toFixed(2)}/ud costo`}
+                                                                {row.costoUnit > 0
+                                                                    ? (row.tipo === 'sin_envasar'
+                                                                        ? `$${row.costoUnit.toFixed(2)}/kg costo`
+                                                                        : `$${row.costoUnit.toFixed(2)}/ud costo`)
+                                                                    : 'sin costo: su lote ya no existe'}
                                                             </p>
                                                             {precioDe(row) > 0 && (
                                                                 <p className="text-blue-400 text-xs mt-0.5">${precioDe(row).toFixed(0)} planta</p>
@@ -1077,10 +1104,10 @@ export function ManagerHome({ onNavigate }) {
                                                             }`}>
                                                             <div className="flex-1 min-w-0">
                                                                 <p className="text-white text-sm font-semibold truncate">{log.productoNombre || '—'}</p>
-                                                                <p className="text-slate-500 text-xs font-mono">{(log.lote || log.id).slice(0, 20)}</p>
+                                                                <p><Lote>{(log.lote || log.id).slice(0, 20)}</Lote></p>
                                                             </div>
                                                             <div className="shrink-0 text-right text-xs">
-                                                                <p className="text-slate-400">{log.litrosIngresados || 0} L</p>
+                                                                <p className="text-slate-400">{fmtL(log.litrosIngresados || 0)}</p>
                                                                 {daysAgo != null && (
                                                                     <p className={daysAgo > 3 ? 'text-rose-400' : 'text-amber-400'}>
                                                                         hace {daysAgo} día{daysAgo !== 1 ? 's' : ''}
@@ -1145,7 +1172,13 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
         const refLog    = refLogByProd[item.productoId];
         const log       = directLog ?? refLog;
 
-        if (!log && !hasStoredCost) return;
+        // Un PT sin producción viva y sin costo guardado es HUÉRFANO: su lote se
+        // eliminó pero el queso quedó en el almacén (pasaba antes de que borrar
+        // una producción se llevara su producto terminado). Antes se descartaba
+        // acá mismo, así que la tarjeta sumaba su "precio de planta" y el detalle
+        // NO lo mostraba: el dueño veía $4.242 sin una sola línea que lo
+        // explicara. Ahora sale en la lista, marcado, y con valor a costo 0.
+        const huerfano = !log && !hasStoredCost;
 
         let totalKgProducido = 0, litrosNetos = 0;
         let costoLeche = 0, costoInsumos = 0, costoEmpaque = 0;
@@ -1184,7 +1217,8 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
         } else {
             const costoTotal = costoLeche + costoInsumos + costoEmpaque;
             const costoPorKg = totalKgProducido > 0 ? costoTotal / totalKgProducido : 0;
-            if (!(costoPorKg > 0)) return;
+            if (!(costoPorKg > 0)) { costoUnit = 0; valor = 0; }
+            else {
             if (item.tipo === 'sin_envasar') {
                 costoUnit = costoPorKg;
             } else {
@@ -1193,8 +1227,10 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
                     { catalogId: item.catalogId, unidades: unds }, packagingByKey) / unds;
                 costoUnit = costoPorKg * (item.pesoPorUnidad || 0) + packUnit;
             }
-            if (!(costoUnit > 0)) return;
-            valor = item.tipo === 'empacado' ? costoUnit * (item.unidades || 0) : costoUnit * kgItem;
+            valor = costoUnit > 0
+                ? (item.tipo === 'empacado' ? costoUnit * (item.unidades || 0) : costoUnit * kgItem)
+                : 0;
+            }
         }
 
         // Scale desglose to this item's share of the lot
@@ -1206,18 +1242,15 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
             total:   +((costoLeche + costoInsumos + costoEmpaque) * proporcion).toFixed(2),
         } : null;
 
-        // Only include items that have a real positive value
-        if (!(valor > 0)) return;
-
         results.push({
-            id: item.id, tipo: item.tipo,
+            id: item.id, tipo: item.tipo, huerfano,
             productoId:     item.productoId,
             productoNombre: item.productoNombre || log?.productoNombre || '—',
             lote:           item.lote || log?.lote || '—',
             kgItem,
             unidades: item.tipo === 'empacado' ? (item.unidades || 0) : null,
             pesoPorUnidad:  item.pesoPorUnidad,
-            costoUnit, valor, estimado: !hasStoredCost,
+            costoUnit: costoUnit || 0, valor: valor || 0, estimado: !hasStoredCost,
             desglose,
         });
     });
@@ -1579,7 +1612,7 @@ export function FinancialBoard() {
                                                     <div className="flex justify-between items-start">
                                                         <div>
                                                             <p className="text-white text-sm font-semibold">{r.productoNombre}</p>
-                                                            <p className="text-slate-500 text-xs font-mono">{r.lote}</p>
+                                                            <p><Lote>{r.lote}</Lote></p>
                                                         </div>
                                                         <div className="text-right shrink-0">
                                                             <p className="text-emerald-400 font-bold text-sm">${r.valorTotal.toFixed(2)}</p>

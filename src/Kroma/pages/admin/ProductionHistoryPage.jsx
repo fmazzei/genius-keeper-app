@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { fmtL, fmtNum } from '@/Kroma/formato.js';
+import Lote from '@/Kroma/Components/Lote.jsx';
 import { soloVivos } from '@/Kroma/estadoPlanta.js';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -172,7 +174,7 @@ function LogDetail({ log, onClose }) {
                 <div className="p-5 border-b border-slate-800 flex items-start justify-between gap-3 shrink-0">
                     <div>
                         <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-1">Reporte de Lote</p>
-                        <p className="text-white font-black text-xl font-mono tracking-wider">{log.lote || log.id}</p>
+                        <p><Lote size="lg" className="!text-xl !font-black tracking-wider">{log.lote || log.id}</Lote></p>
                         <p className="text-emerald-400 font-semibold text-sm mt-0.5">{log.productoNombre}</p>
                     </div>
                     <button onClick={onClose} className="text-slate-500 hover:text-white p-1.5 rounded-lg hover:bg-slate-700 transition-colors mt-1">
@@ -192,7 +194,7 @@ function LogDetail({ log, onClose }) {
 
                     <Sec title="Balance de Masa" />
                     <div className="bg-slate-800 rounded-xl p-4">
-                        <Row label="Litros recibidos"        value={`${litrosIngresados} L`} />
+                        <Row label="Litros recibidos"        value={fmtL(litrosIngresados)} />
                         {merma != null && (
                             <Row label="Merma pasteurizador" value={`${merma} L`}
                                 sub={`${((merma / litrosIngresados) * 100).toFixed(1)}% de los litros`} />
@@ -450,7 +452,7 @@ export default function ProductionHistoryPage({ params = null }) {
                                         <p className="text-white font-bold text-sm truncate group-hover:text-emerald-300 transition-colors">
                                             {log.productoNombre || '—'}
                                         </p>
-                                        <p className="text-slate-500 text-xs mt-0.5 font-mono">{log.lote || log.id}</p>
+                                        <p className="mt-0.5"><Lote>{log.lote || log.id}</Lote></p>
                                     </div>
                                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${cls}`}>
                                         {label}
@@ -465,7 +467,7 @@ export default function ProductionHistoryPage({ params = null }) {
                                     </span>
                                     <span className="flex items-center gap-1">
                                         <Droplets size={10} />
-                                        {log.litrosIngresados || 0} L → {netos} L netos
+                                        {fmtL(log.litrosIngresados || 0)} → {fmtL(netos)} netos
                                     </span>
                                     {kg && (
                                         <span className="flex items-center gap-1">

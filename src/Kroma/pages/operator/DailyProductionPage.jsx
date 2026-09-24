@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { fmtL, fmtNum } from '@/Kroma/formato.js';
+import Lote from '@/Kroma/Components/Lote.jsx';
 import {
     collection, getDocs, addDoc, updateDoc, doc, getDoc,
     serverTimestamp, query, where,
@@ -1435,7 +1437,7 @@ function ProductionCard({ log, onOpen, onDelete, isMaster }) {
 
             <div className="flex items-center gap-2 text-slate-500 text-xs">
                 <Droplets size={12} />
-                <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
+                <span>{fmtL(log.litrosNetos ?? log.litrosIngresados)}</span>
                 <span>·</span>
                 <span>{log.operarioNombre || '—'}</span>
             </div>
@@ -1621,9 +1623,9 @@ function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
             lines.push(`  T: ${r.temperatura}°C | pH: ${r.pH} | ρ: ${r.densidad} | Brix: ${r.Brix}`);
             lines.push(`  Ruta: ${r.rutaLeche === 'tanque' ? 'Tanque de enfriamiento' : 'Directo a producción'}`);
         }
-        lines.push(`Total recibido: ${log.litrosIngresados} L`);
+        lines.push(`Total recibido: ${fmtL(log.litrosIngresados)}`);
         if ((log.merma ?? 0) > 0) lines.push(`Merma pasteurizador: ${log.merma} L`);
-        lines.push(`Litros procesados: ${log.litrosNetos ?? log.litrosIngresados} L`);
+        lines.push(`Litros procesados: ${fmtL(log.litrosNetos ?? log.litrosIngresados)}`);
         lines.push('');
         lines.push('─── RESULTADO ───');
         if (log.totalKgProducido > 0) lines.push(`Kg producidos: ${log.totalKgProducido.toFixed(3)} kg`);
@@ -1671,7 +1673,7 @@ function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
                 </button>
                 <div className="flex-1 min-w-0">
                     <p className="text-white font-semibold text-sm truncate">{log.productoNombre}</p>
-                    <p className="text-slate-500 text-xs font-mono">{lote}</p>
+                    <p><Lote>{lote}</Lote></p>
                 </div>
                 <button onClick={handleShare}
                     className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg border border-slate-700 transition-colors">
@@ -1765,7 +1767,7 @@ function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
                         )) : (
                             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
                                 <RowData label="Proveedor" value={log.proveedorNombre || '—'} />
-                                <RowData label="Litros ingresados" value={`${log.litrosIngresados} L`} />
+                                <RowData label="Litros ingresados" value={fmtL(log.litrosIngresados)} />
                             </div>
                         )}
                     </div>
@@ -2120,7 +2122,7 @@ function NotifConfigModal({ userId, onClose }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function DailyProductionPage({ onNavigate, params = null }) {
-    const { kromaUser, kromaRole, canEdit } = useKroma();
+    const { kromaUser, kromaRole, canEdit, verCostos } = useKroma();
     // Correr la planilla es del maestro quesero. Quien solo consulta
     // (p. ej. gerencia mirando lo que hay en curso) no la inicia.
     const canProducir = canEdit('produccionDiaria');
@@ -3845,7 +3847,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                                     </div>
                                                     <div className="flex items-center flex-wrap gap-2 text-slate-500 text-xs">
                                                         <Droplets size={11} />
-                                                        <span>{log.litrosNetos ?? log.litrosIngresados} L</span>
+                                                        <span>{fmtL(log.litrosNetos ?? log.litrosIngresados)}</span>
                                                         {log.proveedorNombre && <><span>·</span><span className="truncate max-w-[100px]">{log.proveedorNombre}</span></>}
                                                         {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
                                                         {log.kgSinEnvasar > 0 && <><span>·</span><span className="text-amber-600 font-mono">{log.kgSinEnvasar.toFixed(3)} kg sin envasar</span></>}
@@ -3876,6 +3878,8 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 <CargaPlanillaSheet
                     fichas={fichas}
                     suppliers={suppliers}
+                    productsMap={productsMap}
+                    verCostos={verCostos}
                     kromaUser={kromaUser}
                     onClose={() => setCargaPlanilla(false)}
                     onSaved={() => { setCargaPlanilla(false); loadData(); }}
