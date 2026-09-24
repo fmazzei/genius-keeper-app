@@ -104,8 +104,22 @@ const AppLayout: React.FC = () => {
             return <AppShell user={user} role={role} onLogout={() => signOut(auth)} />;
         }
         return (
+            // La contraseña era correcta: la persona ENTRÓ. Lo que falta es su
+            // rol. Decirle solo "rol no reconocido" la deja sin nada que hacer
+            // y al administrador sin nada con qué arreglarlo, así que se
+            // muestran los dos datos que resuelven el caso en un minuto: con
+            // qué cuenta entró y qué rol tiene hoy (o si no tiene ninguno).
             <div className="flex flex-col items-center justify-center h-screen bg-slate-950 gap-5 p-6">
-                <p className="text-slate-400 text-center">Rol de usuario no reconocido. Contacta al administrador.</p>
+                <div className="text-center max-w-sm space-y-2">
+                    <p className="text-slate-300 font-semibold">Entraste bien, pero tu cuenta todavía no tiene un rol asignado.</p>
+                    <p className="text-slate-500 text-sm">
+                        Pásale estos datos al administrador para que te lo asigne:
+                    </p>
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-left space-y-1">
+                        <p className="text-slate-400 text-xs">Cuenta: <span className="text-slate-200">{user?.email || '—'}</span></p>
+                        <p className="text-slate-400 text-xs">Rol actual: <span className="text-slate-200">{role ? String(role) : 'sin rol'}</span></p>
+                    </div>
+                </div>
                 <button
                     onClick={() => signOut(auth)}
                     className="flex items-center gap-2 bg-slate-800 text-slate-300 font-semibold py-2.5 px-5 rounded-lg hover:bg-slate-700 transition-colors"

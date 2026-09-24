@@ -38,7 +38,19 @@ export default function KromaLoginScreen({ onBack }) {
             // Al autenticar, App.tsx rutea solo según el rol — sigue en la misma pantalla.
         } catch (e) {
             console.error('loginConPinEmpresa falló:', e?.code, e?.message, e);
-            fail('PIN incorrecto');
+            // El servidor SÍ distingue "ese PIN no está registrado"
+            // (`not-found`) de "no pude firmar la sesión" (`internal`), pero
+            // acá se mostraba "PIN incorrecto" para todo. Durante una caída,
+            // quien tenía el PIN bueno lo reescribía una y otra vez creyendo
+            // que se equivocaba: el mensaje lo mandaba por el camino errado.
+            const code = e?.code || '';
+            if (code.endsWith('not-found') || code.endsWith('invalid-argument')) {
+                fail('PIN incorrecto');
+            } else if (code.endsWith('unavailable') || code.endsWith('deadline-exceeded')) {
+                fail('Sin conexión. Revisa tu señal e intenta de nuevo.');
+            } else {
+                fail('El PIN es correcto pero no pudimos abrir la sesión. Avísale al administrador.');
+            }
             setBusy(false);
         }
     }, [signInWithCustomToken]);
@@ -79,14 +91,17 @@ export default function KromaLoginScreen({ onBack }) {
                     ))}
                 </div>
 
-                <div className="h-5 text-center mb-4">
+                {/* min-h en vez de alto fijo: los mensajes que explican la causa
+                    real no caben en una línea, y truncarlos sería volver al
+                    "PIN incorrecto" de siempre. */}
+                <div className="min-h-[1.25rem] text-center mb-4">
                     {busy ? (
                         <p className="text-slate-400 text-xs flex items-center justify-center gap-1.5">
                             <Loader size={11} className="animate-spin" /> Entrando…
                         </p>
                     ) : error && (
-                        <p className="text-rose-400 text-xs flex items-center justify-center gap-1">
-                            <AlertCircle size={11} />{error}
+                        <p className="text-rose-400 text-xs flex items-start justify-center gap-1 leading-snug">
+                            <AlertCircle size={11} className="shrink-0 mt-0.5" />{error}
                         </p>
                     )}
                 </div>

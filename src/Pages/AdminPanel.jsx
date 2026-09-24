@@ -29,10 +29,19 @@ import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
 
 // Índice público usuario→correo para permitir login por NOMBRE DE USUARIO.
 // Se escribe al crear/editar cualquier usuario con username.
+//
+// Este índice es una CONVENIENCIA, no la llave: si esta escritura falla, la
+// persona entra igual. Antes no era así — el login dependía de esta fila y un
+// error acá (que se iba en silencio a la consola) dejaba a alguien con cuenta
+// y contraseña válidas afuera, con un "usuario no encontrado" que era mentira.
+// Ahora el login resuelve contra `users_metadata` (la verdad) cuando la fila
+// falta, y de paso la repara. Por eso este fallo NO interrumpe la creación:
+// hacerlo dejaría al máster creyendo que el usuario no se creó —sí se creó— y
+// lo llevaría a intentarlo de nuevo.
 const writeLoginIndex = (username, email, uid) => {
     if (!username || !email) return Promise.resolve();
     return setDoc(doc(db, 'login_index', username), { email, uid: uid || null, updatedAt: serverTimestamp() }, { merge: true })
-        .catch(err => console.warn('login_index write error:', err));
+        .catch(err => console.warn('login_index write error (no bloquea: el login lo resuelve solo):', err));
 };
 
 const ToggleSwitch = ({ enabled, setEnabled, disabled = false }) => (

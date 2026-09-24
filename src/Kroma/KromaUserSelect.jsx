@@ -267,6 +267,7 @@ export default function KromaUserSelect({ onExitKroma }) {
     // 'lacteoca', por si el patrón se reutiliza más adelante.
     const [myEmpresaId, setMyEmpresaId] = useState('lacteoca');
     const [reparando,   setReparando]   = useState(false);
+    const [loadError,   setLoadError]   = useState('');
 
     useEffect(() => {
         loadUsers();
@@ -326,7 +327,14 @@ export default function KromaUserSelect({ onExitKroma }) {
             }
 
             setUsers(lista);
-        } catch (err) { console.error(err); }
+            setLoadError('');
+        } catch (err) {
+            // Antes esto solo hacía console.error: la pantalla quedaba igual
+            // que "esta empresa todavía no tiene usuarios" y ofrecía crear uno
+            // nuevo. Un fallo de red terminaba en perfiles duplicados.
+            console.error(err);
+            setLoadError('No pudimos cargar los perfiles. Revisa tu señal y vuelve a intentar.');
+        }
         finally { setLoading(false); }
     };
 
@@ -385,6 +393,24 @@ export default function KromaUserSelect({ onExitKroma }) {
                         Seleccionar Usuario
                     </p>
 
+                    {/* Un fallo de carga se DECLARA, con salida. Sin esto se ve
+                        igual que una empresa sin usuarios, y el camino que
+                        quedaba era crear un perfil duplicado. */}
+                    {loadError && (
+                        <div className="mb-6 bg-rose-500/10 border border-rose-500/40 rounded-2xl p-4 flex items-start gap-3">
+                            <AlertCircle size={16} className="text-rose-400 shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                                <p className="text-rose-200 text-sm">{loadError}</p>
+                                <button
+                                    onClick={() => { setLoading(true); setLoadError(''); loadUsers(); }}
+                                    className="mt-2 text-xs font-semibold text-rose-300 hover:text-rose-100 underline"
+                                >
+                                    Reintentar
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {users.length > 0 && (
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
                             {users.map(u => {
@@ -417,7 +443,10 @@ export default function KromaUserSelect({ onExitKroma }) {
                     )}
 
                     {/* Create user — only available with no users (bootstrap) */}
-                    {users.length === 0 && (
+                    {/* Si la carga FALLÓ no se ofrece crear: no sabemos si la
+                        empresa tiene perfiles, y crear uno "porque no aparecía"
+                        es justo como nacen los duplicados. */}
+                    {users.length === 0 && !loadError && (
                     !showCreate ? (
                         <button
                             onClick={() => setShowCreate(true)}

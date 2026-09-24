@@ -19,6 +19,31 @@ const ROLE_DOORS = [
     { id: 'master',        label: 'Máster',        Icon: Shield,     accent: 'text-amber-400',   bg: 'bg-amber-500/20',   desc: 'Administración total'        },
 ];
 
+// Traduce el fallo real a algo que la persona pueda ACCIONAR. Un mensaje
+// genérico ("credenciales incorrectas") manda a todo el mundo a reescribir la
+// contraseña, incluso a quien lo que tiene es el teléfono sin señal o una
+// cuenta desactivada — y el que sí la escribió bien no entiende por qué no entra.
+const mensajeDeErrorDeLogin = (e) => {
+    if (e?.message === 'timeout') return 'La conexión está lenta y no respondió. Revisa tu señal e intenta de nuevo.';
+    switch (e?.code) {
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+            return 'Contraseña incorrecta. El usuario sí existe: revisa la contraseña.';
+        case 'auth/user-not-found':
+            return 'No existe una cuenta con ese usuario o correo.';
+        case 'auth/invalid-email':
+            return 'Ese correo no tiene un formato válido.';
+        case 'auth/too-many-requests':
+            return 'Demasiados intentos seguidos. Espera unos minutos y vuelve a intentar — no sigas probando, eso alarga la espera.';
+        case 'auth/user-disabled':
+            return 'Esta cuenta está desactivada. Pídele al administrador que la reactive.';
+        case 'auth/network-request-failed':
+            return 'Sin conexión. Revisa tu señal e intenta de nuevo.';
+        default:
+            return 'No se pudo entrar. Intenta de nuevo; si sigue igual, avísale al administrador.';
+    }
+};
+
 const LoginScreen = () => {
     const { login, signInWithCustomToken } = useAuth();
     const [kromaMode, setKromaMode]     = useState(false);
@@ -66,6 +91,19 @@ const LoginScreen = () => {
         } catch (e) {
             if (e?.message === 'timeout') throw e; // red lenta ≠ usuario inexistente
         }
+        // El índice no tiene la fila. Eso NO significa que la persona no exista:
+        // el índice lo escribe el máster al crear la cuenta y esa escritura
+        // puede haber fallado, o la cuenta puede ser anterior al índice. Antes
+        // se le decía "usuario no encontrado" a alguien con cuenta y contraseña
+        // válidas, y no tenía cómo entrar. Se pregunta al servidor, que mira
+        // users_metadata (la verdad) y de paso repara el índice.
+        try {
+            const fn  = httpsCallable(functions, 'resolverUsuarioParaLogin', { timeout: 12000 });
+            const res = await fn({ username: key });
+            if (res?.data?.email) return res.data.email;
+        } catch (e) {
+            if (e?.code === 'functions/deadline-exceeded') throw new Error('timeout');
+        }
         return null;
     };
 
@@ -82,9 +120,11 @@ const LoginScreen = () => {
             }
             await login(resolvedEmail, loginPassword);
         } catch (e) {
-            setError(e?.message === 'timeout'
-                ? 'La conexión está lenta y no respondió. Revisa tu señal e intenta de nuevo.'
-                : 'Credenciales incorrectas o usuario no registrado.');
+            // Decir la causa REAL. Antes todo caía en "credenciales incorrectas",
+            // así que a quien Firebase había frenado por intentos seguidos se le
+            // decía que su contraseña estaba mal: seguía intentando y se hundía
+            // más. Y un teléfono sin señal se leía igual que una contraseña mala.
+            setError(mensajeDeErrorDeLogin(e));
             setIsSubmitting(false);
         }
     };

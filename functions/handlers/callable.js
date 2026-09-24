@@ -397,16 +397,58 @@ exports.verifyRegistration = functions.runWith({ memory: '512MB' }).https.onCall
     return { verified: true };
 });
 
+// ── Resolver usuario → correo, SIN depender del índice ────────────────────
+// `login_index` es un índice de conveniencia: lo escribe el máster al crear a
+// alguien, y si esa escritura falla (o el usuario es anterior al índice y nadie
+// corrió el backfill) la persona queda SIN PODER ENTRAR aunque su cuenta exista
+// y su contraseña sea correcta — la pantalla le dice "usuario no encontrado",
+// que es mentira. Un índice auxiliar no puede ser lo que decide quién entra.
+//
+// Esto resuelve contra `users_metadata`, que es la verdad, y de paso REPARA el
+// índice. No entrega nada que no fuera ya público: `login_index` es de lectura
+// abierta por diseño (así se resuelve el correo antes de autenticar), y esto
+// no valida contraseña ni emite token — solo dice a qué correo corresponde un
+// usuario. La seguridad sigue siendo la contraseña.
+const normalizarUsuario = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, '_');
+
+async function resolverUidYCorreo(db, key) {
+    const idx = await db.doc(`login_index/${key}`).get();
+    const cacheado = idx.data();
+    if (cacheado?.uid && cacheado?.email) return { uid: cacheado.uid, email: cacheado.email };
+
+    const snap = await db.collection('users_metadata').where('username', '==', key).limit(1).get();
+    if (snap.empty) return cacheado?.uid || cacheado?.email ? { uid: cacheado.uid, email: cacheado.email } : null;
+
+    const docSnap = snap.docs[0];
+    const email = docSnap.data()?.email;
+    if (!email) return null;
+    // Reparar el índice para que la próxima vez no haga falta esta búsqueda.
+    await db.doc(`login_index/${key}`).set({
+        email, uid: docSnap.id, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true }).catch(() => {});
+    return { uid: docSnap.id, email };
+}
+
+exports.resolverUsuarioParaLogin = functions.https.onCall(async (data) => {
+    const key = normalizarUsuario(data?.username);
+    if (!key) throw new functions.https.HttpsError('invalid-argument', 'Falta el nombre de usuario.');
+    const found = await resolverUidYCorreo(admin.firestore(), key);
+    if (!found?.email) throw new functions.https.HttpsError('not-found', 'Usuario no encontrado.');
+    return { email: found.email };
+});
+
 // (2) Autenticación (login) — el usuario NO está autenticado. Se identifica por
 // nombre de usuario (login_index) y, si verifica, se emite un custom token.
 exports.generateAuthenticationOptions = functions.runWith({ memory: '512MB' }).https.onCall(async (data) => {
     const { rpID, origin } = resolveRp(data?.origin);
     const db = admin.firestore();
-    const key = String(data?.username || '').trim().toLowerCase().replace(/\s+/g, '_');
+    const key = normalizarUsuario(data?.username);
     if (!key) throw new functions.https.HttpsError('invalid-argument', 'Falta el nombre de usuario.');
 
-    const idx = await db.doc(`login_index/${key}`).get();
-    const uid = idx.data()?.uid;
+    // Igual que el login por contraseña: si el índice no tiene la fila, se
+    // busca en users_metadata en vez de negarle la huella a alguien que sí está
+    // registrado.
+    const uid = (await resolverUidYCorreo(db, key))?.uid;
     if (!uid) throw new functions.https.HttpsError('not-found', 'Usuario no encontrado.');
 
     const authSnap = await db.collection(`users_metadata/${uid}/authenticators`).get();
@@ -426,9 +468,8 @@ exports.generateAuthenticationOptions = functions.runWith({ memory: '512MB' }).h
 
 exports.verifyAuthentication = functions.runWith({ memory: '512MB' }).https.onCall(async (data) => {
     const db = admin.firestore();
-    const key = String(data?.username || '').trim().toLowerCase().replace(/\s+/g, '_');
-    const idx = await db.doc(`login_index/${key}`).get();
-    const uid = idx.data()?.uid;
+    const key = normalizarUsuario(data?.username);
+    const uid = (await resolverUidYCorreo(db, key))?.uid;
     if (!uid) throw new functions.https.HttpsError('not-found', 'Usuario no encontrado.');
 
     const chalDoc = await db.doc(`users_metadata/${uid}/tokens/authChallenge`).get();

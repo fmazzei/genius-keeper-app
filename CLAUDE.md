@@ -1968,3 +1968,54 @@ la recepción de Frimaca se quedaría sin despachos que recibir si algún doc
 quedara sin etiquetar. El orden correcto es: primero confirmar que los datos
 están etiquetados (`kroma_empresas/lacteoca.datosMigradosAt`), después agregar
 el `where`.
+
+### Libertad de entrada con seguridad: ninguna puerta miente (2026-09) ✅
+
+Principio del dueño, tras quedarse su equipo afuera de Kroma: *"quiero libertad
+de entrada con seguridad. Si yo estoy dando accesos es porque quiero que
+entren"*. Aplicado a las dos apps. **La seguridad es la contraseña y el PIN, no
+los accidentes**: un índice que no se escribió, una lista vacía o un mensaje
+genérico no pueden ser lo que decide quién entra.
+
+**GK — el login por usuario ya no depende de un índice auxiliar.**
+`login_index/{usuario}` lo escribe el máster al crear la cuenta. Si esa
+escritura fallaba (se iba en silencio a la consola con un `console.warn`) o la
+cuenta era anterior al índice, la persona veía **"Usuario no encontrado"** —
+mentira: su cuenta existía y su contraseña era correcta, pero no tenía cómo
+entrar. Ahora `resolverUsuarioParaLogin` (callable) resuelve contra
+`users_metadata`, que es la verdad, y **repara el índice de paso**. No expone
+nada nuevo: `login_index` ya es de lectura pública por diseño y esto no valida
+contraseña ni emite token. El login por **huella** usaba el mismo índice y
+tenía el mismo agujero (`generateAuthenticationOptions`/`verifyAuthentication`):
+comparten ahora `resolverUidYCorreo`. El botón de backfill del AdminPanel se
+conserva, pero ya no hay nada que dependa de que alguien lo pulse.
+
+**GK — los errores de login dicen la causa real** (`mensajeDeErrorDeLogin`).
+Todo caía antes en "Credenciales incorrectas o usuario no registrado", así que
+a quien Firebase había frenado por intentos seguidos (`auth/too-many-requests`)
+se le decía que su contraseña estaba mal: seguía probando y **alargaba su propio
+bloqueo**. Ahora se distinguen contraseña incorrecta, cuenta inexistente, cuenta
+desactivada, demasiados intentos y falta de conexión.
+
+**GK — el rol sin asignar dejó de ser un callejón sin salida.** "Rol de usuario
+no reconocido. Contacta al administrador" no le daba al administrador NADA con
+qué arreglarlo. La pantalla muestra ahora la cuenta con la que entró y el rol
+que tiene hoy (o "sin rol") — los dos datos que cierran el caso en un minuto.
+
+**Kroma — el PIN de empresa deja de culpar al que lo escribió bien.** El
+servidor ya distinguía `not-found` (PIN no registrado) de `internal` (no se pudo
+firmar la sesión), pero la pantalla decía **"PIN incorrecto"** para todo. Durante
+la caída de IAM, quien tenía el PIN correcto lo reescribía una y otra vez
+creyendo equivocarse. Ahora: PIN incorrecto / sin conexión / "el PIN es correcto
+pero no pudimos abrir la sesión, avísale al administrador".
+
+**Kroma — el selector ya no confunde "falló la carga" con "no hay usuarios".**
+`loadUsers` hacía `console.error` y seguía: un fallo de red se veía idéntico a
+una empresa sin perfiles y ofrecía **"Agregar Usuario"** — así nacen los
+duplicados. Ahora declara el error con **Reintentar**, y el formulario de alta
+NO se ofrece si la carga falló.
+
+**Regla para el futuro:** toda puerta de entrada debe (1) fallar solo por la
+credencial, nunca por un dato auxiliar que se puede reconstruir, y (2) nombrar
+la causa real. Si una pantalla de acceso puede mostrar el mismo mensaje para dos
+causas distintas, una de las dos deja a alguien afuera sin saber por qué.
