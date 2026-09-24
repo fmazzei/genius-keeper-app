@@ -531,6 +531,10 @@ export default function DespachoPage() {
     const [saved, setSaved]         = useState(false);
     const [lineas, setLineas]       = useState(() => [newLinea()]);
     const [notas, setNotas]         = useState('');
+    // Fecha del despacho. Por defecto hoy; se mueve para cargar despachos
+    // anteriores al poner la planta al día. `fecha` ya se guardaba como
+    // 'YYYY-MM-DD', así que el input de tipo date encaja tal cual.
+    const [fechaDespacho, setFechaDespacho] = useState(() => new Date().toISOString().split('T')[0]);
 
     const [pickingInvFor,  setPickingInvFor]  = useState(null);
     const [pickingCityFor, setPickingCityFor] = useState(null);
@@ -663,7 +667,8 @@ export default function DespachoPage() {
             }
 
             await addDoc(collection(db, 'kroma_despachos'), {
-                fecha:       new Date().toISOString().split('T')[0],
+                fecha:       fechaDespacho || new Date().toISOString().split('T')[0],
+                cargadaEnDiferido: !!fechaDespacho && fechaDespacho !== new Date().toISOString().split('T')[0],
                 horasSalida: serverTimestamp(),
                 responsable: { id: kromaUser?.id || '', nombre: kromaUser?.name || '' },
                 lineas:      validLineas,
@@ -879,6 +884,16 @@ export default function DespachoPage() {
 
                     {/* Meta strip */}
                     <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 text-xs text-slate-400">
+                        <div className="flex items-center gap-2 mb-2">
+                            <span>Fecha del despacho:</span>
+                            <input
+                                type="date"
+                                value={fechaDespacho}
+                                onChange={e => setFechaDespacho(e.target.value)}
+                                className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-white text-xs focus:outline-none focus:border-emerald-500"
+                            />
+                            <span className="text-slate-600">déjala en hoy salvo que cargues uno anterior</span>
+                        </div>
                         Responsable: <span className="text-white font-medium">{kromaUser?.name || '—'}</span>
                         {loadingInv && <span className="ml-3 text-slate-600">Cargando inventario…</span>}
                         {!loadingInv && inventory.length === 0 && (

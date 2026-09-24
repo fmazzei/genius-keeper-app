@@ -2125,7 +2125,9 @@ en el día a día; solo se mueve para cargar algo que ya ocurrió.
 - La copia optimista de la lista lleva la fecha elegida, no la de hoy: si no,
   una producción cargada en diferido se veía con fecha de hoy hasta recargar.
 
-**Pendiente de esta fase**: el despacho sigue sin campo de fecha (es el paso 8 y
-es opcional en el tablero); y falta el sello explícito "datos confiables desde
-tal fecha" que le serviría a gerencia para saber desde cuándo creerle a un
-indicador.
+El **despacho** cerró igual (paso 8): `fecha` ya se guardaba como `'YYYY-MM-DD'`,
+así que el input de tipo date encaja tal cual, con el mismo criterio —hoy por
+defecto, `cargadaEnDiferido` si la mueven—.
+
+**Pendiente de esta fase**: el sello explícito "datos confiables desde tal fecha"
+que le serviría a gerencia para saber desde cuándo creerle a un indicador.
