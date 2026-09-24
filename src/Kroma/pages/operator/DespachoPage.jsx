@@ -517,8 +517,11 @@ let lineaSeq = 0;
 const newLinea = () => ({ _id: ++lineaSeq, item: null, cantidad: 1, destino: null });
 
 export default function DespachoPage() {
-    const { kromaUser } = useKroma();
-    const [tab, setTab]             = useState('nuevo');
+    const { kromaUser, canEdit } = useKroma();
+    const canEditar = canEdit('despachos');
+    // Quien no despacha entra directo al historial: si no, la pestaña activa
+    // sería una que ya no existe y la pantalla saldría en blanco.
+    const [tab, setTab]             = useState(canEdit('despachos') ? 'nuevo' : 'historial');
     const [inventory, setInventory] = useState([]);
     const [warehouses, setWarehouses] = useState([]);
     const [loadingInv, setLoadingInv] = useState(true);
@@ -860,7 +863,9 @@ export default function DespachoPage() {
 
             {/* Tabs */}
             <div className="flex gap-1 bg-slate-800 rounded-xl p-1 mb-6 w-fit">
-                {[['nuevo', 'Nuevo Despacho'], ['historial', 'Historial']].map(([id, label]) => (
+                {/* Sin permiso de despacho queda solo el Historial: se consulta,
+                    no se declara. */}
+                {(canEditar ? [['nuevo', 'Nuevo Despacho'], ['historial', 'Historial']] : [['historial', 'Historial']]).map(([id, label]) => (
                     <button key={id} onClick={() => setTab(id)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === id ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}>
                         {label}

@@ -281,18 +281,22 @@ function SupplierCard({ supplier, onEdit, onDelete }) {
                     )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                    <button
-                        onClick={() => onEdit(supplier)}
-                        className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors"
-                    >
-                        <Edit2 size={14} />
-                    </button>
-                    <button
-                        onClick={() => onDelete(supplier)}
-                        className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
-                    >
-                        <Trash2 size={14} />
-                    </button>
+                    {onEdit && (
+                        <button
+                            onClick={() => onEdit(supplier)}
+                            className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors"
+                        >
+                            <Edit2 size={14} />
+                        </button>
+                    )}
+                    {onDelete && (
+                        <button
+                            onClick={() => onDelete(supplier)}
+                            className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -330,7 +334,9 @@ function SupplierCard({ supplier, onEdit, onDelete }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function SuppliersPage() {
-    const { kromaUser } = useKroma();
+    const { kromaUser, canEdit } = useKroma();
+    // Los catálogos (proveedores, productos, materiales) son del administrador.
+    const canEditar = canEdit('catalogos');
     const [suppliers, setSuppliers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -444,13 +450,15 @@ export default function SuppliersPage() {
                     </div>
                     <p className="text-slate-400 text-sm">{suppliers.length} proveedor{suppliers.length !== 1 ? 'es' : ''} registrado{suppliers.length !== 1 ? 's' : ''}</p>
                 </div>
-                <button
-                    onClick={() => setMode('create')}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl transition-colors text-sm shrink-0"
-                >
-                    <Plus size={16} />
-                    Nuevo Proveedor
-                </button>
+                {canEditar && (
+                    <button
+                        onClick={() => setMode('create')}
+                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl transition-colors text-sm shrink-0"
+                    >
+                        <Plus size={16} />
+                        Nuevo Proveedor
+                    </button>
+                )}
             </div>
 
             {/* Filters */}
@@ -501,8 +509,8 @@ export default function SuppliersPage() {
                         <SupplierCard
                             key={s.id}
                             supplier={s}
-                            onEdit={handleEdit}
-                            onDelete={setDeleteTarget}
+                            onEdit={canEditar ? handleEdit : null}
+                            onDelete={canEditar ? setDeleteTarget : null}
                         />
                     ))}
                 </div>

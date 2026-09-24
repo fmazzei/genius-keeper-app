@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useKroma } from '@/Kroma/KromaContext';
+import { DEFAULT_MODULES, defaultEditar, efectivo } from '@/Kroma/permisos.js';
 import { db, functions } from '@/Firebase/config.js';
 import { httpsCallable } from 'firebase/functions';
 import {
@@ -36,13 +37,9 @@ const AVATAR_COLORS = [
     'bg-violet-600', 'bg-rose-600', 'bg-cyan-600', 'bg-orange-600',
 ];
 
-// Default modules per role — mirrors KromaShell.DEFAULT_MODULES
-const DEFAULT_MODULES = {
-    kroma_operario:  { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  despachos: true,  almacenes: false, historialProduccion: false, catalogos: false, usuarios: false, controlSistema: false, dashboardsGerenciales: false },
-    kroma_admin:     { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, despachos: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: false },
-    kroma_gerencial: { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, despachos: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: false, dashboardsGerenciales: true  },
-    master:          { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  despachos: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: true  },
-};
+// Los defaults por rol viven en `permisos.js` — antes había acá una copia
+// "espejo" que podía separarse de la real, y entonces este panel mostraba una
+// cosa mientras la app hacía otra.
 
 // All modules — no role restriction; master can assign any to any user
 const MODULES = [
@@ -515,7 +512,11 @@ function PermisosTab() {
                             </div>
                         ) : (
                             <>
-                                <p className="text-slate-600 text-xs mb-3">Permite crear, editar o eliminar registros en módulos específicos, además del acceso de solo lectura.</p>
+                                <p className="text-slate-600 text-xs mb-3">
+                                    Ver un módulo no es poder cargarlo. Cada rol trae de fábrica lo que le
+                                    corresponde a su oficio (marcado <span className="text-slate-500 font-semibold">por rol</span>);
+                                    acá se cambia para esta persona en concreto.
+                                </p>
                                 <div className="space-y-1.5">
                                     <div className="flex items-center px-3 pb-1">
                                         <span className="flex-1 text-[10px] text-slate-600 font-semibold uppercase tracking-widest">Módulo</span>
@@ -528,10 +529,19 @@ function PermisosTab() {
                                         return (
                                             <div key={m.id} className={`flex items-center px-3 py-2.5 rounded-xl border transition-colors ${isVisible ? 'bg-slate-800/50 border-slate-700/50' : 'opacity-40 bg-slate-800/20 border-slate-700/20'}`}>
                                                 <MIcon size={13} className="text-slate-500 shrink-0 mr-2" />
-                                                <span className="text-slate-300 text-sm flex-1 truncate">{m.label}</span>
+                                                <span className="text-slate-300 text-sm flex-1 truncate">
+                                                    {m.label}
+                                                    {/* Heredado del rol = nadie lo tocó a mano acá. Sin esta
+                                                        marca, un permiso que SÍ está concedido se ve idéntico
+                                                        a uno concedido a dedo, y no hay forma de saber qué
+                                                        pasaría al cambiarle el rol a esta persona. */}
+                                                    {permisos.editar?.[m.id] === undefined && defaultEditar(selected.role)[m.id] && (
+                                                        <span className="ml-2 text-[10px] text-slate-600 font-semibold uppercase tracking-wide">por rol</span>
+                                                    )}
+                                                </span>
                                                 <div className="w-14 flex justify-center">
                                                     <Toggle
-                                                        checked={!!(permisos.editar?.[m.id])}
+                                                        checked={efectivo(permisos.editar?.[m.id], defaultEditar(selected.role)[m.id])}
                                                         onChange={v => setPermisos(p => ({ ...p, editar: { ...p.editar, [m.id]: v } }))}
                                                     />
                                                 </div>

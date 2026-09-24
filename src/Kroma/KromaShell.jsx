@@ -34,14 +34,11 @@ import {
 } from 'lucide-react';
 
 // ─── Module defaults per role ─────────────────────────────────────────────────
-// Used when a user has no explicit modulos saved. Master ignores this entirely.
-
-export const DEFAULT_MODULES = {
-    kroma_operario:  { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  despachos: true,  almacenes: false, historialProduccion: false, catalogos: false, usuarios: false, controlSistema: false, dashboardsGerenciales: false },
-    kroma_admin:     { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, despachos: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: false },
-    kroma_gerencial: { produccionDiaria: false, leche: false, inventarioMateriales: false, constructores: false, despachos: false, almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: false, dashboardsGerenciales: true  },
-    master:          { produccionDiaria: true,  leche: true,  inventarioMateriales: true,  constructores: true,  despachos: true,  almacenes: true,  historialProduccion: true,  catalogos: true,  usuarios: true,  controlSistema: true,  dashboardsGerenciales: true  },
-};
+// La tabla vive ahora en `permisos.js`, junto a la de edición — tenerlas juntas
+// es lo que evita que "quién ve" y "quién puede cargar" se separen. Se re-exporta
+// para no romper a quien ya la importaba desde acá.
+export { DEFAULT_MODULES } from './permisos.js';
+import { DEFAULT_MODULES } from './permisos.js';
 
 // ─── Single universal nav list — filtered by effective modules ────────────────
 

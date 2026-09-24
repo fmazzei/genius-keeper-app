@@ -234,7 +234,7 @@ function PresConfigPanel({ config, onChange }) {
 
 // ─── Material Card ───────────────────────────────────────────────────────────
 
-function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo, isMaster, onDelete }) {
+function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo, isMaster, onDelete, canEditar }) {
     const status = stockStatus(invDoc);
     const pct    = barPct(invDoc);
     const hasInv = invDoc != null;
@@ -296,30 +296,36 @@ function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo, isMaster, 
                 </div>
             </div>
 
-            <div className="flex gap-1.5 mt-auto">
-                <button onClick={() => onEntrada(mat, invDoc)}
-                    className="flex-1 flex items-center justify-center gap-1 bg-teal-600 hover:bg-teal-500 active:scale-95 text-white text-xs font-semibold py-2.5 rounded-xl">
-                    <Plus size={12} /> Entrada
-                </button>
-                {hasInv && !isGranel(invDoc) && (
-                    <button onClick={() => onEnUso(mat, invDoc)}
-                        className="flex items-center justify-center gap-1 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 text-xs font-semibold py-2.5 px-3 rounded-xl"
-                        title="Ajustar cantidad en uso">
-                        <Package size={12} /> En uso
+            {/* Cargar existencias es del ADMINISTRADOR: las compras las registra
+                él. El operario ve el stock —necesita saber si le queda cuajo
+                antes de arrancar— pero no lo carga; se descuenta solo con el
+                consumo de cada proceso. */}
+            {canEditar && (
+                <div className="flex gap-1.5 mt-auto">
+                    <button onClick={() => onEntrada(mat, invDoc)}
+                        className="flex-1 flex items-center justify-center gap-1 bg-teal-600 hover:bg-teal-500 active:scale-95 text-white text-xs font-semibold py-2.5 rounded-xl">
+                        <Plus size={12} /> Entrada
                     </button>
-                )}
-                <button onClick={() => onSetMinimo(mat, invDoc)} title="Stock mínimo"
-                    className="flex items-center justify-center gap-1 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 text-xs font-semibold py-2.5 px-3 rounded-xl">
-                    <TrendingDown size={12} />
-                </button>
-            </div>
+                    {hasInv && !isGranel(invDoc) && (
+                        <button onClick={() => onEnUso(mat, invDoc)}
+                            className="flex items-center justify-center gap-1 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 text-xs font-semibold py-2.5 px-3 rounded-xl"
+                            title="Ajustar cantidad en uso">
+                            <Package size={12} /> En uso
+                        </button>
+                    )}
+                    <button onClick={() => onSetMinimo(mat, invDoc)} title="Stock mínimo"
+                        className="flex items-center justify-center gap-1 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 text-xs font-semibold py-2.5 px-3 rounded-xl">
+                        <TrendingDown size={12} />
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
 
 // ─── Entrada Bottom Sheet ─────────────────────────────────────────────────────
 
-function EntradaSheet({ mat, invDoc, onClose, onSave }) {
+function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
     const initialPres = invDoc?.presentacionTipo
         || (mat.presentacion && mat.presentacion !== 'a granel' ? mat.presentacion : 'granel');
     const [config, setConfig] = useState({
@@ -340,7 +346,11 @@ function EntradaSheet({ mat, invDoc, onClose, onSave }) {
     // Solo aplica en "+ Entrada" — "Corregir stock" es un conteo, no una compra.
     const [costoEntrada, setCostoEntrada] = useState('');
     const [omitirCosto, setOmitirCosto]   = useState(false);
-    const puedeCostear = Number(mat.cantidadPresentacion) > 0;
+    // Regla de negocio transversal: el maestro quesero NUNCA ve costos. No es un
+    // permiso que se pueda conceder, así que el bloque de costo no se oculta
+    // "por ahora": directamente no existe para quien no puede verlos, y con él
+    // desaparece también la exigencia de llenarlo para poder guardar.
+    const puedeCostear = verCostos && Number(mat.cantidadPresentacion) > 0;
 
     const cpu = config.cantidadPorUnidad || 0;
     // modoAjuste=true → replace current stock; false → add to current stock
@@ -747,8 +757,10 @@ function AlertsBanner({ alerts, onDismiss }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function MaterialsInventoryPage() {
-    const { kromaUser, kromaRole } = useKroma();
+    const { kromaUser, kromaRole, canEdit, verCostos } = useKroma();
     const isMaster = kromaRole === 'master';
+    // Cargar existencias es del administrador; el operario solo mira.
+    const canEditar = canEdit('inventarioMateriales');
     const [materials, setMaterials] = useState([]);
     const [inventory, setInventory] = useState({});
     const [alerts, setAlerts]       = useState([]);
@@ -971,6 +983,16 @@ export default function MaterialsInventoryPage() {
                 <p className="text-slate-400 text-sm">
                     {materials.length} materiales · {Object.keys(inventory).length} con stock registrado
                 </p>
+                {/* Sin esta línea la pantalla queda muda: el operario ve el stock,
+                    no ve botones, y no tiene cómo saber si es un permiso, un error
+                    o algo que él debería estar haciendo. */}
+                {!canEditar && (
+                    <p className="text-slate-500 text-xs mt-2 leading-snug">
+                        Consulta: acá ves cuánto queda de cada insumo. Las compras y las
+                        correcciones de stock las registra el administrador; el consumo de
+                        cada producción se descuenta solo.
+                    </p>
+                )}
             </div>
 
             <AlertsBanner alerts={alerts} onDismiss={dismissAlert} />
@@ -1039,7 +1061,7 @@ export default function MaterialsInventoryPage() {
                                             onEntrada={(m, inv) => setEntradaTarget({ mat: m, invDoc: inv })}
                                             onEnUso={(m, inv) => setEnUsoTarget({ mat: m, invDoc: inv })}
                                             onSetMinimo={(m, inv) => setMinimoTarget({ mat: m, invDoc: inv })}
-                                            isMaster={isMaster} onDelete={handleDeleteMaterial}
+                                            isMaster={isMaster} onDelete={handleDeleteMaterial} canEditar={canEditar}
                                         />
                                     ))}
                                 </div>
@@ -1053,6 +1075,7 @@ export default function MaterialsInventoryPage() {
                                 onEntrada={(m, inv) => setEntradaTarget({ mat: m, invDoc: inv })}
                                 onEnUso={(m, inv) => setEnUsoTarget({ mat: m, invDoc: inv })}
                                 onSetMinimo={(m, inv) => setMinimoTarget({ mat: m, invDoc: inv })}
+                                isMaster={isMaster} onDelete={handleDeleteMaterial} canEditar={canEditar}
                             />
                         ))}
                     </div>
@@ -1061,7 +1084,7 @@ export default function MaterialsInventoryPage() {
 
             {entradaTarget && (
                 <EntradaSheet mat={entradaTarget.mat} invDoc={entradaTarget.invDoc}
-                    onClose={() => setEntradaTarget(null)} onSave={handleEntrada} />
+                    onClose={() => setEntradaTarget(null)} onSave={handleEntrada} verCostos={verCostos} />
             )}
             {enUsoTarget && (
                 <EnUsoSheet mat={enUsoTarget.mat} invDoc={enUsoTarget.invDoc}

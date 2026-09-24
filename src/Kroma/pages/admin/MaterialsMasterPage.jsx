@@ -466,12 +466,16 @@ function MaterialCard({ material, supplierName, onEdit, onDelete }) {
                     )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => onEdit(material)} className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors">
-                        <Edit2 size={13} />
-                    </button>
-                    <button onClick={() => onDelete(material)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors">
-                        <Trash2 size={13} />
-                    </button>
+                    {onEdit && (
+                        <button onClick={() => onEdit(material)} className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors">
+                            <Edit2 size={13} />
+                        </button>
+                    )}
+                    {onDelete && (
+                        <button onClick={() => onDelete(material)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors">
+                            <Trash2 size={13} />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -547,7 +551,9 @@ function MaterialCard({ material, supplierName, onEdit, onDelete }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function MaterialsMasterPage() {
-    const { kromaUser } = useKroma();
+    const { kromaUser, canEdit } = useKroma();
+    // Los catálogos (proveedores, productos, materiales) son del administrador.
+    const canEditar = canEdit('catalogos');
     const [materials, setMaterials] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
     const [products, setProducts] = useState([]);
@@ -679,13 +685,15 @@ export default function MaterialsMasterPage() {
                     </div>
                     <p className="text-slate-400 text-sm">{materials.length} material{materials.length !== 1 ? 'es' : ''} en catálogo</p>
                 </div>
-                <button
-                    onClick={() => setMode('create')}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl transition-colors text-sm shrink-0"
-                >
-                    <Plus size={16} />
-                    Nuevo Material
-                </button>
+                {canEditar && (
+                    <button
+                        onClick={() => setMode('create')}
+                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl transition-colors text-sm shrink-0"
+                    >
+                        <Plus size={16} />
+                        Nuevo Material
+                    </button>
+                )}
             </div>
 
             {/* Filters */}
@@ -741,8 +749,8 @@ export default function MaterialsMasterPage() {
                                         key={m.id}
                                         material={m}
                                         supplierName={supplierMap[m.proveedorId]}
-                                        onEdit={(mat) => { setEditing(mat); setMode('edit'); }}
-                                        onDelete={setDeleteTarget}
+                                        onEdit={canEditar ? (mat) => { setEditing(mat); setMode('edit'); } : null}
+                                        onDelete={canEditar ? setDeleteTarget : null}
                                     />
                                 ))}
                             </div>
@@ -759,8 +767,8 @@ export default function MaterialsMasterPage() {
                                         key={m.id}
                                         material={m}
                                         supplierName={supplierMap[m.proveedorId]}
-                                        onEdit={(mat) => { setEditing(mat); setMode('edit'); }}
-                                        onDelete={setDeleteTarget}
+                                        onEdit={canEditar ? (mat) => { setEditing(mat); setMode('edit'); } : null}
+                                        onDelete={canEditar ? setDeleteTarget : null}
                                     />
                                 ))}
                             </div>

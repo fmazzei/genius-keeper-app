@@ -2019,3 +2019,66 @@ NO se ofrece si la carga falló.
 credencial, nunca por un dato auxiliar que se puede reconstruir, y (2) nombrar
 la causa real. Si una pantalla de acceso puede mostrar el mismo mensaje para dos
 causas distintas, una de las dos deja a alguien afuera sin saber por qué.
+
+### Fase 0 — que el panel de permisos MANDE (2026-09) ✅
+
+Decisión del dueño: los límites de los roles están bien; lo que estaba mal era
+que **cargar existencias de insumos y materiales es del ADMINISTRADOR, no del
+operario** ("las existencias se actualizan solas con el uso de cada proceso;
+quien debe estar atento a cargar las nuevas compras es el administrador") y que
+**el operario NUNCA debe ver el costo de materiales e insumos. Nunca.** El
+selector de módulos se conserva — su finalidad es la flexibilidad.
+
+**El hallazgo que lo explica todo:** `canEdit`/`canDelete` del `KromaContext`
+se consultaban en **dos botones de toda la app** (las tarjetas de almacén en
+`WarehousesPage`). El panel "Permisos de Edición y Eliminación" de Control del
+Sistema tiene 11 módulos × 2 toggles = 22 interruptores que **no controlaban
+nada**. Por eso el dueño terminó encendiendo el MÓDULO entero al operario: era
+la única palanca que hacía algo. Y `inventarioMateriales: true` para el operario
+no lo puso nadie — era el **valor por defecto en el código**.
+
+- **`src/Kroma/permisos.js` (NUEVO)** — fuente única de las dos capas.
+  `DEFAULT_MODULES` (qué VE cada rol) se movió acá desde `KromaShell.jsx`, que
+  ahora la re-exporta; **`ControlSistemaPage` tenía su propia copia "espejo"**
+  y se eliminó — dos copias del reparto de oficios se separan solas, y cuando
+  se separan el panel muestra una cosa y la app hace otra.
+- **`DEFAULT_EDIT` (NUEVO)** — qué puede CARGAR cada rol. Hizo falta porque
+  `permisos.editar` está vacío en casi todos los perfiles: hacer cumplir
+  `canEdit` sin defaults por rol habría dejado al operario sin poder abrir una
+  planilla el primer día. `efectivo(explicito, porDefecto)` usa `??` y no `||`
+  a propósito — con `||`, un "apagado" puesto a mano por el máster se perdería
+  contra un default en `true`. `canDelete` NO recibe defaults (soft-delete: el
+  borrado sigue siendo del máster salvo concesión expresa).
+- **Reparto corregido**: `inventarioMateriales` → el administrador lo VE y lo
+  CARGA; el operario lo **VE y no lo carga** (necesita saber si le queda cuajo
+  antes de arrancar, pero las compras no son suyas). Se respetan las reglas ya
+  escritas: administrador solo lectura en históricos, gerencia sí los edita.
+- **Costos = regla de negocio, no permiso** (`puedeVerCostos`, expuesto como
+  `verCostos` en el contexto): no sale del panel porque no es algo que se pueda
+  conceder. En `MaterialsInventoryPage`, `puedeCostear` ahora exige `verCostos`,
+  así que para el operario **el bloque "Costo total de esta entrada (USD)" no
+  existe** — y con él desaparece la exigencia de llenarlo para guardar. Era la
+  única superficie de costo de esa pantalla (el resto es cálculo interno).
+- **Cableado real de `canEdit`**: Insumos (entrada/en uso/stock mínimo),
+  Catálogos (crear/editar/borrar en Materiales, Productos y Proveedores),
+  Fichas ("Nueva Plantilla") y Despachos (sin permiso queda solo el Historial,
+  y la pestaña activa arranca ahí para no dejar la pantalla en blanco).
+  Las tarjetas ocultan sus botones cuando no reciben handler (`{onEdit && …}`)
+  en vez de renderizar un botón muerto que reventaría al tocarlo.
+- **El panel dejó de mentir**: los toggles de "Editar" muestran el valor
+  **efectivo** (`efectivo(explícito, default del rol)`) y marcan **"por rol"**
+  lo heredado. Sin eso, un permiso concedido por el rol se veía idéntico a uno
+  apagado, y no había forma de saber qué pasaría al cambiarle el rol a alguien.
+- **La pantalla muda tiene voz**: sin permiso de carga, Insumos explica en una
+  línea que ahí se consulta, que las compras las registra el administrador y que
+  el consumo se descuenta solo — antes el operario veía el stock sin botones y
+  sin saber si era un permiso, un error o algo suyo.
+
+Verificado con `npm run build` limpio y nueve casos de la lógica pura
+(`efectivo`/`defaultEditar`/`puedeVerCostos`), incluido que un apagado manual
+gane al default y que el operario nunca vea costos.
+
+**Pendiente de esta fase**: `DailyProductionPage` y `ProductionHistoryPage`
+todavía no consultan `canEdit` (la planilla es del operario y el historial es
+de lectura, así que hoy no cambia nada en la práctica); conviene cablearlas al
+tocar la Fase 1 para no dejar dos pantallas fuera de la regla.

@@ -1131,7 +1131,9 @@ function loadDraft() {
 // ─── Main component ─────────────────────────────────────────────────────────────
 
 export default function FichaBuilderPage() {
-    const { kromaUser } = useKroma();
+    const { kromaUser, canEdit } = useKroma();
+    // La ficha técnica es del maestro quesero: define el proceso.
+    const canEditar = canEdit('constructores');
     const [products, setProducts]   = useState([]);
     const [materials, setMaterials] = useState([]);
     const [fichas, setFichas]       = useState([]);
@@ -1294,7 +1296,7 @@ export default function FichaBuilderPage() {
                     </div>
                     <p className="text-slate-400 text-sm">{fichas.length} plantilla{fichas.length !== 1 ? 's' : ''} definida{fichas.length !== 1 ? 's' : ''}</p>
                 </div>
-                {products.length > 0 && (
+                {products.length > 0 && canEditar && (
                     <button onClick={() => setMode('builder')} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-3 rounded-xl transition-colors text-sm shrink-0">
                         <Plus size={16} /> Nueva Plantilla
                     </button>

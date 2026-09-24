@@ -88,12 +88,16 @@ function ProductCard({ product, onEdit, onDelete }) {
             <div className="flex items-start justify-between gap-2 mb-3">
                 <p className="text-white font-semibold text-sm leading-snug">{product.nombre}</p>
                 <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => onEdit(product)} className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors">
-                        <Edit2 size={13} />
-                    </button>
-                    <button onClick={() => onDelete(product)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors">
-                        <Trash2 size={13} />
-                    </button>
+                    {onEdit && (
+                        <button onClick={() => onEdit(product)} className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors">
+                            <Edit2 size={13} />
+                        </button>
+                    )}
+                    {onDelete && (
+                        <button onClick={() => onDelete(product)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors">
+                            <Trash2 size={13} />
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -319,7 +323,9 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ProductCatalogPage() {
-    const { kromaUser } = useKroma();
+    const { kromaUser, canEdit } = useKroma();
+    // Los catálogos (proveedores, productos, materiales) son del administrador.
+    const canEditar = canEdit('catalogos');
     const [products, setProducts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [mode, setMode] = useState('list'); // 'list' | 'create' | 'edit'
@@ -421,13 +427,15 @@ export default function ProductCatalogPage() {
                         {products.length} producto{products.length !== 1 ? 's' : ''} — nombres canónicos del sistema
                     </p>
                 </div>
-                <button
-                    onClick={() => { setEditing(null); setMode('create'); }}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl transition-colors text-sm shrink-0"
-                >
-                    <Plus size={16} />
-                    Nuevo Producto
-                </button>
+                {canEditar && (
+                    <button
+                        onClick={() => { setEditing(null); setMode('create'); }}
+                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl transition-colors text-sm shrink-0"
+                    >
+                        <Plus size={16} />
+                        Nuevo Producto
+                    </button>
+                )}
             </div>
 
             {loading ? (
@@ -453,8 +461,8 @@ export default function ProductCatalogPage() {
                         <ProductCard
                             key={p.id}
                             product={p}
-                            onEdit={handleEdit}
-                            onDelete={setDeleteTarget}
+                            onEdit={canEditar ? handleEdit : null}
+                            onDelete={canEditar ? setDeleteTarget : null}
                         />
                     ))}
                 </div>
