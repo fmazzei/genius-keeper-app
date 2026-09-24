@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import {
@@ -282,7 +282,7 @@ function statusBadge(log) {
     return { label: 'Completado', cls: 'text-blue-400 bg-blue-500/15 border-blue-500/30' };
 }
 
-export default function ProductionHistoryPage() {
+export default function ProductionHistoryPage({ params = null }) {
     const { kromaUser } = useKroma();
     const [logs,       setLogs]       = useState([]);
     const [loading,    setLoading]    = useState(true);
@@ -292,6 +292,19 @@ export default function ProductionHistoryPage() {
     const [selectedDay, setSelectedDay] = useState(null);
     const [search,     setSearch]     = useState('');
     const [detail,     setDetail]     = useState(null);
+
+    // Llegada dirigida: "Producciones recientes" del tablero manda el logId y
+    // acá se abre su detalle. Espera a que los logs carguen — el id por sí solo
+    // no alcanza, LogDetail necesita el documento completo. Si el log no está
+    // en la lista (fuera del rango que carga el historial) no se hace nada:
+    // mejor dejar al gerente en el historial que abrirle una ficha vacía.
+    const abiertoRef = useRef(null);
+    useEffect(() => {
+        const id = params?.logId;
+        if (!id || loading || abiertoRef.current === id) return;
+        const log = logs.find(l => l.id === id);
+        if (log) { setDetail(log); abiertoRef.current = id; }
+    }, [params?.logId, logs, loading]);
 
     const load = useCallback(async () => {
         setLoading(true); setError(null);

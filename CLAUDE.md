@@ -2406,3 +2406,40 @@ Verificado con siete casos, incluidos los números reales de las dos planillas
 salinidad en el flujo normal, y ninguna planilla los trae — la carga histórica
 lo esquiva porque no pasa por el runner, pero si algún queso del histórico fue
 en salmuera, esos parámetros simplemente no existen en el papel.
+
+### "Producciones recientes" ahora se abre (2026-09) ✅
+
+Pedido del dueño sobre el tablero de gerencia: *"este listado debe ser
+interactivo. Al pulsar sobre cada uno me debe dirigir a la producción en
+cuestión."* Eran `<div>` sin handler: ocho lotes a la vista y ninguno se abría.
+
+**`onNavigate` acepta ahora un segundo argumento** con el destino puntual
+(`onNavigate('history', { logId })`). `KromaShell` lo guarda en `navParams`, lo
+baja por `renderPage` y lo limpia al navegar por el menú lateral (entrar por el
+menú es empezar de cero). `ProductionHistoryPage` y `DailyProductionPage` lo
+reciben como `params` y abren ese lote **cuando los logs ya cargaron** — el id
+solo no alcanza, la ficha necesita el documento completo.
+
+**El destino depende del ESTADO del lote y del PERMISO de quien mira**, y es lo
+único no obvio de este cambio:
+- **Completada → Historial.** Lo tienen los tres roles que ven este tablero y es
+  donde vive un lote cerrado.
+- **En curso → Producción**, porque el Historial filtra `estado === 'completada'`
+  y ese lote **no está ahí**: mandarlo al historial habría abierto una lista sin
+  su ficha. En la captura del dueño había justo un caso (LCO20260827, con reloj).
+- **En curso + sin el módulo de Producción → fila NO clicable**, con el motivo en
+  el `title`. Gerencia no tiene `produccionDiaria`: si la mandáramos igual, el
+  menú filtra la vista y `activeView` cae a `home` — el toque no haría nada y se
+  vería como app rota.
+
+En Producción se abre el **REPORTE**, no el runner: `openLog` estampa
+`iniciadoAt`, que es *trabajar* sobre la planilla, no mirarla.
+
+**`moduloVisible(role, modulos, modulo)` (NUEVO en `permisos.js`)** — la pregunta
+"¿este rol ve este módulo?" la hacían el menú lateral y ahora también la
+navegación. Se comparte a propósito: un botón que lleva a una pantalla que el
+menú esconde no hace nada, y eso es indistinguible de un bug. Usa `!== false` (no
+`=== true`) para replicar exactamente el criterio del menú: lo no declarado se
+muestra.
+
+Verificado con nueve casos, incluidos los tres del capture.

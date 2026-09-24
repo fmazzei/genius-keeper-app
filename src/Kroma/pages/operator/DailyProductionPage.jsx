@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     collection, getDocs, addDoc, updateDoc, doc, getDoc,
     serverTimestamp, query, where,
@@ -2153,7 +2153,7 @@ function NotifConfigModal({ userId, onClose }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function DailyProductionPage({ onNavigate }) {
+export default function DailyProductionPage({ onNavigate, params = null }) {
     const { kromaUser, kromaRole, canEdit } = useKroma();
     // Correr la planilla es del maestro quesero. Quien solo consulta
     // (p. ej. gerencia mirando lo que hay en curso) no la inicia.
@@ -2163,6 +2163,10 @@ export default function DailyProductionPage({ onNavigate }) {
     const [fichas, setFichas]           = useState([]);
     // Carga de una planilla de papel: una producción que ya ocurrió.
     const [cargaPlanilla, setCargaPlanilla] = useState(false);
+    // Llegada dirigida desde "Producciones recientes" del tablero: abre el
+    // REPORTE del lote, no el runner — `openLog` estampa `iniciadoAt`, que es
+    // trabajar sobre la planilla, no mirarla.
+    const reporteDirigidoRef = useRef(null);
     const [logs, setLogs]               = useState([]);
     const [materialsMap, setMaterialsMap] = useState({}); // materialId → material doc
     const [loading, setLoading]         = useState(true);
@@ -2223,6 +2227,17 @@ export default function DailyProductionPage({ onNavigate }) {
     const [productsMap, setProductsMap]   = useState({}); // productoId → kroma_products doc
 
     useEffect(() => { loadData(); }, []);
+
+    useEffect(() => {
+        const id = params?.logId;
+        if (!id || loading || reporteDirigidoRef.current === id) return;
+        const log = [...logs, ...historial].find(l => l.id === id);
+        if (log) {
+            setReportLog(log);
+            setView('report');
+            reporteDirigidoRef.current = id;
+        }
+    }, [params?.logId, logs, historial, loading]);
 
     async function loadData() {
         setLoading(true); setError(null);

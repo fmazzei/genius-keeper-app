@@ -9,9 +9,10 @@ import {
 import {
     DollarSign, TrendingUp, TrendingDown, ShieldCheck, Droplets, Package,
     BarChart3, Factory, RefreshCw, Loader, AlertTriangle, Award, CheckCircle, Clock, X,
-    Truck, Warehouse, ClipboardList, BookOpen, Tag, FlaskConical,
+    Truck, Warehouse, ClipboardList, BookOpen, Tag, FlaskConical, ChevronRight,
 } from 'lucide-react';
 import { useKroma } from '../KromaContext';
+import { moduloVisible } from '../permisos.js';
 import { leerSello, fmtSello } from '../selloDatos.js';
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
@@ -389,7 +390,12 @@ const COLOR_MAP = {
 // ─── 1. ManagerHome ───────────────────────────────────────────────────────────
 
 export function ManagerHome({ onNavigate }) {
-    const { kromaUser } = useKroma();
+    const { kromaUser, kromaRole } = useKroma();
+    // Una producción EN CURSO no está en el Historial (que solo carga las
+    // completadas), así que su fila tiene que ir a Producción. Pero gerencia no
+    // tiene ese módulo: si la mandáramos igual, el menú la filtra y el toque no
+    // haría nada. Se pregunta con el MISMO criterio que usa el menú lateral.
+    const veProduccion = moduloVisible(kromaRole, kromaUser?.modulos, 'produccionDiaria');
     // El sello dice desde cuándo estos números son interpretables. Sin él, un
     // mes flojo y un mes cargado a medias se ven exactamente igual.
     const [sello, setSello] = useState(null);
@@ -559,8 +565,29 @@ export function ManagerHome({ onNavigate }) {
                                     const rend = getRendimiento(log);
                                     const kg   = getTotalKg(log);
                                     const sinEnv = !log.empaqueFinalizado && (log.disposicion === 'guardar_todo' || log.disposicion === 'mixto');
+                                    // Completada → Historial (la tienen los tres roles y es
+                                    // donde vive un lote cerrado). En curso → Producción, y
+                                    // solo si quien mira tiene ese módulo.
+                                    const destino = log.estado === 'completada'
+                                        ? 'history'
+                                        : (veProduccion ? 'production' : null);
                                     return (
-                                        <div key={log.id} className="px-4 py-3 flex items-center gap-3">
+                                        /* Cada fila abre SU producción en el Historial.
+                                           Va al historial y no al módulo de Producción a
+                                           propósito: gerencia no tiene ese módulo, así que
+                                           el toque no haría nada. El historial sí lo tienen
+                                           los tres roles que ven este tablero, y además es
+                                           el lugar correcto para mirar un lote ya cerrado. */
+                                        <button key={log.id}
+                                            onClick={() => {
+                                                if (!destino) return;
+                                                onNavigate?.(destino, { logId: log.id });
+                                            }}
+                                            disabled={!destino}
+                                            title={destino ? undefined : 'En curso — se ve desde Producción'}
+                                            className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${
+                                                destino ? 'hover:bg-slate-700/30 active:bg-slate-700/50' : 'cursor-default'
+                                            }`}>
                                             <div className="min-w-0 flex-1">
                                                 <p className="text-white text-sm font-semibold truncate">{log.productoNombre || '—'}</p>
                                                 <p className="text-slate-500 text-xs font-mono">{log.lote || log.id.slice(0, 16)}</p>
@@ -577,7 +604,8 @@ export function ManagerHome({ onNavigate }) {
                                                         : <Clock size={14} className="text-slate-500" />}
                                             </div>
                                             {d && <p className="text-slate-600 text-xs shrink-0 hidden md:block">{d.getDate()} {d.toLocaleDateString('es-VE', { month: 'short' })}</p>}
-                                        </div>
+                                            {destino && <ChevronRight size={14} className="text-slate-600 shrink-0" />}
+                                        </button>
                                     );
                                 })}
                             </div>

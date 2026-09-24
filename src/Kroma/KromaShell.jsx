@@ -88,7 +88,7 @@ const ROLE_COLORS = {
 // Role only determines the home page; all other views are available to anyone
 // whose modulos flags include that module.
 
-function renderPage(view, role, kromaUser, onNavigate) {
+function renderPage(view, role, kromaUser, onNavigate, navParams) {
     if (view === 'home') {
         if (role === 'kroma_operario') return <OperatorHome onNavigate={onNavigate} />;
         if (role === 'kroma_gerencial' || role === 'master' || role === 'kroma_owner') return <ManagerHome onNavigate={onNavigate} />;
@@ -96,7 +96,7 @@ function renderPage(view, role, kromaUser, onNavigate) {
     }
     switch (view) {
         case 'puesta_marcha': return <PuestaEnMarchaPage onNavigate={onNavigate} />;
-        case 'production':    return <DailyProductionPage onNavigate={onNavigate} />;
+        case 'production':    return <DailyProductionPage onNavigate={onNavigate} params={navParams} />;
         case 'milk':          return <MilkInventoryPage onNavigate={onNavigate} />;
         case 'materials_inv': return <MaterialsInventoryPage />;
         case 'fichas':        return <FichaBuilderPage onNavigate={onNavigate} />;
@@ -104,7 +104,7 @@ function renderPage(view, role, kromaUser, onNavigate) {
         case 'warehouses':    return <WarehousesPage />;
         case 'cava_rotacion': return <CavaRotacionPage />;
         case 'costos_fijos':  return <CostosFijosPage />;
-        case 'history':       return <ProductionHistoryPage />;
+        case 'history':       return <ProductionHistoryPage params={navParams} />;
         case 'products':      return <ProductCatalogPage />;
         case 'suppliers':     return <SuppliersPage />;
         case 'materials':     return <MaterialsMasterPage />;
@@ -143,6 +143,7 @@ function KromaInner({ onExitKroma }) {
     const { kromaUser, kromaRole, kromaLoading, clearUser, canDo } = useKroma();
     const [currentView, setCurrentView] = useState('home');
     const [prevView,    setPrevView]    = useState(null); // set when navigating from home tiles/shortcuts
+    const [navParams,   setNavParams]   = useState(null); // destino puntual dentro de la vista
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [notifBanner, setNotifBanner] = useState(false); // show "enable notifications" banner
     const unreadCount = useUnreadCount(kromaUser);
@@ -244,15 +245,20 @@ function KromaInner({ onExitKroma }) {
         : 'home';
     const activeNavLabel = visibleNavItems.find(n => n.id === activeView)?.label || 'Inicio';
 
-    // onNavigate = called from home tiles/shortcuts → track return path
-    const onNavigate = (view) => {
+    // onNavigate = called from home tiles/shortcuts → track return path.
+    // El 2º argumento lleva a DÓNDE exactamente: p. ej. abrir una producción
+    // concreta desde "Producciones recientes" en vez de dejar al gerente
+    // buscándola a mano en una lista de meses.
+    const onNavigate = (view, params = null) => {
         setPrevView('home');
+        setNavParams(params);
         setCurrentView(view);
     };
 
     // handleNav = called from sidebar → clear back-path
     const handleNav = (id) => {
         setPrevView(null);
+        setNavParams(null);   // entrar por el menú es empezar de cero
         setCurrentView(id);
         setSidebarOpen(false);
     };
@@ -460,7 +466,7 @@ function KromaInner({ onExitKroma }) {
 
                 {/* ── Main content ── */}
                 <main className="flex-1 overflow-y-auto bg-slate-950">
-                    {renderPage(activeView, kromaRole, kromaUser, onNavigate)}
+                    {renderPage(activeView, kromaRole, kromaUser, onNavigate, navParams)}
                 </main>
             </div>
         </div>

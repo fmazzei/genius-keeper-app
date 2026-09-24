@@ -62,3 +62,17 @@ export const efectivo = (explicito, porDefecto) =>
  */
 export const puedeVerCostos = (role) =>
     role === 'master' || role === 'kroma_owner' || role === 'kroma_admin' || role === 'kroma_gerencial';
+
+/**
+ * ¿Este rol VE este módulo? Mismo criterio que usa el menú lateral: el toggle
+ * explícito del usuario manda, y lo que no está declarado se muestra (por eso
+ * `!== false` y no `=== true`). Vive acá para que la navegación y el menú no
+ * puedan discrepar — un botón que lleva a una pantalla que el menú esconde
+ * simplemente no hace nada, y eso se ve como una app rota.
+ */
+export const moduloVisible = (role, modulosUsuario, modulo) => {
+    if (role === 'master' || role === 'kroma_owner') return true;
+    const explicito = (modulosUsuario || {})[modulo];
+    const porDefecto = defaultModulos(role)[modulo];
+    return (explicito === undefined ? porDefecto : explicito) !== false;
+};
