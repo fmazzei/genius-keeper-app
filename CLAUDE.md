@@ -2154,3 +2154,32 @@ persiste en `kroma_alerts` con `tipo:'faltante_inventario'` (requerido, faltante
 y unidad), diciendo explícitamente que **el stock queda sobrestimado hasta que
 se cargue la compra que faltaba**. Importa sobre todo al cargar historia fuera
 de orden, que es justo cuando nadie lo está mirando.
+
+### Fase 2 — el inicio del operario dice qué sigue, no cuánto hay (2026-09) ✅
+
+`OperatorHome` eran tres contadores: leche en tanque, insumos activos, fichas
+creadas. Un contador es un dato, no una instrucción — el maestro quesero
+llegaba y no sabía si tenía algo abierto, si un lote en espera ya podía
+reanudarse, ni qué tocaba hacer. Reescrito para responder la única pregunta que
+importa al entrar: **¿qué tengo abierto y qué sigue?**
+
+- **"Lo primero"**: UNA frase, en orden de urgencia real — hold vencido (el
+  queso está esperando) → producciones en curso → sin fichas todavía (lleva a
+  Puesta en marcha) → hay leche, puedes arrancar → sin leche, registra una
+  recepción. Cada caso trae su botón.
+- **"Abierto ahora"**: las producciones no completadas, con lote, fecha y, si
+  están en espera, hasta cuándo — o **"listo para continuar"** en ámbar si el
+  plazo ya venció. Eso existía (`estado:'en_hold'` + `holdHasta`) pero vivía
+  enterrado dentro del módulo de Producción.
+- **Avisos**: las alertas vivas de `kroma_alerts` (stock bajo y el nuevo
+  `faltante_inventario`), **más recientes primero** — sin ordenar salían en el
+  orden que devolviera Firestore y un aviso viejo podía tapar al de hoy. Se
+  ordena en cliente: sumar `orderBy` al `where` exigiría un índice compuesto y
+  este proyecto no los despliega en CI.
+- **Los contadores no se borraron**: bajaron a una tira "De un vistazo" al pie,
+  que es el lugar que les corresponde.
+
+**Pendiente/futuro**: las alertas de `kroma_alerts` no se descartan nunca desde
+esta pantalla (`leidaPor` existe pero no se usa acá), así que con el tiempo la
+lista se llena; conviene un "listo" por aviso. Y los inicios del administrador
+y de gerencia (fases 5 y 6) siguen siendo contadores.
