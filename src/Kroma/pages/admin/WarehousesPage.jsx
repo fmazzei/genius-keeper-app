@@ -954,9 +954,14 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
                         </div>
                     </div>
 
-                    {!isMaster && (
+                    {/* `isMaster` no existía en este componente: era un
+                        ReferenceError que tumbaba la hoja de corrección al
+                        abrirla. La variable correcta es `isPrivileged`, que ya
+                        incluye a gerencia (regla de negocio: gerencia edita
+                        históricos, el administrador solo consulta). */}
+                    {!isPrivileged && (
                         <div className="bg-amber-900/20 border border-amber-700/30 rounded-xl px-3 py-2">
-                            <p className="text-amber-300 text-xs">Solo el máster aplica ajustes directamente. Esta solicitud quedará pendiente.</p>
+                            <p className="text-amber-300 text-xs">El ajuste directo lo aplican el máster y gerencia. Esta solicitud quedará pendiente de aprobación.</p>
                         </div>
                     )}
                 </div>
@@ -972,7 +977,7 @@ function AdjustInventoryModal({ item, kromaRole, onClose, onSave, saving }) {
                         className="flex-1 py-3.5 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-bold disabled:opacity-40 transition-colors flex items-center justify-center gap-2"
                         style={{ fontSize: '16px' }}>
                         {saving ? <Loader size={14} className="animate-spin" /> : null}
-                        {saving ? 'Guardando…' : isMaster ? 'Aplicar ajuste' : 'Solicitar ajuste'}
+                        {saving ? 'Guardando…' : isPrivileged ? 'Aplicar ajuste' : 'Solicitar ajuste'}
                     </button>
                 </div>
             </div>

@@ -30,7 +30,7 @@ export function getLitrosNetos(log) {
     }
     return log.litrosNetos ?? log.litrosIngresados ?? 0;
 }
-function getMermaL(log) {
+export function getMermaL(log) {
     const bloques = log.bloquesSnapshot || [];
     const idx = bloques.findIndex(b => b.tipo === 'pasteurizacion');
     if (idx >= 0) {
@@ -54,7 +54,15 @@ export function indexById(arr) {
     (arr || []).forEach(x => { byId[x.id] = x; });
     return byId;
 }
-function materialValue(inv, materialsById) {
+// El stock de un insumo vive partido en envases cerrados + lo que hay abierto.
+export function isGranelInv(inv) {
+    return !inv || inv.presentacionTipo === 'granel' || !inv.cantidadPorUnidad || inv.cantidadPorUnidad <= 0;
+}
+export function totalBaseQty(inv) {
+    if (isGranelInv(inv)) return inv?.stockEnUso ?? 0;
+    return ((inv.stockCerrado ?? 0) * (inv.cantidadPorUnidad || 0)) + (inv.stockEnUso ?? 0);
+}
+export function materialValue(inv, materialsById) {
     const mat = materialsById[inv.materialId];
     return mat ? totalBaseQty(inv) * pricePerBaseUnit(mat) : 0;
 }
@@ -65,7 +73,7 @@ function materialValue(inv, materialsById) {
 // reference dose from bloquesSnapshot (frozen at lot creation) and price it
 // against the current Maestro de Materiales — same g↔kg, ml↔l and density≈1
 // conversion shortcuts used across the app for unit-aware costing.
-function unitConversionFactor(from, to) {
+export function unitConversionFactor(from, to) {
     if (from === to)                      return 1;
     if (from === 'g'  && to === 'kg')     return 0.001;
     if (from === 'kg' && to === 'g')      return 1000;
@@ -75,7 +83,7 @@ function unitConversionFactor(from, to) {
     if (from === 'ml' && to === 'g')      return 1;
     return null;
 }
-function extractFichaDoseRefs(bloquesSnapshot) {
+export function extractFichaDoseRefs(bloquesSnapshot) {
     const out = [];
     (bloquesSnapshot || []).forEach(bloque => {
         const d = bloque?.dosis;

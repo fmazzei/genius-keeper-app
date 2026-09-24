@@ -109,9 +109,11 @@ const IncomingTransfer = ({ transfer, depots, onComplete, isSimulationMode }) =>
                 });
 
                 const transferRef = doc(db, 'transfers', transfer.id);
+                // `lote` no existe acá: la variable del map es `l`. Era un
+                // ReferenceError que tumbaba la distribución de un traslado.
                 const directSalesDetail = lotes.map(l => ({
                     lote: l.lote,
-                    cantidad: distribution[lote.lote]?.['venta_directa'] || 0
+                    cantidad: distribution[l.lote]?.['venta_directa'] || 0
                 })).filter(item => item.cantidad > 0);
 
                 transaction.update(transferRef, { 

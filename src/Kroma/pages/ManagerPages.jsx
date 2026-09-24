@@ -21,7 +21,8 @@ import { soloVivos } from '../estadoPlanta.js';
 import {
     pricePerBaseUnit, indexById, costoPorLitroDesdeFicha, indexPackagingAssignments,
     packagingCostForItem, buildMilkPriceLookup, calcCostoTeoricoLote,
-    getLitrosNetos, getTotalKg, RENDIMIENTO_FALLBACK_L_PER_KG,
+    getLitrosNetos, getTotalKg, getMermaL, materialValue, isGranelInv, totalBaseQty,
+    RENDIMIENTO_FALLBACK_L_PER_KG,
 } from '../costeoLote.js';
 import { leerSello, fmtSello } from '../selloDatos.js';
 
@@ -53,13 +54,6 @@ function avg(arr) {
 // Materials inventory is stored in operational quantities (stockCerrado = closed
 // packages, stockEnUso = base-unit amount of the open one); cost lives in the
 // kroma_materials master catalog as costoUSD per cantidadPresentacion.
-function isGranelInv(inv) {
-    return !inv || inv.presentacionTipo === 'granel' || !inv.cantidadPorUnidad || inv.cantidadPorUnidad <= 0;
-}
-function totalBaseQty(inv) {
-    if (isGranelInv(inv)) return inv?.stockEnUso ?? 0;
-    return ((inv.stockCerrado ?? 0) * (inv.cantidadPorUnidad || 0)) + (inv.stockEnUso ?? 0);
-}
 function monthKey(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
