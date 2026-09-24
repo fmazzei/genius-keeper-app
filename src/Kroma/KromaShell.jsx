@@ -23,7 +23,7 @@ import { ManagerHome, FinancialBoard, ProductionKPIsPage, QualityBoard } from '.
 // Operator pages
 import {
     OperatorHome, MilkInventoryPage, MaterialsInventoryPage,
-    FichaBuilderPage, RecipeBuilderPage, ProcessBuilderPage, DailyProductionPage,
+    FichaBuilderPage, DailyProductionPage,
     DespachoPage,
 } from './pages/OperatorPages';
 
@@ -50,7 +50,7 @@ const ALL_NAV_ITEMS = [
     { id: 'production',    label: 'Producción',          Icon: Factory,       modulo: 'produccionDiaria',     section: 'Operativo' },
     { id: 'milk',          label: 'Leche',               Icon: Droplets,      modulo: 'leche',                section: 'Operativo' },
     { id: 'materials_inv', label: 'Insumos',             Icon: PackageOpen,   modulo: 'inventarioMateriales', section: 'Operativo' },
-    { id: 'fichas',        label: 'Fichas',              Icon: BookOpen,      modulo: 'constructores',        section: 'Operativo' },
+    { id: 'fichas',        label: 'Fichas técnicas',     Icon: BookOpen,      modulo: 'constructores',        section: 'Operativo' },
     { id: 'despacho',     label: 'Despachos',           Icon: Truck,         modulo: 'despachos',            section: 'Operativo' },
     // — Administración —
     { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,     modulo: 'almacenes',            section: 'Administración' },

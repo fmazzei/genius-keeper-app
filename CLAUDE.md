@@ -1463,16 +1463,16 @@ Seleccionar producto → Kroma cruza receta + proceso y despliega solo los campo
 
 ### Archivos principales
 
-**⚠️ Arquitectura real (auditoría 2026-09):** `RecipeBuilderPage.jsx` y
-`ProcessBuilderPage.jsx` (constructores separados de receta/proceso, pensados
-originalmente para `kroma_recipes`/`kroma_processes`) son **código muerto** —
-se importan en `KromaShell.jsx` pero no tienen `case` en el switch de render
-ni ítem de navegación; nunca se despliegan. El constructor que SÍ está en
-producción es **`FichaBuilderPage.jsx`** (colección `kroma_fichas`, un solo
-documento por producto con `bloques:[{tipo, params, dosis}]`), consumido
-directamente por `DailyProductionPage.jsx`. No reactivar los constructores
-viejos sin fusionar su UI dentro del flujo de Fichas — hoy serían un segundo
-sistema desconectado del real.
+**⚠️ Arquitectura real:** el único constructor es **`FichaBuilderPage.jsx`**
+(colección `kroma_fichas`, un documento por producto con
+`bloques:[{tipo, params, dosis}]`), consumido por `DailyProductionPage.jsx`.
+`RecipeBuilderPage.jsx` y `ProcessBuilderPage.jsx` (constructores separados de
+receta/proceso, para `kroma_recipes`/`kroma_processes`) eran código muerto —
+importados pero sin `case` en el switch ni ítem de navegación— y **se
+eliminaron en la Fase 3 (2026-09)**: 3.075 líneas que igual se empaquetaban en
+el bundle y mantenían vivo un vocabulario ("Recetas", "Procesos") que nombraba
+pantallas inexistentes. Su historia queda en git. Las colecciones
+`kroma_recipes`/`kroma_processes` no se tocaron (soft-delete: nunca se borra).
 
 ```
 src/Kroma/
@@ -1490,8 +1490,6 @@ src/Kroma/
       DailyProductionPage.jsx  ← Planilla activa: corre la ficha, descuenta inventario, genera PT
       MaterialsInventoryPage.jsx ← Inventario de insumos, entradas con costeo promedio ponderado
       DespachoPage.jsx         ← Despachos de PT a Caracas/otros destinos
-      ProcessBuilderPage.jsx   ← código muerto, no usado (ver nota arriba)
-      RecipeBuilderPage.jsx    ← código muerto, no usado (ver nota arriba)
 ```
 
 ### Firestore rules (kroma_*)
@@ -1510,8 +1508,7 @@ match /kroma_{collection}/{id} {
 | ProductCatalogPage (Admin) | ✅ Completo |
 | MaterialsMasterPage (Admin) | ✅ Completo — unidades g/kg/ml/l/m/und |
 | SupplierPage (Admin) | ✅ Completo |
-| FichaBuilderPage (Operario) | ✅ Completo — constructor REAL en producción (ver nota "Archivos principales") |
-| ProcessBuilderPage / RecipeBuilderPage (Operario) | ⛔ Código muerto, no se despliega — no confundir con FichaBuilderPage |
+| FichaBuilderPage (Operario) | ✅ Completo — el ÚNICO constructor; en la UI se llama "Ficha técnica" |
 | MilkInventoryPage | ✅ Completo — edición master dentro de 10 min |
 | MaterialsInventoryPage | ✅ Completo — stockCerrado/stockEnUso, alertas, ajuste, secciones, costeo promedio ponderado transaccional |
 | DailyProductionPage | ✅ Completo — recepción, runner bloques, historial, reporte lote, firmas, notificaciones, descuento de empaques/insumos/sal, generación de PT con movimiento de entrada |
@@ -2183,3 +2180,27 @@ importa al entrar: **¿qué tengo abierto y qué sigue?**
 esta pantalla (`leidaPor` existe pero no se usa acá), así que con el tiempo la
 lista se llena; conviene un "listo" por aviso. Y los inicios del administrador
 y de gerencia (fases 5 y 6) siguen siendo contadores.
+
+### Fase 3 — un nombre por cosa (2026-09) ✅
+
+En una app de procesos la precisión del nombre ES la herramienta, y lo mismo se
+llamaba de cuatro formas: el menú decía **Fichas**, la página se titulaba
+**"Plantillas de Producción"**, el acceso directo **"Fichas y Recetas /
+Constructores de recetas"** y el mensaje de Producción mandaba a *"el módulo de
+Plantillas"* — un módulo con ese nombre no existe en el menú. El operario
+buscaba algo que la app nombraba y que no estaba.
+
+**Nombre canónico: "Ficha técnica"** (así se habla en planta), aplicado en menú,
+títulos, botones, accesos directos, mensajes vacíos, el selector de módulos de
+Control del Sistema y los textos del Catálogo de Productos.
+
+**Vocabulario muerto retirado**: `RecipeBuilderPage.jsx` (950 líneas) y
+`ProcessBuilderPage.jsx` (2.125) se eliminaron. No tenían `case` de render ni
+ítem de navegación —nadie podía abrirlos— pero **sí estaban importados, así que
+se empaquetaban en el bundle**, y sobre todo mantenían vivos los términos
+"Recetas" y "Procesos" en una interfaz donde ya no nombran ninguna pantalla.
+Quedan en git. Las colecciones `kroma_recipes`/`kroma_processes` NO se tocaron.
+
+**Pendiente (Fase 4)**: el mensaje de "todavía no hay fichas técnicas" ahora
+nombra bien el destino pero sigue sin llevar — `DailyProductionPage` no recibe
+`onNavigate`. Es exactamente el patrón de "callejón sin botón" que toca resolver.

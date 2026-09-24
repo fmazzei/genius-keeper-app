@@ -40,7 +40,7 @@ const SHORTCUT_DEFS = {
     despacho:           { label: 'Nuevo Despacho',        desc: 'Declarar mercancía en tránsito', Icon: Truck,         color: 'emerald', view: 'despacho'      },
     almacenes:          { label: 'Almacenes',             desc: 'Gestión de almacenes y PT',      Icon: Warehouse,     color: 'violet',  view: 'warehouses'    },
     historial:          { label: 'Historial',             desc: 'Producciones anteriores',        Icon: ClipboardList, color: 'slate',   view: 'history'       },
-    fichas:             { label: 'Fichas y Recetas',      desc: 'Constructores de recetas',       Icon: BookOpen,      color: 'cyan',    view: 'fichas'        },
+    fichas:             { label: 'Fichas técnicas',       desc: 'Plantillas del proceso',         Icon: BookOpen,      color: 'cyan',    view: 'fichas'        },
     catalogo_productos: { label: 'Catálogo Productos',    desc: 'Productos terminados',           Icon: Tag,           color: 'rose',    view: 'products'      },
     proveedores:        { label: 'Proveedores',           desc: 'Directorio de proveedores',      Icon: Truck,         color: 'orange',  view: 'suppliers'     },
 };

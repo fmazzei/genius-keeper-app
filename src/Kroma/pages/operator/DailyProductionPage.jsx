@@ -3130,8 +3130,8 @@ export default function DailyProductionPage() {
                 {fichas.length === 0 ? (
                     <div className="text-center py-16">
                         <FlaskConical size={32} className="text-slate-700 mx-auto mb-3" />
-                        <p className="text-slate-500 text-sm">No hay plantillas creadas.</p>
-                        <p className="text-slate-600 text-xs mt-1">Crea una Plantilla en el módulo de Plantillas primero.</p>
+                        <p className="text-slate-500 text-sm">Todavía no hay fichas técnicas.</p>
+                        <p className="text-slate-600 text-xs mt-1">Sin una ficha técnica no se puede arrancar una producción. Se crean en <span className="text-slate-400 font-medium">Fichas técnicas</span>.</p>
                     </div>
                 ) : (
                     <div className="space-y-3">
@@ -3184,9 +3184,9 @@ export default function DailyProductionPage() {
                         <div className="bg-red-900/30 border border-red-700 rounded-xl px-4 py-3 text-red-300 text-xs font-mono">{saveError}</div>
                     )}
 
-                    {/* ── Plantilla summary ── */}
+                    {/* ── Resumen de la ficha ── */}
                     <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                        <SecLabel>Plantilla seleccionada</SecLabel>
+                        <SecLabel>Ficha técnica seleccionada</SecLabel>
                         <p className="text-white font-bold text-sm mb-2">{selectedFicha?.productoNombre}</p>
                         <div className="flex flex-wrap gap-1.5">
                             {(selectedFicha?.bloques || []).filter(b => !b.deprecated).map((b, i) => {

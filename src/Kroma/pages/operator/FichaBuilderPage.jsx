@@ -1292,13 +1292,13 @@ export default function FichaBuilderPage() {
                 <div>
                     <div className="flex items-center gap-2 mb-1">
                         <ClipboardList size={20} className="text-emerald-400" />
-                        <h2 className="text-xl font-bold text-white">Plantillas de Producción</h2>
+                        <h2 className="text-xl font-bold text-white">Fichas Técnicas</h2>
                     </div>
-                    <p className="text-slate-400 text-sm">{fichas.length} plantilla{fichas.length !== 1 ? 's' : ''} definida{fichas.length !== 1 ? 's' : ''}</p>
+                    <p className="text-slate-400 text-sm">{fichas.length} ficha{fichas.length !== 1 ? 's' : ''} definida{fichas.length !== 1 ? 's' : ''}</p>
                 </div>
                 {products.length > 0 && canEditar && (
                     <button onClick={() => setMode('builder')} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-3 rounded-xl transition-colors text-sm shrink-0">
-                        <Plus size={16} /> Nueva Plantilla
+                        <Plus size={16} /> Nueva ficha
                     </button>
                 )}
             </div>
@@ -1307,8 +1307,8 @@ export default function FichaBuilderPage() {
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 mb-5 flex items-start gap-3">
                     <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                        <p className="text-amber-300 font-semibold text-sm">Tienes una plantilla sin guardar</p>
-                        <p className="text-amber-400/70 text-xs mt-0.5">{loadDraft()?.product?.nombre || 'Plantilla'} — se recuperó automáticamente</p>
+                        <p className="text-amber-300 font-semibold text-sm">Tienes una ficha sin guardar</p>
+                        <p className="text-amber-400/70 text-xs mt-0.5">{loadDraft()?.product?.nombre || 'Ficha'} — se recuperó automáticamente</p>
                     </div>
                     <div className="flex gap-2 shrink-0">
                         <button onClick={discardDraft} className="text-slate-400 hover:text-white text-xs px-2 py-1.5 rounded border border-slate-600 hover:border-slate-500 transition-colors">Descartar</button>
@@ -1336,8 +1336,8 @@ export default function FichaBuilderPage() {
             ) : fichas.length === 0 ? (
                 <div className="text-center py-16">
                     <ClipboardList size={36} className="text-slate-700 mx-auto mb-3" />
-                    <p className="text-slate-500 text-sm">Sin plantillas. Crea la primera.</p>
-                    <button onClick={() => setMode('builder')} className="mt-4 text-emerald-400 hover:text-emerald-300 text-sm font-medium">+ Nueva plantilla</button>
+                    <p className="text-slate-500 text-sm">Sin fichas técnicas. Crea la primera.</p>
+                    <button onClick={() => setMode('builder')} className="mt-4 text-emerald-400 hover:text-emerald-300 text-sm font-medium">+ Nueva ficha técnica</button>
                 </div>
             ) : (
                 <div className="space-y-4 max-w-2xl">
@@ -1352,10 +1352,10 @@ export default function FichaBuilderPage() {
                                         <p className="text-slate-500 text-xs mt-0.5">{ficha.bloques?.length || 0} bloques · {ficha.ingredientesCount || 0} ingrediente{(ficha.ingredientesCount || 0) !== 1 ? 's' : ''}</p>
                                     </div>
                                     <div className="flex items-center gap-1 shrink-0">
-                                        <button onClick={() => openEditFicha(ficha)} className="p-2 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors" title="Editar plantilla">
+                                        <button onClick={() => openEditFicha(ficha)} className="p-2 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors" title="Editar ficha técnica">
                                             <Edit2 size={15} />
                                         </button>
-                                        <button onClick={() => setDeactivateTarget(ficha)} className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors" title="Desactivar plantilla">
+                                        <button onClick={() => setDeactivateTarget(ficha)} className="p-2 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors" title="Desactivar ficha técnica">
                                             <Trash2 size={15} />
                                         </button>
                                     </div>
@@ -1386,8 +1386,8 @@ export default function FichaBuilderPage() {
         {deactivateTarget && (
             <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
                 <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
-                    <h3 className="text-white font-bold text-lg mb-2">Desactivar Plantilla</h3>
-                    <p className="text-slate-400 text-sm mb-6">¿Desactivar la plantilla de <strong className="text-white">{deactivateTarget.productoNombre}</strong>? Su historial se conserva.</p>
+                    <h3 className="text-white font-bold text-lg mb-2">Desactivar ficha técnica</h3>
+                    <p className="text-slate-400 text-sm mb-6">¿Desactivar la ficha técnica de <strong className="text-white">{deactivateTarget.productoNombre}</strong>? Su historial se conserva.</p>
                     {deactivateError && <p className="text-red-400 text-xs mb-4 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{deactivateError}</p>}
                     <div className="flex gap-3">
                         <button onClick={() => { setDeactivateTarget(null); setDeactivateError(null); }} className="flex-1 border border-slate-600 text-slate-300 rounded-xl py-3 text-sm font-medium hover:text-white transition-colors">Cancelar</button>
@@ -1410,8 +1410,8 @@ export default function FichaBuilderPage() {
                     <X size={20} />
                 </button>
                 <div className="flex-1 min-w-0">
-                    <p className="text-white font-bold text-sm truncate">{selectedProduct ? selectedProduct.nombre : 'Nueva Plantilla'}</p>
-                    <p className="text-slate-500 text-xs">{editingFicha ? 'Editando plantilla' : 'Nueva plantilla'}{selectedProduct ? ` · ${bloques.length} bloque${bloques.length !== 1 ? 's' : ''}` : ' · Paso 1 de 2'}</p>
+                    <p className="text-white font-bold text-sm truncate">{selectedProduct ? selectedProduct.nombre : 'Nueva ficha técnica'}</p>
+                    <p className="text-slate-500 text-xs">{editingFicha ? 'Editando ficha' : 'Nueva ficha'}{selectedProduct ? ` · ${bloques.length} bloque${bloques.length !== 1 ? 's' : ''}` : ' · Paso 1 de 2'}</p>
                 </div>
                 {!editingFicha && (
                     <div className="flex gap-1.5 shrink-0">

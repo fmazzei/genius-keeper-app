@@ -172,7 +172,7 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
                     className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 text-sm"
                 />
                 <p className="text-slate-600 text-xs mt-1">
-                    Este nombre es canónico — aparecerá exactamente así en procesos, recetas y producción.
+                    Este nombre es canónico — aparecerá exactamente así en las fichas técnicas y en producción.
                 </p>
             </div>
 
@@ -446,7 +446,7 @@ export default function ProductCatalogPage() {
                 <div className="text-center py-16">
                     <Tag size={36} className="text-slate-700 mx-auto mb-3" />
                     <p className="text-slate-500 text-sm max-w-xs mx-auto">
-                        Sin productos. Define el catálogo para que los procesos y recetas usen nombres estandarizados.
+                        Sin productos. Define el catálogo para que las fichas técnicas usen nombres estandarizados.
                     </p>
                     <button
                         onClick={() => { setEditing(null); setMode('create'); }}
@@ -474,7 +474,7 @@ export default function ProductCatalogPage() {
                         <h3 className="text-white font-bold text-lg mb-2">Eliminar Producto</h3>
                         <p className="text-slate-400 text-sm mb-6">
                             ¿Eliminar <strong className="text-white">{deleteTarget.nombre}</strong>?
-                            Los procesos y recetas vinculados quedarán sin referencia de producto.
+                            Las fichas técnicas vinculadas quedarán sin referencia de producto.
                         </p>
                         <div className="flex gap-3">
                             <button

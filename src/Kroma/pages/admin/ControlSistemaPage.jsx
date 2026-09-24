@@ -47,7 +47,7 @@ const MODULES = [
     { id: 'produccionDiaria',      label: 'Producción Diaria',       desc: 'Planilla de producción activa',         Icon: Factory },
     { id: 'leche',                 label: 'Inventario de Leche',     desc: 'Recepción y control de leche',          Icon: Droplets },
     { id: 'inventarioMateriales',  label: 'Inventario de Insumos',   desc: 'Stock operativo de materiales',         Icon: Package },
-    { id: 'constructores',         label: 'Constructores',           desc: 'Procesos y recetas',                    Icon: BookOpen },
+    { id: 'constructores',         label: 'Fichas técnicas',         desc: 'Plantillas del proceso por producto',   Icon: BookOpen },
     { id: 'despachos',             label: 'Despachos',               desc: 'Declarar mercancía en tránsito',        Icon: Truck },
     { id: 'almacenes',             label: 'Almacenes',               desc: 'Gestión de almacenes y PT',             Icon: Warehouse },
     { id: 'historialProduccion',   label: 'Historial de Producción', desc: 'Reportes históricos',                  Icon: ClipboardList },
@@ -65,7 +65,7 @@ const SHORTCUTS_CATALOG = [
     { id: 'despacho',           label: 'Nuevo Despacho',         desc: 'Declarar mercancía en tránsito',       Icon: Truck,         color: 'emerald' },
     { id: 'almacenes',          label: 'Almacenes',              desc: 'Gestionar almacenes y PT',             Icon: Warehouse,     color: 'violet' },
     { id: 'historial',          label: 'Historial',              desc: 'Ver historial de producciones',        Icon: ClipboardList, color: 'slate' },
-    { id: 'fichas',             label: 'Fichas y Recetas',       desc: 'Acceder a recetas y procesos',         Icon: BookOpen,      color: 'cyan' },
+    { id: 'fichas',             label: 'Fichas técnicas',        desc: 'Acceder a las fichas técnicas',        Icon: BookOpen,      color: 'cyan' },
     { id: 'catalogo_productos', label: 'Catálogo de Productos',  desc: 'Ver catálogo de productos terminados', Icon: Tag,           color: 'rose' },
     { id: 'proveedores',        label: 'Proveedores',            desc: 'Consultar información de proveedores', Icon: Truck,         color: 'orange' },
 ];
