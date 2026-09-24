@@ -7,6 +7,7 @@ import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import { faltaEmpacar } from '@/Kroma/estadoPlanta.js';
+import CargaPlanillaSheet from './CargaPlanillaSheet.jsx';
 import { scheduleHoldNotif, cancelHoldNotif, getNotifConfig, saveNotifConfig, NOTIF_BLOCKS, getNotifPermission, requestNotifPermission } from '../../utils/kromaNotifScheduler';
 import { createFirestoreScheduledNotif, cancelFirestoreScheduledNotif } from '../../utils/kromaFCM';
 import {
@@ -14,7 +15,7 @@ import {
     Clock, AlertTriangle, Package, Droplets,
     Calendar, Lock, ChevronDown, ChevronUp,
     Factory, Pause, FlaskConical, X, Zap,
-    Share2, PenLine, Award, Trash2, RotateCcw, Bell,
+    Share2, PenLine, Award, Trash2, RotateCcw, Bell, FileText,
 } from 'lucide-react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -2160,6 +2161,8 @@ export default function DailyProductionPage({ onNavigate }) {
     const isMaster = kromaRole === 'master';
 
     const [fichas, setFichas]           = useState([]);
+    // Carga de una planilla de papel: una producción que ya ocurrió.
+    const [cargaPlanilla, setCargaPlanilla] = useState(false);
     const [logs, setLogs]               = useState([]);
     const [materialsMap, setMaterialsMap] = useState({}); // materialId → material doc
     const [loading, setLoading]         = useState(true);
@@ -3679,10 +3682,17 @@ export default function DailyProductionPage({ onNavigate }) {
                         </button>
                     )}
                     {canProducir && (
-                        <button onClick={() => setView('select_ficha')}
-                            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-bold px-4 py-2.5 rounded-xl">
-                            <Plus size={15} /> Nueva
-                        </button>
+                        <>
+                            <button onClick={() => setCargaPlanilla(true)}
+                                title="Cargar una planilla de papel de una producción anterior"
+                                className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 text-sm font-bold px-3 py-2.5 rounded-xl">
+                                <FileText size={15} /> Planilla
+                            </button>
+                            <button onClick={() => setView('select_ficha')}
+                                className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-bold px-4 py-2.5 rounded-xl">
+                                <Plus size={15} /> Nueva
+                            </button>
+                        </>
                     )}
                 </div>
             </div>
@@ -3877,6 +3887,15 @@ export default function DailyProductionPage({ onNavigate }) {
             </div>
 
             {/* ── Finalizar Empaque overlay ── */}
+            {cargaPlanilla && (
+                <CargaPlanillaSheet
+                    fichas={fichas}
+                    suppliers={suppliers}
+                    kromaUser={kromaUser}
+                    onClose={() => setCargaPlanilla(false)}
+                    onSaved={() => { setCargaPlanilla(false); loadData(); }}
+                />
+            )}
             {finalizarLog && (
                 <FinalizarEmpaqueModal
                     log={finalizarLog}

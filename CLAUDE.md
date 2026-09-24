@@ -2344,3 +2344,65 @@ proceso"** en vez de "Sin leche en tanque".
 
 Verificado con trece casos de la lógica pura, incluido el del reporte
 (14 recepciones procesadas ⇒ 0 L).
+
+### Cargar las planillas de papel: qué significa de verdad "el histórico" (2026-09) ✅
+
+El dueño mandó dos planillas reales (LACTEOCA C.A · RECEPCIÓN DE LECHE /
+PROCESO, Nº 8 del 22-07 y Nº 11 del 12-09). **Kroma viene a sustituir esa hoja**;
+hoy se sigue llevando en papel como respaldo, y son **unas 32** las que hay que
+convertir en datos.
+
+**El obstáculo NO era la fecha.** Las fechas históricas (Fase 1) solo abren la
+puerta. El problema real: la planilla es un **resumen de todo el proceso en una
+hoja**, y el módulo de Producción es un **asistente en tiempo real** que obliga a
+recorrer bloque por bloque pidiendo datos que el papel nunca capturó. Pasar 32
+planillas por ahí es insoportable y **obligaría a inventar datos** para avanzar.
+
+**`src/Kroma/pages/operator/CargaPlanillaSheet.jsx` (NUEVO)** — un formulario que
+ES la planilla (mismos campos, mismo orden, para que quien transcribe reconozca
+el papel), abierto desde Producción con el botón **"Planilla"**, junto a "Nueva",
+y gobernado por el mismo `canEdit('produccionDiaria')`.
+
+**Lo que NO hace, y es lo más importante:**
+- **NO descuenta inventario.** Esos 177 de cuajo se consumieron en julio; el
+  stock de hoy no los tiene. Descontarlos destruiría el inventario real y —con
+  el arreglo del faltante— llenaría la pantalla de avisos.
+- **NO genera producto terminado.** Ese queso se vendió hace meses; meterlo al
+  almacén inventaría existencias que no están.
+Los insumos se guardan en `insumosDeclarados`, como dato histórico del lote, no
+como movimiento de almacén.
+
+**Tres cosas que el papel impuso:**
+- **Varios productores en una planilla** (la del 22-07: Guanare 591,37 +
+  Masparrito 292,5 = 883,87 L) ⇒ N recepciones que alimentan una producción.
+- **Los campos en blanco son lo NORMAL**: la del 12-09 no trae ni un parámetro
+  de leche ni la curva de pH/T°. Solo se exigen fecha, producto, litros y kilos.
+  Palabras del dueño: *"Kroma es muchísimo más específico y completo"* que la
+  planilla — no hay que modelar sobre las carencias del papel.
+- **La merma es la diferencia**, no un selector: las dos planillas traen 10 L
+  exactos (883,87→873,87 y 427,76→417,76), así que se sugiere total−10 pero
+  manda lo que anotó el operario.
+
+**Dos trampas evitadas por diseño (verificadas con `estadoPlanta.js`):**
+- Las recepciones se crean **`status:'completada'`** — crearlas pendientes las
+  mostraría como leche disponible en el tanque: exactamente la "leche fantasma"
+  recién corregida.
+- El log va **`estado:'completada'` + `empaqueFinalizado:true` +
+  `disposicion:'historico'`** — si quedara como `guardar_todo` sin empacar, las
+  32 planillas aparecerían como trabajo pendiente en el inicio del operario.
+
+**Bug encontrado de paso:** `generateLote` usa `new Date()`, así que una
+producción de julio habría recibido un lote sellado con la fecha de hoy. La
+carga histórica usa `loteHistorico(producto, fecha)`, con la fecha real y sufijo
+`-H`.
+
+El **número de planilla NO se guarda** (decisión del dueño). La coma decimal del
+papel ("591,37") se acepta: el parseo normaliza coma y punto.
+
+Verificado con siete casos, incluidos los números reales de las dos planillas
+(5,66 y 7,31 L/kg; merma 10; suma 883,87).
+
+**Pendiente/futuro**: el salado en salmuera exige temperatura + titulación +
+salinidad en el flujo normal, y ninguna planilla los trae — la carga histórica
+lo esquiva porque no pasa por el runner, pero si algún queso del histórico fue
+en salmuera, esos parámetros simplemente no existen en el papel.
