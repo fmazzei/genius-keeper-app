@@ -24,6 +24,7 @@ import ExportesView from './ExportesView.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import PullToRefresh from '@/Components/PullToRefresh.jsx';
+import TableroGerencial from './TableroGerencial.jsx';
 
 // ✅ Se importan ambos componentes del planificador
 import MonthlyPlanner from './Planner/MonthlyPlanner.jsx';
@@ -32,6 +33,7 @@ import Planner from './Planner/Planner.jsx';
 const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     const { posList, reports, loading: geniusLoading } = useGeniusEngine(role);
     const [refreshKey, setRefreshKey] = useState(0);   // "tirar para actualizar" del tablero
+    const [vistaDash, setVistaDash] = useState('tablero');   // 'tablero' (8 bloques) | 'kpis' (indicadores de campo)
     const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole(role);
@@ -205,7 +207,22 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                                 await new Promise(r => setTimeout(r, 600));   // deja ver que pasó algo
                             }}
                         >
-                            <GerencialDashboard {...commonProps} role={role} readOnly={readOnly} onNavigate={setCurrentView} refreshKey={refreshKey} />
+                            {/* Decisión del dueño (2026-09): la portada del gerente es el
+                                TABLERO de 8 bloques. Los 15 KPIs de campo no se borraron —
+                                viven un toque más adentro, en "Indicadores de campo". */}
+                            {vistaDash === 'tablero'
+                                ? <TableroGerencial key={refreshKey} onVerIndicadores={() => setVistaDash('kpis')} />
+                                : (
+                                    <>
+                                        <div className="px-4 md:px-6 pt-4">
+                                            <button type="button" onClick={() => setVistaDash('tablero')}
+                                                className="text-xs font-bold text-brand-blue bg-white border border-slate-200 rounded-xl px-3 py-2 hover:shadow-md">
+                                                ← Volver al Tablero
+                                            </button>
+                                        </div>
+                                        <GerencialDashboard {...commonProps} role={role} readOnly={readOnly} onNavigate={setCurrentView} refreshKey={refreshKey} />
+                                    </>
+                                )}
                         </PullToRefresh>
                         <div className="snap-center shrink-0 w-full h-full overflow-y-auto">
                             <div className="w-full max-w-5xl mx-auto">

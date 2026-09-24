@@ -19,6 +19,7 @@ const { getAccessToken, listAllInvoices, getInvoiceDetail, getContactDetail, exc
 const { upsertFacturaFromZoho, resolveVendedorFromPreload, esClienteOficina, extraerRif, stripSucursal } = require('./facturaSync');
 const { revertirAcumulados } = require('./facturaCommissionOps');
 const { upsertClientesRegistry, loadClienteMap } = require('./clientesRegistry');
+const { sincronizarCuentasPorPagar } = require('./zohoBills');
 
 /**
  * Anula en GK una factura que Zoho reporta como VOID, si existe (y, en modo por
@@ -791,6 +792,17 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
     } catch (e) {
         // Se declara, no se esconde: el resto del resultado sigue siendo válido.
         res.cuadreError = String(e?.message || e).slice(0, 300);
+    }
+
+    // CUENTAS POR PAGAR: la otra mitad de la caja. Mismo barrido, misma sesión
+    // de Zoho (el token ya está pedido). Solo en el barrido GLOBAL: por vendedor
+    // no tiene sentido, los proveedores no son de nadie.
+    if (!vendedorId) {
+        try {
+            res.porPagar = await sincronizarCuentasPorPagar({ accessToken, organizationId, dataCenter: creds.dataCenter });
+        } catch (e) {
+            res.porPagar = { autorizado: false, motivo: String(e?.message || e).slice(0, 200) };
+        }
     }
 
     // Marca de tiempo de la última conciliación (visible en Integraciones).

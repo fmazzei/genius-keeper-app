@@ -866,6 +866,37 @@ export default function MaterialsInventoryPage() {
         if (matUpdate) {
             setMaterials(prev => prev.map(m => m.id === mat.id ? { ...m, costoUSD: matUpdate.costoUSD } : m));
         }
+
+        // LIBRO DE COMPRAS. Hasta ahora una entrada actualizaba el stock y el
+        // costo promedio y no dejaba NINGÚN rastro de la compra en sí: no había
+        // forma de responder "cuánto compramos este mes, a quién". Se escribe
+        // fuera de la transacción a propósito — si esto falla, el inventario y
+        // el costeo (que es lo crítico) ya quedaron bien.
+        if (!esAjuste && entradaBaseUnits > 0 && costoTotal > 0) {
+            try {
+                await addDoc(collection(db, 'kroma_compras'), {
+                    empresaId:      kromaUser?.empresaId || 'lacteoca',
+                    materialId:     mat.id,
+                    materialNombre: mat.nombre,
+                    categoria:      mat.categoria || 'otros',
+                    proveedorId:     mat.proveedorId || '',
+                    proveedorNombre: mat.proveedorNombre || '',
+                    cantidad:       addCerrado,
+                    unidad:         config.presentacionTipo === 'granel' ? config.unidadBase : config.presentacionTipo,
+                    cantidadBase:   entradaBaseUnits,
+                    unidadBase:     config.unidadBase,
+                    costoTotal:     Number(costoTotal) || 0,
+                    costoUnitarioBase: entradaBaseUnits > 0 ? (Number(costoTotal) || 0) / entradaBaseUnits : 0,
+                    notas:          notas || '',
+                    registradoPor:       kromaUser?.id || '',
+                    registradoPorNombre: kromaUser?.name || '',
+                    fecha:     serverTimestamp(),
+                    createdAt: serverTimestamp(),
+                });
+            } catch (e) {
+                console.error('No se pudo registrar la compra en el libro:', e);
+            }
+        }
     }
 
     async function handleSetEnUso(mat, newCerrado, newEnUso) {

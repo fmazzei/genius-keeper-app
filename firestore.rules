@@ -484,11 +484,15 @@ service cloud.firestore {
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_suppliers/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      // Lectura para gerencia/máster de GK: el Tablero Gerencial muestra la
+      // lista de proveedores sin obligar al gerente a entrar a Kroma.
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
+      allow update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_materials/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
+      allow update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_recipes/{id} {
@@ -517,8 +521,21 @@ service cloud.firestore {
       allow delete: if isKromaAdmin() && kromaSameEmpresa(resource.data);
     }
     match /kroma_inventory_materials/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      // Lectura para gerencia/máster: alimenta "Compras" del Tablero Gerencial
+      // (capital inmovilizado en insumos). Escritura solo Kroma.
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
+      allow update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
+    }
+    // LIBRO DE COMPRAS. Antes no existía: las entradas de material actualizaban
+    // el inventario y el costo promedio, pero no quedaba rastro de la COMPRA
+    // (fecha, proveedor, monto), así que "Compras / histórico" no tenía de dónde
+    // salir. Lo escribe Kroma al registrar una entrada con costo; lo lee también
+    // gerencia/máster de GK para el Tablero Gerencial. Inmutable: es un libro.
+    match /kroma_compras/{id} {
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
+      allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
+      allow update, delete: if isKromaMaster();
     }
     match /kroma_alerts/{id} {
       allow read:   if isKromaAccess() && kromaSameEmpresa(resource.data);

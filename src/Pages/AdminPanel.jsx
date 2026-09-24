@@ -4832,6 +4832,15 @@ const IntegracionesSection = () => {
                                 )}
                             </div>
                         )}
+                        {reconResult.porPagar && (
+                            <p className={`mt-1 pt-1 border-t border-emerald-200 ${reconResult.porPagar.autorizado ? '' : 'text-amber-700'}`}>
+                                {reconResult.porPagar.autorizado
+                                    ? <>Cuentas por pagar: <b>{reconResult.porPagar.nAbiertas ?? 0}</b> facturas de proveedor abiertas
+                                        {' · '}<b>${(reconResult.porPagar.porPagar || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}</b>
+                                        {reconResult.porPagar.vencidas > 0 ? <> (<b className="text-red-600">${(reconResult.porPagar.vencidas).toLocaleString('es-VE', { maximumFractionDigits: 0 })} vencido</b>)</> : null}</>
+                                    : <><b>Cuentas por pagar: no se pudieron leer.</b> {reconResult.porPagar.motivo}</>}
+                            </p>
+                        )}
                         {reconResult.unidades && (
                             <p className="mt-1 pt-1 border-t border-emerald-200">
                                 Unidades: detalle consultado <b>{reconResult.unidades.detalleConsultados ?? 0}</b> · rellenadas <b className="text-emerald-700">{reconResult.unidades.detalleRellenadas ?? 0}</b> · derivadas del monto <b className="text-emerald-700">{reconResult.unidades.derivadasDeMonto ?? 0}</b>
@@ -4896,7 +4905,7 @@ const IntegracionesSection = () => {
                     <summary className="cursor-pointer text-xs font-semibold text-slate-600 select-none">Credenciales de la API de Zoho (configurar una vez)</summary>
                     <div className="mt-3 space-y-2">
                         <p className="text-[11px] text-slate-400">
-                            En el Zoho API Console crea un <b>Self Client</b>. Pega aquí el <b>Client ID</b> y el <b>Client Secret</b>. Luego, en la pestaña <b>Generate Code</b> de Zoho, con scope <code className="bg-slate-100 px-1 rounded">ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.settings.READ</code> (los tres, separados por coma — <b>CREATE</b> es lo que permite facturar desde GK) y duración 10 min, genera el <b>código</b> y pégalo abajo. GK lo canjea por el token permanente. El código dura solo 10 minutos — pégalo apenas lo generes.
+                            En el Zoho API Console crea un <b>Self Client</b>. Pega aquí el <b>Client ID</b> y el <b>Client Secret</b>. Luego, en la pestaña <b>Generate Code</b> de Zoho, con scope <code className="bg-slate-100 px-1 rounded">ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.settings.READ</code> (los cuatro, separados por coma — <b>CREATE</b> permite facturar desde GK y <b>bills.READ</b> trae las cuentas por pagar al Tablero Gerencial) y duración 10 min, genera el <b>código</b> y pégalo abajo. GK lo canjea por el token permanente. El código dura solo 10 minutos — pégalo apenas lo generes.
                         </p>
                         <input type="text" value={creds.clientId} onChange={e => setCreds(c => ({ ...c, clientId: e.target.value }))} placeholder="Client ID" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
                         <input type="password" value={creds.clientSecret} onChange={e => setCreds(c => ({ ...c, clientSecret: e.target.value }))} placeholder="Client Secret" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />

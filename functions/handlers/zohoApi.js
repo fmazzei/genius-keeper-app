@@ -99,6 +99,37 @@ async function listAllInvoices({ accessToken, organizationId, dataCenter, maxPag
 }
 
 /**
+ * Trae UNA página de FACTURAS DE PROVEEDOR (bills) = cuentas por PAGAR.
+ * Requiere el scope `ZohoBooks.bills.READ` en el Self Client: sin él Zoho
+ * responde 401 y la sincronización lo reporta como "falta autorizar".
+ */
+async function listBillsPage({ accessToken, organizationId, dataCenter, page, perPage = 200 }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/bills`, {
+        params: { organization_id: organizationId, page, per_page: perPage, sort_column: 'date', sort_order: 'D' },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+        timeout: 30000,
+    });
+    return {
+        bills:   Array.isArray(res.data?.bills) ? res.data.bills : [],
+        hasMore: res.data?.page_context?.has_more_page === true,
+    };
+}
+
+/** Todas las facturas de proveedor, paginando. `complete` = se agotó el listado. */
+async function listAllBills({ accessToken, organizationId, dataCenter, maxPages = 20, perPage = 200 }) {
+    const all = [];
+    let complete = true;
+    for (let page = 1; page <= maxPages; page++) {
+        const { bills, hasMore } = await listBillsPage({ accessToken, organizationId, dataCenter, page, perPage });
+        all.push(...bills);
+        if (!hasMore || bills.length === 0) { complete = true; break; }
+        if (page === maxPages && hasMore) complete = false;
+    }
+    return { bills: all, complete };
+}
+
+/**
  * Trae el DETALLE de una factura (incluye line_items, que el listado NO trae).
  * Se usa para rellenar las unidades de facturas que entraron por conciliación.
  * @returns {Promise<object|null>} el objeto invoice con line_items, o null.
@@ -234,4 +265,4 @@ async function createInvoice({ accessToken, organizationId, dataCenter, invoice,
     return creada;
 }
 
-module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, exchangeCode, listItems, createInvoice };
+module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, exchangeCode, listItems, createInvoice };

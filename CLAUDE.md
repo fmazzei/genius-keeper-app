@@ -793,6 +793,73 @@ cartera (`estado:'anulada'`, `duplicadoDe:<id bueno>`) **sin tocar comisiones**
 —la factura buena ya las tiene— y se DECLARA en pantalla con los dos ids, para
 que el admin borre la copia.
 
+## Tablero Gerencial — la portada del gerente, rediseñada (2026-09) ✅
+
+Pedido del dueño: cambiar el Dashboard del gerente para que responda **ocho**
+preguntas del negocio. **Decisión suya: REEMPLAZO TOTAL** de la portada anterior
+(15 KPIs de campo + bandas ¿Vendemos?/¿Cobramos?) y **ver los datos de Kroma
+DENTRO de GK**, no un botón que lo saque de la app.
+
+**`src/Pages/TableroGerencial.jsx`** — 8 tarjetas, cada una con UNA cifra que se
+entiende sola y una hoja de detalle:
+
+| # | Tarjeta | De dónde sale |
+|---|---|---|
+| 01 | Cuentas por cobrar | `facturas_vendedor` (`facturaEstado`) → abre `CarteraVencidaModal` |
+| 02 | Cuentas por pagar | **`cuentas_por_pagar`** (NUEVO, bills de Zoho) |
+| 03 | Clientes | `clientes_zoho` (con vendedor / oficina / sin asignar) |
+| 04 | Proveedores | **`kroma_suppliers`** |
+| 05 | Ventas del mes + histórico 12 meses | `facturas_vendedor` |
+| 06 | Devoluciones del mes + histórico | `devoluciones` |
+| 07 | Compras del mes + capital inmovilizado | **`kroma_compras`** (NUEVO) + `kroma_inventory_materials` |
+| 08 | Producción del mes + histórico | `kroma_production_logs` |
+
+**Los 15 KPIs auditados NO se borraron.** `GerencialDashboard.jsx` sigue vivo,
+un toque más adentro: botón "Indicadores de campo →" en el Tablero y "← Volver
+al Tablero" de regreso (`vistaDash` en `ManagerLayout`). Tirar para actualizar
+sigue funcionando sobre los dos.
+
+### Tres cosas que NO existían y hubo que construir
+
+**1. Cuentas por pagar** (`functions/handlers/zohoBills.js` + `zohoApi.listAllBills`).
+GK sabía lo que la empresa COBRA y no lo que DEBE. Baja los *bills* de Zoho a
+`cuentas_por_pagar/{numero}` con el mismo criterio que la cartera por cobrar:
+saldo real (`balance`), estatus de Zoho, y las que Zoho ya no reconoce se
+**marcan** (`ausenteEnZoho`), nunca se borran. Corre dentro del barrido GLOBAL
+(la sesión de Zoho ya está abierta); por vendedor no aplica — los proveedores no
+son de nadie. El resumen queda en `settings/appConfig.zohoPorPagar`.
+**⚠️ Requiere `ZohoBooks.bills.READ` en el Self Client.** El token actual solo
+tiene invoices+settings, así que hoy responde `autorizado:false` con el paso a
+seguir: **no inventa un cero**, que sería peor que no mostrar nada. Las
+instrucciones de Integraciones ya piden los cuatro scopes.
+
+**2. Libro de compras** (`kroma_compras`, NUEVO). Hallazgo real: registrar una
+entrada de material actualizaba el stock y el costo promedio ponderado pero **no
+dejaba NINGÚN rastro de la compra** (fecha, proveedor, monto) — "Compras /
+histórico" habría estado vacío para siempre. `MaterialsInventoryPage.handleEntrada`
+ahora escribe la compra cuando hay costo y no es un ajuste de conteo. Se escribe
+**fuera** de la transacción a propósito: si el libro falla, el inventario y el
+costeo —que es lo crítico— ya quedaron bien. **Límite honesto: el histórico
+arranca hoy**, no hay forma de reconstruir hacia atrás; la tarjeta lo dice y
+mientras tanto muestra el **capital inmovilizado** en insumos, que sí es real.
+
+**3. Reglas de Firestore para el cruce GK ↔ Kroma.** `kroma_suppliers`,
+`kroma_materials` y `kroma_inventory_materials` pasaron a `read: isKromaAccess()
+|| isAdmin()` (escritura sigue siendo solo de Kroma), igual que ya estaba
+`kroma_production_logs`. `kroma_compras` es un libro: crea Kroma, lee también
+gerencia/máster, corrige solo el máster.
+
+**`useTableroGerencial`** carga las 8 fuentes en UNA tanda paralela y cada una
+cae a vacío por su cuenta — que Kroma no responda (reglas, datos sin migrar) NO
+deja en blanco el lado comercial. Las consultas a `kroma_*` llevan el
+`where('empresaId','==','lacteoca')` EXPLÍCITO que exigen las reglas multi-empresa
+(ver "las queries de lista NO filtraban por empresa"); GK es la app comercial de
+una sola empresa, de ahí la constante.
+
+**Pendiente del dueño:** regenerar el Self Client con `ZohoBooks.bills.READ` para
+encender la tarjeta 02. Si Proveedores/Producción salen vacíos, falta correr
+"Migrar datos de Lacteoca" (backfill de `empresaId`) en Kroma → Control del Sistema.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al
