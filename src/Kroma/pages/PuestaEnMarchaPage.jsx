@@ -25,9 +25,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../KromaContext';
+import { leerSello, declararSello, fmtSello } from '../selloDatos.js';
 import {
     Truck, Tag, Package, PackageOpen, BookOpen, Droplets, Factory,
-    Warehouse, Check, ChevronRight, Loader, RefreshCw, AlertCircle,
+    Warehouse, Check, ChevronRight, Loader, RefreshCw, AlertCircle, ShieldCheck,
 } from 'lucide-react';
 
 // Cada paso: qué es, de qué módulo depende el permiso, a qué pantalla lleva y
@@ -155,9 +156,18 @@ function PasoRow({ paso, conteo, listo, puedeAccionar, onIr }) {
 
 export default function PuestaEnMarchaPage({ onNavigate }) {
     const { kromaUser, kromaRole, canEdit } = useKroma();
+    // Declarar el sello es del máster: es un juicio sobre la calidad de
+    // TODOS los datos, no una tarea de un oficio. Las reglas de Firestore
+    // ya restringen la escritura de `kroma_empresas` al máster; esto es el
+    // candado de la UI para que a los demás ni se les ofrezca.
+    const esMaster = kromaRole === 'master' || kromaRole === 'kroma_owner';
     const empresaId = kromaUser?.empresaId || EMPRESA_FALLBACK;
 
     const [conteos, setConteos] = useState(null);
+    const [sello, setSello]     = useState(null);
+    const [selloDraft, setSelloDraft] = useState('');
+    const [guardandoSello, setGuardandoSello] = useState(false);
+    const [selloError, setSelloError] = useState('');
     const [loading, setLoading] = useState(true);
     const [error, setError]     = useState('');
 
@@ -179,6 +189,9 @@ export default function PuestaEnMarchaPage({ onNavigate }) {
                 }
             }));
             setConteos(Object.fromEntries(pares));
+            const s = await leerSello(empresaId);
+            setSello(s);
+            setSelloDraft(s || new Date().toISOString().split('T')[0]);
         } catch (e) {
             console.error(e);
             setError('No se pudo leer el estado de la planta. Revisa tu señal y reintenta.');
@@ -263,6 +276,68 @@ export default function PuestaEnMarchaPage({ onNavigate }) {
                         puedeAccionar={puedeAccionar} onIr={onNavigate} />
                 ))}
             </div>
+
+
+            {/* ── El sello: datos confiables desde… ──
+                Va al final a propósito: es la firma que cierra el arranque, no
+                un campo más del formulario. Con la carga de historia hacia
+                atrás, sin esta fecha gerencia no puede distinguir "julio rindió
+                mal" de "julio se cargó a medias". */}
+            <section className="mt-6 bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                <div className="flex items-start gap-3">
+                    <ShieldCheck size={18} className={sello ? 'text-emerald-400 shrink-0 mt-0.5' : 'text-slate-600 shrink-0 mt-0.5'} />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-white font-semibold text-sm">Datos confiables desde</p>
+                        {sello ? (
+                            <p className="text-emerald-400 text-sm mt-1 font-medium">{fmtSello(sello)}</p>
+                        ) : (
+                            <p className="text-slate-500 text-xs mt-1 leading-snug">
+                                Nadie lo ha declarado todavía. Hasta que lo hagas, los tableros de
+                                gerencia no pueden decir desde cuándo hay que creerles.
+                            </p>
+                        )}
+
+                        {esMaster ? (
+                            <div className="mt-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <input
+                                        type="date"
+                                        value={selloDraft}
+                                        onChange={e => setSelloDraft(e.target.value)}
+                                        className="bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-emerald-500"
+                                    />
+                                    <button
+                                        onClick={async () => {
+                                            if (!selloDraft) return;
+                                            setGuardandoSello(true); setSelloError('');
+                                            try {
+                                                await declararSello(empresaId, selloDraft, kromaUser);
+                                                setSello(selloDraft);
+                                            } catch (e) {
+                                                console.error(e);
+                                                setSelloError('No se pudo guardar. Revisa tu señal e intenta de nuevo.');
+                                            } finally { setGuardandoSello(false); }
+                                        }}
+                                        disabled={guardandoSello || !selloDraft}
+                                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
+                                    >
+                                        {guardandoSello ? 'Guardando…' : sello ? 'Corregir' : 'Declarar'}
+                                    </button>
+                                </div>
+                                <p className="text-slate-600 text-xs mt-2 leading-snug">
+                                    Es tu juicio, no un cálculo: la fecha a partir de la cual das los
+                                    datos por buenos. Por eso no se deduce sola — el dato más antiguo
+                                    cargado puede ser una recepción suelta que no significa que ese mes
+                                    esté completo.
+                                </p>
+                                {selloError && <p className="text-rose-400 text-xs mt-2">{selloError}</p>}
+                            </div>
+                        ) : (
+                            <p className="text-slate-600 text-xs mt-2">Lo declara el máster.</p>
+                        )}
+                    </div>
+                </div>
+            </section>
 
             <p className="text-slate-600 text-xs mt-6 leading-relaxed">
                 El estado sale de los datos reales, no de casillas que alguien marca: si hay

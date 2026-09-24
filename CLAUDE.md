@@ -2276,3 +2276,33 @@ Lo que a gerencia sí le falta es la **fecha de corte**: desde cuándo los datos
 son confiables. Y eso es exactamente el "sello" que el dueño dejó pendiente de
 decidir (deducido del dato más antiguo vs. declarado por él), así que la Fase 6
 se reduce a esa decisión y no a una reescritura.
+
+### El sello: "datos confiables desde…" — DECLARADO (2026-09) ✅
+
+Cierra la Fase 6. Desde que la planta puede cargar historia hacia atrás (Fase 1),
+un indicador de julio puede significar dos cosas muy distintas: que julio rindió
+mal, o que julio se cargó a medias. Sin fecha de corte gerencia no las distingue,
+y un tablero que no se puede interpretar es peor que uno vacío porque invita a
+decidir sobre él.
+
+**Decisión del dueño: se DECLARA, no se deduce.** Se evaluó deducirlo del dato
+más antiguo cargado —nunca se desactualiza— y se descartó: cuando la historia
+entra en desorden, "el dato más antiguo" puede ser una recepción suelta de marzo
+que NO significa que marzo esté completo; el sello mentiría con cara de
+precisión. "Desde acá confío" es un juicio del dueño, no un cálculo.
+
+- **`src/Kroma/selloDatos.js` (NUEVO)**: `leerSello` / `declararSello` /
+  `fmtSello`. Vive en **`kroma_empresas/{empresaId}.datosConfiablesDesde`**
+  (+ quién y cuándo lo declaró) porque es una propiedad de la empresa y esa
+  colección ya es de escritura exclusiva del máster (`isKromaMasterAccess`) y de
+  lectura para todo su equipo: **no hizo falta colección nueva ni tocar reglas**.
+  `fmtSello` arma la fecha con partes locales — `new Date('2026-06-12')` se
+  interpreta como UTC y en Venezuela retrocede un día.
+- **Se declara al final del tablero de Puesta en marcha**, que es donde cierra
+  el arranque, y solo lo ve el máster (`kroma_users.role`, candado de UI; el
+  candado real son las reglas). Si falla la lectura se trata como "no
+  declarado": **nunca se inventa una fecha**, que es el punto entero del sello.
+- **Se muestra en el inicio de gerencia**, bajo el mes. Si nadie lo declaró, lo
+  dice en ámbar en vez de callar.
+
+Con esto queda cerrado el programa completo (Fases 0 a 6).

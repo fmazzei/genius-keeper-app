@@ -12,6 +12,7 @@ import {
     Truck, Warehouse, ClipboardList, BookOpen, Tag, FlaskConical,
 } from 'lucide-react';
 import { useKroma } from '../KromaContext';
+import { leerSello, fmtSello } from '../selloDatos.js';
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 
@@ -389,6 +390,14 @@ const COLOR_MAP = {
 
 export function ManagerHome({ onNavigate }) {
     const { kromaUser } = useKroma();
+    // El sello dice desde cuándo estos números son interpretables. Sin él, un
+    // mes flojo y un mes cargado a medias se ven exactamente igual.
+    const [sello, setSello] = useState(null);
+    useEffect(() => {
+        let vivo = true;
+        leerSello(kromaUser?.empresaId || 'lacteoca').then(s => { if (vivo) setSello(s); });
+        return () => { vivo = false; };
+    }, [kromaUser?.empresaId]);
     const { data, loading, error, reload } = useKromaDashboard();
     const [modal, setModal] = useState(null);
     const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
@@ -469,6 +478,11 @@ export function ManagerHome({ onNavigate }) {
                                 Hola, {kromaUser?.name?.split(' ')[0] || 'Gerencia'}
                             </h2>
                             <p className="text-slate-400 text-sm capitalize">{new Date().toLocaleDateString('es-VE', { month: 'long', year: 'numeric' })}</p>
+                            {sello ? (
+                                <p className="text-slate-500 text-xs mt-0.5">Datos confiables desde el {fmtSello(sello)}</p>
+                            ) : (
+                                <p className="text-amber-500/80 text-xs mt-0.5">Sin fecha de corte declarada — no se sabe desde cuándo los datos están completos</p>
+                            )}
                         </div>
                         <button onClick={reload} className="p-2 text-slate-500 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors" title="Actualizar">
                             <RefreshCw size={16} />
