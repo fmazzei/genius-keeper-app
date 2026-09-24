@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, where } from 'firebase/firestore';
-import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction, Plus, Edit2, Trash2, Loader, Settings, BarChart3, ChefHat, Droplets, BookOpen, Tag, Factory, FlaskConical } from 'lucide-react';
+import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction, Plus, Edit2, Trash2, Loader, Settings, BarChart3, ChefHat, Droplets, BookOpen, Tag, Factory, FlaskConical, ChevronRight } from 'lucide-react';
 import { useKroma } from '../KromaContext';
 import SuppliersPageImpl from './admin/SuppliersPage';
 import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
@@ -56,46 +56,152 @@ const COLOR_MAP = {
     orange:  { bg: 'bg-orange-500/15',  icon: 'text-orange-400',  border: 'border-orange-500/25',  hover: 'hover:border-orange-500/50 hover:bg-orange-500/20'  },
 };
 
+// ─── Inicio del ADMINISTRADOR ─────────────────────────────────────────────────
+//
+// Antes: cuatro contadores (almacenes, proveedores, materiales, PT en stock).
+// Saber que hay 37 materiales no le dice al administrador NADA sobre su
+// trabajo, que es otro: **mantener los datos en un estado tal que la planta
+// pueda trabajar**. Un material sin proveedor, un empaque sin asignar a su
+// producto o un insumo agotado no se ven en ningún contador — y cada uno frena
+// algo río abajo, casi siempre en silencio y en manos de otra persona.
+//
+// Ahora la pantalla responde: **¿qué dato está incompleto y qué frena?**
+
+function Pendiente({ n, titulo, detalle, tone, view, onNavigate }) {
+    const tones = {
+        rose:  'bg-rose-500/10 border-rose-500/30 text-rose-300',
+        amber: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
+        slate: 'bg-slate-900 border-slate-800 text-slate-300',
+    };
+    return (
+        <button onClick={() => onNavigate?.(view)}
+            className={`w-full text-left border rounded-xl p-4 flex items-center gap-3 transition-colors hover:brightness-110 ${tones[tone]}`}>
+            <span className="font-mono font-bold text-xl shrink-0 w-9 text-center">{n}</span>
+            <span className="flex-1 min-w-0">
+                <span className="block font-semibold text-sm">{titulo}</span>
+                <span className="block text-xs opacity-70 mt-0.5 leading-snug">{detalle}</span>
+            </span>
+            <ChevronRight size={15} className="opacity-50 shrink-0" />
+        </button>
+    );
+}
+
 export function AdminHome({ onNavigate }) {
     const { kromaUser } = useKroma();
     const empresaId = kromaUser?.empresaId || 'lacteoca';
-    const [counts, setCounts] = useState({ warehouses: null, suppliers: null, materials: null, inventory: null });
+    const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
+    const [d, setD] = useState(null);
 
     useEffect(() => {
-        const load = async () => {
-            try {
-                const [whSnap, supSnap, matSnap, invSnap] = await Promise.all([
-                    getDocs(query(collection(db, 'kroma_warehouses'),         where('active', '==', true), where('empresaId', '==', empresaId))),
-                    getDocs(query(collection(db, 'kroma_suppliers'),          where('active', '==', true), where('empresaId', '==', empresaId))),
-                    getDocs(query(collection(db, 'kroma_materials'),          where('active', '==', true), where('empresaId', '==', empresaId))),
-                    getDocs(query(collection(db, 'kroma_inventory_pt'),       where('active', '==', true), where('empresaId', '==', empresaId))),
-                ]);
-                setCounts({ warehouses: whSnap.size, suppliers: supSnap.size, materials: matSnap.size, inventory: invSnap.size });
-            } catch {}
-        };
-        load();
+        let vivo = true;
+        (async () => {
+            const vacio = { docs: [] };
+            const q = (col) => getDocs(query(collection(db, col), where('empresaId', '==', empresaId))).catch(() => vacio);
+            const [matSnap, invSnap, prodSnap, supSnap, ptSnap, alertSnap] = await Promise.all([
+                q('kroma_materials'), q('kroma_inventory_materials'), q('kroma_products'),
+                q('kroma_suppliers'), q('kroma_inventory_pt'), q('kroma_alerts'),
+            ]);
+            if (!vivo) return;
+            const vivos = (snap) => (snap.docs || []).map(x => ({ id: x.id, ...x.data() })).filter(x => x.active !== false);
+
+            const materiales = vivos(matSnap);
+            const inv = Object.fromEntries(vivos(invSnap).map(x => [x.id, x]));
+
+            // Un material sin proveedor rompe la trazabilidad de la compra y
+            // deja la ficha del proveedor incompleta.
+            const sinProveedor = materiales.filter(m => !m.proveedorId);
+            // Sin costo no hay costo promedio ponderado ni costeo del lote.
+            const sinCosto     = materiales.filter(m => !(Number(m.costoUSD) > 0));
+            // Un empaque sin asignar NO se descuenta al generar el PT: sale de
+            // la sala y el maestro de materiales nunca se entera.
+            const empaqueSuelto = materiales.filter(
+                m => m.categoria === 'empaques' && (m.asignaciones || []).length === 0);
+            // Sin registro de inventario, la producción no puede descontarlo
+            // (avisa, pero no descuenta).
+            const sinInventario = materiales.filter(m => !inv[m.id]);
+            // Productos sin presentación no se pueden empacar.
+            const sinPresentacion = vivos(prodSnap).filter(p => (p.presentaciones || []).length === 0);
+
+            setD({
+                sinProveedor: sinProveedor.length,
+                sinCosto: sinCosto.length,
+                empaqueSuelto: empaqueSuelto.length,
+                sinInventario: sinInventario.length,
+                sinPresentacion: sinPresentacion.length,
+                alertas: vivos(alertSnap)
+                    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+                    .slice(0, 4),
+                nMateriales: materiales.length,
+                nProveedores: vivos(supSnap).length,
+                nPT: vivos(ptSnap).length,
+            });
+        })();
+        return () => { vivo = false; };
     }, [empresaId]);
 
-    const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
-
-    // Default summary tiles — never include "Usuarios Kroma" (use shortcuts for that)
-    const DEFAULT_TILES = [
-        { label: 'Almacenes',  value: counts.warehouses, Icon: Warehouse,     color: 'emerald', view: 'warehouses' },
-        { label: 'Proveedores',value: counts.suppliers,  Icon: Truck,         color: 'blue',    view: 'suppliers'  },
-        { label: 'Materiales', value: counts.materials,  Icon: Package,       color: 'amber',   view: 'materials'  },
-        { label: 'PT en Stock',value: counts.inventory,  Icon: Archive,       color: 'violet',  view: 'warehouses' },
-    ];
+    const cargando = !d;
+    const pendientes = cargando ? [] : [
+        { n: d.sinPresentacion, tone: 'rose',  view: 'products',      titulo: 'Productos sin presentaciones',
+          detalle: 'Sin presentación no se puede empacar ni generar producto terminado.' },
+        { n: d.sinProveedor,    tone: 'amber', view: 'materials',     titulo: 'Materiales sin proveedor',
+          detalle: 'Rompe la trazabilidad de la compra y el costeo del insumo.' },
+        { n: d.sinCosto,        tone: 'amber', view: 'materials',     titulo: 'Materiales sin costo',
+          detalle: 'Sin costo no hay promedio ponderado ni costo real del lote.' },
+        { n: d.empaqueSuelto,   tone: 'rose',  view: 'materials',     titulo: 'Empaques sin asignar a un producto',
+          detalle: 'No se descuentan al empacar: salen de la sala y el maestro nunca se entera.' },
+        { n: d.sinInventario,   tone: 'slate', view: 'materials_inv', titulo: 'Materiales sin existencias cargadas',
+          detalle: 'La producción avisa pero no puede descontarlos.' },
+    ].filter(x => x.n > 0);
 
     return (
         <div className="p-6 md:p-8">
             <h2 className="text-2xl font-bold text-white mb-1">
                 Hola, {kromaUser?.name?.split(' ')[0] || 'Administrador'}
             </h2>
-            <p className="text-slate-400 mb-8">Panel de Administración · Kroma.</p>
+            <p className="text-slate-400 mb-6">Esto es lo que les falta a los datos para que la planta trabaje.</p>
 
-            {/* Shortcuts section */}
+            {/* ── Lo que frena ── */}
+            <section className="mb-7">
+                {cargando ? (
+                    <div className="flex items-center gap-2 text-slate-500 text-sm py-6">
+                        <Loader size={15} className="animate-spin" /> Revisando los datos…
+                    </div>
+                ) : pendientes.length === 0 ? (
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-5">
+                        <p className="text-emerald-300 font-semibold text-sm">Los datos están completos.</p>
+                        <p className="text-emerald-400/70 text-xs mt-1">
+                            Nada de lo que mantienes está frenando a la planta.
+                        </p>
+                    </div>
+                ) : (
+                    <>
+                        <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">
+                            Pendiente de tu parte
+                        </p>
+                        <div className="space-y-2">
+                            {pendientes.map(p => <Pendiente key={p.titulo} {...p} onNavigate={onNavigate} />)}
+                        </div>
+                    </>
+                )}
+            </section>
+
+            {/* ── Avisos del inventario ── */}
+            {(d?.alertas || []).length > 0 && (
+                <section className="mb-7">
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Avisos</p>
+                    <div className="space-y-2">
+                        {d.alertas.map(a => (
+                            <div key={a.id} className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+                                <p className="text-amber-200 text-xs leading-snug">{a.mensaje}</p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {/* ── Accesos directos ── */}
             {shortcuts.length > 0 && (
-                <section className="mb-8">
+                <section className="mb-7">
                     <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Accesos Directos</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {shortcuts.map(({ label, desc, Icon, color, view }) => {
@@ -117,25 +223,24 @@ export function AdminHome({ onNavigate }) {
                 </section>
             )}
 
-            {/* Summary tiles — always shown, connected with real counts */}
+            {/* ── Los contadores, como contexto ── */}
             <section>
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Resumen</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {DEFAULT_TILES.map(({ label, value, color, Icon, view }) => {
-                        const c = COLOR_MAP[color] || COLOR_MAP.slate;
-                        return (
-                            <button key={label} onClick={() => onNavigate?.(view)}
-                                className={`bg-slate-900 border ${c.border} ${c.hover} rounded-xl p-5 text-left transition-all active:scale-95`}>
-                                <div className={`w-9 h-9 rounded-xl ${c.bg} flex items-center justify-center mb-3`}>
-                                    <Icon size={18} className={c.icon} />
-                                </div>
-                                <p className="text-2xl font-bold text-white font-mono">
-                                    {value === null ? <span className="text-slate-600 text-base">—</span> : value}
-                                </p>
-                                <p className="text-slate-400 text-sm mt-1">{label}</p>
-                            </button>
-                        );
-                    })}
+                <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">De un vistazo</p>
+                <div className="grid grid-cols-3 gap-3">
+                    {[
+                        { label: 'Proveedores', value: cargando ? null : d.nProveedores, Icon: Truck,   view: 'suppliers'  },
+                        { label: 'Materiales',  value: cargando ? null : d.nMateriales,  Icon: Package, view: 'materials'  },
+                        { label: 'PT en stock', value: cargando ? null : d.nPT,          Icon: Archive, view: 'warehouses' },
+                    ].map(({ label, value, Icon, view }) => (
+                        <button key={label} onClick={() => onNavigate?.(view)}
+                            className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-4 text-left transition-colors active:scale-95">
+                            <Icon size={15} className="text-slate-500 mb-2" />
+                            <p className="text-lg font-bold text-white font-mono leading-none">
+                                {value === null ? <span className="text-slate-700 text-sm">—</span> : value}
+                            </p>
+                            <p className="text-slate-500 text-xs mt-1 leading-tight">{label}</p>
+                        </button>
+                    ))}
                 </div>
             </section>
         </div>

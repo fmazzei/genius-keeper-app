@@ -2235,3 +2235,44 @@ dentro de Despachos dice "Sin inventario disponible", pero esa lista está
 filtrada por el buscador — el mensaje puede significar "no hay coincidencias",
 y un botón ahí estaría fuera de lugar además de dentro de un modal. El aviso
 accionable se puso al nivel de la página, donde sí corresponde.
+
+### Fase 5 — el inicio del administrador dice qué frena (2026-09) ✅
+
+Eran cuatro contadores (almacenes, proveedores, materiales, PT en stock). Saber
+que hay 37 materiales no le dice al administrador nada sobre su trabajo, que es
+otro: **mantener los datos en un estado tal que la planta pueda trabajar**. Un
+material sin proveedor, un empaque sin asignar o un insumo sin existencias no
+aparecen en ningún contador — y cada uno frena algo río abajo, en silencio y en
+manos de OTRA persona, que es lo que lo hace difícil de ver.
+
+`AdminHome` lista ahora lo que está incompleto, con el efecto concreto de cada
+cosa y un toque para ir a arreglarlo:
+- **Productos sin presentaciones** — sin presentación no se puede empacar ni
+  generar producto terminado.
+- **Materiales sin proveedor** — rompe la trazabilidad de la compra.
+- **Materiales sin costo** — sin costo no hay promedio ponderado ni costo real
+  del lote.
+- **Empaques sin asignar a un producto** — *no se descuentan al empacar*: salen
+  de la sala y el maestro de materiales nunca se entera (era un bug real,
+  corregido en la auditoría de 2026-09; acá se vuelve visible antes de que pase).
+- **Materiales sin existencias cargadas** — la producción avisa pero no puede
+  descontarlos.
+
+Si no hay nada pendiente lo dice explícitamente ("los datos están completos"),
+en vez de mostrar una lista vacía. Los avisos de `kroma_alerts` (incluido
+`faltante_inventario`) aparecen también acá, porque el que resuelve una compra
+faltante es él. Los contadores bajaron a la tira "De un vistazo".
+
+### Fase 6 — corrección: el inicio de gerencia NO eran contadores
+
+Al abrirlo para reescribirlo resultó que `ManagerHome` **ya es un tablero real**:
+rendimiento L/kg con tendencia contra el mes anterior, merma, capital
+inmovilizado en insumos y en PT, costo teórico por kg ponderado por lote, lotes
+sin empacar e historial reciente. La descripción de la Fase 6 en el plan ("los
+tres tableros siguen siendo contadores") era **falsa** — se escribió sin abrir
+el archivo.
+
+Lo que a gerencia sí le falta es la **fecha de corte**: desde cuándo los datos
+son confiables. Y eso es exactamente el "sello" que el dueño dejó pendiente de
+decidir (deducido del dato más antiguo vs. declarado por él), así que la Fase 6
+se reduce a esa decisión y no a una reescritura.
