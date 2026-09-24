@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { auth, db } from '@/Firebase/config.js';
+import { auth, db, functions } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, doc, getDoc, query, where, serverTimestamp } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { useKroma } from './KromaContext';
 import {
     Settings, BarChart3, ChefHat, Shield,
@@ -265,11 +266,20 @@ export default function KromaUserSelect({ onExitKroma }) {
     // KromaContext) — pero se resuelve su empresaId igual, en vez de asumir
     // 'lacteoca', por si el patrón se reutiliza más adelante.
     const [myEmpresaId, setMyEmpresaId] = useState('lacteoca');
+    const [reparando,   setReparando]   = useState(false);
 
     useEffect(() => {
         loadUsers();
         platformBiometricAvailable().then(setBioAvailable);
     }, []);
+
+    const leerPerfiles = async (empresaId) => {
+        const snap = await getDocs(query(collection(db, 'kroma_users'), where('empresaId', '==', empresaId)));
+        return snap.docs
+            .map((d, i) => ({ id: d.id, avatarIndex: i % AVATAR_COLORS.length, ...d.data() }))
+            .filter(u => u.active !== false)
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    };
 
     const loadUsers = async () => {
         try {
@@ -282,13 +292,38 @@ export default function KromaUserSelect({ onExitKroma }) {
                 }
             } catch {}
             setMyEmpresaId(empresaId);
-            const snap = await getDocs(query(collection(db, 'kroma_users'), where('empresaId', '==', empresaId)));
-            setUsers(
-                snap.docs
-                    .map((d, i) => ({ id: d.id, avatarIndex: i % AVATAR_COLORS.length, ...d.data() }))
-                    .filter(u => u.active !== false)
-                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-            );
+            let lista = await leerPerfiles(empresaId);
+
+            // Cero perfiles en una empresa que ya venía trabajando = los
+            // documentos no tienen `empresaId` y el where los deja fuera (ver
+            // repararDatosLacteoca). El equipo se quedaba afuera sin más pista
+            // que un "Agregar Usuario" — e invitaba a crear perfiles
+            // duplicados encima de los que sí existen. Se repara aquí mismo,
+            // una vez, y se vuelve a leer.
+            //
+            // También se repara si la migración nunca quedó marcada, aunque el
+            // selector se vea bien: una migración a medias deja los perfiles
+            // visibles y los INVENTARIOS vacíos, que es el mismo problema una
+            // pantalla más adentro. Cuesta una lectura.
+            let migrado = true;
+            if (empresaId === 'lacteoca') {
+                try {
+                    const emp = await getDoc(doc(db, 'kroma_empresas', 'lacteoca'));
+                    migrado = !!emp.exists() && !!emp.data()?.datosMigradosAt;
+                } catch { migrado = true; }   // sin permiso de lectura no adivinamos
+            }
+
+            if ((lista.length === 0 || !migrado) && empresaId === 'lacteoca') {
+                setReparando(true);
+                try {
+                    const fn  = httpsCallable(functions, 'repararDatosLacteoca');
+                    const res = await fn({});
+                    if (res?.data?.totalActualizados > 0) lista = await leerPerfiles(empresaId);
+                } catch (err) { console.error('repararDatosLacteoca falló:', err); }
+                finally { setReparando(false); }
+            }
+
+            setUsers(lista);
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
     };
@@ -334,7 +369,14 @@ export default function KromaUserSelect({ onExitKroma }) {
             </div>
 
             {loading ? (
-                <Loader className="animate-spin text-emerald-400" size={32} />
+                <div className="flex flex-col items-center gap-3">
+                    <Loader className="animate-spin text-emerald-400" size={32} />
+                    {reparando && (
+                        <p className="text-slate-400 text-xs text-center max-w-xs">
+                            Poniendo al día los datos de la empresa… solo pasa una vez.
+                        </p>
+                    )}
+                </div>
             ) : (
                 <div className="w-full max-w-2xl">
                     <p className="text-slate-400 text-center text-sm font-medium mb-6 uppercase tracking-widest">

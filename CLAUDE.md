@@ -1904,3 +1904,54 @@ desde su creación.
 **Reglas de Firestore**: `kroma_empresa_pins` es `allow read, write: if false`
 — solo el Admin SDK (dentro de las Cloud Functions) lo toca; exponerlo al
 cliente permitiría listar los PIN de todas las empresas.
+
+### "El equipo no puede entrar a Kroma: dice que no tiene permiso" (2026-09) ✅
+
+Reporte del dueño: desde los dispositivos de su equipo, la gente no podía
+acceder a Kroma. Auditoría con el emulador (`@firebase/rules-unit-testing`,
+test guardado en `tests/firestore.rules.test.mjs`) — **dos causas reales, las
+dos de la misma raíz: multi-empresa dejó cabos sueltos que solo se ven en
+producción.**
+
+**1. Un documento que NO EXISTE devolvía "permission-denied".** Todas las
+reglas `kroma_*` decían `allow read … kromaSameEmpresa(resource.data)`. En un
+`get()` de un documento inexistente, `resource` es **null** y `resource.data`
+revienta la evaluación: el cliente no recibe "no existe", recibe **"no tienes
+permiso"**. Y hay pantallas que abren, por diseño, documentos que todavía no
+existen:
+  - **Costos Fijos** lee `kroma_fixed_costs/{YYYY-MM}` — el doc del mes no
+    existe hasta que alguien lo guarda, o sea **el día 1 de CADA mes**;
+  - **Inventario de leche** lee `kroma_config` y **Rotación de Cava**
+    `kroma_settings`, que fallaban igual mientras nadie los hubiera configurado.
+  Fix: `kromaSameEmpresaDoc()` = `resource == null || kromaSameEmpresa(resource.data)`,
+  aplicado a los 33 sitios de lectura/actualización/borrado. Un documento que no
+  existe no tiene empresa que proteger; se deja pasar y Firestore responde "no
+  existe", que es la verdad. **`kroma_settings` tuvo que partir su `allow read,
+  write`** en `read, update, delete` + `create`: con `write`, un `create` (donde
+  `resource` también es null) habría dejado a cualquier empresa escribir sobre
+  otra.
+
+**2. El backfill de `empresaId` era un botón, y del botón dependía el acceso de
+todos.** Verificado otra vez en el emulador: una lista **sin** `where('empresaId')`
+le devuelve a Lacteoca los documentos de OTRA empresa (por eso el `where` es
+obligatorio), pero ese mismo `where` **no matchea los documentos sin el campo**.
+Si "Migrar datos de Lacteoca" no se corrió, Kroma se ve **vacío** — y lo primero
+que se ve vacío es el **selector de "¿quién eres?"**: los perfiles del equipo no
+aparecen y nadie puede entrar. Peor, el selector ofrecía entonces "Agregar
+usuario", invitando a crear perfiles **duplicados** encima de los que sí existen.
+  - **Ahora se repara solo**: callable **`repararDatosLacteoca`** (cualquier
+    cuenta autenticada cuyo `empresaId` resuelva a `lacteoca` — no es escalada:
+    solo etiqueta documentos que NO tienen empresa, que por definición son los
+    anteriores a multi-empresa; a una empresa nueva le responde `no_aplica`
+    para no entregarle los documentos sueltos de Lacteoca). El núcleo se extrajo
+    a `etiquetarDatosLacteoca(db)`, compartido con el botón del máster.
+  - `KromaUserSelect` lo llama cuando ve **cero perfiles**, y también cuando
+    falta la marca `kroma_empresas/lacteoca.datosMigradosAt` aunque el selector
+    se vea bien — una migración **a medias** deja los perfiles visibles y los
+    INVENTARIOS vacíos, que es el mismo problema una pantalla más adentro.
+    Cuesta una lectura.
+
+**Lección**: en las reglas, `resource.data` solo es seguro cuando el documento
+existe con certeza; y un paso de migración manual del que depende el acceso de
+todo un equipo no es un paso manual, es una bomba de tiempo — tiene que
+repararse solo o avisar, nunca fallar en silencio con las listas vacías.

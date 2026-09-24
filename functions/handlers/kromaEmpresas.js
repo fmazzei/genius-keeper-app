@@ -202,10 +202,15 @@ const KROMA_COLLECTIONS_TO_BACKFILL = [
     "kroma_notifications", "kroma_settings", "kroma_config", "kroma_fixed_costs",
 ];
 
-exports.backfillEmpresaIdLacteoca = onCall({ region: "us-central1", timeoutSeconds: 300 }, async (request) => {
-    await requireKromaMasterAccess(request);
-    const db = admin.firestore();
+/**
+ * Etiqueta con empresaId='lacteoca' todo documento de Kroma que no lo tenga.
+ * Idempotente: una segunda corrida no escribe nada. Devuelve cuántos tocó por
+ * colección, y el total — que es lo que permite decir "no había nada que
+ * migrar" en vez de "ya está" a ciegas.
+ */
+async function etiquetarDatosLacteoca(db) {
     const resultado = {};
+    let totalActualizados = 0;
     for (const col of KROMA_COLLECTIONS_TO_BACKFILL) {
         const snap = await db.collection(col).get();
         const faltantes = snap.docs.filter(d => d.data().empresaId === undefined);
@@ -214,8 +219,56 @@ exports.backfillEmpresaIdLacteoca = onCall({ region: "us-central1", timeoutSecon
             faltantes.slice(i, i + 400).forEach(d => batch.update(d.ref, { empresaId: "lacteoca" }));
             await batch.commit();
         }
+        totalActualizados += faltantes.length;
         resultado[col] = { total: snap.size, actualizados: faltantes.length };
     }
+    // Marca de "ya se migró" para que la app no tenga que barrer 20 colecciones
+    // en cada arranque solo para averiguar que no hay nada que hacer. Sin esto,
+    // una migración a medias (una colección tocada y el resto no) no se
+    // detectaría: el selector se vería bien y los inventarios vacíos.
+    try {
+        await db.doc("kroma_empresas/lacteoca").set({
+            datosMigradosAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    } catch (err) {
+        console.error("etiquetarDatosLacteoca: no se pudo marcar la migración:", err?.message || err);
+    }
+    return { resultado, totalActualizados };
+}
+
+// ── Auto-reparación: que NADIE tenga que acordarse de pulsar un botón ───────
+// El backfill de arriba era un botón en Control del Sistema, y de él dependía
+// que Kroma se viera. Si no se corría, las listas salían VACÍAS — empezando
+// por el selector de "¿quién eres?", así que el equipo entero se quedaba
+// afuera: sus perfiles simplemente no aparecían. Un paso manual del que
+// depende el acceso de todos no es un paso manual, es una bomba de tiempo.
+//
+// Esta versión la puede llamar la PROPIA app cuando detecta el síntoma (cero
+// perfiles en el selector), sin ser máster. No es una escalada: solo la
+// atiende quien ya entró como Lacteoca, y lo único que hace es marcar como
+// 'lacteoca' documentos que NO tienen empresa — que por definición son los
+// anteriores a multi-empresa, o sea, de Lacteoca. Una empresa nueva escribe
+// siempre su propio empresaId, así que no hay nada suyo que pueda arrastrar.
+exports.repararDatosLacteoca = onCall({ region: "us-central1", timeoutSeconds: 300 }, async (request) => {
+    if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
+    const db = admin.firestore();
+    const snap = await db.doc(`users_metadata/${request.auth.uid}`).get();
+    const meta = snap.data() || {};
+    const empresaId = meta.empresaId || "lacteoca";
+    if (empresaId !== "lacteoca") {
+        // Para una empresa nueva no hay nada que reparar: sus datos nacieron
+        // etiquetados. Y dejarla correr esto le entregaría los documentos sin
+        // dueño de Lacteoca.
+        return { ok: true, totalActualizados: 0, motivo: "no_aplica" };
+    }
+    const { resultado, totalActualizados } = await etiquetarDatosLacteoca(db);
+    return { ok: true, totalActualizados, resultado };
+});
+
+exports.backfillEmpresaIdLacteoca = onCall({ region: "us-central1", timeoutSeconds: 300 }, async (request) => {
+    await requireKromaMasterAccess(request);
+    const db = admin.firestore();
+    const { resultado } = await etiquetarDatosLacteoca(db);
 
     // PIN fijo de Lacteoca: "2025", apuntando a la cuenta compartida de
     // siempre (produccion@lacteoca.com). Idempotente.

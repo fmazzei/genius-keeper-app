@@ -72,6 +72,20 @@ service cloud.firestore {
     function kromaSameEmpresa(data) {
       return isKromaMaster() || data.get('empresaId', 'lacteoca') == kromaCallerEmpresaId();
     }
+    // Igual que kromaSameEmpresa, pero para LEER/escribir un documento que puede
+    // NO EXISTIR. Con `resource.data` a secas, un get() de un documento
+    // inexistente revienta la evaluación (resource es null) y el cliente recibe
+    // un "permission-denied" — el usuario ve "no tienes permiso" cuando en
+    // realidad no hay nada que leer. Pasaba de verdad: Costos Fijos abre el doc
+    // del mes (`kroma_fixed_costs/{YYYY-MM}`), que NO existe hasta que alguien
+    // lo guarda — o sea, el primer día de CADA mes; y la config de leche
+    // (`kroma_config`) y Rotación de Cava (`kroma_settings`) fallaban igual
+    // mientras nadie las hubiera configurado. Un documento que no existe no
+    // tiene empresa que proteger: se deja pasar y Firestore devuelve "no
+    // existe", que es la verdad.
+    function kromaSameEmpresaDoc() {
+      return resource == null || kromaSameEmpresa(resource.data);
+    }
     // Máster global (GK) O la cuenta compartida legacy de Kroma
     // (produccion@lacteoca.com, rol 'produccion') — es como se llega al
     // perfil "Master" del picker de Kroma, y desde ahí se administran las
@@ -464,67 +478,70 @@ service cloud.firestore {
     }
 
     match /kroma_settings/{docId} {
-      allow read, write: if isKromaAccess() && kromaSameEmpresa(resource.data);
-      allow create:      if isKromaAccess() && kromaSameEmpresa(request.resource.data);
+      // `write` incluiría create, y para un create `resource` es null: con
+      // kromaSameEmpresaDoc() cualquier empresa podría crear un doc de otra.
+      // Por eso van separados, como en el resto de las colecciones.
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
+      allow create:               if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_fixed_costs/{mesId} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_users/{userId} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_products/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_warehouses/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_suppliers/{id} {
       // Lectura para gerencia/máster de GK: el Tablero Gerencial muestra la
       // lista de proveedores sin obligar al gerente a entrar a Kroma.
-      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
-      allow update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_materials/{id} {
-      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
-      allow update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_recipes/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_processes/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_fichas/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_production_logs/{id} {
       // Lectura para gerencia/máster: alimenta la PISTA del lote en GK
       // (leche → producción → envasado → despacho). Escritura solo Kroma.
-      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
-      allow update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_milk_reception/{id} {
-      allow read:   if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:   if isKromaAccess() && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
-      allow update: if isKromaAccess() && kromaSameEmpresa(resource.data);
-      allow delete: if isKromaAdmin() && kromaSameEmpresa(resource.data);
+      allow update: if isKromaAccess() && kromaSameEmpresaDoc();
+      allow delete: if isKromaAdmin() && kromaSameEmpresaDoc();
     }
     match /kroma_inventory_materials/{id} {
       // Lectura para gerencia/máster: alimenta "Compras" del Tablero Gerencial
       // (capital inmovilizado en insumos). Escritura solo Kroma.
-      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
-      allow update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     // LIBRO DE COMPRAS. Antes no existía: las entradas de material actualizaban
@@ -533,29 +550,29 @@ service cloud.firestore {
     // salir. Lo escribe Kroma al registrar una entrada con costo; lo lee también
     // gerencia/máster de GK para el Tablero Gerencial. Inmutable: es un libro.
     match /kroma_compras/{id} {
-      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
       allow update, delete: if isKromaMaster();
     }
     match /kroma_alerts/{id} {
-      allow read:   if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:   if isKromaAccess() && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
-      allow update: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow update: if isKromaAccess() && kromaSameEmpresaDoc();
       allow delete: if isKromaMaster();
     }
     match /kroma_inventory_pt/{id} {
       // Lectura para gerencia/máster (pista del lote en GK). Escritura solo Kroma.
-      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
-      allow update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_warehouse_movements/{id} {
-      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresa(resource.data);
-      allow update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_notifications/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_despachos/{id} {
@@ -563,17 +580,17 @@ service cloud.firestore {
       // leerlos y marcarlos como recibidos al ingresarlos al almacén comercial
       // — pero solo los de SU MISMA empresa (en la práctica, solo Lacteoca
       // tiene vendedores/mercaderistas en GK).
-      allow read:   if (isKromaAccess() || isComercialAccess() || isMerchandiser()) && kromaSameEmpresa(resource.data);
-      allow update: if (isKromaAccess() || isComercialAccess() || isMerchandiser()) && kromaSameEmpresa(resource.data);
+      allow read:   if (isKromaAccess() || isComercialAccess() || isMerchandiser()) && kromaSameEmpresaDoc();
+      allow update: if (isKromaAccess() || isComercialAccess() || isMerchandiser()) && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
-      allow delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow delete: if isKromaAccess() && kromaSameEmpresaDoc();
     }
     match /kroma_edit_requests/{id} {
-      allow read, update, delete: if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_config/{id} {
-      allow read:  if isKromaAccess() && kromaSameEmpresa(resource.data);
+      allow read:  if isKromaAccess() && kromaSameEmpresaDoc();
       allow write: if isKromaMaster();
     }
   }
