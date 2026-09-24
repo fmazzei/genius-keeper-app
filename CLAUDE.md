@@ -2078,7 +2078,9 @@ Verificado con `npm run build` limpio y nueve casos de la lógica pura
 (`efectivo`/`defaultEditar`/`puedeVerCostos`), incluido que un apagado manual
 gane al default y que el operario nunca vea costos.
 
-**Pendiente de esta fase**: `DailyProductionPage` y `ProductionHistoryPage`
-todavía no consultan `canEdit` (la planilla es del operario y el historial es
-de lectura, así que hoy no cambia nada en la práctica); conviene cablearlas al
-tocar la Fase 1 para no dejar dos pantallas fuera de la regla.
+**Cerrado también**: `DailyProductionPage` consulta ahora `canEdit('produccionDiaria')`
+en sus dos entradas a una planilla nueva (el botón "Nueva" del encabezado y el
+"+ Iniciar nueva producción" del estado vacío) — quien solo consulta, por
+ejemplo gerencia mirando lo que hay en curso, ya no puede arrancar una.
+`ProductionHistoryPage` quedó fuera **porque no tiene una sola escritura**: es
+de lectura real, no hay nada que condicionar ahí.

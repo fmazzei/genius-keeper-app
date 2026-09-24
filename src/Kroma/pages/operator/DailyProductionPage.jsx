@@ -2144,7 +2144,10 @@ function NotifConfigModal({ userId, onClose }) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function DailyProductionPage() {
-    const { kromaUser, kromaRole } = useKroma();
+    const { kromaUser, kromaRole, canEdit } = useKroma();
+    // Correr la planilla es del maestro quesero. Quien solo consulta
+    // (p. ej. gerencia mirando lo que hay en curso) no la inicia.
+    const canProducir = canEdit('produccionDiaria');
     const isMaster = kromaRole === 'master';
 
     const [fichas, setFichas]           = useState([]);
@@ -3587,10 +3590,12 @@ export default function DailyProductionPage() {
                             <Bell size={18} />
                         </button>
                     )}
-                    <button onClick={() => setView('select_ficha')}
-                        className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-bold px-4 py-2.5 rounded-xl">
-                        <Plus size={15} /> Nueva
-                    </button>
+                    {canProducir && (
+                        <button onClick={() => setView('select_ficha')}
+                            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-sm font-bold px-4 py-2.5 rounded-xl">
+                            <Plus size={15} /> Nueva
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -3599,10 +3604,12 @@ export default function DailyProductionPage() {
                     <div className="text-center py-12">
                         <Factory size={36} className="text-slate-700 mx-auto mb-3" />
                         <p className="text-slate-500 text-sm">Sin producciones activas</p>
-                        <button onClick={() => setView('select_ficha')}
-                            className="mt-4 text-emerald-400 hover:text-emerald-300 text-sm font-semibold">
-                            + Iniciar nueva producción
-                        </button>
+                        {canProducir && (
+                            <button onClick={() => setView('select_ficha')}
+                                className="mt-4 text-emerald-400 hover:text-emerald-300 text-sm font-semibold">
+                                + Iniciar nueva producción
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="space-y-4">
