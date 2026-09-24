@@ -2084,3 +2084,48 @@ en sus dos entradas a una planilla nueva (el botón "Nueva" del encabezado y el
 ejemplo gerencia mirando lo que hay en curso, ya no puede arrancar una.
 `ProductionHistoryPage` quedó fuera **porque no tiene una sola escritura**: es
 de lectura real, no hay nada que condicionar ahí.
+
+### Fase 1 — Puesta en marcha: el tablero compartido + fechas reales (2026-09) ✅
+
+Decisión del dueño sobre QUIÉN carga el histórico: **las dos cosas.** El máster
+es plenipotenciario y puede cargarlo todo por su cuenta; y también puede poner a
+cada rol a hacer lo suyo —administrador, operario, gerente— *"todo debería
+converger perfectamente y engranar para que el sistema tenga toda la información
+lista"*. Eso descartó el diseño anterior (un módulo del máster) por uno mejor.
+
+**`src/Kroma/pages/PuestaEnMarchaPage.jsx` (NUEVO) — un TABLERO COMPARTIDO**,
+módulo `puestaEnMarcha`, visible por defecto a los cuatro roles:
+- Los ocho pasos de la cadena de arranque, **en orden**, con el porqué de cada
+  uno. Antes ese orden solo existía en el código y se descubría chocando.
+- **Los cuatro roles ven la secuencia COMPLETA**, para que cada uno entienda
+  dónde encaja su trabajo — que es justo lo que el dueño pidió ("que puedan
+  entender la secuencia de su trabajo"). Pero cada paso solo lo ACCIONA quien
+  tiene el permiso, y son **los mismos permisos de la Fase 0**, no unos nuevos.
+  El que no le toca no ve un botón muerto: ve de quién es el paso y cómo va.
+- **El estado sale de los DATOS REALES**, no de casillas que alguien marca: si
+  hay proveedores cargados, el paso figura hecho. Por eso el tablero no se
+  desincroniza y todos ven exactamente lo mismo. Las ocho lecturas van en una
+  tanda paralela y cada una cae a 0 por su cuenta: que una falle no deja el
+  tablero en blanco.
+- Cierra con **"La planta está lista para operar"** cuando no falta nada.
+
+**Fechas reales — el tapón que impedía poner la app al día.** `fechaInicio` de
+la producción y `fecha` de la compra se estampaban con `serverTimestamp()` sin
+alternativa, así que **no había forma de cargar la producción del martes pasado
+ni una compra vieja**. Ahora ambas pantallas tienen el campo, y esto es lo
+importante: **arranca en AHORA**, que es lo correcto para un registro de proceso
+en el día a día; solo se mueve para cargar algo que ya ocurrió.
+- Si la dejan en ahora se guarda `serverTimestamp()` (el reloj del servidor es
+  más confiable que el del teléfono); si la mueven, manda la fecha elegida y el
+  documento queda marcado `cargadaEnDiferido: true`.
+- **Holgura de un minuto** para decidir "es hoy": el campo nace en `new Date()`
+  y siempre pasan segundos hasta que alguien pulsa Guardar — sin esa holgura,
+  TODA producción normal habría quedado marcada como diferida.
+- Una fecha vacía o inválida cae a `serverTimestamp()`, nunca a NaN.
+- La copia optimista de la lista lleva la fecha elegida, no la de hoy: si no,
+  una producción cargada en diferido se veía con fecha de hoy hasta recargar.
+
+**Pendiente de esta fase**: el despacho sigue sin campo de fecha (es el paso 8 y
+es opcional en el tablero); y falta el sello explícito "datos confiables desde
+tal fecha" que le serviría a gerencia para saber desde cuándo creerle a un
+indicador.

@@ -323,6 +323,12 @@ function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo, isMaster, 
     );
 }
 
+// Fecha local para <input type="datetime-local">.
+function toLocalInput(d) {
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // ─── Entrada Bottom Sheet ─────────────────────────────────────────────────────
 
 function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
@@ -346,6 +352,10 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
     // Solo aplica en "+ Entrada" — "Corregir stock" es un conteo, no una compra.
     const [costoEntrada, setCostoEntrada] = useState('');
     const [omitirCosto, setOmitirCosto]   = useState(false);
+    // Fecha de la COMPRA. Por defecto ahora; se mueve para cargar compras
+    // anteriores — el libro `kroma_compras` arrancaba "hoy" en parte porque no
+    // había dónde escribir la fecha de una compra vieja.
+    const [fechaCompra, setFechaCompra]   = useState(() => toLocalInput(new Date()));
     // Regla de negocio transversal: el maestro quesero NUNCA ve costos. No es un
     // permiso que se pueda conceder, así que el bloque de costo no se oculta
     // "por ahora": directamente no existe para quien no puede verlos, y con él
@@ -381,7 +391,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
         if (addCerrado <= 0 || saving || costoFaltante) return;
         setSaving(true);
         const costoTotal = !modoAjuste && !omitirCosto ? Number(costoEntrada) || 0 : 0;
-        await onSave(mat, config, addCerrado, initEnUso, notas.trim(), modoAjuste, costoTotal);
+        await onSave(mat, config, addCerrado, initEnUso, notas.trim(), modoAjuste, costoTotal, fechaCompra);
         setSaving(false);
         onClose();
     }
@@ -490,6 +500,24 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
                                     <p className="text-teal-600 text-xs">{fmtBase(initEnUso, config.unidadBase)} en uso</p>
                                 )}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Fecha de la compra — solo en "+ Entrada": corregir el conteo
+                        es un ajuste de hoy, no una compra con fecha propia. */}
+                    {!modoAjuste && (
+                        <div className="mb-4">
+                            <SecLabel>Fecha de la compra</SecLabel>
+                            <input
+                                type="datetime-local"
+                                value={fechaCompra}
+                                onChange={e => setFechaCompra(e.target.value)}
+                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-teal-500"
+                            />
+                            <p className="text-slate-500 text-xs mt-1.5">
+                                Déjala como está si la compra es de hoy. Cámbiala para cargar
+                                compras anteriores.
+                            </p>
                         </div>
                     )}
 
@@ -817,7 +845,7 @@ export default function MaterialsInventoryPage() {
         setAlerts(prev => prev.filter(a => a.id !== alertId));
     }
 
-    async function handleEntrada(mat, config, addCerrado, initEnUso, notas, esAjuste = false, costoTotal = 0) {
+    async function handleEntrada(mat, config, addCerrado, initEnUso, notas, esAjuste = false, costoTotal = 0, fechaCompraInput = null) {
         const invRef = doc(db, 'kroma_inventory_materials', mat.id);
         const matRef = doc(db, 'kroma_materials', mat.id);
         const granel = config.presentacionTipo === 'granel';
@@ -879,6 +907,14 @@ export default function MaterialsInventoryPage() {
             setMaterials(prev => prev.map(m => m.id === mat.id ? { ...m, costoUSD: matUpdate.costoUSD } : m));
         }
 
+        // Holgura de un minuto: el campo nace en `new Date()` y siempre pasan
+        // segundos hasta que se guarda; sin ella toda compra normal quedaría
+        // marcada como cargada en diferido.
+        const fechaCompraElegida = fechaCompraInput ? new Date(fechaCompraInput) : null;
+        const fechaCompraEsHoy   = !fechaCompraElegida
+            || !Number.isFinite(fechaCompraElegida.getTime())
+            || Math.abs(Date.now() - fechaCompraElegida.getTime()) < 60 * 1000;
+
         // LIBRO DE COMPRAS. Hasta ahora una entrada actualizaba el stock y el
         // costo promedio y no dejaba NINGÚN rastro de la compra en sí: no había
         // forma de responder "cuánto compramos este mes, a quién". Se escribe
@@ -902,7 +938,10 @@ export default function MaterialsInventoryPage() {
                     notas:          notas || '',
                     registradoPor:       kromaUser?.id || '',
                     registradoPorNombre: kromaUser?.name || '',
-                    fecha:     serverTimestamp(),
+                    // Igual que en producción: si la dejó en ahora se usa la
+                    // hora del servidor; si la movió, manda la suya.
+                    fecha:     fechaCompraEsHoy ? serverTimestamp() : fechaCompraElegida,
+                    cargadaEnDiferido: !fechaCompraEsHoy,
                     createdAt: serverTimestamp(),
                 });
             } catch (e) {

@@ -10,7 +10,7 @@ import {
 import {
     Shield, Users, Bell, Settings2, Loader, Plus, Edit2, Trash2,
     CheckCircle, AlertTriangle, Package, Factory, Warehouse,
-    ClipboardList, Tag, BookOpen, Droplets, BarChart3, Truck,
+    ClipboardList, Tag, BookOpen, Droplets, BarChart3, Truck, Rocket,
     ToggleLeft, ToggleRight, Mail, Briefcase, ChevronDown, X,
     Check, Clock, KeyRound, Eye, EyeOff, Wrench, ClipboardCheck, PackagePlus,
     Building2, RefreshCw,
@@ -43,6 +43,7 @@ const AVATAR_COLORS = [
 
 // All modules — no role restriction; master can assign any to any user
 const MODULES = [
+    { id: 'puestaEnMarcha',        label: 'Puesta en marcha',        desc: 'Tablero del arranque de la planta',     Icon: Rocket },
     { id: 'produccionDiaria',      label: 'Producción Diaria',       desc: 'Planilla de producción activa',         Icon: Factory },
     { id: 'leche',                 label: 'Inventario de Leche',     desc: 'Recepción y control de leche',          Icon: Droplets },
     { id: 'inventarioMateriales',  label: 'Inventario de Insumos',   desc: 'Stock operativo de materiales',         Icon: Package },

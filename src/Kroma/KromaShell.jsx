@@ -15,6 +15,7 @@ import {
 import KromaNotificationsPage from './pages/admin/KromaNotificationsPage';
 import CavaRotacionPage from './pages/admin/CavaRotacionPage';
 import CostosFijosPage from './pages/admin/CostosFijosPage';
+import PuestaEnMarchaPage from './pages/PuestaEnMarchaPage';
 
 // Manager pages
 import { ManagerHome, FinancialBoard, ProductionKPIsPage, QualityBoard } from './pages/ManagerPages';
@@ -30,7 +31,7 @@ import {
     LayoutDashboard, Warehouse, Truck, Package, ClipboardList, Users, Tag,
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
-    LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell, RotateCcw,
+    LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell, RotateCcw, Rocket,
 } from 'lucide-react';
 
 // ─── Module defaults per role ─────────────────────────────────────────────────
@@ -44,6 +45,7 @@ import { DEFAULT_MODULES } from './permisos.js';
 
 const ALL_NAV_ITEMS = [
     { id: 'home',          label: 'Inicio',              Icon: LayoutDashboard },
+    { id: 'puesta_marcha', label: 'Puesta en marcha',    Icon: Rocket, modulo: 'puestaEnMarcha' },
     // — Operativo —
     { id: 'production',    label: 'Producción',          Icon: Factory,       modulo: 'produccionDiaria',     section: 'Operativo' },
     { id: 'milk',          label: 'Leche',               Icon: Droplets,      modulo: 'leche',                section: 'Operativo' },
@@ -93,6 +95,7 @@ function renderPage(view, role, kromaUser, onNavigate) {
         return <AdminHome onNavigate={onNavigate} />;
     }
     switch (view) {
+        case 'puesta_marcha': return <PuestaEnMarchaPage onNavigate={onNavigate} />;
         case 'production':    return <DailyProductionPage />;
         case 'milk':          return <MilkInventoryPage />;
         case 'materials_inv': return <MaterialsInventoryPage />;

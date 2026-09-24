@@ -1935,6 +1935,13 @@ function ReportView({ log, kromaUser, kromaRole, onClose }) {
     );
 }
 
+// Fecha local en el formato que pide <input type="datetime-local"> (sin zona:
+// el operario piensa en hora de planta, no en UTC).
+function toLocalInput(d) {
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // ─── Finalizar Empaque Modal ──────────────────────────────────────────────────
 
 function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, onConfirm }) {
@@ -2174,6 +2181,11 @@ export default function DailyProductionPage() {
     const [milkReceptions, setMilkReceptions]   = useState([]); // active pending receptions from kroma_milk_reception
     const [selectedMilkIds, setSelectedMilkIds] = useState([]);
     const [showQuickMilkForm, setShowQuickMilkForm] = useState(false);
+    // Fecha de la producción. Arranca en AHORA —que es lo correcto para el día
+    // a día— pero es editable, porque sin esto no había forma de cargar la
+    // producción del martes pasado: `fechaInicio` se estampaba con la hora del
+    // servidor y no existía alternativa. Era el tapón para poner la app al día.
+    const [fechaProd, setFechaProd] = useState(() => toLocalInput(new Date()));
     const [quickMilk, setQuickMilk]             = useState({ proveedorId: '', litros: 100, temperatura: 4.0, pH: 6.7 });
     const [quickMilkSaving, setQuickMilkSaving] = useState(false);
 
@@ -2337,6 +2349,12 @@ export default function DailyProductionPage() {
         const litrosTotal = selected.reduce((s, r) => s + (r.litros || 0), 0);
         if (litrosTotal <= 0) return;
         const rutaLeche = selected.some(r => r.enrutamiento === 'tanque') ? 'tanque' : 'directo';
+        // "Es hoy" con holgura de un minuto: el valor arranca en `new Date()` y
+        // para cuando el operario pulsa Iniciar ya pasaron segundos. Sin esa
+        // holgura, toda producción normal quedaría marcada como diferida.
+        const fechaElegida = new Date(fechaProd);
+        const fechaEsHoy   = !Number.isFinite(fechaElegida.getTime())
+            || Math.abs(Date.now() - fechaElegida.getTime()) < 60 * 1000;
         const proveedorNombre = [...new Set(selected.map(r => r.proveedorNombre).filter(Boolean))].join(', ');
         const recepciones = selected.map(r => ({
             proveedorId:     r.proveedorId || '',
@@ -2378,7 +2396,11 @@ export default function DailyProductionPage() {
                 rendimientoKg: 0,
                 operarioId:     kromaUser?.id || '',
                 operarioNombre: kromaUser?.name || '',
-                fechaInicio: serverTimestamp(),
+                // Si el operario dejó la fecha en ahora, se guarda la del
+                // servidor (más confiable que el reloj del teléfono). Si la
+                // movió, manda la suya: está cargando algo que ya ocurrió.
+                fechaInicio: fechaEsHoy ? serverTimestamp() : fechaElegida,
+                cargadaEnDiferido: !fechaEsHoy,
                 fechaCierre: null,
                 active: true,
                 createdAt: serverTimestamp(),
@@ -2394,7 +2416,10 @@ export default function DailyProductionPage() {
             ));
             setMilkReceptions(prev => prev.filter(r => !selectedMilkIds.includes(r.id)));
 
-            const newLog = { id: newLogId, ...data, fechaInicio: new Date(), createdAt: new Date() };
+            // La copia optimista debe llevar la fecha ELEGIDA, no la de hoy: si
+            // no, una producción cargada en diferido aparecería con la fecha de
+            // hoy en la lista hasta que alguien recargara la pantalla.
+            const newLog = { id: newLogId, ...data, fechaInicio: fechaEsHoy ? new Date() : fechaElegida, createdAt: new Date() };
             setLogs(prev => [newLog, ...prev]);
             openLog(newLog);
         } catch (e) { setSaveError(e.message); }
@@ -3134,6 +3159,25 @@ export default function DailyProductionPage() {
                                 );
                             })}
                         </div>
+                    </div>
+
+                    {/* ── Fecha de la producción ──
+                        Arranca en ahora, que es lo correcto para el día a día.
+                        Se mueve solo para cargar algo que ya ocurrió: sin este
+                        campo no había forma de registrar la producción de la
+                        semana pasada, ni de poner la planta al día al arrancar. */}
+                    <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
+                        <SecLabel>Fecha y hora de la producción</SecLabel>
+                        <input
+                            type="datetime-local"
+                            value={fechaProd}
+                            onChange={e => setFechaProd(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500"
+                        />
+                        <p className="text-slate-500 text-xs mt-2 leading-snug">
+                            Déjala como está si estás produciendo ahora. Cámbiala solo si estás
+                            cargando una producción anterior.
+                        </p>
                     </div>
 
                     {/* ── Leche a Procesar ── */}
