@@ -316,7 +316,9 @@ export default function KromaUserSelect({ onExitKroma }) {
             if ((lista.length === 0 || !migrado) && empresaId === 'lacteoca') {
                 setReparando(true);
                 try {
-                    const fn  = httpsCallable(functions, 'repararDatosLacteoca');
+                    // 300 s como el botón del máster: barre 20 colecciones y el
+                    // default de 70 s la abortaría a medias.
+                    const fn  = httpsCallable(functions, 'repararDatosLacteoca', { timeout: 300000 });
                     const res = await fn({});
                     if (res?.data?.totalActualizados > 0) lista = await leerPerfiles(empresaId);
                 } catch (err) { console.error('repararDatosLacteoca falló:', err); }

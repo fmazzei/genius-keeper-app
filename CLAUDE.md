@@ -1955,3 +1955,16 @@ usuario", invitando a crear perfiles **duplicados** encima de los que sí existe
 existe con certeza; y un paso de migración manual del que depende el acceso de
 todo un equipo no es un paso manual, es una bomba de tiempo — tiene que
 repararse solo o avisar, nunca fallar en silencio con las listas vacías.
+
+**Pendiente conocido (no se tocó a propósito):** las consultas de GK que leen
+colecciones de Kroma **sin** `where('empresaId')` — `AlmacenComercialPage`
+(`kroma_despachos` en tránsito, `kroma_inventory_pt`) y `LoteTrazabilidadModal`
+(las tres búsquedas por `lote`). Hoy no fallan ni rompen nada: GK es la app
+comercial de UNA empresa y todos sus usuarios resuelven a `lacteoca`, así que
+la fuga solo se materializaría si otra empresa empezara a despachar. Ponerles
+el `where` ahora sí tiene un riesgo real: un vendedor/mercaderista **nunca abre
+el selector de Kroma**, así que la auto-reparación no se dispara por esa vía y
+la recepción de Frimaca se quedaría sin despachos que recibir si algún doc
+quedara sin etiquetar. El orden correcto es: primero confirmar que los datos
+están etiquetados (`kroma_empresas/lacteoca.datosMigradosAt`), después agregar
+el `where`.
