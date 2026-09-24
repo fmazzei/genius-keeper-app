@@ -148,12 +148,19 @@ export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma 
                                 detalle: p.proveedorNombre ? `Proveedor: ${p.proveedorNombre}` : '',
                             });
                         }
+                        // La pista es un registro forense: una producción
+                        // eliminada NO se esconde, se marca. Su evento de
+                        // eliminación llega aparte, por los movimientos.
+                        const eliminada = p.active === false;
                         evs.push({
                             kind: 'produccion',
                             at: toDate(p.createdAt || p.fecha),
-                            titulo: `Producción · ${p.productoNombre || item?.productoNombre || ''}`,
+                            titulo: `Producción · ${p.productoNombre || item?.productoNombre || ''}`
+                                + (eliminada ? ' (ELIMINADA)' : ''),
                             actor: p.creadoPorNombre || p.responsableNombre || '—', rol: 'planta',
-                            detalle: p.estado ? `Estado: ${p.estado}` : '',
+                            detalle: eliminada
+                                ? 'Esta producción fue eliminada del sistema.'
+                                : (p.estado ? `Estado: ${p.estado}` : ''),
                         });
                     });
                     (ptSnap.docs || []).forEach(d => {

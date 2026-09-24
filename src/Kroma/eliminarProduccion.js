@@ -181,16 +181,23 @@ export async function eliminarProduccionCompleta(db, {
         deletedPorNombre: actor?.name || null,
     });
 
-    const recIds = log.recepcionIds || [];
+    // La RECEPCIÓN de esa leche también es "algo referente a esta producción",
+    // así que se va con ella: es justo lo que el check ofrece conservar. La
+    // excepción es la leche que nunca llegó a ser queso — esa sigue existiendo
+    // de verdad y vuelve al tanque en vez de borrarse.
+    const recIds  = log.recepcionIds || [];
     const liberar = recIds.length > 0 && !produjoQueso(log) && items.length === 0;
     if (recIds.length > 0) {
         await Promise.all(recIds.map(rid =>
-            updateDoc(doc(db, 'kroma_milk_reception', rid), {
-                // Vuelve al tanque solo si esta leche nunca se convirtió en queso.
-                status:    liberar ? 'pendiente' : 'inactivo',
-                logId:     null,
-                updatedAt: serverTimestamp(),
-            })
+            updateDoc(doc(db, 'kroma_milk_reception', rid), liberar
+                ? { status: 'pendiente', logId: null, updatedAt: serverTimestamp() }
+                : {
+                    active: false, status: 'inactivo', logId: null,
+                    deletedAt: serverTimestamp(),
+                    deletedPorId: actor?.id || null,
+                    deletedPorNombre: actor?.name || null,
+                    deletedMotivo: 'Se eliminó la producción que consumió esta leche.',
+                })
         ));
     }
     return { partidas: items.length, unidades, kg, lecheLiberada: liberar };

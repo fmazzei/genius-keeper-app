@@ -277,6 +277,7 @@ export default function CostosFijosPage() {
             ));
             const totalKg = logsSnap.docs.reduce((s, d) => {
                 const data  = d.data();
+                if (data.active === false) return s;   // eliminada: no produjo nada
                 const fecha = data.createdAt?.toDate?.() || new Date(data.createdAt);
                 if (fecha >= start && fecha < end) {
                     return s + (data.totalKgProducido || 0);

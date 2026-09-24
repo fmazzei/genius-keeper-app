@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useKroma } from '../KromaContext';
 import { moduloVisible } from '../permisos.js';
+import { soloVivos } from '../estadoPlanta.js';
 import { leerSello, fmtSello } from '../selloDatos.js';
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
@@ -228,11 +229,15 @@ function useKromaDashboard() {
                 getDocs(eq('kroma_materials')),
                 getDocs(eq('kroma_products')),
             ]);
-            const allLogDocs = logsS.docs.map(d => ({ id: d.id, ...d.data() }));
+            // `soloVivos` NO es opcional: sin él, una producción que el máster
+            // eliminó sigue apareciendo en "Producciones recientes", en "Lotes
+            // pendientes de envasar" y contando en el rendimiento de la planta.
+            // Era la única colección de esta carga que no lo aplicaba.
+            const allLogDocs = soloVivos(logsS.docs.map(d => ({ id: d.id, ...d.data() })));
             setState({
                 data: {
                     logs:    allLogDocs.filter(l => l.estado === 'completada'),
-                    allLogs: allLogDocs,  // unfiltered — used by backfill cost lookup
+                    allLogs: allLogDocs,  // sin filtrar por estado — lo usa el backfill de costos
                     matInv:    matInvS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),
                     ptItems:   ptS.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.active !== false),
                     milkRecs:  milkS.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => m.active !== false),

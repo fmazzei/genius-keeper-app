@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { soloVivos } from '@/Kroma/estadoPlanta.js';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import {
@@ -311,7 +312,7 @@ export default function ProductionHistoryPage({ params = null }) {
         try {
             const snap = await getDocs(query(collection(db, 'kroma_production_logs'), where('empresaId', '==', kromaUser?.empresaId || 'lacteoca')));
             setLogs(
-                snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                soloVivos(snap.docs.map(d => ({ id: d.id, ...d.data() })))
                     .filter(l => l.estado === 'completada')
                     .sort((a, b) => {
                         const da = logDate(a), db_ = logDate(b);

@@ -72,7 +72,7 @@ export function useTableroGerencial() {
                     porPagar:   m(pagar),
                     proveedores: m(prov).filter(p => p.active !== false),
                     compras:    m(compras),
-                    produccion: m(prod),
+                    produccion: m(prod).filter(p => p.active !== false),
                     invMateriales: m(invMat).filter(i => i.active !== false),
                 });
             } catch (e) {

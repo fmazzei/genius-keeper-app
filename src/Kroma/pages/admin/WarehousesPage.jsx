@@ -2155,20 +2155,42 @@ export default function WarehousesPage() {
                 <div>
                     <SecLabel>Últimos movimientos</SecLabel>
                     <div className="space-y-2">
-                        {movements.slice(0, 8).map(mov => (
-                            <div key={mov.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center gap-3">
-                                <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-                                    <ArrowRight size={12} className="text-emerald-400" />
+                        {/* Cuando se elimina una producción, ESTE es el único
+                            rastro que queda de ella. Así que la fila tiene que
+                            decirlo todo: qué lote, quién y cuándo — antes no
+                            mostraba ni el lote ni el responsable. */}
+                        {movements.slice(0, 8).map(mov => {
+                            const borrado = mov.tipo === 'eliminacion_produccion' || mov.tipo === 'eliminacion';
+                            return (
+                                <div key={mov.id} className={`bg-slate-900 border rounded-xl p-3 flex items-start gap-3 ${
+                                    borrado ? 'border-red-900/50' : 'border-slate-800'
+                                }`}>
+                                    <div className={`w-7 h-7 rounded-full border flex items-center justify-center shrink-0 ${
+                                        borrado ? 'bg-red-950/40 border-red-900/50' : 'bg-slate-800 border-slate-700'
+                                    }`}>
+                                        {borrado
+                                            ? <Trash2 size={12} className="text-red-400" />
+                                            : <ArrowRight size={12} className="text-emerald-400" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-white text-xs font-semibold truncate">{mov.productoNombre}</p>
+                                        {mov.lote && <p className="text-slate-600 text-xs font-mono truncate">{mov.lote}</p>}
+                                        <p className={`text-xs ${borrado ? 'text-red-300/80' : 'text-slate-500'}`}>
+                                            {mov.tipo === 'eliminacion_produccion'
+                                                ? (mov.registrosConservados
+                                                    ? 'Producción retirada del almacén — registros conservados'
+                                                    : 'Producción eliminada')
+                                                : `${mov.origenNombre} → ${mov.destinoNombre}`}
+                                            {mov.cantidad > 0 && ` · ${mov.cantidad} ${mov.unidad}`}
+                                        </p>
+                                        {mov.creadoPorNombre && (
+                                            <p className="text-slate-600 text-xs">por {mov.creadoPorNombre}</p>
+                                        )}
+                                    </div>
+                                    <span className="text-slate-600 text-xs shrink-0">{fmtDateTime(mov.createdAt)}</span>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-white text-xs font-semibold truncate">{mov.productoNombre}</p>
-                                    <p className="text-slate-500 text-xs">
-                                        {mov.origenNombre} → {mov.destinoNombre} · {mov.cantidad} {mov.unidad}
-                                    </p>
-                                </div>
-                                <span className="text-slate-600 text-xs shrink-0">{fmtDateTime(mov.createdAt)}</span>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}

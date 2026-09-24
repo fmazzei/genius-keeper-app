@@ -39,3 +39,22 @@ export const esProduccionAbierta = (l) => l?.estado !== 'completada';
  */
 export const faltaEmpacar = (l) =>
     !l?.empaqueFinalizado && (l?.disposicion === 'guardar_todo' || l?.disposicion === 'mixto');
+
+/**
+ * ¿Este documento sigue existiendo?
+ *
+ * Kroma nunca borra de verdad: da de baja con `active:false` (soft-delete). Eso
+ * significa que **cada lectura tiene que descartarlo**, porque Firestore lo
+ * sigue devolviendo. Un solo lector que se olvide mantiene viva en pantalla una
+ * producción que el máster ya eliminó — y así fue: el módulo de Producción sí
+ * filtraba, pero el tablero de gerencia NO, de modo que los lotes borrados
+ * seguían apareciendo en "Producciones recientes", en "Lotes pendientes de
+ * envasar" y contando en el rendimiento L/kg de la planta.
+ *
+ * Por eso vive acá y se comparte: el criterio de "esto ya no existe" no puede
+ * estar escrito de nuevo —ni olvidado— en cada pantalla.
+ */
+export const vivo = (d) => d?.active !== false;
+
+/** Los documentos que siguen existiendo, de una lista o de un snapshot. */
+export const soloVivos = (arr = []) => arr.filter(vivo);
