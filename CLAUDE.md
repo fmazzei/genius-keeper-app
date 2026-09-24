@@ -2443,3 +2443,118 @@ menú esconde no hace nada, y eso es indistinguible de un bug. Usa `!== false` (
 muestra.
 
 Verificado con nueve casos, incluidos los tres del capture.
+
+### Ocho problemas del dueño: guardar, contar, fechar y borrar (2026-09) ✅
+
+Reporte con cinco capturas tras la primera vuelta de uso real. Varios eran
+consecuencia directa de lo que se acababa de entregar.
+
+**Guardar una planilla fallaba SIEMPRE.** Firestore **rechaza `undefined`** en un
+campo: `addDoc` lanza "Unsupported field value: undefined" y no escribe nada. En
+esa pantalla dejar campos en blanco es lo NORMAL —la planilla del 12-09 no trae
+ni un parámetro de leche—, así que `temperatura`/`densidad`/`pH` llegaban como
+`undefined` y tumbaban el guardado completo. **`src/Kroma/sinUndefined.js`**
+(`sinUndefined` + `tieneUndefined` para pruebas) limpia el documento antes de
+escribir: red de seguridad para TODO el formulario, no solo para los campos que
+hoy fallan. Solo desciende a objetos **planos** y arreglos — `Date`, `Timestamp` y
+el centinela de `serverTimestamp()` son instancias de clase y recorrerlas las
+destruiría. `null` SÍ se conserva: "no hay dato" es un dato. Se aplicó también al
+arranque de una producción normal, que tenía el mismo hueco latente (una
+recepción sin parámetros medidos deja esos campos en `undefined`).
+
+**La producción ya NO pide fecha.** Decisión del dueño: *"los procesos no se
+inician con fecha porque la app debe fijar la fecha y hora ella sola, incluso
+ella mide el intervalo de tiempo entre una parte del proceso y otra"*. Se retira
+el `datetime-local` que la Fase 1 había agregado en `setup_litros`: `fechaInicio`
+vuelve a ser `serverTimestamp()` siempre, porque es el **punto cero de una
+medición**, no un dato que se declara. Cargar historia sigue siendo posible — por
+el botón **"Planilla"**, que es otro acto: transcribir papel, no correr un
+proceso. La distinción importa y hay que mantenerla.
+
+**Los campos de fecha salían fuera de lugar**, y eran tres cosas del control
+NATIVO, ninguna de Tailwind: (1) no se encoge sin `min-width: 0`, así que
+desbordaba la tarjeta; (2) sobre fondo oscuro el sistema dibuja su texto y su
+ícono en oscuro y el campo **parece vacío** — lo arregla `color-scheme: dark`;
+(3) su alto no obedece al padding, así que la fila quedaba desalineada. Ahora hay
+un solo **`src/Kroma/Components/CampoFecha.jsx`** usado en los tres sitios que lo
+necesitan (compra, planilla, despacho), con `type="date"` en vez de
+`datetime-local`: en una compra o una planilla **el minuto no existe en el dato
+original**. Los helpers pasaron a **`src/Kroma/fechas.js`** (`hoyInput`,
+`fechaDesdeInput`, `esHoyInput`) — módulo puro, verificable sin React:
+`new Date('2026-07-22')` se lee como UTC y en Venezuela retrocede al 21, así que
+se arma por partes locales y **al mediodía**, donde ningún huso puede cambiarle
+el día. `fechaDesdeInput` rechaza además un día inexistente (el 31 de febrero
+rodaba a marzo).
+
+**El precio de compra no aceptaba decimales.** Con `type="number"` y teclado en
+español, escribir "9,99" deja el input en estado **inválido** y el navegador
+devuelve `value === ''`: el precio se perdía y había que redondear a 9 o a 10.
+Pasa a `type="text" inputMode="decimal"` normalizando la coma, que es lo que la
+gente escribe. **Regla para el futuro: ningún campo de dinero o de dosis en
+`type="number"`** — en un teléfono en español la coma lo vacía.
+
+**Unidad `par`** en el maestro de materiales: los guantes vienen y se cuentan por
+pares, y contarlos en "und" obliga a llevar el doble en la cabeza al reponer. Se
+trata como unidad de **conteo** (`esConteo(u)` = `und` o `par`) en steppers y
+mínimos, y el plural sale bien ("3 pares"). NO se agregó a las unidades de dosis
+de receta ni a las presentaciones de producto: un guante no se dosifica en un
+queso ni se vende como SKU.
+
+**Borrar una producción ahora se borra en toda la app.** El dueño borró lo que
+había en el almacén y **las producciones seguían abiertas** ("falta empacar"), sin
+forma de cerrarlas. Eran dos mitades sueltas:
+- Borrar la planilla dejaba su producto terminado en el almacén. Ahora
+  `eliminarPTDeProduccion` busca el PT por **`logId`** —no por lote, que se repite
+  (el sufijo `-H` del histórico, o dos producciones del mismo producto el mismo
+  día)— y lo da de baja. Son dos filtros de **igualdad**, que Firestore sirve sin
+  índice compuesto.
+- **Cada salida queda en `kroma_warehouse_movements`** (`tipo:
+  'eliminacion_produccion'`): un almacén no puede perder existencias sin un evento
+  que lo explique. Si no había nada en el almacén se escribe **igual** el evento,
+  con cantidad 0 — el libro tiene que poder contar por qué desapareció un lote.
+  El libro **no se edita ni se borra desde la app** por nadie, que es más
+  estricto que lo pedido ("solo el máster"): las reglas no pueden distinguir los
+  roles internos de Kroma (`kroma_users.role` es client-side), así que la
+  inmutabilidad de la UI es la garantía real.
+- Borrar el ítem del almacén ahora **cierra la producción de origen** cuando lo
+  borrado era su queso `sin_envasar` (`empaqueFinalizado: true`,
+  `kgSinEnvasar: 0`, con `cierreMotivo`): su queso no existe, no hay nada que
+  empacar.
+- **La leche solo vuelve al tanque si esa producción NO llegó a dar queso.**
+  Devolver los 880 L de una producción cerrada inventaría leche consumida hace
+  meses: es exactamente la "leche fantasma" ya corregida. Si hubo queso, las
+  recepciones quedan `inactivo` — ni disponibles, ni colgando de una planilla
+  borrada.
+- **Los insumos NO se devuelven** al inventario, y el modal lo DICE: si la
+  producción nunca ocurrió, hay que corregir el stock de esos insumos aparte.
+  Devolverlos automáticamente inflaría el stock de lo que sí se consumió.
+
+**Insumos: tres actos distintos, nunca dos botones encendidos a la vez.** La hoja
+mostraba "+ Entrada" y "Corregir stock" como pestañas simultáneas, y son cosas
+que no se parecen — sumar una compra o **reemplazar** un conteo. Elegir mal pisaba
+el inventario. El modo lo decide ahora la TARJETA y la hoja no lo cambia:
+- **Sin stock cargado → solo "Inventario inicial"**. Desaparece en cuanto hay
+  stock: cargarlo dos veces era la forma de pisar el inventario sin querer.
+- **Con stock cargado → "Compra"** (suma, pide costo y fecha, alimenta el promedio
+  ponderado y `kroma_compras`) **o "Corregir"** (reemplaza el conteo, sin costo).
+- **Por qué NO se hizo literal lo pedido** (que con stock solo quede "ajuste de
+  stock"): esa era la única vía para registrar una compra, o sea el trabajo del
+  administrador, y sin ella el costo promedio ponderado se congela y el libro de
+  compras deja de crecer. El dueño eligió los tres actos separados.
+- En "Compra" NO se pregunta cuánto hay **abierto**: entran envases cerrados y lo
+  que ya estaba abierto no cambió (para eso está el botón "En uso").
+
+**Dejar presionado + o − corre la cantidad, con vibración por paso.**
+**`src/Kroma/pasoSostenido.js`** (`usePasoSostenido`), en los **cuatro** steppers
+(`WholeStepper`/`PrecisionStepper` de Insumos y `StepperField`/`PrecisionStepper`
+de Ficha técnica). Cargar 240 pares de guantes eran 240 toques. Sin librerías de
+gestos y **sin `PointerEvent`**: WebViews viejos de Android. El primer paso sale
+al APRETAR (un toque suelto sigue valiendo uno) y repite acelerando hasta 55 ms;
+hay guarda contra el mousedown emulado que los WebViews disparan tras el touch, y
+`onClick` queda solo para el teclado. `navigator.vibrate` va en try/catch — no
+existe en iOS ni en varios WebViews, y un teléfono sin vibrador no puede impedir
+que se cargue el inventario.
+
+Verificado con build limpio y 16 casos de la lógica pura (la planilla en blanco,
+el centinela de `serverTimestamp` intacto, 22-jul que no retrocede a 21, "9,99",
+`par`).

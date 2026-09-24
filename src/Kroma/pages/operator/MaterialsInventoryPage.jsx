@@ -250,6 +250,11 @@ function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo, isMaster, 
     const status = stockStatus(invDoc);
     const pct    = barPct(invDoc);
     const hasInv = invDoc != null;
+    // ¿A este material ya se le cargó existencia alguna vez? Decide qué se
+    // ofrece: el inventario INICIAL se carga una sola vez en la vida del
+    // material; después lo que pasa es que llega una compra, o que el conteo
+    // físico no cuadra. Son actos distintos y no se mezclan en un mismo botón.
+    const yaTieneStock = hasInv && (invDoc.stockCerrado != null || invDoc.stockEnUso != null);
     const [confirmDel, setConfirmDel] = useState(false);
 
     return (
@@ -313,14 +318,35 @@ function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo, isMaster, 
                 antes de arrancar— pero no lo carga; se descuenta solo con el
                 consumo de cada proceso. */}
             {canEditar && (
-                <div className="flex gap-1.5 mt-auto">
-                    <button onClick={() => onEntrada(mat, invDoc)}
-                        className="flex-1 flex items-center justify-center gap-1 bg-teal-600 hover:bg-teal-500 active:scale-95 text-white text-xs font-semibold py-2.5 rounded-xl">
-                        <Plus size={12} /> Entrada
-                    </button>
+                <div className="mt-auto space-y-1.5">
+                    {/* Carga de existencias: una u otra, nunca las dos.
+                        · Sin stock cargado  → solo "Inventario inicial".
+                        · Con stock cargado  → "Compra" (suma, con costo y fecha;
+                          es lo que mantiene el promedio ponderado y el libro de
+                          compras) o "Corregir" (reemplaza el conteo, sin costo).
+                        El inicial desaparece en cuanto hay stock: cargarlo dos
+                        veces era la forma de pisar el inventario sin querer. */}
+                    {!yaTieneStock ? (
+                        <button onClick={() => onEntrada(mat, invDoc, 'inicial')}
+                            className="w-full flex items-center justify-center gap-1 bg-teal-600 hover:bg-teal-500 active:scale-95 text-white text-xs font-semibold py-2.5 rounded-xl">
+                            <Plus size={12} /> Inventario inicial
+                        </button>
+                    ) : (
+                        <div className="flex gap-1.5">
+                            <button onClick={() => onEntrada(mat, invDoc, 'compra')}
+                                className="flex-1 flex items-center justify-center gap-1 bg-teal-600 hover:bg-teal-500 active:scale-95 text-white text-xs font-semibold py-2.5 rounded-xl">
+                                <Plus size={12} /> Compra
+                            </button>
+                            <button onClick={() => onEntrada(mat, invDoc, 'correccion')}
+                                className="flex-1 flex items-center justify-center gap-1 bg-amber-700 hover:bg-amber-600 active:scale-95 text-white text-xs font-semibold py-2.5 rounded-xl">
+                                <Settings size={12} /> Corregir
+                            </button>
+                        </div>
+                    )}
+                    <div className="flex gap-1.5">
                     {hasInv && !isGranel(invDoc) && (
                         <button onClick={() => onEnUso(mat, invDoc)}
-                            className="flex items-center justify-center gap-1 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 text-xs font-semibold py-2.5 px-3 rounded-xl"
+                            className="flex-1 flex items-center justify-center gap-1 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 text-xs font-semibold py-2.5 px-3 rounded-xl"
                             title="Ajustar cantidad en uso">
                             <Package size={12} /> En uso
                         </button>
@@ -329,6 +355,7 @@ function MaterialCard({ mat, invDoc, onEntrada, onEnUso, onSetMinimo, isMaster, 
                         className="flex items-center justify-center gap-1 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 text-xs font-semibold py-2.5 px-3 rounded-xl">
                         <TrendingDown size={12} />
                     </button>
+                    </div>
                 </div>
             )}
         </div>
@@ -349,7 +376,19 @@ const aNumero = (v) => {
 
 // ─── Entrada Bottom Sheet ─────────────────────────────────────────────────────
 
-function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
+/**
+ * Hoja de carga de existencias. El MODO llega decidido desde la tarjeta y no se
+ * cambia acá: antes la hoja mostraba "+ Entrada" y "Corregir stock" como dos
+ * pestañas encendidas a la vez, y son dos actos que no se parecen —sumar una
+ * compra o reemplazar un conteo—. Elegir mal pisaba el inventario.
+ *
+ *   · 'inicial'    — primera carga del material. Suma desde cero. Pide costo.
+ *   · 'compra'     — llegó mercancía. Suma. Pide costo y fecha de la compra:
+ *                    es lo que alimenta el promedio ponderado y `kroma_compras`.
+ *   · 'correccion' — el conteo físico no cuadra. REEMPLAZA el total. Sin costo,
+ *                    porque no se compró nada.
+ */
+function EntradaSheet({ mat, invDoc, modo = 'inicial', onClose, onSave, verCostos }) {
     const initialPres = invDoc?.presentacionTipo
         || (mat.presentacion && mat.presentacion !== 'a granel' ? mat.presentacion : 'granel');
     const [config, setConfig] = useState({
@@ -358,7 +397,10 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
         cantidadPorUnidad: initialPres === 'granel' ? 0 : (invDoc?.cantidadPorUnidad ?? mat.cantidadPresentacion ?? 0),
     });
     const [showConfig, setShowConfig] = useState(!invDoc);
-    const [modoAjuste, setModoAjuste] = useState(false);
+    // El modo viene de la tarjeta y NO se cambia desde acá: 'correccion'
+    // reemplaza el total, las otras dos suman.
+    const modoAjuste = modo === 'correccion';
+    const esCompra   = modo === 'compra';
     const granel = config.presentacionTipo === 'granel';
 
     const [addCerrado, setAddCerrado] = useState(0);
@@ -367,7 +409,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
     const [saving, setSaving]         = useState(false);
     // Costo TOTAL pagado por esta entrada (no por unidad): de ahí se deriva el
     // precio por unidad base y se pondera contra lo que ya había en stock.
-    // Solo aplica en "+ Entrada" — "Corregir stock" es un conteo, no una compra.
+    // No aplica en "Corregir stock": ese es un conteo, no una compra.
     const [costoEntrada, setCostoEntrada] = useState('');
     const [omitirCosto, setOmitirCosto]   = useState(false);
     // Fecha de la COMPRA. Por defecto hoy; se mueve para cargar compras
@@ -395,12 +437,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
     const undSteps   = [1, 100, 1000];
     const metroSteps = [1, 10, 100];
 
-    function switchMode(ajuste) {
-        setModoAjuste(ajuste);
-        setAddCerrado(0);
-    }
-
-    // El costo es obligatorio en "+ Entrada" (así se mantiene el promedio
+    // El costo es obligatorio al cargar existencias (así se mantiene el promedio
     // ponderado al día); "Corregir stock" no lo pide porque no es una compra.
     // "Omitir costo por ahora" es la única salida — deja el costoUSD como está.
     const costoFaltante = !modoAjuste && puedeCostear && !omitirCosto && !(aNumero(costoEntrada) > 0);
@@ -428,25 +465,26 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
                         <div>
                             <p className="text-white font-bold text-base">{mat.nombre}</p>
                             <p className={`text-sm mt-0.5 ${modoAjuste ? 'text-amber-400' : 'text-slate-400'}`}>
-                                {modoAjuste ? 'Corregir Stock' : 'Registrar Entrada'}
+                                {modoAjuste ? 'Corregir stock' : esCompra ? 'Registrar compra' : 'Inventario inicial'}
                             </p>
                         </div>
                         <button onClick={onClose} className="text-slate-500 hover:text-white p-1"><X size={18} /></button>
                     </div>
 
-                    {/* Mode toggle — only when stock already recorded */}
-                    {invDoc && (
-                        <div className="flex gap-2 mb-4">
-                            <button type="button" onClick={() => switchMode(false)}
-                                className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                                    !modoAjuste ? 'bg-teal-700 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-                                }`}>+ Entrada</button>
-                            <button type="button" onClick={() => switchMode(true)}
-                                className={`flex-1 py-2.5 rounded-xl text-xs font-semibold transition-colors ${
-                                    modoAjuste ? 'bg-amber-700 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
-                                }`}>Corregir stock</button>
-                        </div>
-                    )}
+                    {/* Ya NO hay pestañas de modo: la tarjeta decidió si esto es
+                        inventario inicial, una compra o una corrección de conteo.
+                        Acá solo se explica qué va a pasar con el stock. */}
+                    <div className={`rounded-xl px-4 py-3 mb-4 border ${
+                        modoAjuste ? 'bg-amber-900/20 border-amber-700/40' : 'bg-teal-900/20 border-teal-700/40'
+                    }`}>
+                        <p className={`text-xs leading-snug ${modoAjuste ? 'text-amber-200' : 'text-teal-200'}`}>
+                            {modoAjuste
+                                ? 'Corrige el conteo: lo que declares REEMPLAZA el stock actual. No es una compra, así que no pide costo.'
+                                : esCompra
+                                    ? 'Llegó mercancía: se SUMA al stock que ya hay, y su costo entra al promedio ponderado del material.'
+                                    : 'Primera carga de este material: es la existencia con la que arranca.'}
+                        </p>
+                    </div>
 
                     {/* Presentation config toggle */}
                     <button type="button" onClick={() => setShowConfig(v => !v)}
@@ -463,13 +501,17 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
                     <div className="mb-4">
                         {granel && !isUnd && !isMetros ? (
                             <PrecisionStepper
-                                label={modoAjuste ? `Stock total actual (${config.unidadBase})` : `Cantidad a ingresar (${config.unidadBase})`}
+                                label={modoAjuste
+                                    ? `Stock total actual (${config.unidadBase})`
+                                    : `${esCompra ? 'Cantidad que llegó' : 'Cantidad a ingresar'} (${config.unidadBase})`}
                                 value={addCerrado} onChange={setAddCerrado} unit={config.unidadBase} />
                         ) : (
                             <WholeStepper
                                 label={modoAjuste
                                     ? (granel ? `Stock total actual (${config.unidadBase})` : `${config.presentacionTipo}s en stock total`)
-                                    : (granel ? `Cantidad a ingresar (${config.unidadBase})` : `${config.presentacionTipo}s cerrados a ingresar`)}
+                                    : (granel
+                                        ? `${esCompra ? 'Cantidad que llegó' : 'Cantidad a ingresar'} (${config.unidadBase})`
+                                        : `${config.presentacionTipo}s cerrados que ${esCompra ? 'llegaron' : 'ingresan'}`)}
                                 value={addCerrado} onChange={setAddCerrado}
                                 unit={config.presentacionTipo === 'granel' ? config.unidadBase : config.presentacionTipo}
                                 steps={isUnd ? undSteps : isMetros ? metroSteps : [1]}
@@ -482,8 +524,11 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
                         )}
                     </div>
 
-                    {/* En uso declaration (for discrete, entrada mode only) */}
-                    {!granel && (
+                    {/* Cuánto hay ABIERTO. No se pregunta al registrar una compra:
+                        ahí entran envases cerrados, y lo que ya estaba abierto no
+                        cambió — para eso está el botón "En uso" de la tarjeta.
+                        Preguntarlo acá era una invitación a pisarlo sin querer. */}
+                    {!granel && !esCompra && (
                         <div className="mb-4">
                             {(isUnd || isMetros) ? (
                                 <WholeStepper label={`Ya tengo en uso / abierto (${config.unidadBase})`}
@@ -577,7 +622,7 @@ function EntradaSheet({ mat, invDoc, onClose, onSave, verCostos }) {
                         className={`w-full disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-4 rounded-xl ${
                             modoAjuste ? 'bg-amber-600 hover:bg-amber-500' : 'bg-teal-600 hover:bg-teal-500'
                         }`}>
-                        {saving ? 'Guardando...' : modoAjuste ? 'Corregir Stock' : 'Registrar Entrada'}
+                        {saving ? 'Guardando...' : modoAjuste ? 'Corregir stock' : esCompra ? 'Registrar compra' : 'Guardar inventario inicial'}
                     </button>
                     {costoFaltante && (
                         <p className="text-amber-400 text-xs text-center mt-2">Indica el costo de esta entrada, u omítelo explícitamente.</p>
@@ -1116,7 +1161,7 @@ export default function MaterialsInventoryPage() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     {mats.map(mat => (
                                         <MaterialCard key={mat.id} mat={mat} invDoc={inventory[mat.id] ?? null}
-                                            onEntrada={(m, inv) => setEntradaTarget({ mat: m, invDoc: inv })}
+                                            onEntrada={(m, inv, modo) => setEntradaTarget({ mat: m, invDoc: inv, modo })}
                                             onEnUso={(m, inv) => setEnUsoTarget({ mat: m, invDoc: inv })}
                                             onSetMinimo={(m, inv) => setMinimoTarget({ mat: m, invDoc: inv })}
                                             isMaster={isMaster} onDelete={handleDeleteMaterial} canEditar={canEditar}
@@ -1130,7 +1175,7 @@ export default function MaterialsInventoryPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {filtered.map(mat => (
                             <MaterialCard key={mat.id} mat={mat} invDoc={inventory[mat.id] ?? null}
-                                onEntrada={(m, inv) => setEntradaTarget({ mat: m, invDoc: inv })}
+                                onEntrada={(m, inv, modo) => setEntradaTarget({ mat: m, invDoc: inv, modo })}
                                 onEnUso={(m, inv) => setEnUsoTarget({ mat: m, invDoc: inv })}
                                 onSetMinimo={(m, inv) => setMinimoTarget({ mat: m, invDoc: inv })}
                                 isMaster={isMaster} onDelete={handleDeleteMaterial} canEditar={canEditar}
@@ -1141,7 +1186,7 @@ export default function MaterialsInventoryPage() {
             </div>
 
             {entradaTarget && (
-                <EntradaSheet mat={entradaTarget.mat} invDoc={entradaTarget.invDoc}
+                <EntradaSheet mat={entradaTarget.mat} invDoc={entradaTarget.invDoc} modo={entradaTarget.modo}
                     onClose={() => setEntradaTarget(null)} onSave={handleEntrada} verCostos={verCostos} />
             )}
             {enUsoTarget && (
