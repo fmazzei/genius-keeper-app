@@ -44,20 +44,33 @@ export const tieneExistencia = (item) => {
 export const conExistencia = (items = []) => items.filter(tieneExistencia);
 
 /**
- * ¿Esta partida quedó HUÉRFANA? Es decir: apunta a una producción que ya no
- * existe (se eliminó) y su producto quedó en el almacén.
+ * ¿Esta partida es INVENTARIO QUE SE PUEDE SOSTENER?
  *
- * No es inventario: el sistema mismo declaró que ese lote no existe, así que
- * contarlo —sobre todo a precio de planta— es mostrar plata que no está.
+ * La pregunta de fondo: ¿de dónde salió este queso? Una partida vale como
+ * inventario si se puede contestar — su producción sigue viva, o al menos quedó
+ * guardado su costo del día que se creó. Si no se puede contestar ninguna de las
+ * dos, ese registro no respalda nada y valorarlo a precio de planta es mostrar
+ * plata que no está.
  *
- * Vive acá y NO en cada pantalla a propósito. La tarjeta del tablero y su hoja
+ * Cubre los dos casos que se dieron en producción, y por eso NO basta con mirar
+ * el `logId`:
+ *   · la producción se eliminó y su queso quedó suelto (tiene `logId`, muerto);
+ *   · registros sin lote NI `logId` —el detalle los muestra con "—"—, que no
+ *     hay manera de atar a nada. Mi versión anterior exigía `logId` y a estos
+ *     los daba por buenos: el aviso desapareció de la pantalla y los $4.242
+ *     siguieron contándose. De ahí que la regla mire el RESPALDO, no la forma
+ *     del identificador.
+ *
+ * Vive acá y no en cada pantalla a propósito: la tarjeta del tablero y su hoja
  * de detalle tenían cada una su propia definición, y dos definiciones de lo
- * mismo terminan discrepando: el total de la tarjeta dejaría de cuadrar con la
- * suma de su propia lista, que es justo la clase de descuadre que hizo falta
- * perseguir tres veces.
- *
- * Una partida SIN `logId` (cargada a mano en el almacén) no es huérfana: nunca
- * tuvo producción de la cual quedar suelta.
+ * mismo terminan discrepando.
  */
-export const esHuerfana = (item, logsVivosPorId = {}) =>
-    !!item?.logId && !logsVivosPorId[item.logId];
+export const esHuerfana = (item, logsVivosPorId = {}) => {
+    if (!item) return false;
+    // Su producción existe: es trazable.
+    if (item.logId && logsVivosPorId[item.logId]) return false;
+    // Sin producción viva, pero con su costo propio congelado al crearse: el
+    // registro se hizo completo y se puede valorar. Se respeta.
+    if ((item.costoUnitarioUsd ?? 0) > 0) return false;
+    return true;
+};

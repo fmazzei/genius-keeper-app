@@ -881,14 +881,14 @@ export function ManagerHome({ onNavigate }) {
                                     {huerfanas.length > 0 && (
                                         <div className="bg-red-950/30 border border-red-900/50 rounded-xl px-4 py-3 mb-3">
                                             <p className="text-red-300 text-xs font-semibold">
-                                                {huerfanas.length} partida{huerfanas.length > 1 ? 's' : ''} sin producción
+                                                {huerfanas.length} partida{huerfanas.length > 1 ? 's' : ''} sin respaldo
                                                 {valorHuerfanas > 0 && <> · ${valorHuerfanas.toFixed(0)} a precio de planta</>}
                                             </p>
                                             <p className="text-slate-400 text-xs leading-snug mt-1">
-                                                Su producción fue eliminada y el producto quedó en el almacén.
-                                                <strong className="text-red-200"> No se cuentan como inventario</strong> —
-                                                ni arriba ni en la tarjeta— porque el sistema ya declaró que ese lote no
-                                                existe. Son registros que hay que limpiar.
+                                                No se puede decir de dónde salió este producto: su producción fue
+                                                eliminada, o el registro nunca tuvo lote ni costo.
+                                                <strong className="text-red-200"> No se cuentan como inventario</strong>,
+                                                ni acá arriba ni en la tarjeta. Son registros que hay que limpiar.
                                             </p>
                                             {esMasterKroma && (
                                                 <button type="button" onClick={limpiarHuerfanas} disabled={limpiando}
@@ -946,7 +946,7 @@ export function ManagerHome({ onNavigate }) {
                                                                 </span>
                                                                 {row.huerfano ? (
                                                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/25">
-                                                                        producción eliminada
+                                                                        sin respaldo
                                                                     </span>
                                                                 ) : row.estimado && (
                                                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20">
@@ -969,7 +969,7 @@ export function ManagerHome({ onNavigate }) {
                                                                     ? (row.tipo === 'sin_envasar'
                                                                         ? `$${row.costoUnit.toFixed(2)}/kg costo`
                                                                         : `$${row.costoUnit.toFixed(2)}/ud costo`)
-                                                                    : 'sin costo: su lote ya no existe'}
+                                                                    : 'no se puede costear'}
                                                             </p>
                                                             {precioDe(row) > 0 && (
                                                                 <p className="text-blue-400 text-xs mt-0.5">${precioDe(row).toFixed(0)} planta</p>
