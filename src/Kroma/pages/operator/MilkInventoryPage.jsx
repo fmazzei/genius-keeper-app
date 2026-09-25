@@ -379,7 +379,7 @@ function ParamConfigPanel({ paramConfig, onClose, onSave }) {
 
 // ─── Reception Card ───────────────────────────────────────────────────────────
 
-function ReceptionCard({ rec, paramConfig, isMaster, kromaRole, onEdit, onDelete, onDisable, onEnable }) {
+function ReceptionCard({ rec, paramConfig, isMaster, kromaRole, sinProduccion, onEdit, onDelete, onDisable, onEnable }) {
     const [confirmDelete,  setConfirmDelete]  = useState(false);
     const [confirmDisable, setConfirmDisable] = useState(false);
 
@@ -439,7 +439,43 @@ function ReceptionCard({ rec, paramConfig, isMaster, kromaRole, onEdit, onDelete
             )}
 
             {/* ── Actions ── */}
-            {isLocked ? (
+            {isLocked && sinProduccion ? (
+                /* Recepción que dice "procesada" pero NO la reclama ninguna
+                   producción viva. Pasa cuando una carga de planilla falló a
+                   medias y dejó sus recepciones atrás, o cuando se eliminó la
+                   producción que las consumió. Quedaban bloqueadas para siempre
+                   —"Producción completada"— duplicando el volumen de leche sin
+                   que nadie pudiera sacarlas. */
+                <div className="bg-red-950/30 border border-red-900/50 rounded-xl p-3">
+                    {confirmDelete ? (
+                        <>
+                            <p className="text-red-300 text-xs font-semibold mb-2">¿Eliminar esta recepción?</p>
+                            <div className="flex gap-2">
+                                <button onClick={() => setConfirmDelete(false)}
+                                    className="flex-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs font-semibold py-2 rounded-lg">
+                                    Cancelar
+                                </button>
+                                <button onClick={() => { setConfirmDelete(false); onDelete(rec); }}
+                                    className="flex-1 bg-red-700 hover:bg-red-600 text-white text-xs font-semibold py-2 rounded-lg">
+                                    Eliminar
+                                </button>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="text-red-300 text-xs leading-snug">
+                                Sin producción asociada — no la usó ningún lote.
+                            </span>
+                            {isMaster && (
+                                <button onClick={() => setConfirmDelete(true)}
+                                    className="shrink-0 flex items-center gap-1.5 bg-red-900/40 hover:bg-red-900/70 border border-red-800/50 text-red-300 text-xs font-semibold py-1.5 px-3 rounded-xl transition-colors">
+                                    <Trash2 size={11} /> Eliminar
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+            ) : isLocked ? (
                 <div className="flex items-center gap-1.5 text-slate-600 text-xs pt-1">
                     <Lock size={11} />
                     <span>{rec.status === 'en_proceso' ? 'En uso en producción activa' : 'Producción completada'}</span>
@@ -524,6 +560,9 @@ export default function MilkInventoryPage({ onNavigate }) {
     const isMaster = kromaRole === 'master';
 
     const [allReceptions, setAllReceptions] = useState([]);
+    // Ids de recepción que alguna producción VIVA reclama. `null` = no se pudo
+    // averiguar, y entonces no se ofrece borrar ninguna.
+    const [recepcionesUsadas, setRecepcionesUsadas] = useState(null);
     const [suppliers, setSuppliers]         = useState([]);
     const [milkPrices, setMilkPrices]       = useState([]); // kroma_materials con categoria 'leche'
     const [paramConfig, setParamConfig]     = useState(DEFAULT_PARAM_CONFIG);
@@ -553,12 +592,28 @@ export default function MilkInventoryPage({ onNavigate }) {
     async function loadData() {
         setLoading(true); setError(null);
         try {
-            const [recSnap, suppSnap, matSnap, cfgDoc] = await Promise.all([
+            const [recSnap, suppSnap, matSnap, cfgDoc, logSnap] = await Promise.all([
                 getDocs(query(collection(db, 'kroma_milk_reception'), where('empresaId', '==', empresaId))),
                 getDocs(query(collection(db, 'kroma_suppliers'), where('empresaId', '==', empresaId))),
                 getDocs(query(collection(db, 'kroma_materials'), where('empresaId', '==', empresaId))),
                 getDoc(doc(db, 'kroma_config', CONFIG_DOC_ID)),
+                // Para saber qué recepciones reclama de verdad una producción
+                // viva. Si falla, se asume que todas están en uso: es preferible
+                // no ofrecer borrar nada a ofrecer borrar algo que sí se usa.
+                getDocs(query(collection(db, 'kroma_production_logs'), where('empresaId', '==', empresaId)))
+                    .catch(() => null),
             ]);
+
+            const usadas = new Set();
+            if (logSnap) {
+                logSnap.docs.forEach(d => {
+                    const log = d.data();
+                    if (log.active === false) return;          // eliminada: ya no reclama nada
+                    (log.recepcionIds || []).forEach(id => usadas.add(id));
+                    (log.recepciones || []).forEach(r => r?.recepcionId && usadas.add(r.recepcionId));
+                });
+            }
+            setRecepcionesUsadas(logSnap ? usadas : null);
 
             if (cfgDoc.exists()) {
                 const cfg = cfgDoc.data();
@@ -1053,6 +1108,7 @@ export default function MilkInventoryPage({ onNavigate }) {
                                 paramConfig={paramConfig}
                                 isMaster={isMaster}
                                 kromaRole={kromaRole}
+                                sinProduccion={!!recepcionesUsadas && !recepcionesUsadas.has(rec.id)}
                                 onEdit={openEdit}
                                 onDelete={handleDelete}
                                 onDisable={handleDisable}

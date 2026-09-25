@@ -36,7 +36,7 @@
 //     acaba de corregir.
 
 import React, { useState, useMemo } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
@@ -156,6 +156,15 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 operarioNombre: kromaUser?.name || '',
             };
 
+            // TODO en UN SOLO BATCH: o entra la planilla completa, o no entra
+            // nada. Antes las recepciones se escribían de a una ANTES del log de
+            // producción; si el log fallaba —y falló, por el `undefined` que
+            // rechazaba Firestore— las recepciones ya creadas se quedaban. Cada
+            // reintento del mismo papel volvía a crearlas: así aparecieron seis
+            // recepciones de leche para una sola planilla de dos productores.
+            const batch = writeBatch(db);
+            const logRef = doc(collection(db, 'kroma_production_logs'));
+
             // 1) Las recepciones de leche, ya PROCESADAS.
             const recepciones = [];
             for (const e of entregas) {
@@ -180,7 +189,10 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     active: true,
                     createdAt: serverTimestamp(),
                 };
-                const ref = await addDoc(collection(db, 'kroma_milk_reception'), sinUndefined(rec));
+                const ref = doc(collection(db, 'kroma_milk_reception'));
+                // La recepción apunta a SU producción. Sin esto no hay forma de
+                // distinguir una recepción buena de una que quedó suelta.
+                batch.set(ref, sinUndefined({ ...rec, logId: logRef.id }));
                 recepciones.push(sinUndefined({
                     recepcionId:     ref.id,
                     proveedorId:     rec.proveedorId,
@@ -209,7 +221,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             if (Object.keys(ph).length) curva.pH = ph;
             if (Object.keys(tp).length) curva.temperatura = tp;
 
-            await addDoc(collection(db, 'kroma_production_logs'), sinUndefined({
+            batch.set(logRef, sinUndefined({
                 ...base,
                 fichaId:        ficha.id,
                 productoId:     ficha.productoId,
@@ -266,6 +278,8 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 createdAt: serverTimestamp(),
             }));
 
+            // La única escritura de toda la operación.
+            await batch.commit();
             onSaved?.();
         } catch (e) {
             console.error(e);
