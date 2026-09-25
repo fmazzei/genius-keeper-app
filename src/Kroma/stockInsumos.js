@@ -53,7 +53,10 @@ export const stockStatus = (inv) => {
     if (total <= 0) return 'empty';
     const ratio = total / minimo;
     if (ratio < 0.5) return 'critical';
-    if (ratio < 1)   return 'low';
+    // `<= 1`: estar EXACTAMENTE en el mínimo ya es motivo de reposición — el
+    // mínimo es el punto en el que se vuelve a comprar, no un estado cómodo.
+    // Con `< 1` un insumo justo en su mínimo no avisaba nada.
+    if (ratio <= 1)  return 'low';
     return 'ok';
 };
 

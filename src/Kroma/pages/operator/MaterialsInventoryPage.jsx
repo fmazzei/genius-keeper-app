@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
     collection, getDocs, doc, setDoc, serverTimestamp,
-    query, where, onSnapshot, addDoc, updateDoc, runTransaction,
+    query, where, onSnapshot, addDoc, updateDoc, runTransaction, writeBatch, getDoc,
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
@@ -867,7 +867,52 @@ export default function MaterialsInventoryPage({ params = null }) {
                 .filter(m => m.categoria !== 'leche')
                 .sort((a, b) => a.nombre.localeCompare(b.nombre));
             const inv = {};
-            invSnap.docs.forEach(d => { inv[d.data().materialId] = { id: d.id, ...d.data() }; });
+            // Se indexa por `materialId` O por el id del documento: el id ES el
+            // id del material por construcción, y había registros creados sin
+            // ese campo que quedaban colgados en `inv[undefined]`.
+            invSnap.docs.forEach(d => {
+                const data = d.data();
+                inv[data.materialId || d.id] = { id: d.id, ...data };
+            });
+
+            // ── Reparación de registros invisibles ──
+            //
+            // "En uso" y "Stock mínimo" creaban el registro de inventario SIN
+            // `empresaId` (ya corregido arriba). Como toda lista filtra por ese
+            // campo, esos registros no los devolvía nadie: el material se veía
+            // como "sin existencias cargadas" aunque tuviera stock, y su mínimo
+            // no podía disparar la alerta de reposición. No se arreglan con un
+            // botón que alguien tiene que acordarse de pulsar.
+            const faltantes = mats.filter(m => !inv[m.id]);
+            if (faltantes.length > 0) {
+                try {
+                    // Se piden UNO POR UNO por su id (el id del registro ES el
+                    // id del material). Un `get` puntual sí puede leer un
+                    // documento al que le falta la etiqueta de empresa; una
+                    // lista sin ese filtro la rechazan las reglas. Y son pocos:
+                    // solo los que aparentan no tener inventario.
+                    const encontrados = await Promise.all(faltantes.map(m =>
+                        getDoc(doc(db, 'kroma_inventory_materials', m.id))
+                            .then(snap => (snap.exists() ? { id: snap.id, ...snap.data() } : null))
+                            .catch(() => null)
+                    ));
+                    const batch = writeBatch(db);
+                    let n = 0;
+                    encontrados.forEach(data => {
+                        if (!data) return;
+                        // Existe pero estaba invisible: se le pone la etiqueta
+                        // que le falta para que vuelva a aparecer en las listas.
+                        if (!data.empresaId || !data.materialId) {
+                            batch.update(doc(db, 'kroma_inventory_materials', data.id),
+                                { empresaId, materialId: data.id });
+                            n += 1;
+                        }
+                        inv[data.id] = { ...data, empresaId, materialId: data.id };
+                    });
+                    if (n > 0) await batch.commit();
+                } catch { /* si no se puede reparar, la pantalla igual abre */ }
+            }
+
             setMaterials(mats);
             setInventory(inv);
         } catch (e) { setError(e.message); }
@@ -985,16 +1030,30 @@ export default function MaterialsInventoryPage({ params = null }) {
         }
     }
 
+    // ⚠️ `empresaId` y `materialId` en TODAS las escrituras, no solo en la
+    // entrada. Estas dos usan `setDoc(..., {merge:true})`, que CREA el documento
+    // si no existía — y lo creaban sin `empresaId`. Como cada lista filtra por
+    // `where('empresaId','==',…)`, ese registro quedaba invisible para toda la
+    // app: el material aparecía como "sin existencias cargadas" aunque tuviera
+    // stock, y su mínimo nunca podía disparar la alerta de reposición.
     async function handleSetEnUso(mat, newCerrado, newEnUso) {
         const docRef = doc(db, 'kroma_inventory_materials', mat.id);
-        const update = { stockCerrado: newCerrado, stockEnUso: newEnUso, updatedAt: serverTimestamp() };
+        const update = {
+            empresaId: kromaUser?.empresaId || 'lacteoca',
+            materialId: mat.id,
+            stockCerrado: newCerrado, stockEnUso: newEnUso, updatedAt: serverTimestamp(),
+        };
         await setDoc(docRef, update, { merge: true });
         setInventory(prev => ({ ...prev, [mat.id]: { ...prev[mat.id], ...update } }));
     }
 
     async function handleSetMinimo(mat, minimo, esBase) {
         const docRef = doc(db, 'kroma_inventory_materials', mat.id);
-        const update = { materialId: mat.id, stockMinimo: minimo, stockMinimoEsBase: !!esBase, updatedAt: serverTimestamp() };
+        const update = {
+            empresaId: kromaUser?.empresaId || 'lacteoca',
+            materialId: mat.id,
+            stockMinimo: minimo, stockMinimoEsBase: !!esBase, updatedAt: serverTimestamp(),
+        };
         await setDoc(docRef, update, { merge: true });
         setInventory(prev => ({ ...prev, [mat.id]: { ...prev[mat.id], ...update } }));
     }
