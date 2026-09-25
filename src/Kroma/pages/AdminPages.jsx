@@ -3,7 +3,7 @@ import { db } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, where } from 'firebase/firestore';
 import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction, Plus, Edit2, Trash2, Loader, Settings, BarChart3, ChefHat, Droplets, BookOpen, Tag, Factory, FlaskConical, ChevronRight } from 'lucide-react';
 import { useKroma } from '../KromaContext';
-import { necesitaReposicion, tieneMinimo } from '@/Kroma/stockInsumos.js';
+import { necesitaReposicion, tieneMinimo, inventarioVigente } from '@/Kroma/stockInsumos.js';
 import { conExistencia, esHuerfana } from '@/Kroma/inventarioPT.js';
 import SuppliersPageImpl from './admin/SuppliersPage';
 import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
@@ -114,7 +114,13 @@ export function AdminHome({ onNavigate }) {
 
             const materiales = vivos(matSnap);
             const logsVivos = Object.fromEntries(vivos(logSnap).map(l => [l.id, l]));
-            const inv = Object.fromEntries(vivos(invSnap).map(x => [x.id, x]));
+            // MISMA regla que la pantalla de Insumos (`inventarioVigente`): un
+            // registro dado de baja no cuenta, y las dos tienen que coincidir o
+            // el aviso manda a buscar algo que la lista muestra como presente.
+            const inv = Object.fromEntries(
+                (invSnap.docs || []).map(x => ({ id: x.id, ...x.data() }))
+                    .filter(inventarioVigente)
+                    .map(x => [x.materialId || x.id, x]));
 
             // Un material sin proveedor rompe la trazabilidad de la compra y
             // deja la ficha del proveedor incompleta.

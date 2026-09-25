@@ -872,6 +872,10 @@ export default function MaterialsInventoryPage({ params = null }) {
             // ese campo que quedaban colgados en `inv[undefined]`.
             invSnap.docs.forEach(d => {
                 const data = d.data();
+                // Un registro dado de baja NO cuenta como inventario: esta
+                // pantalla lo ignoraba y por eso mostraba stock de materiales
+                // que el tablero contaba como "sin existencias cargadas".
+                if (data.active === false) return;
                 inv[data.materialId || d.id] = { id: d.id, ...data };
             });
 
@@ -902,6 +906,7 @@ export default function MaterialsInventoryPage({ params = null }) {
                         if (!data) return;
                         // Existe pero estaba invisible: se le pone la etiqueta
                         // que le falta para que vuelva a aparecer en las listas.
+                        if (data.active === false) return;   // dado de baja: no se revive
                         if (!data.empresaId || !data.materialId) {
                             batch.update(doc(db, 'kroma_inventory_materials', data.id),
                                 { empresaId, materialId: data.id });
@@ -1042,6 +1047,9 @@ export default function MaterialsInventoryPage({ params = null }) {
             empresaId: kromaUser?.empresaId || 'lacteoca',
             materialId: mat.id,
             stockCerrado: newCerrado, stockEnUso: newEnUso, updatedAt: serverTimestamp(),
+            // Declarar stock sobre un registro dado de baja lo reactiva: se está
+            // volviendo a usar. Sin esto quedaría escrito pero invisible.
+            active: true,
         };
         await setDoc(docRef, update, { merge: true });
         setInventory(prev => ({ ...prev, [mat.id]: { ...prev[mat.id], ...update } }));
@@ -1053,6 +1061,7 @@ export default function MaterialsInventoryPage({ params = null }) {
             empresaId: kromaUser?.empresaId || 'lacteoca',
             materialId: mat.id,
             stockMinimo: minimo, stockMinimoEsBase: !!esBase, updatedAt: serverTimestamp(),
+            active: true,
         };
         await setDoc(docRef, update, { merge: true });
         setInventory(prev => ({ ...prev, [mat.id]: { ...prev[mat.id], ...update } }));

@@ -68,3 +68,15 @@ export const necesitaReposicion = (inv) => {
 
 /** ¿Tiene un mínimo fijado contra el cual avisar? */
 export const tieneMinimo = (inv) => (inv?.stockMinimo ?? 0) > 0;
+
+/**
+ * ¿Este registro de inventario cuenta?
+ *
+ * Kroma nunca borra: "eliminar el registro de inventario de un material" lo
+ * marca `active:false`. El inicio del administrador lo descartaba y la pantalla
+ * de Insumos NO, así que las dos contaban distinto: el tablero decía "2
+ * materiales sin existencias cargadas" y al entrar a buscarlos la lista los
+ * mostraba con su stock, filtro incluido, como si nada faltara. Dos pantallas
+ * que se contradicen sobre el mismo dato no dejan corregir nada.
+ */
+export const inventarioVigente = (inv) => !!inv && inv.active !== false;
