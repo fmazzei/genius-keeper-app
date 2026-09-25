@@ -3,7 +3,7 @@ import { db } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, where } from 'firebase/firestore';
 import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction, Plus, Edit2, Trash2, Loader, Settings, BarChart3, ChefHat, Droplets, BookOpen, Tag, Factory, FlaskConical, ChevronRight } from 'lucide-react';
 import { useKroma } from '../KromaContext';
-import { necesitaReposicion, tieneMinimo, inventarioVigente } from '@/Kroma/stockInsumos.js';
+import { necesitaReposicion, tieneMinimo, inventarioVigente, esInsumoDeAlmacen } from '@/Kroma/stockInsumos.js';
 import { conExistencia, esHuerfana } from '@/Kroma/inventarioPT.js';
 import SuppliersPageImpl from './admin/SuppliersPage';
 import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
@@ -112,7 +112,10 @@ export function AdminHome({ onNavigate }) {
             if (!vivo) return;
             const vivos = (snap) => (snap.docs || []).map(x => ({ id: x.id, ...x.data() })).filter(x => x.active !== false);
 
-            const materiales = vivos(matSnap);
+            // MISMO universo que la pantalla de Insumos: sin la leche, que no
+            // lleva registro de inventario. Contarla acá generaba un pendiente
+            // que allá no se podía ni ver ni resolver.
+            const materiales = vivos(matSnap).filter(esInsumoDeAlmacen);
             const logsVivos = Object.fromEntries(vivos(logSnap).map(l => [l.id, l]));
             // MISMA regla que la pantalla de Insumos (`inventarioVigente`): un
             // registro dado de baja no cuenta, y las dos tienen que coincidir o

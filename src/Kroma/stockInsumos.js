@@ -80,3 +80,16 @@ export const tieneMinimo = (inv) => (inv?.stockMinimo ?? 0) > 0;
  * que se contradicen sobre el mismo dato no dejan corregir nada.
  */
 export const inventarioVigente = (inv) => !!inv && inv.active !== false;
+
+/**
+ * ¿Este material se controla por el inventario de INSUMOS?
+ *
+ * La leche no: entra por Recepción de Leche (`kroma_milk_reception`) y nunca
+ * tiene un registro en `kroma_inventory_materials`. La pantalla de Insumos ya la
+ * excluía; el inicio del administrador NO, así que contaba cada leche del
+ * maestro como "material sin existencias cargadas" — un aviso imposible de
+ * resolver y de verificar, porque la lista a la que mandaba ni siquiera las
+ * muestra. Ese era el "2" que no aparecía por ningún lado.
+ */
+export const esInsumoDeAlmacen = (material) =>
+    (material?.categoria || 'otros') !== 'leche';

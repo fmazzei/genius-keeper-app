@@ -5,7 +5,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
-import { isGranel, totalDisplay, totalBase, stockStatus, tieneMinimo } from '@/Kroma/stockInsumos.js';
+import { isGranel, totalDisplay, totalBase, stockStatus, tieneMinimo, esInsumoDeAlmacen, necesitaReposicion } from '@/Kroma/stockInsumos.js';
 import { usePasoSostenido, SIN_SELECCION } from '@/Kroma/pasoSostenido.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, esHoyInput } from '@/Kroma/Components/CampoFecha.jsx';
 import { Package, Plus, AlertTriangle, X, Check, TrendingDown, Bell, Settings, Trash2 } from 'lucide-react';
@@ -864,7 +864,7 @@ export default function MaterialsInventoryPage({ params = null }) {
             ]);
             const mats = matsSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
-                .filter(m => m.categoria !== 'leche')
+                .filter(esInsumoDeAlmacen)   // la leche va por Recepción de Leche
                 .sort((a, b) => a.nombre.localeCompare(b.nombre));
             const inv = {};
             // Se indexa por `materialId` O por el id del documento: el id ES el
@@ -1077,26 +1077,30 @@ export default function MaterialsInventoryPage({ params = null }) {
 
     // ── Derived ───────────────────────────────────────────────────────────────
 
-    const lowCount = materials.filter(m => {
-        const st = stockStatus(inventory[m.id]);
-        return (st === 'low' || st === 'critical') && (inventory[m.id]?.stockMinimo ?? 0) > 0;
-    }).length;
+    // Cada filtro es una pregunta distinta y NO se solapan. Antes el contador
+    // de "bajos" excluía los que están en cero y la lista sí los incluía, así
+    // que la pastilla decía un número y mostraba otro.
+    const CRITERIOS = {
+        // Tiene mínimo fijado y está en él o por debajo: hay que comprar.
+        low:        (m) => necesitaReposicion(inventory[m.id]),
+        // No tiene registro de inventario: nunca se le cargó existencia.
+        none:       (m) => !inventory[m.id],
+        // Cargado pero sin mínimo: nunca va a avisar que falta.
+        sin_minimo: (m) => !!inventory[m.id] && !tieneMinimo(inventory[m.id]),
+    };
 
-    const noStockCount = materials.filter(m => !inventory[m.id]).length;
+    const cuenta = (id) => materials.filter(CRITERIOS[id]).length;
+    const lowCount     = cuenta('low');
+    const noStockCount = cuenta('none');
+    const sinMinCount  = cuenta('sin_minimo');
 
     const filtered = materials.filter(m => {
         if (catFilter !== 'all') {
             const section = SECTION_GROUPS.find(s => s.id === catFilter);
             if (section && !section.cats.includes(m.categoria || 'otros')) return false;
         }
-        if (statusFilter === 'low') {
-            const st = stockStatus(inventory[m.id]);
-            return st === 'low' || st === 'critical' || st === 'empty';
-        }
-        if (statusFilter === 'none') return !inventory[m.id];
-        // Cargado pero sin mínimo: nunca va a avisar que falta.
-        if (statusFilter === 'sin_minimo') return !!inventory[m.id] && !tieneMinimo(inventory[m.id]);
-        return true;
+        const criterio = CRITERIOS[statusFilter];
+        return criterio ? criterio(m) : true;
     });
 
     // ── Loading / error ───────────────────────────────────────────────────────
@@ -1152,14 +1156,18 @@ export default function MaterialsInventoryPage({ params = null }) {
             )}
 
             <div className="px-5 mb-3 shrink-0 space-y-2">
-                <div className="flex gap-2">
+                <div className="flex gap-2 overflow-x-auto pb-1">
                     {[
+                        // El rótulo dice exactamente qué muestra cada uno: "sin
+                        // stock" y "por reponer" son cosas distintas y se estaban
+                        // leyendo como la misma.
                         { id: 'all',  label: 'Todos' },
-                        { id: 'low',  label: `⚠ Bajos (${lowCount})` },
-                        { id: 'none', label: `Sin stock (${noStockCount})` },
+                        { id: 'low',  label: `⚠ Por reponer (${lowCount})` },
+                        { id: 'none', label: `Sin registro (${noStockCount})` },
+                        ...(sinMinCount > 0 ? [{ id: 'sin_minimo', label: `Sin mínimo (${sinMinCount})` }] : []),
                     ].map(f => (
                         <button key={f.id} onClick={() => setStatusFilter(f.id)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                                 statusFilter === f.id ? 'bg-teal-700 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
                             }`}>{f.label}</button>
                     ))}
