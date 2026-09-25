@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { kgProducidos, rendimientoLkg } from '@/Kroma/estadoPlanta.js';
-import { kgDePartida, tieneExistencia, conExistencia } from '@/Kroma/inventarioPT.js';
+import { kgDePartida, tieneExistencia, conExistencia, esHuerfana } from '@/Kroma/inventarioPT.js';
 import { fmtL, fmtNum } from '@/Kroma/formato.js';
 import Lote from '@/Kroma/Components/Lote.jsx';
 import { db } from '@/Firebase/config.js';
@@ -305,7 +305,20 @@ export function ManagerHome({ onNavigate }) {
         // PT capital (cost-based) — stored costoUnitarioUsd + backfill estimate
         // Solo partidas CON existencia: una partida empacada en 0 unidades es un
         // registro vacío, aunque conserve su `totalKg` del día que se empacó.
-        const ptVivos = conExistencia(ptItems || []);
+        // Producto cuya PRODUCCIÓN fue eliminada: su registro sigue en el almacén
+        // pero el sistema mismo declara que ese lote no existe. No se cuenta como
+        // inventario —ni a costo ni a precio de planta— porque sería mostrar
+        // plata que no está; se declara aparte para poder limpiarlo.
+        const logsPorId = indexById(allLogs || logs);
+        const ptConExistencia = conExistencia(ptItems || []);
+        const ptHuerfanas = ptConExistencia.filter(i => esHuerfana(i, logsPorId));
+        const ptVivos     = ptConExistencia.filter(i => !esHuerfana(i, logsPorId));
+
+        const valorHuerfanas = ptHuerfanas.reduce((s, item) => {
+            const precio = parseFloat(ptCatalogById[item.productoId]?.precioVentaUSD);
+            return precio > 0 ? s + kgDePartida(item) * precio : s;
+        }, 0);
+
         let capitalPT = 0;
         ptVivos.forEach(item => {
             const kg = kgDePartida(item);
@@ -327,8 +340,61 @@ export function ManagerHome({ onNavigate }) {
         }, 0);
         const hayPrecioVenta = valorVentaPT > 0;
 
-        return { mLogs, totalLitros, totalMermaL, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent, costoXkg, mCostos, capitalPT, valorVentaPT, hayPrecioVenta };
+        return { mLogs, totalLitros, totalMermaL, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent, costoXkg, mCostos, capitalPT, valorVentaPT, hayPrecioVenta, ptHuerfanas, valorHuerfanas };
     }, [data]);
+
+    // ── Limpiar el producto cuya producción ya no existe ──
+    //
+    // Se retira desde acá y no una por una desde Almacenes porque son nueve, y
+    // un trabajo manual del que depende que un número deje de mentir es un
+    // trabajo que nadie va a hacer. Cada salida deja su evento en el libro de
+    // movimientos, igual que cualquier otra.
+    const [limpiando, setLimpiando]       = useState(false);
+    const [errorLimpieza, setErrorLimpieza] = useState('');
+    const esMasterKroma = kromaRole === 'master';
+
+    const limpiarHuerfanas = useCallback(async () => {
+        const items = c?.ptHuerfanas || [];
+        if (!items.length || limpiando) return;
+        setLimpiando(true); setErrorLimpieza('');
+        try {
+            const empresaId = kromaUser?.empresaId || 'lacteoca';
+            // Un batch: o salen todas o no sale ninguna. Media limpieza dejaría
+            // el número a medio corregir, que es peor que no tocarlo.
+            const batch = writeBatch(db);
+            items.forEach(item => {
+                batch.update(doc(db, 'kroma_inventory_pt', item.id), {
+                    active: false,
+                    deletedAt: serverTimestamp(),
+                    deletedPorId: kromaUser?.id || null,
+                    deletedPorNombre: kromaUser?.name || null,
+                    deletedMotivo: 'Su producción fue eliminada: el registro quedó huérfano.',
+                });
+                batch.set(doc(collection(db, 'kroma_warehouse_movements')), {
+                    empresaId,
+                    tipo:            'eliminacion_produccion',
+                    origenId:        item.warehouseId || null,
+                    origenNombre:    'Almacén',
+                    destinoId:       null,
+                    destinoNombre:   'Retirado — producción eliminada',
+                    productoNombre:  item.productoNombre || '',
+                    lote:            item.lote || '',
+                    logId:           item.logId || null,
+                    presentacion:    item.presentacion || (item.tipo === 'sin_envasar' ? 'Sin envasar' : ''),
+                    cantidad:        item.tipo === 'empacado' ? (item.unidades || 0) : (item.kgTotales || 0),
+                    unidad:          item.tipo === 'empacado' ? 'unidades' : 'kg',
+                    nota:            'Registro sin producción que lo respalde.',
+                    creadoPorId:     kromaUser?.id || null,
+                    creadoPorNombre: kromaUser?.name || null,
+                    createdAt:       serverTimestamp(),
+                });
+            });
+            await batch.commit();
+            await reload();
+        } catch (e) {
+            setErrorLimpieza(`No se pudo retirar: ${e.message}`);
+        } finally { setLimpiando(false); }
+    }, [c?.ptHuerfanas, limpiando, kromaUser, reload]);
 
     const close = () => setModal(null);
 
@@ -797,14 +863,18 @@ export function ManagerHome({ onNavigate }) {
                             const precio = parseFloat(ptCatalogById[row.productoId]?.precioVentaUSD);
                             return precio > 0 ? precio * row.kgItem : 0;
                         };
-                        const totalValor = rows.reduce((s, r) => s + r.valor, 0);
-                        const totalVenta = rows.reduce((s, r) => s + precioDe(r), 0);
-                        const totalKg    = rows.reduce((s, r) => s + r.kgItem, 0);
-                        // Producto que sigue en el almacén sin producción que lo
-                        // respalde. Es la explicación de un "$0 a costo" con un
-                        // precio de planta grande al lado: no se puede costear
-                        // porque su lote ya no existe.
+                        // Las partidas cuya producción fue eliminada NO son
+                        // inventario: el sistema mismo declara que ese lote no
+                        // existe. Quedan FUERA de los dos totales —mostrarlas a
+                        // precio de planta es mostrar plata que no está— y se
+                        // declaran aparte, con su monto, para poder limpiarlas.
                         const huerfanas = rows.filter(r => r.huerfano);
+                        const reales    = rows.filter(r => !r.huerfano);
+                        const totalValor = reales.reduce((s, r) => s + r.valor, 0);
+                        const totalVenta = reales.reduce((s, r) => s + precioDe(r), 0);
+                        const totalKg    = reales.reduce((s, r) => s + r.kgItem, 0);
+                        const valorHuerfanas = huerfanas.reduce((s, r) => s + precioDe(r), 0);
+                        const kgHuerfanas    = huerfanas.reduce((s, r) => s + r.kgItem, 0);
                         return (
                             <KpiModal title="Inventario de Producto Terminado" onClose={close}>
                                 <div className="space-y-1">
@@ -812,12 +882,25 @@ export function ManagerHome({ onNavigate }) {
                                         <div className="bg-red-950/30 border border-red-900/50 rounded-xl px-4 py-3 mb-3">
                                             <p className="text-red-300 text-xs font-semibold">
                                                 {huerfanas.length} partida{huerfanas.length > 1 ? 's' : ''} sin producción
+                                                {valorHuerfanas > 0 && <> · ${valorHuerfanas.toFixed(0)} a precio de planta</>}
                                             </p>
                                             <p className="text-slate-400 text-xs leading-snug mt-1">
-                                                Su producción fue eliminada pero el producto quedó en el almacén.
-                                                No se puede costear —por eso la valoración a costo queda corta— y
-                                                sí suma al precio de planta. Sácalas desde Almacenes.
+                                                Su producción fue eliminada y el producto quedó en el almacén.
+                                                <strong className="text-red-200"> No se cuentan como inventario</strong> —
+                                                ni arriba ni en la tarjeta— porque el sistema ya declaró que ese lote no
+                                                existe. Son registros que hay que limpiar.
                                             </p>
+                                            {esMasterKroma && (
+                                                <button type="button" onClick={limpiarHuerfanas} disabled={limpiando}
+                                                    className="mt-2.5 w-full bg-red-800 hover:bg-red-700 disabled:opacity-40 text-white text-xs font-bold py-2.5 rounded-lg transition-colors">
+                                                    {limpiando
+                                                        ? 'Retirando…'
+                                                        : `Retirar las ${huerfanas.length} del almacén`}
+                                                </button>
+                                            )}
+                                            {errorLimpieza && (
+                                                <p className="text-red-300 text-xs mt-2">{errorLimpieza}</p>
+                                            )}
                                         </div>
                                     )}
                                     {/* Header — dual valuation */}
@@ -831,7 +914,12 @@ export function ManagerHome({ onNavigate }) {
                                             <p className="text-slate-400 text-xs mt-0.5">Precio de planta</p>
                                         </div>
                                     </div>
-                                    <p className="text-slate-500 text-xs mb-1">{totalKg.toFixed(1)} kg · {rows.length} partida{rows.length !== 1 ? 's' : ''}</p>
+                                    <p className="text-slate-500 text-xs mb-1">
+                                        {totalKg.toFixed(1)} kg · {reales.length} partida{reales.length !== 1 ? 's' : ''}
+                                        {huerfanas.length > 0 && (
+                                            <span className="text-red-400"> · {kgHuerfanas.toFixed(1)} kg sin producción, aparte</span>
+                                        )}
+                                    </p>
 
                                     {rows.length === 0 && <Empty msg="Sin partidas con costo calculable" />}
 
@@ -1023,13 +1111,10 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
         const refLog    = refLogByProd[item.productoId];
         const log       = directLog ?? refLog;
 
-        // Un PT sin producción viva y sin costo guardado es HUÉRFANO: su lote se
-        // eliminó pero el queso quedó en el almacén (pasaba antes de que borrar
-        // una producción se llevara su producto terminado). Antes se descartaba
-        // acá mismo, así que la tarjeta sumaba su "precio de planta" y el detalle
-        // NO lo mostraba: el dueño veía $4.242 sin una sola línea que lo
-        // explicara. Ahora sale en la lista, marcado, y con valor a costo 0.
-        const huerfano = !log && !hasStoredCost;
+        // MISMA definición que usa la tarjeta (`esHuerfana`, en inventarioPT.js):
+        // si cada una tuviera la suya, el total de la tarjeta dejaría de cuadrar
+        // con la suma de esta lista.
+        const huerfano = esHuerfana(item, logById);
 
         let totalKgProducido = 0, litrosNetos = 0;
         let costoLeche = 0, costoInsumos = 0, costoEmpaque = 0;

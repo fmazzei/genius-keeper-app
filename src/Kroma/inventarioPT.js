@@ -42,3 +42,22 @@ export const tieneExistencia = (item) => {
 
 /** Las partidas que de verdad tienen producto. */
 export const conExistencia = (items = []) => items.filter(tieneExistencia);
+
+/**
+ * ¿Esta partida quedó HUÉRFANA? Es decir: apunta a una producción que ya no
+ * existe (se eliminó) y su producto quedó en el almacén.
+ *
+ * No es inventario: el sistema mismo declaró que ese lote no existe, así que
+ * contarlo —sobre todo a precio de planta— es mostrar plata que no está.
+ *
+ * Vive acá y NO en cada pantalla a propósito. La tarjeta del tablero y su hoja
+ * de detalle tenían cada una su propia definición, y dos definiciones de lo
+ * mismo terminan discrepando: el total de la tarjeta dejaría de cuadrar con la
+ * suma de su propia lista, que es justo la clase de descuadre que hizo falta
+ * perseguir tres veces.
+ *
+ * Una partida SIN `logId` (cargada a mano en el almacén) no es huérfana: nunca
+ * tuvo producción de la cual quedar suelta.
+ */
+export const esHuerfana = (item, logsVivosPorId = {}) =>
+    !!item?.logId && !logsVivosPorId[item.logId];
