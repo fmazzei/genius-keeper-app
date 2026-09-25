@@ -20,6 +20,33 @@ input, select, textarea {
   font-size: 16px !important;
 }
 
+/* ── Campos de fecha ──────────────────────────────────────────────────────
+   En iOS/WebKit el valor de un <input type="date"> vive en un pseudo-elemento
+   con `text-align: center` propio: el resto de los campos del formulario van a
+   la izquierda y la fecha quedaba centrada, descuadrada respecto de todo lo
+   demás. No se puede arreglar con el `style` de React ni con Tailwind porque es
+   un pseudo-elemento del shadow DOM del control — necesita CSS real.
+   `min-width: 0` además evita que el control nativo, que no se encoge solo,
+   desborde su tarjeta en pantallas angostas. */
+input[type="date"],
+input[type="datetime-local"],
+input[type="time"] {
+  text-align: left;
+  min-width: 0;
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+/* En iOS el contenedor interno también centra si el input es más ancho. */
+input[type="date"]::-webkit-datetime-edit,
+input[type="datetime-local"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit {
+  text-align: left;
+  width: 100%;
+}
+
 @keyframes kroma-shake {
   0%,100% { transform: translateX(0); }
   20%,60% { transform: translateX(-6px); }

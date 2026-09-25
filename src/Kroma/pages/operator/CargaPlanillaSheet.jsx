@@ -314,7 +314,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                         <div>
                             <Lbl>Producto</Lbl>
                             <select value={fichaId} onChange={e => setFichaId(e.target.value)}
-                                className="block w-full min-w-0 h-11 bg-slate-800 border border-slate-700 rounded-xl px-3 text-white text-sm focus:outline-none focus:border-emerald-500">
+                                className="block w-full min-w-0 min-h-[44px] bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-emerald-500">
                                 <option value="">Seleccionar…</option>
                                 {fichas.map(f => <option key={f.id} value={f.id}>{f.productoNombre}</option>)}
                             </select>

@@ -35,14 +35,21 @@ export default function CampoFecha({ label, value, onChange, ayuda, acento = 'te
                 value={value}
                 max={max}
                 onChange={e => onChange(e.target.value)}
+                // Mismo `px-3 py-2.5` que el resto de los campos del formulario:
+                // con un alto fijo la caja de la fecha quedaba de otro tamaño que
+                // la de al lado. El `min-h` es solo un piso para que el control
+                // nativo nunca quede más bajo que los demás.
                 // `block w-full min-w-0`: el control nativo no se encoge solo.
-                // `h-11 leading-none`: su alto no lo da el padding.
                 // `appearance-none`: quita el estilo del sistema alrededor.
                 // `colorScheme: dark`: sin esto el texto y el ícono van en oscuro
                 // sobre fondo oscuro y el campo parece vacío.
+                // La ALINEACIÓN a la izquierda se hace en `index.css`: en iOS el
+                // valor vive en un pseudo-elemento que se centra solo, y eso no
+                // se puede tocar desde acá.
                 style={{ colorScheme: 'dark' }}
-                className={`block w-full min-w-0 max-w-full h-11 appearance-none bg-slate-800 border border-slate-700
-                    rounded-xl px-3 text-white text-sm leading-none focus:outline-none ${borde}`}
+                className={`block w-full min-w-0 max-w-full min-h-[44px] appearance-none bg-slate-800
+                    border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm
+                    focus:outline-none ${borde}`}
             />
             {ayuda && <p className="text-slate-500 text-xs mt-1.5 leading-snug">{ayuda}</p>}
         </div>
