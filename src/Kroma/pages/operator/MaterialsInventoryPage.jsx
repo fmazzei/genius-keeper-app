@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
+import { isGranel, totalDisplay, totalBase, stockStatus, tieneMinimo } from '@/Kroma/stockInsumos.js';
 import { usePasoSostenido, SIN_SELECCION } from '@/Kroma/pasoSostenido.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, esHoyInput } from '@/Kroma/Components/CampoFecha.jsx';
 import { Package, Plus, AlertTriangle, X, Check, TrendingDown, Bell, Settings, Trash2 } from 'lucide-react';
@@ -31,38 +32,6 @@ const BAR_COLOR  = { ok: 'bg-emerald-500', low: 'bg-amber-400', critical: 'bg-re
 const TEXT_COLOR = { ok: 'text-emerald-400', low: 'text-amber-400', critical: 'text-red-400', empty: 'text-slate-500', none: 'text-slate-600' };
 
 // ─── Domain helpers ───────────────────────────────────────────────────────────
-
-function isGranel(inv) {
-    return !inv || inv.presentacionTipo === 'granel' || !inv.cantidadPorUnidad || inv.cantidadPorUnidad <= 0;
-}
-
-// Total in presentation units (packages). For granel: total in base units.
-function totalDisplay(inv) {
-    if (!inv) return 0;
-    if (isGranel(inv)) return inv.stockEnUso ?? 0;
-    const cpu = inv.cantidadPorUnidad || 1;
-    return (inv.stockCerrado ?? 0) + (inv.stockEnUso ?? 0) / cpu;
-}
-
-function stockStatus(inv) {
-    if (!inv || (inv.stockCerrado == null && inv.stockEnUso == null)) return 'none';
-    const minimo = inv.stockMinimo ?? 0;
-    if (minimo <= 0) return 'ok';
-    // Compare in the unit the minimum was set in
-    const total = (isGranel(inv) || inv.stockMinimoEsBase) ? totalBase(inv) : totalDisplay(inv);
-    if (total <= 0) return 'empty';
-    const ratio = total / minimo;
-    if (ratio < 0.5) return 'critical';
-    if (ratio < 1)   return 'low';
-    return 'ok';
-}
-
-// Total stock in base units (g, ml…) regardless of presentation
-function totalBase(inv) {
-    if (!inv) return 0;
-    if (isGranel(inv)) return inv.stockEnUso ?? 0;
-    return ((inv.stockCerrado ?? 0) * (inv.cantidadPorUnidad || 0)) + (inv.stockEnUso ?? 0);
-}
 
 // ─── Costeo promedio ponderado ────────────────────────────────────────────────
 //
@@ -850,7 +819,7 @@ function AlertsBanner({ alerts, onDismiss }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function MaterialsInventoryPage() {
+export default function MaterialsInventoryPage({ params = null }) {
     const { kromaUser, kromaRole, canEdit, verCostos } = useKroma();
     const isMaster = kromaRole === 'master';
     // Cargar existencias es del administrador; el operario solo mira.
@@ -861,7 +830,9 @@ export default function MaterialsInventoryPage() {
     const [loading, setLoading]     = useState(true);
     const [error, setError]         = useState(null);
     const [catFilter, setCatFilter]     = useState('all');
-    const [statusFilter, setStatusFilter] = useState('all');
+    // El inicio del administrador señala "2 materiales sin existencias" y manda
+    // acá: se llega con ese filtro puesto, no a la lista completa.
+    const [statusFilter, setStatusFilter] = useState(params?.filtro || 'all');
     const [entradaTarget, setEntradaTarget] = useState(null);
     const [enUsoTarget, setEnUsoTarget]     = useState(null);
     const [minimoTarget, setMinimoTarget]   = useState(null);
@@ -1055,6 +1026,8 @@ export default function MaterialsInventoryPage() {
             return st === 'low' || st === 'critical' || st === 'empty';
         }
         if (statusFilter === 'none') return !inventory[m.id];
+        // Cargado pero sin mínimo: nunca va a avisar que falta.
+        if (statusFilter === 'sin_minimo') return !!inventory[m.id] && !tieneMinimo(inventory[m.id]);
         return true;
     });
 

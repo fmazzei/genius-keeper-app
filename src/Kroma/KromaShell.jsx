@@ -98,7 +98,7 @@ function renderPage(view, role, kromaUser, onNavigate, navParams) {
         case 'puesta_marcha': return <PuestaEnMarchaPage onNavigate={onNavigate} />;
         case 'production':    return <DailyProductionPage onNavigate={onNavigate} params={navParams} />;
         case 'milk':          return <MilkInventoryPage onNavigate={onNavigate} />;
-        case 'materials_inv': return <MaterialsInventoryPage />;
+        case 'materials_inv': return <MaterialsInventoryPage params={navParams} />;
         case 'fichas':        return <FichaBuilderPage onNavigate={onNavigate} />;
         case 'despacho':      return <DespachoPage onNavigate={onNavigate} />;
         case 'warehouses':    return <WarehousesPage />;

@@ -3,6 +3,8 @@ import { db } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, where } from 'firebase/firestore';
 import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction, Plus, Edit2, Trash2, Loader, Settings, BarChart3, ChefHat, Droplets, BookOpen, Tag, Factory, FlaskConical, ChevronRight } from 'lucide-react';
 import { useKroma } from '../KromaContext';
+import { necesitaReposicion, tieneMinimo } from '@/Kroma/stockInsumos.js';
+import { conExistencia, esHuerfana } from '@/Kroma/inventarioPT.js';
 import SuppliersPageImpl from './admin/SuppliersPage';
 import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
 import ProductCatalogPageImpl from './admin/ProductCatalogPage';
@@ -67,14 +69,17 @@ const COLOR_MAP = {
 //
 // Ahora la pantalla responde: **¿qué dato está incompleto y qué frena?**
 
-function Pendiente({ n, titulo, detalle, tone, view, onNavigate }) {
+function Pendiente({ n, titulo, detalle, tone, view, params, onNavigate }) {
     const tones = {
         rose:  'bg-rose-500/10 border-rose-500/30 text-rose-300',
         amber: 'bg-amber-500/10 border-amber-500/30 text-amber-300',
         slate: 'bg-slate-900 border-slate-800 text-slate-300',
     };
     return (
-        <button onClick={() => onNavigate?.(view)}
+        // Lleva al SUBCONJUNTO, no a la lista completa: tocar "2 materiales sin
+        // existencias" y aterrizar en los 19 deja el trabajo de encontrarlos
+        // otra vez en manos de quien ya te lo había señalado.
+        <button onClick={() => onNavigate?.(view, params)}
             className={`w-full text-left border rounded-xl p-4 flex items-center gap-3 transition-colors hover:brightness-110 ${tones[tone]}`}>
             <span className="font-mono font-bold text-xl shrink-0 w-9 text-center">{n}</span>
             <span className="flex-1 min-w-0">
@@ -97,14 +102,18 @@ export function AdminHome({ onNavigate }) {
         (async () => {
             const vacio = { docs: [] };
             const q = (col) => getDocs(query(collection(db, col), where('empresaId', '==', empresaId))).catch(() => vacio);
-            const [matSnap, invSnap, prodSnap, supSnap, ptSnap, alertSnap] = await Promise.all([
+            const [matSnap, invSnap, prodSnap, supSnap, ptSnap, alertSnap, logSnap] = await Promise.all([
                 q('kroma_materials'), q('kroma_inventory_materials'), q('kroma_products'),
                 q('kroma_suppliers'), q('kroma_inventory_pt'), q('kroma_alerts'),
+                // Para no contar como stock el producto terminado cuya
+                // producción ya no existe.
+                q('kroma_production_logs'),
             ]);
             if (!vivo) return;
             const vivos = (snap) => (snap.docs || []).map(x => ({ id: x.id, ...x.data() })).filter(x => x.active !== false);
 
             const materiales = vivos(matSnap);
+            const logsVivos = Object.fromEntries(vivos(logSnap).map(l => [l.id, l]));
             const inv = Object.fromEntries(vivos(invSnap).map(x => [x.id, x]));
 
             // Un material sin proveedor rompe la trazabilidad de la compra y
@@ -117,8 +126,15 @@ export function AdminHome({ onNavigate }) {
             const empaqueSuelto = materiales.filter(
                 m => m.categoria === 'empaques' && (m.asignaciones || []).length === 0);
             // Sin registro de inventario, la producción no puede descontarlo
-            // (avisa, pero no descuenta).
+            // (avisa, pero no descuenta). Es un alta incompleta, NO una alerta
+            // de reposición: no se sabe si falta, se sabe que no está cargado.
             const sinInventario = materiales.filter(m => !inv[m.id]);
+            // LO QUE HAY QUE REPONER: tiene un mínimo fijado y está por debajo.
+            // Esta es la alerta que le sirve al administrador para comprar.
+            const porReponer = materiales.filter(m => necesitaReposicion(inv[m.id]));
+            // Un insumo cargado pero SIN mínimo nunca va a avisar que falta: no
+            // hay umbral contra el cual comparar. El pendiente ahí es definirlo.
+            const sinMinimo = materiales.filter(m => inv[m.id] && !tieneMinimo(inv[m.id]));
             // Productos sin presentación no se pueden empacar.
             const sinPresentacion = vivos(prodSnap).filter(p => (p.presentaciones || []).length === 0);
 
@@ -131,9 +147,15 @@ export function AdminHome({ onNavigate }) {
                 alertas: vivos(alertSnap)
                     .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
                     .slice(0, 4),
+                porReponer: porReponer.length,
+                sinMinimo: sinMinimo.length,
                 nMateriales: materiales.length,
                 nProveedores: vivos(supSnap).length,
-                nPT: vivos(ptSnap).length,
+                // PT que de verdad hay: con existencia (una partida en 0
+                // unidades es un registro vacío) y con una producción que la
+                // respalde. Antes contaba TODOS los documentos activos, así que
+                // mostraba "4 PT en stock" con el almacén vacío.
+                nPT: conExistencia(vivos(ptSnap)).filter(i => !esHuerfana(i, logsVivos)).length,
             });
         })();
         return () => { vivo = false; };
@@ -149,8 +171,15 @@ export function AdminHome({ onNavigate }) {
           detalle: 'Sin costo no hay promedio ponderado ni costo real del lote.' },
         { n: d.empaqueSuelto,   tone: 'rose',  view: 'materials',     titulo: 'Empaques sin asignar a un producto',
           detalle: 'No se descuentan al empacar: salen de la sala y el maestro nunca se entera.' },
-        { n: d.sinInventario,   tone: 'slate', view: 'materials_inv', titulo: 'Materiales sin existencias cargadas',
+        { n: d.sinInventario,   tone: 'slate', view: 'materials_inv', params: { filtro: 'none' },
+          titulo: 'Materiales sin existencias cargadas',
           detalle: 'La producción avisa pero no puede descontarlos.' },
+        { n: d.porReponer,      tone: 'rose',  view: 'materials_inv', params: { filtro: 'low' },
+          titulo: 'Insumos por reponer',
+          detalle: 'Están por debajo del mínimo que les fijaste. Hay que comprar.' },
+        { n: d.sinMinimo,       tone: 'slate', view: 'materials_inv', params: { filtro: 'sin_minimo' },
+          titulo: 'Insumos sin mínimo definido',
+          detalle: 'Nunca van a avisar que faltan: no hay umbral contra el cual comparar.' },
     ].filter(x => x.n > 0);
 
     return (
