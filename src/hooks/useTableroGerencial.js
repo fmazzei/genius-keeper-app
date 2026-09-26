@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { cuentaEnCartera, saldoAbierto } from '@/utils/facturaEstado.js';
+import { facturacionPorPdv, pdvActivo, ciudadDePdv, DESDE_VENTAS } from '@/utils/facturacionPdv.js';
 
 const EMPRESA_GK = 'lacteoca';
 
@@ -27,10 +28,18 @@ const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 const mesKey = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : null;
 
 /** Últimos N meses como claves "YYYY-MM", del más viejo al más nuevo. */
+/**
+ * Los últimos `n` meses, pero NUNCA antes de `DESDE_VENTAS`. Una serie que
+ * arranca en meses vacíos por ser anteriores al corte se lee como una caída de
+ * ventas que nunca ocurrió.
+ */
+export { DESDE_VENTAS };
+
 export function ultimosMeses(n = 12, hasta = new Date()) {
     const out = [];
     for (let i = n - 1; i >= 0; i--) {
         const d = new Date(hasta.getFullYear(), hasta.getMonth() - i, 1);
+        if (d < DESDE_VENTAS) continue;
         out.push({ key: mesKey(d), label: d.toLocaleDateString('es-VE', { month: 'short', year: '2-digit' }), fecha: d });
     }
     return out;
@@ -53,7 +62,7 @@ export function useTableroGerencial() {
                 // datos sin migrar) NO debe dejar en blanco el lado comercial.
                 const vacio = { docs: [] };
                 const kq = (col) => getDocs(query(collection(db, col), where('empresaId', '==', EMPRESA_GK))).catch(() => vacio);
-                const [fact, cli, dev, pagar, prov, compras, prod, invMat] = await Promise.all([
+                const [fact, cli, dev, pagar, prov, compras, prod, invMat, posSnap] = await Promise.all([
                     getDocs(collection(db, 'facturas_vendedor')).catch(() => vacio),
                     getDocs(collection(db, 'clientes_zoho')).catch(() => vacio),
                     getDocs(collection(db, 'devoluciones')).catch(() => vacio),
@@ -62,6 +71,10 @@ export function useTableroGerencial() {
                     kq('kroma_compras'),
                     kq('kroma_production_logs'),
                     kq('kroma_inventory_materials'),
+                    // TODOS los PDV, activos e inactivos: "inactivo" en GK
+                    // significa frecuencia de visita 0, no borrado, y el tablero
+                    // los muestra por separado.
+                    getDocs(collection(db, 'pos')).catch(() => vacio),
                 ]);
                 if (!alive) return;
                 const m = (s) => (s.docs || []).map(d => ({ id: d.id, ...d.data() }));
@@ -74,6 +87,7 @@ export function useTableroGerencial() {
                     compras:    m(compras),
                     produccion: m(prod).filter(p => p.active !== false),
                     invMateriales: m(invMat).filter(i => i.active !== false),
+                    pos: m(posSnap).filter(p => p.type !== 'deposito'),
                 });
             } catch (e) {
                 console.error(e);
@@ -148,7 +162,25 @@ export function useTableroGerencial() {
             prodPorMes[k].kg     += Number(p.rendimientoKg) || 0;
         });
 
+        // ── Puntos de venta, por PESO de facturación ──
+        // Desde 2026: es el corte que pidió el socio para las ventas, y la lista
+        // se ordena por lo que cada PDV facturó en ese período.
+        const pos = data.pos || [];
+        const facturado = facturacionPorPdv(pos, data.facturas, { desde: DESDE_VENTAS });
+        const conPeso = pos.map(p => ({
+            ...p,
+            activo:    pdvActivo(p),
+            ciudad:    ciudadDePdv(p),
+            facturado: facturado.get(p.id)?.monto || 0,
+            nFacturas: facturado.get(p.id)?.nFacturas || 0,
+        })).sort((a, b) => b.facturado - a.facturado);   // el peso manda
+        const pdvActivos   = conPeso.filter(p => p.activo);
+        const pdvInactivos = conPeso.filter(p => !p.activo);
+        const ciudades = [...new Set(conPeso.map(p => p.ciudad))].sort((a, b) => a.localeCompare(b));
+
         return {
+            pdv: conPeso, pdvActivos, pdvInactivos, ciudades,
+            nPdvActivos: pdvActivos.length, nPdvInactivos: pdvInactivos.length,
             porCobrar, cobrarVencido, nPorCobrar: abiertas.length, abiertas,
             porPagar, pagarVencido, nPorPagar: pagarAbiertas.length, pagarAbiertas,
             nClientes: data.clientes.length, conVendedor, oficina,

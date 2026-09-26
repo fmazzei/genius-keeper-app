@@ -20,7 +20,7 @@
 import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-    Wallet, Receipt, Users, Truck, TrendingUp, RotateCcw, ShoppingCart, Factory,
+    Wallet, Receipt, Users, Truck, TrendingUp, RotateCcw, ShoppingCart, Factory, Store,
     X, AlertTriangle, Search, ChevronRight,
 } from 'lucide-react';
 import { useTableroGerencial, ultimosMeses } from '@/hooks/useTableroGerencial.js';
@@ -52,14 +52,17 @@ const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick
                 ${onClick && !disabled ? 'hover:shadow-md hover:border-slate-300 transition-all' : ''}
                 ${disabled ? 'opacity-70' : ''}`}
         >
+            {/* El título va en su propia línea y a todo el ancho. Antes compartía
+                fila con el ícono y el número y llevaba `truncate`: en dos
+                columnas de teléfono, "Cuentas por cobrar" y "Devoluciones del
+                mes" se cortaban — y una tarjeta cuyo nombre no se lee completo
+                no dice qué está mostrando. */}
             <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ICONO}`}><Icon size={16} /></span>
-                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 truncate">{titulo}</p>
-                </div>
+                <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${ICONO}`}><Icon size={16} /></span>
                 <span className="text-[10px] font-extrabold text-slate-300 shrink-0">{n}</span>
             </div>
-            <p className="text-2xl font-black text-slate-800 tabular-nums mt-2 truncate">{valor}</p>
+            <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mt-2 leading-tight">{titulo}</p>
+            <p className="text-2xl font-black text-slate-800 tabular-nums mt-1 truncate">{valor}</p>
             {sub  && <p className="text-xs text-slate-500 mt-0.5 leading-snug">{sub}</p>}
             {nota && <p className="text-[11px] text-slate-400 mt-1 leading-snug">{nota}</p>}
             {onClick && !disabled && (
@@ -242,6 +245,12 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                     nota={`${money0(capitalInsumos)} inmovilizado en insumos`}
                     onClick={() => setAbierto('compras')} />
 
+                <Card n="09" icon={Store} titulo="Puntos de venta" tono="emerald"
+                    valor={num(k.nPdvActivos)}
+                    sub={`${num(k.nPdvInactivos)} inactivo${k.nPdvInactivos === 1 ? '' : 's'} · ${num(k.ciudades.length)} ciudad${k.ciudades.length === 1 ? '' : 'es'}`}
+                    nota="Toca para verlos por peso de facturación"
+                    onClick={() => setAbierto('pdv')} />
+
                 <Card n="08" icon={Factory} titulo="Producción del mes"
                     valor={`${num(k.prodMes.lotes)} lote${k.prodMes.lotes === 1 ? '' : 's'}`}
                     sub={`${num(k.prodMes.litros)} L · ${num(k.prodMes.kg)} kg`}
@@ -403,6 +412,10 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                 </Hoja>
             )}
 
+            {abierto === 'pdv' && (
+                <HojaPdv k={k} onClose={cerrar} />
+            )}
+
             {abierto === 'produccion' && (
                 <Hoja titulo="Producción · histórico" subtitulo="Lotes producidos por mes (Kroma)" onClose={cerrar}>
                     <PorMes datos={k.prodPorMes} valorDe={(m) => m?.lotes} formato={(v) => `${num(v)} lotes`} etiqueta="de producción" />
@@ -424,5 +437,101 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                 </Hoja>
             )}
         </div>
+    );
+}
+
+// ─── Hoja de Puntos de Venta ─────────────────────────────────────────────────
+//
+// El socio la pidió así: los PDV ACTIVOS ordenados por peso de facturación, los
+// INACTIVOS igual, y poder filtrar por ciudad. El orden por facturación es el
+// punto — un PDV que factura $4.000 y uno que factura $80 no son el mismo
+// problema, y en una lista alfabética se ven idénticos.
+function HojaPdv({ k, onClose }) {
+    const [estado, setEstado] = useState('activos');   // activos | inactivos | todos
+    const [ciudad, setCiudad] = useState('todas');
+
+    const base = estado === 'activos' ? k.pdvActivos
+        : estado === 'inactivos'      ? k.pdvInactivos
+        : k.pdv;
+    const lista = ciudad === 'todas' ? base : base.filter(p => p.ciudad === ciudad);
+    const total = lista.reduce((s, p) => s + p.facturado, 0);
+    const conVentas = lista.filter(p => p.facturado > 0).length;
+
+    const Pill = ({ activa, onClick, children }) => (
+        <button type="button" onClick={onClick}
+            className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
+                activa ? 'bg-slate-800 text-white border-slate-800'
+                       : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}>
+            {children}
+        </button>
+    );
+
+    return (
+        <Hoja titulo="Puntos de venta"
+            subtitulo="Ordenados por lo que factura cada uno desde 2026"
+            onClose={onClose}>
+
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
+                <Pill activa={estado === 'activos'}   onClick={() => setEstado('activos')}>
+                    Activos ({num(k.nPdvActivos)})
+                </Pill>
+                <Pill activa={estado === 'inactivos'} onClick={() => setEstado('inactivos')}>
+                    Inactivos ({num(k.nPdvInactivos)})
+                </Pill>
+                <Pill activa={estado === 'todos'}     onClick={() => setEstado('todos')}>
+                    Todos ({num(k.pdv.length)})
+                </Pill>
+            </div>
+
+            {/* Las ciudades son el segundo corte: el socio quiere saber dónde
+                está el peso, no solo cuánto suma. */}
+            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 mt-1">
+                <Pill activa={ciudad === 'todas'} onClick={() => setCiudad('todas')}>Todas las ciudades</Pill>
+                {k.ciudades.map(c => (
+                    <Pill key={c} activa={ciudad === c} onClick={() => setCiudad(c)}>{c}</Pill>
+                ))}
+            </div>
+
+            <div className="flex items-baseline justify-between gap-3 mt-3 pb-2 border-b border-slate-200">
+                <p className="text-sm font-bold text-slate-700">
+                    {num(lista.length)} punto{lista.length === 1 ? '' : 's'} de venta
+                </p>
+                <p className="text-xs text-slate-500">
+                    {money0(total)} · {num(conVentas)} con ventas
+                </p>
+            </div>
+
+            <div className="mt-2 space-y-1.5">
+                {lista.length === 0 ? (
+                    <p className="text-sm text-slate-500 py-6 text-center">Sin puntos de venta con ese filtro.</p>
+                ) : lista.map((p, i) => (
+                    <div key={p.id}
+                        className={`flex items-center gap-3 rounded-xl px-3 py-2.5 border ${
+                            p.activo ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-200'}`}>
+                        <span className="w-6 shrink-0 text-[11px] font-black text-slate-300 tabular-nums">{i + 1}</span>
+                        <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-bold truncate ${p.activo ? 'text-slate-800' : 'text-slate-500'}`}>
+                                {p.name || p.nombre || '—'}
+                            </p>
+                            <p className="text-xs text-slate-500 truncate">
+                                {p.ciudad}
+                                {p.chain && <> · {p.chain}</>}
+                                {!p.activo && <span className="text-slate-400"> · inactivo</span>}
+                            </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                            <p className="text-sm font-black text-slate-800 tabular-nums">
+                                {p.facturado > 0 ? money0(p.facturado) : '—'}
+                            </p>
+                            <p className="text-[11px] text-slate-400">
+                                {p.facturado > 0
+                                    ? `${num(p.nFacturas)} factura${p.nFacturas === 1 ? '' : 's'}`
+                                    : 'sin ventas desde 2026'}
+                            </p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </Hoja>
     );
 }
