@@ -20,7 +20,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { cuentaEnCartera, saldoAbierto } from '@/utils/facturaEstado.js';
-import { facturacionPorPdv, pdvActivo, ciudadDePdv, DESDE_VENTAS } from '@/utils/facturacionPdv.js';
+import { facturacionPorPdv, pdvActivo, ciudadDePdv, agruparPdvPorCliente, DESDE_VENTAS } from '@/utils/facturacionPdv.js';
 
 const EMPRESA_GK = 'lacteoca';
 
@@ -177,9 +177,13 @@ export function useTableroGerencial() {
         const pdvActivos   = conPeso.filter(p => p.activo);
         const pdvInactivos = conPeso.filter(p => !p.activo);
         const ciudades = [...new Set(conPeso.map(p => p.ciudad))].sort((a, b) => a.localeCompare(b));
+        // El acordeón: cada razón social con sus puntos de venta adentro.
+        const porCarnet = {};
+        (data.clientes || []).forEach(c => { if (c.customerId) porCarnet[c.customerId] = c; });
+        const clientesConPdv = agruparPdvPorCliente(conPeso, porCarnet);
 
         return {
-            pdv: conPeso, pdvActivos, pdvInactivos, ciudades,
+            pdv: conPeso, pdvActivos, pdvInactivos, ciudades, clientesConPdv,
             nPdvActivos: pdvActivos.length, nPdvInactivos: pdvInactivos.length,
             porCobrar, cobrarVencido, nPorCobrar: abiertas.length, abiertas,
             porPagar, pagarVencido, nPorPagar: pagarAbiertas.length, pagarAbiertas,

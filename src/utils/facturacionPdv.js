@@ -104,3 +104,43 @@ export const ciudadDePdv = (p) => {
     const c = String(p?.ciudad || p?.city || '').trim();
     return c || 'Sin ciudad';
 };
+
+/**
+ * Los PDV agrupados por CLIENTE (razón social), con su peso de facturación.
+ *
+ * Es la forma en que el socio quiere leerlos: primero a quién le vendemos y
+ * después dónde se ejecuta esa venta. Un cliente puede tener una tienda o
+ * quince sucursales, y en una lista plana de PDV eso no se ve.
+ *
+ * El nombre del cliente sale del registro de Zoho por CARNET cuando lo hay
+ * —es la llave estable— y del `razonSocialZoho` del PDV como respaldo. Un PDV
+ * sin vínculo NO se esconde: cae en su propio grupo, porque un punto de venta
+ * que no se sabe a quién factura es un dato que hay que corregir, no ocultar.
+ */
+export function agruparPdvPorCliente(pdvConPeso = [], clientesPorCarnet = {}) {
+    const grupos = new Map();
+    pdvConPeso.forEach(p => {
+        const porCarnet = p.zohoCustomerId ? clientesPorCarnet[p.zohoCustomerId] : null;
+        const nombre = porCarnet?.razonSocialCanonica || porCarnet?.customerName
+            || p.razonSocialZoho || 'Sin cliente asignado';
+        const clave = clavePorNombre(nombre) || 'sin-cliente';
+        if (!grupos.has(clave)) {
+            grupos.set(clave, {
+                clave, nombre, pdv: [],
+                facturado: 0, nFacturas: 0, activos: 0, inactivos: 0,
+                sinCliente: nombre === 'Sin cliente asignado',
+            });
+        }
+        const g = grupos.get(clave);
+        g.pdv.push(p);
+        g.facturado += p.facturado || 0;
+        g.nFacturas += p.nFacturas || 0;
+        if (p.activo) g.activos += 1; else g.inactivos += 1;
+    });
+
+    return [...grupos.values()]
+        .map(g => ({ ...g, pdv: [...g.pdv].sort((a, b) => b.facturado - a.facturado) }))
+        // Por peso: quién pesa más arriba. Los sin cliente al final — son una
+        // tarea pendiente, no un cliente del negocio.
+        .sort((a, b) => (a.sinCliente - b.sinCliente) || (b.facturado - a.facturado));
+}
