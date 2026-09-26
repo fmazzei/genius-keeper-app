@@ -26,7 +26,7 @@
 // `categoria` de la factura: ese quedó congelado cuando se sincronizó y puede ser
 // anterior a que se marcara el cliente como foodservice.
 
-import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
+import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 
 // Un múltiplo se acepta solo si es "limpio": a lo sumo 12% de desviación
 // respecto al entero. Deja pasar descuentos comerciales normales y descarta un

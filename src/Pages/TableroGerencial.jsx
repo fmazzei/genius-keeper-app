@@ -20,10 +20,11 @@
 import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
-    Wallet, Receipt, Users, Truck, TrendingUp, RotateCcw, ShoppingCart, Factory,
+    Wallet, Receipt, Users, Truck, TrendingUp, RotateCcw, ShoppingCart, Factory, FileText,
     X, AlertTriangle, Search, ChevronRight,
 } from 'lucide-react';
 import { useTableroGerencial, ultimosMeses } from '@/hooks/useTableroGerencial.js';
+import DossierComercialDoc from '@/Components/DossierComercialDoc.jsx';
 import CarteraVencidaModal from '@/Components/CarteraVencidaModal.jsx';
 
 const money  = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -157,6 +158,7 @@ const Fila = ({ titulo, sub, derecha, subDerecha, tono }) => (
 export default function TableroGerencial({ onVerIndicadores = null }) {
     const t = useTableroGerencial();
     const [abierto, setAbierto] = useState(null);   // clave de la hoja abierta
+    const [dossier, setDossier] = useState(false);
     const k = t.kpis;
 
     if (t.loading && !k) {
@@ -190,12 +192,20 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                     <h2 className="text-xl font-black text-slate-800 tracking-tight">Tablero Gerencial</h2>
                     <p className="text-sm text-slate-500">El negocio de un vistazo. Toca cualquier tarjeta para ver el detalle.</p>
                 </div>
-                {onVerIndicadores && (
-                    <button type="button" onClick={onVerIndicadores}
-                        className="text-xs font-bold text-brand-blue bg-white border border-slate-200 rounded-xl px-3 py-2 hover:shadow-md">
-                        Indicadores de campo →
+                <div className="flex items-center gap-2">
+                    {/* El dossier lo generan gerencia y el máster: es el documento
+                        que se le entrega a un tercero que evalúa distribuir. */}
+                    <button type="button" onClick={() => setDossier(true)}
+                        className="flex items-center gap-1.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl px-3 py-2">
+                        <FileText size={14} /> Dossier comercial
                     </button>
-                )}
+                    {onVerIndicadores && (
+                        <button type="button" onClick={onVerIndicadores}
+                            className="text-xs font-bold text-brand-blue bg-white border border-slate-200 rounded-xl px-3 py-2 hover:shadow-md">
+                            Indicadores de campo →
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -393,6 +403,8 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                     )}
                 </Hoja>
             )}
+
+            {dossier && <DossierComercialDoc onClose={() => setDossier(false)} />}
 
             {abierto === 'produccion' && (
                 <Hoja titulo="Producción · histórico" subtitulo="Lotes producidos por mes (Kroma)" onClose={cerrar}>
