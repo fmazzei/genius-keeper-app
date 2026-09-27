@@ -2708,3 +2708,21 @@ el queso de esta producción?"):
   ella había puesto (si nadie lo tocó — `ptReemplazable`).
 - De paso: la Cava mostraba **"Vence pronto" estando vacía** — `hasExpiringSoon`
   contaba partidas en cero. Ahora solo partidas con existencia.
+
+### Vencimientos: obligatorio en lo envasado, tentativo en lo sin envasar (2026-09) ✅
+
+Regla del dueño: **todo lo envasado lleva SIEMPRE la fecha de vencimiento con
+la que salió**, y el queso **sin envasar lleva un vencimiento tentativo de 100
+días desde su fabricación** (`DIAS_VENCIMIENTO_SIN_ENVASAR` en `fechas.js`,
+junto con `inputDeFecha`).
+
+- **Planilla**: cada fila envasada pide "Vence (el de la etiqueta)" —esté o no
+  en cava— y no se puede guardar si falta (`filasSinVencimiento` en
+  `ptPlanilla.js`, el botón dice cuántas faltan). `productosFinales` guarda
+  `fechaVencimiento` siempre. Lo sin envasar muestra "Vencimiento tentativo"
+  (fecha de la planilla + 100, editable); la partida de cava lo lleva con
+  `vencimientoTentativo:true` y el log en `fechaVencimientoSinEnvasar`.
+- **Producción normal**: "Cerrar producción" queda bloqueado si se envasó algo
+  sin fecha de vencimiento (antes era opcional y la partida entraba a cava sin
+  fecha). La partida sin envasar de `createInventoryPT` recibe `fechaInicio` +
+  100 días (tentativo); al envasarla ("Finalizar empaque") se pone el definitivo.

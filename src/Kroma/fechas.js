@@ -46,3 +46,18 @@ export const sumarDiasInput = (valor, dias) => {
     const p = (n) => String(n).padStart(2, '0');
     return `${f.getFullYear()}-${p(f.getMonth() + 1)}-${p(f.getDate())}`;
 };
+
+/**
+ * Vencimiento TENTATIVO del queso sin envasar: 100 días desde su fabricación
+ * (decisión del dueño). Es una sugerencia — al envasarlo se pone el definitivo.
+ */
+export const DIAS_VENCIMIENTO_SIN_ENVASAR = 100;
+
+/** Date | Timestamp de Firestore → "YYYY-MM-DD" en partes locales ('' si no hay). */
+export const inputDeFecha = (v) => {
+    if (!v) return '';
+    const d = v?.toDate ? v.toDate() : (v instanceof Date ? v : new Date(v));
+    if (Number.isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};

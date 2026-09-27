@@ -41,8 +41,8 @@ import { collection, doc, writeBatch, serverTimestamp, deleteField, getDocs, que
 import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
-import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO } from '@/Kroma/Components/CampoFecha.jsx';
-import { partidasDePlanilla, ptReemplazable, modoSugerido, kgSinEnvasarSugerido } from '@/Kroma/ptPlanilla.js';
+import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
+import { partidasDePlanilla, ptReemplazable, modoSugerido, kgSinEnvasarSugerido, filasSinVencimiento } from '@/Kroma/ptPlanilla.js';
 import { leerSello, fmtSello } from '@/Kroma/selloDatos.js';
 import { redondear, fmtNum } from '@/Kroma/formato.js';
 import { formularioDesdeLog, nombrePresentacion, pesoPresentacion, kgPorUnidadDeSku } from '@/Kroma/planillaForm.js';
@@ -102,6 +102,8 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     // Kg que siguen en cava sin envasar. Vacío = se toma lo sugerido (lo
     // producido que no aparece envasado).
     const [sinEnvasar, setSinEnvasar] = useState(ini?.sinEnvasar ?? '');
+    // Vencimiento TENTATIVO de lo sin envasar. Vacío = fabricación + 100 días.
+    const [vencSinEnvasar, setVencSinEnvasar] = useState(ini?.vencSinEnvasar || '');
     // ¿Histórica (su queso ya salió) o actual (su queso sigue en cava)? En una
     // planilla nueva lo sugiere el sello; `null` = seguir la sugerencia.
     const [modoElegido, setModoElegido] = useState(ini?.modo || null);
@@ -163,6 +165,10 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     // Solo una planilla ACTUAL tiene queso en cava; en una histórica ya salió.
     const kgSinEnvasarNum = !esActual ? 0
         : String(sinEnvasar).trim() === '' ? kgSinEnvasarSug : redondear(num(sinEnvasar), 3);
+    const vencSinEnvasarSug = sumarDiasInput(fecha, DIAS_VENCIMIENTO_SIN_ENVASAR);
+    const vencSinEnvasarEf  = vencSinEnvasar || vencSinEnvasarSug;
+    // Todo lo envasado lleva SIEMPRE la fecha de vencimiento con la que salió.
+    const faltanVenc = filasSinVencimiento(empaques);
     const kgDeclarados = redondear(kgEnvasados + kgSinEnvasarNum, 3);
     const precioLecheNum = num(precioLeche);
     // Costo del lote por kg: leche declarada ÷ kilos. Los insumos los pone
@@ -211,7 +217,8 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
         ? { ...e, fechaEnvasado: valor, fechaVencimiento: sumarDiasInput(valor, DIAS_VENCIMIENTO_ENVASADO) || e.fechaVencimiento }
         : e));
 
-    const puedeGuardar = fecha && ficha && totalRecibido > 0 && kilosNum > 0 && !guardando && ptExistente !== null;
+    const puedeGuardar = fecha && ficha && totalRecibido > 0 && kilosNum > 0 && !guardando && ptExistente !== null
+        && faltanVenc.length === 0;
 
     const setEntrega = (i, campo, valor) =>
         setEntregas(prev => prev.map((e, j) => j === i ? { ...e, [campo]: valor } : e));
@@ -325,10 +332,11 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     nombre:        e.nombre || 'Presentación',
                     pesoPorUnidad: redondear(num(e.kgPorUnidad), 3),
                     unidades:      Math.round(num(e.unidades)),
+                    // El vencimiento con el que salió, siempre (esté o no en cava).
+                    fechaVencimiento: e.fechaVencimiento || null,
                     ...(esActual && e.enCava && {
                         enCava: true,
                         fechaEnvasado:    e.fechaEnvasado || null,
-                        fechaVencimiento: e.fechaVencimiento || null,
                     }),
                 }));
 
@@ -362,6 +370,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 rendimientoKg:    rendimiento,   // null si falta un dato, nunca undefined
                 notas: notas.trim(),
                 modoCarga: modo,   // 'historica' | 'actual' — NINGUNA toca insumos
+                fechaVencimientoSinEnvasar: kgSinEnvasarNum > 0 ? vencSinEnvasarEf : null,
                 estado: 'completada',
                 // Queso guardado sin envasar = trabajo PENDIENTE de verdad: entra
                 // a cava y la producción queda "falta empacar" hasta que se
@@ -434,7 +443,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 // quedaba subvaluado (sin insumos ni empaque). Sin costo, gerencia
                 // lo costea con el cálculo completo del lote (leche + insumos de
                 // la ficha + empaque), el mismo de cualquier otro lote.
-                for (const pt of partidasDePlanilla({ empaques: esActual ? empaques : [], kgSinEnvasar: kgSinEnvasarNum })) {
+                for (const pt of partidasDePlanilla({ empaques: esActual ? empaques : [], kgSinEnvasar: kgSinEnvasarNum, vencimientoSinEnvasar: vencSinEnvasarEf })) {
                     batch.set(doc(collection(db, 'kroma_inventory_pt')), sinUndefined({
                         empresaId,
                         productoId: ficha.productoId, productoNombre: ficha.productoNombre,
@@ -703,6 +712,15 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                                     ? `Vacío = lo que no aparece envasado (${fmtNum(kgSinEnvasarSug, 3)} kg). Escribe 0 si no queda nada.`
                                     : 'Entra a cava y la producción queda en "Pendiente de empacar" hasta que se envase.'}
                             </p>
+                            {kgSinEnvasarNum > 0 && (
+                                <div className="mt-2.5">
+                                    <CampoFecha label="Vencimiento tentativo" value={vencSinEnvasarEf}
+                                        onChange={v => setVencSinEnvasar(v)} />
+                                    <p className="text-slate-500 text-[11px] leading-snug mt-1">
+                                        Sugerido: {DIAS_VENCIMIENTO_SIN_ENVASAR} días desde la fabricación. Al envasarlo se pone el definitivo.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -738,6 +756,17 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                                         Vence a {DIAS_VENCIMIENTO_ENVASADO} días del envasado; puedes cambiarlo.
                                     </p>
                                 </div>
+                            )}
+                            {/* Lo envasado SIEMPRE lleva el vencimiento con el que salió. */}
+                            {!(esActual && e.enCava) && (
+                                <div className="mt-2.5">
+                                    <CampoFecha label="Vence (el de la etiqueta)" acento="emerald"
+                                        value={e.fechaVencimiento || ''}
+                                        onChange={v => setEmpaque(i, 'fechaVencimiento', v)} />
+                                </div>
+                            )}
+                            {num(e.unidades) > 0 && !e.fechaVencimiento && (
+                                <p className="text-amber-400 text-[11px] mt-1.5">Falta la fecha de vencimiento.</p>
                             )}
                         </div>
                     ))}
@@ -806,7 +835,9 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 </button>
                 {!puedeGuardar && !guardando && (
                     <p className="text-slate-600 text-xs text-center mt-2">
-                        Hacen falta fecha, producto, litros y kilos producidos.
+                        {faltanVenc.length > 0
+                            ? `Falta la fecha de vencimiento en ${faltanVenc.length === 1 ? 'una presentación envasada' : `${faltanVenc.length} presentaciones envasadas`}.`
+                            : 'Hacen falta fecha, producto, litros y kilos producidos.'}
                     </p>
                 )}
             </div>

@@ -21,7 +21,7 @@ import React from 'react';
 
 // Los helpers de fecha viven en `src/Kroma/fechas.js` (módulo puro, verificable
 // sin montar React) y se reexportan acá para no tener que importar de dos sitios.
-export { hoyInput, fechaDesdeInput, esHoyInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO } from '@/Kroma/fechas.js';
+export { hoyInput, fechaDesdeInput, esHoyInput, sumarDiasInput, inputDeFecha, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/fechas.js';
 
 export default function CampoFecha({ label, value, onChange, ayuda, acento = 'teal', max }) {
     const borde = acento === 'emerald' ? 'focus:border-emerald-500' : 'focus:border-teal-500';

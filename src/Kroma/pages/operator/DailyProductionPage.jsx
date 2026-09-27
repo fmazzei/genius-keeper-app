@@ -5,7 +5,7 @@ import {
     collection, getDocs, addDoc, updateDoc, doc, getDoc,
     serverTimestamp, query, where, writeBatch,
 } from 'firebase/firestore';
-import CampoFecha, { hoyInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO } from '@/Kroma/Components/CampoFecha.jsx';
+import CampoFecha, { hoyInput, sumarDiasInput, inputDeFecha, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
@@ -1053,11 +1053,9 @@ function EmpaqueEditor({ bloque, reg, onChange, litrosNetos, catalogPresentacion
             {totalKgProducido > 0 && disposicion !== 'guardar_todo' && (
                 <div className="space-y-3">
                     <div>
-                        <SecLabel>Fecha de vencimiento del lote</SecLabel>
-                        <input type="date"
-                            value={reg.fechaVencimiento ?? ''}
-                            onChange={e => onChange({ ...reg, fechaVencimiento: e.target.value })}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-slate-500" />
+                        <SecLabel>Fecha de vencimiento del lote (obligatoria)</SecLabel>
+                        <CampoFecha value={reg.fechaVencimiento ?? ''}
+                            onChange={v => onChange({ ...reg, fechaVencimiento: v })} />
                     </div>
 
                     <div>
@@ -2696,11 +2694,16 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             : disposicion === 'mixto'
                 ? (empaqReg.kgSinEnvasar ?? Math.max(0, +(empaqReg.totalKgProducido - kgEmpacadosFinal).toFixed(3)))
                 : 0;
+        // Vencimiento TENTATIVO de lo que queda sin envasar: fabricación + 100
+        // días (decisión del dueño). Al envasarlo se pone el definitivo.
+        const vencSinEnv = sumarDiasInput(inputDeFecha(log.fechaInicio) || hoyInput(), DIAS_VENCIMIENTO_SIN_ENVASAR) || null;
         if (kgSinEnv > 0) {
             ops.push(addDoc(collection(db, 'kroma_inventory_pt'), {
                 ...base,
                 tipo:     'sin_envasar',
                 kgTotales: kgSinEnv,
+                fechaVencimiento: vencSinEnv,
+                vencimientoTentativo: true,
                 ...baseSnapshot,
                 ...(costoBasePorKg > 0 && { costoUnitarioUsd: +costoBasePorKg.toFixed(4) }),
             }));
@@ -2741,7 +2744,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 productoNombre:  log.productoNombre,
                 presentacion:    'Sin envasar',
                 lote:            log.lote || logId,
-                fechaVencimiento: empaqReg.fechaVencimiento || null,
+                fechaVencimiento: vencSinEnv,
                 cantidad:        kgSinEnv,
                 unidad:          'kg',
                 logId,
@@ -3564,6 +3567,12 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         // Salmuera gate check
         const isSaladoSalmuera = currentBloque?.tipo === 'salado'
             && (bloquesData[String(bloqueActualIdx)]?.registros?.metodo ?? currentBloque?.params?.metodo) === 'salmuera';
+        // Lo envasado SIEMPRE lleva su fecha de vencimiento: sin ella la partida
+        // entraba a la cava sin fecha y no había cómo rotarla ni avisar.
+        const regEmpaque = isEmpaque ? (bloquesData[String(bloqueActualIdx)]?.registros || {}) : {};
+        const empacaAlgo = isEmpaque && (regEmpaque.disposicion ?? 'empacar_todo') !== 'guardar_todo'
+            && (regEmpaque.presentaciones || []).some(p => (p.unidades || 0) > 0);
+        const vencGateOk = !empacaAlgo || !!regEmpaque.fechaVencimiento;
         const salmueraGateOk = !isSaladoSalmuera || (
             (bloquesData[String(bloqueActualIdx)]?.registros?.salmueraTemp ?? 0) > 0 &&
             (bloquesData[String(bloqueActualIdx)]?.registros?.titulacion   ?? 0) > 0 &&
@@ -3772,7 +3781,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                             <div className="px-4 pb-5">
                                 <button
                                     onClick={() => completeBlock(bloqueActualIdx)}
-                                    disabled={saving || !salmueraGateOk}
+                                    disabled={saving || !salmueraGateOk || !vencGateOk}
                                     className={`w-full flex items-center justify-center gap-2 text-white font-bold py-4 rounded-xl text-sm ${
                                         isEmpaque
                                             ? 'bg-emerald-600 hover:bg-emerald-500'
@@ -3785,6 +3794,11 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                 {!salmueraGateOk && (
                                     <p className="text-amber-400 text-xs text-center mt-2 flex items-center justify-center gap-1">
                                         <Lock size={11} /> Completa los 3 parámetros de salmuera
+                                    </p>
+                                )}
+                                {!vencGateOk && (
+                                    <p className="text-amber-400 text-xs text-center mt-2 flex items-center justify-center gap-1">
+                                        <Lock size={11} /> Falta la fecha de vencimiento de lo envasado
                                     </p>
                                 )}
                             </div>

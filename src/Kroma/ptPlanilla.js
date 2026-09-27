@@ -22,7 +22,7 @@ const r3 = (x) => Math.round(x * 1000) / 1000;
  * Las partidas de PT que la planilla debe tener en cava.
  * @param {{empaques: Array, kgSinEnvasar: number}} datos
  */
-export function partidasDePlanilla({ empaques = [], kgSinEnvasar = 0 }) {
+export function partidasDePlanilla({ empaques = [], kgSinEnvasar = 0, vencimientoSinEnvasar = null }) {
     const out = [];
     for (const e of empaques) {
         if (!e?.enCava) continue;
@@ -42,7 +42,12 @@ export function partidasDePlanilla({ empaques = [], kgSinEnvasar = 0 }) {
         });
     }
     const kg = r3(n(kgSinEnvasar));
-    if (kg > 0) out.push({ tipo: 'sin_envasar', kgTotales: kg, cantidadCargada: kg });
+    // Vencimiento TENTATIVO (fabricación + 100 días): se confirma al envasar.
+    if (kg > 0) out.push({
+        tipo: 'sin_envasar', kgTotales: kg, cantidadCargada: kg,
+        fechaVencimiento: vencimientoSinEnvasar || null,
+        ...(vencimientoSinEnvasar && { vencimientoTentativo: true }),
+    });
     return out;
 }
 
@@ -94,4 +99,9 @@ export function modoDeLog(log) {
 export function kgSinEnvasarSugerido(kilos, kgEnvasados) {
     const k = n(kilos) - n(kgEnvasados);
     return k > 0.0005 ? r3(k) : 0;
+}
+
+/** Filas envasadas a las que les falta la fecha de vencimiento (obligatoria). */
+export function filasSinVencimiento(empaques = []) {
+    return empaques.filter(e => Math.round(n(e?.unidades)) > 0 && n(e?.kgPorUnidad) > 0 && !e?.fechaVencimiento);
 }

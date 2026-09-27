@@ -89,6 +89,7 @@ export function formularioDesdeLog(log) {
         })),
         // `null` = no se declaró queso sin envasar (la pill queda apagada).
         sinEnvasar: log.kgSinEnvasar > 0 ? txt(log.kgSinEnvasar) : '',
+        vencSinEnvasar: log.fechaVencimientoSinEnvasar || '',
         modo: modoDeLog(log),
         precioLeche: txt(recs.find(r => r.costoUsdLitro)?.costoUsdLitro),
         notas: log.notas || '',
