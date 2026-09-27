@@ -42,7 +42,7 @@ import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import CampoFecha, { hoyInput, fechaDesdeInput } from '@/Kroma/Components/CampoFecha.jsx';
 import { redondear, fmtNum } from '@/Kroma/formato.js';
-import { formularioDesdeLog } from '@/Kroma/planillaForm.js';
+import { formularioDesdeLog, nombrePresentacion, pesoPresentacion, kgPorUnidadDeSku } from '@/Kroma/planillaForm.js';
 
 const MERMA_SUGERIDA = 10;   // lo que traen las planillas revisadas
 
@@ -96,6 +96,8 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     const [curvaTemp, setCurvaTemp] = useState(ini?.curvaTemp || { inicial: '', h24: '', h72: '' });
     const [kilos, setKilos]   = useState(ini?.kilos || '');
     const [empaques, setEmpaques] = useState(ini?.empaques || []);   // lo que se envasó, declarado
+    // Queso que se guardó SIN envasar (se envasa después). `null` = no declarado.
+    const [sinEnvasar, setSinEnvasar] = useState(ini?.sinEnvasar ?? null);
     const [precioLeche, setPrecioLeche] = useState(ini?.precioLeche || '');  // $/L, opcional
     const [notas, setNotas]   = useState(ini?.notas || '');
 
@@ -123,6 +125,8 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     const skus = (productsMap[ficha?.productoId]?.presentaciones || []);
     const kgEnvasados = redondear(
         empaques.reduce((s, e) => s + num(e.kgPorUnidad) * num(e.unidades), 0), 3);
+    const kgSinEnvasarNum = sinEnvasar === null ? 0 : redondear(num(sinEnvasar), 3);
+    const kgDeclarados = redondear(kgEnvasados + kgSinEnvasarNum, 3);
     const precioLecheNum = num(precioLeche);
     // Costo del lote por kg: leche declarada ÷ kilos. Los insumos los pone
     // gerencia desde la ficha (dosis teórica × precio del Maestro), por eso acá
@@ -132,10 +136,9 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
         ? redondear(costoLecheHist / kilosNum) : null;
 
     const agregarSku = (sku) => {
-        const kg = sku.unidad === 'kg' ? (sku.pesoNeto || 0) : (sku.pesoNeto || 0) / 1000;
         setEmpaques(prev => [...prev, {
-            catalogId: sku.id, nombre: sku.nombre || 'Presentación',
-            kgPorUnidad: String(kg), unidades: '',
+            catalogId: sku.id, nombre: nombrePresentacion(sku),
+            kgPorUnidad: String(kgPorUnidadDeSku(sku)), unidades: '',
         }]);
     };
     const setEmpaque = (i, campo, valor) =>
@@ -275,7 +278,10 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 // ni el costo por kg, ni contaba en los promedios de la planta.
                 totalKgProducido: kilosNum,
                 rendimientoKg:    rendimiento,   // null si falta un dato, nunca undefined
-                kgSinEnvasar:     0,
+                // Declarado, igual que el empaque: dice cuánto se guardó a granel
+                // para envasar después. NO abre trabajo pendiente ni entra a
+                // cava (disposicion 'historico' + empaqueFinalizado).
+                kgSinEnvasar:     kgSinEnvasarNum,
                 notas: notas.trim(),
                 // Cerrada y empacada: si quedara como "guardar_todo" sin empacar,
                 // las 32 planillas aparecerían como trabajo pendiente en el
@@ -506,12 +512,39 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                         <div className="flex flex-wrap gap-1.5 mb-3">
                             {skus.map(sku => (
                                 <button key={sku.id} type="button" onClick={() => agregarSku(sku)}
-                                    className="flex items-center gap-1 bg-slate-800 border border-slate-700 hover:border-emerald-500/50 text-slate-300 text-xs font-semibold px-3 py-2 rounded-xl transition-colors">
-                                    <Plus size={11} /> {sku.nombre}
+                                    className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 hover:border-emerald-500/50 text-slate-300 text-xs font-semibold px-3 py-2 rounded-xl transition-colors text-left">
+                                    <Plus size={11} className="shrink-0" />
+                                    {/* El PESO manda: en el catálogo todas suelen llamarse
+                                        igual que el producto, y sin él no se distinguen. */}
+                                    {pesoPresentacion(sku) && (
+                                        <span className="text-white font-bold font-mono">{pesoPresentacion(sku)}</span>
+                                    )}
+                                    <span className="text-slate-400 font-normal">{sku.nombre || 'Presentación'}</span>
                                 </button>
                             ))}
                         </div>
                     )}
+
+                    {/* Queso guardado sin envasar: se envasa después. Solo kg. */}
+                    <div className="mb-3">
+                        <button type="button"
+                            onClick={() => setSinEnvasar(v => v === null ? '' : null)}
+                            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border transition-colors ${
+                                sinEnvasar !== null
+                                    ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+                                    : 'bg-slate-800 border-slate-700 hover:border-amber-500/50 text-slate-300'}`}>
+                            {sinEnvasar !== null ? <X size={11} /> : <Plus size={11} />} Sin envasar
+                        </button>
+                        {sinEnvasar !== null && (
+                            <div className="bg-slate-900 border border-amber-500/30 rounded-xl p-3 mt-2">
+                                <p className="text-slate-500 text-xs leading-snug mb-2">
+                                    Kilos que se guardaron sin envasar para envasarlos después.
+                                </p>
+                                <Inp inputMode="decimal" placeholder="Kg sin envasar" value={sinEnvasar}
+                                    onChange={ev => setSinEnvasar(ev.target.value)} />
+                            </div>
+                        )}
+                    </div>
 
                     {empaques.map((e, i) => (
                         <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2.5">
@@ -536,10 +569,13 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                         <Plus size={13} /> Otra presentación
                     </button>
 
-                    {kgEnvasados > 0 && (
+                    {kgDeclarados > 0 && (
                         <p className="text-slate-400 text-xs mt-2.5 text-right font-mono">
                             Envasado: <span className="text-white font-bold">{fmtNum(kgEnvasados, 3)} kg</span>
-                            {kilosNum > 0 && kgEnvasados > kilosNum && (
+                            {kgSinEnvasarNum > 0 && (
+                                <> · Sin envasar: <span className="text-amber-300 font-bold">{fmtNum(kgSinEnvasarNum, 3)} kg</span></>
+                            )}
+                            {kilosNum > 0 && kgDeclarados > kilosNum && (
                                 <span className="block text-amber-400 mt-1">
                                     Más de lo producido ({fmtNum(kilosNum, 3)} kg) — revisa las cantidades.
                                 </span>

@@ -2605,3 +2605,17 @@ corrección lo dice.
 Desde la pantalla Historial, "Editar" lleva a Producción con
 `{logId, editar:true}`; si el lote es más viejo que los 20 que carga Producción,
 se busca por id en vez de fallar en silencio.
+
+### Planilla: presentaciones visibles y "Sin envasar" (2026-09) ✅
+
+En el catálogo todas las presentaciones se llaman como el producto ("Lacteoca
+Chèvre Original"), así que las pills de empaque de la planilla eran idénticas.
+Ahora cada pill muestra el **peso en grande** (`pesoPresentacion`) y el nombre
+debajo en gris, y la fila agregada se nombra `nombrePresentacion` ("… · 250 g",
+sin duplicar el peso si ya venía en el nombre). Helpers puros en `planillaForm.js`.
+
+Pill **"Sin envasar"** (ámbar): kg que se guardaron a granel para envasar
+después. Se guarda en `kgSinEnvasar` del log y se restaura al corregir la
+planilla. **No abre trabajo pendiente ni entra a cava**: la planilla sigue con
+`disposicion:'historico'` + `empaqueFinalizado:true` (ver `faltaEmpacar`). El
+aviso "más de lo producido" compara envasado + sin envasar contra los kilos.

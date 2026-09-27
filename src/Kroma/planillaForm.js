@@ -23,6 +23,33 @@ const aInputFecha = (v) => {
 
 const curva = (c = {}) => ({ inicial: txt(c.inicial), h24: txt(c.h24), h72: txt(c.h72) });
 
+/**
+ * El peso de una presentación en texto ("250 g", "1 kg"). Es lo que distingue
+ * a las presentaciones entre sí: en el catálogo suelen llevar TODAS el nombre
+ * del producto ("Lacteoca Chèvre Original"), así que el nombre solo no sirve.
+ */
+export const pesoPresentacion = (sku) => {
+    const p = Number(sku?.pesoNeto);
+    if (!Number.isFinite(p) || p <= 0) return '';
+    return `${String(p).replace('.', ',')} ${sku?.unidad || 'g'}`;
+};
+
+/** Nombre completo de la presentación: producto + peso, sin repetir el peso. */
+export const nombrePresentacion = (sku) => {
+    const nombre = (sku?.nombre || '').trim() || 'Presentación';
+    const peso = pesoPresentacion(sku);
+    if (!peso) return nombre;
+    // Si alguien ya escribió el peso dentro del nombre, no se duplica.
+    const norm = (s) => s.toLowerCase().replace(/\s+/g, '');
+    return norm(nombre).includes(norm(peso)) ? nombre : `${nombre} · ${peso}`;
+};
+
+/** Kg por unidad de una presentación del catálogo. */
+export const kgPorUnidadDeSku = (sku) => {
+    const p = Number(sku?.pesoNeto) || 0;
+    return sku?.unidad === 'kg' ? p : p / 1000;
+};
+
 /** El estado inicial del formulario a partir de un log ya guardado. */
 export function formularioDesdeLog(log) {
     if (!log) return null;
@@ -56,6 +83,8 @@ export function formularioDesdeLog(log) {
             kgPorUnidad: txt(p.pesoPorUnidad),
             unidades:    txt(p.unidades),
         })),
+        // `null` = no se declaró queso sin envasar (la pill queda apagada).
+        sinEnvasar: log.kgSinEnvasar > 0 ? txt(log.kgSinEnvasar) : null,
         precioLeche: txt(recs.find(r => r.costoUsdLitro)?.costoUsdLitro),
         notas: log.notas || '',
     };
