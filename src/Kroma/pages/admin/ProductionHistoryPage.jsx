@@ -11,7 +11,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import {
     ClipboardList, ChevronLeft, ChevronRight, Search, X,
     Loader, Droplets, Package, Calendar, BarChart3,
-    CheckCircle, User,
+    CheckCircle, User, PenLine,
 } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
 
@@ -154,7 +154,7 @@ function Sec({ title }) {
     return <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-5 mb-2">{title}</p>;
 }
 
-function LogDetail({ log, materials = [], verCostos = false, onClose }) {
+function LogDetail({ log, materials = [], verCostos = false, onClose, onEditar }) {
     const litrosIngresados = log.litrosIngresados || 0;
     const merma            = getMerma(log);
     const litrosNetos      = getLitrosNetos(log);
@@ -196,9 +196,19 @@ function LogDetail({ log, materials = [], verCostos = false, onClose }) {
                         <p><Lote size="lg" className="!text-xl !font-black tracking-wider">{log.lote || log.id}</Lote></p>
                         <p className="text-emerald-400 font-semibold text-sm mt-0.5">{log.productoNombre}</p>
                     </div>
-                    <button onClick={onClose} className="text-slate-500 hover:text-white p-1.5 rounded-lg hover:bg-slate-700 transition-colors mt-1">
-                        <X size={18} />
-                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        {/* Solo el máster corrige: lo lleva a Producción, que es donde
+                            viven los pasos del proceso y la hoja de la planilla. */}
+                        {onEditar && (
+                            <button onClick={() => onEditar(log)}
+                                className="flex items-center gap-1.5 text-violet-300 hover:text-white bg-violet-900/40 hover:bg-violet-800/60 border border-violet-700/50 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors mt-1">
+                                <PenLine size={13} /> Editar
+                            </button>
+                        )}
+                        <button onClick={onClose} className="text-slate-500 hover:text-white p-1.5 rounded-lg hover:bg-slate-700 transition-colors mt-1">
+                            <X size={18} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="overflow-y-auto flex-1 px-5 pb-6">
@@ -331,8 +341,9 @@ function statusBadge(log) {
     return { label: 'Completado', cls: 'text-blue-400 bg-blue-500/15 border-blue-500/30' };
 }
 
-export default function ProductionHistoryPage({ params = null }) {
-    const { kromaUser, verCostos } = useKroma();
+export default function ProductionHistoryPage({ params = null, onNavigate = null }) {
+    const { kromaUser, kromaRole, verCostos } = useKroma();
+    const isMaster = kromaRole === 'master';
     const [logs,       setLogs]       = useState([]);
     const [materials,  setMaterials]  = useState([]);
     const [loading,    setLoading]    = useState(true);
@@ -591,7 +602,11 @@ export default function ProductionHistoryPage({ params = null }) {
                 </div>
             )}
 
-            {detail && <LogDetail log={detail} materials={materials} verCostos={verCostos} onClose={() => setDetail(null)} />}
+            {detail && <LogDetail log={detail} materials={materials} verCostos={verCostos}
+                onClose={() => setDetail(null)}
+                onEditar={isMaster && onNavigate
+                    ? (log) => { setDetail(null); onNavigate('production', { logId: log.id, editar: true }); }
+                    : null} />}
         </div>
     );
 }

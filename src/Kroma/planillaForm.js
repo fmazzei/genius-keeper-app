@@ -1,0 +1,62 @@
+// RUTA: src/Kroma/planillaForm.js
+//
+// De un registro de producción GUARDADO al formulario de la planilla.
+//
+// Corregir una planilla cargada es reabrirla con todo lo que ya tenía, no
+// volver a teclearla. Esto traduce el documento de `kroma_production_logs` a
+// los campos del formulario — y lo hace también para las planillas cargadas con
+// el esquema VIEJO, que guardaban los kilos en `rendimientoKg`: son justamente
+// las que más necesitan corregirse.
+
+import { kgProducidos } from './estadoPlanta.js';
+
+const txt = (v) => (v === null || v === undefined || Number.isNaN(v)) ? '' : String(v);
+
+/** "YYYY-MM-DD" en partes LOCALES (en Venezuela el UTC retrocede un día). */
+const aInputFecha = (v) => {
+    if (!v) return '';
+    const d = v?.toDate ? v.toDate() : new Date(v);
+    if (Number.isNaN(d.getTime())) return '';
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+const curva = (c = {}) => ({ inicial: txt(c.inicial), h24: txt(c.h24), h72: txt(c.h72) });
+
+/** El estado inicial del formulario a partir de un log ya guardado. */
+export function formularioDesdeLog(log) {
+    if (!log) return null;
+    const recs = log.recepciones || [];
+    const insumos = log.insumosDeclarados || {};
+    return {
+        fecha:   aInputFecha(log.fechaInicio || log.fechaCierre || log.createdAt),
+        fichaId: log.fichaId || '',
+        entregas: recs.length > 0
+            ? recs.map(r => ({
+                proveedorId: r.proveedorId || '',
+                litros:      txt(r.litros),
+                temperatura: txt(r.temperatura),
+                pH:          txt(r.pH),
+                densidad:    txt(r.densidad),
+            }))
+            : [{ proveedorId: '', litros: '', temperatura: '', pH: '', densidad: '' }],
+        litrosProceso: txt(log.litrosNetos),
+        insumos: {
+            conservante: txt(insumos.conservante), fermento: txt(insumos.fermento),
+            calcio: txt(insumos.calcio), cuajo: txt(insumos.cuajo), sal: txt(insumos.sal),
+        },
+        curvaPh:   curva(log.curvaMaduracion?.pH),
+        curvaTemp: curva(log.curvaMaduracion?.temperatura),
+        // `kgProducidos` lee bien los dos esquemas: sin él, una planilla vieja
+        // se reabriría con los kilos en blanco.
+        kilos: txt(kgProducidos(log) || ''),
+        empaques: (log.productosFinales || []).map(p => ({
+            catalogId:   p.catalogId || null,
+            nombre:      p.nombre || '',
+            kgPorUnidad: txt(p.pesoPorUnidad),
+            unidades:    txt(p.unidades),
+        })),
+        precioLeche: txt(recs.find(r => r.costoUsdLitro)?.costoUsdLitro),
+        notas: log.notas || '',
+    };
+}

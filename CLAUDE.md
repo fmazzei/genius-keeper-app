@@ -2558,3 +2558,50 @@ que se cargue el inventario.
 Verificado con build limpio y 16 casos de la lógica pura (la planilla en blanco,
 el centinela de `serverTimestamp` intacto, 22-jul que no retrocede a 21, "9,99",
 `par`).
+
+### Corregir una producción cerrada (solo máster) (2026-09) ✅
+
+Pedido del dueño: encontró errores en planillas que cargó y no había forma de
+corregirlas. La edición existía —por bloque, para el máster— pero solo dentro de
+una producción EN CURSO: nunca llegaba al historial. Ahora "Editar" aparece en
+el Historial de Producción (tarjeta de cada lote) y en la ficha del lote de la
+pantalla Historial, y **solo para el máster**.
+
+**Dos clases de registro, y cada una se corrige donde viven sus datos:**
+- **Planilla de papel** (`origen:'planilla_papel'`): no tiene pasos —el papel no
+  los trae—. Se reabre SU hoja (`CargaPlanillaSheet` con `logEditar`) con todo
+  precargado (`src/Kroma/planillaForm.js`, `formularioDesdeLog`) y el guardado
+  escribe sobre el MISMO registro: mismo id, así lo sigue encontrando la pista
+  del lote. Las recepciones viejas se dan de baja y se escriben las nuevas en el
+  mismo batch — editarlas una por una exigiría emparejar productores, y la
+  corrección puede justo cambiar eso. Borra `rendimientoLitrosPorKg` (la huella
+  del esquema viejo): si quedara, `kgProducidos` la seguiría prefiriendo y la
+  corrección de los kilos no se vería.
+- **Producción corrida paso a paso**: se abre el proceso en `modoEdicion`, con
+  TODOS los bloques como terminados y el lápiz en cada uno. `abrirParaEditar` no
+  estampa `iniciadoAt` ni toca los avisos de espera (eso es trabajar, no
+  corregir), y pone `bloqueActualIdx = bloques.length`, así que no hay paso en
+  curso ni botón de "Completar/Cerrar producción".
+
+**"Reabrir bloque" NO se ofrece al corregir.** Reactivar una producción cerrada
+haría que al volver a cerrarla se descontara inventario y se creara producto
+terminado por SEGUNDA vez. Corregir un dato no es volver a producir.
+`BlockDoneCard` solo pinta ese botón si recibe `onMasterReset`.
+
+**Corregir un paso resincroniza el resumen del lote.** Los kilos, litros netos y
+rendimiento viven FUERA de los bloques y son lo que leen el historial, gerencia
+y el costeo: editar Empaque o Pasteurización sin resincronizarlos dejaba la
+ficha con el número viejo, como si la edición no hubiera servido. El producto
+terminado que ya está en el almacén NO se ajusta solo — el aviso del modo
+corrección lo dice.
+
+**Dos errores de la tarjeta del historial, visibles en la captura del dueño:**
+- La fecha era la de CARGA (`createdAt`), no la de producción: una planilla de
+  junio tecleada en septiembre decía "27-sept", contradiciendo a su propio lote.
+  Ahora es `fechaInicio`.
+- La planilla del esquema viejo mostraba "124.80 L/kg": eran sus KILOS leídos
+  como rendimiento. Ahora usa `kgProducidos`/`rendimientoLkg` (5.89 L/kg).
+
+Desde la pantalla Historial, "Editar" lleva a Producción con
+`{logId, editar:true}`; si el lote es más viejo que los 20 que carga Producción,
+se busca por id en vez de fallar en silencio.

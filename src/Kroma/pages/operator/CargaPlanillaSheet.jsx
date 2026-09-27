@@ -36,12 +36,13 @@
 //     acaba de corregir.
 
 import React, { useState, useMemo } from 'react';
-import { collection, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import CampoFecha, { hoyInput, fechaDesdeInput } from '@/Kroma/Components/CampoFecha.jsx';
 import { redondear, fmtNum } from '@/Kroma/formato.js';
+import { formularioDesdeLog } from '@/Kroma/planillaForm.js';
 
 const MERMA_SUGERIDA = 10;   // lo que traen las planillas revisadas
 
@@ -77,20 +78,26 @@ function loteHistorico(productoNombre, fecha) {
     return `${iniciales}${fecha.getFullYear()}${p(fecha.getMonth() + 1)}${p(fecha.getDate())}-H`;
 }
 
-export default function CargaPlanillaSheet({ fichas = [], suppliers = [], productsMap = {}, verCostos = false, kromaUser, onClose, onSaved }) {
-    const [fecha, setFecha]       = useState(hoyInput);
-    const [fichaId, setFichaId]   = useState('');
-    const [entregas, setEntregas] = useState([
+export default function CargaPlanillaSheet({ fichas = [], suppliers = [], productsMap = {}, verCostos = false, kromaUser, logEditar = null, onClose, onSaved }) {
+    // Corregir una planilla es REABRIRLA con todo lo que ya tenía, no volver a
+    // teclearla. Con `logEditar` el formulario arranca precargado y el guardado
+    // escribe sobre ese mismo registro en vez de crear otro.
+    const ini = logEditar ? formularioDesdeLog(logEditar) : null;
+    const editando = !!ini;
+
+    const [fecha, setFecha]       = useState(ini?.fecha || hoyInput());
+    const [fichaId, setFichaId]   = useState(ini?.fichaId || '');
+    const [entregas, setEntregas] = useState(ini?.entregas || [
         { proveedorId: '', litros: '', temperatura: '', pH: '', densidad: '' },
     ]);
-    const [litrosProceso, setLitrosProceso] = useState('');
-    const [insumos, setInsumos] = useState({ conservante: '', fermento: '', calcio: '', cuajo: '', sal: '' });
-    const [curvaPh, setCurvaPh]     = useState({ inicial: '', h24: '', h72: '' });
-    const [curvaTemp, setCurvaTemp] = useState({ inicial: '', h24: '', h72: '' });
-    const [kilos, setKilos]   = useState('');
-    const [empaques, setEmpaques] = useState([]);   // lo que se envasó, declarado
-    const [precioLeche, setPrecioLeche] = useState('');  // $/L, opcional
-    const [notas, setNotas]   = useState('');
+    const [litrosProceso, setLitrosProceso] = useState(ini?.litrosProceso || '');
+    const [insumos, setInsumos] = useState(ini?.insumos || { conservante: '', fermento: '', calcio: '', cuajo: '', sal: '' });
+    const [curvaPh, setCurvaPh]     = useState(ini?.curvaPh   || { inicial: '', h24: '', h72: '' });
+    const [curvaTemp, setCurvaTemp] = useState(ini?.curvaTemp || { inicial: '', h24: '', h72: '' });
+    const [kilos, setKilos]   = useState(ini?.kilos || '');
+    const [empaques, setEmpaques] = useState(ini?.empaques || []);   // lo que se envasó, declarado
+    const [precioLeche, setPrecioLeche] = useState(ini?.precioLeche || '');  // $/L, opcional
+    const [notas, setNotas]   = useState(ini?.notas || '');
 
     const [guardando, setGuardando] = useState(false);
     const [error, setError]         = useState('');
@@ -163,7 +170,26 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             // reintento del mismo papel volvía a crearlas: así aparecieron seis
             // recepciones de leche para una sola planilla de dos productores.
             const batch = writeBatch(db);
-            const logRef = doc(collection(db, 'kroma_production_logs'));
+            // Al CORREGIR se escribe sobre el mismo registro: mismo id, así
+            // todo lo que apunta a él (la pista del lote, el historial) sigue
+            // encontrándolo.
+            const logRef = editando
+                ? doc(db, 'kroma_production_logs', logEditar.id)
+                : doc(collection(db, 'kroma_production_logs'));
+
+            // Las recepciones que tenía se dan de baja y se escriben las nuevas,
+            // en el MISMO batch. Editarlas una por una exigiría emparejar cuál
+            // productor era cuál, y la corrección puede justo cambiar eso
+            // (agregar un productor, quitar otro, corregir los litros).
+            if (editando) {
+                (logEditar.recepcionIds || []).forEach(rid => {
+                    batch.update(doc(db, 'kroma_milk_reception', rid), {
+                        active: false,
+                        deletedAt: serverTimestamp(),
+                        deletedMotivo: 'Reemplazada al corregir la planilla.',
+                    });
+                });
+            }
 
             // 1) Las recepciones de leche, ya PROCESADAS.
             const recepciones = [];
@@ -221,7 +247,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             if (Object.keys(ph).length) curva.pH = ph;
             if (Object.keys(tp).length) curva.temperatura = tp;
 
-            batch.set(logRef, sinUndefined({
+            const datosLog = sinUndefined({
                 ...base,
                 fichaId:        ficha.id,
                 productoId:     ficha.productoId,
@@ -276,7 +302,22 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 fechaCierre: fechaDate,
                 active: true,
                 createdAt: serverTimestamp(),
-            }));
+            });
+
+            if (editando) {
+                const { createdAt, ...resto } = datosLog;   // la fecha de alta no cambia
+                batch.update(logRef, {
+                    ...resto,
+                    // Huella del esquema viejo: si quedara, `kgProducidos` la
+                    // seguiría prefiriendo y la corrección de los kilos no se vería.
+                    rendimientoLitrosPorKg: deleteField(),
+                    corregidoPorId:     kromaUser?.id || null,
+                    corregidoPorNombre: kromaUser?.name || null,
+                    corregidoAt:        serverTimestamp(),
+                });
+            } else {
+                batch.set(logRef, datosLog);
+            }
 
             // La única escritura de toda la operación.
             await batch.commit();
@@ -293,7 +334,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             <div className="flex items-center gap-3 px-5 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
                 <FileText size={17} className="text-emerald-400 shrink-0" />
                 <div className="flex-1 min-w-0">
-                    <p className="text-white font-bold text-sm">Cargar planilla anterior</p>
+                    <p className="text-white font-bold text-sm">{editando ? 'Corregir planilla' : 'Cargar planilla anterior'}</p>
                     <p className="text-slate-500 text-xs">Una producción que ya ocurrió</p>
                 </div>
                 <button onClick={onClose} className="text-slate-400 hover:text-white p-1"><X size={20} /></button>
@@ -546,7 +587,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             <div className="px-5 py-4 bg-slate-900 border-t border-slate-800 shrink-0">
                 <button onClick={guardar} disabled={!puedeGuardar}
                     className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl text-sm transition-colors disabled:opacity-40 flex items-center justify-center gap-2">
-                    {guardando ? <><Loader size={16} className="animate-spin" /> Guardando…</> : 'Guardar planilla'}
+                    {guardando ? <><Loader size={16} className="animate-spin" /> Guardando…</> : (editando ? 'Guardar corrección' : 'Guardar planilla')}
                 </button>
                 {!puedeGuardar && !guardando && (
                     <p className="text-slate-600 text-xs text-center mt-2">

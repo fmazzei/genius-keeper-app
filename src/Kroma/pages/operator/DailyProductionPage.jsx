@@ -8,7 +8,7 @@ import {
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
-import { faltaEmpacar } from '@/Kroma/estadoPlanta.js';
+import { faltaEmpacar, kgProducidos, rendimientoLkg } from '@/Kroma/estadoPlanta.js';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta } from '@/Kroma/eliminarProduccion.js';
@@ -1354,11 +1354,17 @@ function BlockDoneCard({ bloque, idx, data, isMaster, onMasterEdit, onMasterRese
                             title="Editar bloque">
                             <PenLine size={12} />
                         </button>
-                        <button type="button" onClick={() => onMasterReset?.(idx)}
-                            className="w-7 h-7 rounded-lg bg-amber-900/60 hover:bg-amber-800 text-amber-400 flex items-center justify-center"
-                            title="Reabrir bloque">
-                            <RotateCcw size={12} />
-                        </button>
+                        {/* "Reabrir" NO se ofrece al corregir una producción ya
+                            cerrada: reactivarla haría que al volver a cerrarla se
+                            descontara inventario y se creara producto terminado
+                            por SEGUNDA vez. Corregir un dato no es volver a producir. */}
+                        {onMasterReset && (
+                            <button type="button" onClick={() => onMasterReset(idx)}
+                                className="w-7 h-7 rounded-lg bg-amber-900/60 hover:bg-amber-800 text-amber-400 flex items-center justify-center"
+                                title="Reabrir bloque">
+                                <RotateCcw size={12} />
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
@@ -2178,6 +2184,10 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     const [productionAlerts, setProductionAlerts] = useState([]);
 
     // Master edit / delete
+    // Corregir una producción YA CERRADA desde el historial. No es reanudarla:
+    // se editan los datos de cada paso sin volver a disparar inventario ni PT.
+    const [modoEdicion, setModoEdicion]           = useState(false);
+    const [planillaEditar, setPlanillaEditar]     = useState(null);
     const [masterEditIdx, setMasterEditIdx]       = useState(null);
     const [masterEditData, setMasterEditData]     = useState({});
     const [masterEditSaving, setMasterEditSaving] = useState(false);
@@ -2194,13 +2204,23 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     useEffect(() => {
         const id = params?.logId;
         if (!id || loading || reporteDirigidoRef.current === id) return;
-        const log = [...logs, ...historial].find(l => l.id === id);
-        if (log) {
+        const destino = (log) => {
+            reporteDirigidoRef.current = id;
+            // Desde el Historial se puede pedir CORREGIR, no solo mirar.
+            if (params?.editar) { abrirParaEditar(log); return; }
             setReportLog(log);
             setView('report');
-            reporteDirigidoRef.current = id;
-        }
-    }, [params?.logId, logs, historial, loading]);
+        };
+        const log = [...logs, ...historial].find(l => l.id === id);
+        if (log) { destino(log); return; }
+        // Acá solo se cargan las últimas 20 cerradas; un lote más viejo pedido
+        // desde el Historial no estaría. Se busca por su id en vez de fallar
+        // en silencio.
+        getDoc(doc(db, 'kroma_production_logs', id))
+            .then(snap => { if (snap.exists() && snap.data().active !== false) destino({ id: snap.id, ...snap.data() }); })
+            .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [params?.logId, params?.editar, logs, historial, loading]);
 
     async function loadData() {
         setLoading(true); setError(null);
@@ -2285,6 +2305,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             }
         }
 
+        setModoEdicion(false);
         cancelHoldNotif(log.id); // clear any pending timer when resuming
         cancelFirestoreScheduledNotif(db, log.id).catch(() => {}); // cancel Cloud Function FCM
         setActiveLog(log);
@@ -2936,6 +2957,37 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         finally { setSaving(false); }
     }
 
+    /**
+     * Abrir una producción cerrada para CORREGIRLA (solo máster).
+     *
+     * Hay dos clases de registro y cada uno se corrige donde viven sus datos:
+     *   · una PLANILLA cargada del papel no tiene pasos —el papel no los trae—:
+     *     se reabre su propia hoja con todo precargado;
+     *   · una producción corrida paso a paso se abre en el proceso, con todos
+     *     sus bloques como terminados y el lápiz en cada uno.
+     *
+     * A diferencia de `openLog`, NO estampa `iniciadoAt` ni toca los avisos de
+     * espera: eso es trabajar sobre una producción en curso, y esta ya cerró.
+     */
+    function abrirParaEditar(log) {
+        if (!isMaster || !log) return;
+        if (log.origen === 'planilla_papel' || log.disposicion === 'historico') {
+            setPlanillaEditar(log);
+            setCargaPlanilla(true);
+            return;
+        }
+        const bloques = log.bloquesSnapshot || [];
+        setActiveLog(log);
+        setBloquesData(log.bloquesData || {});
+        // Todos los pasos quedan "hechos": así cada uno sale con su lápiz y no
+        // aparece ningún paso en curso que se pueda completar por accidente.
+        setBloqueActualIdx(bloques.length);
+        setHoldOptions({});
+        setSaveError(null);
+        setModoEdicion(true);
+        setView('runner');
+    }
+
     // ── Master: open edit modal for completed block ───────────────────────────
     function openMasterEdit(idx) {
         const idxStr = String(idx);
@@ -2957,9 +3009,48 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 editadoAt:        new Date().toISOString(),
             };
             const newBloquesData = { ...bloquesData, [idxStr]: updatedBlock };
-            await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), { bloquesData: newBloquesData });
+
+            // El RESUMEN del lote (kilos, litros netos, rendimiento) vive fuera
+            // de los bloques, y es lo que leen el historial, gerencia y el
+            // costeo. Corregir el paso sin resincronizarlo dejaría la ficha
+            // mostrando el número viejo: parecería que la edición no sirvió.
+            const tipo = (activeLog.bloquesSnapshot || [])[masterEditIdx]?.tipo;
+            const resumen = {};
+            const litrosIng = Number(activeLog.litrosIngresados) || 0;
+            let litrosNet = Number(activeLog.litrosNetos ?? litrosIng) || 0;
+            let kg = Number(activeLog.totalKgProducido) || 0;
+            if (tipo === 'pasteurizacion' && newReg.merma != null) {
+                resumen.merma = Number(newReg.merma) || 0;
+                litrosNet = Math.max(0, +(litrosIng - resumen.merma).toFixed(2));
+                resumen.litrosNetos = litrosNet;
+            }
+            if (tipo === 'empaque') {
+                if (newReg.totalKgProducido != null) {
+                    kg = Number(newReg.totalKgProducido) || 0;
+                    resumen.totalKgProducido = kg;
+                }
+                if (newReg.presentaciones) resumen.productosFinales = newReg.presentaciones;
+                if (newReg.fechaVencimiento !== undefined) resumen.fechaVencimiento = newReg.fechaVencimiento ?? null;
+            }
+            if (resumen.totalKgProducido != null || resumen.litrosNetos != null) {
+                resumen.rendimientoKg = kg > 0 && litrosNet > 0 ? +(litrosNet / kg).toFixed(2) : 0;
+            }
+
+            const cambios = sinUndefined({
+                bloquesData: newBloquesData,
+                ...resumen,
+                ...(modoEdicion && {
+                    corregidoPorId:     kromaUser?.id || null,
+                    corregidoPorNombre: kromaUser?.name || null,
+                    corregidoAt:        serverTimestamp(),
+                }),
+            });
+            await updateDoc(doc(db, 'kroma_production_logs', activeLog.id), cambios);
             setBloquesData(newBloquesData);
-            setActiveLog(prev => ({ ...prev, bloquesData: newBloquesData }));
+            setActiveLog(prev => ({ ...prev, bloquesData: newBloquesData, ...resumen }));
+            // Que el historial muestre ya la corrección, sin recargar.
+            setHistorial(prev => prev.map(l => l.id === activeLog.id
+                ? { ...l, bloquesData: newBloquesData, ...resumen } : l));
             setMasterEditIdx(null);
             setMasterEditData({});
         } catch (e) {
@@ -3365,7 +3456,13 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             <div className="flex flex-col h-full overflow-hidden bg-slate-950">
                 {/* Header */}
                 <div className="flex items-center gap-3 px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
-                    <button onClick={() => setView('list')} className="text-slate-400 hover:text-white p-1 -ml-1 shrink-0">
+                    {/* Salir limpia el modo corrección: si quedara encendido, el
+                        próximo lote que se abra para TRABAJAR perdería el botón
+                        de reabrir y mostraría el aviso de corrección. */}
+                    <button onClick={() => {
+                            if (modoEdicion) { setModoEdicion(false); setActiveLog(null); }
+                            setView('list');
+                        }} className="text-slate-400 hover:text-white p-1 -ml-1 shrink-0">
                         <ChevronLeft size={20} />
                     </button>
                     <div className="flex-1 min-w-0">
@@ -3461,13 +3558,24 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 )}
 
                 <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                    {modoEdicion && (
+                        <div className="bg-violet-950/40 border border-violet-800/50 rounded-xl px-4 py-3">
+                            <p className="text-violet-200 text-sm font-semibold">Corrigiendo una producción cerrada</p>
+                            <p className="text-violet-300/80 text-xs leading-snug mt-1">
+                                Toca el lápiz de cualquier paso para corregir sus datos. Se corrige el
+                                registro: <strong className="text-violet-200">no se vuelve a descontar
+                                inventario ni se crea producto terminado</strong>. Si cambias los kilos del
+                                empaque, el producto que ya está en el almacén no se ajusta solo.
+                            </p>
+                        </div>
+                    )}
                     {/* Completed blocks */}
                     {bloques.map((b, i) => {
                         if (i < bloqueActualIdx) return (
                             <BlockDoneCard key={i} bloque={b} idx={i} data={bloquesData[String(i)]}
                                 isMaster={isMaster}
                                 onMasterEdit={openMasterEdit}
-                                onMasterReset={masterResetBlock}
+                                onMasterReset={modoEdicion ? null : masterResetBlock}
                             />
                         );
                         return null;
@@ -3831,8 +3939,11 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                                     <div className="flex items-start justify-between gap-2">
                                                         <div className="flex-1 min-w-0">
                                                             <p className="text-white font-semibold text-sm">{log.productoNombre}</p>
-                                                            {log.lote && <p className="text-slate-600 text-xs font-mono mt-0.5">{log.lote}</p>}
-                                                            <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
+                                                            {log.lote && <p className="mt-0.5"><Lote>{log.lote}</Lote></p>}
+                                                            {/* La fecha de la PRODUCCIÓN, no la de cuando se cargó:
+                                                                una planilla de junio tecleada en septiembre decía
+                                                                "27-sept", contradiciendo a su propio lote. */}
+                                                            <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.fechaInicio || log.fechaCierre || log.createdAt)}</p>
                                                         </div>
                                                         <div className="flex flex-col items-end gap-1 shrink-0">
                                                             <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${badgeColor}`}>
@@ -3849,13 +3960,24 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                                         <Droplets size={11} />
                                                         <span>{fmtL(log.litrosNetos ?? log.litrosIngresados)}</span>
                                                         {log.proveedorNombre && <><span>·</span><span className="truncate max-w-[100px]">{log.proveedorNombre}</span></>}
-                                                        {log.totalKgProducido > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{log.totalKgProducido.toFixed(3)} kg</span></>}
-                                                        {log.kgSinEnvasar > 0 && <><span>·</span><span className="text-amber-600 font-mono">{log.kgSinEnvasar.toFixed(3)} kg sin envasar</span></>}
-                                                        {log.rendimientoKg > 0 && <><span>·</span><span className={`font-mono font-semibold ${rendimientoColorClass(log.rendimientoKg)}`}>{log.rendimientoKg.toFixed(2)} L/kg</span></>}
+                                                        {/* `kgProducidos`/`rendimientoLkg` leen bien también las
+                                                            planillas cargadas con el esquema viejo, que guardaba
+                                                            los KILOS en `rendimientoKg`: por eso una salía con
+                                                            "124.80 L/kg". */}
+                                                        {kgProducidos(log) > 0 && <><span>·</span><span className="text-emerald-600 font-mono">{fmtNum(kgProducidos(log), 3)} kg</span></>}
+                                                        {log.kgSinEnvasar > 0 && <><span>·</span><span className="text-amber-600 font-mono">{fmtNum(log.kgSinEnvasar, 3)} kg sin envasar</span></>}
+                                                        {rendimientoLkg(log) > 0 && <><span>·</span><span className={`font-mono font-semibold ${rendimientoColorClass(rendimientoLkg(log))}`}>{fmtNum(rendimientoLkg(log))} L/kg</span></>}
                                                     </div>
                                                 </button>
                                                 {isMaster && (
-                                                    <div className="border-t border-slate-700/50 px-4 py-2 flex justify-end">
+                                                    <div className="border-t border-slate-700/50 px-4 py-2 flex items-center justify-between gap-3">
+                                                        <button type="button"
+                                                            onClick={() => abrirParaEditar(log)}
+                                                            className="flex items-center gap-1.5 text-violet-400 hover:text-violet-300 text-xs font-semibold">
+                                                            <PenLine size={12} />
+                                                            {log.origen === 'planilla_papel' || log.disposicion === 'historico'
+                                                                ? 'Editar planilla' : 'Editar pasos del proceso'}
+                                                        </button>
                                                         <button type="button"
                                                             onClick={() => setMasterDeleteLog(log)}
                                                             className="flex items-center gap-1.5 text-red-500 hover:text-red-400 text-xs font-semibold">
@@ -3881,8 +4003,9 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                     productsMap={productsMap}
                     verCostos={verCostos}
                     kromaUser={kromaUser}
-                    onClose={() => setCargaPlanilla(false)}
-                    onSaved={() => { setCargaPlanilla(false); loadData(); }}
+                    logEditar={planillaEditar}
+                    onClose={() => { setCargaPlanilla(false); setPlanillaEditar(null); }}
+                    onSaved={() => { setCargaPlanilla(false); setPlanillaEditar(null); loadData(); }}
                 />
             )}
             {finalizarLog && (
