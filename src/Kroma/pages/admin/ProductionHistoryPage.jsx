@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { kgProducidos, rendimientoLkg } from '@/Kroma/estadoPlanta.js';
 import {
     calcCostoTeoricoLote, indexById, indexPackagingAssignments, buildMilkPriceLookup,
+    getLitrosNetos as getLitrosNetosLote, getMermaL,
 } from '@/Kroma/costeoLote.js';
 import { fmtL, fmtNum } from '@/Kroma/formato.js';
 import Lote from '@/Kroma/Components/Lote.jsx';
@@ -32,26 +33,12 @@ function logDate(log) {
     if (!ts) return null;
     return ts?.toDate ? ts.toDate() : new Date(ts);
 }
-function getLitrosNetos(log) {
-    const bloques = log.bloquesSnapshot || [];
-    const pastIdx = bloques.findIndex(b => b.tipo === 'pasteurizacion');
-    if (pastIdx >= 0) {
-        const pastData = (log.bloquesData || {})[String(pastIdx)];
-        if (pastData?.completado) {
-            const merma = pastData.registros?.merma ?? 10;
-            return Math.max(0, (log.litrosIngresados || 0) - merma);
-        }
-    }
-    return log.litrosNetos ?? log.litrosIngresados ?? 0;
-}
+// Litros y merma: los MISMOS de costeoLote.js (antes había copias propias acá,
+// y la de merma ignoraba la de las planillas de papel).
+const getLitrosNetos = (log) => getLitrosNetosLote(log);
 function getMerma(log) {
-    const bloques = log.bloquesSnapshot || [];
-    const pastIdx = bloques.findIndex(b => b.tipo === 'pasteurizacion');
-    if (pastIdx >= 0) {
-        const pastData = (log.bloquesData || {})[String(pastIdx)];
-        if (pastData?.completado) return pastData.registros?.merma ?? 10;
-    }
-    return null;
+    const m = getMermaL(log);
+    return m > 0 ? m : null;
 }
 function getTotalKg(log) {
     // Primero lo que declaró el bloque de empaque, si esa corrida lo tiene…
@@ -164,7 +151,14 @@ function LogDetail({ log, materials = [], verCostos = false, onClose, onEditar }
     const bData            = log.bloquesData || {};
 
     const empIdx  = bloques.findIndex(b => b.tipo === 'empaque');
-    const empItems = empIdx >= 0 ? (bData[String(empIdx)]?.registros?.items || []) : [];
+    const empBloque = empIdx >= 0 ? (bData[String(empIdx)]?.registros?.items || []) : [];
+    // Una planilla de papel no tiene bloque de empaque: lo envasado vive en
+    // `productosFinales` (antes su ficha salía sin empaque).
+    const empItems = empBloque.length > 0 ? empBloque
+        : (log.productosFinales || []).map(p => ({ nombre: p.nombre, unidades: p.unidades, pesoKg: p.pesoPorUnidad, enCava: p.enCava, fechaVencimiento: p.fechaVencimiento }));
+    const esPlanilla = log.origen === 'planilla_papel';
+    const insumosPapel = Object.entries(log.insumosDeclarados || {})
+        .filter(([, v]) => String(v ?? '').trim() !== '');
 
     const cuajIdx  = bloques.findIndex(b => b.tipo === 'cuajado');
     const cuajData = cuajIdx >= 0 ? bData[String(cuajIdx)] : null;
@@ -215,7 +209,8 @@ function LogDetail({ log, materials = [], verCostos = false, onClose, onEditar }
                     <Sec title="Información General" />
                     <div className="bg-slate-800 rounded-xl p-4">
                         <Row label="Fecha"            value={fmtDate(log.fechaCierre || log.createdAt)} />
-                        <Row label="Hora"             value={fmtTime(log.fechaCierre || log.createdAt)} />
+                        {/* Una planilla de papel no tiene hora: se guarda al mediodía. */}
+                        {!esPlanilla && <Row label="Hora" value={fmtTime(log.fechaCierre || log.createdAt)} />}
                         <Row label="Maestro Quesero"  value={log.firmas?.maestro || log.creadoPorNombre || '—'} />
                         <Row label="Almacén PT"       value={log.firmas?.almacen || '—'} />
                         <Row label="Proveedor leche"  value={log.proveedorNombre || '—'} />
@@ -276,7 +271,18 @@ function LogDetail({ log, materials = [], verCostos = false, onClose, onEditar }
                         </>
                     )}
 
-                    <Sec title="Bloques del Proceso" />
+                    {insumosPapel.length > 0 && (
+                        <>
+                            <Sec title="Insumos (según la planilla)" />
+                            <div className="bg-slate-800 rounded-xl p-4">
+                                {insumosPapel.map(([k, v]) => (
+                                    <Row key={k} label={k.charAt(0).toUpperCase() + k.slice(1)} value={String(v)} />
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                    {!esPlanilla && <Sec title="Bloques del Proceso" />}
                     <div className="space-y-2">
                         {bloques.map((bloque, idx) => {
                             const bd = bData[String(idx)];
@@ -320,10 +326,13 @@ function LogDetail({ log, materials = [], verCostos = false, onClose, onEditar }
                                         label={it.nombre || it.sku || `Presentación ${i + 1}`}
                                         value={`${it.unidades || 0} uds`}
                                         sub={it.pesoKg
-                                            ? `${it.pesoKg} kg/ud · ${((it.unidades || 0) * (it.pesoKg || 0)).toFixed(2)} kg total`
+                                            ? `${it.pesoKg} kg/ud · ${((it.unidades || 0) * (it.pesoKg || 0)).toFixed(2)} kg total${it.enCava ? ` · en cava${it.fechaVencimiento ? `, vence ${it.fechaVencimiento}` : ''}` : ''}`
                                             : undefined}
                                     />
                                 ))}
+                                {(log.kgSinEnvasar || 0) > 0 && (
+                                    <Row label="Sin envasar (en cava)" value={`${fmtNum(log.kgSinEnvasar, 3)} kg`} />
+                                )}
                             </div>
                         </>
                     )}

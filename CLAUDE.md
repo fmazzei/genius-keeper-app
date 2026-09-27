@@ -2648,3 +2648,41 @@ lo de una planilla ya se vendió" era falsa.
   resto (o se cierra declarando el resto como merma). Todo en un batch.
 - La lista "Pendiente de empacar" ya no se corta en los 20 lotes más recientes:
   una planilla vieja con queso en cava también aparece.
+
+### Las planillas cuentan en TODOS los cálculos (2026-09) ✅
+
+Pedido del dueño: ya que la carga por planilla da resultados reales, que cuente
+en rendimiento, costo por kg, merma, etc. Decisión suya: los insumos de la
+planilla **NO se descuentan del stock actual** (el inventario inicial ya refleja
+esas producciones), pero sí cuentan para el costo y se ven en la ficha del lote.
+Auditoría completa de los lectores de `kroma_production_logs`; lo corregido:
+
+- **Tablero Gerencial de GK (bug general, no solo planillas)**: la tarjeta 08
+  sumaba `rendimientoKg` (la razón L/kg, ~7 por lote) como si fueran KILOS, y
+  contaba lotes en curso. Ahora `kgProducidos`, solo `completada`, por
+  `fechaProduccion`.
+- **Fechas**: `fechaProduccion(log)`/`msProduccion` en `estadoPlanta.js`
+  (fechaInicio → fechaCierre → createdAt). Costos Fijos agrupaba kg por
+  `createdAt` (una planilla de julio inflaba septiembre); Producción ordenaba y
+  mostraba por fecha de carga (32 planillas cargadas hoy desplazaban los lotes
+  reales del historial); la pista del lote fechaba la producción "hoy". Las
+  planillas se muestran sin hora (`fmtFechaLote`).
+- **Merma**: `getMermaL` (costeoLote) y la copia de ProductionHistoryPage solo
+  leían el bloque de pasteurización → toda planilla contaba merma 0. Ahora
+  `mermaDeLog` (merma guardada o ingresados − netos). ProductionHistoryPage usa
+  los helpers de `costeoLote.js` en vez de copias propias.
+- **Costo de la leche** sin precio declarado: se valoraba sobre litros NETOS;
+  la leche que se paga es la que entró (`litrosIngresados`, merma incluida).
+- **Costo del PT de planilla**: se congelaba solo con la leche (subvaluado, sin
+  insumos ni empaque). Ya no se congela: gerencia lo costea con el cálculo
+  completo del lote. Al envasar después una planilla, la base $/kg sale de
+  `costoBasePorKgTeorico` (leche + insumos de la ficha).
+- **Ficha del lote (Historial)**: muestra los insumos anotados en la planilla,
+  el empaque (desde `productosFinales`, con "en cava / vence") y los kg sin
+  envasar; oculta "Bloques del proceso" y "Hora" en planillas. El reporte de
+  Producción también cae a `productosFinales`.
+- **Puntaje de productores (QualityBoard, bug general)**: leía `r.temperatura`/
+  `r.ph` sueltos, pero viven en `parametros` (y el pH como `pH`) → el puntaje de
+  TODOS los productores salía vacío. `paramRecepcion` lo corrige.
+- "Tiempo real vs teórico" filtra primero los lotes con tiempos y después toma
+  10 (las planillas no tienen tiempos y desplazaban a los reales).

@@ -16,7 +16,7 @@
 // De ahí que un lote sin ficha (una planilla de papel cargada sin ella) o sin
 // kilos declarados no tenga costo: no hay de dónde sacarlo.
 
-import { kgProducidos } from './estadoPlanta.js';
+import { kgProducidos, mermaDeLog } from './estadoPlanta.js';
 
 // Con qué rendimiento se estiman los litros cuando el lote no los trae.
 export const RENDIMIENTO_FALLBACK_L_PER_KG = 6.2;
@@ -37,7 +37,10 @@ export function getMermaL(log) {
         const pd = (log.bloquesData || {})[String(idx)];
         if (pd?.completado) return pd.registros?.merma ?? 10;
     }
-    return 0;
+    // Sin bloque de pasteurización (las planillas de papel no tienen bloques):
+    // la merma guardada en el lote o ingresados − netos. Antes devolvía 0 y la
+    // merma de toda planilla desaparecía de los tableros.
+    return mermaDeLog(log);
 }
 export function getTotalKg(log) {
     const kg = kgProducidos(log);   // tolera las planillas con el esquema viejo
@@ -164,7 +167,8 @@ export function calcCostoTeoricoLote(log, materialsById, packagingByKey, milkLoo
         if (!litrosNetos && totalKg > 0) litrosNetos = totalKg * RENDIMIENTO_FALLBACK_L_PER_KG;
         const provId    = log.recepciones?.[0]?.proveedorId;
         const milkPrice = (provId && milkLookup.milkByProv[provId]) ?? milkLookup.fallbackMilkPrice;
-        costoLeche = milkPrice * litrosNetos;
+        // La leche que se paga es la que ENTRÓ, merma incluida.
+        costoLeche = milkPrice * ((log.litrosIngresados > 0 ? log.litrosIngresados : 0) || litrosNetos);
     }
 
     const costoPorLitroInsumos = costoPorLitroDesdeFicha(log.bloquesSnapshot, materialsById);
@@ -177,4 +181,15 @@ export function calcCostoTeoricoLote(log, materialsById, packagingByKey, milkLoo
     const costoPorKg = totalKg > 0 ? costoTotal / totalKg : null;
 
     return { costoLeche, costoInsumos, costoEmpaque, costoTotal, litrosNetos, totalKg, costoPorKg };
+}
+
+/**
+ * $/kg del queso SIN empaque (leche + insumos teóricos de la ficha). Es la base
+ * para costear lo que se envasa después de un lote que no corrió bloque a
+ * bloque (una planilla de papel): sus insumos reales no están en `bloquesData`.
+ */
+export function costoBasePorKgTeorico(log, materialsById) {
+    const mats = Object.values(materialsById || {});
+    const r = calcCostoTeoricoLote({ ...log, productosFinales: [] }, materialsById, {}, buildMilkPriceLookup(mats));
+    return r.totalKg > 0 ? (r.costoLeche + r.costoInsumos) / r.totalKg : 0;
 }

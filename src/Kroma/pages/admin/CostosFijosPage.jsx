@@ -18,6 +18,7 @@ import {
     query, where, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
+import { fechaProduccion, kgProducidos as kgDeLog } from '@/Kroma/estadoPlanta.js';
 import { useKroma } from '@/Kroma/KromaContext.jsx';
 import {
     DollarSign, Plus, Trash2, Save, ChevronLeft, ChevronRight,
@@ -278,9 +279,11 @@ export default function CostosFijosPage() {
             const totalKg = logsSnap.docs.reduce((s, d) => {
                 const data  = d.data();
                 if (data.active === false) return s;   // eliminada: no produjo nada
-                const fecha = data.createdAt?.toDate?.() || new Date(data.createdAt);
-                if (fecha >= start && fecha < end) {
-                    return s + (data.totalKgProducido || 0);
+                // Por la fecha en que se PRODUJO, no la de carga: una planilla de
+                // julio cargada en septiembre inflaba septiembre y vaciaba julio.
+                const fecha = fechaProduccion(data);
+                if (fecha && fecha >= start && fecha < end) {
+                    return s + (kgDeLog(data) || 0);
                 }
                 return s;
             }, 0);

@@ -397,7 +397,10 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                         unidad: it.tipo === 'sin_envasar' ? 'kg' : 'unidades',
                     });
                 }
-                const costoBase = costoPorKgHist > 0 ? { costoBasePorKgUsd: costoPorKgHist } : {};
+                // SIN costo congelado a propósito: con solo la leche del papel
+                // quedaba subvaluado (sin insumos ni empaque). Sin costo, gerencia
+                // lo costea con el cálculo completo del lote (leche + insumos de
+                // la ficha + empaque), el mismo de cualquier otro lote.
                 for (const pt of partidasDePlanilla({ empaques, kgSinEnvasar: kgSinEnvasarNum })) {
                     batch.set(doc(collection(db, 'kroma_inventory_pt')), sinUndefined({
                         empresaId,
@@ -407,12 +410,6 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                         operarioId: kromaUser?.id || '', operarioNombre: kromaUser?.name || '',
                         origen: 'planilla_papel',
                         ...pt,
-                        ...costoBase,
-                        ...(costoPorKgHist > 0 && {
-                            costoUnitarioUsd: pt.tipo === 'sin_envasar'
-                                ? costoPorKgHist
-                                : redondear(costoPorKgHist * pt.pesoPorUnidad, 4),
-                        }),
                         active: true,
                         createdAt: serverTimestamp(),
                     }));

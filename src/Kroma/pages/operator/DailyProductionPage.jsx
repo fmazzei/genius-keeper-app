@@ -9,8 +9,9 @@ import CampoFecha, { hoyInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO } from 
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
-import { faltaEmpacar, kgProducidos, rendimientoLkg } from '@/Kroma/estadoPlanta.js';
+import { faltaEmpacar, kgProducidos, rendimientoLkg, fechaProduccion, msProduccion } from '@/Kroma/estadoPlanta.js';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
+import { costoBasePorKgTeorico } from '@/Kroma/costeoLote.js';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta } from '@/Kroma/eliminarProduccion.js';
 import CargaPlanillaSheet from './CargaPlanillaSheet.jsx';
@@ -119,6 +120,17 @@ function fmtDateTime(ts) {
     if (!ts) return '—';
     const d = ts.toDate ? ts.toDate() : new Date(ts);
     return d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+// Fecha de un lote para mostrar: la de PRODUCCIÓN, no la de carga. Una planilla
+// de papel no tiene hora (se guarda al mediodía), así que se muestra sin hora.
+function fmtFechaLote(log) {
+    const d = fechaProduccion(log);
+    if (!d) return '—';
+    if (log?.origen === 'planilla_papel') {
+        return d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    return fmtDateTime(d);
 }
 
 function calcTeórico(cantidad, litrosNetos) {
@@ -1411,7 +1423,7 @@ function ProductionCard({ log, onOpen, onDelete, isMaster }) {
             <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
                     <p className="text-white font-bold text-base truncate">{log.productoNombre}</p>
-                    <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
+                    <p className="text-slate-500 text-xs mt-0.5">{fmtFechaLote(log)}</p>
                 </div>
                 <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ml-2 shrink-0 ${estado.bg} ${estado.text} ${estado.border}`}>
                     {estado.label}
@@ -1590,7 +1602,9 @@ function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
 
     const empaqIdx = bloques.findIndex(b => b.tipo === 'empaque');
     const empaqReg = empaqIdx >= 0 ? (bData[String(empaqIdx)]?.registros || {}) : {};
-    const presentaciones = empaqReg.presentaciones || [];
+    // Una planilla de papel no tiene bloque de empaque: lo envasado vive en
+    // `productosFinales`. Sin este respaldo su reporte salía sin empaque.
+    const presentaciones = (empaqReg.presentaciones?.length ? empaqReg.presentaciones : log.productosFinales) || [];
     const kgEmpacados = presentaciones.reduce((s, p) => s + (p.pesoPorUnidad || 0) * (p.unidades || 0), 0);
 
     async function signMaestro() {
@@ -1621,7 +1635,7 @@ function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
         lines.push('═══════════════════════════════');
         lines.push(`Lote:     ${lote}`);
         lines.push(`Producto: ${log.productoNombre}`);
-        lines.push(`Fecha:    ${fmtDateTime(log.createdAt)}`);
+        lines.push(`Fecha:    ${fmtFechaLote(log)}`);
         lines.push(`Operario: ${log.operarioNombre || '—'}`);
         lines.push('');
         lines.push('─── RECEPCIÓN DE LECHE ───');
@@ -1720,7 +1734,7 @@ function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
                         }`}>{lote}</p>
                         <p className="text-slate-500 text-xs text-center">{log.productoNombre}</p>
                         <div className="flex items-center gap-3 mt-1">
-                            <span className="text-slate-600 text-xs">{fmtDateTime(log.createdAt)}</span>
+                            <span className="text-slate-600 text-xs">{fmtFechaLote(log)}</span>
                             <span className="text-slate-700">·</span>
                             <span className="text-slate-600 text-xs">{log.operarioNombre}</span>
                         </div>
@@ -2279,7 +2293,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             const allLogs = logsSnap.docs
                 .map(d => ({ id: d.id, ...d.data() }))
                 .filter(l => l.active !== false)
-                .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+                .sort((a, b) => msProduccion(b) - msProduccion(a));   // por fecha de producción, no de carga
             const logsList   = allLogs.filter(l => l.estado !== 'completada');
             // Los 20 más recientes MÁS cualquier producción que falte por
             // empacar, por vieja que sea: una planilla de julio con queso sin
@@ -2788,8 +2802,11 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             const actor = { creadoPorId: kromaUser?.id || null, creadoPorNombre: kromaUser?.name || null };
             // Mismo $/kg base congelado del lote (leche + insumos reales) +
             // costo de empaque propio del SKU al precio vigente.
-            const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap)
-                || granel.find(g => g.costoBasePorKgUsd > 0)?.costoBasePorKgUsd || 0;
+            // Una planilla de papel no tiene insumos reales en `bloquesData`:
+            // se costea con leche + insumos de la ficha, como en gerencia.
+            const costoBasePorKg = log.origen === 'planilla_papel'
+                ? costoBasePorKgTeorico(log, materialsMap)
+                : calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap);
             const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(4) } : {};
 
             const batch = writeBatch(db);
@@ -3930,7 +3947,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                             </div>
                             <div className="space-y-3">
                                 {pendientes.map(log => {
-                                    const tsMs = log.fechaCierre?.toMillis?.() || log.createdAt?.toMillis?.() || 0;
+                                    const tsMs = msProduccion(log);
                                     const dias = Math.max(0, Math.floor((Date.now() - tsMs) / 86400000));
                                     const esMixto = log.disposicion === 'mixto';
                                     const kgPend = log.kgSinEnvasar || log.totalKgProducido || 0;
@@ -3945,7 +3962,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                                     <div className="flex-1 min-w-0">
                                                         <p className="text-white font-semibold text-sm">{log.productoNombre}</p>
                                                         {log.lote && <p className={`text-xs font-mono mt-0.5 ${esMixto ? 'text-orange-400/70' : 'text-amber-400/70'}`}>{log.lote}</p>}
-                                                        <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.createdAt)}</p>
+                                                        <p className="text-slate-500 text-xs mt-0.5">{fmtFechaLote(log)}</p>
                                                     </div>
                                                     <div className="shrink-0 text-right space-y-1">
                                                         <span className={`inline-block text-xs font-bold px-2 py-1 rounded-full border ${
@@ -4044,7 +4061,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                                             {/* La fecha de la PRODUCCIÓN, no la de cuando se cargó:
                                                                 una planilla de junio tecleada en septiembre decía
                                                                 "27-sept", contradiciendo a su propio lote. */}
-                                                            <p className="text-slate-500 text-xs mt-0.5">{fmtDateTime(log.fechaInicio || log.fechaCierre || log.createdAt)}</p>
+                                                            <p className="text-slate-500 text-xs mt-0.5">{fmtFechaLote(log)}</p>
                                                         </div>
                                                         <div className="flex flex-col items-end gap-1 shrink-0">
                                                             <span className={`text-xs font-semibold px-2 py-1 rounded-full border ${badgeColor}`}>

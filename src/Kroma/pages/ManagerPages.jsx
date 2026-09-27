@@ -1137,7 +1137,7 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
             if (costoLeche === 0) {
                 const provId    = directLog?.recepciones?.[0]?.proveedorId;
                 const milkPrice = (provId && milkByProv[provId]) ?? fallbackMilkPrice;
-                costoLeche = milkPrice * litrosNetos;
+                costoLeche = milkPrice * ((directLog?.litrosIngresados > 0 ? directLog.litrosIngresados : 0) || litrosNetos);   // la leche que entró, merma incluida
             }
             costoInsumos = costoPorLitroDesdeFicha(log.bloquesSnapshot, materialsById) * litrosNetos;
             costoEmpaque = directLog
@@ -1270,7 +1270,7 @@ function computeBackfillCosts(ptItems, logs, materials) {
         if (costoLeche === 0) {
             const provId    = directLog?.recepciones?.[0]?.proveedorId;
             const milkPrice = (provId && milkByProv[provId]) ?? fallbackMilkPrice;
-            costoLeche = milkPrice * litrosNetos;
+            costoLeche = milkPrice * ((directLog?.litrosIngresados > 0 ? directLog.litrosIngresados : 0) || litrosNetos);   // la leche que entró, merma incluida
         }
 
         // Insumos — theoretical from bloquesSnapshot (either direct or reference log)
@@ -1625,7 +1625,9 @@ export function ProductionKPIsPage() {
         logs.forEach(l => { const n = l.productoNombre || 'Sin nombre'; prodMap[n] = (prodMap[n] || 0) + getLitrosNetos(l); });
         const productDist = Object.entries(prodMap).map(([name, litros]) => ({ name, litros })).sort((a, b) => b.litros - a.litros).slice(0, 6);
 
-        const timeData = sorted.slice(0, 10).reverse().map(log => {
+        // Primero los lotes CON tiempos (las planillas de papel no los tienen) y
+        // después los 10 más recientes: si no, las planillas desplazaban a los reales.
+        const timeData = sorted.filter(l => Object.values(l.bloquesData || {}).some(bd => bd?.completado)).slice(0, 10).reverse().map(log => {
             let real = 0, teo = 0;
             Object.values(log.bloquesData || {}).forEach(bd => {
                 if (bd.completado) { if (bd.tiempoRealMin) real += bd.tiempoRealMin; if (bd.tiempoTeorico) teo += bd.tiempoTeorico; }
@@ -1756,9 +1758,18 @@ export function ProductionKPIsPage() {
 
 // ─── 4. QualityBoard ─────────────────────────────────────────────────────────
 
+// Los parámetros de una recepción viven en `parametros` (y el pH como `pH`).
+// Antes se leían sueltos (`r.temperatura`, `r.ph`) y el puntaje de TODOS los
+// productores salía vacío. Se conserva la lectura suelta por si hay datos viejos.
+function paramRecepcion(r, f) {
+    const p = r?.parametros || {};
+    const v = f === 'ph' ? (p.pH ?? p.ph ?? r?.pH ?? r?.ph) : (p[f] ?? r?.[f]);
+    return parseFloat(v);
+}
+
 function calcScore(recs) {
     if (!recs.length) return null;
-    const n = f => recs.map(r => parseFloat(r[f])).filter(v => !isNaN(v));
+    const n = f => recs.map(r => paramRecepcion(r, f)).filter(v => !isNaN(v));
     const temps = n('temperatura'), phs = n('ph'), dens = n('densidad'), brixs = n('brix');
     let total = 0, parts = 0;
     if (temps.length) { const a = avg(temps); total += a <= 4 ? 2.5 : Math.max(0, 2.5 - (a - 4) * 0.4); parts++; }
@@ -1785,7 +1796,7 @@ export function QualityBoard() {
         });
 
         const stats = Object.values(suppMap).map(({ id, name, recs }) => {
-            const n = f => recs.map(r => parseFloat(r[f])).filter(v => !isNaN(v));
+            const n = f => recs.map(r => paramRecepcion(r, f)).filter(v => !isNaN(v));
             return {
                 id, name, score: calcScore(recs),
                 entregas:    recs.length,

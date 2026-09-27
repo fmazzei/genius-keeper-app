@@ -24,6 +24,7 @@ import {
     X, AlertTriangle, Search, ChevronRight,
 } from 'lucide-react';
 import { useTableroGerencial, ultimosMeses } from '@/hooks/useTableroGerencial.js';
+import { kgProducidos, fechaProduccion, msProduccion } from '@/Kroma/estadoPlanta.js';
 import DossierComercialDoc from '@/Components/DossierComercialDoc.jsx';
 import CarteraVencidaModal from '@/Components/CarteraVencidaModal.jsx';
 
@@ -414,14 +415,14 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                         {(t.produccion || []).length === 0
                             ? <p className="text-sm text-slate-400 py-4">Sin producción visible. Si Kroma tiene datos, falta correr la migración de empresaId.</p>
                             : [...(t.produccion || [])]
-                                .sort((a, b) => (toDate(b.fechaInicio) || 0) - (toDate(a.fechaInicio) || 0))
+                                .sort((a, b) => msProduccion(b) - msProduccion(a))
                                 .slice(0, 15)
                                 .map(p => (
                                     <Fila key={p.id} titulo={p.productoNombre || '—'}
-                                        sub={`Lote ${p.lote || '—'} · ${fmt(toDate(p.fechaInicio))} · ${p.operarioNombre || ''}`}
-                                        derecha={`${num(p.rendimientoKg)} kg`}
-                                        subDerecha={`${num(p.litrosNetos)} L${p.estado === 'activa' ? ' · en curso' : ''}`}
-                                        tono={p.estado === 'activa' ? 'border-l-emerald-500' : 'border-l-slate-200'} />
+                                        sub={`Lote ${p.lote || '—'} · ${fmt(fechaProduccion(p))} · ${p.operarioNombre || ''}`}
+                                        derecha={`${num(kgProducidos(p))} kg`}
+                                        subDerecha={`${num(p.litrosNetos)} L${p.estado !== 'completada' ? ' · en curso' : ''}`}
+                                        tono={p.estado !== 'completada' ? 'border-l-emerald-500' : 'border-l-slate-200'} />
                                 ))}
                     </div>
                 </Hoja>

@@ -142,7 +142,7 @@ export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma 
                         if (p.litrosRecibidos || p.litros || p.litrosNetos) {
                             evs.push({
                                 kind: 'leche',
-                                at: toDate(p.fechaRecepcion || p.createdAt),
+                                at: toDate(p.fechaRecepcion || p.fechaInicio || p.createdAt),   // no la fecha de carga
                                 titulo: `Leche a producción · ${p.litrosNetos || p.litros || p.litrosRecibidos} L`,
                                 actor: p.responsableNombre || p.creadoPorNombre || '—', rol: 'planta',
                                 detalle: p.proveedorNombre ? `Proveedor: ${p.proveedorNombre}` : '',
@@ -154,7 +154,7 @@ export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma 
                         const eliminada = p.active === false;
                         evs.push({
                             kind: 'produccion',
-                            at: toDate(p.createdAt || p.fecha),
+                            at: toDate(p.fechaInicio || p.fechaCierre || p.createdAt || p.fecha),
                             titulo: `Producción · ${p.productoNombre || item?.productoNombre || ''}`
                                 + (eliminada ? ' (ELIMINADA)' : ''),
                             actor: p.creadoPorNombre || p.responsableNombre || '—', rol: 'planta',

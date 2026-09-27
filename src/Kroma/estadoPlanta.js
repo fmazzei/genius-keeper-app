@@ -84,3 +84,35 @@ export const rendimientoLkg = (log, litrosNetos) => {
     const l  = litrosNetos ?? log.litrosNetos ?? log.litrosIngresados ?? 0;
     return kg > 0 && l > 0 ? +(l / kg).toFixed(2) : null;
 };
+
+/**
+ * La fecha EN QUE SE PRODUJO un lote — nunca la de carga. Una planilla de julio
+ * tecleada en septiembre tiene `createdAt` de septiembre: agrupar o mostrar por
+ * `createdAt` la mete en el mes equivocado y vacía el suyo. Devuelve Date o null.
+ */
+export function fechaProduccion(log) {
+    for (const v of [log?.fechaInicio, log?.fechaCierre, log?.createdAt]) {
+        if (!v) continue;
+        const d = v?.toDate ? v.toDate() : (v instanceof Date ? v : (typeof v?.seconds === 'number' ? new Date(v.seconds * 1000) : new Date(v)));
+        if (!Number.isNaN(d.getTime())) return d;
+    }
+    return null;
+}
+
+/** Milisegundos de `fechaProduccion` (0 si no hay), para ordenar. */
+export const msProduccion = (log) => fechaProduccion(log)?.getTime() || 0;
+
+/**
+ * Merma de pasteurización en litros. El bloque de pasteurización manda cuando
+ * existe; si no (una planilla no tiene bloques), se usa la merma guardada en el
+ * log o la diferencia ingresados − netos. Antes solo miraba el bloque y toda
+ * planilla contaba merma 0.
+ */
+export function mermaDeLog(log, mermaDeBloque = null) {
+    if (mermaDeBloque != null && mermaDeBloque > 0) return mermaDeBloque;
+    if (typeof log?.merma === 'number' && log.merma >= 0) return log.merma;
+    const ing = Number(log?.litrosIngresados) || 0;
+    const net = Number(log?.litrosNetos);
+    if (ing > 0 && Number.isFinite(net) && net > 0) return Math.max(0, +(ing - net).toFixed(2));
+    return mermaDeBloque || 0;
+}

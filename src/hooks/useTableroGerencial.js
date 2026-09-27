@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { cuentaEnCartera, saldoAbierto } from '@/utils/facturaEstado.js';
+import { kgProducidos, fechaProduccion } from '@/Kroma/estadoPlanta.js';
 import { facturacionPorPdv, pdvActivo, ciudadDePdv, agruparPdvPorCliente, DESDE_VENTAS } from '@/utils/facturacionPdv.js';
 
 const EMPRESA_GK = 'lacteoca';
@@ -154,12 +155,15 @@ export function useTableroGerencial() {
 
         // ── 8. Producción: lotes, litros y kg por mes
         const prodPorMes = {};
-        data.produccion.forEach(p => {
-            const k = mesKey(toDate(p.fechaInicio) || toDate(p.createdAt)); if (!k) return;
+        // Solo lotes CERRADOS, fechados por cuándo se produjeron, y con los
+        // KILOS reales: antes sumaba `rendimientoKg`, que es la razón L/kg
+        // (~7 por lote), como si fueran kilos.
+        data.produccion.filter(p => p.estado === 'completada').forEach(p => {
+            const k = mesKey(fechaProduccion(p)); if (!k) return;
             if (!prodPorMes[k]) prodPorMes[k] = { lotes: 0, litros: 0, kg: 0 };
             prodPorMes[k].lotes += 1;
             prodPorMes[k].litros += Number(p.litrosNetos) || 0;
-            prodPorMes[k].kg     += Number(p.rendimientoKg) || 0;
+            prodPorMes[k].kg     += kgProducidos(p) || 0;
         });
 
         // ── Puntos de venta, por PESO de facturación ──
