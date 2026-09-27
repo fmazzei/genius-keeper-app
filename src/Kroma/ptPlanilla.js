@@ -62,3 +62,36 @@ export function ptReemplazable(itemsVivos = []) {
         && typeof i.cantidadCargada === 'number'
         && Math.abs(cantidadActual(i) - i.cantidadCargada) < 0.0005);
 }
+
+// ─── Histórica vs. actual ────────────────────────────────────────────────────
+//
+// Decisión del dueño: una planilla NUNCA toca el inventario de materiales e
+// insumos (esos insumos ya se usaron y el stock de hoy ya está al día). La
+// diferencia entre las dos cargas es solo QUÉ PASA CON EL QUESO:
+//   · 'historica' — ya salió: nada entra a cava.
+//   · 'actual'    — su producto sigue en cava: entra lo envasado (con su
+//                   vencimiento) y lo que quedó sin envasar.
+
+/**
+ * El modo sugerido para una planilla NUEVA: si su fecha es igual o posterior al
+ * sello "datos confiables desde…", el inventario inicial se contó antes de esa
+ * producción, así que su queso tiene que estar en cava → 'actual'. Sin sello no
+ * hay criterio y se sugiere 'historica' (lo conservador: no inventa existencias).
+ */
+export function modoSugerido(fechaYmd, selloYmd) {
+    if (!selloYmd || !fechaYmd) return 'historica';
+    return String(fechaYmd) >= String(selloYmd) ? 'actual' : 'historica';
+}
+
+/** El modo de una planilla YA guardada (las anteriores a esta opción se deducen). */
+export function modoDeLog(log) {
+    if (log?.modoCarga === 'actual' || log?.modoCarga === 'historica') return log.modoCarga;
+    const algoEnCava = (log?.productosFinales || []).some(p => p?.enCava) || (log?.kgSinEnvasar || 0) > 0;
+    return algoEnCava ? 'actual' : 'historica';
+}
+
+/** Kg sin envasar que se sugieren: lo producido que no aparece envasado. */
+export function kgSinEnvasarSugerido(kilos, kgEnvasados) {
+    const k = n(kilos) - n(kgEnvasados);
+    return k > 0.0005 ? r3(k) : 0;
+}

@@ -42,7 +42,8 @@ import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO } from '@/Kroma/Components/CampoFecha.jsx';
-import { partidasDePlanilla, ptReemplazable } from '@/Kroma/ptPlanilla.js';
+import { partidasDePlanilla, ptReemplazable, modoSugerido, kgSinEnvasarSugerido } from '@/Kroma/ptPlanilla.js';
+import { leerSello, fmtSello } from '@/Kroma/selloDatos.js';
 import { redondear, fmtNum } from '@/Kroma/formato.js';
 import { formularioDesdeLog, nombrePresentacion, pesoPresentacion, kgPorUnidadDeSku } from '@/Kroma/planillaForm.js';
 
@@ -98,8 +99,20 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     const [curvaTemp, setCurvaTemp] = useState(ini?.curvaTemp || { inicial: '', h24: '', h72: '' });
     const [kilos, setKilos]   = useState(ini?.kilos || '');
     const [empaques, setEmpaques] = useState(ini?.empaques || []);   // lo que se envasó, declarado
-    // Queso que se guardó SIN envasar (se envasa después). `null` = no declarado.
-    const [sinEnvasar, setSinEnvasar] = useState(ini?.sinEnvasar ?? null);
+    // Kg que siguen en cava sin envasar. Vacío = se toma lo sugerido (lo
+    // producido que no aparece envasado).
+    const [sinEnvasar, setSinEnvasar] = useState(ini?.sinEnvasar ?? '');
+    // ¿Histórica (su queso ya salió) o actual (su queso sigue en cava)? En una
+    // planilla nueva lo sugiere el sello; `null` = seguir la sugerencia.
+    const [modoElegido, setModoElegido] = useState(ini?.modo || null);
+    const [sello, setSello] = useState(null);
+    useEffect(() => {
+        let vivo = true;
+        leerSello(kromaUser?.empresaId || 'lacteoca').then(s => { if (vivo) setSello(s); });
+        return () => { vivo = false; };
+    }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+    const modo = modoElegido || modoSugerido(fecha, sello);
+    const esActual = modo === 'actual';
     const [precioLeche, setPrecioLeche] = useState(ini?.precioLeche || '');  // $/L, opcional
     const [notas, setNotas]   = useState(ini?.notas || '');
 
@@ -146,7 +159,10 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     const skus = (productsMap[ficha?.productoId]?.presentaciones || []);
     const kgEnvasados = redondear(
         empaques.reduce((s, e) => s + num(e.kgPorUnidad) * num(e.unidades), 0), 3);
-    const kgSinEnvasarNum = sinEnvasar === null ? 0 : redondear(num(sinEnvasar), 3);
+    const kgSinEnvasarSug = kgSinEnvasarSugerido(kilos, kgEnvasados);
+    // Solo una planilla ACTUAL tiene queso en cava; en una histórica ya salió.
+    const kgSinEnvasarNum = !esActual ? 0
+        : String(sinEnvasar).trim() === '' ? kgSinEnvasarSug : redondear(num(sinEnvasar), 3);
     const kgDeclarados = redondear(kgEnvasados + kgSinEnvasarNum, 3);
     const precioLecheNum = num(precioLeche);
     // Costo del lote por kg: leche declarada ÷ kilos. Los insumos los pone
@@ -160,8 +176,24 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
         setEmpaques(prev => [...prev, {
             catalogId: sku.id, nombre: nombrePresentacion(sku),
             kgPorUnidad: String(kgPorUnidadDeSku(sku)), unidades: '',
-            enCava: false, fechaEnvasado: '', fechaVencimiento: '',
+            ...filaEnCava(esActual),
         }]);
+    };
+    // En una planilla ACTUAL lo envasado está en cava por defecto, con
+    // vencimiento a 60 días del envasado (se puede desmarcar si ya se vendió).
+    function filaEnCava(enCava) {
+        const env = hoyInput();
+        return enCava
+            ? { enCava: true, fechaEnvasado: env, fechaVencimiento: sumarDiasInput(env, DIAS_VENCIMIENTO_ENVASADO) }
+            : { enCava: false, fechaEnvasado: '', fechaVencimiento: '' };
+    }
+    const cambiarModo = (m) => {
+        setModoElegido(m);
+        // Al pasar a ACTUAL, lo envasado se marca en cava (con fechas) salvo
+        // que ya tuviera sus fechas puestas.
+        if (m === 'actual') {
+            setEmpaques(prev => prev.map(e => e.enCava ? e : { ...e, ...filaEnCava(true) }));
+        }
     };
     const setEmpaque = (i, campo, valor) =>
         setEmpaques(prev => prev.map((e, j) => j === i ? { ...e, [campo]: valor } : e));
@@ -293,7 +325,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     nombre:        e.nombre || 'Presentación',
                     pesoPorUnidad: redondear(num(e.kgPorUnidad), 3),
                     unidades:      Math.round(num(e.unidades)),
-                    ...(e.enCava && {
+                    ...(esActual && e.enCava && {
                         enCava: true,
                         fechaEnvasado:    e.fechaEnvasado || null,
                         fechaVencimiento: e.fechaVencimiento || null,
@@ -329,6 +361,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 totalKgProducido: kilosNum,
                 rendimientoKg:    rendimiento,   // null si falta un dato, nunca undefined
                 notas: notas.trim(),
+                modoCarga: modo,   // 'historica' | 'actual' — NINGUNA toca insumos
                 estado: 'completada',
                 // Queso guardado sin envasar = trabajo PENDIENTE de verdad: entra
                 // a cava y la producción queda "falta empacar" hasta que se
@@ -401,7 +434,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 // quedaba subvaluado (sin insumos ni empaque). Sin costo, gerencia
                 // lo costea con el cálculo completo del lote (leche + insumos de
                 // la ficha + empaque), el mismo de cualquier otro lote.
-                for (const pt of partidasDePlanilla({ empaques, kgSinEnvasar: kgSinEnvasarNum })) {
+                for (const pt of partidasDePlanilla({ empaques: esActual ? empaques : [], kgSinEnvasar: kgSinEnvasarNum })) {
                     batch.set(doc(collection(db, 'kroma_inventory_pt')), sinUndefined({
                         empresaId,
                         productoId: ficha.productoId, productoNombre: ficha.productoNombre,
@@ -600,11 +633,35 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     entra a cava lo que SIGUE ahí: las filas "En cava hoy" y los
                     kg sin envasar (ver ptPlanilla.js). */}
                 <section>
-                    <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-1">Empaque</p>
-                    <p className="text-slate-500 text-xs leading-snug mb-3">
-                        Lo que se envasó de este lote. Si esas unidades <strong className="text-slate-400">siguen
-                        en la cava</strong>, márcalas "En cava hoy" y entran al almacén con su vencimiento.
-                        Lo que ya se vendió queda solo como dato del lote.
+                    <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-1">Empaque y cava</p>
+
+                    {/* Histórica o actual: NINGUNA toca el inventario de
+                        insumos (esos insumos ya se usaron y el stock de hoy
+                        está al día). Solo decide si su queso entra a cava. */}
+                    <Lbl>¿Dónde está hoy el queso de esta producción?</Lbl>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                        {[
+                            ['historica', 'Histórica', 'Ya salió: no entra a cava'],
+                            ['actual',    'Actual',    'Sigue en cava'],
+                        ].map(([id, t, sub]) => (
+                            <button key={id} type="button" onClick={() => cambiarModo(id)}
+                                className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                                    modo === id
+                                        ? 'bg-emerald-500/15 border-emerald-500/60'
+                                        : 'bg-slate-800 border-slate-700 hover:border-slate-500'}`}>
+                                <span className={`block text-sm font-bold ${modo === id ? 'text-emerald-300' : 'text-white'}`}>{t}</span>
+                                <span className="block text-[11px] text-slate-400 leading-snug">{sub}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <p className="text-slate-500 text-[11px] leading-snug mb-3">
+                        {!modoElegido && sello
+                            ? `Sugerido por la fecha: tus datos son confiables desde el ${fmtSello(sello)}. `
+                            : ''}
+                        Ninguna de las dos descuenta insumos ni materiales: esos ya se usaron.
+                        {esActual
+                            ? ' Lo envasado entra a cava con su vencimiento y el resto como sin envasar.'
+                            : ' Lo envasado queda solo como dato del lote (rendimiento y costo).'}
                     </p>
 
                     {ptBloqueado && (
@@ -634,27 +691,20 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                         </div>
                     )}
 
-                    {/* Queso guardado sin envasar: se envasa después. Solo kg. */}
-                    <div className="mb-3">
-                        <button type="button"
-                            onClick={() => setSinEnvasar(v => v === null ? '' : null)}
-                            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border transition-colors ${
-                                sinEnvasar !== null
-                                    ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
-                                    : 'bg-slate-800 border-slate-700 hover:border-amber-500/50 text-slate-300'}`}>
-                            {sinEnvasar !== null ? <X size={11} /> : <Plus size={11} />} Sin envasar
-                        </button>
-                        {sinEnvasar !== null && (
-                            <div className="bg-slate-900 border border-amber-500/30 rounded-xl p-3 mt-2">
-                                <p className="text-slate-500 text-xs leading-snug mb-2">
-                                    Kilos que siguen en cava sin envasar. Entran al almacén y la
-                                    producción queda en "Pendiente de empacar" hasta que se envasen.
-                                </p>
-                                <Inp inputMode="decimal" placeholder="Kg sin envasar" value={sinEnvasar}
-                                    onChange={ev => setSinEnvasar(ev.target.value)} />
-                            </div>
-                        )}
-                    </div>
+                    {/* Queso que sigue en cava sin envasar: solo en una planilla actual. */}
+                    {esActual && (
+                        <div className="bg-slate-900 border border-amber-500/30 rounded-xl p-3 mb-3">
+                            <Lbl>Sin envasar (kg en cava)</Lbl>
+                            <Inp inputMode="decimal" value={sinEnvasar}
+                                placeholder={kgSinEnvasarSug > 0 ? `${fmtNum(kgSinEnvasarSug, 3)} (sugerido)` : '0'}
+                                onChange={ev => setSinEnvasar(ev.target.value)} />
+                            <p className="text-slate-500 text-[11px] leading-snug mt-1.5">
+                                {String(sinEnvasar).trim() === ''
+                                    ? `Vacío = lo que no aparece envasado (${fmtNum(kgSinEnvasarSug, 3)} kg). Escribe 0 si no queda nada.`
+                                    : 'Entra a cava y la producción queda en "Pendiente de empacar" hasta que se envase.'}
+                            </p>
+                        </div>
+                    )}
 
                     {empaques.map((e, i) => (
                         <div key={i} className="bg-slate-900 border border-slate-800 rounded-xl p-3 mb-2.5">
@@ -670,15 +720,15 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                                 <Inp inputMode="numeric" placeholder="Unidades" value={e.unidades}
                                     onChange={ev => setEmpaque(i, 'unidades', ev.target.value)} />
                             </div>
-                            <button type="button" onClick={() => toggleEnCava(i)}
+                            {esActual && <button type="button" onClick={() => toggleEnCava(i)}
                                 className={`mt-2.5 flex items-center gap-2 text-xs font-semibold ${e.enCava ? 'text-emerald-300' : 'text-slate-500'}`}>
                                 <span className={`w-4 h-4 rounded border flex items-center justify-center ${
                                     e.enCava ? 'bg-emerald-600 border-emerald-500' : 'border-slate-600'}`}>
                                     {e.enCava && <span className="text-white text-[10px] leading-none">✓</span>}
                                 </span>
                                 En cava hoy
-                            </button>
-                            {e.enCava && (
+                            </button>}
+                            {esActual && e.enCava && (
                                 <div className="grid grid-cols-2 gap-2.5 mt-2.5">
                                     <CampoFecha label="Envasado" acento="emerald" value={e.fechaEnvasado || ''}
                                         onChange={v => setEnvasado(i, v)} />
@@ -693,7 +743,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     ))}
 
                     <button
-                        onClick={() => setEmpaques(prev => [...prev, { nombre: '', kgPorUnidad: '', unidades: '', enCava: false, fechaEnvasado: '', fechaVencimiento: '' }])}
+                        onClick={() => setEmpaques(prev => [...prev, { nombre: '', kgPorUnidad: '', unidades: '', ...filaEnCava(esActual) }])}
                         className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-emerald-500/50 text-slate-500 hover:text-emerald-400 rounded-xl py-2.5 text-xs font-semibold transition-colors">
                         <Plus size={13} /> Otra presentación
                     </button>

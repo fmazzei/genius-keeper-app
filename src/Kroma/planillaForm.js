@@ -9,6 +9,7 @@
 // las que más necesitan corregirse.
 
 import { kgProducidos } from './estadoPlanta.js';
+import { modoDeLog } from './ptPlanilla.js';
 
 const txt = (v) => (v === null || v === undefined || Number.isNaN(v)) ? '' : String(v);
 
@@ -87,7 +88,8 @@ export function formularioDesdeLog(log) {
             fechaVencimiento: p.fechaVencimiento || '',
         })),
         // `null` = no se declaró queso sin envasar (la pill queda apagada).
-        sinEnvasar: log.kgSinEnvasar > 0 ? txt(log.kgSinEnvasar) : null,
+        sinEnvasar: log.kgSinEnvasar > 0 ? txt(log.kgSinEnvasar) : '',
+        modo: modoDeLog(log),
         precioLeche: txt(recs.find(r => r.costoUsdLitro)?.costoUsdLitro),
         notas: log.notas || '',
     };

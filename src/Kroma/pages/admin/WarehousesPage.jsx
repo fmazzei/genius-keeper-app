@@ -13,6 +13,7 @@ import {
 import { useKroma } from '@/Kroma/KromaContext.jsx';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta, cantidadDePartida, esPartidaDe } from '@/Kroma/eliminarProduccion.js';
+import { tieneExistencia } from '@/Kroma/inventarioPT.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -2028,9 +2029,11 @@ export default function WarehousesPage() {
     function hasExpiringSoon(wh) {
         const limit = Date.now() + 30 * 86400000;
         if (isComercialWh(wh)) {
-            return comercialItemsFor(wh).some(i => i.fechaVencimiento && new Date(i.fechaVencimiento).getTime() < limit);
+            return comercialItemsFor(wh).some(i => (i.unidades ?? 0) > 0 && i.fechaVencimiento && new Date(i.fechaVencimiento).getTime() < limit);
         }
-        return inventoryPT.some(i => i.warehouseId === wh.id && i.fechaVencimiento && new Date(i.fechaVencimiento).getTime() < limit);
+        // Solo partidas CON existencia: antes una partida en cero (vendida o
+        // retirada) seguía encendiendo "Vence pronto" sobre una cava vacía.
+        return inventoryPT.some(i => i.warehouseId === wh.id && tieneExistencia(i) && i.fechaVencimiento && new Date(i.fechaVencimiento).getTime() < limit);
     }
 
     // ── Loading / Error states ─────────────────────────────────────────────────

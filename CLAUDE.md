@@ -2686,3 +2686,25 @@ Auditoría completa de los lectores de `kroma_production_logs`; lo corregido:
   TODOS los productores salía vacío. `paramRecepcion` lo corrige.
 - "Tiempo real vs teórico" filtra primero los lotes con tiempos y después toma
   10 (las planillas no tienen tiempos y desplazaban a los reales).
+
+### Planilla histórica o actual — y NINGUNA toca insumos (2026-09) ✅
+
+Decisión del dueño: una planilla **nunca** descuenta materiales ni insumos —esos
+insumos ya se usaron y el stock de hoy está al día; el inventario de materiales
+solo lo mueve la producción corrida en la app—. Lo único que distingue las dos
+cargas es **qué pasa con el queso**, y se elige en la planilla ("¿Dónde está hoy
+el queso de esta producción?"):
+
+- **Histórica** — ya salió: nada entra a cava; lo envasado es solo dato del lote.
+- **Actual** — sigue en cava: cada fila envasada entra marcada "En cava hoy"
+  (se puede desmarcar si parte se vendió) con envasado y vencimiento a 60 días;
+  el resto entra como **sin envasar** (vacío = kilos − envasado, sugerido; 0 si
+  no queda nada) y la producción queda en "Pendiente de empacar".
+- **Sugerencia por el sello** (`modoSugerido` en `ptPlanilla.js`): fecha de la
+  planilla ≥ "datos confiables desde…" ⇒ Actual (el inventario inicial se contó
+  antes de esa producción); si no, o sin sello, Histórica. Se guarda
+  `modoCarga`; las planillas anteriores lo deducen (`modoDeLog`).
+- Cambiar una planilla de Actual a Histórica al corregirla retira de cava lo que
+  ella había puesto (si nadie lo tocó — `ptReemplazable`).
+- De paso: la Cava mostraba **"Vence pronto" estando vacía** — `hasExpiringSoon`
+  contaba partidas en cero. Ahora solo partidas con existencia.
