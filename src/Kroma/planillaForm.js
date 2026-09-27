@@ -82,6 +82,9 @@ export function formularioDesdeLog(log) {
             nombre:      p.nombre || '',
             kgPorUnidad: txt(p.pesoPorUnidad),
             unidades:    txt(p.unidades),
+            enCava:           !!p.enCava,
+            fechaEnvasado:    p.fechaEnvasado || '',
+            fechaVencimiento: p.fechaVencimiento || '',
         })),
         // `null` = no se declaró queso sin envasar (la pill queda apagada).
         sinEnvasar: log.kgSinEnvasar > 0 ? txt(log.kgSinEnvasar) : null,

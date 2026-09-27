@@ -30,3 +30,19 @@ export const fechaDesdeInput = (valor) => {
 
 /** ¿Esa cadena "YYYY-MM-DD" es el día de hoy? */
 export const esHoyInput = (valor) => !valor || valor === hoyInput();
+
+/**
+ * Días de vida útil desde el ENVASADO. Decisión del dueño: el producto que se
+ * guarda sin envasar y se envasa después vence a los 60 días de envasado (no a
+ * los 90 de la producción). Es solo el valor sugerido: la fecha se puede mover.
+ */
+export const DIAS_VENCIMIENTO_ENVASADO = 60;
+
+/** "YYYY-MM-DD" + N días → "YYYY-MM-DD" (partes locales). '' si no es fecha. */
+export const sumarDiasInput = (valor, dias) => {
+    const f = fechaDesdeInput(valor);
+    if (!f) return '';
+    f.setDate(f.getDate() + (Number(dias) || 0));
+    const p = (n) => String(n).padStart(2, '0');
+    return `${f.getFullYear()}-${p(f.getMonth() + 1)}-${p(f.getDate())}`;
+};

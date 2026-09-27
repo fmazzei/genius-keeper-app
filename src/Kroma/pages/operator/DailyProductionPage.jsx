@@ -3,8 +3,9 @@ import { fmtL, fmtNum } from '@/Kroma/formato.js';
 import Lote from '@/Kroma/Components/Lote.jsx';
 import {
     collection, getDocs, addDoc, updateDoc, doc, getDoc,
-    serverTimestamp, query, where,
+    serverTimestamp, query, where, writeBatch,
 } from 'firebase/firestore';
+import CampoFecha, { hoyInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO } from '@/Kroma/Components/CampoFecha.jsx';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
@@ -1924,6 +1925,15 @@ function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
 function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, onConfirm }) {
     const kgDisponible = log.kgSinEnvasar ?? 0;
     const [presentaciones, setPresentaciones] = useState([]);
+    // Vence a 60 días del ENVASADO (decisión del dueño), no de la producción.
+    const [fechaEnvasado, setFechaEnvasado] = useState(hoyInput());
+    const [fechaVencimiento, setFechaVencimiento] = useState(sumarDiasInput(hoyInput(), DIAS_VENCIMIENTO_ENVASADO));
+    const [cerrarResto, setCerrarResto] = useState(false);
+    const cambiarEnvasado = (v) => {
+        setFechaEnvasado(v);
+        const venc = sumarDiasInput(v, DIAS_VENCIMIENTO_ENVASADO);
+        if (venc) setFechaVencimiento(venc);
+    };
 
     function skuToKg(sku) {
         return sku.unidad === 'kg' ? (sku.pesoNeto || 0) : (sku.pesoNeto || 0) / 1000;
@@ -1943,7 +1953,11 @@ function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, on
     }
 
     const kgEmpacados = presentaciones.reduce((s, p) => s + (p.pesoPorUnidad || 0) * (p.unidades || 0), 0);
-    const canConfirm  = presentaciones.some(p => (p.unidades || 0) > 0);
+    // Se puede envasar una parte: lo que sobra sigue pendiente. Un pequeño
+    // margen (2 %) cubre el redondeo del peso nominal.
+    const excede      = kgEmpacados > kgDisponible * 1.02 + 0.001;
+    const canConfirm  = presentaciones.some(p => (p.unidades || 0) > 0) && !excede && !!fechaVencimiento;
+    const resto       = Math.max(0, kgDisponible - kgEmpacados);
 
     return (
         <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm">
@@ -2004,6 +2018,29 @@ function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, on
                         );
                     })}
                 </div>
+                <div className="px-5 pt-3 border-t border-slate-800 shrink-0 space-y-2.5">
+                    <div className="grid grid-cols-2 gap-2.5">
+                        <CampoFecha label="Envasado" acento="emerald" value={fechaEnvasado} onChange={cambiarEnvasado} />
+                        <CampoFecha label="Vence" acento="emerald" value={fechaVencimiento} onChange={setFechaVencimiento} />
+                    </div>
+                    <p className="text-slate-500 text-[11px] leading-snug">
+                        Vence a {DIAS_VENCIMIENTO_ENVASADO} días del envasado; puedes cambiarlo.
+                    </p>
+                    {kgEmpacados > 0 && resto > 0.0005 && (
+                        <button type="button" onClick={() => setCerrarResto(v => !v)}
+                            className={`flex items-start gap-2 text-xs text-left ${cerrarResto ? 'text-rose-300' : 'text-slate-400'}`}>
+                            <span className={`mt-0.5 w-4 h-4 shrink-0 rounded border flex items-center justify-center ${
+                                cerrarResto ? 'bg-rose-600 border-rose-500' : 'border-slate-600'}`}>
+                                {cerrarResto && <Check size={11} className="text-white" />}
+                            </span>
+                            <span>
+                                {cerrarResto
+                                    ? `No queda nada sin envasar: los ${resto.toFixed(3)} kg restantes fueron merma.`
+                                    : `Quedan ${resto.toFixed(3)} kg sin envasar en cava (seguirá pendiente). Marca si fue merma.`}
+                            </span>
+                        </button>
+                    )}
+                </div>
                 {/* Footer */}
                 {kgEmpacados > 0 && (
                     <div className="px-5 py-2 border-t border-slate-800 flex justify-between items-center shrink-0">
@@ -2018,7 +2055,7 @@ function FinalizarEmpaqueModal({ log, catalogPresentaciones, saving, onClose, on
                         className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
                         Cancelar
                     </button>
-                    <button onClick={() => onConfirm(presentaciones)} disabled={!canConfirm || saving}
+                    <button onClick={() => onConfirm(presentaciones, { fechaEnvasado, fechaVencimiento, cerrarResto: cerrarResto && resto > 0.0005 })} disabled={!canConfirm || saving}
                         className="flex-1 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold disabled:opacity-40 transition-colors">
                         {saving ? 'Guardando…' : 'Confirmar empaque'}
                     </button>
@@ -2244,7 +2281,11 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 .filter(l => l.active !== false)
                 .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
             const logsList   = allLogs.filter(l => l.estado !== 'completada');
-            const historialList = allLogs.filter(l => l.estado === 'completada').slice(0, 20);
+            // Los 20 más recientes MÁS cualquier producción que falte por
+            // empacar, por vieja que sea: una planilla de julio con queso sin
+            // envasar en cava tiene que aparecer en "Pendiente de empacar".
+            const historialList = allLogs.filter(l => l.estado === 'completada')
+                .filter((l, i) => i < 20 || faltaEmpacar(l));
 
             const mMap = {};
             matsSnap.docs.forEach(d => { mMap[d.id] = { id: d.id, ...d.data() }; });
@@ -2708,50 +2749,110 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         if (empaqueConsumo.length > 0) await decrementInventory(empaqueConsumo);
     }
 
-    async function finalizarEmpaque(log, presentaciones) {
+    // Envasar (todo o parte de) el queso que quedó SIN ENVASAR en cava.
+    //
+    // Antes esto creaba las unidades envasadas pero NUNCA descontaba los kg sin
+    // envasar de la cava: el mismo queso quedaba contado dos veces (a granel y
+    // envasado). Tampoco ponía vencimiento, y cerraba la producción aunque se
+    // envasara solo una parte. Ahora: descuenta los kg de las partidas sin
+    // envasar del lote, las unidades nuevas entran a la MISMA ubicación con su
+    // fecha de envasado y vencimiento (60 días del envasado por defecto), queda
+    // rastro en el libro de movimientos, y si sobra queso la producción sigue
+    // pendiente de empacar con lo que resta.
+    async function finalizarEmpaque(log, presentaciones, { fechaEnvasado, fechaVencimiento, cerrarResto } = {}) {
         setFinSaving(true);
         try {
+            const empresaId = kromaUser?.empresaId || 'lacteoca';
+            const lote = log.lote || log.id;
+            const pres = presentaciones.filter(p => (p.unidades || 0) > 0);
+            const kgEmpacados = +pres.reduce((s, p) => s + (p.pesoPorUnidad || 0) * p.unidades, 0).toFixed(3);
+
+            // Las partidas sin envasar de ESTE lote (por logId, no por lote:
+            // el lote se repite).
+            const ptSnap = await getDocs(query(collection(db, 'kroma_inventory_pt'),
+                where('empresaId', '==', empresaId), where('logId', '==', log.id)));
+            const granel = ptSnap.docs
+                .map(d => ({ id: d.id, ...d.data() }))
+                .filter(i => i.active !== false && i.tipo === 'sin_envasar' && (i.kgTotales || 0) > 0);
+            const warehouseId = granel[0]?.warehouseId || null;
+
             const base = {
-                empresaId: kromaUser?.empresaId || 'lacteoca',
+                empresaId,
                 productoId: log.productoId, productoNombre: log.productoNombre,
                 fichaId: log.fichaId, logId: log.id,
-                lote: log.lote || log.id,
-                loteLabel: `${log.lote || log.id} — ${log.productoNombre}`,
+                lote, loteLabel: `${lote} — ${log.productoNombre}`,
                 operarioId: kromaUser?.id || '', operarioNombre: kromaUser?.name || '',
+                ...(warehouseId && { warehouseId }),
                 active: true, createdAt: serverTimestamp(),
             };
+            const actor = { creadoPorId: kromaUser?.id || null, creadoPorNombre: kromaUser?.name || null };
             // Mismo $/kg base congelado del lote (leche + insumos reales) +
-            // costo de empaque propio del SKU al precio vigente — el envasado
-            // tardío de un sobrante "sin envasar" carga exactamente el mismo
-            // costo real que si se hubiera envasado en el momento.
-            const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap);
+            // costo de empaque propio del SKU al precio vigente.
+            const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap)
+                || granel.find(g => g.costoBasePorKgUsd > 0)?.costoBasePorKgUsd || 0;
             const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(4) } : {};
-            const ops = presentaciones
-                .filter(p => (p.unidades || 0) > 0)
-                .map(p => {
-                    const empaqueUnit = costoEmpaqueUnitario(log.productoId, p.catalogId, p.unidades, materialsMap);
-                    const costoUnitarioUsd = costoBasePorKg > 0
-                        ? +(costoBasePorKg * (p.pesoPorUnidad || 0) + empaqueUnit).toFixed(4)
-                        : null;
-                    return addDoc(collection(db, 'kroma_inventory_pt'), {
-                        ...base, tipo: 'empacado',
-                        presentacion: p.nombre, pesoPorUnidad: p.pesoPorUnidad,
-                        unidades: p.unidades,
-                        totalKg: +((p.pesoPorUnidad || 0) * p.unidades).toFixed(3),
-                        ...baseSnapshot,
-                        ...(costoUnitarioUsd != null && { costoUnitarioUsd }),
-                    });
-                });
-            await Promise.all(ops);
 
+            const batch = writeBatch(db);
+            const mov = (extra) => batch.set(doc(collection(db, 'kroma_warehouse_movements')), {
+                empresaId, productoNombre: log.productoNombre, lote, logId: log.id,
+                origenId: warehouseId, destinoId: warehouseId, ...actor, createdAt: serverTimestamp(), ...extra,
+            });
+
+            for (const p of pres) {
+                const empaqueUnit = costoEmpaqueUnitario(log.productoId, p.catalogId, p.unidades, materialsMap);
+                const costoUnitarioUsd = costoBasePorKg > 0
+                    ? +(costoBasePorKg * (p.pesoPorUnidad || 0) + empaqueUnit).toFixed(4)
+                    : null;
+                batch.set(doc(collection(db, 'kroma_inventory_pt')), {
+                    ...base, tipo: 'empacado',
+                    presentacion: p.nombre, pesoPorUnidad: p.pesoPorUnidad,
+                    unidades: p.unidades,
+                    totalKg: +((p.pesoPorUnidad || 0) * p.unidades).toFixed(3),
+                    fechaEnvasado: fechaEnvasado || null,
+                    fechaVencimiento: fechaVencimiento || null,
+                    ...baseSnapshot,
+                    ...(costoUnitarioUsd != null && { costoUnitarioUsd }),
+                });
+                mov({
+                    tipo: 'envasado', origenNombre: 'Sin envasar', destinoNombre: 'Envasado',
+                    presentacion: p.nombre, fechaVencimiento: fechaVencimiento || null,
+                    cantidad: p.unidades, unidad: 'unidades',
+                });
+            }
+
+            // Descontar de la cava los kg que se envasaron (o todo, si se cierra
+            // declarando el resto como merma).
+            let porDescontar = cerrarResto
+                ? granel.reduce((s, g) => s + (g.kgTotales || 0), 0)
+                : kgEmpacados;
+            for (const g of granel) {
+                if (porDescontar <= 0.0005) break;
+                const quita = Math.min(g.kgTotales || 0, porDescontar);
+                const queda = +((g.kgTotales || 0) - quita).toFixed(3);
+                porDescontar = +(porDescontar - quita).toFixed(3);
+                batch.update(doc(db, 'kroma_inventory_pt', g.id),
+                    queda > 0.0005 ? { kgTotales: queda } : { kgTotales: 0, active: false });
+                mov({
+                    tipo: 'envasado', origenNombre: 'Sin envasar', destinoNombre: 'Envasado',
+                    presentacion: 'Sin envasar', cantidad: -+quita.toFixed(3), unidad: 'kg',
+                });
+            }
+
+            const disponible = log.kgSinEnvasar ?? 0;
+            const resto = cerrarResto ? 0 : Math.max(0, +(disponible - kgEmpacados).toFixed(3));
             const update = {
-                kgSinEnvasar: 0,
-                disposicion: 'empacar_todo',
-                empaqueFinalizado: true,
-                presentacionesFinalizacion: presentaciones,
-                fechaFinalizacionEmpaque: serverTimestamp(),
+                kgSinEnvasar: resto,
+                disposicion: resto > 0 ? 'mixto' : 'empacar_todo',
+                empaqueFinalizado: resto <= 0,
+                presentacionesFinalizacion: [
+                    ...(log.presentacionesFinalizacion || []),
+                    ...pres.map(p => ({ ...p, fechaEnvasado: fechaEnvasado || null, fechaVencimiento: fechaVencimiento || null })),
+                ],
+                ...(resto <= 0 && { fechaFinalizacionEmpaque: serverTimestamp() }),
+                ultimoEnvasadoAt: serverTimestamp(),
             };
-            await updateDoc(doc(db, 'kroma_production_logs', log.id), update);
+            batch.update(doc(db, 'kroma_production_logs', log.id), update);
+            await batch.commit();
             setHistorial(prev => prev.map(l => l.id === log.id ? { ...l, ...update } : l));
             setFinalizarLog(null);
         } catch (e) { alert(e.message); }
@@ -4014,7 +4115,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                     catalogPresentaciones={productsMap[finalizarLog.productoId]?.presentaciones || []}
                     saving={finSaving}
                     onClose={() => setFinalizarLog(null)}
-                    onConfirm={(pres) => finalizarEmpaque(finalizarLog, pres)}
+                    onConfirm={(pres, extra) => finalizarEmpaque(finalizarLog, pres, extra)}
                 />
             )}
 

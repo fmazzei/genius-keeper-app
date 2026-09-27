@@ -18,8 +18,9 @@
 //   · NO descuenta inventario. Esos 177 de cuajo se consumieron en julio; el
 //     stock de hoy no los tiene. Descontarlos destruiría el inventario real y
 //     llenaría la pantalla de avisos de faltante.
-//   · NO genera producto terminado. Ese queso se vendió hace meses; meterlo al
-//     almacén inventaría existencias que no están.
+//   · NO mete a cava lo que ya se vendió. Solo entra al almacén lo que el
+//     papel declara que SIGUE ahí: los kg sin envasar y las filas de empaque
+//     marcadas "En cava hoy" (con su envasado y vencimiento). Ver ptPlanilla.js.
 // Los insumos se guardan DECLARADOS, como dato histórico del lote, no como
 // movimiento de almacén.
 //
@@ -35,12 +36,13 @@
 //     disponible en el tanque, que es exactamente la "leche fantasma" que se
 //     acaba de corregir.
 
-import React, { useState, useMemo } from 'react';
-import { collection, doc, writeBatch, serverTimestamp, deleteField } from 'firebase/firestore';
+import React, { useState, useMemo, useEffect } from 'react';
+import { collection, doc, writeBatch, serverTimestamp, deleteField, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
-import CampoFecha, { hoyInput, fechaDesdeInput } from '@/Kroma/Components/CampoFecha.jsx';
+import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO } from '@/Kroma/Components/CampoFecha.jsx';
+import { partidasDePlanilla, ptReemplazable } from '@/Kroma/ptPlanilla.js';
 import { redondear, fmtNum } from '@/Kroma/formato.js';
 import { formularioDesdeLog, nombrePresentacion, pesoPresentacion, kgPorUnidadDeSku } from '@/Kroma/planillaForm.js';
 
@@ -102,6 +104,25 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     const [notas, setNotas]   = useState(ini?.notas || '');
 
     const [guardando, setGuardando] = useState(false);
+    // Al corregir: lo que esta planilla ya tiene en cava. `null` = cargando.
+    const [ptExistente, setPtExistente] = useState(editando ? null : []);
+    useEffect(() => {
+        if (!editando) return;
+        let vivo = true;
+        getDocs(query(collection(db, 'kroma_inventory_pt'),
+            where('empresaId', '==', kromaUser?.empresaId || 'lacteoca'),
+            where('logId', '==', logEditar.id)))
+            .then(snap => {
+                if (!vivo) return;
+                setPtExistente(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => i.active !== false));
+            })
+            .catch(() => { if (vivo) setPtExistente([]); });
+        return () => { vivo = false; };
+    }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+    // Si lo que está en cava ya se tocó (despacho, envasado, ajuste), corregir
+    // la planilla NO lo recrea: devolvería a cava producto que ya salió.
+    const ptBloqueado = editando && ptExistente !== null && ptExistente.length > 0
+        && (!ptReemplazable(ptExistente) || !!logEditar?.fechaFinalizacionEmpaque);
     const [error, setError]         = useState('');
 
     // `redondear` en la SUMA, no solo al mostrar: sumar 591,37 + 153,73 en coma
@@ -139,12 +160,26 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
         setEmpaques(prev => [...prev, {
             catalogId: sku.id, nombre: nombrePresentacion(sku),
             kgPorUnidad: String(kgPorUnidadDeSku(sku)), unidades: '',
+            enCava: false, fechaEnvasado: '', fechaVencimiento: '',
         }]);
     };
     const setEmpaque = (i, campo, valor) =>
         setEmpaques(prev => prev.map((e, j) => j === i ? { ...e, [campo]: valor } : e));
+    // "En cava hoy": se envasó hace poco y sigue en el almacén. El vencimiento
+    // se sugiere a 60 días del ENVASADO (decisión del dueño), y se recalcula si
+    // cambia la fecha de envasado; se puede mover a mano.
+    const toggleEnCava = (i) => setEmpaques(prev => prev.map((e, j) => {
+        if (j !== i) return e;
+        if (e.enCava) return { ...e, enCava: false };
+        const env = e.fechaEnvasado || hoyInput();
+        return { ...e, enCava: true, fechaEnvasado: env,
+            fechaVencimiento: e.fechaVencimiento || sumarDiasInput(env, DIAS_VENCIMIENTO_ENVASADO) };
+    }));
+    const setEnvasado = (i, valor) => setEmpaques(prev => prev.map((e, j) => j === i
+        ? { ...e, fechaEnvasado: valor, fechaVencimiento: sumarDiasInput(valor, DIAS_VENCIMIENTO_ENVASADO) || e.fechaVencimiento }
+        : e));
 
-    const puedeGuardar = fecha && ficha && totalRecibido > 0 && kilosNum > 0 && !guardando;
+    const puedeGuardar = fecha && ficha && totalRecibido > 0 && kilosNum > 0 && !guardando && ptExistente !== null;
 
     const setEntrega = (i, campo, valor) =>
         setEntregas(prev => prev.map((e, j) => j === i ? { ...e, [campo]: valor } : e));
@@ -250,6 +285,21 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             if (Object.keys(ph).length) curva.pH = ph;
             if (Object.keys(tp).length) curva.temperatura = tp;
 
+            // Todo lo que se envasó (vendido o en cava): kg envasados y costo de empaque.
+            const productosFinalesPlanilla = empaques
+                .filter(e => num(e.unidades) > 0 && num(e.kgPorUnidad) > 0)
+                .map(e => ({
+                    catalogId:     e.catalogId || null,
+                    nombre:        e.nombre || 'Presentación',
+                    pesoPorUnidad: redondear(num(e.kgPorUnidad), 3),
+                    unidades:      Math.round(num(e.unidades)),
+                    ...(e.enCava && {
+                        enCava: true,
+                        fechaEnvasado:    e.fechaEnvasado || null,
+                        fechaVencimiento: e.fechaVencimiento || null,
+                    }),
+                }));
+
             const datosLog = sinUndefined({
                 ...base,
                 fichaId:        ficha.id,
@@ -278,17 +328,20 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 // ni el costo por kg, ni contaba en los promedios de la planta.
                 totalKgProducido: kilosNum,
                 rendimientoKg:    rendimiento,   // null si falta un dato, nunca undefined
-                // Declarado, igual que el empaque: dice cuánto se guardó a granel
-                // para envasar después. NO abre trabajo pendiente ni entra a
-                // cava (disposicion 'historico' + empaqueFinalizado).
-                kgSinEnvasar:     kgSinEnvasarNum,
                 notas: notas.trim(),
-                // Cerrada y empacada: si quedara como "guardar_todo" sin empacar,
-                // las 32 planillas aparecerían como trabajo pendiente en el
-                // inicio del operario.
                 estado: 'completada',
-                disposicion: 'historico',
-                empaqueFinalizado: true,
+                // Queso guardado sin envasar = trabajo PENDIENTE de verdad: entra
+                // a cava y la producción queda "falta empacar" hasta que se
+                // envase desde Producción → Pendiente de empacar. Sin eso, la
+                // planilla queda cerrada (si quedara abierta, las 32 planillas
+                // aparecerían como pendientes en el inicio del operario).
+                ...(ptBloqueado
+                    // Lo que hay en cava ya se tocó: el estado de empaque lo
+                    // manda la operación real, no la planilla.
+                    ? {}
+                    : kgSinEnvasarNum > 0
+                        ? { kgSinEnvasar: kgSinEnvasarNum, disposicion: productosFinalesPlanilla.length > 0 ? 'mixto' : 'guardar_todo', empaqueFinalizado: false }
+                        : { kgSinEnvasar: 0, disposicion: 'historico', empaqueFinalizado: true }),
                 // La ficha SÍ se guarda: es lo que le permite a gerencia costear
                 // el lote (insumos teóricos por litro × litros). `bloquesData`
                 // queda vacío porque el papel no trae la corrida bloque a bloque.
@@ -296,14 +349,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 bloquesData: {},
                 // El empaque declarado. NO entra a cava —ese queso ya salió—
                 // pero sin él no hay kg envasados ni costo de empaque del lote.
-                productosFinales: empaques
-                    .filter(e => num(e.unidades) > 0 && num(e.kgPorUnidad) > 0)
-                    .map(e => ({
-                        catalogId:     e.catalogId || null,
-                        nombre:        e.nombre || 'Presentación',
-                        pesoPorUnidad: redondear(num(e.kgPorUnidad), 3),
-                        unidades:      Math.round(num(e.unidades)),
-                    })),
+                productosFinales: productosFinalesPlanilla,
                 fechaInicio: fechaDate,
                 fechaCierre: fechaDate,
                 active: true,
@@ -323,6 +369,61 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 });
             } else {
                 batch.set(logRef, datosLog);
+            }
+
+            // 3) Lo que SIGUE en cava: los kg sin envasar y las filas "En cava
+            // hoy". En el mismo batch, con su entrada en el libro de
+            // movimientos (un almacén no gana existencias sin un evento que lo
+            // explique). Sin `warehouseId` el Almacén lo ubica en la Cava.
+            if (!ptBloqueado) {
+                const lote = datosLog.lote;
+                const actor = { creadoPorId: kromaUser?.id || null, creadoPorNombre: kromaUser?.name || null };
+                const mov = (extra) => batch.set(doc(collection(db, 'kroma_warehouse_movements')), sinUndefined({
+                    empresaId, productoNombre: ficha.productoNombre, lote, logId: logRef.id,
+                    origenId: null, destinoId: null, ...actor, createdAt: serverTimestamp(), ...extra,
+                }));
+                // Al corregir: lo que la planilla había puesto (intacto) se
+                // reemplaza por lo que dice el formulario ahora.
+                for (const it of (ptExistente || [])) {
+                    batch.update(doc(db, 'kroma_inventory_pt', it.id), {
+                        active: false, deletedAt: serverTimestamp(),
+                        deletedMotivo: 'Reemplazada al corregir la planilla.',
+                    });
+                    mov({
+                        tipo: 'correccion_planilla', origenNombre: 'Cava', destinoNombre: 'Corrección de planilla',
+                        presentacion: it.tipo === 'sin_envasar' ? 'Sin envasar' : it.presentacion,
+                        fechaVencimiento: it.fechaVencimiento || null,
+                        cantidad: -(it.tipo === 'sin_envasar' ? it.kgTotales : it.unidades),
+                        unidad: it.tipo === 'sin_envasar' ? 'kg' : 'unidades',
+                    });
+                }
+                const costoBase = costoPorKgHist > 0 ? { costoBasePorKgUsd: costoPorKgHist } : {};
+                for (const pt of partidasDePlanilla({ empaques, kgSinEnvasar: kgSinEnvasarNum })) {
+                    batch.set(doc(collection(db, 'kroma_inventory_pt')), sinUndefined({
+                        empresaId,
+                        productoId: ficha.productoId, productoNombre: ficha.productoNombre,
+                        fichaId: ficha.id, logId: logRef.id,
+                        lote, loteLabel: `${lote} — ${ficha.productoNombre}`,
+                        operarioId: kromaUser?.id || '', operarioNombre: kromaUser?.name || '',
+                        origen: 'planilla_papel',
+                        ...pt,
+                        ...costoBase,
+                        ...(costoPorKgHist > 0 && {
+                            costoUnitarioUsd: pt.tipo === 'sin_envasar'
+                                ? costoPorKgHist
+                                : redondear(costoPorKgHist * pt.pesoPorUnidad, 4),
+                        }),
+                        active: true,
+                        createdAt: serverTimestamp(),
+                    }));
+                    mov({
+                        tipo: 'entrada_produccion', origenNombre: 'Producción (planilla)', destinoNombre: 'Cava',
+                        presentacion: pt.tipo === 'sin_envasar' ? 'Sin envasar' : pt.presentacion,
+                        fechaVencimiento: pt.fechaVencimiento || null,
+                        cantidad: pt.tipo === 'sin_envasar' ? pt.kgTotales : pt.unidades,
+                        unidad: pt.tipo === 'sin_envasar' ? 'kg' : 'unidades',
+                    });
+                }
             }
 
             // La única escritura de toda la operación.
@@ -498,15 +599,26 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 </section>
 
                 {/* ── Empaque ──
-                    Declarado, NO entra a cava: ese queso ya salió hace meses.
-                    Pero sin él el lote no tiene kg envasados ni costo de empaque,
-                    y el costo por kg del histórico queda incompleto. */}
+                    Lo envasado sirve para el rendimiento y el costo por kg. Solo
+                    entra a cava lo que SIGUE ahí: las filas "En cava hoy" y los
+                    kg sin envasar (ver ptPlanilla.js). */}
                 <section>
                     <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-1">Empaque</p>
                     <p className="text-slate-500 text-xs leading-snug mb-3">
-                        Lo que se envasó de este lote. <strong className="text-slate-400">No entra al
-                        almacén</strong> — ya se despachó. Sirve para el rendimiento y el costo por kg.
+                        Lo que se envasó de este lote. Si esas unidades <strong className="text-slate-400">siguen
+                        en la cava</strong>, márcalas "En cava hoy" y entran al almacén con su vencimiento.
+                        Lo que ya se vendió queda solo como dato del lote.
                     </p>
+
+                    {ptBloqueado && (
+                        <div className="flex items-start gap-2 bg-amber-900/20 border border-amber-700/40 rounded-xl px-3 py-2.5 mb-3">
+                            <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                            <p className="text-amber-200 text-xs leading-snug">
+                                Lo que esta planilla puso en cava ya se movió (despacho, envasado o ajuste).
+                                Esta corrección <strong>no cambia la cava</strong>: ajústala desde Almacenes.
+                            </p>
+                        </div>
+                    )}
 
                     {skus.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mb-3">
@@ -538,7 +650,8 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                         {sinEnvasar !== null && (
                             <div className="bg-slate-900 border border-amber-500/30 rounded-xl p-3 mt-2">
                                 <p className="text-slate-500 text-xs leading-snug mb-2">
-                                    Kilos que se guardaron sin envasar para envasarlos después.
+                                    Kilos que siguen en cava sin envasar. Entran al almacén y la
+                                    producción queda en "Pendiente de empacar" hasta que se envasen.
                                 </p>
                                 <Inp inputMode="decimal" placeholder="Kg sin envasar" value={sinEnvasar}
                                     onChange={ev => setSinEnvasar(ev.target.value)} />
@@ -560,11 +673,30 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                                 <Inp inputMode="numeric" placeholder="Unidades" value={e.unidades}
                                     onChange={ev => setEmpaque(i, 'unidades', ev.target.value)} />
                             </div>
+                            <button type="button" onClick={() => toggleEnCava(i)}
+                                className={`mt-2.5 flex items-center gap-2 text-xs font-semibold ${e.enCava ? 'text-emerald-300' : 'text-slate-500'}`}>
+                                <span className={`w-4 h-4 rounded border flex items-center justify-center ${
+                                    e.enCava ? 'bg-emerald-600 border-emerald-500' : 'border-slate-600'}`}>
+                                    {e.enCava && <span className="text-white text-[10px] leading-none">✓</span>}
+                                </span>
+                                En cava hoy
+                            </button>
+                            {e.enCava && (
+                                <div className="grid grid-cols-2 gap-2.5 mt-2.5">
+                                    <CampoFecha label="Envasado" acento="emerald" value={e.fechaEnvasado || ''}
+                                        onChange={v => setEnvasado(i, v)} />
+                                    <CampoFecha label="Vence" acento="emerald" value={e.fechaVencimiento || ''}
+                                        onChange={v => setEmpaque(i, 'fechaVencimiento', v)} />
+                                    <p className="col-span-2 text-slate-500 text-[11px] leading-snug -mt-1">
+                                        Vence a {DIAS_VENCIMIENTO_ENVASADO} días del envasado; puedes cambiarlo.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     ))}
 
                     <button
-                        onClick={() => setEmpaques(prev => [...prev, { nombre: '', kgPorUnidad: '', unidades: '' }])}
+                        onClick={() => setEmpaques(prev => [...prev, { nombre: '', kgPorUnidad: '', unidades: '', enCava: false, fechaEnvasado: '', fechaVencimiento: '' }])}
                         className="w-full flex items-center justify-center gap-1.5 border border-dashed border-slate-700 hover:border-emerald-500/50 text-slate-500 hover:text-emerald-400 rounded-xl py-2.5 text-xs font-semibold transition-colors">
                         <Plus size={13} /> Otra presentación
                     </button>

@@ -2615,7 +2615,36 @@ debajo en gris, y la fila agregada se nombra `nombrePresentacion` ("… · 250 g
 sin duplicar el peso si ya venía en el nombre). Helpers puros en `planillaForm.js`.
 
 Pill **"Sin envasar"** (ámbar): kg que se guardaron a granel para envasar
-después. Se guarda en `kgSinEnvasar` del log y se restaura al corregir la
-planilla. **No abre trabajo pendiente ni entra a cava**: la planilla sigue con
-`disposicion:'historico'` + `empaqueFinalizado:true` (ver `faltaEmpacar`). El
-aviso "más de lo producido" compara envasado + sin envasar contra los kilos.
+después. El aviso "más de lo producido" compara envasado + sin envasar contra
+los kilos. (Primera versión: no entraba a cava — corregido abajo.)
+
+### La planilla SÍ pone en cava lo que sigue ahí; envasar después, bien hecho (2026-09) ✅
+
+Corrección del dueño: *"ese producto que está sin envasar aún persiste en cava y
+no está malo. También unidades de esa producción están en cava que recién se
+envasaron… bajé el vencimiento a 60 días desde el envasado"*. La premisa "todo
+lo de una planilla ya se vendió" era falsa.
+
+- **`src/Kroma/ptPlanilla.js`** (puro): `partidasDePlanilla` = lo que la
+  planilla deja en cava — los kg **sin envasar** (siempre) y las filas de
+  empaque marcadas **"En cava hoy"** (con `fechaEnvasado` y `fechaVencimiento`).
+  Lo envasado que ya se vendió sigue siendo solo dato del lote. Se escriben en
+  el MISMO batch de la planilla, con `origen:'planilla_papel'`,
+  `cantidadCargada` y su `entrada_produccion` en el libro de movimientos. Sin
+  `warehouseId` → el Almacén las ubica en la Cava.
+- Con kg sin envasar la producción queda **pendiente de empacar**
+  (`disposicion` `mixto`/`guardar_todo`, `empaqueFinalizado:false`).
+- **Corregir la planilla** reemplaza sus partidas SOLO si nadie las tocó
+  (`ptReemplazable`: todas de la planilla y con la cantidad con que entraron).
+  Si algo se despachó, envasó o ajustó, la corrección NO toca la cava y lo dice.
+- **Vencimiento a 60 días del envasado**: `DIAS_VENCIMIENTO_ENVASADO` y
+  `sumarDiasInput` en `fechas.js`; es la fecha sugerida, se puede mover.
+- **"Finalizar empaque" tenía un bug de doble conteo**: creaba las unidades
+  envasadas pero **nunca descontaba los kg sin envasar de la cava**, no ponía
+  vencimiento y cerraba la producción aunque se envasara una parte. Ahora pide
+  envasado + vencimiento, descuenta los kg de las partidas `sin_envasar` del
+  lote (por `logId`), deja las unidades en la misma ubicación, escribe
+  movimientos `envasado`, y si sobra queso la producción sigue pendiente con el
+  resto (o se cierra declarando el resto como merma). Todo en un batch.
+- La lista "Pendiente de empacar" ya no se corta en los 20 lotes más recientes:
+  una planilla vieja con queso en cava también aparece.
