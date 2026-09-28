@@ -470,7 +470,7 @@ function AddInventoryModal({ warehouse, onClose, onSave, saving }) {
 // salían "Bodega de Insumos" y "Tanque de Enfriamiento" como destino de un queso.
 const aceptaPT = (w) => (w?.tipo === 'PT' || w?.tipo === 'mixto') && !isMilkTank(w) && !isComercialWh(w);
 
-function TransferModal({ item, warehouses, currentWarehouseId, saving, onClose, onConfirm, onDespachar }) {
+function TransferModal({ item, warehouses, currentWarehouseId, saving, onClose, onConfirm, onDespachar, sinPermisoDespacho }) {
     const isEmpacado  = item.tipo === 'empacado';
     const maxQty      = isEmpacado ? (item.unidades || 0) : (item.kgTotales || 0);
     const unit        = isEmpacado ? 'unidades' : 'kg';
@@ -520,12 +520,18 @@ function TransferModal({ item, warehouses, currentWarehouseId, saving, onClose, 
                 </div>
 
                 {/* Destination */}
-                {comercial && onDespachar && (
+                {sinPermisoDespacho && (
+                    <p className="text-slate-400 text-xs bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-3 leading-relaxed">
+                        Para enviarlo a Caracas hay que registrar un <b className="text-slate-200">despacho</b>, y tu perfil no tiene permiso
+                        de Despachos. Pídeselo al máster en Control del Sistema → Permisos.
+                    </p>
+                )}
+                {onDespachar && (
                     <div className="rounded-xl border border-amber-600/40 bg-amber-900/15 p-3.5">
                         <div className="flex items-start gap-3">
                             <Truck size={18} className="text-amber-400 shrink-0 mt-0.5" />
                             <div className="min-w-0 flex-1">
-                                <p className="text-white text-sm font-semibold">{comercial.nombre}</p>
+                                <p className="text-white text-sm font-semibold">{comercial?.nombre || 'Depósito Comercial Caracas'}</p>
                                 <p className="text-slate-400 text-xs mt-0.5 leading-relaxed">
                                     A Caracas el producto va en el camión: se registra como <b className="text-slate-200">despacho</b> y
                                     entra al depósito cuando lo reciben en Frimaca.
@@ -2183,6 +2189,7 @@ export default function WarehousesPage({ onNavigate }) {
                         saving={saving}
                         onClose={() => setTransferItem(null)}
                         onConfirm={executeTransfer}
+                        sinPermisoDespacho={!canEdit('despachos')}
                         onDespachar={onNavigate && canEdit('despachos') ? (item, cantidad) => {
                             setTransferItem(null);
                             onNavigate('despacho', { prefill: {

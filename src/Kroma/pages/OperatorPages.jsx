@@ -317,7 +317,7 @@ export function OperatorHome({ onNavigate }) {
 
 export const MilkInventoryPage = (props) => <MilkInventoryPageImpl {...props} />;
 
-export const MaterialsInventoryPage = () => <MaterialsInventoryPageImpl />;
+export const MaterialsInventoryPage = (props) => <MaterialsInventoryPageImpl {...props} />;
 
 export const FichaBuilderPage = (props) => <FichaBuilderPageImpl {...props} />;
 

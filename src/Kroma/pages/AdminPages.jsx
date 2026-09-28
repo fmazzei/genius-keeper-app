@@ -285,15 +285,15 @@ export function AdminHome({ onNavigate }) {
     );
 }
 
-export const WarehousesPage = () => <WarehousesPageImpl />;
+export const WarehousesPage = (props) => <WarehousesPageImpl {...props} />;
 
-export const SuppliersPage = () => <SuppliersPageImpl />;
+export const SuppliersPage = (props) => <SuppliersPageImpl {...props} />;
 
-export const MaterialsMasterPage = () => <MaterialsMasterPageImpl />;
+export const MaterialsMasterPage = (props) => <MaterialsMasterPageImpl {...props} />;
 
-export const ProductCatalogPage = () => <ProductCatalogPageImpl />;
+export const ProductCatalogPage = (props) => <ProductCatalogPageImpl {...props} />;
 
-export const ProductionHistoryPage = () => <ProductionHistoryPageImpl />;
+export const ProductionHistoryPage = (props) => <ProductionHistoryPageImpl {...props} />;
 
 export const ControlSistemaPage = ({ kromaUser }) => <ControlSistemaPageImpl kromaUser={kromaUser} />;
 

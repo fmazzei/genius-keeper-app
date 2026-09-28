@@ -2946,3 +2946,20 @@ Pedido del dueño: *"verifica que todo esté perfectamente conectado y no nos d�
 - la segunda recepción se rechaza sin duplicar.
 
 Cómo correrla está en el encabezado del archivo.
+
+### Bug: los "re-exportadores" de Kroma se comían los props (2026-09) ✅
+
+El dueño abrió "Mover producto" y no aparecía la opción de despachar a Caracas.
+
+**Causa:** `AdminPages.jsx` re-exportaba `WarehousesPage`, `ProductionHistoryPage`, `ProductCatalogPage`, `SuppliersPage` y `MaterialsMasterPage` con `() => <Impl />`, y `OperatorPages.jsx` hacía lo mismo con `MaterialsInventoryPage`. Esos wrappers **descartaban todos los props**, así que `onNavigate` y `params` nunca llegaban. Es el mismo error que ya se había corregido en otras páginas de Kroma, y quedaron copias.
+
+Además del botón "Despachar a Caracas", estaban rotas desde que se agregaron:
+- **"Producciones recientes → abrir el lote"** en el Historial (le faltaban `params`);
+- **"Editar"** desde el Historial;
+- los accesos de "qué frena" del inicio del administrador hacia **Insumos** (le faltaban `params`).
+
+Ahora TODOS los wrappers son `(props) => <Impl {...props} />`. **Regla:** un re-export de página nunca se escribe `() => <X />`.
+
+**De paso, en el modal:**
+- La opción de despacho ya no depende de encontrar un almacén con "comercial" en el nombre.
+- Si el perfil no tiene permiso de Despachos, lo DICE en vez de esconder la opción.
