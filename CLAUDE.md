@@ -2895,3 +2895,13 @@ le es irrelevante la razón social"*. Y menos "amuñuñado" en el teléfono.
   - Ahora el hook expone también `pdvList` (solo PDV).
   - Reporte, pedidos, toma de pedido y devoluciones usan `pdvList`.
   - Hub y planificador de rutas siguen con `masterStopList`: el depósito sí es una parada de la ruta.
+
+### Kroma — Catálogo de Productos: las presentaciones se leen por su peso (2026-09) ✅
+
+En la tarjeta del producto, las presentaciones eran chips con su **nombre**, y en el catálogo casi todas se llaman igual que el producto: cuatro "Lacteoca Chèvre Original" idénticos. Ahora `ProductCard` muestra:
+- **Una ficha por presentación**, con el **peso en grande** (`pesoPresentacion`), ordenadas de menor a mayor (`kgPorUnidadDeSku`).
+- El nombre solo cuando dice algo distinto del producto.
+- El **precio por unidad** (precio de planta $/kg × kg de la presentación), junto al precio de planta al pie. Los dos se ven solo con `verCostos`: el operario nunca ve precios ni costos.
+- **Sin presentaciones**: un aviso ámbar que explica que sin ellas no se puede empacar.
+- También en el formulario: el peso va primero y en grande en cada presentación ya agregada.
+- Correcciones de paso: "presentaciónes" → "presentaciones"; el encabezado se apila en el teléfono.

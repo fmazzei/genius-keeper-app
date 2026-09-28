@@ -3,6 +3,7 @@ import { db } from '@/Firebase/config.js';
 import { collection, getDocs, addDoc, updateDoc, doc, query, where, serverTimestamp } from 'firebase/firestore';
 import { Tag, Plus, Edit2, Trash2, Loader, X } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
+import { pesoPresentacion, kgPorUnidadDeSku } from '../../planillaForm.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -77,51 +78,81 @@ export const PillGroup = ({ options, value, onChange, size = 'md' }) => {
 
 // ─── Product Card ─────────────────────────────────────────────────────────────
 
-function ProductCard({ product, onEdit, onDelete }) {
+function ProductCard({ product, onEdit, onDelete, verPrecio }) {
     const catStyle = CAT_STYLE[product.categoria] || CAT_STYLE.otro;
     const milkStyle = MILK_STYLE[product.tipoLeche] || 'bg-slate-500/20 text-slate-400 border-slate-500/30';
     const catLabel = CATEGORIES.find(c => c.id === product.categoria)?.label || product.categoria;
     const milkLabel = MILK_TYPES.find(m => m.id === product.tipoLeche)?.label || product.tipoLeche;
+    const precioKg = Number(product.precioVentaUSD) || 0;
+
+    // Las presentaciones se distinguen por su PESO, no por su nombre: en el
+    // catálogo casi todas se llaman igual que el producto ("Lacteoca Chèvre
+    // Original"), así que cuatro chips con el mismo texto no decían nada.
+    // Cada una es una ficha con el peso en grande, ordenadas de menor a mayor,
+    // y su nombre solo aparece si dice algo distinto del producto.
+    const presentaciones = [...(product.presentaciones || [])]
+        .sort((a, b) => kgPorUnidadDeSku(a) - kgPorUnidadDeSku(b));
+    const mismoNombre = (sku) => (sku.nombre || '').trim().toLowerCase() === (product.nombre || '').trim().toLowerCase();
 
     return (
-        <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-slate-600 transition-colors">
-            <div className="flex items-start justify-between gap-2 mb-3">
-                <p className="text-white font-semibold text-sm leading-snug">{product.nombre}</p>
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 hover:border-slate-600 transition-colors flex flex-col">
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="text-white font-bold text-lg leading-snug">{product.nombre}</p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium ${catStyle}`}>{catLabel}</span>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full border font-medium ${milkStyle}`}>Leche {milkLabel}</span>
+                    </div>
+                </div>
                 <div className="flex items-center gap-1 shrink-0">
                     {onEdit && (
-                        <button onClick={() => onEdit(product)} className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors">
-                            <Edit2 size={13} />
+                        <button onClick={() => onEdit(product)} aria-label="Editar producto" className="p-2 text-slate-400 hover:text-emerald-400 hover:bg-slate-700 rounded-lg transition-colors">
+                            <Edit2 size={16} />
                         </button>
                     )}
                     {onDelete && (
-                        <button onClick={() => onDelete(product)} className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors">
-                            <Trash2 size={13} />
+                        <button onClick={() => onDelete(product)} aria-label="Eliminar producto" className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors">
+                            <Trash2 size={16} />
                         </button>
                     )}
                 </div>
             </div>
 
-            <div className="flex flex-wrap gap-1.5 mb-3">
-                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${catStyle}`}>{catLabel}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${milkStyle}`}>Leche {milkLabel}</span>
+            <div className="mt-5">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                    {presentaciones.length === 0 ? 'Presentaciones'
+                        : `${presentaciones.length} ${presentaciones.length === 1 ? 'presentación' : 'presentaciones'}`}
+                </p>
+                {presentaciones.length === 0 ? (
+                    <p className="text-sm text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5">
+                        Sin presentaciones: no se puede empacar ni generar producto terminado. Agrégalas con el lápiz.
+                    </p>
+                ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                        {presentaciones.map(sku => {
+                            const peso = pesoPresentacion(sku);
+                            const precioUnidad = verPrecio && precioKg > 0 ? precioKg * kgPorUnidadDeSku(sku) : 0;
+                            return (
+                                <div key={sku.id} className="bg-slate-900/60 border border-slate-700 rounded-xl px-3 py-3 text-center">
+                                    <p className="text-2xl font-black text-white leading-none">{peso || '—'}</p>
+                                    {!mismoNombre(sku) && (
+                                        <p className="text-[11px] text-slate-400 mt-1.5 leading-tight line-clamp-2">{sku.nombre}</p>
+                                    )}
+                                    {precioUnidad > 0 && (
+                                        <p className="text-[11px] text-emerald-400 font-semibold mt-1.5">${precioUnidad.toFixed(2)} c/u</p>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
 
-            {(product.presentaciones || []).length > 0 && (
-                <div>
-                    <p className="text-slate-500 text-xs mb-1.5">
-                        {product.presentaciones.length} presentación{product.presentaciones.length !== 1 ? 'es' : ''}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                        {product.presentaciones.map(sku => (
-                            <span key={sku.id} className="text-xs px-2 py-0.5 bg-slate-700 text-slate-300 rounded-full border border-slate-600">
-                                {sku.nombre}
-                            </span>
-                        ))}
-                    </div>
+            {verPrecio && precioKg > 0 && (
+                <div className="mt-4 pt-3 border-t border-slate-700 flex items-baseline justify-between">
+                    <span className="text-xs text-slate-500">Precio de planta</span>
+                    <span className="text-emerald-400 font-bold">${precioKg.toFixed(2)} <span className="text-xs font-semibold text-emerald-400/70">/ kg</span></span>
                 </div>
-            )}
-            {(product.precioVentaUSD > 0) && (
-                <p className="text-emerald-400 text-xs font-semibold mt-2">${Number(product.precioVentaUSD).toFixed(2)} / kg</p>
             )}
         </div>
     );
@@ -226,13 +257,9 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
                     <div className="space-y-2 mb-3">
                         {form.presentaciones.map(sku => (
                             <div key={sku.id} className="flex items-center justify-between bg-slate-700 border border-slate-600 rounded-lg px-3 py-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-white text-sm font-medium">{sku.nombre}</span>
-                                    {sku.pesoNeto > 0 && (
-                                        <span className="text-xs px-2 py-0.5 bg-slate-600 text-slate-300 rounded-full">
-                                            {sku.pesoNeto} {sku.unidad}
-                                        </span>
-                                    )}
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <span className="text-white text-base font-black shrink-0 min-w-[64px]">{pesoPresentacion(sku) || '—'}</span>
+                                    <span className="text-slate-400 text-sm truncate">{sku.nombre}</span>
                                 </div>
                                 <button
                                     type="button"
@@ -323,7 +350,7 @@ function ProductForm({ initial, onSave, onCancel, saving }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ProductCatalogPage() {
-    const { kromaUser, canEdit } = useKroma();
+    const { kromaUser, canEdit, verCostos } = useKroma();
     // Los catálogos (proveedores, productos, materiales) son del administrador.
     const canEditar = canEdit('catalogos');
     const [products, setProducts] = useState([]);
@@ -417,10 +444,10 @@ export default function ProductCatalogPage() {
     // ── List view ──────────────────────────────────────────────────────────────
     return (
         <div className="p-6 md:p-8">
-            <div className="flex items-center justify-between mb-6 gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
                 <div>
                     <div className="flex items-center gap-2 mb-1">
-                        <Tag size={20} className="text-emerald-400" />
+                        <Tag size={20} className="text-emerald-400 shrink-0" />
                         <h2 className="text-xl font-bold text-white">Catálogo de Productos</h2>
                     </div>
                     <p className="text-slate-400 text-sm">
@@ -430,7 +457,7 @@ export default function ProductCatalogPage() {
                 {canEditar && (
                     <button
                         onClick={() => { setEditing(null); setMode('create'); }}
-                        className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl transition-colors text-sm shrink-0"
+                        className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2.5 rounded-xl transition-colors text-sm shrink-0"
                     >
                         <Plus size={16} />
                         Nuevo Producto
@@ -456,13 +483,14 @@ export default function ProductCatalogPage() {
                     </button>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {products.map(p => (
                         <ProductCard
                             key={p.id}
                             product={p}
                             onEdit={canEditar ? handleEdit : null}
                             onDelete={canEditar ? setDeleteTarget : null}
+                            verPrecio={!!verCostos}
                         />
                     ))}
                 </div>
