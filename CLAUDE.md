@@ -2726,3 +2726,23 @@ junto con `inputDeFecha`).
   sin fecha de vencimiento (antes era opcional y la partida entraba a cava sin
   fecha). La partida sin envasar de `createInventoryPT` recibe `fechaInicio` +
   100 días (tentativo); al envasarla ("Finalizar empaque") se pone el definitivo.
+
+### Cava legible: presentación y lote resaltados, resumen que filtra, tarjetas parejas (2026-09) ✅
+
+Pedido del dueño con capturas de la Cava y de Almacenes.
+- **Cada partida** muestra la **presentación como chip grande** (azul, "250 g" /
+  "1 kg", de `etiquetaPeso(pesoPorUnidad)`; ámbar "Sin envasar" para granel) y
+  el **lote resaltado** (`<Lote>` verde en un recuadro). Antes el lote iba en
+  gris y la presentación repetía el nombre del producto. La lista se ordena por
+  **vencimiento** (lo que vence primero, primero) y lo sin envasar muestra su
+  vencimiento, marcado "(tentativo)" cuando corresponde.
+- **Resumen arriba** (`ResumenCava`, compacto: dos tiras con scroll lateral):
+  unidades por presentación, kg sin envasar, partidas que vencen en ≤30 días y
+  los lotes. **Tocar una cifra filtra el listado**; tocarla otra vez lo quita.
+  Lógica pura en `inventarioPT.js` (`resumenCava`, `pasaFiltroCava`,
+  `etiquetaPeso`, `clavePresentacion`), solo sobre partidas con existencia.
+- **Tarjetas de Almacenes** rediseñadas y del **mismo alto** (`h-full` + columna
+  flex, `min-h-[190px]`): arriba ícono + nombre + descripción de una línea; al
+  centro la cifra grande (ud envasadas y kg sin envasar, o N insumos / bajo
+  mínimo, o "Vacío"); abajo el tipo y el aviso "Vence pronto", que antes se
+  montaba sobre el menú ⋯.

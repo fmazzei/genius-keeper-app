@@ -74,3 +74,64 @@ export const esHuerfana = (item, logsVivosPorId = {}) => {
     if ((item.costoUnitarioUsd ?? 0) > 0) return false;
     return true;
 };
+
+// ─── Lo que hay en una cava, de un vistazo ───────────────────────────────────
+
+/** "250 g" / "1 kg" a partir del peso por unidad en kg ('' si no hay). */
+export const etiquetaPeso = (pesoKg) => {
+    const p = Number(pesoKg) || 0;
+    if (p <= 0) return '';
+    if (p >= 1) return `${String(+p.toFixed(3)).replace('.', ',')} kg`;
+    return `${Math.round(p * 1000)} g`;
+};
+
+/** Clave de presentación de una partida empacada (por peso; si no, por nombre). */
+export const clavePresentacion = (i) => {
+    const e = etiquetaPeso(i?.pesoPorUnidad);
+    return e || (i?.presentacion || 'Sin presentación');
+};
+
+const DIAS_VENCE_PRONTO = 30;
+const vencePronto = (i, hoy = Date.now()) => {
+    if (!i?.fechaVencimiento) return false;
+    const t = new Date(`${String(i.fechaVencimiento).slice(0, 10)}T12:00:00`).getTime();
+    return Number.isFinite(t) && t < hoy + DIAS_VENCE_PRONTO * 86400000;
+};
+
+/**
+ * Resumen de una cava: unidades por presentación, kg sin envasar, lotes y
+ * partidas que vencen en ≤30 días. Solo partidas con existencia.
+ */
+export function resumenCava(items = [], hoy = Date.now()) {
+    const vivas = items.filter(tieneExistencia);
+    const pres = new Map();
+    const lotes = new Map();
+    let kgSin = 0, partSin = 0, vence = 0;
+    for (const i of vivas) {
+        if (i.tipo === 'empacado') {
+            const k = clavePresentacion(i);
+            const p = pres.get(k) || { clave: k, unidades: 0, kg: 0, partidas: 0, peso: Number(i.pesoPorUnidad) || 0 };
+            p.unidades += i.unidades || 0; p.kg += kgDePartida(i); p.partidas += 1;
+            pres.set(k, p);
+        } else { kgSin += kgDePartida(i); partSin += 1; }
+        const l = i.lote || '—';
+        lotes.set(l, (lotes.get(l) || 0) + 1);
+        if (vencePronto(i, hoy)) vence += 1;
+    }
+    return {
+        presentaciones: [...pres.values()].sort((a, b) => a.peso - b.peso),
+        sinEnvasar: { kg: Math.round(kgSin * 1000) / 1000, partidas: partSin },
+        lotes: [...lotes.entries()].map(([lote, partidas]) => ({ lote, partidas })).sort((a, b) => a.lote.localeCompare(b.lote)),
+        vencePronto: vence,
+    };
+}
+
+/** ¿La partida pasa el filtro del resumen? filtro = {tipo:'pres'|'sin'|'vence'|'lote', valor} | null */
+export function pasaFiltroCava(i, filtro, hoy = Date.now()) {
+    if (!filtro) return true;
+    if (filtro.tipo === 'pres')  return i.tipo === 'empacado' && clavePresentacion(i) === filtro.valor;
+    if (filtro.tipo === 'sin')   return i.tipo === 'sin_envasar';
+    if (filtro.tipo === 'vence') return vencePronto(i, hoy);
+    if (filtro.tipo === 'lote')  return (i.lote || '—') === filtro.valor;
+    return true;
+}

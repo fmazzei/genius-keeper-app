@@ -13,7 +13,7 @@ import {
 import { useKroma } from '@/Kroma/KromaContext.jsx';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta, cantidadDePartida, esPartidaDe } from '@/Kroma/eliminarProduccion.js';
-import { tieneExistencia } from '@/Kroma/inventarioPT.js';
+import { tieneExistencia, resumenCava, pasaFiltroCava, etiquetaPeso } from '@/Kroma/inventarioPT.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1169,9 +1169,69 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
 
 // ─── Warehouse Detail View ────────────────────────────────────────────────────
 
+// ─── Resumen de cava: cada cifra filtra el listado ───────────────────────────
+// Compacto a propósito (dos tiras que se desplazan de lado) para no comerse la
+// pantalla: lo que hay por presentación, lo sin envasar, lo que vence pronto y
+// los lotes. Tocar una cifra filtra; tocarla otra vez quita el filtro.
+function ResumenCava({ resumen, filtro, onFiltro }) {
+    const activo = (t, v) => filtro && filtro.tipo === t && (v === undefined || filtro.valor === v);
+    const tog = (t, v) => onFiltro(activo(t, v) ? null : { tipo: t, valor: v });
+    const chip = (on, tono) => `shrink-0 flex items-baseline gap-1.5 rounded-xl border px-3 py-1.5 transition-colors ${
+        on ? `${tono.on}` : 'bg-slate-900 border-slate-700 hover:border-slate-500'}`;
+    const T = {
+        sky:     { on: 'bg-sky-500/20 border-sky-400',         num: 'text-sky-300' },
+        amber:   { on: 'bg-amber-500/20 border-amber-400',     num: 'text-amber-300' },
+        rose:    { on: 'bg-rose-500/20 border-rose-400',       num: 'text-rose-300' },
+        emerald: { on: 'bg-emerald-500/15 border-emerald-400', num: 'text-emerald-300' },
+    };
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+                {resumen.presentaciones.map(p => (
+                    <button key={p.clave} type="button" onClick={() => tog('pres', p.clave)} className={chip(activo('pres', p.clave), T.sky)}>
+                        <span className="text-slate-400 text-[11px] font-semibold">{p.clave}</span>
+                        <span className={`${T.sky.num} font-bold font-mono text-sm`}>{p.unidades.toLocaleString('es-VE')} ud</span>
+                    </button>
+                ))}
+                {resumen.sinEnvasar.partidas > 0 && (
+                    <button type="button" onClick={() => tog('sin')} className={chip(activo('sin'), T.amber)}>
+                        <span className="text-slate-400 text-[11px] font-semibold">Sin envasar</span>
+                        <span className={`${T.amber.num} font-bold font-mono text-sm`}>{resumen.sinEnvasar.kg.toLocaleString('es-VE')} kg</span>
+                    </button>
+                )}
+                {resumen.vencePronto > 0 && (
+                    <button type="button" onClick={() => tog('vence')} className={chip(activo('vence'), T.rose)}>
+                        <span className="text-slate-400 text-[11px] font-semibold">Vence ≤30 d</span>
+                        <span className={`${T.rose.num} font-bold font-mono text-sm`}>{resumen.vencePronto}</span>
+                    </button>
+                )}
+            </div>
+            {resumen.lotes.length > 1 && (
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+                    <span className="shrink-0 text-slate-600 text-[10px] font-bold uppercase tracking-widest mr-1">Lotes</span>
+                    {resumen.lotes.map(l => (
+                        <button key={l.lote} type="button" onClick={() => tog('lote', l.lote)}
+                            className={`shrink-0 rounded-lg border px-2 py-1 transition-colors ${
+                                activo('lote', l.lote) ? T.emerald.on : 'bg-slate-900 border-slate-800 hover:border-slate-600'}`}>
+                            <Lote size="xs">{l.lote}</Lote>
+                            <span className="text-slate-500 text-[10px] ml-1">×{l.partidas}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+            {filtro && (
+                <button type="button" onClick={() => onFiltro(null)} className="text-xs text-slate-400 hover:text-white underline">
+                    Quitar filtro
+                </button>
+            )}
+        </div>
+    );
+}
+
 function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventoryMat, movements, warehouses, kromaUser, kromaRole, canDo, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
     const [showMov, setShowMov] = useState(false);
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+    const [filtro, setFiltro] = useState(null);   // filtro del resumen de cava
     const isMaster = kromaRole === 'master';
 
     const showMaterials = isInsumosWh(warehouse);
@@ -1184,8 +1244,12 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
     const items = isComercial
         ? inventarioComercial.filter(i => (i.almacenNombre || '').trim().toLowerCase() === (warehouse.nombre || '').trim().toLowerCase())
         : inventoryPT.filter(i => (i.warehouseId || '__cava__') === (warehouse.id || '__cava__'));
-    const empacados = items.filter(i => i.tipo === 'empacado' && (i.unidades ?? 0) > 0);
-    const sinEnv    = items.filter(i => i.tipo === 'sin_envasar' && (i.kgTotales ?? 0) > 0);
+    // Lo que vence primero, primero: así se despacha la cava (FIFO por vencimiento).
+    const porVence = (a, b) => String(a.fechaVencimiento || '9999').localeCompare(String(b.fechaVencimiento || '9999'));
+    const resumen = resumenCava(items);
+    const visibles = items.filter(i => pasaFiltroCava(i, filtro));
+    const empacados = visibles.filter(i => i.tipo === 'empacado' && (i.unidades ?? 0) > 0).sort(porVence);
+    const sinEnv    = visibles.filter(i => i.tipo === 'sin_envasar' && (i.kgTotales ?? 0) > 0).sort(porVence);
 
     const whMovs = movements.filter(m => m.origenId === warehouse.id || m.destinoId === warehouse.id).slice(0, 30);
     const m = TIPO_META[warehouse.tipo] || TIPO_META.mixto;
@@ -1249,6 +1313,11 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                 {/* Materials inventory (insumos warehouse, read-only) */}
                 {showMaterials && <MaterialsInventorySection inventoryMat={inventoryMat} />}
 
+                {/* Resumen de lo que hay: cada cifra filtra el listado */}
+                {!showMaterials && items.some(tieneExistencia) && (
+                    <ResumenCava resumen={resumen} filtro={filtro} onFiltro={setFiltro} />
+                )}
+
                 {/* Empacado */}
                 {empacados.length > 0 && (
                     <div>
@@ -1256,21 +1325,31 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                         <div className="space-y-2">
                             {empacados.map(item => (
                                 <div key={item.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                                    <div className="flex items-start justify-between gap-2 mb-2">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-white text-sm font-semibold truncate">{item.productoNombre}</p>
-                                            {item.presentacion && <p className="text-slate-500 text-xs mt-0.5">{item.presentacion}</p>}
+                                    <div className="flex items-start justify-between gap-3 mb-3">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            {/* La PRESENTACIÓN, grande: es lo que distingue una
+                                                partida de otra del mismo producto. */}
+                                            <span className="shrink-0 min-w-[64px] text-center bg-sky-500/15 border border-sky-500/40 text-sky-300 font-black font-mono text-base rounded-xl px-2.5 py-1.5">
+                                                {etiquetaPeso(item.pesoPorUnidad) || '—'}
+                                            </span>
+                                            <div className="min-w-0">
+                                                <p className="text-white text-sm font-semibold truncate">{item.productoNombre}</p>
+                                                {item.lote && (
+                                                    <span className="inline-block mt-1 bg-emerald-500/10 border border-emerald-500/40 rounded-lg px-2 py-0.5">
+                                                        <Lote size="lg">{item.lote}</Lote>
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <p className="text-emerald-400 font-bold font-mono">{item.unidades} ud</p>
+                                            <p className="text-emerald-400 font-bold font-mono text-lg leading-none">{item.unidades} ud</p>
                                             {item.pesoPorUnidad > 0 && (
-                                                <p className="text-slate-500 text-xs font-mono">{(item.pesoPorUnidad * item.unidades).toFixed(3)} kg</p>
+                                                <p className="text-slate-500 text-xs font-mono mt-1">{(item.pesoPorUnidad * item.unidades).toFixed(3)} kg</p>
                                             )}
                                         </div>
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
                                         <div className="flex flex-wrap gap-2 text-xs">
-                                            {item.lote && <span className="text-slate-600 font-mono">{item.lote}</span>}
                                             {item.fechaVencimiento && (
                                                 <span className={`px-2 py-0.5 rounded-full border text-xs ${
                                                     new Date(item.fechaVencimiento) < new Date()
@@ -1330,15 +1409,28 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                         <div className="space-y-2">
                             {sinEnv.map(item => (
                                 <div key={item.id} className="bg-amber-900/10 border border-amber-700/30 rounded-xl p-4">
-                                    <div className="flex items-start justify-between gap-2 mb-2">
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-white text-sm font-semibold">{item.productoNombre}</p>
-                                            <p className="text-amber-400/70 text-xs">Sin envasar</p>
+                                    <div className="flex items-start justify-between gap-3 mb-3">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <span className="shrink-0 min-w-[64px] text-center bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-2 leading-tight">
+                                                Sin<br />envasar
+                                            </span>
+                                            <div className="min-w-0">
+                                                <p className="text-white text-sm font-semibold truncate">{item.productoNombre}</p>
+                                                {item.lote && (
+                                                    <span className="inline-block mt-1 bg-emerald-500/10 border border-emerald-500/40 rounded-lg px-2 py-0.5">
+                                                        <Lote size="lg">{item.lote}</Lote>
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <p className="text-amber-300 font-bold font-mono shrink-0">{(item.kgTotales || 0).toFixed(3)} kg</p>
+                                        <p className="text-amber-300 font-bold font-mono text-lg leading-none shrink-0">{(item.kgTotales || 0).toFixed(3)} kg</p>
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
-                                        {item.lote && <span className="text-slate-600 text-xs font-mono">{item.lote}</span>}
+                                        {item.fechaVencimiento && (
+                                            <span className="px-2 py-0.5 rounded-full border text-xs bg-slate-800 border-slate-700 text-slate-400">
+                                                Vence{item.vencimientoTentativo ? ' (tentativo)' : ''}: {item.fechaVencimiento}
+                                            </span>
+                                        )}
                                         {deleteConfirmId === item.id ? (
                                             <div className="flex gap-1.5 ml-auto">
                                                 <button onClick={() => setDeleteConfirmId(null)}
@@ -1379,6 +1471,10 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                             ))}
                         </div>
                     </div>
+                )}
+
+                {!showMaterials && filtro && empacados.length + sinEnv.length === 0 && (
+                    <p className="text-slate-500 text-sm text-center py-6">Nada con ese filtro.</p>
                 )}
 
                 {!showMaterials && items.length === 0 && (
@@ -1453,62 +1549,59 @@ function WarehouseCard({ wh, count, stock, matCount, matLow, warn, canEdit, canD
     const showMenu = canEdit || canDelete;
 
     return (
-        <div className="relative">
+        <div className="relative h-full">
+            {/* Tarjetas del MISMO alto (h-full + columna flex): antes cada una
+                medía según su contenido y la grilla quedaba escalonada. El orden
+                es siempre el mismo: quién es → cuánto hay → qué tipo / avisos. */}
             <button type="button"
                 onClick={onOpen}
-                className="w-full text-left bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl p-5 space-y-3 transition-colors group">
-                <div className="flex items-start justify-between gap-2">
-                    <div className={`w-10 h-10 rounded-xl ${meta.bg} border ${meta.border} flex items-center justify-center`}>
+                className="w-full h-full min-h-[190px] text-left bg-slate-900 border border-slate-800 hover:border-slate-600 rounded-2xl p-4 flex flex-col gap-3 transition-colors group">
+                <div className={`flex items-center gap-3 ${showMenu ? 'pr-8' : ''}`}>
+                    <div className={`w-10 h-10 shrink-0 rounded-xl ${meta.bg} border ${meta.border} flex items-center justify-center`}>
                         <span className={meta.color}>{warehouseIcon(wh.icono || 'archive')}</span>
                     </div>
-                    {warn && (
-                        <div className="flex items-center gap-1 text-amber-400 bg-amber-900/20 border border-amber-700/30 rounded-full px-2 py-0.5">
-                            <AlertTriangle size={10} />
-                            <span className="text-xs font-semibold">Vence pronto</span>
+                    <div className="min-w-0">
+                        <p className="text-white font-semibold text-sm leading-tight group-hover:text-emerald-300 transition-colors">{wh.nombre}</p>
+                        {wh.descripcion && <p className="text-slate-500 text-xs mt-0.5 line-clamp-1">{wh.descripcion}</p>}
+                    </div>
+                </div>
+
+                {/* Cuánto hay: la cifra grande manda */}
+                <div className="flex-1 flex flex-col justify-center">
+                    {isMatWh ? (
+                        matCount > 0 ? (
+                            <>
+                                <p className="text-white font-bold font-mono text-2xl leading-none">{matCount}<span className="text-slate-400 text-sm font-sans font-semibold ml-1.5">insumo{matCount !== 1 ? 's' : ''}</span></p>
+                                {matLow > 0 && <p className="text-amber-400 text-xs mt-1.5">{matLow} bajo mínimo</p>}
+                            </>
+                        ) : <p className="text-slate-500 text-sm font-semibold">Vacío</p>
+                    ) : (stock.totalUnidades > 0 || stock.totalKgSinEnvasar > 0) ? (
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <p className="text-emerald-400 font-bold font-mono text-2xl leading-none">{stock.totalUnidades.toLocaleString('es-VE')}<span className="text-slate-400 text-sm font-sans font-semibold ml-1">ud</span></p>
+                                <p className="text-slate-500 text-[11px] mt-1">{stock.totalUnidades > 0 ? formatDocenas(stock.docenas, stock.sueltas) : 'envasadas'}</p>
+                            </div>
+                            {stock.totalKgSinEnvasar > 0 && (
+                                <div>
+                                    <p className="text-amber-300 font-bold font-mono text-2xl leading-none">{(+stock.totalKgSinEnvasar.toFixed(2)).toLocaleString('es-VE')}<span className="text-slate-400 text-sm font-sans font-semibold ml-1">kg</span></p>
+                                    <p className="text-slate-500 text-[11px] mt-1">sin envasar</p>
+                                </div>
+                            )}
                         </div>
-                    )}
+                    ) : <p className="text-slate-500 text-sm font-semibold">Vacío</p>}
                 </div>
-                <div>
-                    <p className="text-white font-semibold text-sm group-hover:text-emerald-300 transition-colors">{wh.nombre}</p>
-                    {wh.descripcion && <p className="text-slate-600 text-xs mt-0.5 line-clamp-2">{wh.descripcion}</p>}
-                </div>
-                <div className="flex items-center justify-between">
+
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${meta.bg} ${meta.color} ${meta.border}`}>
                         {meta.label}
                     </span>
-                    {isMatWh ? (
-                        matCount === 0 && (
-                            <span className="text-slate-400 text-xs font-mono">Vacío</span>
-                        )
-                    ) : (
-                        stock.totalUnidades === 0 && stock.totalKgSinEnvasar === 0 && (
-                            <span className="text-slate-400 text-xs font-mono">Vacío</span>
-                        )
+                    {warn && (
+                        <span className="flex items-center gap-1 text-amber-400 bg-amber-900/20 border border-amber-700/30 rounded-full px-2 py-0.5">
+                            <AlertTriangle size={10} />
+                            <span className="text-xs font-semibold">Vence pronto</span>
+                        </span>
                     )}
                 </div>
-                {isMatWh ? (
-                    matCount > 0 && (
-                        <div className="text-xs text-slate-400">
-                            <span className="text-slate-200 font-semibold">{matCount} insumo{matCount !== 1 ? 's' : ''}</span>
-                            {matLow > 0 && <span className="text-amber-400"> · {matLow} bajo mínimo</span>}
-                        </div>
-                    )
-                ) : (
-                    (stock.totalUnidades > 0 || stock.totalKgSinEnvasar > 0) && (
-                        <div className="text-xs text-slate-400 space-y-0.5">
-                            {stock.totalUnidades > 0 && (
-                                <p>
-                                    <span className="text-slate-200 font-semibold">{stock.totalUnidades.toLocaleString('es-VE')} ud</span>
-                                    {' · '}
-                                    {formatDocenas(stock.docenas, stock.sueltas)}
-                                </p>
-                            )}
-                            {stock.totalKgSinEnvasar > 0 && (
-                                <p><span className="text-slate-200 font-semibold">{stock.totalKgSinEnvasar.toLocaleString('es-VE')} kg</span> sin envasar</p>
-                            )}
-                        </div>
-                    )
-                )}
             </button>
 
             {/* ⋯ menu button */}
@@ -2143,7 +2236,7 @@ export default function WarehousesPage() {
             )}
 
             {/* Warehouse grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-stretch">
                 {warehouses.map(wh => (
                     <WarehouseCard
                         key={wh.id}
