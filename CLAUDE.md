@@ -2905,3 +2905,15 @@ En la tarjeta del producto, las presentaciones eran chips con su **nombre**, y e
 - **Sin presentaciones**: un aviso ámbar que explica que sin ellas no se puede empacar.
 - También en el formulario: el peso va primero y en grande en cada presentación ya agregada.
 - Correcciones de paso: "presentaciónes" → "presentaciones"; el encabezado se apila en el teléfono.
+
+### Kroma — "Mover producto": destinos coherentes y a Caracas por despacho (2026-09) ✅
+
+Reporte del dueño: al transferir queso terminado solo aparecían **Bodega de Insumos** y **Tanque de Enfriamiento**, y no había forma de mandarlo al **Depósito Comercial**.
+
+- **Destinos coherentes.** El `TransferModal` (`WarehousesPage`) solo ofrece almacenes que aceptan producto terminado (`aceptaPT`): `tipo` PT o mixto, que no sean el tanque de leche ni el depósito comercial. Si no hay otro almacén de PT en la planta, lo dice.
+- **A Caracas no se traslada, se despacha** (regla ya establecida en "Almacén Frimaca").
+  - El depósito comercial se alimenta solo de `inventario_comercial`, cuando GK recibe el camión en Frimaca. Un traslado directo haría "llegar" mercancía que nunca salió, o la contaría dos veces.
+  - El modal muestra una tarjeta ámbar **"Despachar N a Caracas"** que abre **Despachos** con la línea ya armada: lote, cantidad y destino Caracas. Usa `onNavigate('despacho', {prefill:{inventoryId, cantidad, destino}})`; `DespachoPage` ahora recibe `params`.
+  - La planta descuenta su stock al despachar, como siempre para Caracas.
+  - Solo aparece para quien tiene permiso de editar Despachos.
+- El título pasó a **"Mover producto"**, con dos caminos: "Despachar a Caracas" y "Mover dentro de la planta".

@@ -465,21 +465,31 @@ function AddInventoryModal({ warehouse, onClose, onSave, saving }) {
 
 // ─── Transfer Modal ───────────────────────────────────────────────────────────
 
-function TransferModal({ item, warehouses, currentWarehouseId, saving, onClose, onConfirm }) {
+// ¿Puede este almacén recibir producto terminado? Solo los de PT o mixtos que
+// no sean el tanque de leche. Antes el traslado ofrecía TODOS los almacenes y
+// salían "Bodega de Insumos" y "Tanque de Enfriamiento" como destino de un queso.
+const aceptaPT = (w) => (w?.tipo === 'PT' || w?.tipo === 'mixto') && !isMilkTank(w) && !isComercialWh(w);
+
+function TransferModal({ item, warehouses, currentWarehouseId, saving, onClose, onConfirm, onDespachar }) {
     const isEmpacado  = item.tipo === 'empacado';
     const maxQty      = isEmpacado ? (item.unidades || 0) : (item.kgTotales || 0);
     const unit        = isEmpacado ? 'unidades' : 'kg';
     const [destId, setDestId]   = useState('');
     const [qty, setQty]         = useState(maxQty);
 
-    const destWarehouses = warehouses.filter(w => w.id !== currentWarehouseId && !isComercialWh(w));
+    const destWarehouses = warehouses.filter(w => w.id !== currentWarehouseId && aceptaPT(w));
+    // El Depósito Comercial (Caracas) NO se alimenta con un traslado: la
+    // mercancía viaja en el camión como DESPACHO y entra al inventario de
+    // Caracas cuando se recibe en Frimaca (GK). Un traslado directo la
+    // duplicaría o la haría "llegar" sin haber salido.
+    const comercial = warehouses.find(w => isComercialWh(w) && w.id !== currentWarehouseId);
     const canConfirm = destId && qty > 0 && qty <= maxQty;
 
     return (
         <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm">
             <div className="bg-slate-900 border border-slate-700 rounded-t-2xl md:rounded-2xl w-full max-w-md p-5 space-y-4">
                 <div className="flex items-center justify-between">
-                    <p className="text-white font-bold text-base">Transferir a otro almacén</p>
+                    <p className="text-white font-bold text-base">Mover producto</p>
                     <button onClick={onClose} className="text-slate-500 hover:text-white p-1"><X size={16} /></button>
                 </div>
 
@@ -510,8 +520,32 @@ function TransferModal({ item, warehouses, currentWarehouseId, saving, onClose, 
                 </div>
 
                 {/* Destination */}
+                {comercial && onDespachar && (
+                    <div className="rounded-xl border border-amber-600/40 bg-amber-900/15 p-3.5">
+                        <div className="flex items-start gap-3">
+                            <Truck size={18} className="text-amber-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                                <p className="text-white text-sm font-semibold">{comercial.nombre}</p>
+                                <p className="text-slate-400 text-xs mt-0.5 leading-relaxed">
+                                    A Caracas el producto va en el camión: se registra como <b className="text-slate-200">despacho</b> y
+                                    entra al depósito cuando lo reciben en Frimaca.
+                                </p>
+                            </div>
+                        </div>
+                        <button type="button" onClick={() => onDespachar(item, qty)} disabled={!(qty > 0 && qty <= maxQty)}
+                            className="mt-3 w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-40">
+                            <Truck size={15} /> Despachar {qty} {unit} a Caracas
+                        </button>
+                    </div>
+                )}
+
                 <div>
-                    <SecLabel>Almacén destino</SecLabel>
+                    <SecLabel>Mover dentro de la planta</SecLabel>
+                    {destWarehouses.length === 0 && (
+                        <p className="text-slate-500 text-xs bg-slate-800/60 border border-slate-700 rounded-xl px-3 py-3">
+                            No hay otro almacén de producto terminado en la planta.
+                        </p>
+                    )}
                     <div className="space-y-2">
                         {destWarehouses.map(w => {
                             const m = TIPO_META[w.tipo] || TIPO_META.mixto;
@@ -542,11 +576,11 @@ function TransferModal({ item, warehouses, currentWarehouseId, saving, onClose, 
                         className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
                         Cancelar
                     </button>
-                    <button onClick={() => onConfirm(destId, qty)} disabled={!canConfirm || saving}
+                    {destWarehouses.length > 0 && <button onClick={() => onConfirm(destId, qty)} disabled={!canConfirm || saving}
                         className="flex-1 py-3.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-bold disabled:opacity-40 transition-colors flex items-center justify-center gap-2">
                         <ArrowRight size={14} />
                         {saving ? 'Transfiriendo…' : 'Transferir'}
-                    </button>
+                    </button>}
                 </div>
             </div>
         </div>
@@ -1637,7 +1671,7 @@ function WarehouseCard({ wh, count, stock, matCount, matLow, warn, canEdit, canD
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function WarehousesPage() {
+export default function WarehousesPage({ onNavigate }) {
     const { kromaUser, kromaRole, canEdit, canDelete, canDo } = useKroma();
 
     const [warehouses,   setWarehouses]   = useState([]);
@@ -2149,6 +2183,13 @@ export default function WarehousesPage() {
                         saving={saving}
                         onClose={() => setTransferItem(null)}
                         onConfirm={executeTransfer}
+                        onDespachar={onNavigate && canEdit('despachos') ? (item, cantidad) => {
+                            setTransferItem(null);
+                            onNavigate('despacho', { prefill: {
+                                inventoryId: item.id, cantidad,
+                                destino: { tipo: 'ciudad', ciudad: 'Caracas', estado: 'Distrito Capital' },
+                            } });
+                        } : null}
                     />
                 )}
                 {editItem && (

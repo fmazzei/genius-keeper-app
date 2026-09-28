@@ -518,7 +518,7 @@ function DespachoCard({ despacho, onMarkEntregado, onApplyTransfer, onSyncGK }) 
 let lineaSeq = 0;
 const newLinea = () => ({ _id: ++lineaSeq, item: null, cantidad: 1, destino: null });
 
-export default function DespachoPage({ onNavigate }) {
+export default function DespachoPage({ onNavigate, params }) {
     const { kromaUser, canEdit } = useKroma();
     const canEditar = canEdit('despachos');
     // Quien no despacha entra directo al historial: si no, la pestaña activa
@@ -566,6 +566,16 @@ export default function DespachoPage({ onNavigate }) {
                     .filter(i => getMaxQty(i) > 0)
                     .filter(i => !caracasWhId || i.warehouseId !== caracasWhId);
                 setInventory(inv);
+                // Viene del Almacén ("Despachar a Caracas"): la línea llega
+                // armada con el lote, la cantidad y el destino; solo se revisa y
+                // se confirma.
+                const pre = params?.prefill;
+                const itemPre = pre && inv.find(i => i.id === pre.inventoryId);
+                if (itemPre) {
+                    const cant = Math.min(Number(pre.cantidad) || 1, getMaxQty(itemPre));
+                    setLineas([{ ...newLinea(), item: itemPre, cantidad: cant, destino: pre.destino || null }]);
+                    setTab('nuevo');
+                }
             } catch (err) { console.error(err); }
             finally { setLoadingInv(false); }
         };
