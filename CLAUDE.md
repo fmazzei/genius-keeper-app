@@ -2882,3 +2882,16 @@ le es irrelevante la razón social"*. Y menos "amuñuñado" en el teléfono.
 - **Espacio**: en el teléfono la pantalla va de borde a borde (`-mx-4`, sin
   tarjeta anidada ni sangrías); resumen en cuadrícula, herramientas del grupo en
   tarjetas (3 columnas en escritorio), filas con Editar a lo ancho.
+
+### Reporte de visita, paso 1 más claro + depósitos fuera de la lista de PDV (2026-09) ✅
+
+- **Paso "Inventario y Frescura"** (`VisitReportForm` → `Step1_Inventory`):
+  - La primera pregunta es **"¿Cómo está el anaquel?"**, con dos tarjetas: *Hay producto* / *Está vacío (quiebre)*. Antes el quiebre era un botón rojo al final, debajo de todo el formulario de lotes. Pasar a vacío con lotes cargados pide confirmar, porque los borra.
+  - La fecha es una **tarjeta grande** con el `<input type="date">` invisible encima: en iOS un date vacío se veía como una caja en blanco. La tarjeta dice "Toca para elegir la fecha" o muestra la fecha en **dd/mm/aa** (`fmtVence`).
+  - "Escanear con la cámara" pasó a botón secundario de una línea.
+  - Los lotes muestran fecha, días y cantidad grande; "¿envase dañado?" es `type="text" inputMode="numeric"`.
+  - Se actualizó el texto de la guía (`ReporterGuideCoach`).
+- **Depósitos ≠ PDV en la app del mercaderista.** `useMerchandiserData` mezclaba la colección `depots` (Depósito Frimaca, etc.) con los PDV en `masterStopList`, así que un depósito salía entre los puntos de venta para reportar anaquel.
+  - Ahora el hook expone también `pdvList` (solo PDV).
+  - Reporte, pedidos, toma de pedido y devoluciones usan `pdvList`.
+  - Hub y planificador de rutas siguen con `masterStopList`: el depósito sí es una parada de la ruta.

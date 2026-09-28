@@ -93,7 +93,7 @@ const AppShell = ({ user, role, onLogout }) => {
     const [currentDistance, setCurrentDistance] = useState(0);
     const [isVerifyingLocation, setIsVerifyingLocation] = useState(false);
 
-    const { masterStopList, loading: merchandiserLoading } = useMerchandiserData();
+    const { masterStopList, pdvList, loading: merchandiserLoading } = useMerchandiserData();
     const { tasks, loading: tasksLoading, completeTask } = useDelegatedTasks(selectedReporter?.id);
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole('merchandiser');
@@ -281,9 +281,9 @@ const AppShell = ({ user, role, onLogout }) => {
                             selectedReporter={selectedReporter}
                         />;
 
-            case 'pedidos': return <PosList posList={masterStopList} title="Selecciona el PDV del despacho" onSelectPos={(pos) => { setSelectedPos(pos); setCurrentView('pedido_form'); }} onBack={() => setCurrentView('hub')} />;
+            case 'pedidos': return <PosList posList={pdvList} title="Selecciona el PDV del despacho" onSelectPos={(pos) => { setSelectedPos(pos); setCurrentView('pedido_form'); }} onBack={() => setCurrentView('hub')} />;
             case 'pedido_form': return <PedidoForm pos={selectedPos} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
-            case 'tomar_pedido': return <TomarPedidoForm posList={masterStopList} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
+            case 'tomar_pedido': return <TomarPedidoForm posList={pdvList} selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
             case 'reportes_historial': return <ReportesHistorial selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
             case 'pedidos_historial': return <PedidosHistorial selectedReporter={selectedReporter} onBack={() => setCurrentView('hub')} />;
             case 'notificaciones': return <NotificacionesMerchandiser user={user} onBack={() => setCurrentView('hub')} />;
@@ -297,13 +297,13 @@ const AppShell = ({ user, role, onLogout }) => {
             );
             case 'devoluciones': return (
                 <DevolucionesPage
-                    posList={masterStopList}
+                    posList={pdvList}
                     selectedReporter={selectedReporter}
                     user={user}
                     onBack={() => setCurrentView('hub')}
                 />
             );
-            case 'report': return <PosList posList={masterStopList} onSelectPos={navigateToReport} />;
+            case 'report': return <PosList posList={pdvList} onSelectPos={navigateToReport} />;
             case 'tasks':
                 return (
                     <div className="p-4 md:p-8 max-w-2xl mx-auto w-full">

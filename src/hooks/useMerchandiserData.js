@@ -68,5 +68,9 @@ export const useMerchandiserData = () => {
 
     const loading = isLoadingPos || isLoadingDepots;
 
-    return { masterStopList, loading };
+    // Solo puntos de venta, SIN depósitos. Los depósitos (colección `depots`,
+    // p.ej. Depósito Frimaca) son paradas de la RUTA — se planifican, se retira
+    // mercancía — pero no tienen anaquel que reportar ni se les despacha un
+    // pedido: mezclarlos en esas listas los hacía aparecer como si fueran PDV.
+    return { masterStopList, pdvList: posList, loading };
 };

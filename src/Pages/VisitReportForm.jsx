@@ -6,6 +6,7 @@ import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { db } from '@/Firebase/config.js';
 import { db as localDB } from '@/db/local.js';
 import { safeUUID } from '@/utils/safeId.js';
+import { fmtVence } from '@/utils/fechaCorta.js';
 import { estadoLote, resumenLotes } from '@/utils/retiros.js';
 import { useSwipeable } from 'react-swipeable';
 // ✅ CORRECCIÓN: Se añade 'Check' a la lista de importaciones para solucionar el error.
@@ -109,7 +110,6 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
     const { processImageForDate, isProcessing } = useVisionAPI();
     const [isOptimizing, setIsOptimizing] = useState(false);
 
-    const handleStockoutToggle = () => { if(!isReadOnly) { const isNowStockout = !report.stockout; setReport(prev => ({ ...prev, stockout: isNowStockout, batches: isNowStockout ? [] : prev.batches })); }};
     
     const handleScanComplete = async (imageDataUrl) => {
         if (!imageDataUrl || typeof imageDataUrl !== 'string') {
@@ -180,56 +180,100 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
     };
     const openNumpad = () => { if(!isReadOnly) { if (currentDate) setNumpadOpen(true); else alert("Primero selecciona o escanea una fecha."); }};
     
+    const fijarAnaquel = (vacio) => {
+        if (isReadOnly || !!report.stockout === vacio) return;
+        if (vacio && report.batches.length > 0
+            && !window.confirm('Se borrarán los lotes que ya registraste. ¿El anaquel está vacío?')) return;
+        setReport(prev => ({ ...prev, stockout: vacio, batches: vacio ? [] : prev.batches }));
+    };
+
     return (
         <FormSection title="Inventario y Frescura" icon={<Calendar className="text-brand-blue mr-3"/>}>
+            {/* 1) La primera pregunta es UNA sola y a la vista: ¿hay producto?
+                Antes el quiebre era un botón rojo al final, debajo de todo el
+                formulario de lotes — había que recorrer lo que no aplicaba para
+                encontrarlo. */}
+            {!isReadOnly && (
+                <div className="mb-5">
+                    <p className="text-base font-bold text-slate-800 mb-2">¿Cómo está el anaquel?</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => fijarAnaquel(false)}
+                            className={`rounded-xl border-2 px-3 py-3 text-left transition-colors ${!report.stockout ? 'border-brand-blue bg-blue-50' : 'border-slate-200 bg-white'}`}>
+                            <CheckCircle size={20} className={!report.stockout ? 'text-brand-blue' : 'text-slate-300'} />
+                            <p className={`mt-1 font-bold leading-tight ${!report.stockout ? 'text-brand-blue' : 'text-slate-600'}`}>Hay producto</p>
+                            <p className="text-xs text-slate-500 mt-0.5">Registra sus lotes</p>
+                        </button>
+                        <button type="button" onClick={() => fijarAnaquel(true)}
+                            className={`rounded-xl border-2 px-3 py-3 text-left transition-colors ${report.stockout ? 'border-red-500 bg-red-50' : 'border-slate-200 bg-white'}`}>
+                            <AlertTriangle size={20} className={report.stockout ? 'text-red-600' : 'text-slate-300'} />
+                            <p className={`mt-1 font-bold leading-tight ${report.stockout ? 'text-red-700' : 'text-slate-600'}`}>Está vacío</p>
+                            <p className="text-xs text-slate-500 mt-0.5">Quiebre de stock</p>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {!report.stockout ? (
-            <div className="space-y-4">
-                {!isReadOnly && <p className="text-sm text-slate-600">Registra cada lote del anaquel: primero su <b>fecha de vencimiento</b>, luego <b>cuántas unidades</b> hay.</p>}
+            <div className="space-y-5">
                 {!isReadOnly && (
-                <div className="bg-slate-50 p-4 rounded-xl border space-y-4 overflow-hidden">
-                    {/* Paso 1 — Fecha */}
+                <div className="space-y-4">
+                    {/* Paso 1 — Fecha. El input nativo va INVISIBLE encima de una
+                        tarjeta grande: en iOS un <input type="date"> vacío se ve
+                        como una caja en blanco, sin decir qué hacer. Así el toque
+                        abre el calendario del teléfono y la tarjeta dice lo que hay. */}
                     <div>
-                        <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-1.5">
-                            <span className="w-5 h-5 rounded-full bg-brand-blue text-white text-xs flex items-center justify-center shrink-0">1</span>
+                        <p className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-2">
+                            <span className="w-6 h-6 rounded-full bg-brand-blue text-white text-xs flex items-center justify-center shrink-0">1</span>
                             Fecha de vencimiento del lote
-                        </label>
-                        <div className="relative w-full">
-                            <Calendar size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" />
+                        </p>
+                        <label className={`relative flex items-center gap-3 w-full rounded-xl border-2 px-4 py-4 ${currentDate ? 'border-brand-blue bg-blue-50' : 'border-slate-300 bg-white'}`}>
+                            <Calendar size={24} className={currentDate ? 'text-brand-blue shrink-0' : 'text-slate-400 shrink-0'} />
+                            <span className="min-w-0 flex-grow">
+                                {currentDate
+                                    ? <><span className="block text-xs text-slate-500">Vence</span><span className="block text-xl font-black text-slate-900">{fmtVence(currentDate)}</span></>
+                                    : <span className="block text-base font-semibold text-slate-500">Toca para elegir la fecha</span>}
+                            </span>
+                            <ChevronRight size={20} className="text-slate-400 shrink-0" />
                             <input
                                 type="date"
                                 value={currentDate}
+                                aria-label="Fecha de vencimiento del lote"
                                 onChange={e => {
                                     const val = e.target.value;
                                     setCurrentDate(val);
                                     if (!isReadOnly && val && /^\d{4}-\d{2}-\d{2}$/.test(val)) setNumpadOpen(true);
                                 }}
-                                // block + w-full + min-w-0 + appearance-none: iOS Safari NO respeta
-                                // width:100% en <input type="date"> sin esto → se desbordaba la tarjeta.
-                                className="block w-full min-w-0 max-w-full appearance-none box-border pl-11 pr-3 py-3 border-2 border-slate-300 rounded-lg font-semibold text-slate-800 bg-white focus:border-brand-blue focus:ring-0"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                                 disabled={isReadOnly}
                             />
-                        </div>
-                        <button type="button" onClick={() => setScannerOpen(true)} className="mt-2 w-full flex items-center justify-center gap-2 border-2 border-brand-blue text-brand-blue font-bold py-2.5 px-4 rounded-lg active:scale-95 transition-transform">
-                            <Camera size={20}/> o escanear la fecha con la cámara
+                        </label>
+                        <button type="button" onClick={() => setScannerOpen(true)}
+                            className="mt-2 w-full flex items-center justify-center gap-2 text-sm font-semibold text-brand-blue py-2.5 rounded-xl border border-slate-200 bg-white active:scale-95 transition-transform">
+                            <Camera size={18}/> Escanear la fecha con la cámara
                         </button>
                     </div>
+
                     {/* Paso 2 — Cantidad */}
                     <div>
-                        <label className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-1.5">
-                            <span className={`w-5 h-5 rounded-full text-white text-xs flex items-center justify-center shrink-0 ${currentDate ? 'bg-brand-blue' : 'bg-slate-300'}`}>2</span>
-                            Cantidad de unidades del lote
-                        </label>
-                        <button type="button" onClick={openNumpad} disabled={!currentDate} className={`w-full flex items-center justify-between py-3 px-4 rounded-lg font-bold border-2 transition-colors ${currentDate ? 'bg-brand-yellow text-black border-brand-yellow active:scale-95' : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'}`}>
-                            <span>{currentDate ? 'Toca para ingresar la cantidad' : 'Primero elige la fecha ↑'}</span>
+                        <p className="flex items-center gap-2 text-sm font-bold text-slate-700 mb-2">
+                            <span className={`w-6 h-6 rounded-full text-white text-xs flex items-center justify-center shrink-0 ${currentDate ? 'bg-brand-blue' : 'bg-slate-300'}`}>2</span>
+                            Unidades de ese lote
+                        </p>
+                        <button type="button" onClick={openNumpad} disabled={!currentDate}
+                            className={`w-full flex items-center justify-between py-4 px-4 rounded-xl font-bold border-2 transition-colors ${currentDate ? 'bg-brand-yellow text-black border-brand-yellow active:scale-95' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                            <span>{currentDate ? 'Ingresar la cantidad' : 'Primero elige la fecha'}</span>
                             {currentDate && <ChevronRight size={20} />}
                         </button>
                     </div>
                 </div>
                 )}
-                <div>
-                    <h4 className="font-semibold text-slate-700 mb-2 mt-4">Lotes Registrados:</h4>
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                        {report.batches.length === 0 && <p className="text-sm text-slate-400 text-center p-4">Aún no has añadido ningún lote.</p>}
+
+                <div className={!isReadOnly ? 'pt-4 border-t border-slate-200' : ''}>
+                    <p className="font-bold text-slate-800 mb-2">
+                        Lotes registrados {report.batches.length > 0 && <span className="text-slate-400 font-semibold">({report.batches.length})</span>}
+                    </p>
+                    <div className="space-y-2">
+                        {report.batches.length === 0 && <p className="text-sm text-slate-400 py-3">Todavía ninguno. Cada lote que agregues aparece aquí.</p>}
                         {[...report.batches]
                             .map((b, originalIdx) => ({ ...b, originalIdx }))
                             .sort((a, b) => daysUntilExpiry(a.expiryDate) - daysUntilExpiry(b.expiryDate))
@@ -237,30 +281,32 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                                 const days = daysUntilExpiry(batch.expiryDate);
                                 const urg = getUrgency(days);
                                 return (
-                                    <div key={batch.originalIdx} className={`p-3 rounded-lg animate-fade-in ${urg.row}`}>
-                                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <span className="font-semibold text-slate-800">Vence: {batch.expiryDate}</span>
-                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${urg.badge}`}>{urg.label}</span>
+                                    <div key={batch.originalIdx} className={`p-3 rounded-xl animate-fade-in ${urg.row}`}>
+                                        <div className="flex items-center gap-3">
+                                            <div className="min-w-0 flex-grow">
+                                                <p className="text-xs text-slate-500">Vence</p>
+                                                <p className="font-bold text-slate-800 leading-tight">{fmtVence(batch.expiryDate)}</p>
+                                                <span className={`inline-block mt-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${urg.badge}`}>{urg.label}</span>
                                             </div>
-                                            <div className="flex items-center justify-between w-full sm:w-auto gap-3">
-                                                <span className="font-bold text-lg text-brand-blue">
-                                                    {batch.quantity} <span className="text-sm font-normal text-slate-500">unid.</span>
-                                                </span>
-                                                {!isReadOnly && <button onClick={() => handleRemoveBatch(batch.originalIdx)}><Trash2 className="text-red-500" size={18}/></button>}
-                                            </div>
+                                            <p className="font-black text-2xl text-brand-blue leading-none">
+                                                {batch.quantity}<span className="block text-[11px] font-semibold text-slate-500 text-right">unid.</span>
+                                            </p>
+                                            {!isReadOnly && (
+                                                <button type="button" onClick={() => handleRemoveBatch(batch.originalIdx)} aria-label="Quitar lote"
+                                                    className="p-2 -mr-1 rounded-lg text-red-500 active:bg-red-50"><Trash2 size={18}/></button>
+                                            )}
                                         </div>
                                         {/* Lo ÚNICO que la fecha no puede decir: cuántas de esas
                                             unidades tienen el envase dañado. El estado (vencido /
                                             por vencer / vigente) lo deduce el sistema, y el retiro
                                             efectivo se declara después en Devoluciones. */}
                                         {!isReadOnly && (
-                                            <div className="mt-2 flex items-center gap-2">
-                                                <label className="text-[11px] font-semibold text-slate-600 flex-1 min-w-0">
-                                                    ¿Unidades con envase dañado?
+                                            <div className="mt-2 pt-2 border-t border-black/5 flex items-center gap-2">
+                                                <label className="text-xs font-semibold text-slate-600 flex-1 min-w-0">
+                                                    ¿Cuántas con el envase dañado?
                                                 </label>
                                                 <input
-                                                    type="number" min="0" max={batch.quantity} inputMode="numeric"
+                                                    type="text" inputMode="numeric"
                                                     value={batch.danadas ?? ''}
                                                     onChange={e => handleDanadasChange(batch.originalIdx, e.target.value)}
                                                     placeholder="0"
@@ -275,8 +321,8 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                     {(() => {
                         const danadas = report.batches.reduce((s, b) => s + Math.min(Number(b.quantity) || 0, Number(b.danadas) || 0), 0);
                         return danadas > 0 ? (
-                            <div className="flex items-center gap-2 bg-slate-100 border border-slate-300 rounded-lg p-3 mt-3">
-                                <AlertCircle size={16} className="text-slate-500 shrink-0" />
+                            <div className="flex items-start gap-2 bg-slate-100 border border-slate-300 rounded-xl p-3 mt-3">
+                                <AlertCircle size={16} className="text-slate-500 shrink-0 mt-0.5" />
                                 <p className="text-sm font-semibold text-slate-700">
                                     {danadas} unidad{danadas !== 1 ? 'es' : ''} con envase dañado. El retiro y la reposición se declaran en <b>Devoluciones</b>.
                                 </p>
@@ -285,11 +331,11 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                     })()}
                     {(() => {
                         const atRisk = report.batches.reduce((s, b) => s + (daysUntilExpiry(b.expiryDate) <= 15 ? b.quantity : 0), 0);
-                        return atRisk > 0 && !report.stockout ? (
-                            <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-lg p-3 mt-3">
-                                <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                        return atRisk > 0 ? (
+                            <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-xl p-3 mt-3">
+                                <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
                                 <p className="text-sm font-semibold text-amber-800">
-                                    {atRisk} unidad{atRisk !== 1 ? 'es' : ''} vence{atRisk !== 1 ? 'n' : ''} en ≤ 15 días — acción requerida
+                                    {atRisk} unidad{atRisk !== 1 ? 'es' : ''} vence{atRisk !== 1 ? 'n' : ''} en 15 días o menos — acción requerida
                                 </p>
                             </div>
                         ) : null;
@@ -297,32 +343,23 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                 </div>
             </div>
             ) : (
-                <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl text-center">
-                    <AlertTriangle size={28} className="mx-auto text-red-500 mb-2" />
-                    <p className="font-bold text-red-700">Quiebre de Stock reportado</p>
-                    <p className="text-sm text-red-600 mt-0.5">El anaquel está vacío. Si te equivocaste, toca el botón rojo de abajo para deshacer.</p>
+                <div className="p-5 bg-red-50 border-2 border-red-200 rounded-xl text-center">
+                    <AlertTriangle size={32} className="mx-auto text-red-500 mb-2" />
+                    <p className="text-lg font-bold text-red-700">Quiebre de stock</p>
+                    <p className="text-sm text-red-600 mt-1">El anaquel está vacío. Si te equivocaste, toca <b>Hay producto</b> arriba.</p>
                 </div>
             )}
 
             {/* Pista de fluidez: cuando el paso ya está listo, invita a avanzar. */}
             {!isReadOnly && (report.batches.length > 0 || report.stockout) && (
-                <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                    <CheckCircle size={16} className="shrink-0" /> Listo. Toca «Siguiente» abajo para continuar.
+                <div className="mt-5 flex items-center gap-2 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                    <CheckCircle size={16} className="shrink-0" /> Listo. Toca la flecha de abajo para continuar.
                 </div>
             )}
 
-            {/* Botón de emergencia (quiebre de stock) — al final, en rojo. */}
-            {!isReadOnly && (
-                <div className="mt-6 pt-4 border-t border-slate-200">
-                    <button type="button" onClick={handleStockoutToggle} className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-bold border-2 transition-colors ${report.stockout ? 'bg-red-600 text-white border-red-600' : 'bg-red-50 text-red-700 border-red-300 active:scale-95'}`}>
-                        <AlertTriangle size={18} />
-                        {report.stockout ? 'Deshacer quiebre de stock' : 'El anaquel está VACÍO (Quiebre de Stock)'}
-                    </button>
-                </div>
-            )}
             {!isReadOnly && <CameraScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onCapture={handleScanComplete} onStatusChange={setScannerStatus}/>}
             {(isProcessing || isOptimizing) && <div className="fixed inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50"><Loader className="animate-spin h-12 w-12 text-brand-blue"/> <p className="mt-4 font-semibold">{scannerStatus || "Procesando..."}</p></div>}
-            {!isReadOnly && <NumericKeypadModal isOpen={isNumpadOpen} onClose={() => setNumpadOpen(false)} onConfirm={handleNumpadConfirm} title={`Cantidad para lote ${currentDate}`}/>}
+            {!isReadOnly && <NumericKeypadModal isOpen={isNumpadOpen} onClose={() => setNumpadOpen(false)} onConfirm={handleNumpadConfirm} title={`Unidades del lote que vence ${fmtVence(currentDate)}`}/>}
         </FormSection>
     );
 };
