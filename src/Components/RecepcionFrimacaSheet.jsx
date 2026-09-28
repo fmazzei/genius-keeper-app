@@ -16,13 +16,12 @@
 import React, { useState, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
-    collection, doc, addDoc, updateDoc, setDoc, serverTimestamp,
-} from 'firebase/firestore';
-import {
     X, Truck, Package, CheckCircle, AlertTriangle, Camera, Loader, ChevronRight, ArrowLeft, Minus, Plus,
 } from 'lucide-react';
 import { fileToCompactDataURL } from '@/utils/imageCapture.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
+import { lineasACaracas } from '@/utils/destinoDespacho.js';
+import { recibirDespacho } from '@/utils/recepcionOps.js';
 
 const THEME = {
     light: {
@@ -53,7 +52,9 @@ const norm = (s) => (s || '').trim().toLowerCase();
 
 export default function RecepcionFrimacaSheet({ despacho, almacenes = [], inventario = [], actor, theme = 'light', onClose, onDone }) {
     const t = THEME[theme] || THEME.light;
-    const lineas = useMemo(() => despacho?.lineas || [], [despacho]);
+    // Solo lo que va a Caracas: un despacho viejo con líneas a otra ciudad no
+    // puede cargar esas líneas al inventario de Frimaca.
+    const lineas = useMemo(() => lineasACaracas(despacho), [despacho]);
 
     // Almacén Frimaca por defecto: el que contiene "frimaca" o "caracas", o el primero.
     const defAlmacen = useMemo(() => {
@@ -93,85 +94,10 @@ export default function RecepcionFrimacaSheet({ despacho, almacenes = [], invent
         setSaving(true); setError('');
         try {
             const actorLabel = { id: actor?.id || '', nombre: actor?.nombre || '', role: actor?.role || '' };
-            const yaAplicado = despacho.inventarioAplicado === true;
-
-            // 1) Cargar inventario (desde lo RECIBIDO) + libro de movimientos.
-            if (!yaAplicado) {
-                for (let i = 0; i < lineas.length; i++) {
-                    const l = lineas[i];
-                    const recibida = Number(rows[i]?.cantidadRecibida) || 0;
-                    if (recibida <= 0) continue;
-                    const lote = l.lote || '';
-                    const venc = l.fechaVencimiento || '';
-                    // Solo se suma a un lote VIGENTE. Un lote CERRADO (0 unidades)
-                    // se queda cerrado: mercancía nueva abre un registro nuevo,
-                    // así el histórico y su pista no se "reabren".
-                    const existing = inventario.find(inv =>
-                        inv.almacenId === almacenId &&
-                        norm(inv.productoNombre) === norm(l.productoNombre) &&
-                        (inv.lote || '') === lote &&
-                        (inv.fechaVencimiento || '') === venc &&
-                        (Number(inv.unidades) || 0) > 0
-                    );
-                    const antes = existing ? (existing.unidades || 0) : 0;
-                    const despues = antes + recibida;
-                    if (existing) {
-                        await updateDoc(doc(db, 'inventario_comercial', existing.id), {
-                            unidades: despues, updatedAt: serverTimestamp(), updatedBy: actorLabel,
-                        });
-                    } else {
-                        await addDoc(collection(db, 'inventario_comercial'), {
-                            almacenId, almacenNombre: almacen.nombre,
-                            productoNombre: l.productoNombre, presentacion: l.presentacion || '',
-                            tipo: l.tipo || 'empacado', unit: l.unit || 'ud',
-                            lote, fechaVencimiento: venc, unidades: despues,
-                            origenDespachoId: despacho.id, updatedAt: serverTimestamp(), updatedBy: actorLabel,
-                        });
-                    }
-                    await addDoc(collection(db, 'inventario_movimientos'), {
-                        almacenId, almacenNombre: almacen.nombre,
-                        productoNombre: l.productoNombre, presentacion: l.presentacion || '',
-                        lote, fechaVencimiento: venc,
-                        tipo: 'entrada_recepcion', cantidad: recibida,
-                        unidadesAntes: antes, unidadesDespues: despues,
-                        ref: { despachoId: despacho.id },
-                        actorId: actorLabel.id, actorNombre: actorLabel.nombre, actorRole: actorLabel.role,
-                        nota: rows[i]?.estadoOk ? '' : (rows[i]?.novedad || 'novedad'),
-                        createdAt: serverTimestamp(),
-                    });
-                }
-            }
-
-            // 2) Acta de recepción con fotos (doc aparte para no inflar el despacho).
-            const conNovedad = rows.some(r => !r.estadoOk);
-            await setDoc(doc(db, 'recepciones_frimaca', despacho.id), {
-                despachoId: despacho.id,
-                recibidoPor: actorLabel, recibidoAt: serverTimestamp(),
-                almacenId, almacenNombre: almacen.nombre,
-                lineasRecibidas: lineas.map((l, i) => ({
-                    productoNombre: l.productoNombre, presentacion: l.presentacion || '',
-                    lote: l.lote || '', fechaVencimiento: l.fechaVencimiento || '',
-                    unit: l.unit || 'ud',
-                    cantidadEnviada: Number(l.cantidad) || 0,
-                    cantidadRecibida: Number(rows[i]?.cantidadRecibida) || 0,
-                    estadoOk: rows[i]?.estadoOk !== false,
-                    novedad: rows[i]?.estadoOk ? '' : (rows[i]?.novedad || ''),
-                    novedadFoto: rows[i]?.estadoOk ? null : (rows[i]?.novedadFoto || null),
-                })),
-                conNovedad, planillaFoto, notas: notas.trim(),
-                createdAt: serverTimestamp(),
-            });
-
-            // 3) Cerrar el despacho.
-            await updateDoc(doc(db, 'kroma_despachos', despacho.id), {
-                estado: 'recibido_caracas',
-                recibidoCaracas: true,
-                recibidoPor: actorLabel,
-                recibidoEnGKAt: serverTimestamp(),
-                almacenComercialId: almacenId,
-                almacenComercialNombre: almacen.nombre,
-                conNovedad,
-                inventarioAplicado: true,
+            await recibirDespacho(db, {
+                despachoId: despacho.id, lineas, rows, inventario,
+                almacenId, almacenNombre: almacen.nombre, actor: actorLabel,
+                planillaFoto, notas: notas.trim(),
             });
 
             onDone?.();

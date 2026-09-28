@@ -11,6 +11,8 @@ import {
     MapPin, Clock, ChevronDown, Search, X, Package, RefreshCw,
 } from 'lucide-react';
 import { fmtVence } from '@/utils/fechaCorta.js';
+import { esDestinoCaracas } from '@/utils/destinoDespacho.js';
+import { registrarDespacho } from '@/Kroma/despachoOps.js';
 
 // ─── Venezuela — estados y ciudades ──────────────────────────────────────────
 
@@ -68,10 +70,7 @@ const docenasLabel = (item) => {
 // condición estaba copiada 3 veces (handleSubmit, markEntregado,
 // applyHistoricalTransfer) y una CUARTA vez, ligeramente distinta, en
 // DespachoCard (hasCaracasLines). Una sola fuente evita que se desalineen.
-const isCaracasDestino = (destino) =>
-    destino?.ciudad === 'Caracas' ||
-    destino?.estado === 'Distrito Capital' ||
-    (destino?.tipo === 'otro' && /caracas/i.test(destino?.texto || ''));
+const isCaracasDestino = esDestinoCaracas;
 
 const destinoDisplay = (d) => {
     if (!d) return '';
@@ -536,14 +535,18 @@ export default function DespachoPage({ onNavigate, params }) {
     // Fecha del despacho. Por defecto hoy; se mueve para cargar despachos
     // anteriores al poner la planta al día. `fecha` ya se guardaba como
     // 'YYYY-MM-DD', así que el input de tipo date encaja tal cual.
-    const [fechaDespacho, setFechaDespacho] = useState(() => new Date().toISOString().split('T')[0]);
+    const [fechaDespacho, setFechaDespacho] = useState(() => hoyInput());
 
     const [pickingInvFor,  setPickingInvFor]  = useState(null);
     const [pickingCityFor, setPickingCityFor] = useState(null);
 
-    // Load inventory + warehouses
-    useEffect(() => {
-        const load = async () => {
+    const [saveError, setSaveError] = useState('');
+    const prefillHecho = React.useRef(false);
+
+    // Load inventory + warehouses. Se vuelve a llamar después de cada despacho:
+    // si no, la lista seguía mostrando el stock de antes y se podía despachar
+    // dos veces lo mismo.
+    const cargarInventario = useCallback(async () => {
             try {
                 const myEmpresaId = kromaUser?.empresaId || 'lacteoca';
                 const [invSnap, whSnap] = await Promise.all([
@@ -569,8 +572,9 @@ export default function DespachoPage({ onNavigate, params }) {
                 // Viene del Almacén ("Despachar a Caracas"): la línea llega
                 // armada con el lote, la cantidad y el destino; solo se revisa y
                 // se confirma.
-                const pre = params?.prefill;
+                const pre = !prefillHecho.current ? params?.prefill : null;
                 const itemPre = pre && inv.find(i => i.id === pre.inventoryId);
+                if (pre) prefillHecho.current = true;
                 if (itemPre) {
                     const cant = Math.min(Number(pre.cantidad) || 1, getMaxQty(itemPre));
                     setLineas([{ ...newLinea(), item: itemPre, cantidad: cant, destino: pre.destino || null }]);
@@ -578,9 +582,8 @@ export default function DespachoPage({ onNavigate, params }) {
                 }
             } catch (err) { console.error(err); }
             finally { setLoadingInv(false); }
-        };
-        load();
-    }, []);
+    }, [kromaUser?.empresaId, params]);
+    useEffect(() => { cargarInventario(); }, [cargarInventario]);
 
     const loadHistorial = useCallback(async () => {
         setLoadingHist(true);
@@ -618,14 +621,20 @@ export default function DespachoPage({ onNavigate, params }) {
         setPickingCityFor(null);
     };
 
-    const canSubmit = lineas.some(l => l.item && l.destino && l.cantidad > 0);
+    // Una línea a medias (producto sin destino, o destino sin producto) antes
+    // se DESCARTABA en silencio al guardar: el despacho salía sin ella.
+    const lineasIncompletas = lineas.filter(l => (l.item && !l.destino) || (!l.item && l.destino)).length;
+    const canSubmit = lineasIncompletas === 0 && lineas.some(l => l.item && l.destino && l.cantidad > 0);
 
     const handleSubmit = async () => {
         if (!canSubmit || saving) return;
-        setSaving(true);
+        setSaving(true); setSaveError('');
         try {
+            const empresaId = kromaUser?.empresaId || 'lacteoca';
+            const hoy = hoyInput();
+            const fecha = fechaDespacho || hoy;
             const validLineas = lineas
-                .filter(l => l.item && l.destino)
+                .filter(l => l.item && l.destino && l.cantidad > 0)
                 .map(({ item, cantidad, destino }) => ({
                     inventoryId:     item.id,
                     productoNombre:  item.productoNombre,
@@ -638,65 +647,29 @@ export default function DespachoPage({ onNavigate, params }) {
                     destino,
                 }));
 
-            // Un despacho a Caracas lo cierra la Recepción en Frimaca (GK), no
-            // "Marcar como Entregado" — así que la planta descuenta su propio
-            // stock AQUÍ, al momento real de salir el camión, no después. Antes
-            // esta deducción solo ocurría al marcar "Entregado", y para Caracas
-            // ese botón nunca debía pulsarse: el stock de la planta se quedaba
-            // mostrando mercancía que ya se fue.
-            for (const linea of validLineas) {
-                if (!isCaracasDestino(linea.destino)) continue;
-                const srcRef  = doc(db, 'kroma_inventory_pt', linea.inventoryId);
-                const srcSnap = await getDoc(srcRef);
-                if (!srcSnap.exists()) continue;
-                const srcData    = srcSnap.data();
-                const isEmpacado = srcData.tipo === 'empacado';
-                const field      = isEmpacado ? 'unidades' : 'kgTotales';
-                const current    = srcData[field] || 0;
-                const deducir    = isEmpacado ? Math.round(linea.cantidad) : (parseFloat(linea.cantidad) || 0);
-                const remaining  = Math.max(0, +(current - deducir).toFixed(3));
-                await updateDoc(srcRef, remaining === 0 ? { [field]: 0, active: false } : { [field]: remaining });
+            // Caracas y los demás destinos se cierran por vías DISTINTAS (Caracas
+            // lo cierra la Recepción en Frimaca en GK; el resto, "Marcar como
+            // Entregado"). Un despacho mixto quedaba a medio camino: GK recibía
+            // también las líneas de otras ciudades y esas nunca se descontaban de
+            // la planta. Por eso se guarda un despacho por cada vía.
+            const aCaracas = validLineas.filter(l => isCaracasDestino(l.destino));
+            const aOtros   = validLineas.filter(l => !isCaracasDestino(l.destino));
 
-                const srcWhNombre = warehouses.find(w => w.id === srcData.warehouseId)?.nombre || 'Planta';
-                await addDoc(collection(db, 'kroma_warehouse_movements'), {
-                    tipo:            'despacho_salida',
-                    origenId:        srcData.warehouseId || null,
-                    origenNombre:    srcWhNombre,
-                    destinoId:       null,
-                    destinoNombre:   'Camino a Caracas — cierra Recepción Frimaca',
-                    productoNombre:  linea.productoNombre,
-                    presentacion:    linea.presentacion || '',
-                    lote:            linea.lote || '',
-                    fechaVencimiento: linea.fechaVencimiento || null,
-                    cantidad:        deducir,
-                    unidad:          isEmpacado ? 'unidades' : 'kg',
-                    empresaId:       kromaUser?.empresaId || 'lacteoca',
-                    creadoPorId:     kromaUser?.id || null,
-                    creadoPorNombre: kromaUser?.name || null,
-                    createdAt:       serverTimestamp(),
-                });
-                linea.plantaDeducida = true;
-            }
-
-            await addDoc(collection(db, 'kroma_despachos'), {
-                fecha:       fechaDespacho || new Date().toISOString().split('T')[0],
-                cargadaEnDiferido: !!fechaDespacho && fechaDespacho !== new Date().toISOString().split('T')[0],
-                horasSalida: serverTimestamp(),
+            await registrarDespacho(db, {
+                aCaracas, aOtros, fecha, hoy, notas: notas.trim(), empresaId,
                 responsable: { id: kromaUser?.id || '', nombre: kromaUser?.name || '' },
-                lineas:      validLineas,
-                notas:       notas.trim(),
-                estado:      'en_transito',
-                empresaId:   kromaUser?.empresaId || 'lacteoca',
-                active:      true,
-                createdAt:   serverTimestamp(),
+                nombreAlmacen: (id) => warehouses.find(w => w.id === id)?.nombre || 'Planta',
             });
 
             setSaved(true);
             setLineas([newLinea()]);
             setNotas('');
             setTimeout(() => setSaved(false), 4000);
-        } catch (err) { console.error(err); }
-        finally { setSaving(false); }
+            cargarInventario();
+        } catch (err) {
+            console.error('Despacho:', err);
+            setSaveError(err?.message || 'No se pudo registrar el despacho. Revisa la conexión e intenta de nuevo.');
+        } finally { setSaving(false); }
     };
 
     // "Marcar como Entregado" es SOLO para destinos que este propio botón cierra
@@ -760,10 +733,7 @@ export default function DespachoPage({ onNavigate, params }) {
                 const deducir    = isEmpacado ? Math.round(cantidad) : (parseFloat(cantidad) || 0);
                 const remaining  = Math.max(0, +(current - deducir).toFixed(3));
                 await updateDoc(srcRef, remaining === 0 ? { [field]: 0, active: false } : { [field]: remaining });
-                const isCaracasDest =
-                    destino?.ciudad === 'Caracas' ||
-                    destino?.estado === 'Distrito Capital' ||
-                    (destino?.tipo === 'otro' && /caracas/i.test(destino?.texto || ''));
+                const isCaracasDest = isCaracasDestino(destino);
                 if (isCaracasDest && caracasWh) {
                     const { id: _id, warehouseNombre: _wn, ...itemBase } = srcData;
                     await addDoc(collection(db, 'kroma_inventory_pt'), {
@@ -806,10 +776,7 @@ export default function DespachoPage({ onNavigate, params }) {
 
             for (const linea of (despacho.lineas || [])) {
                 const { cantidad, destino, productoNombre, lote, fechaVencimiento, presentacion, unit } = linea;
-                const isCaracasDest =
-                    destino?.ciudad === 'Caracas' ||
-                    destino?.estado === 'Distrito Capital' ||
-                    (destino?.tipo === 'otro' && /caracas/i.test(destino?.texto || ''));
+                const isCaracasDest = isCaracasDestino(destino);
                 if (!isCaracasDest || !caracasWh) continue;
 
                 const isEmpacado = (unit || 'ud') === 'ud';
@@ -1035,6 +1002,17 @@ export default function DespachoPage({ onNavigate, params }) {
                         rows={2}
                         className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500 resize-none"
                     />
+
+                    {lineasIncompletas > 0 && (
+                        <p className="text-amber-300 text-xs bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
+                            {lineasIncompletas === 1 ? 'Hay una línea' : `Hay ${lineasIncompletas} líneas`} sin producto o sin destino. Complétala{lineasIncompletas === 1 ? '' : 's'} o quítala{lineasIncompletas === 1 ? '' : 's'} para poder despachar.
+                        </p>
+                    )}
+                    {saveError && (
+                        <p className="text-red-300 text-sm bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2.5">
+                            No se registró el despacho: {saveError}
+                        </p>
+                    )}
 
                     {/* Submit */}
                     {saved ? (

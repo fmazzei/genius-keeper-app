@@ -2917,3 +2917,32 @@ Reporte del dueño: al transferir queso terminado solo aparecían **Bodega de In
   - La planta descuenta su stock al despachar, como siempre para Caracas.
   - Solo aparece para quien tiene permiso de editar Despachos.
 - El título pasó a **"Mover producto"**, con dos caminos: "Despachar a Caracas" y "Mover dentro de la planta".
+
+### Despacho → Recepción en Frimaca: auditado y probado de punta a punta (2026-09) ✅
+
+Pedido del dueño: *"verifica que todo esté perfectamente conectado y no nos dé problemas a la hora de hacer un despacho"*. Se recorrió la cadena Almacén → Despachos → planta → GK → almacén comercial y había seis fallas reales:
+
+1. **El despacho no era atómico.** Se descontaba la planta con escrituras sueltas y DESPUÉS se creaba el despacho. Si se caía la conexión en medio, el stock se iba sin despacho, y el error solo quedaba en la consola.
+   - Ahora es **`registrarDespacho`** (`src/Kroma/despachoOps.js`): UNA `runTransaction` que lee el stock real, descuenta, anota el libro y crea el despacho, o no hace nada.
+   - El error se muestra en pantalla.
+2. **Despachar más de lo que había** se recortaba a 0 en silencio. Ahora se rechaza con un mensaje: "solo quedan N ud y se quieren despachar M". La lista de Despachos se recarga tras cada despacho.
+3. **Despachos mixtos** (Caracas + otra ciudad) quedaban a medio camino: GK recibía también la línea de la otra ciudad y esa línea nunca se descontaba de la planta. Ahora se guarda **un despacho por vía**, con `destinoCaracas` true/false.
+4. **Fecha en UTC**: despachar después de las 8 pm se registraba al día siguiente. Ahora se usa `hoyInput()`, en hora local.
+5. **La recepción mezclaba presentaciones**: 250 g y 1 kg del mismo lote y vencimiento se sumaban en una sola fila de `inventario_comercial`. Ahora también empareja por presentación.
+6. **La recepción no era atómica.** Un reintento tras un corte volvía a sumar lo recibido, y dos teléfonos podían recibir el mismo camión.
+   - Ahora es **`recibirDespacho`** (`src/utils/recepcionOps.js`): una transacción que exige que el despacho siga `en_transito`.
+
+**Otras dos correcciones:**
+- **Una sola regla "¿va a Caracas?"**: `src/utils/destinoDespacho.js` (`esDestinoCaracas`, `lineasACaracas`), compartida por Kroma y GK. GK solo lista y recibe líneas a Caracas.
+- **Rotación de Cava** calculaba la velocidad solo con despachos `entregado`, pero los de Caracas terminan en `recibido_caracas`: ignoraba casi todo lo despachado. Ahora cuenta todo lo que salió de la planta (por fecha de salida) y deja fuera el granel en kg.
+
+**Prueba**: `tests/despacho.e2e.test.mjs` corre contra el emulador con las reglas reales y el MISMO código de la app. Son 14 verificaciones, todas en verde:
+- el despacho mixto se parte en dos;
+- los descuentos son exactos (ud y kg);
+- el sobre-despacho se rechaza sin tocar nada;
+- GK solo ve lo de Caracas;
+- las presentaciones no se mezclan;
+- la novedad y el acta quedan guardadas;
+- la segunda recepción se rechaza sin duplicar.
+
+Cómo correrla está en el encabezado del archivo.

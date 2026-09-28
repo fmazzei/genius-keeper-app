@@ -802,14 +802,20 @@ export default function CavaRotacionPage() {
 
             // Despachos históricos para velocidad (últimas 26 semanas para tener margen)
             const cutoff = new Date(today.getTime() - 26 * 7 * 86400000);
+            // Cuenta TODO lo que salió de la planta: en tránsito, entregado y
+            // recibido en Caracas. Antes solo leía 'entregado', pero los
+            // despachos a Caracas terminan como 'recibido_caracas' (los cierra
+            // la Recepción en Frimaca), así que la velocidad ignoraba casi todo
+            // lo que de verdad se despachó. El estado se filtra en cliente para
+            // no exigir un índice compuesto.
             const despSnap = await getDocs(query(
                 collection(db, 'kroma_despachos'),
-                where('estado', '==', 'entregado'),
                 where('empresaId', '==', empresaId),
             ));
+            const SALIO = new Set(['en_transito', 'entregado', 'recibido_caracas']);
             setDespachos(despSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => {
-                const fecha = d.recibidoEnGKAt?.toDate?.() || d.createdAt?.toDate?.();
-                return fecha && fecha >= cutoff;
+                const fecha = d.createdAt?.toDate?.();
+                return SALIO.has(d.estado) && d.active !== false && fecha && fecha >= cutoff;
             }));
         } catch (e) {
             setError('No se pudo cargar la información. ' + e.message);
@@ -879,11 +885,13 @@ export default function CavaRotacionPage() {
     const velocityMap = {};
     const cutoffVelocidad = new Date(today.getTime() - globalCfg.semanasHistorial * 7 * 86400000);
     const despachosVentana = despachos.filter(d => {
-        const fecha = d.recibidoEnGKAt?.toDate?.() || d.createdAt?.toDate?.();
+        // Fecha de SALIDA de la planta: es cuando el producto dejó la cava.
+        const fecha = d.createdAt?.toDate?.();
         return fecha && fecha >= cutoffVelocidad;
     });
     despachosVentana.forEach(d => {
-        (d.lineas || []).forEach(l => {
+        // Solo unidades envasadas: el granel va en kg y no se suma a unidades.
+        (d.lineas || []).filter(l => l.tipo !== 'sin_envasar').forEach(l => {
             if (!velocityMap[l.productoNombre]) velocityMap[l.productoNombre] = 0;
             velocityMap[l.productoNombre] += Number(l.cantidad || 0);
         });

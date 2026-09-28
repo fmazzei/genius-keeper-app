@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import StockAdjustSheet from '@/Components/StockAdjustSheet.jsx';
 import RecepcionFrimacaSheet from '@/Components/RecepcionFrimacaSheet.jsx';
+import { lineasACaracas } from '@/utils/destinoDespacho.js';
 import PickingSheet from '@/Components/PickingSheet.jsx';
 import LoteTrazabilidadModal from '@/Components/LoteTrazabilidadModal.jsx';
 import { fmtVence } from '@/utils/fechaCorta.js';
@@ -149,7 +150,9 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
             const alms = almSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => a.active !== false);
             setAlmacenes(alms);
             setInventario(invSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-            setPendientes(despSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+            // Solo lo que viene a Caracas: un despacho de planta a otra ciudad
+            // también está "en tránsito", pero no se recibe en Frimaca.
+            setPendientes(despSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => lineasACaracas(d).length > 0));
             // El máster ve las solicitudes de ajuste pendientes (quien no puede
             // corregir por sí mismo se las envía desde el ítem).
             if (isMaster) {
@@ -476,7 +479,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                             <p className={`text-sm ${t.emptyText}`}>No hay despachos de planta en tránsito.</p>
                         </div>
                     ) : pendientes.map(despacho => {
-                        const lineas = despacho.lineas || [];
+                        const lineas = lineasACaracas(despacho);
                         const destinos = [...new Set(lineas.map(l => destinoDisplay(l.destino)).filter(Boolean))];
                         return (
                             <div key={despacho.id} className={`rounded-xl p-4 ${t.card}`}>
