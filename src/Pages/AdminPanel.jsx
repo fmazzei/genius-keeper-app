@@ -19,8 +19,7 @@ import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
 import { WIDGET_REGISTRY, WIDGET_CATEGORIES } from '../config/widgetRegistry.js';
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
-import AddPosForm from '../Components/AddPosForm.jsx';
-import EditPosModal from '../Components/EditPosModal.jsx';
+import FichaPdv from '../Components/FichaPdv.jsx';
 import ClientesPdvHub from './ClientesPdvHub.jsx';
 import PuntosDeVentaDoc, { ciudadesDe } from '../Components/PuntosDeVentaDoc.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
@@ -408,6 +407,26 @@ const PosManagement = ({ posList: posListActivos = [], loading }) => {
         setChangesMade(true);
     };
 
+    // Mover TODOS los PDV de un grupo a otra cadena/marca (p.ej. juntar
+    // "Inversiones Cold 2024, C.A" y "Páramo Libertador" en "Páramo"). Solo
+    // cambia `chain`, que es lo que agrupa la lista del mercaderista; la razón
+    // social de cada PDV (su vínculo con Zoho) no se toca.
+    const handleMoverCadena = async (chain) => {
+        const destino = (window.prompt(`¿A qué cadena/marca mueves los PDV de "${chain}"?\nEscribe el nombre (vacío = Individual).`, '') ?? null);
+        if (destino === null) return;
+        const nueva = destino.trim() || 'Automercados Individuales';
+        if (nueva === chain) return;
+        const ids = editablePos.filter(p => (p.chain || 'Automercados Individuales') === chain).map(p => p.id);
+        try {
+            for (let i = 0; i < ids.length; i += 400) {
+                const batch = writeBatch(db);
+                ids.slice(i, i + 400).forEach(id => batch.update(doc(db, 'pos', id), { chain: nueva }));
+                await batch.commit();
+            }
+            setEditablePos(prev => prev.map(p => ids.includes(p.id) ? { ...p, chain: nueva } : p));
+        } catch (e) { alert('No se pudo mover: ' + (e?.message || e)); }
+    };
+
     // Un PDV está inactivo cuando su frecuencia es 0/vacía (foodservice no lleva
     // visitas por diseño: no se considera inactivo).
     const estaInactivo = (p) => p.canal !== 'foodservice' && !(Number(p.visitInterval) > 0);
@@ -553,16 +572,17 @@ const PosManagement = ({ posList: posListActivos = [], loading }) => {
                         <div className="bg-slate-50 p-4"><button onClick={() => toggleCategory(chain)} className="w-full flex justify-between items-center text-left font-bold text-slate-800"><span className="truncate pr-2">{chain} ({groupedPos[chain].length})</span><ChevronDown className={`transition-transform duration-300 flex-shrink-0 ${openCategories[chain] ? 'rotate-180' : ''}`} /></button></div>
                         {openCategories[chain] && (
                             <div className="bg-white">
-                                <div className="p-4 bg-slate-100 flex flex-col sm:flex-row items-center gap-2"><label className="text-sm font-semibold text-slate-600 flex-grow">Aplicar a todos en "{chain}":</label><div className="flex gap-2 w-full sm:w-auto"><input type="number" placeholder="Días" value={massUpdateValues[chain] || ''} onChange={e => setMassUpdateValues(prev => ({ ...prev, [chain]: e.target.value }))} className="w-full sm:w-24 text-center p-2 border border-slate-300 rounded-md" /><button onClick={() => handleMassUpdate(chain)} className="bg-slate-600 text-white font-semibold px-4 py-2 rounded-md text-sm">Aplicar</button></div></div>
+                                <div className="p-4 bg-slate-100 flex flex-col sm:flex-row items-center gap-2"><label className="text-sm font-semibold text-slate-600 flex-grow">Aplicar a todos en "{chain}":</label><div className="flex gap-2 w-full sm:w-auto"><input type="number" placeholder="Días" value={massUpdateValues[chain] || ''} onChange={e => setMassUpdateValues(prev => ({ ...prev, [chain]: e.target.value }))} className="w-full sm:w-24 text-center p-2 border border-slate-300 rounded-md" /><button onClick={() => handleMassUpdate(chain)} className="bg-slate-600 text-white font-semibold px-4 py-2 rounded-md text-sm">Aplicar</button><button onClick={() => handleMoverCadena(chain)} className="bg-white border border-slate-300 text-slate-700 font-semibold px-3 py-2 rounded-md text-sm whitespace-nowrap">Mover a otra cadena</button></div></div>
                                 <ul className="divide-y divide-slate-200">{groupedPos[chain].sort((a,b) => (a.name || '').localeCompare(b.name || '')).map(pos => { const esFood = pos.canal === 'foodservice'; return (<li key={pos.id} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-3"><div className="w-full text-center sm:text-left"><p className="font-semibold text-slate-900">{pos.name || <span className="italic text-slate-400">(sin nombre)</span>}</p>{esFood ? <p className="text-sm text-orange-600 font-semibold">Foodservice · sin visitas</p> : <p className={`text-sm ${pos.visitInterval > 0 ? 'text-slate-500' : 'text-red-600 font-semibold'}`}>{pos.visitInterval > 0 ? 'Activo' : 'INACTIVO'}</p>}</div><div className="flex items-center gap-2 flex-shrink-0"><button type="button" onClick={() => setPosToEdit(pos)} title="Editar PDV" className="p-1.5 text-slate-400 hover:text-brand-blue rounded-lg hover:bg-blue-50 transition-colors"><Pencil size={16} /></button>{esFood ? <span className="text-xs font-bold uppercase px-2.5 py-1.5 rounded-full bg-orange-100 text-orange-700">Foodservice</span> : <><input type="number" value={pos.visitInterval ?? ''} onChange={(e) => handleIntervalChange(pos.id, e.target.value)} className="w-20 text-center p-2 border border-slate-300 rounded-md" min="0" /><label className="text-sm text-slate-600">días</label></>}</div></li>); })}</ul>
                             </div>
                         )}
                     </div>
                 ))}
             </div>
-            <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Agregar Nuevo Punto de Venta"><AddPosForm onClose={() => setIsAddModalOpen(false)} canEditZoho /></Modal>
+            {/* Misma ficha única que Clientes y PDV: crear y editar por la misma vía. */}
+            {isAddModalOpen && <FichaPdv onClose={() => setIsAddModalOpen(false)} />}
             {posToEdit && (
-                <EditPosModal
+                <FichaPdv
                     pos={posToEdit}
                     onClose={() => setPosToEdit(null)}
                     onSaved={handleEditSaved}
@@ -4914,7 +4934,7 @@ const IntegracionesSection = () => {
                     <summary className="cursor-pointer text-xs font-semibold text-slate-600 select-none">Credenciales de la API de Zoho (configurar una vez)</summary>
                     <div className="mt-3 space-y-2">
                         <p className="text-[11px] text-slate-400">
-                            En el Zoho API Console crea un <b>Self Client</b>. Pega aquí el <b>Client ID</b> y el <b>Client Secret</b>. Luego, en la pestaña <b>Generate Code</b> de Zoho, con scope <code className="bg-slate-100 px-1 rounded">ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.settings.READ</code> (los cuatro, separados por coma — <b>CREATE</b> permite facturar desde GK y <b>bills.READ</b> trae las cuentas por pagar al Tablero Gerencial) y duración 10 min, genera el <b>código</b> y pégalo abajo. GK lo canjea por el token permanente. El código dura solo 10 minutos — pégalo apenas lo generes.
+                            En el Zoho API Console crea un <b>Self Client</b>. Pega aquí el <b>Client ID</b> y el <b>Client Secret</b>. Luego, en la pestaña <b>Generate Code</b> de Zoho, con scope <code className="bg-slate-100 px-1 rounded">ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ</code> (los cinco, separados por coma — <b>CREATE</b> permite facturar desde GK, <b>bills.READ</b> trae las cuentas por pagar al Tablero Gerencial y <b>contacts.READ</b> trae los clientes nuevos, aún sin facturas, a la lista de razones sociales) y duración 10 min, genera el <b>código</b> y pégalo abajo. GK lo canjea por el token permanente. El código dura solo 10 minutos — pégalo apenas lo generes.
                         </p>
                         <input type="text" value={creds.clientId} onChange={e => setCreds(c => ({ ...c, clientId: e.target.value }))} placeholder="Client ID" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
                         <input type="password" value={creds.clientSecret} onChange={e => setCreds(c => ({ ...c, clientSecret: e.target.value }))} placeholder="Client Secret" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />

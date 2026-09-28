@@ -29,8 +29,7 @@ import {
     Plus, Link2, Link2Off, Building2, Briefcase,
 } from 'lucide-react';
 import Modal from '@/Components/Modal.jsx';
-import AddPosForm from '@/Components/AddPosForm.jsx';
-import EditPosModal from '@/Components/EditPosModal.jsx';
+import FichaPdv from '@/Components/FichaPdv.jsx';
 
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 // Razón social SIN el paréntesis de sucursal: "Central Madeirense, C.A. (Santa
@@ -271,7 +270,7 @@ const ClienteCard = ({ grupo, vendedores, pdvsSinCliente, abierto, onToggle, onA
                                         <option key={p.id} value={p.id}>{p.name}{p.zone ? ` · ${p.zone}` : ''}</option>
                                     ))}
                                 </select>
-                                <button type="button" onClick={onCrearPdv}
+                                <button type="button" onClick={() => onCrearPdv(carnetPorDefecto || grupo.carnets[0])}
                                     className="text-[11px] font-semibold px-2.5 py-2 rounded-lg bg-brand-blue text-white">
                                     <Plus size={12} className="inline mr-1" />Crear PDV
                                 </button>
@@ -664,7 +663,7 @@ export default function ClientesPdvHub() {
                         </span>
                         {verHuerfanos ? <ChevronDown size={15} className="text-slate-300 shrink-0" /> : <ChevronRight size={15} className="text-slate-300 shrink-0" />}
                     </button>
-                    <button type="button" onClick={() => setCrearPdv(true)}
+                    <button type="button" onClick={() => setCrearPdv({ razonInicial: null })}
                         className="text-[11px] font-semibold px-2.5 py-1.5 rounded-lg bg-brand-blue text-white shrink-0">
                         <Plus size={12} className="inline mr-1" />Nuevo PDV
                     </button>
@@ -742,7 +741,7 @@ export default function ClientesPdvHub() {
                         onFrecuencia={cambiarFrecuencia}
                         onDesvincular={desvincularPdv}
                         onEditarPdv={setEditarPdv}
-                        onCrearPdv={() => setCrearPdv(true)}
+                        onCrearPdv={(carnet) => setCrearPdv({ razonInicial: carnet || null })}
                         saving={saving}
                         savingPdv={savingPdv}
                     />
@@ -754,12 +753,17 @@ export default function ClientesPdvHub() {
                 )}
             </div>
 
-            <Modal isOpen={crearPdv} onClose={() => setCrearPdv(false)} title="Nuevo punto de venta" size="lg">
-                <AddPosForm onClose={() => setCrearPdv(false)} canEditZoho />
-            </Modal>
+            {/* La ficha ÚNICA del PDV: crear y editar por la misma vía. */}
+            {crearPdv && (
+                <FichaPdv
+                    razonInicial={crearPdv.razonInicial || null}
+                    onClose={() => setCrearPdv(false)}
+                    onSaved={() => setCrearPdv(false)}
+                />
+            )}
 
             {editarPdv && (
-                <EditPosModal
+                <FichaPdv
                     pos={editarPdv}
                     onClose={() => setEditarPdv(null)}
                     onSaved={() => setEditarPdv(null)}

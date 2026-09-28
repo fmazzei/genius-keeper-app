@@ -2761,3 +2761,49 @@ Pedido del dueño con capturas de la Cava y de Almacenes.
   tres. Ahora son dos filas: chip de presentación ("250 g" / "Granel") +
   producto + cantidad; debajo el lote (sin partirse), "Vence dd/mm/aa" y las
   acciones, que en pantalla chica son solo íconos.
+
+## GK — Una sola ficha para crear y editar PDV (2026-09) ✅
+
+Reporte del dueño: agregar un cliente/PDV era "sumamente enredado". Había TRES
+formularios que dejaban el PDV distinto — `AddPosForm` (pestañas Individual y
+Cadena, cada una guardando campos diferentes; la de Cadena ni siquiera guardaba
+canal ni razón social), `EditPosModal` (otros campos) y la vinculación a Zoho
+aparte. Caso real: las tiendas nuevas de Páramo quedaron agrupadas por la razón
+social "Inversiones Cold 2024, C.A" y "Páramo Libertador" en un grupo propio.
+
+**`src/Components/FichaPdv.jsx` (NUEVO) — la ÚNICA forma de crear y editar un
+PDV.** `AddPosForm.jsx` y `EditPosModal.jsx` se ELIMINARON. Orden, decidido por
+el dueño:
+1. **Razón social** — SOLO de la lista de Zoho (`clientes_zoho`, agrupada por
+   razón social canónica con `agruparRazones` de `src/utils/razonesZoho.js`); si
+   tiene varias sucursales/carnets se elige cuál. Guarda **`zohoCustomerId` +
+   `razonSocialZoho`** juntos (antes Editar cambiaba el nombre y dejaba el carnet
+   viejo, así el PDV seguía colgando del cliente anterior).
+2. **Nombre para mostrar** (`name`) — lo que ve el mercaderista.
+3. **Cadena / marca** (`chain`, opcional, autocompletado; vacío = Individual) —
+   **agrupa la lista del mercaderista** (decisión del dueño: por marca, p.ej.
+   "Páramo" con las tiendas de Inversiones Cold 2024 e Hipermercado Páramo). Al
+   elegir la razón social se sugiere la cadena que ya usan sus otros PDV.
+4. **Retail / Foodservice** (se sugiere foodservice si el cliente lo es).
+5. **Tipo de despacho** — Directo por defecto (+ régimen si es centralizado).
+Luego ciudad, zona, frecuencia (0 = inactivo; antes el alta lo dejaba activo
+igual) y ubicación/mapa como estaban. Al guardar llama `emparejarRazonSocialPDV`
+(atribución de facturas) y `marcarCategoriaCliente` si es foodservice.
+
+**Quién crea**: solo **máster y administración** (Clientes y PDV — "Nuevo PDV" o
+"Crear PDV" dentro de la ficha del cliente, que llega con la razón social ya
+elegida). Se quitó "Agregar Nuevo" de la lista del mercaderista y del vendedor
+(`PosList`); al vendedor además las reglas le negaban crear. La lista maestra
+usa la misma ficha para agregar y editar, y ganó **"Mover a otra cadena"** por
+grupo (cambia solo `chain` de todos sus PDV) para ordenar lo ya cargado.
+⚠ `chain` también arma la cartera de despachos centralizados (`vendor_clients`
+por cadena): al mover una cadena centralizada, revisar la cartera del vendedor.
+
+**La lista de razones sociales viene de Zoho.** `clientes_zoho` nacía solo de
+FACTURAS, así que un cliente nuevo sin facturas no aparecía. Ahora el barrido
+global también baja los **contactos** de Zoho (`listAllContacts` +
+`sincronizarClientesDesdeContactos`, merge, `desdeContactos:true`) — requiere el
+scope **`ZohoBooks.contacts.READ`**; sin él responde `autorizado:false` y queda
+en `settings/appConfig.zohoContactos`. Las instrucciones de Integraciones piden
+ahora los cinco scopes. Los inactivos en Zoho (`activoEnZoho:false`) no se
+ofrecen.

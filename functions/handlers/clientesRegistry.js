@@ -147,9 +147,55 @@ async function backfillFacturasPorCustomerId(customerId, vendedor, db) {
     return n;
 }
 
+/**
+ * Completa `clientes_zoho` con los CLIENTES de Zoho que todavía no tienen
+ * facturas. El registro nace de las facturas (upsertClientesRegistry), así que
+ * un cliente recién creado en Zoho no aparecía en GK hasta su primera factura —
+ * y la ruta única de alta de PDV solo deja elegir razones sociales de esa
+ * lista. Con esto el cliente aparece en la siguiente conciliación (cada hora).
+ * Merge: nunca pisa lo que viene de facturas ni lo que asignó el admin.
+ * Requiere el scope ZohoBooks.contacts.READ; sin él devuelve autorizado:false.
+ */
+async function sincronizarClientesDesdeContactos({ accessToken, organizationId, dataCenter }, db) {
+    const { listAllContacts } = require('./zohoApi');
+    let contacts;
+    try {
+        ({ contacts } = await listAllContacts({ accessToken, organizationId, dataCenter }));
+    } catch (e) {
+        const status = e?.response?.status;
+        const msg = e?.response?.data?.message || e.message;
+        if (status === 401 || /scope|unauthor/i.test(String(msg))) {
+            return { autorizado: false, motivo: 'Falta el scope ZohoBooks.contacts.READ en el Self Client: '
+                + 'los clientes sin facturas todavía no llegan a GK.' };
+        }
+        return { autorizado: false, motivo: `Zoho: ${msg}` };
+    }
+    let escritos = 0;
+    const vivos = contacts.filter(c => c?.contact_id && (c.contact_name || c.company_name));
+    for (let i = 0; i < vivos.length; i += 400) {
+        const batch = db.batch();
+        for (const c of vivos.slice(i, i + 400)) {
+            const nombre = c.contact_name || c.company_name;
+            batch.set(db.doc(`clientes_zoho/${clienteIdKey(c.contact_id)}`), {
+                customerId:          String(c.contact_id),
+                customerName:        nombre,
+                razonSocialCanonica: stripSucursal(nombre),
+                companyName:         c.company_name || null,
+                activoEnZoho:        c.status ? c.status === 'active' : true,
+                desdeContactos:      true,
+                updatedAt:           admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            escritos++;
+        }
+        await batch.commit();
+    }
+    return { autorizado: true, total: contacts.length, escritos };
+}
+
 module.exports = {
     clienteIdKey,
     upsertClientesRegistry,
     loadClienteMap,
     backfillFacturasPorCustomerId,
+    sincronizarClientesDesdeContactos,
 };

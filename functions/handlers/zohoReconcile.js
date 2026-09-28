@@ -18,7 +18,7 @@ const admin = require("firebase-admin");
 const { getAccessToken, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
 const { upsertFacturaFromZoho, resolveVendedorFromPreload, esClienteOficina, extraerRif, stripSucursal } = require('./facturaSync');
 const { revertirAcumulados } = require('./facturaCommissionOps');
-const { upsertClientesRegistry, loadClienteMap } = require('./clientesRegistry');
+const { upsertClientesRegistry, loadClienteMap, sincronizarClientesDesdeContactos } = require('./clientesRegistry');
 const { sincronizarCuentasPorPagar } = require('./zohoBills');
 
 /**
@@ -802,6 +802,14 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
             res.porPagar = await sincronizarCuentasPorPagar({ accessToken, organizationId, dataCenter: creds.dataCenter });
         } catch (e) {
             res.porPagar = { autorizado: false, motivo: String(e?.message || e).slice(0, 200) };
+        }
+        // Clientes de Zoho SIN facturas todavía: sin esto no aparecen en la
+        // lista de razones sociales del alta de PDV hasta su primera factura.
+        try {
+            res.contactos = await sincronizarClientesDesdeContactos({ accessToken, organizationId, dataCenter: creds.dataCenter }, admin.firestore());
+            await admin.firestore().doc('settings/appConfig').set({ zohoContactos: { ...res.contactos, at: admin.firestore.FieldValue.serverTimestamp() } }, { merge: true });
+        } catch (e) {
+            res.contactos = { autorizado: false, motivo: String(e?.message || e).slice(0, 200) };
         }
     }
 

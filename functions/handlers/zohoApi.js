@@ -265,4 +265,29 @@ async function createInvoice({ accessToken, organizationId, dataCenter, invoice,
     return creada;
 }
 
-module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, exchangeCode, listItems, createInvoice };
+/**
+ * Trae TODOS los CLIENTES (contactos tipo customer) de Zoho Books, paginando.
+ * Sirve para que la lista de razones sociales de GK tenga también a los
+ * clientes que todavía no tienen facturas (recién creados en Zoho).
+ * Requiere el scope `ZohoBooks.contacts.READ`: sin él Zoho responde 401.
+ */
+async function listAllContacts({ accessToken, organizationId, dataCenter, maxPages = 20, perPage = 200 }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    let complete = true;
+    for (let page = 1; page <= maxPages; page++) {
+        const res = await axios.get(`${api}/books/v3/contacts`, {
+            params: { organization_id: organizationId, contact_type: 'customer', page, per_page: perPage },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+            timeout: 30000,
+        });
+        const contacts = Array.isArray(res.data?.contacts) ? res.data.contacts : [];
+        all.push(...contacts);
+        const hasMore = res.data?.page_context?.has_more_page === true;
+        if (!hasMore || contacts.length === 0) { complete = true; break; }
+        if (page === maxPages && hasMore) complete = false;
+    }
+    return { contacts: all, complete };
+}
+
+module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };
