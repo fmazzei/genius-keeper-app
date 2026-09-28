@@ -392,7 +392,7 @@ export default function ListaMaestraPdv() {
     // panel ya trae su relleno): sin tarjeta ni márgenes anidados. En pantalla
     // grande vuelve la tarjeta.
     return (
-        <div className="-mx-4 sm:mx-0 sm:bg-white sm:p-6 sm:rounded-lg sm:shadow">
+        <div className="-mx-4 sm:mx-0 min-w-0 overflow-x-hidden sm:bg-white sm:p-6 sm:rounded-lg sm:shadow">
             {/* Encabezado */}
             <div className="px-4 sm:px-0 flex flex-col lg:flex-row lg:items-end justify-between gap-3 mb-4">
                 <div>
@@ -401,7 +401,7 @@ export default function ListaMaestraPdv() {
                     </h3>
                     <p className="text-sm text-slate-500 mt-1">Agrupados por grupo comercial y, dentro de cada grupo, por razón social. Toca un grupo para trabajarlo.</p>
                 </div>
-                <div className="grid grid-cols-[1fr_auto] sm:flex gap-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] sm:flex gap-2">
                     <button onClick={() => setFicha({ pos: null })}
                         className="flex items-center justify-center gap-2 bg-brand-yellow text-black font-bold px-4 py-2.5 rounded-lg shadow-sm">
                         <Plus size={18} /> Nuevo punto de venta
@@ -476,7 +476,7 @@ export default function ListaMaestraPdv() {
 // ── Un grupo comercial (desplegable) ─────────────────────────────────────────
 
 const Herramienta = ({ titulo, ayuda, children }) => (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+    <div className="min-w-0 bg-white rounded-xl border border-slate-200 p-4">
         <p className="text-sm font-bold text-slate-800">{titulo}</p>
         {ayuda && <p className="text-xs text-slate-500 mt-0.5 mb-3">{ayuda}</p>}
         {children}
@@ -530,17 +530,17 @@ function GrupoMarca({ g, abierta, onToggle, vinculo, vendedores, trabajando, otr
             </button>
 
             {abierta && (
-                <div className="border-t border-slate-200">
+                <div className="border-t border-slate-200 min-w-0">
                     {/* Herramientas del grupo: una al lado de la otra en pantalla ancha */}
-                    <div className="bg-slate-50 p-3 sm:p-4 grid gap-3 lg:grid-cols-3">
+                    <div className="bg-slate-50 p-3 sm:p-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
                         <Herramienta titulo={individual ? 'Formar un grupo' : 'Nombre del grupo'}
                             ayuda={'Es lo que ven el mercaderista y todo GK. Ej.: "Grupo Páramo".'}>
                             <div className="flex gap-2">
                                 <input value={nombre} onChange={e => setNombre(e.target.value)}
                                     placeholder={nombreEsRazon ? `Hoy: ${g.marca}` : 'Ej.: Grupo Páramo'}
-                                    className="min-w-0 flex-grow px-3 py-2.5 border border-slate-300 rounded-lg text-sm" />
+                                    className="min-w-0 w-0 flex-grow px-3 py-2.5 border border-slate-300 rounded-lg text-sm" />
                                 <button disabled={!puedeGuardar || ocupadoMarca} onClick={() => onRenombrar(g, destino, limpiar)}
-                                    className="flex items-center gap-1.5 bg-brand-blue text-white font-bold px-4 rounded-lg text-sm disabled:opacity-40">
+                                    className="flex-shrink-0 flex items-center gap-1.5 bg-brand-blue text-white font-bold px-4 rounded-lg text-sm disabled:opacity-40">
                                     {ocupadoMarca ? <Loader size={14} className="animate-spin" /> : <Check size={14} />} Guardar
                                 </button>
                             </div>
@@ -558,12 +558,12 @@ function GrupoMarca({ g, abierta, onToggle, vinculo, vendedores, trabajando, otr
                                 ayuda="Si este cliente es parte de un grupo que ya existe (otra razón social del mismo dueño), pásalo allá.">
                                 <div className="flex gap-2">
                                     <select value={unirA} onChange={e => setUnirA(e.target.value)}
-                                        className="min-w-0 flex-grow px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white">
+                                        className="min-w-0 w-0 flex-grow px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white">
                                         <option value="">Elegir grupo…</option>
                                         {otrosGrupos.map(n => <option key={n} value={n}>{n}</option>)}
                                     </select>
                                     <button disabled={!unirA || ocupadoMarca} onClick={() => onRenombrar(g, unirA, true)}
-                                        className="bg-slate-800 text-white font-bold px-4 rounded-lg text-sm disabled:opacity-40">Unir</button>
+                                        className="flex-shrink-0 bg-slate-800 text-white font-bold px-4 rounded-lg text-sm disabled:opacity-40">Unir</button>
                                 </div>
                             </Herramienta>
                         )}
@@ -616,10 +616,10 @@ function SeccionRazon({ sec, vinculo, vendedores, trabajando, onAccionRazon, onF
                     </p>
                 </div>
                 {r && (
-                    <div className="grid grid-cols-[1fr_auto] gap-2 md:w-auto">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 md:w-auto min-w-0">
                         <select value={of ? '__oficina' : vid} disabled={ocupado}
                             onChange={e => onAccionRazon(r, { tipo: 'vendedor', valor: e.target.value })}
-                            className="min-w-0 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white md:w-52">
+                            className="min-w-0 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white md:w-52">
                             <option value="">Sin vendedor</option>
                             {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                             <option value="__oficina">Oficina (sin comisión)</option>
