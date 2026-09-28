@@ -71,15 +71,29 @@ export function nombreSinRazon(nombre, razones = []) {
     return original;
 }
 
+const claveTxt = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** "Grupo Páramo" → "Páramo": lo que encabeza el nombre de cada PDV. */
+export const prefijoDeGrupo = (marca) => String(marca || '').replace(/^\s*grupo\s+/i, '').trim();
+
 /**
- * Nombre del PDV sin la razón social y encabezado por la marca:
- * "Hipermercado Páramo, C.A. (Piedra Azul)" + marca "Páramo" → "Páramo Piedra Azul".
- * Si el nombre ya empieza por la marca, no la repite.
+ * Nombre del PDV sin la razón social y, si hace falta, encabezado por la marca:
+ *   "Inversiones Cold 2024, C.A - Páramo La Urbina" → "Páramo La Urbina"
+ *   "Hipermercado Páramo, C.A. (Piedra Azul)" + "Grupo Páramo" → "Páramo Piedra Azul"
+ * No antepone nada si el grupo todavía se llama como una razón social (sería
+ * volver a meterla), ni si el nombre ya contiene la marca.
  */
 export function nombreConMarca(nombre, razones, marca) {
-    const limpio = nombreSinRazon(nombre, razones);
-    if (limpio === String(nombre || '').trim() || !marca || marca === INDIVIDUAL) return limpio;
-    return norm(limpio).startsWith(norm(marca)) ? limpio : `${marca} ${limpio}`;
+    const original = String(nombre || '').trim();
+    const limpio = nombreSinRazon(original, razones);
+    if (limpio === original || !marca || marca === INDIVIDUAL) return limpio;
+    const pref = prefijoDeGrupo(marca);
+    const kp = claveTxt(pref);
+    if (!kp) return limpio;
+    const esRazon = razones.some(r => [r, canonRazon(r), sinFormaJuridica(r), sinFormaJuridica(canonRazon(r))]
+        .some(x => { const k = claveTxt(x); return k && (k === kp || k.startsWith(kp) && kp.length > 12); }));
+    if (esRazon) return limpio;
+    return claveTxt(limpio).includes(kp) ? limpio : `${pref} ${limpio}`;
 }
 
 // ── Piezas ───────────────────────────────────────────────────────────────────
@@ -95,17 +109,6 @@ const Chip = ({ tone = 'slate', children, title }) => {
     }[tone];
     return <span title={title} className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${t}`}>{children}</span>;
 };
-
-const PasoMarca = ({ n, titulo, ayuda, children }) => (
-    <div className="p-3 sm:p-4 border-b border-slate-200 last:border-b-0">
-        <p className="text-sm font-bold text-slate-700 flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-brand-blue text-white text-[11px] flex items-center justify-center flex-shrink-0">{n}</span>
-            {titulo}
-        </p>
-        {ayuda && <p className="text-xs text-slate-500 mt-1 ml-7">{ayuda}</p>}
-        <div className="mt-2 ml-7">{children}</div>
-    </div>
-);
 
 // ── Componente principal ─────────────────────────────────────────────────────
 
@@ -214,23 +217,36 @@ export default function ListaMaestraPdv() {
         });
         return [...m.entries()].map(([marca, todosPdv]) => {
             todosPdv.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'es'));
-            // Razones sociales de Zoho de la marca, agrupadas (con todas sus sucursales).
-            const razones = new Map();
+            // Dentro del grupo, los PDV se ordenan por RAZÓN SOCIAL de Zoho (un
+            // grupo como "Grupo Páramo" vive con varias: Inversiones Cold 2024 e
+            // Hipermercado Páramo). Lo que no tiene razón social va al final.
+            const secciones = new Map();
             todosPdv.forEach(p => {
                 const v = vinculo(p);
-                if (!v.cliente) return;
-                const canon = v.cliente.razonSocialCanonica || canonRazon(v.cliente.customerName);
-                if (!razones.has(norm(canon))) {
-                    const carnets = clientes.filter(c => norm(c.razonSocialCanonica || canonRazon(c.customerName)) === norm(canon));
-                    razones.set(norm(canon), { canon, carnets });
+                const canon = v.cliente ? (v.cliente.razonSocialCanonica || canonRazon(v.cliente.customerName)) : '';
+                const k = canon ? norm(canon) : '__sin';
+                if (!secciones.has(k)) {
+                    secciones.set(k, {
+                        clave: k,
+                        razon: canon ? {
+                            canon,
+                            carnets: clientes.filter(c => norm(c.razonSocialCanonica || canonRazon(c.customerName)) === norm(canon)),
+                        } : null,
+                        todos: [],
+                    });
                 }
+                secciones.get(k).todos.push(p);
             });
+            const lista = [...secciones.values()]
+                .map(sec => ({ ...sec, visibles: sec.todos.filter(pasaFiltro) }))
+                .sort((a, b) => (!a.razon) - (!b.razon) || (a.razon?.canon || '').localeCompare(b.razon?.canon || '', 'es'));
+            const razones = lista.filter(sec => sec.razon).map(sec => sec.razon);
             return {
-                marca, todos: todosPdv,
+                marca, todos: todosPdv, secciones: lista,
                 visibles: todosPdv.filter(pasaFiltro),
                 activos: todosPdv.filter(p => !esFood(p) && !estaInactivo(p)).length,
                 sinRazon: todosPdv.filter(p => ['sin', 'roto'].includes(vinculo(p).estado)).length,
-                razones: [...razones.values()].sort((a, b) => a.canon.localeCompare(b.canon, 'es')),
+                razones,
             };
         })
             .filter(g => g.visibles.length > 0)
@@ -370,86 +386,78 @@ export default function ListaMaestraPdv() {
         { k: 'sinRazon',  label: 'Sin razón social', n: conteo.sinRazon,  cls: 'text-red-600' },
     ];
 
+    const nombresGrupos = grupos.map(g => g.marca).filter(m => m !== INDIVIDUAL);
+
+    // En el teléfono la pantalla se usa de borde a borde (el contenedor del
+    // panel ya trae su relleno): sin tarjeta ni márgenes anidados. En pantalla
+    // grande vuelve la tarjeta.
     return (
-        <div className="bg-white p-4 sm:p-6 rounded-lg shadow">
+        <div className="-mx-4 sm:mx-0 sm:bg-white sm:p-6 sm:rounded-lg sm:shadow">
             {/* Encabezado */}
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-4">
+            <div className="px-4 sm:px-0 flex flex-col lg:flex-row lg:items-end justify-between gap-3 mb-4">
                 <div>
                     <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                         <Store size={20} className="text-brand-blue" /> Clientes y puntos de venta
                     </h3>
-                    <p className="text-sm text-slate-500 mt-1">Todos tus puntos de venta, agrupados por marca. Toca una marca para verla y trabajarla.</p>
+                    <p className="text-sm text-slate-500 mt-1">Agrupados por grupo comercial y, dentro de cada grupo, por razón social. Toca un grupo para trabajarlo.</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-[1fr_auto] sm:flex gap-2">
                     <button onClick={() => setFicha({ pos: null })}
-                        className="flex items-center gap-2 bg-brand-yellow text-black font-bold px-4 py-2 rounded-lg shadow-sm">
+                        className="flex items-center justify-center gap-2 bg-brand-yellow text-black font-bold px-4 py-2.5 rounded-lg shadow-sm">
                         <Plus size={18} /> Nuevo punto de venta
                     </button>
                     <button onClick={() => setExportCfg({ estado: 'todos', ciudades: [], canal: 'todos' })}
-                        className="flex items-center gap-2 bg-white border border-slate-300 text-slate-700 font-bold px-4 py-2 rounded-lg shadow-sm">
+                        className="flex items-center justify-center gap-2 bg-white border border-slate-300 text-slate-700 font-bold px-4 py-2.5 rounded-lg shadow-sm">
                         <FileDown size={18} /> PDF
                     </button>
                 </div>
             </div>
 
-            {/* Cómo funciona: tres pasos */}
-            <ol className="grid sm:grid-cols-3 gap-2 mb-4">
-                {[
-                    ['Crea el punto de venta', 'Razón social de Zoho → nombre → marca → retail/foodservice → despacho.'],
-                    ['Ordena por marca', 'Dentro de cada marca: cómo se llama, quién la vende y cada cuánto se visita.'],
-                    ['Ajusta cada PDV', 'Frecuencia, editar o eliminar, desde su fila.'],
-                ].map(([t, d], i) => (
-                    <li key={t} className="flex gap-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
-                        <span className="w-6 h-6 rounded-full bg-brand-blue text-white text-xs font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
-                        <div><p className="text-sm font-bold text-slate-700">{t}</p><p className="text-xs text-slate-500">{d}</p></div>
-                    </li>
-                ))}
-            </ol>
-
-            {/* Resumen que filtra */}
-            <div className="flex gap-2 overflow-x-auto pb-1 mb-3">
+            {/* Resumen que filtra: ocupa todo el ancho */}
+            <div className="px-4 sm:px-0 grid grid-cols-3 sm:grid-cols-5 gap-2 mb-3">
                 {FILTROS.map(f => (
                     <button key={f.k} onClick={() => setFiltro(filtro === f.k && f.k !== 'todos' ? 'todos' : f.k)}
-                        className={`flex-shrink-0 text-left px-3 py-2 rounded-lg border transition-colors ${
+                        className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
                             filtro === f.k ? 'border-brand-blue bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-                        <p className={`text-lg font-black leading-none ${f.cls}`}>{f.n}</p>
-                        <p className="text-[11px] font-semibold text-slate-500 mt-1 whitespace-nowrap">{f.label}</p>
+                        <p className={`text-xl font-black leading-none ${f.cls}`}>{f.n}</p>
+                        <p className="text-[11px] font-semibold text-slate-500 mt-1 leading-tight">{f.label}</p>
                     </button>
                 ))}
             </div>
 
-            <div className="relative mb-3">
-                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar por nombre, marca, razón social o ciudad (opcional)"
-                    className="w-full pl-9 pr-9 py-2 border border-slate-300 rounded-lg text-sm" />
-                {busca && <button onClick={() => setBusca('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400"><X size={16} /></button>}
+            <div className="px-4 sm:px-0 relative mb-4">
+                <Search size={16} className="absolute left-7 sm:left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar (opcional)"
+                    className="w-full pl-9 pr-9 py-2.5 border border-slate-300 rounded-lg text-sm bg-white" />
+                {busca && <button onClick={() => setBusca('')} className="absolute right-6 sm:right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400"><X size={16} /></button>}
             </div>
 
-            {msg && <p className="mb-3 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-start gap-2"><Check size={16} className="mt-0.5 flex-shrink-0" />{msg}</p>}
-            {error && <p className="mb-3 text-sm font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2"><AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />{error}</p>}
+            <div className="px-4 sm:px-0">
+                {msg && <p className="mb-3 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-start gap-2"><Check size={16} className="mt-0.5 flex-shrink-0" />{msg}</p>}
+                {error && <p className="mb-3 text-sm font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2"><AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />{error}</p>}
+                {exportCfg && <ExportarPdf cfg={exportCfg} setCfg={setExportCfg} posList={lista} onGenerar={() => setShowDoc(exportCfg)} />}
+            </div>
+            {showDoc && <PuntosDeVentaDoc posList={lista} estado={showDoc.estado} ciudades={showDoc.ciudades} canal={showDoc.canal} onClose={() => setShowDoc(null)} />}
 
             {/* Frecuencias sin guardar */}
             {pendientes.length > 0 && (
-                <div className="sticky top-0 z-10 mb-3 flex items-center gap-2 p-3 rounded-lg bg-brand-blue text-white shadow">
+                <div className="sticky top-0 z-10 mb-3 flex items-center gap-2 px-4 py-3 sm:rounded-lg bg-brand-blue text-white shadow">
                     <p className="text-sm font-semibold flex-grow">{pendientes.length} frecuencia(s) sin guardar</p>
                     <button onClick={() => setCambiosFrec({})} className="text-xs font-semibold px-3 py-1.5 rounded-md bg-white/15">Descartar</button>
                     <button onClick={guardarFrecuencias} disabled={guardando}
                         className="flex items-center gap-1.5 text-sm font-bold px-3 py-1.5 rounded-md bg-white text-brand-blue disabled:opacity-60">
-                        {guardando ? <Loader size={14} className="animate-spin" /> : <Save size={14} />} Guardar frecuencias
+                        {guardando ? <Loader size={14} className="animate-spin" /> : <Save size={14} />} Guardar
                     </button>
                 </div>
             )}
 
-            {/* Exportar PDF */}
-            {exportCfg && <ExportarPdf cfg={exportCfg} setCfg={setExportCfg} posList={lista} onGenerar={() => setShowDoc(exportCfg)} />}
-            {showDoc && <PuntosDeVentaDoc posList={lista} estado={showDoc.estado} ciudades={showDoc.ciudades} canal={showDoc.canal} onClose={() => setShowDoc(null)} />}
-
-            {/* Marcas */}
-            <div className="space-y-2">
+            {/* Grupos */}
+            <div className="space-y-3">
                 {grupos.length === 0 && <p className="text-center text-sm text-slate-500 py-10">No hay puntos de venta con este filtro.</p>}
                 {grupos.map(g => (
                     <GrupoMarca key={g.marca} g={g} abierta={estaAbierta(g.marca)} onToggle={() => toggle(g.marca)}
                         vinculo={vinculo} vendedores={vendedores} trabajando={trabajando}
+                        otrosGrupos={nombresGrupos.filter(n => n !== g.marca)}
                         onRenombrar={renombrarMarca} onFrecuenciaMarca={frecuenciaParaMarca}
                         onAccionRazon={accionRazon} onFrecuencia={cambiarFrecuencia}
                         onAgregar={() => setFicha({ pos: g.marca === INDIVIDUAL ? null : { chain: g.marca } })}
@@ -465,130 +473,121 @@ export default function ListaMaestraPdv() {
     );
 }
 
-// ── Una marca (desplegable) ──────────────────────────────────────────────────
+// ── Un grupo comercial (desplegable) ─────────────────────────────────────────
 
-function GrupoMarca({ g, abierta, onToggle, vinculo, vendedores, trabajando, onRenombrar, onFrecuenciaMarca,
-    onAccionRazon, onFrecuencia, onAgregar, onEditar, onEliminar }) {
-    const [nombre, setNombre] = useState(g.marca === INDIVIDUAL ? '' : g.marca);
-    const [limpiar, setLimpiar] = useState(true);
-    const [dias, setDias] = useState('');
-    useEffect(() => { setNombre(g.marca === INDIVIDUAL ? '' : g.marca); }, [g.marca]);
+const Herramienta = ({ titulo, ayuda, children }) => (
+    <div className="bg-white rounded-xl border border-slate-200 p-4">
+        <p className="text-sm font-bold text-slate-800">{titulo}</p>
+        {ayuda && <p className="text-xs text-slate-500 mt-0.5 mb-3">{ayuda}</p>}
+        {children}
+    </div>
+);
 
+function GrupoMarca({ g, abierta, onToggle, vinculo, vendedores, trabajando, otrosGrupos, onRenombrar,
+    onFrecuenciaMarca, onAccionRazon, onFrecuencia, onAgregar, onEditar, onEliminar }) {
     const individual = g.marca === INDIVIDUAL;
     const razonesTodas = g.razones.flatMap(r => [r.canon, ...r.carnets.map(c => c.customerName)]);
-    const ejemplo = g.todos.map(p => ({ antes: p.name, despues: nombreConMarca(p.name, [...razonesTodas, p.razonSocialZoho].filter(Boolean), nombre.trim()) }))
+    // Si el grupo todavía se llama como su razón social, el campo arranca
+    // vacío: ese nombre es justo lo que hay que cambiar.
+    const nombreEsRazon = !individual && razonesTodas.some(r => [canonRazon(r), sinFormaJuridica(canonRazon(r))].some(x => claveTxt(x) === claveTxt(g.marca)));
+    const inicial = individual || nombreEsRazon ? '' : g.marca;
+    const [nombre, setNombre] = useState(inicial);
+    const [limpiar, setLimpiar] = useState(true);
+    const [dias, setDias] = useState('');
+    const [unirA, setUnirA] = useState('');
+    useEffect(() => { setNombre(inicial); }, [inicial]);
+
+    const destino = nombre.trim();
+    const ejemplo = destino && g.todos
+        .map(p => ({ antes: p.name, despues: nombreConMarca(p.name, [...razonesTodas, p.razonSocialZoho].filter(Boolean), destino) }))
         .find(x => x.antes !== x.despues);
     const vendName = (id) => vendedores.find(v => v.id === id)?.name;
-    const cambiaNombre = (nombre.trim() || INDIVIDUAL) !== g.marca;
+    const vendedoresGrupo = [...new Set(g.razones.map(r => {
+        if (r.carnets.length > 0 && r.carnets.every(c => c.esOficina)) return 'Oficina';
+        return vendName(r.carnets.find(c => c.vendedorId)?.vendedorId) || 'Sin vendedor';
+    }))];
     const ocupadoMarca = trabajando === 'marca:' + g.marca;
+    const puedeGuardar = !!destino && (destino !== g.marca || (limpiar && ejemplo));
 
     return (
-        <div className="border border-slate-200 rounded-lg overflow-hidden">
-            <button onClick={onToggle} className="w-full bg-slate-50 p-4 flex items-center gap-3 text-left">
+        <div className="bg-white border-y sm:border border-slate-200 sm:rounded-xl overflow-hidden">
+            <button onClick={onToggle} className="w-full px-4 py-4 flex items-center gap-3 text-left bg-white hover:bg-slate-50">
                 <div className="min-w-0 flex-grow">
-                    <p className="font-bold text-slate-800 truncate">{individual ? 'Individuales (sin marca)' : g.marca}
-                        <span className="text-slate-400 font-semibold"> ({g.todos.length})</span></p>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                        <Chip tone="green">{g.activos} activo{g.activos === 1 ? '' : 's'}</Chip>
-                        {g.sinRazon > 0 && <Chip tone="red"><Link2Off size={11} /> {g.sinRazon} sin razón social</Chip>}
-                        {!individual && g.razones.map(r => {
-                            const vid = r.carnets.find(c => c.vendedorId)?.vendedorId;
-                            const of = r.carnets.length > 0 && r.carnets.every(c => c.esOficina);
-                            return <Chip key={r.canon} tone="slate" title={r.canon}>
-                                <span className="max-w-[180px] truncate">{r.canon}</span>
-                                <span className="text-slate-400">· {of ? 'Oficina' : (vendName(vid) || 'sin vendedor')}</span>
-                            </Chip>;
-                        })}
-                    </div>
+                    <p className="text-lg font-bold text-slate-900 leading-snug">{individual ? 'Individuales (sin grupo)' : g.marca}</p>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                        {g.todos.length} PDV · <span className="text-emerald-700 font-semibold">{g.activos} activo{g.activos === 1 ? '' : 's'}</span>
+                        {g.razones.length > 0 && <> · {g.razones.length} razón{g.razones.length === 1 ? '' : 'es'} social{g.razones.length === 1 ? '' : 'es'}</>}
+                        {vendedoresGrupo.length > 0 && <> · {vendedoresGrupo.join(', ')}</>}
+                    </p>
+                    {(g.sinRazon > 0 || nombreEsRazon) && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {g.sinRazon > 0 && <Chip tone="red"><Link2Off size={11} /> {g.sinRazon} sin razón social</Chip>}
+                            {nombreEsRazon && <Chip tone="amber">Ponle nombre de grupo</Chip>}
+                        </div>
+                    )}
                 </div>
-                <ChevronDown className={`flex-shrink-0 text-slate-500 transition-transform ${abierta ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`flex-shrink-0 text-slate-400 transition-transform ${abierta ? 'rotate-180' : ''}`} />
             </button>
 
             {abierta && (
-                <div>
-                    {/* Herramientas de la marca, paso a paso */}
-                    <div className="bg-slate-100/70 border-y border-slate-200">
-                        <PasoMarca n="1" titulo={individual ? 'Agrupar en una marca' : 'Nombre que se muestra'}
-                            ayuda={individual
-                                ? 'Estos PDV no tienen marca. Escribe una para agruparlos todos (o usa Editar en cada uno).'
-                                : 'Es lo que ven el mercaderista y todo GK (p.ej. "Páramo" en vez de "Inversiones Cold 2024, C.A").'}>
-                            <div className="flex flex-col sm:flex-row gap-2">
-                                <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Nombre de la marca"
-                                    className="flex-grow p-2 border border-slate-300 rounded-md text-sm" />
-                                <button disabled={!cambiaNombre && !(limpiar && ejemplo) || ocupadoMarca}
-                                    onClick={() => onRenombrar(g, nombre, limpiar)}
-                                    className="flex items-center justify-center gap-1.5 bg-brand-blue text-white font-semibold px-4 py-2 rounded-md text-sm disabled:opacity-40">
+                <div className="border-t border-slate-200">
+                    {/* Herramientas del grupo: una al lado de la otra en pantalla ancha */}
+                    <div className="bg-slate-50 p-3 sm:p-4 grid gap-3 lg:grid-cols-3">
+                        <Herramienta titulo={individual ? 'Formar un grupo' : 'Nombre del grupo'}
+                            ayuda={'Es lo que ven el mercaderista y todo GK. Ej.: "Grupo Páramo".'}>
+                            <div className="flex gap-2">
+                                <input value={nombre} onChange={e => setNombre(e.target.value)}
+                                    placeholder={nombreEsRazon ? `Hoy: ${g.marca}` : 'Ej.: Grupo Páramo'}
+                                    className="min-w-0 flex-grow px-3 py-2.5 border border-slate-300 rounded-lg text-sm" />
+                                <button disabled={!puedeGuardar || ocupadoMarca} onClick={() => onRenombrar(g, destino, limpiar)}
+                                    className="flex items-center gap-1.5 bg-brand-blue text-white font-bold px-4 rounded-lg text-sm disabled:opacity-40">
                                     {ocupadoMarca ? <Loader size={14} className="animate-spin" /> : <Check size={14} />} Guardar
                                 </button>
                             </div>
                             {ejemplo && (
-                                <label className="flex items-start gap-2 mt-2 text-xs text-slate-600 cursor-pointer">
+                                <label className="flex items-start gap-2 mt-3 text-xs text-slate-600 cursor-pointer">
                                     <input type="checkbox" checked={limpiar} onChange={e => setLimpiar(e.target.checked)} className="mt-0.5" />
-                                    <span>Quitar la razón social del nombre de los PDV. Ej.: <i>{ejemplo.antes}</i> → <b>{ejemplo.despues}</b></span>
+                                    <span>Quitar la razón social del nombre de cada PDV.<br />
+                                        <span className="text-slate-400 line-through">{ejemplo.antes}</span> → <b className="text-slate-800">{ejemplo.despues}</b></span>
                                 </label>
                             )}
-                        </PasoMarca>
+                        </Herramienta>
 
-                        {g.razones.length > 0 && (
-                            <PasoMarca n="2" titulo="Razón social de Zoho: vendedor y canal"
-                                ayuda="A quién se le atribuyen las facturas y cómo se le vende. Aplica a todas sus sucursales.">
-                                <div className="space-y-2">
-                                    {g.razones.map(r => {
-                                        const of = r.carnets.length > 0 && r.carnets.every(c => c.esOficina);
-                                        const vid = r.carnets.find(c => c.vendedorId)?.vendedorId || '';
-                                        const food = r.carnets.some(c => c.categoria === 'foodservice');
-                                        const ocupado = trabajando === 'razon:' + r.canon;
-                                        return (
-                                            <div key={r.canon} className="flex flex-col sm:flex-row sm:items-center gap-2 p-2 bg-white rounded-md border border-slate-200">
-                                                <p className="text-sm font-semibold text-slate-700 flex-grow min-w-0">
-                                                    {r.canon}
-                                                    {r.carnets.length > 1 && <span className="text-xs text-slate-400 font-normal"> · {r.carnets.length} sucursales en Zoho</span>}
-                                                </p>
-                                                <div className="flex items-center gap-2">
-                                                    {ocupado && <Loader size={14} className="animate-spin text-brand-blue" />}
-                                                    <select value={of ? '__oficina' : vid} disabled={ocupado}
-                                                        onChange={e => onAccionRazon(r, { tipo: 'vendedor', valor: e.target.value })}
-                                                        className="p-1.5 border border-slate-300 rounded-md text-sm">
-                                                        <option value="">Sin vendedor</option>
-                                                        {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                                                        <option value="__oficina">Oficina (sin comisión)</option>
-                                                    </select>
-                                                    <div className="flex rounded-md border border-slate-300 overflow-hidden text-xs font-bold">
-                                                        {[['retail', 'Retail'], ['foodservice', 'Foodservice']].map(([k, l]) => (
-                                                            <button key={k} disabled={ocupado || (k === 'foodservice') === food}
-                                                                onClick={() => onAccionRazon(r, { tipo: 'canal', valor: k })}
-                                                                className={`px-2.5 py-1.5 ${(k === 'foodservice') === food ? 'bg-brand-blue text-white' : 'bg-white text-slate-600'}`}>{l}</button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
+                        {otrosGrupos.length > 0 && (
+                            <Herramienta titulo="Unir con otro grupo"
+                                ayuda="Si este cliente es parte de un grupo que ya existe (otra razón social del mismo dueño), pásalo allá.">
+                                <div className="flex gap-2">
+                                    <select value={unirA} onChange={e => setUnirA(e.target.value)}
+                                        className="min-w-0 flex-grow px-3 py-2.5 border border-slate-300 rounded-lg text-sm bg-white">
+                                        <option value="">Elegir grupo…</option>
+                                        {otrosGrupos.map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                    <button disabled={!unirA || ocupadoMarca} onClick={() => onRenombrar(g, unirA, true)}
+                                        className="bg-slate-800 text-white font-bold px-4 rounded-lg text-sm disabled:opacity-40">Unir</button>
                                 </div>
-                            </PasoMarca>
+                            </Herramienta>
                         )}
 
-                        <PasoMarca n={g.razones.length > 0 ? '3' : '2'} titulo="Frecuencia de visita para toda la marca"
-                            ayuda="Días entre visitas. 0 = inactivo (no se borra). Luego pulsa Guardar frecuencias.">
+                        <Herramienta titulo="Frecuencia para todo el grupo" ayuda="Días entre visitas. 0 = inactivo (no se borra).">
                             <div className="flex gap-2">
                                 <input type="text" inputMode="numeric" value={dias} onChange={e => setDias(e.target.value.replace(/[^\d]/g, ''))}
-                                    placeholder="Días" className="w-24 text-center p-2 border border-slate-300 rounded-md text-sm" />
+                                    placeholder="Días" className="w-24 text-center px-3 py-2.5 border border-slate-300 rounded-lg text-sm" />
                                 <button onClick={() => onFrecuenciaMarca(g, dias)} disabled={dias === ''}
-                                    className="bg-slate-700 text-white font-semibold px-4 py-2 rounded-md text-sm disabled:opacity-40">Aplicar a todos</button>
+                                    className="flex-grow sm:flex-grow-0 bg-slate-800 text-white font-bold px-4 rounded-lg text-sm disabled:opacity-40">Aplicar a todos</button>
                             </div>
-                        </PasoMarca>
+                        </Herramienta>
                     </div>
 
-                    {/* Los PDV */}
-                    <ul className="divide-y divide-slate-200">
-                        {g.visibles.map(p => (
-                            <FilaPdv key={p.id} p={p} v={vinculo(p)} ocupado={trabajando === 'pdv:' + p.id}
-                                onFrecuencia={onFrecuencia} onEditar={onEditar} onEliminar={onEliminar} />
-                        ))}
-                    </ul>
-                    <div className="p-3 bg-white border-t border-slate-200">
+                    {/* Los PDV, por razón social */}
+                    {g.secciones.filter(sec => sec.visibles.length > 0).map(sec => (
+                        <SeccionRazon key={sec.clave} sec={sec} vinculo={vinculo} vendedores={vendedores}
+                            trabajando={trabajando} onAccionRazon={onAccionRazon}
+                            onFrecuencia={onFrecuencia} onEditar={onEditar} onEliminar={onEliminar} />
+                    ))}
+
+                    <div className="p-3 sm:p-4 border-t border-slate-200">
                         <button onClick={onAgregar}
-                            className="w-full flex items-center justify-center gap-2 py-2 rounded-lg border-2 border-dashed border-slate-300 text-sm font-bold text-slate-600 hover:border-brand-blue hover:text-brand-blue">
+                            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-slate-300 text-sm font-bold text-slate-600 hover:border-brand-blue hover:text-brand-blue">
                             <Plus size={16} /> Agregar punto de venta {individual ? '' : `a ${g.marca}`}
                         </button>
                     </div>
@@ -598,42 +597,91 @@ function GrupoMarca({ g, abierta, onToggle, vinculo, vendedores, trabajando, onR
     );
 }
 
+// ── Una razón social dentro del grupo: su vendedor, su canal y sus PDV ───────
+
+function SeccionRazon({ sec, vinculo, vendedores, trabajando, onAccionRazon, onFrecuencia, onEditar, onEliminar }) {
+    const r = sec.razon;
+    const of = r && r.carnets.length > 0 && r.carnets.every(c => c.esOficina);
+    const vid = r?.carnets.find(c => c.vendedorId)?.vendedorId || '';
+    const food = r?.carnets.some(c => c.categoria === 'foodservice');
+    const ocupado = r && trabajando === 'razon:' + r.canon;
+    return (
+        <section className="border-t border-slate-200">
+            <div className="px-4 py-3 bg-slate-100/80 flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                <div className="min-w-0 flex-grow">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{r ? 'Razón social' : 'Sin razón social de Zoho'}</p>
+                    <p className="text-sm font-bold text-slate-800">
+                        {r ? r.canon : 'Ábrelos con Editar y elige su razón social'}
+                        <span className="font-normal text-slate-500"> · {sec.todos.length} PDV{r && r.carnets.length > 1 ? ` · ${r.carnets.length} sucursales en Zoho` : ''}</span>
+                    </p>
+                </div>
+                {r && (
+                    <div className="grid grid-cols-[1fr_auto] gap-2 md:w-auto">
+                        <select value={of ? '__oficina' : vid} disabled={ocupado}
+                            onChange={e => onAccionRazon(r, { tipo: 'vendedor', valor: e.target.value })}
+                            className="min-w-0 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white md:w-52">
+                            <option value="">Sin vendedor</option>
+                            {vendedores.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                            <option value="__oficina">Oficina (sin comisión)</option>
+                        </select>
+                        <div className="flex rounded-lg border border-slate-300 overflow-hidden text-xs font-bold bg-white">
+                            {ocupado && <span className="px-2 flex items-center"><Loader size={13} className="animate-spin text-brand-blue" /></span>}
+                            {[['retail', 'Retail'], ['foodservice', 'Food']].map(([k, l]) => (
+                                <button key={k} disabled={ocupado || (k === 'foodservice') === !!food}
+                                    onClick={() => onAccionRazon(r, { tipo: 'canal', valor: k })}
+                                    className={`px-3 py-2 ${(k === 'foodservice') === !!food ? 'bg-brand-blue text-white' : 'text-slate-600'}`}>{l}</button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+            <ul className="divide-y divide-slate-100">
+                {sec.visibles.map(p => (
+                    <FilaPdv key={p.id} p={p} v={vinculo(p)} ocupado={trabajando === 'pdv:' + p.id}
+                        onFrecuencia={onFrecuencia} onEditar={onEditar} onEliminar={onEliminar} />
+                ))}
+            </ul>
+        </section>
+    );
+}
+
 // ── Una fila de PDV ──────────────────────────────────────────────────────────
 
 function FilaPdv({ p, v, ocupado, onFrecuencia, onEditar, onEliminar }) {
     const food = esFood(p);
     const inactivo = estaInactivo(p);
     return (
-        <li className={`p-4 flex flex-col sm:flex-row sm:items-center gap-3 ${inactivo ? 'bg-slate-50/60' : ''}`}>
+        <li className={`px-4 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-4 ${inactivo ? 'bg-slate-50' : ''}`}>
             <div className="min-w-0 flex-grow">
-                <p className={`font-semibold ${inactivo ? 'text-slate-500' : 'text-slate-900'}`}>
+                <p className={`text-base font-semibold ${inactivo ? 'text-slate-500' : 'text-slate-900'}`}>
                     {p.name || <span className="italic text-slate-400">(sin nombre)</span>}
                 </p>
-                <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                    {v.estado === 'ok' && <Chip tone="green" title="Vinculado al carnet de Zoho"><Link2 size={11} /> {p.razonSocialZoho || v.cliente?.customerName || 'Zoho'}</Chip>}
-                    {v.estado === 'nombre' && <Chip tone="amber" title="Vinculado por nombre: ábrelo con Editar y guárdalo para amarrarlo al carnet"><Link2 size={11} /> {p.razonSocialZoho}</Chip>}
-                    {v.estado === 'roto' && <Chip tone="red" title="Esa razón social ya no existe en Zoho: elígela de nuevo con Editar"><Link2Off size={11} /> {p.razonSocialZoho} (no está en Zoho)</Chip>}
-                    {v.estado === 'sin' && <Chip tone="red"><Link2Off size={11} /> Sin razón social de Zoho</Chip>}
-                    {food ? <Chip tone="orange">Foodservice · sin visitas</Chip>
-                        : inactivo ? <Chip tone="slate">INACTIVO</Chip> : null}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-xs text-slate-500">
+                    {v.estado === 'nombre' && <Chip tone="amber" title="Vinculado solo por nombre: ábrelo con Editar y guárdalo">Vínculo por nombre</Chip>}
+                    {v.estado === 'roto' && <Chip tone="red" title="Esa razón social ya no existe en Zoho">{p.razonSocialZoho} no está en Zoho</Chip>}
+                    {v.estado === 'sin' && <Chip tone="red"><Link2Off size={11} /> Sin razón social</Chip>}
+                    {v.estado === 'ok' && p.razonSocialZoho && /\(/.test(p.razonSocialZoho) && (
+                        <span className="inline-flex items-center gap-1 text-emerald-700"><Link2 size={11} /> {p.razonSocialZoho.match(/\(([^)]*)\)\s*$/)?.[1] || p.razonSocialZoho}</span>
+                    )}
+                    {food ? <Chip tone="orange">Foodservice</Chip> : inactivo ? <Chip tone="slate">Inactivo</Chip> : null}
                     {p.tipoDespacho === 'centralizado' && <Chip tone="blue"><Truck size={11} /> Centralizado</Chip>}
-                    {p.city && <span className="text-[11px] text-slate-400 inline-flex items-center gap-0.5"><MapPin size={11} />{p.city}{p.zone ? ` · ${p.zone}` : ''}</span>}
+                    {p.city && <span className="inline-flex items-center gap-0.5"><MapPin size={11} />{p.city}{p.zone ? ` · ${p.zone}` : ''}</span>}
                 </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-                {!food && (
+                {food ? <span className="text-xs text-orange-600 font-semibold w-[104px]">Sin visitas</span> : (
                     <label className="flex items-center gap-1.5">
                         <input type="text" inputMode="numeric" value={p.visitInterval ?? ''}
                             onChange={(e) => onFrecuencia(p.id, e.target.value)}
-                            className="w-16 text-center p-2 border border-slate-300 rounded-md" />
-                        <span className="text-sm text-slate-500">días</span>
+                            className="w-14 text-center py-2 border border-slate-300 rounded-lg text-sm" />
+                        <span className="text-xs text-slate-500">días</span>
                     </label>
                 )}
-                <button onClick={() => onEditar(p)} className="flex items-center gap-1 text-sm font-semibold px-3 py-2 rounded-md border border-slate-300 text-slate-700 hover:border-brand-blue hover:text-brand-blue">
+                <button onClick={() => onEditar(p)} className="flex-grow md:flex-grow-0 flex items-center justify-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:border-brand-blue hover:text-brand-blue">
                     <Pencil size={14} /> Editar
                 </button>
                 <button onClick={() => onEliminar(p)} disabled={ocupado} title="Eliminar"
-                    className="p-2 rounded-md border border-slate-300 text-slate-400 hover:text-red-600 hover:border-red-300 disabled:opacity-40">
+                    className="p-2.5 rounded-lg border border-slate-300 text-slate-400 hover:text-red-600 hover:border-red-300 disabled:opacity-40">
                     {ocupado ? <Loader size={14} className="animate-spin" /> : <Trash2 size={14} />}
                 </button>
             </div>

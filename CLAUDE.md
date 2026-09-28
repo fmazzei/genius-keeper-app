@@ -2859,3 +2859,26 @@ AdminPanel se ELIMINARON; **`src/Pages/ListaMaestraPdv.jsx`** es la pantalla
   = solo por nombre, rojo = sin razón social o ya no existe en Zoho), canal,
   despacho, ciudad, frecuencia editable (se guardan juntas con la barra "Guardar
   frecuencias"), **Editar** y **Eliminar** (soft-delete `eliminado:true`).
+
+### Grupos comerciales con sus razones sociales adentro + pantalla a todo el ancho (2026-09) ✅
+
+Pedido del dueño: *"Páramo podría llamarse Grupo Páramo y dentro viven sus razones
+sociales (Inversiones Cold 2024, C.A e Hipermercado Páramo, C.A)… al mercaderista
+le es irrelevante la razón social"*. Y menos "amuñuñado" en el teléfono.
+
+- **El grupo es `chain`** (lo que ya agrupa la lista del mercaderista, que así ve
+  "Grupo Páramo" con todas sus tiendas sin importar la razón social). Dentro del
+  grupo, `ListaMaestraPdv` ordena los PDV **por razón social** (`SeccionRazon`):
+  cada razón social trae su vendedor y su canal en su propia barra, y debajo sus
+  PDV; los que no tienen razón social van al final.
+- **"Unir con otro grupo"**: pasa todos los PDV del grupo al `chain` de otro
+  (limpiando los nombres). Así se juntan Inversiones Cold e Hipermercado Páramo.
+- **Nombres de PDV**: `nombreConMarca` antepone `prefijoDeGrupo` ("Grupo Páramo"
+  → "Páramo") solo si hace falta, y nunca antepone el nombre del grupo cuando
+  ese nombre todavía ES una razón social (bug que se vio en la captura:
+  "Inversiones Cold 2024, C.A Páramo Parque Central"). Si el grupo aún se llama
+  como su razón social, el campo arranca vacío y la cabecera dice "Ponle nombre
+  de grupo".
+- **Espacio**: en el teléfono la pantalla va de borde a borde (`-mx-4`, sin
+  tarjeta anidada ni sangrías); resumen en cuadrícula, herramientas del grupo en
+  tarjetas (3 columnas en escritorio), filas con Editar a lo ancho.
