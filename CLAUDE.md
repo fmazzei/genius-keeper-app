@@ -2807,3 +2807,25 @@ scope **`ZohoBooks.contacts.READ`**; sin él responde `autorizado:false` y queda
 en `settings/appConfig.zohoContactos`. Las instrucciones de Integraciones piden
 ahora los cinco scopes. Los inactivos en Zoho (`activoEnZoho:false`) no se
 ofrecen.
+
+### Clientes y PDV: UN solo sitio, y el nombre que se muestra es la marca (2026-09) ✅
+
+Reclamo del dueño tras la ficha única: *"quedé exactamente en lo mismo"*. Seguían
+siendo dos pantallas (Clientes y PDV + "PDV: lista maestra") y el cliente se
+mostraba con su razón social ("Inversiones Cold 2024, C.A") cuando para el
+mercaderista y para todo GK es **"Páramo"**.
+
+- **`ClientesPdvHub.jsx` es el ÚNICO sitio**: ver clientes y sus PDV, crear
+  ("Nuevo punto de venta", abre `FichaPdv`), **editar** y **eliminar** cada PDV
+  desde su fila, exportar el PDF de PDV. Se retiró del menú de AdminPanel la
+  entrada "PDV: lista maestra" (el `case 'pos'` queda, sin ruta de acceso).
+- **"★ Nombre para mostrar"** por cliente (`NombreMarca` → `guardarMarca`):
+  escribe `chain` en TODOS los PDV del cliente (es lo que agrupa la lista del
+  mercaderista y la cartera por cadena) y, opcionalmente, **quita la razón social
+  del nombre** de cada PDV (`nombreSinRazon`: "Inversiones Cold 2024, C.A -
+  Páramo La Urbina" → "Páramo La Urbina"). La tarjeta del cliente muestra la
+  marca en grande y la razón social debajo.
+- **Eliminar = soft-delete** (`eliminado:true, active:false, visitInterval:0`):
+  se conserva para el histórico (visitas, facturas) y se oculta de la lista.
+- ⚠️ Cambiar la marca cambia `chain`: si una cadena **centralizada** está
+  asignada a un vendedor por cadena en `vendor_clients`, revisar su cartera.

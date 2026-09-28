@@ -26,8 +26,9 @@ import { collection, onSnapshot, getDocs, query, where, doc, updateDoc, writeBat
 import { httpsCallable } from 'firebase/functions';
 import {
     Store, Search, Loader, Check, AlertTriangle, ChevronDown, ChevronRight,
-    Plus, Link2, Link2Off, Building2, Briefcase,
+    Plus, Link2, Link2Off, Building2, Briefcase, Pencil, Trash2, FileDown,
 } from 'lucide-react';
+import PuntosDeVentaDoc from '@/Components/PuntosDeVentaDoc.jsx';
 import Modal from '@/Components/Modal.jsx';
 import FichaPdv from '@/Components/FichaPdv.jsx';
 
@@ -35,6 +36,30 @@ const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 // Razón social SIN el paréntesis de sucursal: "Central Madeirense, C.A. (Santa
 // Marta)" → "Central Madeirense, C.A.". Espejo de `stripSucursal` del backend.
 const canon = (s) => String(s || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+const INDIVIDUAL = 'Automercados Individuales';
+
+/** El nombre de la marca/cadena que usan los PDV de un cliente (la más común). */
+function marcaDe(pdvs) {
+    const cuenta = {};
+    pdvs.forEach(p => { if (p.chain && p.chain !== INDIVIDUAL) cuenta[p.chain] = (cuenta[p.chain] || 0) + 1; });
+    return Object.entries(cuenta).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+}
+
+/** Quita la razón social del principio del nombre: "Inversiones Cold 2024, C.A - Páramo La Urbina" → "Páramo La Urbina". */
+export function nombreSinRazon(nombre, razones = []) {
+    const n = String(nombre || '');
+    const low = n.toLowerCase();
+    for (const r of razones) {
+        const rr = String(r || '').trim().toLowerCase();
+        if (!rr) continue;
+        if (low.startsWith(rr)) {
+            const resto = n.slice(rr.length).replace(/^[\s\-–—:·,.]+/, '').trim();
+            if (resto) return resto;
+        }
+    }
+    return n;
+}
 
 // ── Piezas de UI ─────────────────────────────────────────────────────────────
 
@@ -83,7 +108,7 @@ const Segmented = ({ value, options, onChange, disabled }) => (
 
 // ── Fila de PDV dentro de la ficha del cliente ───────────────────────────────
 
-const PdvRow = ({ pdv, onFrecuencia, onDesvincular, onEditar, saving }) => {
+const PdvRow = ({ pdv, onFrecuencia, onDesvincular, onEditar, onEliminar, saving }) => {
     const [valor, setValor] = useState(String(pdv.visitInterval ?? ''));
     useEffect(() => { setValor(String(pdv.visitInterval ?? '')); }, [pdv.visitInterval]);
 
@@ -126,11 +151,54 @@ const PdvRow = ({ pdv, onFrecuencia, onDesvincular, onEditar, saving }) => {
                     </label>
                 )}
                 {saving === pdv.id && <Loader size={13} className="animate-spin text-brand-blue shrink-0" />}
-                <button type="button" onClick={() => onDesvincular(pdv.id)}
-                    className="text-[11px] font-semibold text-slate-400 hover:text-red-500 shrink-0">
-                    Desvincular
+                <button type="button" onClick={() => onEditar(pdv)} title="Editar"
+                    className="flex items-center gap-1 text-[11px] font-semibold text-brand-blue px-2 py-1 rounded-lg hover:bg-blue-50 shrink-0">
+                    <Pencil size={12} /> Editar
+                </button>
+                <button type="button" onClick={() => onEliminar(pdv)} title="Eliminar"
+                    className="flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-red-500 px-2 py-1 rounded-lg hover:bg-red-50 shrink-0">
+                    <Trash2 size={12} /> Eliminar
                 </button>
             </div>
+            <button type="button" onClick={() => onDesvincular(pdv.id)}
+                className="mt-1 text-[10px] text-slate-400 hover:text-red-500">
+                Desvincular de este cliente
+            </button>
+        </div>
+    );
+};
+
+// ── Nombre para mostrar del cliente (su marca/cadena) ────────────────────────
+// Es lo que ve el mercaderista en su lista y lo que usan las pantallas de GK:
+// "Páramo" en vez de "Inversiones Cold 2024, C.A". Se guarda en la cadena
+// (`chain`) de TODOS sus PDV, así dos razones sociales de la misma marca
+// (Inversiones Cold 2024 e Hipermercado Páramo) quedan juntas.
+const NombreMarca = ({ grupo, onGuardar, saving }) => {
+    const [valor, setValor] = useState(grupo.marca || '');
+    const razones = [grupo.canon, ...grupo.carnets.map(c => c.customerName)];
+    const conPrefijo = grupo.pdvs.filter(p => nombreSinRazon(p.name, razones) !== p.name);
+    const [limpiar, setLimpiar] = useState(true);
+    useEffect(() => { setValor(grupo.marca || ''); }, [grupo.marca]);
+    const cambia = valor.trim() !== (grupo.marca || '') || (limpiar && conPrefijo.length > 0);
+    return (
+        <div>
+            <div className="flex gap-2">
+                <input value={valor} onChange={e => setValor(e.target.value)} placeholder="Ej: Páramo"
+                    className="flex-1 min-w-0 p-2 border border-slate-300 rounded-lg text-sm" />
+                <button type="button" disabled={!cambia || saving || grupo.pdvs.length === 0}
+                    onClick={() => onGuardar(grupo, valor.trim(), limpiar)}
+                    className="text-xs font-semibold px-3 py-2 rounded-lg bg-brand-blue text-white disabled:opacity-40 shrink-0">
+                    {saving ? 'Guardando…' : 'Guardar'}
+                </button>
+            </div>
+            {conPrefijo.length > 0 && (
+                <label className="flex items-start gap-2 mt-2 text-[11px] text-slate-600">
+                    <input type="checkbox" checked={limpiar} onChange={e => setLimpiar(e.target.checked)} className="mt-0.5" />
+                    <span>Quitar la razón social del nombre de {conPrefijo.length} PDV
+                        (ej. "{conPrefijo[0].name}" → "{nombreSinRazon(conPrefijo[0].name, razones)}").</span>
+                </label>
+            )}
+            {grupo.pdvs.length === 0 && <p className="text-[11px] text-slate-400 mt-1">Se aplica cuando el cliente tenga puntos de venta.</p>}
         </div>
     );
 };
@@ -138,7 +206,7 @@ const PdvRow = ({ pdv, onFrecuencia, onDesvincular, onEditar, saving }) => {
 // ── Ficha de cliente (los 4 pasos) ───────────────────────────────────────────
 
 const ClienteCard = ({ grupo, vendedores, pdvsSinCliente, abierto, onToggle, onAccion, onVincularPdv,
-                       onFrecuencia, onDesvincular, onEditarPdv, onCrearPdv, saving, savingPdv }) => {
+                       onFrecuencia, onDesvincular, onEditarPdv, onCrearPdv, onEliminarPdv, onMarca, saving, savingPdv }) => {
     const [nuevoPdvId, setNuevoPdvId] = useState('');
     const [carnetSel, setCarnetSel]   = useState('');
 
@@ -157,7 +225,8 @@ const ClienteCard = ({ grupo, vendedores, pdvsSinCliente, abierto, onToggle, onA
                         {abierto ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                     </span>
                     <div className="min-w-0 flex-1">
-                        <p className="font-bold text-slate-800 text-sm leading-snug break-words">{grupo.canon}</p>
+                        <p className="font-bold text-slate-800 text-sm leading-snug break-words">{grupo.marca || grupo.canon}</p>
+                        {grupo.marca && <p className="text-[11px] text-slate-500 break-words">Razón social: {grupo.canon}</p>}
                         <p className="text-[11px] text-slate-400 mt-0.5">
                             {grupo.carnets.length > 1 ? `${grupo.carnets.length} sucursales · ` : ''}
                             {grupo.facturas} factura{grupo.facturas === 1 ? '' : 's'} ·{' '}
@@ -177,6 +246,11 @@ const ClienteCard = ({ grupo, vendedores, pdvsSinCliente, abierto, onToggle, onA
 
             {abierto && (
                 <div className="px-3.5 pb-4 border-t border-slate-100">
+
+                    <Paso n="★" titulo="Nombre para mostrar"
+                          ayuda="Lo que ve el mercaderista y todo GK para este cliente (su marca o cadena). Varias razones sociales pueden llevar el mismo: así se agrupan juntas.">
+                        <NombreMarca grupo={grupo} onGuardar={onMarca} saving={saving === grupo.canon} />
+                    </Paso>
 
                     <Paso n="1" titulo="Quién es"
                           ayuda="La razón social viene de Zoho; una cadena puede tener varias sucursales, cada una con su propio carnet.">
@@ -240,7 +314,7 @@ const ClienteCard = ({ grupo, vendedores, pdvsSinCliente, abierto, onToggle, onA
                             <div className="space-y-1.5 mb-2">
                                 {grupo.pdvs.map(p => (
                                     <PdvRow key={p.id} pdv={p} saving={savingPdv}
-                                        onFrecuencia={onFrecuencia} onDesvincular={onDesvincular} onEditar={onEditarPdv} />
+                                        onFrecuencia={onFrecuencia} onDesvincular={onDesvincular} onEditar={onEditarPdv} onEliminar={onEliminarPdv} />
                                 ))}
                             </div>
                         )}
@@ -302,6 +376,7 @@ export default function ClientesPdvHub() {
     const [crearPdv, setCrearPdv]   = useState(false);
     const [editarPdv, setEditarPdv] = useState(null);
     const [verHuerfanos, setVerHuerfanos] = useState(false);
+    const [verPdf, setVerPdf] = useState(false);
     const [amarrando, setAmarrando] = useState(false);
 
     // Los PDV se escuchan en vivo (se editan aquí mismo); clientes y vendedores
@@ -309,7 +384,7 @@ export default function ClientesPdvHub() {
     useEffect(() => {
         const unsub = onSnapshot(
             collection(db, 'pos'),
-            snap => setPos(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+            snap => setPos(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => p.eliminado !== true)),
             e => { console.error('ClientesPdvHub pos:', e); setError('No se pudieron cargar los puntos de venta.'); },
         );
         return () => unsub();
@@ -396,7 +471,7 @@ export default function ClientesPdvHub() {
             claves.forEach(k => (pdvPorRazon.get(k) || []).forEach(sumar));
             pdvs.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
             return {
-                ...x, sucursales: total, estado, pdvs,
+                ...x, sucursales: total, estado, pdvs, marca: marcaDe(pdvs),
                 canal: x.food > 0 ? 'foodservice' : 'retail',
                 vendedorId: x.vendedorIds.size === 1 ? [...x.vendedorIds][0] : null,
             };
@@ -433,7 +508,7 @@ export default function ClientesPdvHub() {
             if (filtro === 'pendientes' && !(g.estado === 'pendiente' || g.estado === 'mixto')) return false;
             if (filtro === 'oficina' && g.estado !== 'oficina') return false;
             if (filtro === 'sinPdv' && !(g.pdvs.length === 0 && g.canal !== 'foodservice')) return false;
-            if (q && !norm(g.canon).includes(q)
+            if (q && !norm(g.canon).includes(q) && !norm(g.marca).includes(q)
                 && !g.carnets.some(c => norm(c.customerName).includes(q))
                 && !g.pdvs.some(p => norm(p.name).includes(q))) return false;
             return true;
@@ -531,6 +606,37 @@ export default function ClientesPdvHub() {
         finally { setSavingPdv(''); }
     };
 
+    // Eliminar un PDV: se retira de todas las listas (mercaderista, seguidor,
+    // cartera) pero el documento se CONSERVA marcado — sus reportes de visita y
+    // su historia lo siguen necesitando.
+    const eliminarPdv = async (p) => {
+        if (!window.confirm(`¿Eliminar "${p.name}"?\nDeja de aparecer en todas las listas. Sus reportes de visita se conservan.`)) return;
+        setSavingPdv(p.id); setMsg(''); setError('');
+        try {
+            await updateDoc(doc(db, 'pos', p.id), { eliminado: true, active: false, visitInterval: 0, eliminadoAt: new Date() });
+            setMsg(`✓ "${p.name}" eliminado.`);
+        } catch (e) { setError('No se pudo eliminar. ' + (e?.message || e)); }
+        finally { setSavingPdv(''); }
+    };
+
+    // Nombre para mostrar del cliente = la cadena de TODOS sus PDV (+ limpiar la
+    // razón social del nombre de cada PDV si se pide).
+    const guardarMarca = async (grupo, marca, limpiar) => {
+        setSaving(grupo.canon); setMsg(''); setError('');
+        try {
+            const razones = [grupo.canon, ...grupo.carnets.map(c => c.customerName)];
+            const batch = writeBatch(db);
+            grupo.pdvs.forEach(p => {
+                const patch = { chain: marca || INDIVIDUAL };
+                if (limpiar) { const n = nombreSinRazon(p.name, razones); if (n !== p.name) patch.name = n; }
+                batch.update(doc(db, 'pos', p.id), patch);
+            });
+            await batch.commit();
+            setMsg(`✓ ${grupo.canon} se muestra ahora como "${marca || 'Individual'}" (${grupo.pdvs.length} PDV).`);
+        } catch (e) { setError('No se pudo guardar el nombre. ' + (e?.message || e)); }
+        finally { setSaving(''); }
+    };
+
     // ── Amarrar al carnet los PDV que todavía están vinculados solo por nombre ──
     // Un vínculo por nombre se rompe el día que alguien renombre ese cliente en
     // Zoho, y se rompe EN SILENCIO. Esto resuelve el nombre actual → carnet una
@@ -586,10 +692,16 @@ export default function ClientesPdvHub() {
                     de venta y su frecuencia de visita). Los clientes llegan de Zoho al conciliar; los puntos de
                     venta se crean aquí.
                 </p>
-                <p className="text-[11px] text-slate-400 mt-1.5">
-                    Para trabajo en lote (aplicar una frecuencia a toda una cadena o exportar el maestro) usa
-                    <b> PDV: lista maestra</b>. Integraciones queda solo para sincronizar y reparar datos.
-                </p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                    <button type="button" onClick={() => setCrearPdv({ razonInicial: null })}
+                        className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg bg-brand-blue text-white">
+                        <Plus size={13} /> Nuevo punto de venta
+                    </button>
+                    <button type="button" onClick={() => setVerPdf(true)}
+                        className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-300 text-slate-700 bg-white">
+                        <FileDown size={13} /> Exportar PDF
+                    </button>
+                </div>
             </div>
 
             {porAmarrar.length > 0 && (
@@ -697,6 +809,8 @@ export default function ClientesPdvHub() {
                                                     )}
                                                 </button>
                                                 {savingPdv === p.id && <Loader size={13} className="animate-spin text-brand-blue shrink-0 mt-1" />}
+                                                <button type="button" onClick={() => setEditarPdv(p)} className="text-brand-blue p-1 shrink-0" title="Editar"><Pencil size={13} /></button>
+                                                <button type="button" onClick={() => eliminarPdv(p)} className="text-slate-400 hover:text-red-500 p-1 shrink-0" title="Eliminar"><Trash2 size={13} /></button>
                                             </div>
                                             <div className="mt-1.5 min-w-0">
                                                 <select
@@ -742,6 +856,8 @@ export default function ClientesPdvHub() {
                         onDesvincular={desvincularPdv}
                         onEditarPdv={setEditarPdv}
                         onCrearPdv={(carnet) => setCrearPdv({ razonInicial: carnet || null })}
+                        onEliminarPdv={eliminarPdv}
+                        onMarca={guardarMarca}
                         saving={saving}
                         savingPdv={savingPdv}
                     />
@@ -752,6 +868,8 @@ export default function ClientesPdvHub() {
                     </p>
                 )}
             </div>
+
+            {verPdf && <PuntosDeVentaDoc posList={pos} estado="todos" ciudades={[]} canal="todos" onClose={() => setVerPdf(false)} />}
 
             {/* La ficha ÚNICA del PDV: crear y editar por la misma vía. */}
             {crearPdv && (

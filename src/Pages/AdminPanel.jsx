@@ -5370,7 +5370,6 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             id: 'comercial', label: 'Comercial', Icon: Store,
             items: [
                 { id: 'clientes_pdv', label: 'Clientes y PDV',  Icon: Store, badge: 'Nuevo' },
-                { id: 'pos',         label: 'PDV: lista maestra', Icon: Link2 },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
                 { id: 'comisiones_dash', label: 'Comisiones a pagar', Icon: BarChart2, badge: 'Nuevo' },
                 { id: 'facturacion', label: 'Facturación', Icon: Receipt, badge: 'Nuevo' },
