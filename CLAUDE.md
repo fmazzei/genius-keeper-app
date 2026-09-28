@@ -2829,3 +2829,33 @@ mercaderista y para todo GK es **"Páramo"**.
   se conserva para el histórico (visitas, facturas) y se oculta de la lista.
 - ⚠️ Cambiar la marca cambia `chain`: si una cadena **centralizada** está
   asignada a un vendedor por cadena en `vendor_clients`, revisar su cartera.
+
+### Corrección: el único sitio ES la lista maestra (2026-09) ✅
+
+El dueño rechazó el centro de fichas por razón social (`ClientesPdvHub`): *"no
+tiene para visualizar todos los puntos de venta así organizado como está la
+lista maestra… aparecen un montón de cosas que no dicen nada, hay que comenzar
+por buscar"*. La organización que funciona es la de la lista maestra —todos los
+PDV a la vista, agrupados por marca en desplegables— así que **se quedó ella y
+absorbió todo lo demás**. `ClientesPdvHub.jsx` y el `PosManagement` interno de
+AdminPanel se ELIMINARON; **`src/Pages/ListaMaestraPdv.jsx`** es la pantalla
+"Clientes y PDV" (máster: Comercial; administración: su módulo).
+
+- **Arriba**: tres pasos en una línea (crear → ordenar por marca → ajustar),
+  "Nuevo punto de venta", PDF, un resumen que FILTRA (Todos / Activos /
+  Inactivos / Foodservice / Sin razón social) y un buscador opcional.
+- **Cada marca** (desplegable, Individuales al final) muestra en su cabecera los
+  activos, cuántos PDV no tienen razón social y cada razón social de Zoho con su
+  vendedor. Adentro, paso a paso: **① Nombre que se muestra** (renombra `chain`
+  de todos sus PDV y, marcado por defecto, limpia la razón social del nombre de
+  cada PDV encabezándolo con la marca — `nombreConMarca`: "Hipermercado Páramo,
+  C.A. (Piedra Azul)" → "Páramo Piedra Azul"; tolera acentos, puntuación y la
+  forma jurídica); **② Razón social de Zoho: vendedor y canal** (mismo callable
+  `asignarClienteVendedor`, por todos los carnets de esa razón social; el canal
+  se hereda a sus PDV); **③ Frecuencia para toda la marca**; y al pie "Agregar
+  punto de venta a esta marca" (FichaPdv con la marca ya puesta — por eso
+  `FichaPdv` decide alta/edición por `pos?.id`, no por `pos`).
+- **Cada PDV**: su razón social con el estado del vínculo (verde = carnet, ámbar
+  = solo por nombre, rojo = sin razón social o ya no existe en Zoho), canal,
+  despacho, ciudad, frecuencia editable (se guardan juntas con la barra "Guardar
+  frecuencias"), **Editar** y **Eliminar** (soft-delete `eliminado:true`).

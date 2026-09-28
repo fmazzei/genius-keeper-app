@@ -23,7 +23,7 @@ import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import CarteraManager from '@/Components/CarteraManager.jsx';
 import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas } from '@/Pages/AdminPanel.jsx';
-import ClientesPdvHub from '@/Pages/ClientesPdvHub.jsx';
+import ListaMaestraPdv from '@/Pages/ListaMaestraPdv.jsx';
 
 const saludoDelDia = () => {
     const h = new Date().getHours();
@@ -157,7 +157,7 @@ export default function AdministracionLayout({ user, onLogout }) {
                 ) : activeTab?.id === 'clientes' ? (
                     /* Un solo sitio: quién es el cliente → de quién es → cómo se le
                        vende → dónde se ejecuta (sus PDV y sus frecuencias). */
-                    <ClientesPdvHub />
+                    <ListaMaestraPdv />
                 ) : activeTab?.id === 'cartera' ? (
                     <CarteraAdmin vendedores={vendedores} />
                 ) : (

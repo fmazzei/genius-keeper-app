@@ -19,9 +19,7 @@ import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
 import { WIDGET_REGISTRY, WIDGET_CATEGORIES } from '../config/widgetRegistry.js';
 import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
-import FichaPdv from '../Components/FichaPdv.jsx';
-import ClientesPdvHub from './ClientesPdvHub.jsx';
-import PuntosDeVentaDoc, { ciudadesDe } from '../Components/PuntosDeVentaDoc.jsx';
+import ListaMaestraPdv from './ListaMaestraPdv.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
@@ -280,317 +278,6 @@ const SalesGoalsManagement = () => {
     );
 };
 
-
-// OJO: esta pantalla es la LISTA MAESTRA de puntos de venta, así que carga TODOS
-// los PDV — activos e inactivos. El `posList` que llega por props viene filtrado
-// a `active == true` (lo que consumen rutas, KPIs y el seguidor), y usarlo aquí
-// hacía que un PDV desapareciera de la pantalla al inactivarlo, sin manera de
-// volver a verlo o reactivarlo. Inactivar es poner la frecuencia en 0, NO borrar.
-const PosManagement = ({ posList: posListActivos = [], loading }) => {
-    const [todos, setTodos] = useState(null);   // null = cargando
-    const [verInactivos, setVerInactivos] = useState(true);
-    // Exportación a PDF del maestro: alcance (todos / solo activos) y ciudad.
-    const [exportCfg, setExportCfg] = useState(null);   // null = cerrado
-    const [showDoc, setShowDoc] = useState(null);
-
-    useEffect(() => {
-        const unsub = onSnapshot(
-            collection(db, 'pos'),
-            (snap) => setTodos(snap.docs.map(d => ({ id: d.id, ...d.data(), type: 'pos' }))),
-            (e) => { console.error('PosManagement pos listener:', e); setTodos([]); }
-        );
-        return () => unsub();
-    }, []);
-
-    // Mientras carga la lista completa se usa la de props para no parpadear.
-    const posList = todos ?? posListActivos;
-
-    const [editablePos, setEditablePos] = useState([]);
-    const [openCategories, setOpenCategories] = useState({});
-    const [isSaving, setIsSaving] = useState(false);
-    const [changesMade, setChangesMade] = useState(false);
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [massUpdateValues, setMassUpdateValues] = useState({});
-    const [posToEdit, setPosToEdit] = useState(null);
-
-    useEffect(() => {
-        if (posList.length > 0) {
-            setEditablePos(JSON.parse(JSON.stringify(posList)));
-            const initialCategories = {};
-            const initialMassUpdate = {};
-            posList.forEach(pos => {
-                const chain = pos.chain || 'Automercados Individuales';
-                initialCategories[chain] = false;
-                initialMassUpdate[chain] = '';
-            });
-            setOpenCategories(initialCategories);
-            setMassUpdateValues(initialMassUpdate);
-        }
-    }, [posList]);
-
-    // Se ACEPTA el campo vacío: antes, al borrar el número, `parseInt('')` daba
-    // NaN y la función salía sin actualizar el estado — el valor viejo se quedaba
-    // pegado y había que insertar el nuevo dígito al lado y borrar el anterior.
-    // Vacío se guarda como '' y al persistir se interpreta como 0 (PDV inactivo).
-    const handleIntervalChange = useCallback((posId, newInterval) => {
-        const limpio = String(newInterval ?? '').replace(/[^\d]/g, '');
-        const valor = limpio === '' ? '' : Math.max(0, parseInt(limpio, 10));
-        setEditablePos(currentPosList => currentPosList.map(pos => pos.id === posId ? { ...pos, visitInterval: valor } : pos));
-        setChangesMade(true);
-    }, []);
-
-    const handleSaveChanges = async () => {
-        setIsSaving(true);
-        // Se juntan los cambios y se escriben en tandas de 400 (el tope de un
-        // batch de Firestore es 500). Se usa `set(..., {merge:true})` en vez de
-        // `update`: `update` REVIENTA toda la tanda si algún documento ya no
-        // existe (p.ej. un PDV borrado en otra sesión o datos de simulación),
-        // y ese fallo global era el "Hubo un error al guardar los cambios".
-        const cambios = [];
-        editablePos.forEach(pos => {
-            if (!pos?.id || typeof pos.id !== 'string') return;
-            if (pos.id.startsWith('sim-pos-') || pos.id.startsWith('real-pos-')) return;
-            if (pos.canal === 'foodservice') return; // foodservice: sin visitas, no se toca aquí
-            const originalPos = posList.find(p => p.id === pos.id);
-            // Campo vacío = 0 = PDV inactivo. Se normaliza SIEMPRE al guardar para
-            // que no queden registros con frecuencia vacía y `active: true`
-            // (aparecían como INACTIVO en la lista pero seguían contando en los
-            // indicadores del seguimiento comercial).
-            const nuevo = Number(pos.visitInterval) || 0;
-            const previo = Number(originalPos?.visitInterval) || 0;
-            const activoIncoherente = originalPos && originalPos.active !== (previo > 0);
-            if (originalPos && (previo !== nuevo || activoIncoherente)) {
-                cambios.push({ id: pos.id, visitInterval: nuevo, active: nuevo > 0 });
-            }
-        });
-
-        if (cambios.length === 0) {
-            alert("No hay cambios que guardar.");
-            setIsSaving(false);
-            setChangesMade(false);
-            return;
-        }
-
-        try {
-            for (let i = 0; i < cambios.length; i += 400) {
-                const tanda = cambios.slice(i, i + 400);
-                const batch = writeBatch(db);
-                tanda.forEach(c => {
-                    batch.set(doc(db, 'pos', c.id), { visitInterval: c.visitInterval, active: c.active }, { merge: true });
-                });
-                await batch.commit();
-            }
-            setChangesMade(false);
-            alert(`${cambios.length} Puntos de Venta actualizados.`);
-        } catch (error) {
-            console.error('Guardar intervalos de visita:', error);
-            // Mostrar la causa real: un mensaje genérico impedía diagnosticar
-            // (permisos, documento inexistente, red…).
-            alert(`No se pudieron guardar los cambios.\n\n${error?.code || ''} ${error?.message || error}`);
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const handleMassUpdate = (chain) => {
-        const intervalValue = parseInt(massUpdateValues[chain], 10);
-        if (isNaN(intervalValue) || intervalValue < 0) {
-            alert("Por favor, introduce un número válido.");
-            return;
-        }
-        setEditablePos(prev => prev.map(pos => {
-            if ((pos.chain || 'Automercados Individuales') === chain) {
-                return { ...pos, visitInterval: intervalValue };
-            }
-            return pos;
-        }));
-        setChangesMade(true);
-    };
-
-    // Mover TODOS los PDV de un grupo a otra cadena/marca (p.ej. juntar
-    // "Inversiones Cold 2024, C.A" y "Páramo Libertador" en "Páramo"). Solo
-    // cambia `chain`, que es lo que agrupa la lista del mercaderista; la razón
-    // social de cada PDV (su vínculo con Zoho) no se toca.
-    const handleMoverCadena = async (chain) => {
-        const destino = (window.prompt(`¿A qué cadena/marca mueves los PDV de "${chain}"?\nEscribe el nombre (vacío = Individual).`, '') ?? null);
-        if (destino === null) return;
-        const nueva = destino.trim() || 'Automercados Individuales';
-        if (nueva === chain) return;
-        const ids = editablePos.filter(p => (p.chain || 'Automercados Individuales') === chain).map(p => p.id);
-        try {
-            for (let i = 0; i < ids.length; i += 400) {
-                const batch = writeBatch(db);
-                ids.slice(i, i + 400).forEach(id => batch.update(doc(db, 'pos', id), { chain: nueva }));
-                await batch.commit();
-            }
-            setEditablePos(prev => prev.map(p => ids.includes(p.id) ? { ...p, chain: nueva } : p));
-        } catch (e) { alert('No se pudo mover: ' + (e?.message || e)); }
-    };
-
-    // Un PDV está inactivo cuando su frecuencia es 0/vacía (foodservice no lleva
-    // visitas por diseño: no se considera inactivo).
-    const estaInactivo = (p) => p.canal !== 'foodservice' && !(Number(p.visitInterval) > 0);
-    const totalInactivos = useMemo(() => editablePos.filter(estaInactivo).length, [editablePos]);
-
-    const groupedPos = useMemo(() => editablePos
-        .filter(pos => verInactivos || !estaInactivo(pos))
-        .reduce((acc, pos) => {
-            const chain = pos.chain || 'Automercados Individuales';
-            if (!acc[chain]) { acc[chain] = []; }
-            acc[chain].push(pos);
-            return acc;
-        }, {}), [editablePos, verInactivos]);
-
-    const toggleCategory = useCallback((category) => {
-        setOpenCategories(prev => ({ ...prev, [category]: !prev[category] }));
-    }, []);
-
-    const handleEditSaved = useCallback((updatedPos) => {
-        setEditablePos(prev => prev.map(p => p.id === updatedPos.id ? { ...p, ...updatedPos } : p));
-    }, []);
-
-    if (loading && posList.length === 0) return <LoadingSpinner />;
-    
-    return (
-        <div className="bg-white p-4 sm:p-6 rounded-lg shadow">
-            <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
-                <h3 className="text-xl font-semibold text-slate-700 text-center sm:text-left">Intervalos de Visita por PDV</h3>
-                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                    <button onClick={() => setIsAddModalOpen(true)} className="flex items-center justify-center gap-2 bg-brand-yellow text-black font-bold px-4 py-2 rounded-lg hover:bg-opacity-90 shadow-sm"><PlusCircle size={18} /> Agregar PDV</button>
-                    <button onClick={() => setExportCfg({ estado: 'todos', ciudades: [], canal: 'todos' })} className="flex items-center justify-center gap-2 bg-white border border-slate-300 text-slate-700 font-bold px-4 py-2 rounded-lg hover:bg-slate-50 shadow-sm"><FileDown size={18} /> Exportar PDF</button>
-                    <button onClick={handleSaveChanges} disabled={!changesMade || isSaving} className="flex items-center justify-center gap-2 px-4 py-2 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">{isSaving ? <LoadingSpinner size="sm" /> : <Save size={18} />}{isSaving ? 'Guardando...' : 'Guardar'}</button>
-                </div>
-            </div>
-            <p className="text-sm text-slate-500 mb-3 flex items-start gap-2"><AlertCircle size={16} className="flex-shrink-0 mt-0.5" /> <span>Modifica los días entre visitas. Asignar '0' días desactiva el PDV: <strong>no se borra</strong>, deja de contar en rutas, KPIs y seguimiento, y puedes reactivarlo aquí cuando quieras.</span></p>
-
-            {/* Opciones de exportación */}
-            {exportCfg && (
-                <div className="mb-5 p-4 border border-slate-200 rounded-xl bg-slate-50">
-                    <p className="text-sm font-bold text-slate-700 mb-3">Exportar puntos de venta a PDF</p>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        <div>
-                            <p className="text-xs font-semibold text-slate-500 mb-1.5">Estado</p>
-                            <div className="flex gap-2">
-                                {[['todos', 'Ambos'], ['activos', 'Solo activos'], ['inactivos', 'Solo inactivos']].map(([val, lbl]) => (
-                                    <button key={val} onClick={() => setExportCfg(c => ({ ...c, estado: val }))}
-                                        className={`flex-1 px-2 py-2 rounded-lg text-xs font-bold border transition-colors ${
-                                            exportCfg.estado === val ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
-                                        }`}>{lbl}</button>
-                                ))}
-                            </div>
-                        </div>
-                        <div>
-                            <p className="text-xs font-semibold text-slate-500 mb-1.5">Canal</p>
-                            <div className="flex gap-2">
-                                {[['todos', 'Ambos'], ['retail', 'Retail'], ['foodservice', 'Foodservice']].map(([val, lbl]) => (
-                                    <button key={val} onClick={() => setExportCfg(c => ({ ...c, canal: val }))}
-                                        className={`flex-1 px-2 py-2 rounded-lg text-xs font-bold border transition-colors ${
-                                            exportCfg.canal === val ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
-                                        }`}>{lbl}</button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Ciudades: selección MÚLTIPLE (ninguna = todas) */}
-                    <div className="mt-4">
-                        <div className="flex items-center gap-2 mb-1.5">
-                            <p className="text-xs font-semibold text-slate-500">
-                                Ciudades {exportCfg.ciudades.length > 0 && <span className="text-brand-blue">({exportCfg.ciudades.length} seleccionadas)</span>}
-                            </p>
-                            {exportCfg.ciudades.length > 0 && (
-                                <button onClick={() => setExportCfg(c => ({ ...c, ciudades: [] }))}
-                                    className="text-xs font-semibold text-brand-blue hover:underline ml-auto">Limpiar</button>
-                            )}
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                            <button onClick={() => setExportCfg(c => ({ ...c, ciudades: [] }))}
-                                className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                                    exportCfg.ciudades.length === 0 ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
-                                }`}>Todas</button>
-                            {ciudadesDe(posList).map(c => {
-                                const sel = exportCfg.ciudades.includes(c);
-                                return (
-                                    <button key={c}
-                                        onClick={() => setExportCfg(prev => ({
-                                            ...prev,
-                                            ciudades: sel ? prev.ciudades.filter(x => x !== c) : [...prev.ciudades, c],
-                                        }))}
-                                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-colors ${
-                                            sel ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'
-                                        }`}>{c}</button>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    <div className="flex gap-2 mt-4">
-                        <button onClick={() => setShowDoc(exportCfg)}
-                            className="flex items-center gap-2 bg-brand-blue text-white font-bold text-sm px-4 py-2 rounded-lg">
-                            <FileDown size={16} /> Generar PDF
-                        </button>
-                        <button onClick={() => setExportCfg(null)}
-                            className="text-sm font-semibold text-slate-500 px-3">Cancelar</button>
-                    </div>
-                </div>
-            )}
-
-            {showDoc && (
-                <PuntosDeVentaDoc
-                    posList={posList}
-                    estado={showDoc.estado}
-                    ciudades={showDoc.ciudades}
-                    canal={showDoc.canal}
-                    onClose={() => setShowDoc(null)}
-                />
-            )}
-
-            {/* Esta pantalla es para trabajo EN LOTE (aplicar una frecuencia a toda
-                una cadena, revisar inactivos, exportar). La gestión de un cliente
-                concreto — vendedor, canal, razón social y sus PDV — vive completa en
-                "Clientes y PDV". */}
-            <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-3 leading-relaxed">
-                Lista maestra para trabajo <b>en lote</b>: aplicar una frecuencia a toda una cadena, revisar
-                inactivos y exportar. Para gestionar un cliente concreto (vendedor, canal, razón social y sus
-                puntos de venta) usa <b>Comercial → Clientes y PDV</b>.
-            </p>
-
-            {/* La lista maestra muestra TODOS los PDV. Este filtro solo oculta los
-                inactivos de la vista; nunca los elimina. */}
-            <div className="flex items-center gap-2 mb-6">
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${totalInactivos > 0 ? 'bg-slate-100 text-slate-600' : 'bg-emerald-50 text-emerald-700'}`}>
-                    {totalInactivos} inactivo{totalInactivos === 1 ? '' : 's'}
-                </span>
-                <button onClick={() => setVerInactivos(v => !v)}
-                    className="text-xs font-semibold text-brand-blue hover:underline">
-                    {verInactivos ? 'Ocultar inactivos' : 'Mostrar inactivos'}
-                </button>
-            </div>
-            <div className="space-y-2">
-                {Object.keys(groupedPos).sort().map(chain => (
-                    <div key={chain} className="border border-slate-200 rounded-lg overflow-hidden">
-                        <div className="bg-slate-50 p-4"><button onClick={() => toggleCategory(chain)} className="w-full flex justify-between items-center text-left font-bold text-slate-800"><span className="truncate pr-2">{chain} ({groupedPos[chain].length})</span><ChevronDown className={`transition-transform duration-300 flex-shrink-0 ${openCategories[chain] ? 'rotate-180' : ''}`} /></button></div>
-                        {openCategories[chain] && (
-                            <div className="bg-white">
-                                <div className="p-4 bg-slate-100 flex flex-col sm:flex-row items-center gap-2"><label className="text-sm font-semibold text-slate-600 flex-grow">Aplicar a todos en "{chain}":</label><div className="flex gap-2 w-full sm:w-auto"><input type="number" placeholder="Días" value={massUpdateValues[chain] || ''} onChange={e => setMassUpdateValues(prev => ({ ...prev, [chain]: e.target.value }))} className="w-full sm:w-24 text-center p-2 border border-slate-300 rounded-md" /><button onClick={() => handleMassUpdate(chain)} className="bg-slate-600 text-white font-semibold px-4 py-2 rounded-md text-sm">Aplicar</button><button onClick={() => handleMoverCadena(chain)} className="bg-white border border-slate-300 text-slate-700 font-semibold px-3 py-2 rounded-md text-sm whitespace-nowrap">Mover a otra cadena</button></div></div>
-                                <ul className="divide-y divide-slate-200">{groupedPos[chain].sort((a,b) => (a.name || '').localeCompare(b.name || '')).map(pos => { const esFood = pos.canal === 'foodservice'; return (<li key={pos.id} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-3"><div className="w-full text-center sm:text-left"><p className="font-semibold text-slate-900">{pos.name || <span className="italic text-slate-400">(sin nombre)</span>}</p>{esFood ? <p className="text-sm text-orange-600 font-semibold">Foodservice · sin visitas</p> : <p className={`text-sm ${pos.visitInterval > 0 ? 'text-slate-500' : 'text-red-600 font-semibold'}`}>{pos.visitInterval > 0 ? 'Activo' : 'INACTIVO'}</p>}</div><div className="flex items-center gap-2 flex-shrink-0"><button type="button" onClick={() => setPosToEdit(pos)} title="Editar PDV" className="p-1.5 text-slate-400 hover:text-brand-blue rounded-lg hover:bg-blue-50 transition-colors"><Pencil size={16} /></button>{esFood ? <span className="text-xs font-bold uppercase px-2.5 py-1.5 rounded-full bg-orange-100 text-orange-700">Foodservice</span> : <><input type="number" value={pos.visitInterval ?? ''} onChange={(e) => handleIntervalChange(pos.id, e.target.value)} className="w-20 text-center p-2 border border-slate-300 rounded-md" min="0" /><label className="text-sm text-slate-600">días</label></>}</div></li>); })}</ul>
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
-            {/* Misma ficha única que Clientes y PDV: crear y editar por la misma vía. */}
-            {isAddModalOpen && <FichaPdv onClose={() => setIsAddModalOpen(false)} />}
-            {posToEdit && (
-                <FichaPdv
-                    pos={posToEdit}
-                    onClose={() => setPosToEdit(null)}
-                    onSaved={handleEditSaved}
-                />
-            )}
-        </div>
-    );
-};
 
 const DepotManagement = () => {
     const [depots, setDepots] = useState([]);
@@ -2360,7 +2047,7 @@ const scoreRazon = (pdvName, razon) => {
 
 // ─── Herramientas de REPARACIÓN por nombre de razón social ──────────────────
 // La atribución del día a día (cliente → vendedor, canal, PDV y frecuencias)
-// vive en `ClientesPdvHub` (Comercial → "Clientes y PDV"), en una sola ficha por
+// vive en `ListaMaestraPdv` (Comercial → "Clientes y PDV"), en una sola ficha por
 // cliente y por CARNET (customer_id, estable). Lo que queda aquí abajo son
 // herramientas de emergencia que operan por NOMBRE, para casos en que el carnet
 // aún no existe o hay que reparar histórico.
@@ -5369,7 +5056,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
         {
             id: 'comercial', label: 'Comercial', Icon: Store,
             items: [
-                { id: 'clientes_pdv', label: 'Clientes y PDV',  Icon: Store, badge: 'Nuevo' },
+                { id: 'clientes_pdv', label: 'Clientes y PDV',  Icon: Store },
                 { id: 'sales_goals', label: 'Metas',            Icon: Target  },
                 { id: 'comisiones_dash', label: 'Comisiones a pagar', Icon: BarChart2, badge: 'Nuevo' },
                 { id: 'facturacion', label: 'Facturación', Icon: Receipt, badge: 'Nuevo' },
@@ -5426,8 +5113,8 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
             );
             case 'admin_mgmt':    return <AdministradoresManagement />;
             case 'mercaderistas': return <ReportersManagement />;
-            case 'pos':            return <PosManagement posList={posList} loading={loading} />;
-            case 'clientes_pdv':   return <ClientesPdvHub />;
+            case 'pos':            return <ListaMaestraPdv />;
+            case 'clientes_pdv':   return <ListaMaestraPdv />;
             case 'sales_goals':    return <SalesGoalsManagement />;
             case 'comisiones_dash': return <ComisionesDashboard />;
             case 'facturacion':    return <FacturacionClientes />;

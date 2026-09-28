@@ -112,7 +112,9 @@ const inputCls = 'w-full px-3 py-2.5 border border-slate-300 rounded-xl text-bas
  * @param razonInicial  (crear) carnet/razón social preseleccionada, p.ej. desde la ficha del cliente.
  */
 const FichaPdv = ({ pos = null, razonInicial = null, onClose, onSaved }) => {
-    const nuevo = !pos;
+    // Sin `id` es un alta (puede venir con la marca ya puesta, p.ej. "Agregar PDV
+    // a esta marca" desde la lista maestra).
+    const nuevo = !pos?.id;
     const [form, setForm] = useState({
         name:            pos?.name || '',
         chain:           (pos?.chain === INDIVIDUAL ? '' : pos?.chain) || '',
