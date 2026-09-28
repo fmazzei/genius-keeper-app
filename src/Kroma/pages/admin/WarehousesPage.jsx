@@ -14,6 +14,7 @@ import { useKroma } from '@/Kroma/KromaContext.jsx';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta, cantidadDePartida, esPartidaDe } from '@/Kroma/eliminarProduccion.js';
 import { tieneExistencia, resumenCava, pasaFiltroCava, etiquetaPeso } from '@/Kroma/inventarioPT.js';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -442,7 +443,7 @@ function AddInventoryModal({ warehouse, onClose, onSave, saving }) {
                         {!isEmpacado && (
                             <p className="text-slate-400 text-xs">{cantidadNum} kg sin envasar</p>
                         )}
-                        <p className="text-slate-500 text-xs">Vence: {fechaVencimiento}</p>
+                        <p className="text-slate-500 text-xs">Vence: {fmtVence(fechaVencimiento)}</p>
                     </div>
                 )}
 
@@ -1169,6 +1170,76 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
 
 // ─── Warehouse Detail View ────────────────────────────────────────────────────
 
+// ─── Una partida de la cava ──────────────────────────────────────────────────
+// Compacta para el teléfono: dos filas. Arriba la presentación (chip), el
+// producto y la cantidad; abajo el lote resaltado, el vencimiento (dd/mm/aa) y
+// las acciones — en pantalla chica solo íconos, para que nada se parta en tres
+// renglones como pasaba con el lote y la fecha.
+function PartidaCava({ item, confirmando, onAjustar, onBorrar, onTransferir, onCancelarBorrar, onConfirmarBorrar }) {
+    const granel = item.tipo === 'sin_envasar';
+    const vencida = item.fechaVencimiento && new Date(`${String(item.fechaVencimiento).slice(0, 10)}T12:00:00`) < new Date();
+    const btn = 'flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 transition-colors';
+    return (
+        <div className={`rounded-xl p-3 sm:p-4 border ${granel ? 'bg-amber-900/10 border-amber-700/30' : 'bg-slate-900 border-slate-800'}`}>
+            <div className="flex items-center gap-2.5">
+                <span className={`shrink-0 min-w-[52px] text-center rounded-lg border px-2 py-1 font-bold leading-tight ${
+                    granel
+                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 text-[10px] uppercase tracking-wide'
+                        : 'bg-sky-500/15 border-sky-500/40 text-sky-300 font-mono text-sm'}`}>
+                    {granel ? 'Granel' : (etiquetaPeso(item.pesoPorUnidad) || '—')}
+                </span>
+                <p className="flex-1 min-w-0 text-white text-sm font-semibold truncate">{item.productoNombre}</p>
+                <div className="text-right shrink-0">
+                    <p className={`font-bold font-mono text-base sm:text-lg leading-none ${granel ? 'text-amber-300' : 'text-emerald-400'}`}>
+                        {granel ? `${(item.kgTotales || 0).toFixed(3)} kg` : `${item.unidades} ud`}
+                    </p>
+                    {!granel && item.pesoPorUnidad > 0 && (
+                        <p className="text-slate-500 text-[11px] font-mono mt-0.5">{(item.pesoPorUnidad * item.unidades).toFixed(3)} kg</p>
+                    )}
+                </div>
+            </div>
+            <div className="flex items-center gap-2 mt-2.5">
+                <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                    {item.lote && (
+                        <span className="whitespace-nowrap bg-emerald-500/10 border border-emerald-500/40 rounded-md px-1.5 py-0.5">
+                            <Lote size="sm">{item.lote}</Lote>
+                        </span>
+                    )}
+                    {item.fechaVencimiento && (
+                        <span className={`whitespace-nowrap text-xs ${vencida ? 'text-red-400 font-semibold' : 'text-slate-400'}`}>
+                            Vence {fmtVence(item.fechaVencimiento)}{item.vencimientoTentativo ? ' (tent.)' : ''}
+                        </span>
+                    )}
+                </div>
+                {confirmando ? (
+                    <div className="flex gap-1.5 shrink-0">
+                        <button onClick={onCancelarBorrar} className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-700 text-slate-400">Cancelar</button>
+                        <button onClick={onConfirmarBorrar} className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-semibold">Confirmar</button>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        {onAjustar && (
+                            <button onClick={onAjustar} title="Ajustar" className={`${btn} hover:border-rose-500/50 hover:text-rose-300`}>
+                                <Edit2 size={12} /><span className="hidden sm:inline">Ajustar</span>
+                            </button>
+                        )}
+                        {onBorrar && (
+                            <button onClick={onBorrar} title="Eliminar" className={`${btn} text-slate-500 hover:border-rose-500/50 hover:text-rose-400`}>
+                                <Trash2 size={12} />
+                            </button>
+                        )}
+                        {onTransferir && (
+                            <button onClick={onTransferir} title="Transferir" className={`${btn} hover:border-slate-500 hover:text-white`}>
+                                <ArrowRight size={12} /><span className="hidden sm:inline">Transferir</span>
+                            </button>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // ─── Resumen de cava: cada cifra filtra el listado ───────────────────────────
 // Compacto a propósito (dos tiras que se desplazan de lado) para no comerse la
 // pantalla: lo que hay por presentación, lo sin envasar, lo que vence pronto y
@@ -1324,79 +1395,13 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                         <SecLabel>Producto empacado ({empacados.length})</SecLabel>
                         <div className="space-y-2">
                             {empacados.map(item => (
-                                <div key={item.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                                    <div className="flex items-start justify-between gap-3 mb-3">
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            {/* La PRESENTACIÓN, grande: es lo que distingue una
-                                                partida de otra del mismo producto. */}
-                                            <span className="shrink-0 min-w-[64px] text-center bg-sky-500/15 border border-sky-500/40 text-sky-300 font-black font-mono text-base rounded-xl px-2.5 py-1.5">
-                                                {etiquetaPeso(item.pesoPorUnidad) || '—'}
-                                            </span>
-                                            <div className="min-w-0">
-                                                <p className="text-white text-sm font-semibold truncate">{item.productoNombre}</p>
-                                                {item.lote && (
-                                                    <span className="inline-block mt-1 bg-emerald-500/10 border border-emerald-500/40 rounded-lg px-2 py-0.5">
-                                                        <Lote size="lg">{item.lote}</Lote>
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-emerald-400 font-bold font-mono text-lg leading-none">{item.unidades} ud</p>
-                                            {item.pesoPorUnidad > 0 && (
-                                                <p className="text-slate-500 text-xs font-mono mt-1">{(item.pesoPorUnidad * item.unidades).toFixed(3)} kg</p>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <div className="flex flex-wrap gap-2 text-xs">
-                                            {item.fechaVencimiento && (
-                                                <span className={`px-2 py-0.5 rounded-full border text-xs ${
-                                                    new Date(item.fechaVencimiento) < new Date()
-                                                        ? 'bg-red-900/30 border-red-700/50 text-red-400'
-                                                        : 'bg-slate-800 border-slate-700 text-slate-400'
-                                                }`}>
-                                                    Vence: {item.fechaVencimiento}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {deleteConfirmId === item.id ? (
-                                            <div className="flex gap-1.5">
-                                                <button onClick={() => setDeleteConfirmId(null)}
-                                                    className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-700 text-slate-400">
-                                                    Cancelar
-                                                </button>
-                                                <button onClick={() => { setDeleteConfirmId(null); onDeleteItem(item); }}
-                                                    className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-semibold">
-                                                    Confirmar
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                {canEditPT && (
-                                                    <button onClick={() => onEditItem(item, warehouse.id)}
-                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-rose-500/50 hover:text-rose-300 transition-colors">
-                                                        <Edit2 size={11} />
-                                                        Ajustar
-                                                    </button>
-                                                )}
-                                                {canDeleteItem && (
-                                                    <button onClick={() => setDeleteConfirmId(item.id)}
-                                                        className="flex items-center justify-center text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-500 hover:border-rose-500/50 hover:text-rose-400 transition-colors">
-                                                        <Trash2 size={11} />
-                                                    </button>
-                                                )}
-                                                {canTransfer && (
-                                                    <button onClick={() => onTransfer(item, warehouse.id)}
-                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
-                                                        <ArrowRight size={11} />
-                                                        Transferir
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
+                                <PartidaCava key={item.id} item={item}
+                                    confirmando={deleteConfirmId === item.id}
+                                    onAjustar={canEditPT ? () => onEditItem(item, warehouse.id) : null}
+                                    onBorrar={canDeleteItem ? () => setDeleteConfirmId(item.id) : null}
+                                    onTransferir={canTransfer ? () => onTransfer(item, warehouse.id) : null}
+                                    onCancelarBorrar={() => setDeleteConfirmId(null)}
+                                    onConfirmarBorrar={() => { setDeleteConfirmId(null); onDeleteItem(item); }} />
                             ))}
                         </div>
                     </div>
@@ -1408,66 +1413,13 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                         <SecLabel>Sin envasar ({sinEnv.length})</SecLabel>
                         <div className="space-y-2">
                             {sinEnv.map(item => (
-                                <div key={item.id} className="bg-amber-900/10 border border-amber-700/30 rounded-xl p-4">
-                                    <div className="flex items-start justify-between gap-3 mb-3">
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <span className="shrink-0 min-w-[64px] text-center bg-amber-500/15 border border-amber-500/40 text-amber-300 font-bold text-xs rounded-xl px-2.5 py-2 leading-tight">
-                                                Sin<br />envasar
-                                            </span>
-                                            <div className="min-w-0">
-                                                <p className="text-white text-sm font-semibold truncate">{item.productoNombre}</p>
-                                                {item.lote && (
-                                                    <span className="inline-block mt-1 bg-emerald-500/10 border border-emerald-500/40 rounded-lg px-2 py-0.5">
-                                                        <Lote size="lg">{item.lote}</Lote>
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <p className="text-amber-300 font-bold font-mono text-lg leading-none shrink-0">{(item.kgTotales || 0).toFixed(3)} kg</p>
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2">
-                                        {item.fechaVencimiento && (
-                                            <span className="px-2 py-0.5 rounded-full border text-xs bg-slate-800 border-slate-700 text-slate-400">
-                                                Vence{item.vencimientoTentativo ? ' (tentativo)' : ''}: {item.fechaVencimiento}
-                                            </span>
-                                        )}
-                                        {deleteConfirmId === item.id ? (
-                                            <div className="flex gap-1.5 ml-auto">
-                                                <button onClick={() => setDeleteConfirmId(null)}
-                                                    className="text-xs px-2.5 py-1.5 rounded-lg bg-slate-700 text-slate-400">
-                                                    Cancelar
-                                                </button>
-                                                <button onClick={() => { setDeleteConfirmId(null); onDeleteItem(item); }}
-                                                    className="text-xs px-2.5 py-1.5 rounded-lg bg-rose-700 hover:bg-rose-600 text-white font-semibold">
-                                                    Confirmar
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                                                {canEditPT && (
-                                                    <button onClick={() => onEditItem(item, warehouse.id)}
-                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-rose-500/50 hover:text-rose-300 transition-colors">
-                                                        <Edit2 size={11} />
-                                                        Ajustar
-                                                    </button>
-                                                )}
-                                                {canDeleteItem && (
-                                                    <button onClick={() => setDeleteConfirmId(item.id)}
-                                                        className="flex items-center justify-center text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-500 hover:border-rose-500/50 hover:text-rose-400 transition-colors">
-                                                        <Trash2 size={11} />
-                                                    </button>
-                                                )}
-                                                {canTransfer && (
-                                                    <button onClick={() => onTransfer(item, warehouse.id)}
-                                                        className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white transition-colors">
-                                                        <ArrowRight size={11} />
-                                                        Transferir
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
+                                <PartidaCava key={item.id} item={item}
+                                    confirmando={deleteConfirmId === item.id}
+                                    onAjustar={canEditPT ? () => onEditItem(item, warehouse.id) : null}
+                                    onBorrar={canDeleteItem ? () => setDeleteConfirmId(item.id) : null}
+                                    onTransferir={canTransfer ? () => onTransfer(item, warehouse.id) : null}
+                                    onCancelarBorrar={() => setDeleteConfirmId(null)}
+                                    onConfirmarBorrar={() => { setDeleteConfirmId(null); onDeleteItem(item); }} />
                             ))}
                         </div>
                     </div>

@@ -23,6 +23,7 @@ import {
     Zap, TrendingDown, Loader, RefreshCw, Shield, BarChart2, Eye, EyeOff, Truck,
 } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 // Config global de rotación por empresa: un doc por empresa en
 // `kroma_settings/{docId}` (con `empresaId` como campo, para que las reglas
@@ -560,7 +561,7 @@ function LoteRow({ row, globalCfg }) {
                         <div>
                             <p className="text-slate-500 text-[10px] uppercase font-medium">Vencimiento</p>
                             <p className={`text-sm font-mono ${row.diasHastaVencer <= 0 ? 'text-red-400' : row.diasHastaVencer <= 30 ? 'text-amber-300' : 'text-slate-300'}`}>
-                                {row.fechaVencimiento || '—'}
+                                {fmtVence(row.fechaVencimiento) || '—'}
                             </p>
                         </div>
                         <div className="flex items-center gap-3">

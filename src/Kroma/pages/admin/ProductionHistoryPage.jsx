@@ -15,6 +15,7 @@ import {
     CheckCircle, User, PenLine,
 } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -326,7 +327,7 @@ function LogDetail({ log, materials = [], verCostos = false, onClose, onEditar }
                                         label={it.nombre || it.sku || `Presentación ${i + 1}`}
                                         value={`${it.unidades || 0} uds`}
                                         sub={it.pesoKg
-                                            ? `${it.pesoKg} kg/ud · ${((it.unidades || 0) * (it.pesoKg || 0)).toFixed(2)} kg total${it.enCava ? ` · en cava${it.fechaVencimiento ? `, vence ${it.fechaVencimiento}` : ''}` : ''}`
+                                            ? `${it.pesoKg} kg/ud · ${((it.unidades || 0) * (it.pesoKg || 0)).toFixed(2)} kg total${it.enCava ? ` · en cava${it.fechaVencimiento ? `, vence ${fmtVence(it.fechaVencimiento)}` : ''}` : ''}`
                                             : undefined}
                                     />
                                 ))}

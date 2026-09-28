@@ -14,6 +14,7 @@
 
 import React, { useState } from 'react';
 import { X, Plus, Minus, Loader, ShieldAlert, History, Send, Lock } from 'lucide-react';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 const THEME = {
     light: {
@@ -110,7 +111,7 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                             <p className={`text-xs mt-0.5 leading-snug ${t.meta}`}>
                                 {item?.presentacion || ''}{item?.lote && <> · Lote {item.lote}</>}
                             </p>
-                            {item?.fechaVencimiento && <p className={`text-xs leading-snug ${t.meta}`}>Vence {item.fechaVencimiento}</p>}
+                            {item?.fechaVencimiento && <p className={`text-xs leading-snug ${t.meta}`}>Vence {fmtVence(item.fechaVencimiento)}</p>}
                         </div>
                         <button onClick={onClose} className={`p-1 shrink-0 ${t.closeBtn}`}><X size={18} /></button>
                     </div>

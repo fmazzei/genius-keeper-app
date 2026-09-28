@@ -15,6 +15,7 @@ import React, { useState } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, doc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { X, PackageMinus, Minus, Plus, CheckCircle, AlertTriangle } from 'lucide-react';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 const THEME = {
     light: {
@@ -119,7 +120,7 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                                 {item?.lote && <> · Lote {item.lote}</>}
                             </p>
                             {item?.fechaVencimiento && (
-                                <p className={`text-xs leading-snug ${t.meta}`}>Vence {item.fechaVencimiento}</p>
+                                <p className={`text-xs leading-snug ${t.meta}`}>Vence {fmtVence(item.fechaVencimiento)}</p>
                             )}
                         </div>
                         <button onClick={onClose} className={`p-1 shrink-0 ${t.close}`}><X size={18} /></button>

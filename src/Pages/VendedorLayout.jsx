@@ -42,6 +42,7 @@ import LiquidacionDetalladaDoc from '@/Components/LiquidacionDetalladaDoc.jsx';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 // ─── Caché del Home (stale-while-revalidate) ─────────────────────────────────
 // Firestore `getDocs` es "servidor primero" estando online (la caché de
@@ -1079,7 +1080,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     synthetic: true,
                     alertType: 'picking',
                     title: `Picking en Frimaca: ${p.cantidad} ${p.unit || 'ud'} de ${p.productoNombre}`,
-                    body: `Lote ${p.lote || '—'}${p.fechaVencimiento ? ` (vence ${p.fechaVencimiento})` : ''}${p.mercaderistaNombre ? ` · ${p.mercaderistaNombre}` : ''}. Quedan ${p.stockDespues ?? '—'} uds. Inventario ya actualizado.`,
+                    body: `Lote ${p.lote || '—'}${p.fechaVencimiento ? ` (vence ${fmtVence(p.fechaVencimiento)})` : ''}${p.mercaderistaNombre ? ` · ${p.mercaderistaNombre}` : ''}. Quedan ${p.stockDespues ?? '—'} uds. Inventario ya actualizado.`,
                     createdAt: p.createdAt,
                 }));
             const merged = [...items, ...pickAlerts].sort((a, b) => {

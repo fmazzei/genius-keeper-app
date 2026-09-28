@@ -25,6 +25,7 @@ import StockAdjustSheet from '@/Components/StockAdjustSheet.jsx';
 import RecepcionFrimacaSheet from '@/Components/RecepcionFrimacaSheet.jsx';
 import PickingSheet from '@/Components/PickingSheet.jsx';
 import LoteTrazabilidadModal from '@/Components/LoteTrazabilidadModal.jsx';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 const destinoDisplay = (d) => {
     if (!d) return '';
@@ -334,7 +335,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                     {item.presentacion}{item.lote && ` · Lote ${item.lote}`}
                 </p>
                 {item.fechaVencimiento && (
-                    <p className={`text-xs leading-snug ${t.meta}`}>Vence {item.fechaVencimiento}</p>
+                    <p className={`text-xs leading-snug ${t.meta}`}>Vence {fmtVence(item.fechaVencimiento)}</p>
                 )}
                 {cerrado && item.almacenNombre && (
                     <p className={`text-xs leading-snug ${t.meta}`}>{item.almacenNombre}</p>
@@ -501,7 +502,7 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                                             </div>
                                             <div className={`text-right text-xs shrink-0 ml-2 ${t.meta}`}>
                                                 {l.lote && <div>Lote {l.lote}</div>}
-                                                {l.fechaVencimiento && <div>Vence {l.fechaVencimiento}</div>}
+                                                {l.fechaVencimiento && <div>Vence {fmtVence(l.fechaVencimiento)}</div>}
                                             </div>
                                         </div>
                                     ))}

@@ -8,6 +8,7 @@ import NumericKeypadModal from '@/Components/NumericKeypadModal.jsx';
 import CameraScannerModal from '@/Components/CamScannerModal.jsx';
 import { useVisionAPI } from '@/hooks/useVisionAPI.js';
 import imageCompression from 'browser-image-compression';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 const customDataUrlToFile = async (dataUrl, filename) => {
     const res = await fetch(dataUrl);
@@ -254,7 +255,7 @@ const PedidoForm = ({ pos, selectedReporter, onBack }) => {
                                                 <span className="text-xs font-semibold text-emerald-600">{item.unidades} disp.</span>
                                             </div>
                                             <div className="flex items-center justify-between gap-2 mt-0.5">
-                                                <span className="text-xs text-slate-400">Vence: {item.fechaVencimiento || '—'}</span>
+                                                <span className="text-xs text-slate-400">Vence: {fmtVence(item.fechaVencimiento) || '—'}</span>
                                                 <span className="text-xs text-slate-400">{item.almacenNombre}</span>
                                             </div>
                                         </button>

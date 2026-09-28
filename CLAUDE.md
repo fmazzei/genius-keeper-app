@@ -2746,3 +2746,18 @@ Pedido del dueño con capturas de la Cava y de Almacenes.
   centro la cifra grande (ud envasadas y kg sin envasar, o N insumos / bajo
   mínimo, o "Vacío"); abajo el tipo y el aviso "Vence pronto", que antes se
   montaba sobre el menú ⋯.
+
+### Cava en el teléfono + vencimientos en dd/mm/aa (2026-09) ✅
+
+- **Fechas de vencimiento como se leen en Venezuela: dd/mm/aa.** Se siguen
+  GUARDANDO como "YYYY-MM-DD" (lo da el input date y ordena bien), pero se
+  MUESTRAN con `fmtVence` (`src/utils/fechaCorta.js`, compartido GK + Kroma;
+  arma por partes para no retroceder un día por UTC). Aplicado en todo lugar
+  que mostraba un vencimiento: Almacenes/Cava, Rotación de Cava, Historial,
+  reporte de producción, Despachos, Almacén Comercial, Picking, Ajuste de
+  stock, Recepción Frimaca, Pedido, pista del lote y la alerta de picking.
+- **Partida de cava compacta** (`PartidaCava`): en el teléfono las tarjetas eran
+  enormes — el lote se partía en dos renglones y "Vence (tentativo): fecha" en
+  tres. Ahora son dos filas: chip de presentación ("250 g" / "Granel") +
+  producto + cantidad; debajo el lote (sin partirse), "Vence dd/mm/aa" y las
+  acciones, que en pantalla chica son solo íconos.

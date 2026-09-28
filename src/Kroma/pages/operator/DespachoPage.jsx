@@ -10,6 +10,7 @@ import {
     Truck, Plus, Trash2, Loader, CheckCircle,
     MapPin, Clock, ChevronDown, Search, X, Package, RefreshCw,
 } from 'lucide-react';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 // ─── Venezuela — estados y ciudades ──────────────────────────────────────────
 
@@ -431,7 +432,7 @@ function DespachoCard({ despacho, onMarkEntregado, onApplyTransfer, onSyncGK }) 
                                     {l.presentacion && <span className="text-slate-400 text-xs"> {l.presentacion}</span>}
                                     {' '}{l.productoNombre}
                                 </p>
-                                {l.fechaVencimiento && <p className="text-[10px] text-slate-500">Vence {l.fechaVencimiento}</p>}
+                                {l.fechaVencimiento && <p className="text-[10px] text-slate-500">Vence {fmtVence(l.fechaVencimiento)}</p>}
                             </div>
                         </div>
                     ))}
@@ -953,7 +954,7 @@ export default function DespachoPage({ onNavigate }) {
                                                             {linea.item.tipo === 'sin_envasar' ? 'Sin envasar' : (linea.item.presentacion || 'Empacado')}
                                                             {linea.item.fechaVencimiento && (
                                                                 <span className={`ml-1.5 ${isExpired(linea.item.fechaVencimiento) ? 'text-red-400' : isExpiringSoon(linea.item.fechaVencimiento) ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                                                    · Vence {linea.item.fechaVencimiento}
+                                                                    · Vence {fmtVence(linea.item.fechaVencimiento)}
                                                                 </span>
                                                             )}
                                                         </p>

@@ -24,6 +24,7 @@ import {
     Factory, Pause, FlaskConical, X, Zap,
     Share2, PenLine, Award, Trash2, RotateCcw, Bell, FileText,
 } from 'lucide-react';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1858,7 +1859,7 @@ function ReportView({ log, kromaUser, kromaRole, onClose, onEliminar }) {
                             {empaqReg.fechaVencimiento && (
                                 <div className="flex justify-between items-center text-xs text-slate-500 pt-1">
                                     <span>Vence</span>
-                                    <span className="font-mono text-slate-300">{empaqReg.fechaVencimiento}</span>
+                                    <span className="font-mono text-slate-300">{fmtVence(empaqReg.fechaVencimiento)}</span>
                                 </div>
                             )}
                         </div>

@@ -22,6 +22,7 @@ import {
     X, Truck, Package, CheckCircle, AlertTriangle, Camera, Loader, ChevronRight, ArrowLeft, Minus, Plus,
 } from 'lucide-react';
 import { fileToCompactDataURL } from '@/utils/imageCapture.js';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 const THEME = {
     light: {
@@ -236,7 +237,7 @@ export default function RecepcionFrimacaSheet({ despacho, almacenes = [], invent
                                                 <p className={`text-xs ${t.meta}`}>
                                                     Enviado: {l.cantidad} {l.unit || 'ud'}
                                                     {l.lote && ` · Lote ${l.lote}`}
-                                                    {l.fechaVencimiento && ` · Vence ${l.fechaVencimiento}`}
+                                                    {l.fechaVencimiento && ` · Vence ${fmtVence(l.fechaVencimiento)}`}
                                                 </p>
                                             </div>
                                         </div>

@@ -21,6 +21,7 @@ import {
     X, Loader, Truck, PackageCheck, PackageMinus, Milk, Factory, Package,
     AlertTriangle, SlidersHorizontal, MapPin,
 } from 'lucide-react';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 const THEME = {
     light: {
@@ -170,7 +171,7 @@ export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma 
                             at: toDate(p.createdAt),
                             titulo: `Producto terminado · ${p.unidades ?? p.kgTotales ?? ''} ${p.tipo === 'empacado' ? 'ud' : 'kg'}`,
                             actor: '—', rol: 'planta',
-                            detalle: p.presentacion ? `${p.presentacion}${p.fechaVencimiento ? ` · vence ${p.fechaVencimiento}` : ''}` : '',
+                            detalle: p.presentacion ? `${p.presentacion}${p.fechaVencimiento ? ` · vence ${fmtVence(p.fechaVencimiento)}` : ''}` : '',
                         });
                     });
                     (whSnap.docs || []).forEach(d => {
@@ -210,7 +211,7 @@ export default function LoteTrazabilidadModal({ item, theme = 'light', verKroma 
                         <p className={`text-xs mt-0.5 ${t.meta}`}>
                             {item?.productoNombre}
                             {item?.lote && <> · Lote <span className="font-semibold">{item.lote}</span></>}
-                            {item?.fechaVencimiento && <> · Vence {item.fechaVencimiento}</>}
+                            {item?.fechaVencimiento && <> · Vence {fmtVence(item.fechaVencimiento)}</>}
                         </p>
                     </div>
                     <button onClick={onClose} className={`p-1 shrink-0 ${t.close}`}><X size={18} /></button>
