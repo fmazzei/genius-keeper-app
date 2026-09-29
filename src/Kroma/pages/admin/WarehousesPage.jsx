@@ -1351,6 +1351,7 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const [filtro, setFiltro] = useState(null);   // filtro del resumen de cava
     const isMaster = kromaRole === 'master';
+    const { canEdit } = useKroma();
 
     const showMaterials = isInsumosWh(warehouse);
     const matRows = showMaterials ? matActiveRows(inventoryMat) : [];
@@ -1380,6 +1381,11 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
     const isPT = warehouse.tipo === 'PT' || warehouse.tipo === 'mixto';
     const canCargar = !isComercial && (canDo ? canDo('cargarInventarioPT') : false);
     const canTransfer = !isComercial;
+    // Registrar salidas (venta, reposición, merma…): lo hacen el operario y el
+    // administrador (decisión del dueño). Además del rol, manda el PERMISO:
+    // quien tenga "Editar" en Almacenes o en Despachos puede hacerlo, así el
+    // máster lo activa desde Control del Sistema sin depender del rol exacto.
+    const canSalida = !isComercial && (canEditPT || canEdit('almacenes') || canEdit('despachos'));
     const canDeleteItem = !isComercial && isMaster;
 
     return (
@@ -1431,6 +1437,14 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                 {/* Materials inventory (insumos warehouse, read-only) */}
                 {showMaterials && <MaterialsInventorySection inventoryMat={inventoryMat} />}
 
+                {/* Sin permiso de salida: decirlo, con el rol, en vez de esconder el botón. */}
+                {!showMaterials && !isComercial && !canSalida && items.some(tieneExistencia) && (
+                    <div className="bg-amber-900/20 border border-amber-700/40 rounded-xl px-4 py-3 text-amber-200 text-xs leading-relaxed">
+                        Tu perfil ({kromaRole || 'sin rol'}) no puede registrar salidas de la cava (ventas, reposiciones, merma).
+                        El máster lo activa en Control del Sistema → Permisos → Almacenes o Despachos → Editar.
+                    </div>
+                )}
+
                 {/* Resumen de lo que hay: cada cifra filtra el listado */}
                 {!showMaterials && items.some(tieneExistencia) && (
                     <ResumenCava resumen={resumen} filtro={filtro} onFiltro={setFiltro} />
@@ -1447,7 +1461,7 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                                     onAjustar={canEditPT ? () => onEditItem(item, warehouse.id) : null}
                                     onBorrar={canDeleteItem ? () => setDeleteConfirmId(item.id) : null}
                                     onTransferir={canTransfer ? () => onTransfer(item, warehouse.id) : null}
-                                    onSalida={canTransfer && canEditPT && onSalida ? () => onSalida(item, warehouse.id) : null}
+                                    onSalida={canSalida && onSalida ? () => onSalida(item, warehouse.id) : null}
                                     onCancelarBorrar={() => setDeleteConfirmId(null)}
                                     onConfirmarBorrar={() => { setDeleteConfirmId(null); onDeleteItem(item); }} />
                             ))}
@@ -1466,7 +1480,7 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                                     onAjustar={canEditPT ? () => onEditItem(item, warehouse.id) : null}
                                     onBorrar={canDeleteItem ? () => setDeleteConfirmId(item.id) : null}
                                     onTransferir={canTransfer ? () => onTransfer(item, warehouse.id) : null}
-                                    onSalida={canTransfer && canEditPT && onSalida ? () => onSalida(item, warehouse.id) : null}
+                                    onSalida={canSalida && onSalida ? () => onSalida(item, warehouse.id) : null}
                                     onCancelarBorrar={() => setDeleteConfirmId(null)}
                                     onConfirmarBorrar={() => { setDeleteConfirmId(null); onDeleteItem(item); }} />
                             ))}

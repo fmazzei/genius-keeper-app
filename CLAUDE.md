@@ -3023,6 +3023,13 @@ Propuesta de la administradora, aprobada por el dueño: si el inventario se llev
 
 Prueba: `tests/salidasCava.e2e.test.mjs`, 39 verificaciones en verde.
 
+### El botón "Salida" no le salía a la administradora (2026-09) ✅
+
+Reporte del dueño: el botón verde "Salida" de la cava solo aparecía en su perfil de máster. El código lo condicionaba a una lista FIJA de roles (`canEditPT`), así que cualquier perfil cuyo rol no estuviera exactamente en esa lista quedaba sin botón y sin explicación. No se pudo verificar el perfil real (no hay acceso a los datos de producción), así que se atacó por los dos lados:
+- **Manda el permiso, no solo el rol**: `canSalida` = rol de la lista **o** `canEdit('almacenes')` **o** `canEdit('despachos')`. El máster lo activa desde Control del Sistema → Permisos, sin depender del rol exacto.
+- **Si no hay permiso, la cava lo DICE**, con el rol del perfil y dónde se activa, en vez de esconder el botón en silencio.
+- **Despachos → Ventas en planta**: el botón pasó a "Registrar venta, reposición u otra salida" y abre la hoja sin tipo fijo. Quien no ve Almacenes (el operario) también puede registrar reposiciones y merma.
+
 ### Bug: los "re-exportadores" de Kroma se comían los props (2026-09) ✅
 
 El dueño abrió "Mover producto" y no aparecía la opción de despachar a Caracas.

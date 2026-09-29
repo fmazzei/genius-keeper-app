@@ -336,7 +336,7 @@ export default function VentasPlanta({ inventory = [], nombreAlmacen, onInventar
             {canEdit('despachos') && (
                 <button onClick={() => setNueva(true)}
                     className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl py-3 text-sm">
-                    <Plus size={16} /> Registrar venta
+                    <Plus size={16} /> Registrar venta, reposición u otra salida
                 </button>
             )}
 
@@ -443,7 +443,7 @@ export default function VentasPlanta({ inventory = [], nombreAlmacen, onInventar
             )}
 
             {nueva && (
-                <SalidaCavaSheet tipoInicial="venta" items={inventory} nombreAlmacen={nombreAlmacen}
+                <SalidaCavaSheet items={inventory} nombreAlmacen={nombreAlmacen}
                     onClose={() => setNueva(false)} onDone={() => { cargar(); onInventarioCambio?.(); }} />
             )}
             {vincular && <VincularSheet venta={vincular} onClose={() => setVincular(null)} onHecho={cargar} />}
