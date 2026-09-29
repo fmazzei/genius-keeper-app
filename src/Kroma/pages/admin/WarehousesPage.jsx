@@ -8,8 +8,9 @@ import {
     Warehouse, Package, Archive, Truck, Droplets, Plus, ChevronLeft,
     ArrowRight, Clock, Check, ChevronDown, ChevronUp, AlertTriangle, X,
     Edit2, Send, ThumbsUp, ThumbsDown, MoreVertical, ClipboardCheck, Loader, Trash2,
-    PackageOpen, Scale, Calendar, Hash,
+    PackageOpen, Scale, Calendar, Hash, LogOut,
 } from 'lucide-react';
+import SalidaCavaSheet from '@/Kroma/Components/SalidaCavaSheet.jsx';
 import { useKroma } from '@/Kroma/KromaContext.jsx';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta, cantidadDePartida, esPartidaDe } from '@/Kroma/eliminarProduccion.js';
@@ -1215,7 +1216,7 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
 // producto y la cantidad; abajo el lote resaltado, el vencimiento (dd/mm/aa) y
 // las acciones — en pantalla chica solo íconos, para que nada se parta en tres
 // renglones como pasaba con el lote y la fecha.
-function PartidaCava({ item, confirmando, onAjustar, onBorrar, onTransferir, onCancelarBorrar, onConfirmarBorrar }) {
+function PartidaCava({ item, confirmando, onAjustar, onBorrar, onTransferir, onSalida, onCancelarBorrar, onConfirmarBorrar }) {
     const granel = item.tipo === 'sin_envasar';
     const vencida = item.fechaVencimiento && new Date(`${String(item.fechaVencimiento).slice(0, 10)}T12:00:00`) < new Date();
     const btn = 'flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 transition-colors';
@@ -1268,7 +1269,13 @@ function PartidaCava({ item, confirmando, onAjustar, onBorrar, onTransferir, onC
                                 <Trash2 size={12} />
                             </button>
                         )}
-                        {onTransferir && (
+                        {/* "Salida" pregunta primero si es venta, transferencia u
+                            otra salida; sin permiso de venta queda Transferir. */}
+                        {onSalida ? (
+                            <button onClick={onSalida} title="Salida: venta, transferencia u otra" className={`${btn} border-emerald-700/60 text-emerald-300 hover:border-emerald-500 hover:text-white`}>
+                                <LogOut size={12} /><span className="hidden sm:inline">Salida</span>
+                            </button>
+                        ) : onTransferir && (
                             <button onClick={onTransferir} title="Transferir" className={`${btn} hover:border-slate-500 hover:text-white`}>
                                 <ArrowRight size={12} /><span className="hidden sm:inline">Transferir</span>
                             </button>
@@ -1339,7 +1346,7 @@ function ResumenCava({ resumen, filtro, onFiltro }) {
     );
 }
 
-function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventoryMat, movements, warehouses, kromaUser, kromaRole, canDo, onBack, onTransfer, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
+function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventoryMat, movements, warehouses, kromaUser, kromaRole, canDo, onBack, onTransfer, onSalida, onEditItem, onDeleteItem, onInventoryUpdated, onAddItem }) {
     const [showMov, setShowMov] = useState(false);
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const [filtro, setFiltro] = useState(null);   // filtro del resumen de cava
@@ -1440,6 +1447,7 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                                     onAjustar={canEditPT ? () => onEditItem(item, warehouse.id) : null}
                                     onBorrar={canDeleteItem ? () => setDeleteConfirmId(item.id) : null}
                                     onTransferir={canTransfer ? () => onTransfer(item, warehouse.id) : null}
+                                    onSalida={canTransfer && canEditPT && onSalida ? () => onSalida(item, warehouse.id) : null}
                                     onCancelarBorrar={() => setDeleteConfirmId(null)}
                                     onConfirmarBorrar={() => { setDeleteConfirmId(null); onDeleteItem(item); }} />
                             ))}
@@ -1458,6 +1466,7 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                                     onAjustar={canEditPT ? () => onEditItem(item, warehouse.id) : null}
                                     onBorrar={canDeleteItem ? () => setDeleteConfirmId(item.id) : null}
                                     onTransferir={canTransfer ? () => onTransfer(item, warehouse.id) : null}
+                                    onSalida={canTransfer && canEditPT && onSalida ? () => onSalida(item, warehouse.id) : null}
                                     onCancelarBorrar={() => setDeleteConfirmId(null)}
                                     onConfirmarBorrar={() => { setDeleteConfirmId(null); onDeleteItem(item); }} />
                             ))}
@@ -1505,6 +1514,7 @@ function WarehouseDetail({ warehouse, inventoryPT, inventarioComercial, inventor
                                                     } · {mov.cantidad} {mov.unidad}
                                                 </p>
                                                 {mov.lote && <p className="text-slate-700 text-xs font-mono">{mov.lote}</p>}
+                                                {mov.nota && <p className="text-slate-500 text-xs italic mt-0.5">"{mov.nota}"</p>}
                                             </div>
                                             <span className="text-slate-600 text-xs shrink-0">{fmtDateTime(mov.createdAt)}</span>
                                         </div>
@@ -1696,6 +1706,7 @@ export default function WarehousesPage({ onNavigate }) {
     const [editWarehouse, setEditWarehouse] = useState(null);
     const [transferItem, setTransferItem] = useState(null);
     const [transferWId,  setTransferWId]  = useState(null);
+    const [salidaItem,   setSalidaItem]   = useState(null);   // { item, warehouseId }
     const [editItem,     setEditItem]     = useState(null);
     const [editItemWId,  setEditItemWId]  = useState(null);
     const [saving,       setSaving]       = useState(false);
@@ -2155,6 +2166,7 @@ export default function WarehousesPage({ onNavigate }) {
                     canDo={canDo}
                     onBack={() => setView('list')}
                     onTransfer={(item, warehouseId) => { setTransferItem(item); setTransferWId(warehouseId); }}
+                    onSalida={(item, warehouseId) => setSalidaItem({ item, warehouseId })}
                     onEditItem={(item, warehouseId) => { setEditItem(item); setEditItemWId(warehouseId); }}
                     onDeleteItem={handleDeleteInventoryItem}
                     onInventoryUpdated={handleInventoryUpdated}
@@ -2181,6 +2193,16 @@ export default function WarehousesPage({ onNavigate }) {
                         />
                     );
                 })()}
+                {salidaItem && (
+                    <SalidaCavaSheet
+                        itemInicial={salidaItem.item}
+                        items={inventoryPT.filter(i => (i.warehouseId || '__cava__') === (salidaItem.warehouseId || '__cava__'))}
+                        nombreAlmacen={(id) => warehouses.find(w => w.id === id)?.nombre || 'Cava'}
+                        onTransferir={(item) => { setSalidaItem(null); setTransferItem(item); setTransferWId(salidaItem.warehouseId); }}
+                        onClose={() => setSalidaItem(null)}
+                        onDone={loadData}
+                    />
+                )}
                 {transferItem && (
                     <TransferModal
                         item={transferItem}

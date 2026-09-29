@@ -2947,6 +2947,37 @@ Pedido del dueño: *"verifica que todo esté perfectamente conectado y no nos d�
 
 Cómo correrla está en el encabezado del archivo.
 
+### Salidas de cava: venta, transferencia u otra salida — y la venta enlazada a Zoho (2026-09) ✅
+
+Pedido del dueño: desde la cava de Barinas también se VENDE, y no había cómo registrarlo. Las salidas eran despacho (a Caracas u "Otro destino" en texto libre), ajuste (motivo opcional) o eliminar. Una venta quedaba como "Otro destino: Juan Pérez" o como ajuste: sin cliente, sin motivo y sin factura.
+
+**Regla para distinguirlas: ¿el producto sigue siendo de la empresa?**
+- **Transferencia**: sí, solo cambia de lugar. Usa el despacho o "Mover producto" de siempre.
+- **Venta**: pasa a un cliente de Zoho (carnet) y queda **por facturar**.
+- **Otra salida**: sin venta, con motivo OBLIGATORIO (`MOTIVOS_SALIDA`): merma, vencido, muestra, consumo interno, donación, otro (este último exige nota).
+
+**Decisiones del dueño:**
+- Registran operario Y administrador. El operario no ve precios.
+- Se factura por las dos vías: desde la venta o vinculando una factura hecha en Zoho.
+- Los clientes de planta cuentan como **Oficina**.
+
+**Cómo quedó:**
+- **`src/Kroma/salidasCava.js`**: `registrarSalidaCava` es UNA transacción, como el despacho. Lee el stock real, descuenta y escribe el libro con `tipo:'venta'` o `salida_<motivo>` (más `motivo`, `nota`, `clienteZohoId` y `ventaId`). Si es venta, crea **`kroma_ventas_planta`** (`estadoFactura:'por_facturar'`, líneas con lote y peso, `gramos`). También exporta `unidadesEquivalentes` / `cuadreVentaFactura` (entregado en unidades de venta de GK, 250 g, contra `facturas_vendedor.unidades`; tolerancia de media unidad).
+- **Cava** (`WarehousesPage`): el botón de cada partida pasó a **"Salida"**. Abre `SalidaCavaSheet`, que pregunta primero el tipo; "Transferencia" abre el `TransferModal` de siempre.
+- **Despachos → pestaña "Ventas en planta"** (`VentasPlanta.jsx`):
+  - "Registrar venta" y filtros Por facturar / Facturadas / No cuadran.
+  - Quien tiene `verCostos` ve además "Facturar en Zoho" (artículo sugerido por nombre y peso, cantidad convertida a kg si el artículo va en kg, precio editable, borrador o emitida), "Vincular factura" (facturas del cliente en GK, las más cercanas a la fecha primero) y "Facturas sin salida de cava" (facturas de clientes de planta, desde su primera venta, sin salida vinculada).
+  - "Otro destino" en Nuevo Despacho remite a Ventas en planta.
+- **Cloud Function `ventasPlanta`** (`functions/handlers/ventasPlanta.js`), acciones `catalogo | pendientes | candidatas | vincular | desvincular | facturar`.
+  - Todo por Admin SDK: el teléfono de planta NO lee `clientes_zoho`, `zoho_items` ni `facturas_vendedor`.
+  - Solo Lacteoca (`empresaId`).
+  - Al facturar o vincular: si el cliente no tiene vendedor se marca `esOficina:true`. Si ya es de un vendedor NO se toca y se avisa (moverlo cambiaría comisiones).
+  - Facturar reusa `createInvoice` + `upsertFacturaFromZoho` y deja rastro en `facturas_emitidas_gk` con `origen:'venta_planta'`. Una factura creada desde Kroma no se desvincula: se anula en Zoho.
+- **Reglas**: `kroma_ventas_planta`. El cliente solo la CREA, y nacida `por_facturar` sin número de factura; actualizar o borrar es del máster (la factura la escribe la función).
+- **Prueba**: `tests/salidasCava.e2e.test.mjs` (emulador, reglas reales): 21 verificaciones en verde (venta mixta ud+kg, 6,5 kg = 26 uds, libro enlazado, cuadre, motivo, rechazos sin tocar stock, candados de reglas y aislamiento por empresa).
+
+**Pendiente del dueño**: "Facturar en Zoho" necesita el Self Client con `ZohoBooks.invoices.CREATE` (el mismo pendiente de la facturación del vendedor). Mientras tanto se factura en Zoho y se usa "Vincular factura".
+
 ### Bug: los "re-exportadores" de Kroma se comían los props (2026-09) ✅
 
 El dueño abrió "Mover producto" y no aparecía la opción de despachar a Caracas.

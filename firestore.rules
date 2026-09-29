@@ -554,6 +554,16 @@ service cloud.firestore {
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
       allow update, delete: if isKromaMaster();
     }
+    // Ventas que salen de la cava de planta. Las registra quien entrega (operario
+    // o administrador). La factura la pone o la vincula la Cloud Function
+    // `ventasPlanta` (Admin SDK), así que el cliente no las modifica.
+    match /kroma_ventas_planta/{id} {
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data)
+                    && request.resource.data.estadoFactura == 'por_facturar'
+                    && request.resource.data.facturaNumero == null;
+      allow update, delete: if isKromaMaster();
+    }
     match /kroma_alerts/{id} {
       allow read:   if isKromaAccess() && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);

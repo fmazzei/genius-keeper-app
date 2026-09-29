@@ -13,6 +13,7 @@ import {
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { esDestinoCaracas } from '@/utils/destinoDespacho.js';
 import { registrarDespacho } from '@/Kroma/despachoOps.js';
+import VentasPlanta from './VentasPlanta.jsx';
 
 // ─── Venezuela — estados y ciudades ──────────────────────────────────────────
 
@@ -291,7 +292,7 @@ function CityPicker({ onSelect, onClose }) {
                         <MapPin size={15} className="text-slate-500 shrink-0" />
                         <div>
                             <p className="text-white text-sm font-medium">Otro destino</p>
-                            <p className="text-slate-500 text-xs">Cliente específico o dirección personalizada</p>
+                            <p className="text-slate-500 text-xs">Otro lugar o dirección. ¿Es una venta a un cliente? Regístrala en "Ventas en planta".</p>
                         </div>
                     </button>
                 ) : (
@@ -522,7 +523,7 @@ export default function DespachoPage({ onNavigate, params }) {
     const canEditar = canEdit('despachos');
     // Quien no despacha entra directo al historial: si no, la pestaña activa
     // sería una que ya no existe y la pantalla saldría en blanco.
-    const [tab, setTab]             = useState(canEdit('despachos') ? 'nuevo' : 'historial');
+    const [tab, setTab]             = useState(params?.tab === 'ventas' ? 'ventas' : canEdit('despachos') ? 'nuevo' : 'historial');
     const [inventory, setInventory] = useState([]);
     const [warehouses, setWarehouses] = useState([]);
     const [loadingInv, setLoadingInv] = useState(true);
@@ -846,12 +847,12 @@ export default function DespachoPage({ onNavigate, params }) {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-1 bg-slate-800 rounded-xl p-1 mb-6 w-fit">
+            <div className="flex gap-1 bg-slate-800 rounded-xl p-1 mb-6 w-fit max-w-full overflow-x-auto">
                 {/* Sin permiso de despacho queda solo el Historial: se consulta,
                     no se declara. */}
-                {(canEditar ? [['nuevo', 'Nuevo Despacho'], ['historial', 'Historial']] : [['historial', 'Historial']]).map(([id, label]) => (
+                {(canEditar ? [['nuevo', 'Nuevo Despacho'], ['historial', 'Historial'], ['ventas', 'Ventas en planta']] : [['historial', 'Historial'], ['ventas', 'Ventas en planta']]).map(([id, label]) => (
                     <button key={id} onClick={() => setTab(id)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === id ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}>
+                        className={`px-3 sm:px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${tab === id ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}>
                         {label}
                     </button>
                 ))}
@@ -1048,6 +1049,15 @@ export default function DespachoPage({ onNavigate, params }) {
                         ))
                     )}
                 </div>
+            )}
+
+            {/* ── Ventas en planta: salen de la cava a un cliente, NO son despacho ── */}
+            {tab === 'ventas' && (
+                <VentasPlanta
+                    inventory={inventory}
+                    nombreAlmacen={(id) => warehouses.find(w => w.id === id)?.nombre || 'Cava'}
+                    onInventarioCambio={cargarInventario}
+                />
             )}
 
             {/* ── Inventory picker modal ── */}
