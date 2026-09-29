@@ -16,6 +16,9 @@ import SeguimientoDoc from '@/Components/SeguimientoDoc.jsx';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
 import { computeSeguidor, periodoRango } from '@/utils/seguidorSemanal.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
+import DesempenoVendedor, { DesempenoMini } from '@/Components/DesempenoVendedor.jsx';
+import { evaluarDesempeno } from '@/utils/desempenoVendedor.js';
+import { computeMetaMensual } from '@/utils/vendedorMeta.js';
 
 const TODOS = '__todos__';
 
@@ -83,14 +86,46 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
         return () => { alive = false; };
     }, []);
 
+    // PDV de la cartera de un vendedor: por PDV directo O por cadena completa.
+    const pdvDe = (vid) => {
+        const pdvTodos = (posList || []).filter(p => p.type !== 'depot');
+        if (vid === TODOS) return pdvTodos;
+        const c = cartera[vid];
+        return pdvTodos.filter(p => c && (c.pos.has(p.id) || (p.chain && c.chains.has(p.chain))));
+    };
+    const pisoDe = (v) => Number(v?.commissionConfig?.anaquelMinUnits) > 0
+        ? Number(v.commissionConfig.anaquelMinUnits)
+        : (DEFAULT_COMMISSION_CONFIG.anaquelMinUnits || 12);
+
+    // DESEMPEÑO de cada vendedor en su período de empleo EN CURSO (el mismo con
+    // el que se le paga): no depende del navegador Semana/Mes de abajo, que es
+    // para revisar el histórico de indicadores.
+    const desempeno = useMemo(() => {
+        const out = {};
+        vendedores.forEach(v => {
+            const per = computeMetaMensual(v);
+            const pdv = pdvDe(v.id);
+            const ids = new Set(pdv.map(p => p.id));
+            const seguidor = computeSeguidor({
+                cartera: pdv,
+                visitas: (reports || []).filter(r => r.posId && ids.has(r.posId)),
+                facturas,
+                opts: { pisoAnaquel: pisoDe(v), desde: per.periodStart, hasta: per.periodEnd, ingreso: v.fechaIngreso || null, vendedorId: v.id },
+            });
+            const c = cartera[v.id];
+            out[v.id] = evaluarDesempeno({
+                vendedor: v, facturas, seguidor,
+                carteraSize: c ? c.pos.size + c.chains.size : 0,
+            });
+        });
+        return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [vendedores, facturas, cartera, posList, reports]);
+
     // Universo según la selección: toda la empresa o la cartera del vendedor.
     const data = useMemo(() => {
         const esTodos = sel === TODOS;
-        const pdvTodos = (posList || []).filter(p => p.type !== 'depot');
-        const c = cartera[sel];
-        const pdv = esTodos
-            ? pdvTodos
-            : pdvTodos.filter(p => c && (c.pos.has(p.id) || (p.chain && c.chains.has(p.chain))));
+        const pdv = pdvDe(sel);
         const idsPdv = new Set(pdv.map(p => p.id));
         const visitas = (reports || []).filter(r => !r.posId || idsPdv.has(r.posId));
 
@@ -111,9 +146,7 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
                 // "Mi Semana": con el default fijo, el máster clasificaba
                 // sin_oc/con_inventario con un umbral distinto al que ve el
                 // vendedor, y los dos tableros no coincidían.
-                pisoAnaquel: Number(v?.commissionConfig?.anaquelMinUnits) > 0
-                    ? Number(v.commissionConfig.anaquelMinUnits)
-                    : (DEFAULT_COMMISSION_CONFIG.anaquelMinUnits || 12),
+                pisoAnaquel: pisoDe(v),
                 desde: rango.desde, hasta: rango.hasta,
                 ingreso: v?.fechaIngreso || null,
                 vendedorId: esTodos ? null : sel,
@@ -171,12 +204,33 @@ export default function SeguimientoComercial({ posList = [], reports = [] }) {
                     <p className="text-sm text-slate-400">Cargando facturación y visitas…</p>
                 </div>
             ) : (
+            <>
+            {/* Un vistazo: ¿está cumpliendo? */}
+            {sel === TODOS ? (
+                vendedores.length > 0 && (
+                    <section>
+                        <p className="text-sm font-bold text-slate-700 mb-2">Desempeño del equipo <span className="font-normal text-slate-400">· toca un vendedor para ver el detalle</span></p>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {[...vendedores]
+                                .sort((a, b) => (desempeno[a.id]?.global ?? -1) - (desempeno[b.id]?.global ?? -1))
+                                .map(v => (
+                                    <DesempenoMini key={v.id} ev={desempeno[v.id]} nombre={v.name || v.email} onClick={() => setSel(v.id)} />
+                                ))}
+                        </div>
+                    </section>
+                )
+            ) : (
+                <DesempenoVendedor ev={desempeno[sel]} nombre={nombreSel} />
+            )}
+
+            <p className="text-sm font-bold text-slate-700 pt-2">Indicadores de la semana o del mes</p>
             <SeguidorSemanalView
                 data={data}
                 theme="light"
                 titulo={nombreSel}
                 periodoCtl={{ gran, setGran, offset, setOffset, label: rango.label, actual: rango.actual }}
             />
+            </>
             )}
 
             {showDoc && (

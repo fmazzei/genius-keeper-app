@@ -1292,7 +1292,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     unidades: f.unidades, monto: f.monto, balance: f.balance,
                     estado: f.estado, categoria: f.categoria,
                     fecha: f.fecha, vencimiento: f.vencimiento, fechaPago: f.fechaPago,
-                    recuperada: f.recuperada,
+                    recuperada: f.recuperada, zohoCustomerId: f.zohoCustomerId,
                 })));
                 const enPeriodo = (f) => {
                     const t = f.fecha?.toDate?.() || (f.fecha ? new Date(f.fecha) : null);
@@ -1944,7 +1944,7 @@ const VendedorLayout = ({ user, onLogout }) => {
             )}
 
             {showVentas && (
-                <VendedorVentasCartera facturas={carteraFacturas} onClose={() => setShowVentas(false)} />
+                <VendedorVentasCartera facturas={carteraFacturas} ingreso={vendedor.ingreso || null} vendedorId={user?.uid} onClose={() => setShowVentas(false)} />
             )}
 
             {/* Retiro/reposición declarado desde "PDV con producto por vencer".

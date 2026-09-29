@@ -160,7 +160,7 @@ function dedupFacturas(facturas) {
  * para el tracking en vivo del vendedor.
  */
 const MS_SEMANA = 7 * MS_DIA;
-function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minUnits, threshold) {
+export function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minUnits, threshold) {
     const vacio = { semanasTotales: 0, semanasLogradas: 0, factor: 0, semActivados: 0, semObjetivo: 0, semLograda: false };
     if (!carteraSize || carteraSize <= 0) return vacio;
     const objetivo = Math.max(1, Math.ceil(carteraSize * threshold / 100));

@@ -33,7 +33,7 @@ const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDig
 
 const Th = ({ children, right }) => <th className={`py-1.5 px-2 ${right ? 'text-right' : 'text-left'}`}>{children}</th>;
 
-export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, periodoLabel = '', onClose }) {
+export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, periodoLabel = '', onClose, soloUnidades = false }) {
     const fecha = new Date().toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     const etiquetaGrupo = modo === 'razon' ? 'Razón social' : 'Punto de venta';
     const t = totales || grupos.reduce((a, g) => ({
@@ -54,7 +54,7 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, p
                         <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: NAVY }}><span className="text-[#FFD600] font-black text-lg">GK</span></div>
                         <div>
                             <p className="font-black text-[17px]" style={{ color: NAVY }}>Genius Keeper</p>
-                            <p className="text-[12px] text-slate-500">Facturación por {etiquetaGrupo.toLowerCase()}{periodoLabel ? ` · ${periodoLabel}` : ''}</p>
+                            <p className="text-[12px] text-slate-500">{soloUnidades ? 'Unidades vendidas' : 'Facturación'} por {etiquetaGrupo.toLowerCase()}{periodoLabel ? ` · ${periodoLabel}` : ''}</p>
                         </div>
                     </div>
                     <p className="text-[11px] text-slate-400 mb-4">
@@ -62,7 +62,7 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, p
                     </p>
 
                     {/* Resumen */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
+                    {!soloUnidades && <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
                         {[
                             { l: 'Facturado', v: money(t.facturado), c: NAVY },
                             { l: 'Cobrado', v: money(t.cobrado), c: '#0f9d6b' },
@@ -74,9 +74,37 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, p
                                 <p className="font-black text-[13px] whitespace-nowrap" style={{ color: k.c, fontVariantNumeric: 'tabular-nums' }}>{k.v}</p>
                             </div>
                         ))}
-                    </div>
+                    </div>}
 
                     {grupos.length === 0 ? <p className="text-[12px] text-slate-400">Sin facturación en el filtro actual.</p> : (
+                        soloUnidades ? (
+                        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '11px', fontVariantNumeric: 'tabular-nums' }}>
+                            <thead>
+                                <tr className="text-white" style={{ background: NAVY, fontSize: '9px' }}>
+                                    <Th>#</Th><Th>{etiquetaGrupo.toUpperCase()}</Th><Th right>FACT.</Th><Th right>UNIDADES</Th><Th right>% DEL TOTAL</Th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {grupos.map((g, i) => (
+                                    <tr key={i} style={{ background: i % 2 ? '#f6f7f9' : '#fff' }}>
+                                        <td className="py-1 px-2 text-slate-400">{i + 1}</td>
+                                        <td className="py-1 px-2 font-semibold">{g.nombre}{g.categoria === 'foodservice' ? <span className="text-amber-600 font-normal"> · FS</span> : ''}</td>
+                                        <td className="py-1 px-2 text-right">{num(g.facturas)}</td>
+                                        <td className="py-1 px-2 text-right font-semibold">{num(g.unidades)}</td>
+                                        <td className="py-1 px-2 text-right text-slate-500">{t.unidades > 0 ? `${Math.round(g.unidades / t.unidades * 100)}%` : '—'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot>
+                                <tr className="font-black" style={{ borderTop: `2px solid ${NAVY}` }}>
+                                    <td className="py-1.5 px-2" colSpan={2} style={{ color: NAVY }}>TOTAL</td>
+                                    <td className="py-1.5 px-2 text-right">{num(t.facturas)}</td>
+                                    <td className="py-1.5 px-2 text-right">{num(t.unidades)}</td>
+                                    <td className="py-1.5 px-2 text-right">100%</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                        ) : (
                         <div className="gk-scroll" style={{ overflowX: 'auto' }}>
                         <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: '740px', fontSize: '11px', fontVariantNumeric: 'tabular-nums' }}>
                             <colgroup>
@@ -117,9 +145,10 @@ export default function FacturacionDoc({ modo = 'razon', grupos = [], totales, p
                             </tfoot>
                         </table>
                         </div>
+                        )
                     )}
 
-                    <p className="text-[10px] text-slate-400 mt-6 pt-3 border-t border-slate-200">Genius Keeper · Lacteoca — Documento interno de facturación. FS = Foodservice. Montos según Zoho Books (excluye anuladas).</p>
+                    <p className="text-[10px] text-slate-400 mt-6 pt-3 border-t border-slate-200">Genius Keeper · Lacteoca — {soloUnidades ? 'Unidades según las facturas de Zoho Books (excluye anuladas). FS = Foodservice.' : 'Documento interno de facturación. FS = Foodservice. Montos según Zoho Books (excluye anuladas).'}</p>
                 </div>
             </div>
             <style>{PRINT_CSS}</style>

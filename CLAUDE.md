@@ -2963,3 +2963,44 @@ Ahora TODOS los wrappers son `(props) => <Impl {...props} />`. **Regla:** un re-
 **De paso, en el modal:**
 - La opción de despacho ya no depende de encontrar un almacén con "comercial" en el nombre.
 - Si el perfil no tiene permiso de Despachos, lo DICE en vez de esconder la opción.
+
+### "Ventas de tu cartera" = desde su ingreso y su cartera actual, en unidades (2026-09) ✅
+
+Pedido del dueño: la hoja mostraba TODO el histórico de facturas atribuidas al vendedor, incluso de antes de que entrara y de clientes que ya no son suyos. *"No vale de nada meter toda una cantidad de puntos y clientes."*
+
+`VendedorVentasCartera` cuenta ahora SOLO:
+- lo facturado desde `fechaIngreso`, sin recuperadas;
+- de clientes que HOY son suyos: `clientes_zoho.vendedorId == uid` (sin Oficina), por **carnet**. Si una factura vieja no trae carnet, por nombre.
+
+Si no se puede leer la cartera, lo dice y no filtra por cliente. `VendedorLayout` pasa ahora `zohoCustomerId`, `ingreso` y `vendedorId`. La lógica pura es `ventasDeSuCartera`.
+
+Se retiró la vista **"por facturación"**: todo en unidades, con "% de tus unidades" por fila. El PDF usa `FacturacionDoc soloUnidades`, sin montos.
+
+### Seguimiento: desempeño del vendedor de un vistazo (2026-09) ✅
+
+Pedido del dueño: en Seguimiento, *"un vistazo y sabemos si el vendedor está cumpliendo o no"*, con una valoración global.
+
+**Motor puro `src/utils/desempenoVendedor.js`** (`evaluarDesempeno`):
+- Evalúa el **período de empleo en curso**, el mismo con el que se le paga.
+- Compara contra lo que tocaba llevar **a hoy**, no contra la meta del mes entero.
+- Cinco pilares de 0 a 100:
+
+| Pilar | Mide | Peso |
+|---|---|---|
+| Facturación | unidades vs. `metaMensual × días corridos/días del período` | 30 |
+| Cobranza | parte de su cuenta por cobrar que está al día (y cuántas pasan de 45 días) | 25 |
+| Activación | semanas logradas del bono (`computeActivacionPeriodo`, ahora exportada) | 15 |
+| Visitas | cobertura del mercaderista según `visitInterval` (del seguidor) | 15 |
+| Cartera comprando | PDV sin comprar hace +8 días (accionables) sobre su total | 15 |
+
+- **Global** = promedio ponderado. Un pilar sin datos **no cuenta** y su peso se reparte (nunca un cero inventado).
+- Veredicto: ≥85 **Cumpliendo**, 65–84 **En riesgo**, <65 **No está cumpliendo**. `peor` = el pilar que más puntos le resta, ponderado.
+
+**Vista `src/Components/DesempenoVendedor.jsx`:**
+- Medidor semicircular con el puntaje y el veredicto.
+- "Lo que más le resta".
+- Una fila por pilar: barra, cifra y una línea de detalle.
+
+**En `SeguimientoComercial`:**
+- En *Toda la empresa*, una tarjeta por vendedor (`DesempenoMini`), ordenadas de peor a mejor; tocar una abre su detalle.
+- Por vendedor, el tablero completo arriba de los indicadores Semana/Mes de siempre. Estos siguen para revisar el histórico.
