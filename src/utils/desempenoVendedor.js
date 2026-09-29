@@ -30,7 +30,12 @@ const toDate = (v) => {
 };
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 
-export const PESOS = { facturacion: 30, cobranza: 25, activacion: 15, visitas: 15, cartera: 15 };
+// Decisión del dueño: Facturación, Activación y Cobranza pesan IGUAL. Se dan la
+// mano pero no son lo mismo: facturación mide VOLUMEN (unidades vs. meta) y
+// activación mide AMPLITUD (cuántos clientes compran cada semana al menos el
+// mínimo) — no es lo mismo activar con una docena que con tres. Visitas y
+// cartera comprando son de apoyo.
+export const PESOS = { facturacion: 25, cobranza: 25, activacion: 25, visitas: 12.5, cartera: 12.5 };
 
 /** Estado a partir de un puntaje 0–100. */
 export function estadoDe(score) {

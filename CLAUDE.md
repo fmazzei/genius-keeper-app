@@ -2987,12 +2987,13 @@ Pedido del dueño: en Seguimiento, *"un vistazo y sabemos si el vendedor está c
 
 | Pilar | Mide | Peso |
 |---|---|---|
-| Facturación | unidades vs. `metaMensual × días corridos/días del período` | 30 |
+| Facturación | VOLUMEN: unidades vs. `metaMensual × días corridos/días del período` | 25 |
 | Cobranza | parte de su cuenta por cobrar que está al día (y cuántas pasan de 45 días) | 25 |
-| Activación | semanas logradas del bono (`computeActivacionPeriodo`, ahora exportada) | 15 |
-| Visitas | cobertura del mercaderista según `visitInterval` (del seguidor) | 15 |
-| Cartera comprando | PDV sin comprar hace +8 días (accionables) sobre su total | 15 |
+| Activación | AMPLITUD: semanas logradas del bono (`computeActivacionPeriodo`, ahora exportada) | 25 |
+| Visitas | cobertura del mercaderista según `visitInterval` (del seguidor) | 12,5 |
+| Cartera comprando | PDV sin comprar hace +8 días (accionables) sobre su total | 12,5 |
 
+- **Pesos (decisión del dueño):** Facturación, Cobranza y Activación pesan IGUAL (25 c/u). Facturación y activación se dan la mano pero no son lo mismo: una mide volumen y la otra cuántos clientes compran cada semana — no es lo mismo activar con una docena que con tres. Visitas y cartera son de apoyo.
 - **Global** = promedio ponderado. Un pilar sin datos **no cuenta** y su peso se reparte (nunca un cero inventado).
 - Veredicto: ≥85 **Cumpliendo**, 65–84 **En riesgo**, <65 **No está cumpliendo**. `peor` = el pilar que más puntos le resta, ponderado.
 

@@ -19,9 +19,9 @@ const TONO = {
 };
 
 export const PILAR_META = {
-    facturacion: { nombre: 'Facturación', que: 'Unidades vs. lo que tocaba llevar a hoy', Icon: Receipt },
+    facturacion: { nombre: 'Facturación', que: 'Volumen: unidades vs. lo que tocaba llevar a hoy', Icon: Receipt },
     cobranza:    { nombre: 'Cobranza',    que: 'Parte de su cuenta por cobrar que está al día', Icon: Wallet },
-    activacion:  { nombre: 'Activación',  que: 'Semanas en que activó su cartera (bono)', Icon: Zap },
+    activacion:  { nombre: 'Activación',  que: 'Amplitud: semanas en que compró la mayoría de su cartera', Icon: Zap },
     visitas:     { nombre: 'Visitas',     que: 'Cobertura del mercaderista en su cartera', Icon: MapPin },
     cartera:     { nombre: 'Cartera comprando', que: 'PDV de su cartera que están comprando', Icon: Store },
 };
@@ -85,7 +85,7 @@ export default function DesempenoVendedor({ ev, nombre }) {
                             <div className="min-w-0">
                                 <p className="text-sm font-bold text-slate-800 flex items-baseline gap-2 flex-wrap">
                                     {meta.nombre}
-                                    <span className="text-[11px] font-normal text-slate-400">{meta.que} · pesa {pil.peso}%</span>
+                                    <span className="text-[11px] font-normal text-slate-400">{meta.que} · pesa {String(pil.peso).replace('.', ',')}%</span>
                                 </p>
                                 <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden mt-1.5">
                                     <div className={`h-full rounded-full ${tp.bar}`} style={{ width: `${pil.score ?? 0}%` }} />
