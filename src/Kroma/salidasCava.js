@@ -8,7 +8,12 @@
 //   · Venta         — no, pasa a un cliente (carnet de Zoho). Queda "por
 //     facturar" hasta que administración la factura o le vincula su factura.
 //   · Reposición    — no: se le reemplaza a un cliente, sin cobrar, producto
-//     vencido o dañado. Lleva cliente y motivo; no se factura.
+//     vencido o dañado. Lleva cliente, motivo y lo que el cliente DEVOLVIÓ.
+//     Esquema contable de la administradora (decidido por el dueño): en Zoho
+//     se hace una NOTA DE CRÉDITO por lo devuelto y una FACTURA por lo repuesto,
+//     y se cruzan — saldo del cliente intacto, rastro producto por producto.
+//     La reposición queda "por documentar" hasta que se vinculan las dos, y GK
+//     saca esa factura de ventas, meta y comisión (`esReposicion`).
 //   · Otra salida   — no, y no entra dinero: merma, vencido, muestra, consumo
 //     interno, donación u otro. Motivo OBLIGATORIO.
 //
@@ -80,12 +85,14 @@ export function resumenLineas(lineas = []) {
  * @param {object} [p.cliente] { customerId, customerName } — obligatorio en venta
  * @param {string} [p.motivo]  clave de MOTIVOS_SALIDA — obligatorio en salida
  * @param {string} [p.nota]    obligatoria si el motivo es "otro"
+ * @param {number} [p.devueltas] reposición: unidades que el cliente devolvió
+ *                  (entran y salen como merma: nunca vuelven a la venta)
  * @param {string} p.fecha     'YYYY-MM-DD'
  * @param {string} p.hoy       'YYYY-MM-DD'
  * @returns {Promise<{ventaId: string|null}>}
  */
 export async function registrarSalidaCava(db, {
-    tipo, lineas = [], cliente = null, motivo = '', nota = '', fecha, hoy,
+    tipo, lineas = [], cliente = null, motivo = '', nota = '', devueltas = 0, fecha, hoy,
     empresaId = 'lacteoca', responsable = { id: '', nombre: '' },
     nombreAlmacen = () => 'Cava', etiquetaPresentacion = () => '',
 }) {
@@ -94,6 +101,8 @@ export async function registrarSalidaCava(db, {
     if (validas.length === 0) throw new Error('Indica qué producto sale y cuánto.');
     if ((tipo === 'venta' || tipo === 'reposicion') && !cliente?.customerId) throw new Error(tipo === 'venta' ? 'Elige el cliente de la venta.' : 'Elige el cliente al que se le repone.');
     if (tipo === 'reposicion' && !MOTIVOS_REPOSICION.some(m => m.key === motivo)) throw new Error('Indica por qué se repone: vencido o dañado.');
+    const nDevueltas = Math.max(0, Math.round(Number(devueltas) || 0));
+    if (tipo === 'reposicion' && !(nDevueltas > 0)) throw new Error('Indica cuántas unidades devolvió el cliente.');
     if (tipo === 'salida' && !MOTIVOS_SALIDA.some(m => m.key === motivo)) throw new Error('Elige el motivo de la salida.');
     if (tipo === 'salida' && motivo === 'otro' && !String(nota).trim()) throw new Error('Explica el motivo en la nota.');
 
@@ -138,7 +147,9 @@ export async function registrarSalidaCava(db, {
             unidad:           r.empacado ? 'unidades' : 'kg',
         }));
 
-        const ventaRef = tipo === 'venta' ? doc(collection(db, 'kroma_ventas_planta')) : null;
+        // Venta y reposición dejan un registro que se documenta en Zoho (factura;
+        // en la reposición, además, la nota de crédito).
+        const ventaRef = tipo !== 'salida' ? doc(collection(db, 'kroma_ventas_planta')) : null;
         if (ventaRef) ventaId = ventaRef.id;
 
         for (const r of leidos) {
@@ -173,8 +184,40 @@ export async function registrarSalidaCava(db, {
             });
         }
 
+        // Lo que el cliente devolvió: entra y sale como merma en el mismo acto
+        // (queda en el libro, nunca suma a la cava vendible).
+        if (tipo === 'reposicion') {
+            const r0 = leidos[0];
+            tx.set(doc(collection(db, 'kroma_warehouse_movements')), {
+                tipo:            'devolucion_cliente',
+                motivo,
+                origenId:        null,
+                origenNombre:    `Devuelto · ${cliente.customerName || ''}`,
+                destinoId:       null,
+                destinoNombre:   'Merma',
+                clienteZohoId:   String(cliente.customerId),
+                clienteNombre:   cliente.customerName || '',
+                ventaId,
+                productoNombre:  r0?.data.productoNombre || '',
+                presentacion:    '',
+                lote:            '',
+                cantidad:        nDevueltas,
+                delta:           0,
+                unidad:          'unidades',
+                nota:            String(nota || '').trim() || null,
+                fecha,
+                cargadaEnDiferido: fecha !== hoy,
+                empresaId,
+                creadoPorId:     responsable.id || null,
+                creadoPorNombre: responsable.nombre || null,
+                createdAt:       serverTimestamp(),
+            });
+        }
+
         if (ventaRef) {
             tx.set(ventaRef, {
+                tipo:            tipo === 'reposicion' ? 'reposicion' : 'venta',
+                ...(tipo === 'reposicion' ? { motivo, unidadesDevueltas: nDevueltas, notaCreditoNumero: null } : {}),
                 empresaId,
                 fecha,
                 cargadaEnDiferido: fecha !== hoy,

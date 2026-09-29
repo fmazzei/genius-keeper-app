@@ -2999,6 +2999,30 @@ Pedido del dueño: el libro de movimientos tenía que ser práctico, en una secc
   - Descarga CSV. Solo lectura: el libro no se edita desde la app.
 - Prueba ampliada: `tests/salidasCava.e2e.test.mjs`, 34 verificaciones en verde.
 
+### Reposición documentada en Zoho: nota de crédito + factura cruzadas (2026-09) ✅
+
+Propuesta de la administradora, aprobada por el dueño: si el inventario se lleva en sistema, una reposición no puede quedar solo como salida física.
+- En Zoho se hace una **nota de crédito** por lo devuelto: esas unidades entran al almacén principal.
+- Se hace una **factura** por lo repuesto: vuelven a salir.
+- Se **cruza la nota de crédito contra la factura**: el saldo del cliente no se mueve, y queda el reconocimiento producto por producto.
+
+**En Kroma:**
+- La reposición exige **unidades devueltas** (`devueltas` en `registrarSalidaCava`). Lo devuelto va al libro como `devolucion_cliente`: entra y sale como **merma** en el mismo acto (clase Reposiciones, signo 0) y nunca suma a la cava vendible. `totales` lo cuenta aparte (`devueltas`).
+- Crea un registro en `kroma_ventas_planta` con `tipo:'reposicion'`, `motivo`, `unidadesDevueltas` y `notaCreditoNumero:null`. Queda **"Por documentar"** en Despachos → Ventas en planta.
+- Se documenta con el botón "Vincular nota de crédito y factura":
+  - Se escribe el número de la nota de crédito. GK no guarda notas de crédito, así que se declara a mano.
+  - Se elige la factura entre las del cliente. Se cuadran las unidades repuestas contra las facturadas.
+  - La acción `facturar` se rechaza para reposiciones: las dos piezas se hacen en Zoho.
+
+**En GK la factura de reposición NO es venta** (`facturas_vendedor.esReposicion:true`):
+- `ventasPlanta.vincular` revierte sus unidades y su comisión si ya se habían contado (`revertirAcumulados`) y la marca con `comisionGenerada:0`.
+- `upsertFacturaFromZoho` respeta la marca: no la vuelve a contabilizar ni calcula comisión aunque Zoho la ponga `pagada` al aplicarle la nota de crédito.
+- `facturaEstado.cuentaEnCartera` la excluye (nueva `esReposicion`), así que sale de ventas, meta, cobranza, desempeño y dossier; `motivoFuera` dice "Reposición (cruzada con NC …)".
+- Desvincular quita la marca.
+- Se verificó que todas las pantallas que suman facturas pasan por `cuentaEnCartera`.
+
+Prueba: `tests/salidasCava.e2e.test.mjs`, 39 verificaciones en verde.
+
 ### Bug: los "re-exportadores" de Kroma se comían los props (2026-09) ✅
 
 El dueño abrió "Mover producto" y no aparecía la opción de despachar a Caracas.

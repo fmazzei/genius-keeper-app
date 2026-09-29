@@ -130,7 +130,7 @@ export default function LibroMovimientosPage() {
                             <p className="text-white font-mono text-sm mt-1 leading-tight">
                                 {t.ud ? `${num(t.ud)} ud` : ''}{t.ud && t.kg ? ' · ' : ''}{t.kg ? `${num(t.kg, 2)} kg` : ''}{!t.ud && !t.kg ? '—' : ''}
                             </p>
-                            <p className="text-slate-500 text-[11px]">{t.n} mov.</p>
+                            <p className="text-slate-500 text-[11px]">{t.n} mov.{t.devueltas ? ` · devolvieron ${num(t.devueltas)} ud` : ''}</p>
                         </button>
                     );
                 })}

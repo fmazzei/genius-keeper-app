@@ -27,10 +27,16 @@ export const esAnulada = (f) => f?.estado === 'anulada';
 export const esFantasma = (f) => f?.ausenteEnZoho === true || f?.estado === 'borrador';
 
 /**
+ * Factura de REPOSICIÓN (se cruza con una nota de crédito por lo devuelto): no
+ * es venta ni se cobra. Se vincula desde Kroma → Despachos → Ventas en planta.
+ */
+export const esReposicion = (f) => f?.esReposicion === true;
+
+/**
  * ¿Cuenta este documento para la gestión comercial (facturación, cobranza,
  * unidades, comisión)? Excluye anuladas y fantasmas.
  */
-export const cuentaEnCartera = (f) => !!f && !esAnulada(f) && !esFantasma(f);
+export const cuentaEnCartera = (f) => !!f && !esAnulada(f) && !esFantasma(f) && !esReposicion(f);
 
 /**
  * Saldo REAL por cobrar. Zoho reporta `balance` (total − abonado); si falta, se
@@ -53,5 +59,6 @@ export const motivoFuera = (f) => {
     if (esAnulada(f)) return 'Anulada';
     if (f?.ausenteEnZoho === true) return 'Ya no existe en Zoho';
     if (f?.estado === 'borrador') return 'Volvió a borrador en Zoho';
+    if (f?.esReposicion === true) return `Reposición (cruzada con NC ${f.notaCreditoReposicion || ''})`.replace(' )', ')');
     return null;
 };

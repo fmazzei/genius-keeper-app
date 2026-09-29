@@ -29,6 +29,8 @@ const TIPOS = {
     eliminacion_produccion: { cat: 'cava', label: 'Producción eliminada',  signo: -1 },
     venta:                  { cat: 'venta', label: 'Venta',                signo: -1 },
     reposicion:             { cat: 'reposicion', label: 'Reposición',      signo: -1 },
+    // Lo que el cliente devolvió: entra y sale como merma en el mismo acto.
+    devolucion_cliente:     { cat: 'reposicion', label: 'Devuelto por el cliente → merma', signo: 0 },
     transferencia:          { cat: 'transferencia', label: 'Traslado entre almacenes', signo: 0 },
     despacho_salida:        { cat: 'transferencia', label: 'Despacho a Caracas', signo: -1 },
     despacho_entregado:     { cat: 'transferencia', label: 'Despacho entregado', signo: -1 },
@@ -50,7 +52,7 @@ export function cantidadConSigno(m) {
     const c = Math.abs(Number(m?.cantidad) || 0);
     const { signo } = clasificar(m);
     if (signo) return signo * c;
-    if (m?.tipo === 'transferencia') return 0;
+    if (m?.tipo === 'transferencia' || m?.tipo === 'devolucion_cliente') return 0;
     if (typeof m?.delta === 'number' && m.delta !== 0) return m.delta;
     if (m?.tipo === 'envasado') return m.unidad === 'kg' ? -c : c;
     return Number(m?.cantidad) || 0;
@@ -111,10 +113,12 @@ export function filtrar(movs = [], f = {}) {
 
 /** Totales por clase: movimientos, unidades y kg (en valor absoluto). */
 export function totales(movs = []) {
-    const out = Object.fromEntries(CATEGORIAS.map(c => [c.key, { n: 0, ud: 0, kg: 0 }]));
+    const out = Object.fromEntries(CATEGORIAS.map(c => [c.key, { n: 0, ud: 0, kg: 0, devueltas: 0 }]));
     movs.forEach(m => {
         const o = out[clasificar(m).cat];
         if (!o) return;
+        // Lo devuelto no es producto que salió: se cuenta aparte.
+        if (m.tipo === 'devolucion_cliente') { o.devueltas += Math.abs(Number(m.cantidad) || 0); return; }
         o.n += 1;
         const q = Math.abs(Number(m.cantidad) || 0);
         if (m.unidad === 'kg') o.kg = +(o.kg + q).toFixed(3); else o.ud += q;

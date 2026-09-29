@@ -16,6 +16,13 @@
 // se marca `esOficina` al facturar o vincular; si ya es de un vendedor NO se
 // toca y se avisa, porque cambiarlo movería comisiones.
 //
+// REPOSICIONES (mismo registro, `tipo:'reposicion'`): esquema de la
+// administradora — en Zoho, NOTA DE CRÉDITO por lo devuelto + FACTURA por lo
+// repuesto, cruzadas (saldo del cliente intacto). Aquí se vinculan las dos y la
+// factura se marca `esReposicion`: sale de ventas, meta y comisión en GK (se
+// revierten sus unidades/comisión si ya se habían contado) y la conciliación no
+// la vuelve a contar (`upsertFacturaFromZoho` respeta la marca).
+//
 // Todo pasa por esta función (Admin SDK) para no abrirle al teléfono de la
 // planta `clientes_zoho`, `zoho_items` ni `facturas_vendedor`, que son datos
 // comerciales. Solo aplica a Lacteoca: Zoho es de Lacteoca.
@@ -25,6 +32,7 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { getAccessToken, createInvoice } = require('./zohoApi');
 const { upsertFacturaFromZoho, GRAMOS_POR_UNIDAD_DEFAULT } = require('./facturaSync');
+const { revertirAcumulados } = require('./facturaCommissionOps');
 
 const ROLES = ['produccion', 'kroma_admin', 'kroma_gerencial', 'kroma_operario', 'kroma_owner',
     'master', 'administrador', 'gerencia', 'sales_manager'];
@@ -88,6 +96,26 @@ function datosFactura(f) {
         unidades: Number(f.unidades) || 0,
         estado: f.estado || '',
     };
+}
+
+/** La factura de una reposición NO es venta: fuera de meta, comisión y ventas. */
+async function marcarFacturaReposicion(db, numero, ventaId, notaCreditoNumero) {
+    const ref = db.doc(`facturas_vendedor/${numero}`);
+    const snap = await ref.get();
+    if (!snap.exists) return;
+    const f = { id: snap.id, ...snap.data() };
+    if (!f.esReposicion) {
+        try { await revertirAcumulados(f); }
+        catch (e) { functions.logger.error(`ventasPlanta: no se pudo revertir la comisión de ${numero}`, e); }
+    }
+    await ref.set({
+        esReposicion: true,
+        reposicionId: ventaId,
+        notaCreditoReposicion: notaCreditoNumero || null,
+        unidadesContabilizadas: false,
+        comisionGenerada: 0,
+        reposicionMarcadaAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
 }
 
 async function guardarVinculo(db, ref, venta, factura, gramosPorUnidad, via, uid) {
@@ -188,6 +216,9 @@ exports.ventasPlanta = onCall({ region: "us-central1", timeoutSeconds: 240, memo
         const { ref, venta } = await leerVenta(db, request.data.ventaId);
         const numero = String(request.data.numero || '').trim();
         if (!numero) throw new HttpsError("invalid-argument", "Elige la factura.");
+        const esRepo = venta.tipo === 'reposicion';
+        const nc = String(request.data.notaCreditoNumero || '').trim();
+        if (esRepo && !nc) throw new HttpsError("invalid-argument", "Escribe el número de la nota de crédito por lo devuelto.");
         const fSnap = await db.doc(`facturas_vendedor/${numero}`).get();
         if (!fSnap.exists) throw new HttpsError("not-found", `La factura ${numero} no está en GK. Espera la próxima conciliación con Zoho.`);
         const f = fSnap.data();
@@ -198,7 +229,11 @@ exports.ventasPlanta = onCall({ region: "us-central1", timeoutSeconds: 240, memo
         if (otra.docs.some(d => d.id !== ref.id)) throw new HttpsError("already-exists", `La factura ${numero} ya está vinculada a otra venta.`);
         const { aviso } = await asegurarOficina(db, venta.clienteZohoId);
         const cuadre = await guardarVinculo(db, ref, venta, datosFactura(f), gramosPorUnidad, 'vinculada', uid);
-        return { ok: true, numero, cuadre, aviso };
+        if (esRepo) {
+            await ref.update({ notaCreditoNumero: nc });
+            await marcarFacturaReposicion(db, numero, ref.id, nc);
+        }
+        return { ok: true, numero, cuadre, aviso, reposicion: esRepo };
     }
 
     if (accion === 'desvincular') {
@@ -206,9 +241,16 @@ exports.ventasPlanta = onCall({ region: "us-central1", timeoutSeconds: 240, memo
         if (venta.facturaVia === 'creada') {
             throw new HttpsError("failed-precondition", "Esta factura se creó desde Kroma: si está mal, anúlala en Zoho y la venta se puede volver a facturar.");
         }
+        if (venta.tipo === 'reposicion' && venta.facturaNumero) {
+            // Vuelve a ser una factura normal: la próxima conciliación la cuenta.
+            await db.doc(`facturas_vendedor/${venta.facturaNumero}`).set({
+                esReposicion: false, reposicionId: null, notaCreditoReposicion: null,
+            }, { merge: true }).catch(() => {});
+        }
         await ref.update({
             estadoFactura: 'por_facturar', facturaNumero: null, facturaFecha: null, facturaTotal: null,
             facturaUnidades: null, diferenciaUnidades: null, cuadra: null, facturaVia: null,
+            ...(venta.tipo === 'reposicion' ? { notaCreditoNumero: null } : {}),
         });
         return { ok: true };
     }
@@ -217,6 +259,9 @@ exports.ventasPlanta = onCall({ region: "us-central1", timeoutSeconds: 240, memo
     if (accion === 'facturar') {
         const { ref, venta } = await leerVenta(db, request.data.ventaId);
         if (venta.estadoFactura === 'facturada') throw new HttpsError("already-exists", `Esta venta ya tiene la factura ${venta.facturaNumero}.`);
+        if (venta.tipo === 'reposicion') {
+            throw new HttpsError("failed-precondition", "Una reposición se documenta en Zoho con nota de crédito + factura, cruzadas. Hazlas allá y usa \"Vincular\".");
+        }
         const { lineas = [], emitir = false, diasCredito = 0, notas = '' } = request.data;
         const lineItems = [];
         for (const l of lineas) {

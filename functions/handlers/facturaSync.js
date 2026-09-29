@@ -424,9 +424,15 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
         updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
     };
 
+    // Factura de REPOSICIÓN (vinculada desde Kroma → Ventas en planta): cruza
+    // con una nota de crédito, no es venta. Ni unidades a la meta ni comisión,
+    // aunque Zoho la marque pagada al aplicarle la nota de crédito.
+    const esReposicion = existingData?.esReposicion === true;
     const yaContabilizada = existingData?.unidadesContabilizadas === true;
     const unidadesPrevias = Number(existingData?.unidades) || 0;
-    if (vendedor && mesCohorte && unidades > 0 && !yaContabilizada) {
+    if (esReposicion) {
+        facturaData.unidadesContabilizadas = false;
+    } else if (vendedor && mesCohorte && unidades > 0 && !yaContabilizada) {
         const tier = await congelarTasaCohorte(vendedor, mesCohorte, unidades, periodoCohorte);
         facturaData.tasaCohorte = tier.rate * 100;
         facturaData.tierCohorte = tier.label;
@@ -456,7 +462,7 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     // Pasó a PAGADA (primera vez): calcular comisión. Aislado en try/catch para
     // que un fallo del cálculo NO impida persistir el estado 'pagada'.
     const becamePaid = estado === 'pagada' && existingData?.estado !== 'pagada';
-    if (becamePaid) {
+    if (becamePaid && !esReposicion) {
         try {
             await procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencimiento, fechaPagoZoho });
         } catch (e) {

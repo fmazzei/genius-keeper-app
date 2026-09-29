@@ -8,6 +8,7 @@ import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'fs';
 import { doc, getDoc, setDoc, updateDoc, getDocs, collection, query, where } from 'firebase/firestore';
 import { registrarSalidaCava, cuadreVentaFactura, unidadesEquivalentes } from '../src/Kroma/salidasCava.js';
+import { cuentaEnCartera, motivoFuera } from '../src/utils/facturaEstado.js';
 import { clasificar, cantidadConSigno, filtrar, totales, opciones, fechaMovimiento } from '../src/Kroma/libroMovimientos.js';
 
 const PORT = Number(process.env.FS_PORT || 8080);
@@ -64,26 +65,36 @@ ok(/nota/.test(await falla({ tipo: 'salida', motivo: 'otro', lineas: [{ inventor
 ok(/cliente/.test(await falla({ tipo: 'venta', lineas: [{ inventoryId: 'kg1', cantidad: 1 }] }) || ''), 'venta sin cliente se rechaza');
 ok((await leer('kroma_inventory_pt', 'kg1')).unidades === 3, 'tras los rechazos el stock sigue intacto (3)');
 
-// 4b. Reposición a un cliente: sale sin factura, con cliente y motivo
-ok(/vencido o dañado/.test(await falla({ tipo: 'reposicion', cliente: { customerId: '999' }, lineas: [{ inventoryId: 'kg1', cantidad: 1 }] }) || ''), 'reposición sin motivo se rechaza');
-await registrarSalidaCava(planta, { ...comun, tipo: 'reposicion', motivo: 'vencido', nota: 'devolvió 1 kg vencido',
+// 4b. Reposición a un cliente: cliente + motivo + lo devuelto; queda "por documentar"
+ok(/vencido o dañado/.test(await falla({ tipo: 'reposicion', cliente: { customerId: '999' }, devueltas: 6, lineas: [{ inventoryId: 'kg1', cantidad: 1 }] }) || ''), 'reposición sin motivo se rechaza');
+ok(/devolvió/.test(await falla({ tipo: 'reposicion', motivo: 'vencido', cliente: { customerId: '999' }, lineas: [{ inventoryId: 'kg1', cantidad: 1 }] }) || ''), 'reposición sin unidades devueltas se rechaza');
+const { ventaId: repoId } = await registrarSalidaCava(planta, { ...comun, tipo: 'reposicion', motivo: 'vencido', devueltas: 6, nota: 'lote viejo',
   cliente: { customerId: '999', customerName: 'Bodega La Esquina' }, lineas: [{ inventoryId: 'kg1', cantidad: 1 }] });
 ok((await leer('kroma_inventory_pt', 'kg1')).unidades === 2, 'reposición: 1 kg sale de la cava (3 − 1 = 2)');
-ok((await getDocs(query(collection(planta, 'kroma_ventas_planta'), where('empresaId', '==', 'lacteoca')))).size === 1, 'la reposición NO crea venta por facturar');
+const repo = await leer('kroma_ventas_planta', repoId);
+ok(repo.tipo === 'reposicion' && repo.estadoFactura === 'por_facturar' && repo.unidadesDevueltas === 6 && repo.notaCreditoNumero === null,
+  'la reposición queda por documentar (NC + factura), con 6 ud devueltas');
+ok(unidadesEquivalentes(repo.lineas, 250) === 4, '1 kg repuesto = 4 unidades de venta (lo que debe decir la factura de reposición)');
 
 // 4c. Libro de movimientos
 const libro = (await getDocs(query(collection(planta, 'kroma_warehouse_movements'), where('empresaId', '==', 'lacteoca')))).docs.map(d => ({ id: d.id, ...d.data() }));
 const tot = totales(libro);
 ok(tot.venta.n === 3 && tot.venta.ud === 14 && tot.venta.kg === 1.5, `libro: ventas = 3 mov · 14 ud · 1,5 kg → ${JSON.stringify(tot.venta)}`);
-ok(tot.reposicion.n === 1 && tot.reposicion.ud === 1, 'libro: 1 reposición de 1 ud');
+ok(tot.reposicion.n === 1 && tot.reposicion.ud === 1 && tot.reposicion.devueltas === 6, `libro: 1 reposición de 1 ud, devolvieron 6 → ${JSON.stringify(tot.reposicion)}`);
+const dev = libro.find(m => m.tipo === 'devolucion_cliente');
+ok(!!dev && cantidadConSigno(dev) === 0 && clasificar(dev).cat === 'reposicion', 'lo devuelto entra y sale como merma: en el libro, sin sumar ni restar stock');
 ok(tot.salida.n === 1 && tot.salida.ud === 3, 'libro: 1 otra salida (muestra) de 3 ud');
 ok(clasificar({ tipo: 'transferencia' }).cat === 'transferencia' && cantidadConSigno({ tipo: 'transferencia', cantidad: 5 }) === 0, 'transferencia: clase propia y no suma ni resta');
 ok(cantidadConSigno({ tipo: 'venta', cantidad: 4 }) === -4 && cantidadConSigno({ tipo: 'entrada_produccion', cantidad: 4 }) === 4, 'signos: venta −, entrada de producción +');
-ok(filtrar(libro, { cliente: '999' }).length === 4, 'filtro por cliente: 3 líneas de venta + 1 reposición');
+ok(filtrar(libro, { cliente: '999' }).length === 5, 'filtro por cliente: 3 líneas de venta + reposición + devolución');
 ok(filtrar(libro, { lote: 'LCO20260901', cats: new Set(['salida']) }).length === 1, 'filtro por producción + clase');
 ok(filtrar(libro, { desde: new Date(2026, 9, 1) }).length === 0, 'filtro por fecha: nada en octubre');
 ok(opciones(libro).clientes[0]?.nombre === 'Bodega La Esquina', 'el filtro de clientes sale de los movimientos, con su nombre');
 ok(fechaMovimiento({ fecha: '2026-07-22' }).getDate() === 22, 'la fecha declarada no retrocede un día por UTC');
+
+// 4d. GK: la factura de reposición no cuenta como venta
+ok(!cuentaEnCartera({ estado: 'pagada', esReposicion: true }) && cuentaEnCartera({ estado: 'pagada' }), 'GK: factura de reposición fuera de ventas/meta/comisión; una normal sigue contando');
+ok(/Reposición/.test(motivoFuera({ esReposicion: true, notaCreditoReposicion: 'CN-31' }) || ''), 'GK dice por qué no cuenta: reposición cruzada con NC');
 
 // 5. Reglas: el teléfono no puede marcar la venta como facturada ni otra empresa leerla
 let bloqueado = false;

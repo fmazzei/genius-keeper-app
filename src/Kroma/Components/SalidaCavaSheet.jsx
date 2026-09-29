@@ -87,6 +87,7 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
     const [cliente, setCliente] = useState(null);
     const [motivo, setMotivo] = useState('');
     const [nota, setNota] = useState('');
+    const [devueltas, setDevueltas] = useState('');
     const [fecha, setFecha] = useState(() => hoyInput());
     const [lineas, setLineas] = useState(() => itemInicial ? [{ id: itemInicial.id, cant: granel(itemInicial) ? '' : '1' }] : []);
     const [agregar, setAgregar] = useState(false);
@@ -108,7 +109,7 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
     });
     const listo = lineas.length > 0 && problemas.every(p => !p)
         && (tipo === 'venta' ? !!cliente
-            : tipo === 'reposicion' ? (!!cliente && MOTIVOS_REPOSICION.some(m => m.key === motivo))
+            : tipo === 'reposicion' ? (!!cliente && MOTIVOS_REPOSICION.some(m => m.key === motivo) && parseInt(devueltas, 10) > 0)
             : (MOTIVOS_SALIDA.some(m => m.key === motivo) && (motivo !== 'otro' || nota.trim())));
 
     const guardar = async () => {
@@ -116,7 +117,7 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
         setSaving(true); setError('');
         try {
             const r = await registrarSalidaCava(db, {
-                tipo, cliente, motivo, nota, fecha: fecha || hoyInput(), hoy: hoyInput(),
+                tipo, cliente, motivo, nota, devueltas: parseInt(devueltas, 10) || 0, fecha: fecha || hoyInput(), hoy: hoyInput(),
                 lineas: lineas.map(l => ({ inventoryId: l.id, cantidad: aNum(l.cant) })),
                 empresaId: kromaUser?.empresaId || 'lacteoca',
                 responsable: { id: kromaUser?.id || '', nombre: kromaUser?.name || '' },
@@ -149,7 +150,7 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
                                 {tipo === 'venta'
                                     ? 'El producto ya salió del inventario. La venta queda "por facturar": administración la factura o le vincula su factura de Zoho en Despachos → Ventas en planta.'
                                     : tipo === 'reposicion'
-                                    ? 'El producto ya salió del inventario como reposición al cliente (sin factura). Queda en el Libro de movimientos.'
+                                    ? 'Quedó registrada y lo devuelto como merma. Falta documentarla en Zoho: nota de crédito por lo devuelto y factura por lo repuesto, cruzadas. Luego se vinculan en Despachos → Ventas en planta.'
                                     : 'El producto ya salió del inventario y el motivo quedó en el libro de movimientos.'}
                             </p>
                             <button onClick={onClose} className="mt-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl px-6 py-2.5 text-sm">Cerrar</button>
@@ -203,7 +204,14 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
                                             </button>
                                         ))}
                                     </div>
-                                    <p className="text-slate-500 text-xs mt-2">Aquí va lo que SALE de la cava para reemplazar. Lo que el cliente devuelve no vuelve a la venta: anótalo en la nota.</p>
+                                    <p className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mt-4 mb-2">¿Cuántas unidades devolvió el cliente?</p>
+                                    <div className="flex items-center gap-2">
+                                        <input value={devueltas} inputMode="numeric" placeholder="ud"
+                                            onChange={e => setDevueltas(e.target.value.replace(/[^0-9]/g, ''))}
+                                            className="w-28 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-base font-mono focus:outline-none focus:border-violet-500" />
+                                        <span className="text-slate-400 text-sm">ud</span>
+                                    </div>
+                                    <p className="text-slate-500 text-xs mt-2">Lo devuelto queda registrado como merma: no vuelve a la venta. Abajo va lo que SALE de la cava para reemplazar. En Zoho se documenta con una nota de crédito (lo devuelto) y una factura (lo repuesto).</p>
                                 </div>
                             )}
 

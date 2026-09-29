@@ -9,6 +9,9 @@
 //     (en unidades de venta de GK) contra las unidades de la factura.
 //   · Facturas sin salida — facturas de clientes de planta que nadie registró
 //     como salida de cava. El control en el otro sentido.
+//   · Reposiciones (`tipo:'reposicion'`) — "por documentar" hasta vincular la
+//     NOTA DE CRÉDITO por lo devuelto y la FACTURA por lo repuesto, que la
+//     administradora hace en Zoho y cruza entre sí.
 //
 // Registrar la venta lo puede hacer el operario (sin precios). Facturar,
 // vincular y ver montos es de quien puede ver costos (`verCostos`): el
@@ -21,7 +24,9 @@ import { db, functions } from '@/Firebase/config.js';
 import { ShoppingBag, Loader, Link2, FileText, CheckCircle2, AlertTriangle, X, Plus, Unlink, Search } from 'lucide-react';
 import { useKroma } from '../../KromaContext';
 import SalidaCavaSheet from '../../Components/SalidaCavaSheet.jsx';
-import { resumenLineas, gramosDeLinea } from '@/Kroma/salidasCava.js';
+import { resumenLineas, gramosDeLinea, motivoLabel } from '@/Kroma/salidasCava.js';
+
+const esRepo = (v) => v?.tipo === 'reposicion';
 import { fmtVence } from '@/utils/fechaCorta.js';
 
 const llamar = (data) => httpsCallable(functions, 'ventasPlanta', { timeout: 240000 })(data).then(r => r.data);
@@ -52,9 +57,9 @@ function Cuadre({ v }) {
     return (
         <div className={`mt-2 rounded-lg border px-3 py-2 text-xs ${ok ? 'border-emerald-700/40 bg-emerald-900/15 text-emerald-300' : 'border-amber-600/50 bg-amber-900/20 text-amber-200'}`}>
             <span className="font-semibold">Factura {v.facturaNumero}</span>
-            {v.facturaVia === 'creada' ? ' · creada desde Kroma' : ' · vinculada'}
+            {esRepo(v) ? ` · NC ${v.notaCreditoNumero || '—'}` : v.facturaVia === 'creada' ? ' · creada desde Kroma' : ' · vinculada'}
             <span className="block mt-0.5">
-                Entregado {num(v.unidadesEntregadas)} uds · facturado {num(v.facturaUnidades)} uds
+                {esRepo(v) ? 'Repuesto' : 'Entregado'} {num(v.unidadesEntregadas)} uds · facturado {num(v.facturaUnidades)} uds
                 {ok ? ' — cuadra' : ` — diferencia ${v.diferenciaUnidades > 0 ? '+' : ''}${num(v.diferenciaUnidades)} uds`}
             </span>
         </div>
@@ -63,6 +68,8 @@ function Cuadre({ v }) {
 
 // ── Vincular una factura ya hecha en Zoho ────────────────────────────────────
 function VincularSheet({ venta, onClose, onHecho }) {
+    const repo = esRepo(venta);
+    const [nc, setNc] = useState('');
     const [data, setData] = useState(null);
     const [error, setError] = useState('');
     const [guardando, setGuardando] = useState('');
@@ -71,22 +78,41 @@ function VincularSheet({ venta, onClose, onHecho }) {
         llamar({ accion: 'candidatas', ventaId: venta.id }).then(setData).catch(e => setError(e.message));
     }, [venta.id]);
     const vincular = async (numero) => {
+        if (repo && !nc.trim()) { setError('Primero escribe el número de la nota de crédito.'); return; }
         setGuardando(numero); setError('');
-        try { const r = await llamar({ accion: 'vincular', ventaId: venta.id, numero }); setRes(r); onHecho(); }
+        try { const r = await llamar({ accion: 'vincular', ventaId: venta.id, numero, notaCreditoNumero: nc.trim() }); setRes(r); onHecho(); }
         catch (e) { setError(e.message); }
         finally { setGuardando(''); }
     };
     return (
-        <Hoja titulo="Vincular factura de Zoho" onClose={onClose}>
-            <p className="text-slate-400 text-sm">
-                Facturas de <b className="text-white">{venta.clienteNombre}</b>, las más cercanas a la venta del {fmtVence(venta.fecha)} primero.
-                Se entregaron {data ? num(data.unidadesEntregadas) : '…'} uds de venta.
-            </p>
+        <Hoja titulo={repo ? 'Documentar la reposición' : 'Vincular factura de Zoho'} onClose={onClose}>
+            {repo ? (
+                <div className="space-y-3">
+                    <p className="text-slate-400 text-sm leading-relaxed">
+                        En Zoho: <b className="text-white">1)</b> nota de crédito por lo devuelto ({num(venta.unidadesDevueltas)} ud),
+                        {' '}<b className="text-white">2)</b> factura por lo repuesto ({data ? num(data.unidadesEntregadas) : '…'} uds de venta),
+                        {' '}<b className="text-white">3)</b> aplica la nota de crédito a esa factura. Luego vincúlalas aquí.
+                    </p>
+                    {!res && (
+                        <label className="block text-xs text-slate-500">Número de la nota de crédito
+                            <input value={nc} onChange={e => setNc(e.target.value)} placeholder="Ej: CN-00031"
+                                className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm font-mono focus:outline-none focus:border-violet-500" />
+                        </label>
+                    )}
+                    {!res && <p className="text-slate-500 text-xs">Ahora elige la factura de la reposición:</p>}
+                </div>
+            ) : (
+                <p className="text-slate-400 text-sm">
+                    Facturas de <b className="text-white">{venta.clienteNombre}</b>, las más cercanas a la venta del {fmtVence(venta.fecha)} primero.
+                    Se entregaron {data ? num(data.unidadesEntregadas) : '…'} uds de venta.
+                </p>
+            )}
             {error && <p className="bg-rose-900/20 border border-rose-700/40 rounded-xl px-3 py-2 text-rose-300 text-sm">{error}</p>}
             {res ? (
                 <div className="text-center py-4">
                     <CheckCircle2 size={36} className={`mx-auto mb-2 ${res.cuadre.cuadra ? 'text-emerald-400' : 'text-amber-400'}`} />
-                    <p className="text-white font-semibold">Vinculada a {res.numero}</p>
+                    <p className="text-white font-semibold">{res.reposicion ? `Documentada: factura ${res.numero} + NC ${nc}` : `Vinculada a ${res.numero}`}</p>
+                    {res.reposicion && <p className="text-slate-400 text-xs mt-1">Esa factura ya no cuenta como venta ni comisión en GK.</p>}
                     <p className="text-slate-400 text-sm mt-1">
                         {res.cuadre.cuadra ? 'Lo entregado y lo facturado cuadran.'
                             : `No cuadra: entregado ${num(res.cuadre.entregadas)} uds, facturado ${num(res.cuadre.facturadas)} uds.`}
@@ -289,6 +315,7 @@ export default function VentasPlanta({ inventory = [], nombreAlmacen, onInventar
         const l = ventas || [];
         return {
             por_facturar: l.filter(v => v.estadoFactura !== 'facturada').length,
+            reposiciones: l.filter(esRepo).length,
             facturada: l.filter(v => v.estadoFactura === 'facturada').length,
             descuadre: l.filter(v => v.estadoFactura === 'facturada' && v.cuadra === false).length,
         };
@@ -302,8 +329,8 @@ export default function VentasPlanta({ inventory = [], nombreAlmacen, onInventar
     return (
         <div className="space-y-4">
             <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 text-xs text-slate-400 leading-relaxed">
-                Ventas que salieron de la cava de la planta. Quien entrega registra la venta (cliente, lote y cantidad);
-                {verCostos ? ' tú la facturas en Zoho o le vinculas la factura que ya se hizo allá.' : ' administración la factura o le vincula su factura de Zoho.'}
+                Ventas y reposiciones que salieron de la cava de la planta. Quien entrega las registra (cliente, lote y cantidad);
+                {verCostos ? ' tú las documentas en Zoho: la venta con su factura, la reposición con nota de crédito + factura cruzadas.' : ' administración las documenta en Zoho.'}
             </div>
 
             {canEdit('despachos') && (
@@ -314,7 +341,7 @@ export default function VentasPlanta({ inventory = [], nombreAlmacen, onInventar
             )}
 
             <div className="flex gap-1.5 flex-wrap">
-                {[['por_facturar', 'Por facturar', cuentas.por_facturar], ['facturada', 'Facturadas', cuentas.facturada], ['descuadre', 'No cuadran', cuentas.descuadre]]
+                {[['por_facturar', 'Pendientes', cuentas.por_facturar], ['facturada', 'Documentadas', cuentas.facturada], ['descuadre', 'No cuadran', cuentas.descuadre]]
                     .filter(([k, , n]) => k !== 'descuadre' || n > 0)
                     .map(([k, l, n]) => (
                         <button key={k} onClick={() => setFiltro(k)}
@@ -340,14 +367,20 @@ export default function VentasPlanta({ inventory = [], nombreAlmacen, onInventar
             ) : visibles.length === 0 ? (
                 <div className="text-center py-12">
                     <ShoppingBag size={30} className="text-slate-700 mx-auto mb-2" />
-                    <p className="text-slate-500 text-sm">{filtro === 'por_facturar' ? 'No hay ventas por facturar.' : 'Nada por aquí.'}</p>
+                    <p className="text-slate-500 text-sm">{filtro === 'por_facturar' ? 'Nada pendiente de documentar.' : 'Nada por aquí.'}</p>
                 </div>
             ) : visibles.map(v => (
                 <div key={v.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
                     <div className="flex items-start gap-3">
                         <div className="flex-1 min-w-0">
-                            <p className="text-white font-semibold text-sm">{v.clienteNombre}</p>
-                            <p className="text-slate-400 text-xs mt-0.5">{fmtVence(v.fecha)} · {resumenLineas(v.lineas)}</p>
+                            <p className="text-white font-semibold text-sm">
+                                {esRepo(v) && <span className="text-violet-300 text-[10px] font-bold uppercase tracking-wide mr-1.5">Reposición</span>}
+                                {v.clienteNombre}
+                            </p>
+                            <p className="text-slate-400 text-xs mt-0.5">
+                                {fmtVence(v.fecha)} · {esRepo(v) ? 'repuesto ' : ''}{resumenLineas(v.lineas)}
+                                {esRepo(v) ? ` · devolvió ${num(v.unidadesDevueltas)} ud (${motivoLabel(v.motivo).toLowerCase()})` : ''}
+                            </p>
                             <p className="text-slate-600 text-xs mt-0.5">
                                 Lote {[...new Set((v.lineas || []).map(l => l.lote).filter(Boolean))].join(', ') || '—'}
                                 {v.registradoPorNombre ? ` · registró ${v.registradoPorNombre}` : ''}
@@ -356,13 +389,17 @@ export default function VentasPlanta({ inventory = [], nombreAlmacen, onInventar
                         </div>
                         <span className={`shrink-0 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-md ${v.estadoFactura === 'facturada'
                             ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'}`}>
-                            {v.estadoFactura === 'facturada' ? 'Facturada' : 'Por facturar'}
+                            {v.estadoFactura === 'facturada' ? (esRepo(v) ? 'Documentada' : 'Facturada') : (esRepo(v) ? 'Por documentar' : 'Por facturar')}
                         </span>
                     </div>
                     <Cuadre v={v} />
                     {verCostos && (
                         <div className="flex gap-2 mt-3">
-                            {v.estadoFactura !== 'facturada' ? (
+                            {v.estadoFactura !== 'facturada' && esRepo(v) ? (
+                                <button onClick={() => setVincular(v)} className="flex-1 flex items-center justify-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-bold rounded-lg py-2">
+                                    <Link2 size={13} /> Vincular nota de crédito y factura
+                                </button>
+                            ) : v.estadoFactura !== 'facturada' ? (
                                 <>
                                     <button onClick={() => setFacturar(v)} className="flex-1 flex items-center justify-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg py-2">
                                         <FileText size={13} /> Facturar en Zoho
