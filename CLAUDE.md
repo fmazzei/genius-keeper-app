@@ -2978,6 +2978,27 @@ Pedido del dueño: desde la cava de Barinas también se VENDE, y no había cómo
 
 **Pendiente del dueño**: "Facturar en Zoho" necesita el Self Client con `ZohoBooks.invoices.CREATE` (el mismo pendiente de la facturación del vendedor). Mientras tanto se factura en Zoho y se usa "Vincular factura".
 
+### Libro de movimientos (sección propia) + Reposición a un cliente (2026-09) ✅
+
+Pedido del dueño: el libro de movimientos tenía que ser práctico, en una sección que se llame así. Debía distinguir los movimientos de cava, las ventas y las transferencias entre almacenes, y filtrar por fecha, producción y cliente. Y preguntó cómo registrar una **reposición por producto vencido o dañado**.
+
+- **Reposición = cuarto tipo de salida** (`tipo:'reposicion'` en `registrarSalidaCava` y en `SalidaCavaSheet`). Se le reemplaza a un cliente, sin cobrar, producto vencido o dañado (`MOTIVOS_REPOSICION`: `vencido` / `danado`). Lleva cliente Y motivo, **no crea venta por facturar** y queda en el libro como `reposicion`. Lo que el cliente devuelve NO vuelve a la venta: se anota en la nota. Los movimientos de venta y reposición guardan ahora `clienteNombre` y `logId`.
+- **`src/Kroma/libroMovimientos.js`** (puro): `clasificar` reparte cada `tipo` en 5 clases:
+  - Cava: producción, envasado, entradas, ajustes, correcciones, eliminaciones.
+  - Ventas.
+  - Reposiciones.
+  - Transferencias: traslado entre almacenes, despacho a Caracas, despacho entregado.
+  - Otras salidas: `salida_*`.
+
+  Además: `cantidadConSigno` (+ entra, − sale, 0 se mueve dentro); `fechaMovimiento` (la fecha declarada si se cargó en diferido, armada en hora local); `filtrar`, `totales`, `opciones` y `aCsv` (separador `;` y BOM, para Excel en español).
+- **`LibroMovimientosPage.jsx`** — Kroma → Administración → **Libro de movimientos** (módulo nuevo `libroMovimientos`: operario no, administrador, gerencia y máster sí; en Control del Sistema es `soloLectura`, sin toggles de edición).
+  - Cinco tarjetas por clase con ud/kg del período, que funcionan como filtro.
+  - Período: Este mes / 7 días / Mes anterior / Todo / Fechas.
+  - Selectores de producción (lote) y cliente; buscador libre.
+  - Lista agrupada por día. Tocar un lote o un cliente filtra por él.
+  - Descarga CSV. Solo lectura: el libro no se edita desde la app.
+- Prueba ampliada: `tests/salidasCava.e2e.test.mjs`, 34 verificaciones en verde.
+
 ### Bug: los "re-exportadores" de Kroma se comían los props (2026-09) ✅
 
 El dueño abrió "Mover producto" y no aparecía la opción de despachar a Caracas.

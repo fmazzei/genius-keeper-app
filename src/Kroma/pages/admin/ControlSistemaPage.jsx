@@ -10,7 +10,7 @@ import {
 import {
     Shield, Users, Bell, Settings2, Loader, Plus, Edit2, Trash2,
     CheckCircle, AlertTriangle, Package, Factory, Warehouse,
-    ClipboardList, Tag, BookOpen, Droplets, BarChart3, Truck, Rocket,
+    ClipboardList, Tag, BookOpen, Droplets, BarChart3, Truck, Rocket, BookText,
     ToggleLeft, ToggleRight, Mail, Briefcase, ChevronDown, X,
     Check, Clock, KeyRound, Eye, EyeOff, Wrench, ClipboardCheck, PackagePlus,
     Building2, RefreshCw,
@@ -50,6 +50,7 @@ const MODULES = [
     { id: 'constructores',         label: 'Fichas técnicas',         desc: 'Plantillas del proceso por producto',   Icon: BookOpen },
     { id: 'despachos',             label: 'Despachos',               desc: 'Declarar mercancía en tránsito',        Icon: Truck },
     { id: 'almacenes',             label: 'Almacenes',               desc: 'Gestión de almacenes y PT',             Icon: Warehouse },
+    { id: 'libroMovimientos',      label: 'Libro de movimientos',    desc: 'Entradas, ventas, reposiciones y traslados', Icon: BookText, soloLectura: true },
     { id: 'historialProduccion',   label: 'Historial de Producción', desc: 'Reportes históricos',                  Icon: ClipboardList },
     { id: 'catalogos',             label: 'Catálogos',               desc: 'Productos, materiales y proveedores',   Icon: Tag },
     { id: 'usuarios',              label: 'Usuarios Kroma',          desc: 'Gestión de personal',                  Icon: Users },
@@ -524,7 +525,7 @@ function PermisosTab() {
                                         <span className="w-14 text-center text-[10px] text-slate-600 font-semibold uppercase tracking-widest">Editar</span>
                                         <span className="w-14 text-center text-[10px] text-slate-600 font-semibold uppercase tracking-widest">Eliminar</span>
                                     </div>
-                                    {MODULES.map(m => {
+                                    {MODULES.filter(m => !m.soloLectura).map(m => {
                                         const MIcon = m.Icon;
                                         const isVisible = modulos[m.id] !== false;
                                         return (

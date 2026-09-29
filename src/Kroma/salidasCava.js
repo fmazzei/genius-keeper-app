@@ -7,6 +7,8 @@
 //     de la planta). No vive aquí: usa el despacho / "Mover producto".
 //   · Venta         — no, pasa a un cliente (carnet de Zoho). Queda "por
 //     facturar" hasta que administración la factura o le vincula su factura.
+//   · Reposición    — no: se le reemplaza a un cliente, sin cobrar, producto
+//     vencido o dañado. Lleva cliente y motivo; no se factura.
 //   · Otra salida   — no, y no entra dinero: merma, vencido, muestra, consumo
 //     interno, donación u otro. Motivo OBLIGATORIO.
 //
@@ -25,7 +27,14 @@ export const MOTIVOS_SALIDA = [
     { key: 'donacion',        label: 'Donación' },
     { key: 'otro',            label: 'Otro motivo' },
 ];
-export const motivoLabel = (k) => MOTIVOS_SALIDA.find(m => m.key === k)?.label || k || '—';
+// Reposición: se le REEMPLAZA al cliente, sin cobrar, producto que se le venció
+// o se le dañó. No es venta (no se factura) ni merma nuestra de cava: el
+// producto sale a un cliente, y por eso lleva cliente Y motivo.
+export const MOTIVOS_REPOSICION = [
+    { key: 'vencido', label: 'Se le venció' },
+    { key: 'danado',  label: 'Llegó o se dañó' },
+];
+export const motivoLabel = (k) => MOTIVOS_SALIDA.find(m => m.key === k)?.label || MOTIVOS_REPOSICION.find(m => m.key === k)?.label || k || '—';
 
 /** Cantidad disponible de una partida (ud si está empacada, kg si es granel). */
 export const disponible = (item) => item?.tipo === 'sin_envasar' ? (Number(item.kgTotales) || 0) : (Number(item?.unidades) || 0);
@@ -66,7 +75,7 @@ export function resumenLineas(lineas = []) {
 
 /**
  * @param {object} p
- * @param {'venta'|'salida'} p.tipo
+ * @param {'venta'|'reposicion'|'salida'} p.tipo
  * @param {Array}  p.lineas   [{ inventoryId, cantidad }]
  * @param {object} [p.cliente] { customerId, customerName } — obligatorio en venta
  * @param {string} [p.motivo]  clave de MOTIVOS_SALIDA — obligatorio en salida
@@ -80,10 +89,11 @@ export async function registrarSalidaCava(db, {
     empresaId = 'lacteoca', responsable = { id: '', nombre: '' },
     nombreAlmacen = () => 'Cava', etiquetaPresentacion = () => '',
 }) {
-    if (tipo !== 'venta' && tipo !== 'salida') throw new Error('Tipo de salida inválido.');
+    if (!['venta', 'reposicion', 'salida'].includes(tipo)) throw new Error('Tipo de salida inválido.');
     const validas = lineas.filter(l => l.inventoryId && Number(l.cantidad) > 0);
     if (validas.length === 0) throw new Error('Indica qué producto sale y cuánto.');
-    if (tipo === 'venta' && !cliente?.customerId) throw new Error('Elige el cliente de la venta.');
+    if ((tipo === 'venta' || tipo === 'reposicion') && !cliente?.customerId) throw new Error(tipo === 'venta' ? 'Elige el cliente de la venta.' : 'Elige el cliente al que se le repone.');
+    if (tipo === 'reposicion' && !MOTIVOS_REPOSICION.some(m => m.key === motivo)) throw new Error('Indica por qué se repone: vencido o dañado.');
     if (tipo === 'salida' && !MOTIVOS_SALIDA.some(m => m.key === motivo)) throw new Error('Elige el motivo de la salida.');
     if (tipo === 'salida' && motivo === 'otro' && !String(nota).trim()) throw new Error('Explica el motivo en la nota.');
 
@@ -135,13 +145,16 @@ export async function registrarSalidaCava(db, {
             tx.update(r.ref, r.restante <= 0 ? { [r.field]: 0, active: false } : { [r.field]: r.restante });
             tx.set(doc(collection(db, 'kroma_warehouse_movements')), {
                 // `venta` o `salida_<motivo>`: el libro dice QUÉ salió y POR QUÉ.
-                tipo:            tipo === 'venta' ? 'venta' : `salida_${motivo}`,
+                tipo:            tipo === 'salida' ? `salida_${motivo}` : tipo,
                 motivo:          tipo === 'venta' ? 'venta' : motivo,
                 origenId:        r.data.warehouseId || null,
                 origenNombre:    nombreAlmacen(r.data.warehouseId),
                 destinoId:       null,
-                destinoNombre:   tipo === 'venta' ? `Venta · ${cliente.customerName || ''}` : motivoLabel(motivo),
-                clienteZohoId:   tipo === 'venta' ? String(cliente.customerId) : null,
+                destinoNombre:   tipo === 'venta' ? `Venta · ${cliente.customerName || ''}`
+                               : tipo === 'reposicion' ? `Reposición · ${cliente.customerName || ''}` : motivoLabel(motivo),
+                clienteZohoId:   tipo !== 'salida' ? String(cliente.customerId) : null,
+                clienteNombre:   tipo !== 'salida' ? (cliente.customerName || '') : null,
+                logId:           r.data.logId || null,
                 ventaId:         ventaId,
                 productoNombre:  r.data.productoNombre || '',
                 presentacion:    r.data.presentacion || '',

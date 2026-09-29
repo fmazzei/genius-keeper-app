@@ -15,13 +15,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '@/Firebase/config.js';
-import { X, ShoppingBag, ArrowRight, AlertTriangle, Loader, Search, Plus, Trash2, CheckCircle2 } from 'lucide-react';
+import { X, ShoppingBag, ArrowRight, AlertTriangle, Loader, Search, Plus, Trash2, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useKroma } from '../KromaContext';
 import CampoFecha, { hoyInput } from './CampoFecha.jsx';
 import Lote from './Lote.jsx';
 import { etiquetaPeso } from '@/Kroma/inventarioPT.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
-import { MOTIVOS_SALIDA, disponible, registrarSalidaCava } from '@/Kroma/salidasCava.js';
+import { MOTIVOS_SALIDA, MOTIVOS_REPOSICION, disponible, registrarSalidaCava } from '@/Kroma/salidasCava.js';
 
 const granel = (i) => i?.tipo === 'sin_envasar';
 const presLabel = (i) => granel(i) ? 'Granel' : (etiquetaPeso(i?.pesoPorUnidad) || i?.presentacion || '—');
@@ -30,6 +30,7 @@ const TONO = {
     emerald: { borde: 'hover:border-emerald-500/70', fondo: 'bg-emerald-500/15', icono: 'text-emerald-400' },
     sky:     { borde: 'hover:border-sky-500/70',     fondo: 'bg-sky-500/15',     icono: 'text-sky-400' },
     amber:   { borde: 'hover:border-amber-500/70',   fondo: 'bg-amber-500/15',   icono: 'text-amber-400' },
+    violet:  { borde: 'hover:border-violet-500/70',  fondo: 'bg-violet-500/15',  icono: 'text-violet-400' },
 };
 const aNum = (s) => { const n = parseFloat(String(s).replace(',', '.')); return Number.isFinite(n) ? n : 0; };
 
@@ -106,7 +107,9 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
         return null;
     });
     const listo = lineas.length > 0 && problemas.every(p => !p)
-        && (tipo === 'venta' ? !!cliente : (!!motivo && (motivo !== 'otro' || nota.trim())));
+        && (tipo === 'venta' ? !!cliente
+            : tipo === 'reposicion' ? (!!cliente && MOTIVOS_REPOSICION.some(m => m.key === motivo))
+            : (MOTIVOS_SALIDA.some(m => m.key === motivo) && (motivo !== 'otro' || nota.trim())));
 
     const guardar = async () => {
         if (!listo || saving) return;
@@ -132,7 +135,7 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
             <div className="bg-slate-900 border border-slate-700 w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 shrink-0">
                     <p className="text-white font-bold">
-                        {hecho ? 'Listo' : !tipo ? 'Salida de cava' : tipo === 'venta' ? 'Venta a un cliente' : 'Otra salida'}
+                        {hecho ? 'Listo' : !tipo ? 'Salida de cava' : tipo === 'venta' ? 'Venta a un cliente' : tipo === 'reposicion' ? 'Reposición a un cliente' : 'Otra salida'}
                     </p>
                     <button onClick={onClose} className="text-slate-400 hover:text-white p-1"><X size={18} /></button>
                 </div>
@@ -141,10 +144,12 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
                     {hecho ? (
                         <div className="text-center py-6">
                             <CheckCircle2 size={40} className="text-emerald-400 mx-auto mb-3" />
-                            <p className="text-white font-semibold">{tipo === 'venta' ? 'Venta registrada' : 'Salida registrada'}</p>
+                            <p className="text-white font-semibold">{tipo === 'venta' ? 'Venta registrada' : tipo === 'reposicion' ? 'Reposición registrada' : 'Salida registrada'}</p>
                             <p className="text-slate-400 text-sm mt-2 leading-relaxed">
                                 {tipo === 'venta'
                                     ? 'El producto ya salió del inventario. La venta queda "por facturar": administración la factura o le vincula su factura de Zoho en Despachos → Ventas en planta.'
+                                    : tipo === 'reposicion'
+                                    ? 'El producto ya salió del inventario como reposición al cliente (sin factura). Queda en el Libro de movimientos.'
                                     : 'El producto ya salió del inventario y el motivo quedó en el libro de movimientos.'}
                             </p>
                             <button onClick={onClose} className="mt-5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl px-6 py-2.5 text-sm">Cerrar</button>
@@ -154,11 +159,12 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
                             <p className="text-slate-400 text-sm">¿El producto sigue siendo de la empresa?</p>
                             {[
                                 { k: 'venta', Icon: ShoppingBag, t: 'Venta a un cliente', d: 'Pasa a un cliente. Queda por facturar en Zoho.', c: 'emerald' },
+                                { k: 'reposicion', Icon: RefreshCw, t: 'Reposición a un cliente', d: 'Se le reemplaza, sin cobrar, producto vencido o dañado.', c: 'violet' },
                                 { k: 'transfer', Icon: ArrowRight, t: 'Transferencia', d: 'Sigue siendo nuestro: va a Caracas o a otro almacén de la planta.', c: 'sky' },
                                 { k: 'salida', Icon: AlertTriangle, t: 'Otra salida', d: 'Sale sin venta: merma, vencido, muestra, consumo interno…', c: 'amber' },
                             ].filter(o => o.k !== 'transfer' || onTransferir).map(({ k, Icon, t, d, c }) => (
                                 <button key={k} type="button"
-                                    onClick={() => k === 'transfer' ? onTransferir(itemInicial) : setTipo(k)}
+                                    onClick={() => { if (k === 'transfer') onTransferir(itemInicial); else { setTipo(k); setMotivo(''); } }}
                                     className={`w-full flex items-start gap-3 text-left rounded-xl border p-4 bg-slate-800/60 border-slate-700 ${TONO[c].borde}`}>
                                     <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${TONO[c].fondo}`}>
                                         <Icon size={18} className={TONO[c].icono} />
@@ -172,7 +178,7 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
                         </div>
                     ) : (
                         <>
-                            {tipo === 'venta' && (
+                            {(tipo === 'venta' || tipo === 'reposicion') && (
                                 <div>
                                     <p className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-2">Cliente</p>
                                     {cliente ? (
@@ -181,6 +187,23 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
                                             <button onClick={() => setCliente(null)} className="text-xs text-slate-400 hover:text-white underline shrink-0">Cambiar</button>
                                         </div>
                                     ) : <Cliente onElegir={setCliente} />}
+                                </div>
+                            )}
+
+                            {tipo === 'reposicion' && (
+                                <div>
+                                    <p className="text-slate-500 text-[11px] font-bold uppercase tracking-widest mb-2">¿Por qué se repone?</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {MOTIVOS_REPOSICION.map(m => (
+                                            <button key={m.key} type="button" onClick={() => setMotivo(m.key)}
+                                                className={`text-left text-sm rounded-xl border px-3 py-2.5 ${motivo === m.key
+                                                    ? 'bg-violet-500/15 border-violet-400 text-violet-200 font-semibold'
+                                                    : 'bg-slate-800/60 border-slate-700 text-slate-300'}`}>
+                                                {m.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <p className="text-slate-500 text-xs mt-2">Aquí va lo que SALE de la cava para reemplazar. Lo que el cliente devuelve no vuelve a la venta: anótalo en la nota.</p>
                                 </div>
                             )}
 
@@ -263,7 +286,7 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
                                     Nota {tipo === 'salida' && motivo === 'otro' ? '(obligatoria)' : '(opcional)'}
                                 </p>
                                 <textarea value={nota} onChange={e => setNota(e.target.value)} rows={2}
-                                    placeholder={tipo === 'venta' ? 'Ej: retiró en planta, pagó en efectivo…' : 'Qué pasó'}
+                                    placeholder={tipo === 'venta' ? 'Ej: retiró en planta, pagó en efectivo…' : tipo === 'reposicion' ? 'Ej: devolvió 6 ud del lote LCO…, vencidas' : 'Qué pasó'}
                                     className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-emerald-500" />
                             </div>
 
@@ -274,12 +297,12 @@ export default function SalidaCavaSheet({ items = [], itemInicial = null, tipoIn
 
                 {tipo && !hecho && (
                     <div className="px-5 py-4 border-t border-slate-800 flex gap-2 shrink-0">
-                        <button onClick={() => { setTipo(tipoInicial || null); setError(''); }} disabled={!!tipoInicial}
+                        <button onClick={() => { setTipo(tipoInicial || null); setMotivo(''); setError(''); }} disabled={!!tipoInicial}
                             className="px-4 border border-slate-600 text-slate-300 rounded-xl text-sm disabled:hidden">Atrás</button>
                         <button onClick={guardar} disabled={!listo || saving}
                             className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold rounded-xl py-3 text-sm flex items-center justify-center gap-2">
                             {saving && <Loader size={15} className="animate-spin" />}
-                            {tipo === 'venta' ? 'Registrar venta' : 'Registrar salida'}
+                            {tipo === 'venta' ? 'Registrar venta' : tipo === 'reposicion' ? 'Registrar reposición' : 'Registrar salida'}
                         </button>
                     </div>
                 )}
