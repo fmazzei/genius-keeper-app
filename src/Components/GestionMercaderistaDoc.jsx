@@ -43,7 +43,7 @@ function Pagina({ titulo, sub, bloques, total, mesLabel }) {
                 <div style={{ textAlign: 'right', fontSize: 11, color: '#334155' }}>
                     <b style={{ textTransform: 'capitalize' }}>{mesLabel}</b><br />
                     <span style={{ fontSize: 26, fontWeight: 900, color: colorPct(total.pct) }}>{total.pct != null ? `${total.pct}%` : '—'}</span><br />
-                    <span style={{ color: '#64748b' }}>de la ruta · {total.visitas} visitas</span>
+                    <span style={{ color: '#64748b' }}>de su ruta cada semana · {total.cubiertos}/{total.tocaban} PDV-semana</span>
                 </div>
             </div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -69,8 +69,16 @@ function Pagina({ titulo, sub, bloques, total, mesLabel }) {
                     ))}
                 </tbody>
             </table>
+            {total.nuncaVisitados?.length > 0 && (
+                <div style={{ marginTop: 12, padding: 10, border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 6 }}>
+                    <p style={{ margin: '0 0 4px', fontSize: 10, fontWeight: 800, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: 1 }}>
+                        PDV de su ruta sin visitar en todo el mes ({total.nuncaVisitados.length})
+                    </p>
+                    <p style={{ margin: 0, fontSize: 11, color: '#334155', lineHeight: 1.5 }}>{total.nuncaVisitados.map(p => p.nombre).join(' · ')}</p>
+                </div>
+            )}
             <p style={{ fontSize: 9, color: '#94a3b8', marginTop: 10, lineHeight: 1.5 }}>
-                Semanas fijas 1–7, 8–14, 15–21 y 22–fin de mes. Las visitas que tocaban salen de la frecuencia de cada PDV; la ruta
+                Semanas fijas 1–7, 8–14, 15–21 y 22–fin de mes. Un PDV "toca" en la semana según su frecuencia y cuenta como cubierto si recibió al menos una visita; las visitas repetidas son un dato secundario. La ruta
                 de cada mercaderista es la cartera de los vendedores que lo tienen asignado. "Por vencer" = lotes que vencen en 7 días o menos desde la visita.
             </p>
         </div>

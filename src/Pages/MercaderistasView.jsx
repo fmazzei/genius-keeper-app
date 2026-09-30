@@ -7,7 +7,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
-import { ChevronLeft, ChevronRight, FileDown, Info, Building2, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileDown, Info, Building2, User, MapPinOff, X } from 'lucide-react';
 import { informeMercaderistas, FILAS_INFORME, valorFila } from '@/utils/gestionMercaderista.js';
 import GestionMercaderistaDoc from '@/Components/GestionMercaderistaDoc.jsx';
 
@@ -21,6 +21,7 @@ export default function MercaderistasView({ posList = [], reports = [] }) {
     const [vclients, setVclients] = useState([]);
     const [sel, setSel] = useState(EMPRESA);
     const [doc, setDoc] = useState(false);
+    const [faltantes, setFaltantes] = useState(null);   // { titulo, lista }
 
     useEffect(() => {
         getDocs(collection(db, 'devoluciones'))
@@ -68,7 +69,7 @@ export default function MercaderistasView({ posList = [], reports = [] }) {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                         <h3 className="text-xl font-black text-slate-800">Gestión del mercaderista</h3>
-                        <p className="text-sm text-slate-500 mt-1">Mes a mes, semana a semana: cuántas visitas hizo contra las que tocaban y qué encontró en el anaquel.</p>
+                        <p className="text-sm text-slate-500 mt-1">Mes a mes, semana a semana: a cuántos PDV de su ruta fue y qué encontró en el anaquel. Toca una semana para ver los PDV que quedaron sin visitar.</p>
                     </div>
                     <button onClick={() => setDoc(true)} className="flex items-center gap-2 bg-brand-blue text-white font-bold text-sm px-4 py-2.5 rounded-xl shrink-0">
                         <FileDown size={16} /> Informe PDF
@@ -103,14 +104,26 @@ export default function MercaderistasView({ posList = [], reports = [] }) {
                     <p className="bg-white border border-slate-200 rounded-2xl p-6 text-sm text-slate-500">No hay reportes de visita en este mes.</p>
                 ) : (
                     <>
-                        {/* Cumplimiento por semana */}
+                        {/* Cobertura por semana: lo que manda es a cuántos PDV de su
+                            ruta fue AL MENOS UNA VEZ. Las visitas son secundarias. */}
                         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                            {vista.bloques.map(b => <Semana key={b.n} b={b} />)}
-                            <div className="col-span-2 lg:col-span-1 bg-slate-800 text-white rounded-2xl p-4">
+                            {vista.bloques.map(b => (
+                                <Semana key={b.n} b={b}
+                                    onVer={() => setFaltantes({ titulo: `Semana ${b.n} (${b.label}) · ${vista.nombre}`, lista: b.sinVisitar || [] })} />
+                            ))}
+                            <button type="button"
+                                onClick={() => setFaltantes({ titulo: `Sin visitar en todo el mes · ${vista.nombre}`, lista: vista.total.nuncaVisitados || [] })}
+                                className="col-span-2 lg:col-span-1 bg-slate-800 text-white rounded-2xl p-4 text-left">
                                 <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-300">Total del mes</p>
-                                <p className="text-3xl font-black mt-1">{vista.total.visitas} <span className="text-sm font-bold text-slate-300">visitas</span></p>
-                                <p className="text-sm text-slate-200">{vista.total.meta > 0 ? `${vista.total.pct}% de la ruta · ${vista.total.cumplidas}/${vista.total.meta}` : 'Sin meta de visitas'}</p>
-                            </div>
+                                <p className="text-3xl font-black mt-1">{vista.total.pct != null ? `${vista.total.pct}%` : '—'} <span className="text-sm font-bold text-slate-300">de su ruta cada semana</span></p>
+                                <p className="text-sm text-slate-200">
+                                    {vista.total.tocaban > 0 ? `${vista.total.cubiertos} de ${vista.total.tocaban} PDV-semana cubiertos` : 'Sin PDV que tocaran'}
+                                </p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                    {vista.total.visitas} visitas · {vista.total.repetidas} repetidas
+                                    {vista.total.nuncaVisitados?.length ? ` · ${vista.total.nuncaVisitados.length} PDV sin pisar en el mes` : ''}
+                                </p>
+                            </button>
                         </div>
 
                         {/* Tabla semana a semana */}
@@ -145,7 +158,8 @@ export default function MercaderistasView({ posList = [], reports = [] }) {
                         <p className="text-[11px] text-slate-400 flex gap-1.5">
                             <Info size={13} className="shrink-0 mt-0.5" />
                             <span>
-                                Las visitas que tocaban salen de la frecuencia de cada PDV (la misma de "Mi Semana"). La ruta de cada mercaderista
+                                Un PDV "toca" en la semana según su frecuencia de visita (la misma de "Mi Semana"); cuenta como cubierto si
+                                recibió al menos una visita. En la columna "Mes", "PDV sin visitar" son los que no pisó en todo el mes. La ruta de cada mercaderista
                                 es la cartera de los vendedores que lo tienen asignado
                                 {persona
                                     ? (persona.rutaAsignada
@@ -160,11 +174,36 @@ export default function MercaderistasView({ posList = [], reports = [] }) {
             </div>
 
             {doc && <GestionMercaderistaDoc informe={inf} onClose={() => setDoc(false)} />}
+
+            {faltantes && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" onClick={() => setFaltantes(null)}>
+                    <div className="bg-white w-full sm:max-w-md max-h-[80vh] rounded-t-2xl sm:rounded-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-start justify-between gap-3 p-4 border-b border-slate-200">
+                            <div className="min-w-0">
+                                <p className="font-black text-slate-800 flex items-center gap-2"><MapPinOff size={17} className="text-red-500" /> PDV sin visitar</p>
+                                <p className="text-xs text-slate-500">{faltantes.titulo}</p>
+                            </div>
+                            <button onClick={() => setFaltantes(null)} className="p-1.5 rounded-lg hover:bg-slate-100" aria-label="Cerrar"><X size={18} /></button>
+                        </div>
+                        <div className="overflow-y-auto p-4">
+                            {faltantes.lista.length === 0 ? (
+                                <p className="text-sm text-emerald-700 text-center py-6">Visitó todos los PDV de su ruta que tocaban. ✓</p>
+                            ) : (
+                                <ul className="space-y-1.5">
+                                    {faltantes.lista.map(p => (
+                                        <li key={p.id} className="text-sm text-slate-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{p.nombre}</li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
 
-function Semana({ b }) {
+function Semana({ b, onVer }) {
     if (b.futuro) {
         return (
             <div className="bg-white border border-dashed border-slate-200 rounded-2xl p-4 text-slate-300">
@@ -176,15 +215,23 @@ function Semana({ b }) {
     }
     const t = b.pct == null ? 'text-slate-500' : b.pct >= 90 ? 'text-emerald-600' : b.pct >= 70 ? 'text-amber-600' : 'text-red-600';
     const bar = b.pct == null ? 'bg-slate-300' : b.pct >= 90 ? 'bg-emerald-500' : b.pct >= 70 ? 'bg-amber-500' : 'bg-red-500';
+    const faltan = Math.max(0, (b.tocaban || 0) - (b.cubiertos || 0));
     return (
-        <div className="bg-white border border-slate-200 rounded-2xl p-4">
+        <button type="button" onClick={onVer} className="bg-white border border-slate-200 rounded-2xl p-4 text-left hover:shadow-md transition-shadow">
             <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Semana {b.n}{b.enCurso ? ' · en curso' : ''}</p>
             <p className="text-xs text-slate-400">{b.label}</p>
-            <p className="text-2xl font-black text-slate-800 mt-1">{b.visitas} <span className="text-xs font-bold text-slate-400">visitas</span></p>
-            <p className={`text-sm font-bold ${t}`}>{b.meta > 0 ? `${b.pct}% · ${b.cumplidas}/${b.meta}` : 'Sin meta'}</p>
-            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-2">
-                <div className={`h-full rounded-full ${bar}`} style={{ width: `${Math.min(100, b.pct ?? 0)}%` }} />
-            </div>
-        </div>
+            {b.tocaban > 0 ? (
+                <>
+                    <p className="text-2xl font-black text-slate-800 mt-1">{b.cubiertos} <span className="text-sm font-bold text-slate-400">de {b.tocaban} PDV</span></p>
+                    <p className={`text-sm font-bold ${t}`}>{b.pct}% de su ruta{faltan ? ` · faltaron ${faltan}` : ' ✓'}</p>
+                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-2">
+                        <div className={`h-full rounded-full ${bar}`} style={{ width: `${Math.min(100, b.pct ?? 0)}%` }} />
+                    </div>
+                </>
+            ) : (
+                <p className="text-sm text-slate-500 mt-2">Ningún PDV de su ruta tocaba</p>
+            )}
+            <p className="text-[11px] text-slate-500 mt-2">{b.visitas} visitas{b.repetidas ? ` · ${b.repetidas} repetidas` : ''}{b.fueraRuta ? ` · ${b.fueraRuta} fuera de ruta` : ''}</p>
+        </button>
     );
 }

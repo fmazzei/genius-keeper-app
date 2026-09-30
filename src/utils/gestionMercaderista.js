@@ -62,12 +62,26 @@ function duracionMin(r) {
     return m > 0 && m <= 240 ? m : null;
 }
 
-/** Métricas operativas de un conjunto de reportes (y la meta de visitas de sus PDV). */
-function metricas(reportes, { metaPdv = [], devoluciones = [] } = {}) {
+/**
+ * Métricas operativas de un conjunto de reportes.
+ *
+ * Lo que manda es la COBERTURA (decisión del dueño, 2026-09): de los PDV de su
+ * ruta que tocaban en la semana, ¿a cuántos fue AL MENOS UNA VEZ? 22 visitas no
+ * dicen nada si 9 fueron al mismo punto y 8 PDV quedaron sin pisar. Las visitas
+ * repetidas son un dato secundario (puntos que piden más atención).
+ *
+ * @param metaPdv   PDV de la ruta que tocaban en el bloque (meta > 0)
+ * @param rutaIds   TODOS los PDV de su ruta (para distinguir "fuera de ruta")
+ */
+function metricas(reportes, { metaPdv = [], rutaIds = null, devoluciones = [] } = {}) {
     const conteo = {};
     reportes.forEach(r => { if (r.posId) conteo[r.posId] = (conteo[r.posId] || 0) + 1; });
-    const meta = metaPdv.reduce((s, p) => s + p.meta, 0);
-    const cumplidas = metaPdv.reduce((s, p) => s + Math.min(conteo[p.id] || 0, p.meta), 0);
+    const tocaban = metaPdv.length;
+    const cubiertosLista = metaPdv.filter(p => conteo[p.id] > 0);
+    const sinVisitar = metaPdv.filter(p => !conteo[p.id]).map(p => ({ id: p.id, nombre: p.nombre }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    const pdvDistintos = new Set(reportes.map(r => r.posId || r.posName)).size;
+    const fueraRuta = rutaIds ? reportes.filter(r => r.posId && !rutaIds.has(r.posId)).length : 0;
 
     const dur = reportes.map(duracionMin).filter(m => m != null);
     let quiebres = 0, repuestos = 0, udsRepuestas = 0, conPorVencer = 0, udsPorVencer = 0, conVencido = 0;
@@ -98,10 +112,12 @@ function metricas(reportes, { metaPdv = [], devoluciones = [] } = {}) {
 
     return {
         visitas: reportes.length,
-        pdvDistintos: new Set(reportes.map(r => r.posId || r.posName)).size,
-        meta, cumplidas,
-        pct: meta > 0 ? Math.round((cumplidas / meta) * 100) : null,
-        faltan: Math.max(0, meta - cumplidas),
+        pdvDistintos,
+        tocaban, cubiertos: cubiertosLista.length, sinVisitar,
+        pct: tocaban > 0 ? Math.round((cubiertosLista.length / tocaban) * 100) : null,
+        tocabanIds: metaPdv.map(p => p.id),
+        repetidas: Math.max(0, reportes.length - pdvDistintos),
+        fueraRuta,
         durProm: dur.length ? Math.round(dur.reduce((s, m) => s + m, 0) / dur.length) : null,
         quiebres, repuestos, udsRepuestas,
         conPorVencer, udsPorVencer, conVencido,
@@ -148,6 +164,8 @@ export function informeMercaderistas({ reports = [], posList = [], devoluciones 
         p.type !== 'depot' && p.active !== false && Number(p.visitInterval) > 0 &&
         p.canal !== 'foodservice' && p.sinMerchandising !== true);
 
+    const pdvMerchIds = new Set(pdvMerch.map(p => p.id));
+
     // Última visita de cada PDV antes de un instante (para la meta de visitas).
     const tiemposPorPdv = {};
     conFecha.forEach(r => { if (r.posId) (tiemposPorPdv[r.posId] ||= []).push(r._t); });
@@ -182,15 +200,14 @@ export function informeMercaderistas({ reports = [], posList = [], devoluciones 
             ? pdvMerch.filter(p => rutas[k].pos.has(p.id))
             : pdvMerch.filter(p => duenoPdv[p.id] === k);
         const reps = delMes.filter(r => r._k === k);
+        const rutaIds = new Set(suyos.map(p => p.id));
         const porBloque = bloques.map(b => {
             if (bloqueFuturo(b)) return { ...b, futuro: true };
             const rb = reps.filter(r => r._t >= b.desde && r._t < b.hasta);
-            return { ...b, enCurso: b.desde <= ahora && ahora < b.hasta, ...metricas(rb, { metaPdv: metaDe(suyos, b), devoluciones: devsDe(k, b.desde, b.hasta) }) };
+            return { ...b, enCurso: b.desde <= ahora && ahora < b.hasta, ...metricas(rb, { metaPdv: metaDe(suyos, b), rutaIds, devoluciones: devsDe(k, b.desde, b.hasta) }) };
         });
         const validos = porBloque.filter(b => !b.futuro);
-        const total = sumar(validos);
-        total.pdvDistintos = new Set(reps.map(r => r.posId || r.posName)).size;
-        total.durProm = promedioDur(reps);
+        const total = sumar(validos, reps, suyos);
         return {
             id: k, nombre: nombres[k] || 'Mercaderista', pdvRuta: suyos.length, bloques: porBloque, total,
             rutaAsignada: asignada, vendedores: asignada ? (rutas[k].vendedores || []) : [],
@@ -201,11 +218,9 @@ export function informeMercaderistas({ reports = [], posList = [], devoluciones 
     const empBloques = bloques.map(b => {
         if (bloqueFuturo(b)) return { ...b, futuro: true };
         const rb = delMes.filter(r => r._t >= b.desde && r._t < b.hasta);
-        return { ...b, enCurso: b.desde <= ahora && ahora < b.hasta, ...metricas(rb, { metaPdv: metaDe(pdvMerch, b), devoluciones: devsDe(null, b.desde, b.hasta) }) };
+        return { ...b, enCurso: b.desde <= ahora && ahora < b.hasta, ...metricas(rb, { metaPdv: metaDe(pdvMerch, b), rutaIds: pdvMerchIds, devoluciones: devsDe(null, b.desde, b.hasta) }) };
     });
-    const empTotal = sumar(empBloques.filter(b => !b.futuro));
-    empTotal.pdvDistintos = new Set(delMes.map(r => r.posId || r.posName)).size;
-    empTotal.durProm = promedioDur(delMes);
+    const empTotal = sumar(empBloques.filter(b => !b.futuro), delMes, pdvMerch);
 
     // PDV con ruta que no están en la cartera de ningún vendedor con mercaderista.
     const cubiertos = new Set(conRuta.flatMap(k => [...rutas[k].pos]));
@@ -218,11 +233,26 @@ export function informeMercaderistas({ reports = [], posList = [], devoluciones 
     };
 }
 
-const SUMABLES = ['visitas', 'meta', 'cumplidas', 'faltan', 'quiebres', 'repuestos', 'udsRepuestas', 'conPorVencer', 'udsPorVencer',
+const SUMABLES = ['visitas', 'tocaban', 'cubiertos', 'repetidas', 'fueraRuta', 'quiebres', 'repuestos', 'udsRepuestas', 'conPorVencer', 'udsPorVencer',
     'conVencido', 'danadas', 'precios', 'competencia', 'entrantes', 'pop', 'devoluciones', 'udsDevueltas'];
-function sumar(bloques) {
+/**
+ * Total del mes. La cobertura del mes es la de las SEMANAS sumadas (PDV cubiertos
+ * semana a semana ÷ PDV que tocaban semana a semana): ir una sola vez en el mes a
+ * un PDV semanal no puede contar como cubierto el mes entero.
+ * Además: los PDV de la ruta que no pisó NI UNA VEZ en todo el mes.
+ */
+function sumar(bloques, reps = [], pdvs = []) {
     const t = Object.fromEntries(SUMABLES.map(k => [k, bloques.reduce((s, b) => s + (b[k] || 0), 0)]));
-    t.pct = t.meta > 0 ? Math.round((t.cumplidas / t.meta) * 100) : null;
+    t.pct = t.tocaban > 0 ? Math.round((t.cubiertos / t.tocaban) * 100) : null;
+    t.pdvDistintos = new Set(reps.map(r => r.posId || r.posName)).size;
+    t.durProm = promedioDur(reps);
+    const tocados = new Set(bloques.flatMap(b => b.tocabanIds || []));
+    const visitados = new Set(reps.map(r => r.posId).filter(Boolean));
+    t.nuncaVisitados = pdvs.filter(p => tocados.has(p.id) && !visitados.has(p.id))
+        .map(p => ({ id: p.id, nombre: p.name || p.nombre || '—' }))
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    t.pdvTocados = tocados.size;
+    t.repetidas = Math.max(0, reps.length - t.pdvDistintos);
     return t;
 }
 function promedioDur(reps) {
@@ -232,10 +262,12 @@ function promedioDur(reps) {
 
 /** Filas del informe (etiqueta, clave, formato) — compartidas por pantalla y PDF. */
 export const FILAS_INFORME = [
-    { k: 'visitas',      label: 'Visitas realizadas', grupo: 'Visitas' },
-    { k: 'cumplimiento', label: 'Cumplimiento de la ruta', grupo: 'Visitas', fmt: (b) => b.meta > 0 ? `${b.pct}% (${b.cumplidas}/${b.meta})` : '—' },
-    { k: 'pdvDistintos', label: 'PDV distintos visitados', grupo: 'Visitas' },
-    { k: 'durProm',      label: 'Duración promedio (min)', grupo: 'Visitas', fmt: (b) => b.durProm ?? '—' },
+    { k: 'cobertura',    label: 'PDV de su ruta visitados', grupo: 'Cobertura de la ruta', fmt: (b) => b.tocaban > 0 ? `${b.cubiertos} de ${b.tocaban} (${b.pct}%)` : '—' },
+    { k: 'sinVisitarN',  label: 'PDV sin visitar', grupo: 'Cobertura de la ruta', fmt: (b) => b.tocaban > 0 ? (b.nuncaVisitados ? b.nuncaVisitados.length : b.tocaban - b.cubiertos) : '—' },
+    { k: 'visitas',      label: 'Visitas realizadas', grupo: 'Visitas (dato secundario)' },
+    { k: 'repetidas',    label: 'Visitas repetidas (mismo PDV)', grupo: 'Visitas (dato secundario)' },
+    { k: 'fueraRuta',    label: 'Visitas fuera de su ruta', grupo: 'Visitas (dato secundario)' },
+    { k: 'durProm',      label: 'Duración promedio (min)', grupo: 'Visitas (dato secundario)', fmt: (b) => b.durProm ?? '—' },
     { k: 'quiebres',     label: 'Quiebres encontrados', grupo: 'Anaquel' },
     { k: 'repuestos',    label: 'Quiebres repuestos en la visita (R)', grupo: 'Anaquel' },
     { k: 'udsRepuestas', label: 'Unidades repuestas', grupo: 'Anaquel' },
