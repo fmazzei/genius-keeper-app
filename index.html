@@ -18,6 +18,25 @@
     <meta name="apple-mobile-web-app-title" content="Genius Keeper" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="manifest" href="/manifest.json" />
+    <!--
+      "Instalar Genius Keeper": Chrome ofrece la instalación con el evento
+      `beforeinstallprompt`, UNA vez y a veces antes de que el bundle cargue.
+      Se guarda acá, en ES5 puro (WebViews viejos), para que el botón de la app
+      (InstalarApp en App.tsx) lo use cuando monte. Todo en try/catch.
+    -->
+    <script>
+      try {
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault();
+          window.__gkInstallPrompt = e;
+          try { window.dispatchEvent(new Event('gk-install-ready')); } catch (x) {}
+        });
+        window.addEventListener('appinstalled', function () {
+          window.__gkInstallPrompt = null;
+          try { window.dispatchEvent(new Event('gk-installed')); } catch (x) {}
+        });
+      } catch (err) {}
+    </script>
     <meta property="og:title" content="Genius Keeper" />
     <meta property="og:image" content="https://geniuskeeper-36553.web.app/apple-touch-icon.png" />
     <meta property="og:image:width" content="180" />

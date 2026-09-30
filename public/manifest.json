@@ -3,9 +3,15 @@
   "name": "Lacteoca Genius Keeper",
   "icons": [
     {
-      "src": "/icon.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
       "purpose": "any"
     },
     {
@@ -19,6 +25,12 @@
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
     }
   ],
   "start_url": "/",
@@ -30,5 +42,6 @@
     {
       "origin": "https://geniuskeeper-36553.web.app"
     }
-  ]
+  ],
+  "id": "/"
 }

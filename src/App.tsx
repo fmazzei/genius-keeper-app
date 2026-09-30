@@ -16,6 +16,7 @@ import ReportDetailModalController from '@/Components/ReportDetailModalControlle
 import RouteInviteModal from '@/Components/RouteInviteModal.tsx';
 import ErrorBoundary from '@/Components/ErrorBoundary.jsx';
 import ImpersonationBanner from '@/Components/ImpersonationBanner.jsx';
+import InstalarApp from '@/Components/InstalarApp.jsx';
 import { LogOut, Lock, RefreshCw } from 'lucide-react';
 import { useAppUpdate } from '@/hooks/useAppUpdate.js';
 
@@ -250,6 +251,7 @@ const App: React.FC = () => {
     return (
         <Router>
             <ActualizacionDisponible />
+            <InstalarApp />
             <InAppNotification
                 notification={activeNotification}
                 onDismiss={() => setActiveNotification(null)}

@@ -3037,6 +3037,17 @@ Reporte del dueño con captura: en Producción Diaria el operario (DH) no tenía
 - **Si otro perfil no puede producir, la pantalla lo DICE**, con su rol y dónde se activa, en vez de esconder los botones.
 - **Crear sí, corregir no**: corregir una producción cerrada sigue siendo SOLO del máster (lápiz por bloque, "Editar" del Historial y `abrirParaEditar`). La llegada con `params.editar` ahora también exige `isMaster`: era la única vía sin candado.
 
+### Botón "Instalar Genius Keeper" dentro de la app (2026-09) ✅
+
+Una operaria con Android no encontraba "Agregar a la pantalla principal" en el menú de Chrome: estaba más abajo, había que bajar. Ahora la app lo ofrece sola.
+- **`index.html`** captura `beforeinstallprompt` con un script inline ES5, antes de que React monte (el evento puede llegar antes). Lo guarda en `window.__gkInstallPrompt` y avisa con los eventos `gk-install-ready` / `gk-installed`.
+- **`manifest.json`**: se agregaron `id` y los PNG 192/512 con `purpose:"any"`. Chrome exige un PNG "any" para considerar la app instalable; antes solo eran "maskable".
+- **`src/Components/InstalarApp.jsx`**, montado en `App.tsx` (arriba, para no chocar con el aviso de versión nueva que va abajo):
+  - Si Chrome ofreció instalar, muestra el botón **"Instalar"**, que abre el diálogo nativo.
+  - Si en 4 s no llega el evento, da los pasos a mano: Android ⋮ → bajar → "Agregar a la pantalla principal"; iOS Compartir → "Agregar a inicio". En escritorio no aparece.
+  - No aparece si ya corre instalada (`display-mode: standalone`).
+  - Se puede cerrar y no vuelve en 14 días (`localStorage`, en try/catch).
+
 ### Bug: los "re-exportadores" de Kroma se comían los props (2026-09) ✅
 
 El dueño abrió "Mover producto" y no aparecía la opción de despachar a Caracas.
