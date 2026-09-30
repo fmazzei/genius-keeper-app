@@ -2181,7 +2181,11 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     const { kromaUser, kromaRole, canEdit, verCostos } = useKroma();
     // Correr la planilla es del maestro quesero. Quien solo consulta
     // (p. ej. gerencia mirando lo que hay en curso) no la inicia.
-    const canProducir = canEdit('produccionDiaria');
+    // Para el OPERARIO producir es su función principal: no depende del
+    // interruptor del panel. Un "Editar Producción" apagado a mano en su perfil
+    // (p. ej. guardado antes de que el panel mandara) lo dejaba sin botón
+    // "Nueva" y sin forma de saber por qué.
+    const canProducir = canEdit('produccionDiaria') || kromaRole === 'kroma_operario';
     const isMaster = kromaRole === 'master';
 
     const [fichas, setFichas]           = useState([]);
@@ -3926,6 +3930,13 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 pb-8">
+                {/* Sin permiso: decirlo, con el rol, en vez de esconder el botón. */}
+                {!canProducir && (
+                    <div className="mb-4 bg-amber-900/20 border border-amber-700/40 rounded-xl px-4 py-3 text-amber-200 text-xs leading-relaxed">
+                        Tu perfil ({kromaRole || 'sin rol'}) puede consultar la producción pero no iniciarla.
+                        El máster lo activa en Control del Sistema → Permisos → Producción Diaria → Editar.
+                    </div>
+                )}
                 {logs.length === 0 ? (
                     <div className="text-center py-12">
                         <Factory size={36} className="text-slate-700 mx-auto mb-3" />

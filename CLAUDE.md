@@ -3030,6 +3030,12 @@ Reporte del dueño: el botón verde "Salida" de la cava solo aparecía en su per
 - **Si no hay permiso, la cava lo DICE**, con el rol del perfil y dónde se activa, en vez de esconder el botón en silencio.
 - **Despachos → Ventas en planta**: el botón pasó a "Registrar venta, reposición u otra salida" y abre la hoja sin tipo fijo. Quien no ve Almacenes (el operario) también puede registrar reposiciones y merma.
 
+### El operario no podía iniciar una producción (2026-09) ✅
+
+Reporte del dueño con captura: en Producción Diaria el operario (DH) no tenía los botones "Nueva" ni "Planilla". Su rol sí era `kroma_operario`: la campana de alertas, que solo se pinta para ese rol, aparecía en la captura. La causa era un **"Editar Producción" apagado a mano en su perfil**. `efectivo()` hace que un apagado explícito gane al default del rol, y ese interruptor probablemente se guardó cuando el panel todavía no mandaba.
+- **Producir es la función principal del operario**: `canProducir = canEdit('produccionDiaria') || kromaRole === 'kroma_operario'`. El panel ya no puede quitárselo.
+- **Si otro perfil no puede producir, la pantalla lo DICE**, con su rol y dónde se activa, en vez de esconder los botones.
+
 ### Bug: los "re-exportadores" de Kroma se comían los props (2026-09) ✅
 
 El dueño abrió "Mover producto" y no aparecía la opción de despachar a Caracas.
