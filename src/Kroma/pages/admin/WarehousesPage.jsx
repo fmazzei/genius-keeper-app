@@ -14,7 +14,7 @@ import SalidaCavaSheet from '@/Kroma/Components/SalidaCavaSheet.jsx';
 import { useKroma } from '@/Kroma/KromaContext.jsx';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta, cantidadDePartida, esPartidaDe } from '@/Kroma/eliminarProduccion.js';
-import { tieneExistencia, resumenCava, pasaFiltroCava, etiquetaPeso } from '@/Kroma/inventarioPT.js';
+import { tieneExistencia, resumenCava, pasaFiltroCava, etiquetaPeso, enDocenas } from '@/Kroma/inventarioPT.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -58,11 +58,6 @@ function fmtRelative(ts) {
     return fmtDateTime(ts);
 }
 
-function formatDocenas(docenas, sueltas) {
-    if (docenas === 0) return `${sueltas} suelta${sueltas !== 1 ? 's' : ''}`;
-    if (sueltas === 0) return `${docenas} docena${docenas !== 1 ? 's' : ''}`;
-    return `${docenas} doc + ${sueltas} suelta${sueltas !== 1 ? 's' : ''}`;
-}
 
 function SecLabel({ children }) {
     return (
@@ -1234,8 +1229,11 @@ function PartidaCava({ item, confirmando, onAjustar, onBorrar, onTransferir, onS
                     <p className={`font-bold font-mono text-base sm:text-lg leading-none ${granel ? 'text-amber-300' : 'text-emerald-400'}`}>
                         {granel ? `${(item.kgTotales || 0).toFixed(3)} kg` : `${item.unidades} ud`}
                     </p>
+                    {!granel && (
+                        <p className="text-sky-300 text-[11px] font-semibold mt-0.5 whitespace-nowrap">{enDocenas(item.unidades)}</p>
+                    )}
                     {!granel && item.pesoPorUnidad > 0 && (
-                        <p className="text-slate-500 text-[11px] font-mono mt-0.5">{(item.pesoPorUnidad * item.unidades).toFixed(3)} kg</p>
+                        <p className="text-slate-500 text-[11px] font-mono">{(item.pesoPorUnidad * item.unidades).toFixed(3)} kg</p>
                     )}
                 </div>
             </div>
@@ -1309,6 +1307,7 @@ function ResumenCava({ resumen, filtro, onFiltro }) {
                     <button key={p.clave} type="button" onClick={() => tog('pres', p.clave)} className={chip(activo('pres', p.clave), T.sky)}>
                         <span className="text-slate-400 text-[11px] font-semibold">{p.clave}</span>
                         <span className={`${T.sky.num} font-bold font-mono text-sm`}>{p.unidades.toLocaleString('es-VE')} ud</span>
+                        <span className="text-slate-400 text-[10px] whitespace-nowrap">{enDocenas(p.unidades)}</span>
                     </button>
                 ))}
                 {resumen.sinEnvasar.partidas > 0 && (
@@ -1595,7 +1594,7 @@ function WarehouseCard({ wh, count, stock, matCount, matLow, warn, canEdit, canD
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <p className="text-emerald-400 font-bold font-mono text-2xl leading-none">{stock.totalUnidades.toLocaleString('es-VE')}<span className="text-slate-400 text-sm font-sans font-semibold ml-1">ud</span></p>
-                                <p className="text-slate-500 text-[11px] mt-1">{stock.totalUnidades > 0 ? formatDocenas(stock.docenas, stock.sueltas) : 'envasadas'}</p>
+                                <p className="text-slate-500 text-[11px] mt-1">{stock.totalUnidades > 0 ? enDocenas(stock.totalUnidades) : 'envasadas'}</p>
                             </div>
                             {stock.totalKgSinEnvasar > 0 && (
                                 <div>

@@ -77,6 +77,20 @@ export const esHuerfana = (item, logsVivosPorId = {}) => {
 
 // ─── Lo que hay en una cava, de un vistazo ───────────────────────────────────
 
+/**
+ * Unidades expresadas en DOCENAS (pedido del dueño, 2026-09: en planta se
+ * cuenta y se despacha por docena). "2 docenas y 6 sueltas", "3 docenas",
+ * "8 sueltas". Siempre acompaña a las unidades, nunca las reemplaza.
+ */
+export const enDocenas = (unidades) => {
+    const n = Math.max(0, Math.floor(Number(unidades) || 0));
+    const d = Math.floor(n / 12), s = n % 12;
+    const tD = d === 1 ? '1 docena' : `${d} docenas`;
+    const tS = s === 1 ? '1 suelta' : `${s} sueltas`;
+    if (d === 0) return tS;
+    return s === 0 ? tD : `${tD} y ${tS}`;
+};
+
 /** "250 g" / "1 kg" a partir del peso por unidad en kg ('' si no hay). */
 export const etiquetaPeso = (pesoKg) => {
     const p = Number(pesoKg) || 0;
