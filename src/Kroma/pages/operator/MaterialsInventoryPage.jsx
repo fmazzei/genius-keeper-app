@@ -410,9 +410,12 @@ function EntradaSheet({ mat, invDoc, modo = 'inicial', onClose, onSave, verCosto
     // ponderado al día); "Corregir stock" no lo pide porque no es una compra.
     // "Omitir costo por ahora" es la única salida — deja el costoUSD como está.
     const costoFaltante = !modoAjuste && puedeCostear && !omitirCosto && !(aNumero(costoEntrada) > 0);
+    // Corregir el conteo A CERO es válido (se acabó, se botó, nunca estuvo): lo
+    // pidió el dueño. Una compra o un inventario inicial sí exigen algo que sumar.
+    const cantidadValida = modoAjuste ? addCerrado >= 0 : addCerrado > 0;
 
     async function handleSave() {
-        if (addCerrado <= 0 || saving || costoFaltante) return;
+        if (!cantidadValida || saving || costoFaltante) return;
         setSaving(true);
         const costoTotal = !modoAjuste && !omitirCosto ? aNumero(costoEntrada) : 0;
         await onSave(mat, config, addCerrado, initEnUso, notas.trim(), modoAjuste, costoTotal, fechaCompra);
@@ -515,8 +518,8 @@ function EntradaSheet({ mat, invDoc, modo = 'inicial', onClose, onSave, verCosto
                         </div>
                     )}
 
-                    {/* Preview */}
-                    {addCerrado > 0 && (
+                    {/* Preview (en corrección también con 0: "Ajustar a 0" es el caso) */}
+                    {(addCerrado > 0 || modoAjuste) && (
                         <div className={`flex items-center gap-3 rounded-xl px-4 py-3 mb-4 ${
                             modoAjuste ? 'bg-amber-900/25 border border-amber-700/40' : 'bg-teal-900/30 border border-teal-700/40'
                         }`}>
@@ -587,11 +590,11 @@ function EntradaSheet({ mat, invDoc, modo = 'inicial', onClose, onSave, verCosto
                             className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-white text-sm placeholder-slate-600 resize-none focus:outline-none focus:border-slate-500" />
                     </div>
 
-                    <button onClick={handleSave} disabled={addCerrado <= 0 || saving || costoFaltante}
+                    <button onClick={handleSave} disabled={!cantidadValida || saving || costoFaltante}
                         className={`w-full disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold py-4 rounded-xl ${
                             modoAjuste ? 'bg-amber-600 hover:bg-amber-500' : 'bg-teal-600 hover:bg-teal-500'
                         }`}>
-                        {saving ? 'Guardando...' : modoAjuste ? 'Corregir stock' : esCompra ? 'Registrar compra' : 'Guardar inventario inicial'}
+                        {saving ? 'Guardando...' : modoAjuste ? (newCerrado === 0 && newEnUso === 0 ? 'Dejar en cero' : 'Corregir stock') : esCompra ? 'Registrar compra' : 'Guardar inventario inicial'}
                     </button>
                     {costoFaltante && (
                         <p className="text-amber-400 text-xs text-center mt-2">Indica el costo de esta entrada, u omítelo explícitamente.</p>

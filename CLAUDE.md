@@ -2762,6 +2762,10 @@ Pedido del dueño con capturas de la Cava y de Almacenes.
   producto + cantidad; debajo el lote (sin partirse), "Vence dd/mm/aa" y las
   acciones, que en pantalla chica son solo íconos.
 
+### Insumos: "Corregir stock" ahora permite dejar en CERO (2026-09) ✅
+
+Reporte del dueño: no había forma de declarar que un insumo se acabó. El botón de `EntradaSheet` (`MaterialsInventoryPage`) exigía `addCerrado > 0` en los tres modos. Ahora `cantidadValida` = `>= 0` en **Corregir** (el conteo reemplaza el stock, y 0 es un conteo válido) y `> 0` en Compra / Inventario inicial (hay que sumar algo). La vista previa aparece también en 0 ("Ajustar a: 0") y el botón dice **"Dejar en cero"**. `handleEntrada` ya aceptaba el 0; el bloqueo era solo de la pantalla.
+
 ### Cava en docenas (2026-09) ✅
 
 Pedido del dueño: en planta se cuenta y se despacha por docena, así que cada partida envasada muestra **unidades Y docenas** ("30 ud · 2 docenas y 6 sueltas"; "36 ud · 3 docenas"; "8 ud · 8 sueltas"). Una sola función, **`enDocenas(unidades)`** en `src/Kroma/inventarioPT.js`, usada en la partida (`PartidaCava`), en las cifras del resumen por presentación (`ResumenCava`) y en la tarjeta del almacén (reemplazó el `formatDocenas` local, que decía "2 doc + 6 sueltas"). Las docenas acompañan a las unidades, nunca las reemplazan; el granel sigue en kg.
