@@ -2260,8 +2260,9 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         if (!id || loading || reporteDirigidoRef.current === id) return;
         const destino = (log) => {
             reporteDirigidoRef.current = id;
-            // Desde el Historial se puede pedir CORREGIR, no solo mirar.
-            if (params?.editar) { abrirParaEditar(log); return; }
+            // Desde el Historial se puede pedir CORREGIR, no solo mirar —
+            // y corregir una producción cerrada es SOLO del máster.
+            if (params?.editar && isMaster) { abrirParaEditar(log); return; }
             setReportLog(log);
             setView('report');
         };

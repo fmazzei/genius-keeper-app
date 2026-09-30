@@ -3035,6 +3035,7 @@ Reporte del dueño: el botón verde "Salida" de la cava solo aparecía en su per
 Reporte del dueño con captura: en Producción Diaria el operario (DH) no tenía los botones "Nueva" ni "Planilla". Su rol sí era `kroma_operario`: la campana de alertas, que solo se pinta para ese rol, aparecía en la captura. La causa era un **"Editar Producción" apagado a mano en su perfil**. `efectivo()` hace que un apagado explícito gane al default del rol, y ese interruptor probablemente se guardó cuando el panel todavía no mandaba.
 - **Producir es la función principal del operario**: `canProducir = canEdit('produccionDiaria') || kromaRole === 'kroma_operario'`. El panel ya no puede quitárselo.
 - **Si otro perfil no puede producir, la pantalla lo DICE**, con su rol y dónde se activa, en vez de esconder los botones.
+- **Crear sí, corregir no**: corregir una producción cerrada sigue siendo SOLO del máster (lápiz por bloque, "Editar" del Historial y `abrirParaEditar`). La llegada con `params.editar` ahora también exige `isMaster`: era la única vía sin candado.
 
 ### Bug: los "re-exportadores" de Kroma se comían los props (2026-09) ✅
 
