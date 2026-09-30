@@ -8,7 +8,7 @@ import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/Firebase/config.js';
-import { LogOut, BarChart2, TrendingUp, Settings, Map as MapIcon, Menu, ChevronsRight, Users, ClipboardList, Download, Warehouse } from 'lucide-react';
+import { LogOut, BarChart2, TrendingUp, Settings, Map as MapIcon, Menu, ChevronsRight, Briefcase, CalendarCheck, ClipboardList, Download, Warehouse, UserCheck } from 'lucide-react';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
@@ -17,12 +17,12 @@ import GerencialDashboard from './GerencialDashboard.jsx';
 import MarketTrendsView from './MarketTrendsView.jsx';
 import AlertsCenterView from './AlertsCenterView.jsx';
 import AdminPanel from './AdminPanel.jsx';
-import SeguimientoComercial from './SeguimientoComercial.jsx';
-import RendimientoComercialView from './RendimientoComercialView.jsx';
+import ComercialView from './ComercialView.jsx';
+import EstaSemanaView from './EstaSemanaView.jsx';
+import MercaderistasView from './MercaderistasView.jsx';
 import ReportesAnaquelView from './ReportesAnaquelView.jsx';
 import ExportesView from './ExportesView.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
-import FacturacionClientes from './FacturacionClientes.jsx';
 import PullToRefresh from '@/Components/PullToRefresh.jsx';
 import TableroGerencial from './TableroGerencial.jsx';
 
@@ -48,7 +48,10 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     // cifras ya viven en las bandas ¿Vendemos? / ¿Cobramos? del dashboard).
     const [currentView, setCurrentView] = useState('dashboard');
     const [userMetadata, setUserMetadata] = useState({ name: '', email: '' });
-    const [dashPage, setDashPage] = useState(0); // 0 = KPIs, 1 = Ventas por cliente/PDV
+    // Pestaña de Comercial a la que llevan las tarjetas del Tablero (03 Clientes,
+    // 05 Ventas). `n` fuerza el cambio aunque se repita la misma pestaña.
+    const [comercialIr, setComercialIr] = useState({ tab: 'meta', n: 0 });
+    const irAComercial = (tab) => { setComercialIr(p => ({ tab, n: p.n + 1 })); setCurrentView('comercial'); };
 
     useEffect(() => {
         if (!user?.uid) return;
@@ -66,11 +69,11 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
         }
+        if (currentView === 'comercial' && modules.rendimientoComercial === false) setCurrentView('dashboard');
         if (role === 'gerencia' || role === 'sales_manager') {
             if (currentView === 'planner'   && !modules.plannerManager)   setCurrentView('dashboard');
             if (currentView === 'trends'    && !modules.marketTrends)     setCurrentView('dashboard');
         }
-        if (currentView === 'rendimiento' && !modules.rendimientoComercial) setCurrentView('dashboard');
     }, [modules, role, currentView]);
 
     // ✅ Se añade un estado para controlar la navegación del planificador.
@@ -89,8 +92,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             trends:           'Análisis de Tendencias',
             alerts:           'Centro de Notificaciones',
             settings:         'Configuraciones',
-            rendimiento:      'Vendedores',
-            seguimiento:      'Seguimiento Comercial',
+            comercial:        'Comercial',
+            semana:           'Para esta semana',
+            mercaderistas:    'Mercaderistas',
             almacenComercial: 'Almacén Comercial',
             planner:          'Centro de Planificación',
             reportesAnaquel:  'Reportes de Anaquel',
@@ -115,8 +119,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         const masterNav = (
             <ul>
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
-                <NavItem icon={<ClipboardList size={24} />} text="Seguimiento" active={currentView === 'seguimiento'} onClick={() => setCurrentView('seguimiento')} />
-                {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Vendedores" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
+                {modules.rendimientoComercial !== false && <NavItem icon={<Briefcase size={24} />} text="Comercial" active={currentView === 'comercial'} onClick={() => setCurrentView('comercial')} />}
+                <NavItem icon={<CalendarCheck size={24} />} text="Esta semana" active={currentView === 'semana'} onClick={() => setCurrentView('semana')} />
+                <NavItem icon={<UserCheck size={24} />} text="Mercaderistas" active={currentView === 'mercaderistas'} onClick={() => setCurrentView('mercaderistas')} />
                 {modules.marketTrends && <NavItem icon={<TrendingUp size={24} />} text="Tendencias" active={currentView === 'trends'} onClick={() => setCurrentView('trends')} />}
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
@@ -129,8 +134,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         const gerenciaNav = (
             <ul>
                 <NavItem icon={<BarChart2 size={24} />} text="Dashboard" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
-                <NavItem icon={<ClipboardList size={24} />} text="Seguimiento" active={currentView === 'seguimiento'} onClick={() => setCurrentView('seguimiento')} />
-                {modules.rendimientoComercial && <NavItem icon={<Users size={24} />} text="Vendedores" active={currentView === 'rendimiento'} onClick={() => setCurrentView('rendimiento')} />}
+                {modules.rendimientoComercial !== false && <NavItem icon={<Briefcase size={24} />} text="Comercial" active={currentView === 'comercial'} onClick={() => setCurrentView('comercial')} />}
+                <NavItem icon={<CalendarCheck size={24} />} text="Esta semana" active={currentView === 'semana'} onClick={() => setCurrentView('semana')} />
+                <NavItem icon={<UserCheck size={24} />} text="Mercaderistas" active={currentView === 'mercaderistas'} onClick={() => setCurrentView('mercaderistas')} />
                 <NavItem icon={<ClipboardList size={24} />} text="Rep. Anaquel" active={currentView === 'reportesAnaquel'} onClick={() => setCurrentView('reportesAnaquel')} />
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
@@ -160,18 +166,22 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
 
         return (
             <>
-                {/* Seguimiento comercial — mismos indicadores que ve el vendedor
-                     en "Mi Semana", por vendedor o de toda la empresa. */}
-                {currentView === 'seguimiento' && (
-                    <div className="block h-full overflow-y-auto overflow-x-hidden p-4 md:p-6 bg-slate-50">
-                        <SeguimientoComercial posList={posList} reports={reports} />
-                    </div>
+                {/* Comercial: meta de la empresa · vendedores · clientes y ventas.
+                    Reemplaza "Seguimiento" y "Vendedores" (decían casi lo mismo) y
+                    trae las ventas por cliente que vivían en el Dashboard. */}
+                {currentView === 'comercial' && (
+                    <ComercialView posList={posList} reports={reports} irA={comercialIr} />
                 )}
 
-                {/* Rendimiento comercial por vendedor */}
-                <div className={currentView === 'rendimiento' ? 'block h-full' : 'hidden'}>
-                    <RendimientoComercialView />
-                </div>
+                {/* Para esta semana: los indicadores de "Mi Semana", informativos */}
+                {currentView === 'semana' && (
+                    <EstaSemanaView posList={posList} reports={reports} />
+                )}
+
+                {/* Gestión del mercaderista: mes a mes, en 4 semanas */}
+                {currentView === 'mercaderistas' && (
+                    <MercaderistasView posList={posList} reports={reports} />
+                )}
 
                 {/* Reportes de Anaquel */}
                 <div className={currentView === 'reportesAnaquel' ? 'block h-full' : 'hidden'}>
@@ -184,66 +194,34 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 </div>
 
                 <div className={currentView === 'dashboard' ? 'flex flex-col h-full' : 'hidden'}>
-                    {/* Dashboard deslizable: página 0 = KPIs (4 preguntas) ·
-                        página 1 = Ventas por cliente y punto de venta. */}
-                    <div
-                        id="gk-dash-swipe"
-                        onScroll={(e) => {
-                            const el = e.currentTarget;
-                            const p = Math.round(el.scrollLeft / el.clientWidth);
-                            if (p !== dashPage) setDashPage(p);
+                    {/* Tirar hacia abajo = actualizar. Los PDV y las visitas llegan por
+                        onSnapshot (ya son tiempo real); lo que se relee es la
+                        facturación de Zoho. La antigua 2.ª página deslizable
+                        "Ventas por cliente/PDV" se mudó a Comercial → Clientes y ventas. */}
+                    <PullToRefresh
+                        className="flex-1 min-h-0 w-full"
+                        onRefresh={async () => {
+                            setRefreshKey(k => k + 1);
+                            await new Promise(r => setTimeout(r, 600));   // deja ver que pasó algo
                         }}
-                        className="flex-1 flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory"
-                        style={{ scrollbarWidth: 'none' }}
                     >
-                        {/* Tirar hacia abajo = actualizar. Los PDV y las visitas
-                            llegan por onSnapshot (ya son tiempo real); lo que se
-                            relee es la facturación de Zoho, que se carga una sola
-                            vez al montar. */}
-                        <PullToRefresh
-                            className="snap-center shrink-0 w-full h-full"
-                            onRefresh={async () => {
-                                setRefreshKey(k => k + 1);
-                                await new Promise(r => setTimeout(r, 600));   // deja ver que pasó algo
-                            }}
-                        >
-                            {/* Decisión del dueño (2026-09): la portada del gerente es el
-                                TABLERO de 8 bloques. Los 15 KPIs de campo no se borraron —
-                                viven un toque más adentro, en "Indicadores de campo". */}
-                            {vistaDash === 'tablero'
-                                ? <TableroGerencial key={refreshKey} onVerIndicadores={() => setVistaDash('kpis')} />
-                                : (
-                                    <>
-                                        <div className="px-4 md:px-6 pt-4">
-                                            <button type="button" onClick={() => setVistaDash('tablero')}
-                                                className="text-xs font-bold text-brand-blue bg-white border border-slate-200 rounded-xl px-3 py-2 hover:shadow-md">
-                                                ← Volver al Tablero
-                                            </button>
-                                        </div>
-                                        <GerencialDashboard {...commonProps} role={role} readOnly={readOnly} onNavigate={setCurrentView} refreshKey={refreshKey} />
-                                    </>
-                                )}
-                        </PullToRefresh>
-                        <div className="snap-center shrink-0 w-full h-full overflow-y-auto">
-                            <div className="w-full max-w-5xl mx-auto">
-                                <FacturacionClientes />
-                            </div>
-                        </div>
-                    </div>
-                    <div className="shrink-0 flex items-center justify-center gap-2 py-2 bg-white border-t border-slate-100">
-                        {['Indicadores', 'Ventas por cliente/PDV'].map((lbl, i) => (
-                            <button key={i}
-                                onClick={() => {
-                                    setDashPage(i);
-                                    const el = document.getElementById('gk-dash-swipe');
-                                    if (el) el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' });
-                                }}
-                                className={`flex items-center gap-1.5 text-[11px] font-bold rounded-full px-2.5 py-1 transition-colors ${dashPage === i ? 'text-brand-blue' : 'text-slate-400'}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${dashPage === i ? 'bg-brand-blue' : 'bg-slate-300'}`} />
-                                {lbl}
-                            </button>
-                        ))}
-                    </div>
+                        {/* Decisión del dueño (2026-09): la portada del gerente es el
+                            TABLERO de 8 bloques. Los 15 KPIs de campo viven un toque
+                            más adentro, en "Indicadores de campo". */}
+                        {vistaDash === 'tablero'
+                            ? <TableroGerencial key={refreshKey} onVerIndicadores={() => setVistaDash('kpis')} onIrComercial={modules.rendimientoComercial !== false ? irAComercial : null} />
+                            : (
+                                <>
+                                    <div className="px-4 md:px-6 pt-4">
+                                        <button type="button" onClick={() => setVistaDash('tablero')}
+                                            className="text-xs font-bold text-brand-blue bg-white border border-slate-200 rounded-xl px-3 py-2 hover:shadow-md">
+                                            ← Volver al Tablero
+                                        </button>
+                                    </div>
+                                    <GerencialDashboard {...commonProps} role={role} readOnly={readOnly} onNavigate={setCurrentView} refreshKey={refreshKey} />
+                                </>
+                            )}
+                    </PullToRefresh>
                 </div>
                 <div className={currentView === 'trends' ? 'block h-full' : 'hidden'}>
                     <MarketTrendsView {...commonProps} />

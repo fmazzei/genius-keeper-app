@@ -3048,6 +3048,21 @@ Una operaria con Android no encontraba "Agregar a la pantalla principal" en el m
   - No aparece si ya corre instalada (`display-mode: standalone`).
   - Se puede cerrar y no vuelve en 14 días (`localStorage`, en try/catch).
 
+### Máster/gerencia: Comercial, Esta semana y Mercaderistas (2026-09) ✅
+
+Pedido del dueño: "Seguimiento" y "Vendedores" decían casi lo mismo, y las ventas por cliente vivían escondidas como 2.ª página deslizable del Dashboard. Nuevo menú de `ManagerLayout`: **Dashboard · Comercial · Esta semana · Mercaderistas** (resto igual). Se ELIMINARON `SeguimientoComercial.jsx` y `RendimientoComercialView.jsx`.
+
+**Comercial** (`ComercialView.jsx`, gobernado por el módulo `rendimientoComercial`, ahora rotulado "Comercial"), tres pestañas:
+1. **Meta de la empresa** — mes CALENDARIO (decisión del dueño). Unidades sobre la meta (`metaVentasGeneral`; si no se fijó, suma de metas de vendedores, y lo dice), barra con la marca de "dónde deberíamos ir a hoy", ritmo y proyección de cierre. Facturado / cobrado / por cobrar / +45 días. **Quién aporta** a la meta por vendedor, Oficina y sin asignar (`useFinancialKpis.aportePorVendedorMes`, por carnet vigente) e **histórico de 12 meses** contra la meta (`historico12`). Todo con `unidadesReales` (kg → uds).
+2. **Vendedores** — el desempeño de cada uno en su período de empleo. `evaluarDesempeno` devuelve ahora por pilar `pctMeta` / `sobreMeta` y `valor` "X de Y": **el número grande es el % sobre la meta** y debajo las unidades sobre la meta; la barra sigue siendo el puntaje contra el ritmo. Además `comision: {nivel, tasa, generada}`.
+3. **Clientes y ventas** — `FacturacionClientes` con filtro de **cartera** (toda la empresa / cada vendedor / Oficina / sin asignar, por el dueño ACTUAL del carnet en `clientes_zoho`), periodo Mes, unidades reales y por cobrar = saldo (no monto).
+
+**Esta semana** (`EstaSemanaView.jsx`): los indicadores de "Mi Semana" en versión INFORMATIVA. Matriz vendedores × indicadores (sin facturar, visitas cubiertas, quiebres sin reponer, anaquel bajo, por vencer, cobranza vencida) con color por celda + fila "Toda la empresa". Arriba, `lecturaDe()` interpreta el patrón en texto (p. ej. "el atraso es de ruta, no de venta"). Tocar una celda lista los PDV; tocar un vendedor abre su tablero completo (sin acciones) y el PDF (`SeguimientoDoc`). Navegable por semana/mes. Datos compartidos con Vendedores vía **`useCarteraComercial`** (extraído del viejo Seguimiento: las dos pantallas leen lo mismo).
+
+**Mercaderistas** (`MercaderistasView.jsx` + motor puro `src/utils/gestionMercaderista.js` + PDF `GestionMercaderistaDoc.jsx`): mes a mes en **4 bloques fijos 1–7, 8–14, 15–21, 22–fin** (decisión del dueño). Por semana y total del mes: visitas, cumplimiento de ruta (meta por `visitInterval`, mismo `metaVisitasPeriodo` del seguidor), PDV distintos, duración promedio, quiebres encontrados / repuestos (R) / uds repuestas, visitas con producto por vencer (≤7 días desde la visita) o vencido, envases dañados, devoluciones, precios levantados, competencia y nuevos entrantes. **GK no guarda qué PDV le toca a cada mercaderista**: se usa su ruta de hecho (cada PDV cuenta para quien más lo visitó en los 90 días previos al cierre; con un solo mercaderista, toda la ruta es suya) y la pantalla lo declara.
+
+**Duplicados retirados del Dashboard**: la página deslizable "Ventas por cliente/PDV" (ahora Comercial → Clientes y ventas) y las hojas de las tarjetas **03 Clientes** y **05 Ventas** del Tablero, que ahora llevan a Comercial (`onIrComercial`).
+
 ### Bug: los "re-exportadores" de Kroma se comían los props (2026-09) ✅
 
 El dueño abrió "Mover producto" y no aparecía la opción de despachar a Caracas.

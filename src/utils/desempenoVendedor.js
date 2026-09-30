@@ -18,7 +18,7 @@
 // Un pilar sin datos (p. ej. vendedor sin PDV con mercaderista) NO cuenta: se
 // declara y su peso se reparte entre los demás. No se inventa un cero.
 
-import { computeMetaMensual, computeActivacionPeriodo } from '@/utils/vendedorMeta.js';
+import { computeMetaMensual, computeActivacionPeriodo, tierParaPct } from '@/utils/vendedorMeta.js';
 import { cuentaEnCartera, esPorCobrar, saldoAbierto } from '@/utils/facturaEstado.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 
@@ -29,6 +29,8 @@ const toDate = (v) => {
     return isNaN(d?.getTime?.()) ? null : d;
 };
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
+// % sobre la meta, sin techo: pasar la meta (120%) también se dice.
+const pctTxt = (x) => (x == null || !isFinite(x)) ? '—' : `${Math.round(x * 100)}%`;
 
 // Decisión del dueño: Facturación, Activación y Cobranza pesan IGUAL. Se dan la
 // mano pero no son lo mismo: facturación mide VOLUMEN (unidades vs. meta) y
@@ -81,8 +83,9 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], seguidor = null
     const esperado = meta * avance;
     pilares.facturacion = meta > 0 ? {
         score: clamp(esperado > 0 ? (unidades / esperado) * 100 : 100),
-        valor: `${num(unidades)} uds`,
-        detalle: `Meta del mes ${num(meta)} uds · a hoy tocaba llevar ${num(esperado)} (${Math.round(unidades / meta * 100)}% de la meta)`,
+        valor: `${num(unidades)} de ${num(meta)} uds`,
+        pctMeta: unidades / meta, sobreMeta: `${pctTxt(unidades / meta)} de la meta`,
+        detalle: `A hoy tocaba llevar ${num(esperado)} uds (${pctTxt(avance)} del período corrido) · faltan ${num(Math.max(0, meta - unidades))} uds para la meta`,
         pct: meta > 0 ? unidades / meta : 0,
     } : { score: null, valor: '—', detalle: 'El vendedor no tiene meta mensual configurada.' };
 
@@ -100,7 +103,9 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], seguidor = null
     }).length;
     pilares.cobranza = {
         score: porCobrar > 0 ? clamp((1 - vencido / porCobrar) * 100) : (suyas.length ? 100 : null),
-        valor: porCobrar > 0 ? `${Math.round((1 - vencido / porCobrar) * 100)}% al día` : 'Sin deuda',
+        valor: porCobrar > 0 ? `${money0(porCobrar - vencido)} de ${money0(porCobrar)} al día` : 'Sin deuda',
+        pctMeta: porCobrar > 0 ? 1 - vencido / porCobrar : (suyas.length ? 1 : null),
+        sobreMeta: porCobrar > 0 ? `${pctTxt(1 - vencido / porCobrar)} al día (meta 100%)` : (suyas.length ? '100% al día' : '—'),
         detalle: porCobrar > 0
             ? `${money0(vencido)} vencido de ${money0(porCobrar)} por cobrar · ${vencidas.length} factura${vencidas.length === 1 ? '' : 's'} vencida${vencidas.length === 1 ? '' : 's'}${graves ? ` (${graves} con más de ${cfg.facturaMaxDias ?? 45} días: pierden comisión)` : ''}`
             : (suyas.length ? 'No tiene facturas por cobrar.' : 'Todavía no tiene facturas.'),
@@ -111,7 +116,9 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], seguidor = null
         cfg.activacionMinUnits ?? 24, cfg.activacionThreshold ?? 80);
     pilares.activacion = carteraSize > 0 && act.semanasTotales > 0 ? {
         score: clamp(act.factor * 100),
-        valor: `${act.semanasLogradas}/${act.semanasTotales} semanas`,
+        valor: `${act.semanasLogradas} de ${act.semanasTotales} semanas`,
+        pctMeta: act.semanasLogradas / act.semanasTotales,
+        sobreMeta: `${pctTxt(act.semanasLogradas / act.semanasTotales)} de las semanas`,
         detalle: `Una semana se logra con ${act.semObjetivo} de ${carteraSize} clientes con ≥${cfg.activacionMinUnits ?? 24} uds · esta semana: ${act.semActivados}/${act.semObjetivo}${act.semLograda ? ' ✓' : ''}`,
     } : { score: null, valor: '—', detalle: 'Sin cartera asignada para medir activación.' };
 
@@ -119,7 +126,8 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], seguidor = null
     const m = seguidor?.mercaderista;
     pilares.visitas = m && m.meta > 0 ? {
         score: clamp((m.hechas / m.meta) * 100),
-        valor: `${m.hechas}/${m.meta} visitas`,
+        valor: `${m.hechas} de ${m.meta} visitas`,
+        pctMeta: m.hechas / m.meta, sobreMeta: `${pctTxt(m.hechas / m.meta)} de la meta`,
         detalle: `Según la frecuencia de cada PDV · faltan ${m.faltan} en ${m.items?.length || 0} PDV`,
     } : { score: null, valor: '—', detalle: m?.pdvCartera ? 'Ningún PDV tocaba visita en el período.' : 'Su cartera no tiene PDV con mercaderista.' };
 
@@ -128,7 +136,8 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], seguidor = null
     const totalPdv = seguidor?.cobertura?.total || 0;
     pilares.cartera = sf && totalPdv > 0 ? {
         score: clamp((1 - sf.count / totalPdv) * 100),
-        valor: `${totalPdv - sf.count}/${totalPdv} PDV`,
+        valor: `${totalPdv - sf.count} de ${totalPdv} PDV`,
+        pctMeta: (totalPdv - sf.count) / totalPdv, sobreMeta: `${pctTxt((totalPdv - sf.count) / totalPdv)} comprando`,
         detalle: sf.count
             ? `${sf.count} PDV sin comprar hace más de 8 días${sf.sinVisita ? ` (${sf.sinVisita} sin visita)` : ''}${sf.conInventario?.count ? ` · ${sf.conInventario.count} con inventario, no cuentan` : ''}`
             : 'Todos sus PDV están comprando o tienen inventario.',
@@ -149,8 +158,17 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], seguidor = null
         .map(([k, w]) => ({ k, perdida: (100 - pilares[k].score) * w }))
         .sort((a, b) => b.perdida - a.perdida)[0];
 
+    // Nivel de comisión que le da su % de facturación (mismo cálculo que su Home)
+    // y la comisión ya generada por lo cobrado del período.
+    const nivel = tierParaPct(cfg, meta > 0 ? unidades / meta : 0);
+    const comisionGenerada = suyas
+        .filter(f => f.estado === 'pagada' && !f.comisionAnulada)
+        .filter(f => { const t = toDate(f.fecha); return t && t >= inicio && t < fin; })
+        .reduce((s, f) => s + (Number(f.comisionGenerada) || 0), 0);
+
     return {
         global, estado: estadoDe(global),
+        comision: { nivel: nivel.label, tasa: nivel.rate, generada: comisionGenerada },
         pilares: Object.fromEntries(Object.entries(pilares).map(([k, v]) => [k, { ...v, estado: estadoDe(v.score), peso: PESOS[k] }])),
         peor: peor && peor.perdida > 0 ? peor.k : null,
         periodo: {

@@ -26,6 +26,8 @@ export const PILAR_META = {
     cartera:     { nombre: 'Cartera comprando', que: 'PDV de su cartera que están comprando', Icon: Store },
 };
 const ORDEN = ['facturacion', 'cobranza', 'activacion', 'visitas', 'cartera'];
+const pct = (x) => (x == null || !isFinite(x)) ? '—' : `${Math.round(x * 100)}%`;
+const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
 
 /** Medidor semicircular con el puntaje global. */
 function Medidor({ score, tono, size = 180 }) {
@@ -64,6 +66,12 @@ export default function DesempenoVendedor({ ev, nombre }) {
                             <span>Lo que más le resta: <b>{PILAR_META[ev.peor].nombre}</b> — {ev.pilares[ev.peor].detalle}</span>
                         </p>
                     )}
+                    {ev.comision && (
+                        <p className="text-xs text-slate-500 mt-1.5">
+                            Nivel de comisión <b className="text-slate-700">{ev.comision.nivel} ({(ev.comision.tasa * 100).toLocaleString('es-VE', { maximumFractionDigits: 1 })}%)</b>
+                            {' · '}comisión generada por lo cobrado: <b className="text-slate-700">{money0(ev.comision.generada)}</b>
+                        </p>
+                    )}
                     {p.sinIngreso && (
                         <p className="text-xs text-amber-700 mt-2">Sin fecha de ingreso: se evalúa el mes de calendario con la meta plena.</p>
                     )}
@@ -91,19 +99,27 @@ export default function DesempenoVendedor({ ev, nombre }) {
                                     <div className={`h-full rounded-full ${tp.bar}`} style={{ width: `${pil.score ?? 0}%` }} />
                                 </div>
                             </div>
+                            {/* A la derecha, lo que pidió el dueño: % sobre la meta y
+                                las unidades sobre la meta. La barra es el puntaje
+                                (contra lo que tocaba llevar a hoy). */}
                             <div className="text-right">
-                                <p className={`text-2xl font-black leading-none ${tp.txt}`}>{pil.score ?? '—'}</p>
+                                <p className={`text-2xl font-black leading-none ${tp.txt}`}>{pct(pil.pctMeta)}</p>
                                 <p className="text-[11px] text-slate-500 mt-0.5 whitespace-nowrap">{pil.valor}</p>
                             </div>
-                            <p className="col-start-2 col-span-2 text-xs text-slate-500">{pil.detalle}</p>
+                            <p className="col-start-2 col-span-2 text-xs text-slate-500">
+                                {pil.sobreMeta && <b className="text-slate-600">{pil.sobreMeta} · </b>}
+                                {pil.detalle}
+                                {pil.score != null && <span className="text-slate-400"> · puntaje {pil.score}/100</span>}
+                            </p>
                         </div>
                     );
                 })}
             </div>
 
             <p className="px-5 sm:px-6 py-3 text-[11px] text-slate-400 bg-slate-50 border-t border-slate-100">
-                85 o más: cumpliendo · 65 a 84: en riesgo · menos de 65: no está cumpliendo. Los pilares sin datos no cuentan
-                y su peso se reparte entre los demás. La facturación se compara con lo que tocaba llevar a hoy, no con la meta del mes entero.
+                El porcentaje grande es el avance sobre la meta del período. La barra y el puntaje comparan contra lo que
+                tocaba llevar a hoy, no contra la meta del mes entero. Global: 85 o más cumpliendo · 65 a 84 en riesgo ·
+                menos de 65 no está cumpliendo. Los pilares sin datos no cuentan y su peso se reparte entre los demás.
             </p>
         </section>
     );
@@ -134,7 +150,7 @@ export function DesempenoMini({ ev, nombre, onClick }) {
                             <div className="flex-1 h-1.5 rounded-full bg-white/80 overflow-hidden">
                                 <div className={`h-full rounded-full ${tp.bar}`} style={{ width: `${pil.score ?? 0}%` }} />
                             </div>
-                            <span className={`text-[11px] font-bold w-7 text-right ${tp.txt}`}>{pil.score ?? '—'}</span>
+                            <span className={`text-[11px] font-bold w-10 text-right ${tp.txt}`}>{pct(pil.pctMeta)}</span>
                         </div>
                     );
                 })}

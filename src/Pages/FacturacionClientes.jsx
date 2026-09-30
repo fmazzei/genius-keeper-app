@@ -8,10 +8,17 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, getDocs } from 'firebase/firestore';
-import { RefreshCw, FileDown, Search, Store, Building2, AlertCircle, Calendar } from 'lucide-react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { RefreshCw, FileDown, Search, Store, Building2, AlertCircle, Calendar, Users } from 'lucide-react';
 import FacturacionDoc from '@/Components/FacturacionDoc.jsx';
-import { cuentaEnCartera } from '@/utils/facturaEstado.js';
+import { cuentaEnCartera, saldoAbierto } from '@/utils/facturaEstado.js';
+import { unidadesReales, buildCanalResolver } from '@/utils/unidadesFactura.js';
+
+// Filtro de cartera: TODAS las ventas, las de un vendedor, Oficina o sin asignar.
+// Se resuelve por la cartera ACTUAL (clientes_zoho por carnet), que es lo que
+// el gerente quiere ver: "¿qué le vende hoy su cartera?".
+const CARTERA_TODOS = '__todos__', CARTERA_OFICINA = '__oficina__', CARTERA_SIN = '__sin__';
+const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
@@ -26,6 +33,9 @@ const StatChip = ({ label, value, color }) => (
 
 export default function FacturacionClientes() {
     const [facturas, setFacturas] = useState([]);
+    const [clientes, setClientes] = useState([]);
+    const [vendedores, setVendedores] = useState([]);
+    const [carteraSel, setCarteraSel] = useState(CARTERA_TODOS);
     const [loading, setLoading]   = useState(true);
     const [error, setError]       = useState('');
     const [groupBy, setGroupBy]   = useState('razon'); // 'razon' | 'pdv'
@@ -33,16 +43,23 @@ export default function FacturacionClientes() {
     const [showDoc, setShowDoc]   = useState(false);
     // Período: por defecto el AÑO EN CURSO. Filtros año / semestre / trimestre.
     const [year, setYear]         = useState(new Date().getFullYear());
-    const [gran, setGran]         = useState('year'); // 'year' | 'sem' | 'tri'
-    const [sub, setSub]           = useState(1);       // semestre 1-2 · trimestre 1-4
+    const [gran, setGran]         = useState('year'); // 'year' | 'sem' | 'tri' | 'mes'
+    const [sub, setSub]           = useState(1);       // semestre 1-2 · trimestre 1-4 · mes 1-12
 
     useEffect(() => {
         let alive = true;
         (async () => {
             setLoading(true); setError('');
             try {
-                const snap = await getDocs(collection(db, 'facturas_vendedor'));
-                if (alive) setFacturas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                const [snap, cliSnap, venSnap] = await Promise.all([
+                    getDocs(collection(db, 'facturas_vendedor')),
+                    getDocs(collection(db, 'clientes_zoho')).catch(() => ({ docs: [] })),
+                    getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))).catch(() => ({ docs: [] })),
+                ]);
+                if (!alive) return;
+                setFacturas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                setClientes((cliSnap.docs || []).map(d => d.data()));
+                setVendedores((venSnap.docs || []).map(d => ({ id: d.id, ...d.data() })).filter(v => v.active !== false));
             } catch (e) {
                 console.error(e);
                 if (alive) setError('No se pudieron cargar las facturas.');
@@ -68,12 +85,29 @@ export default function FacturacionClientes() {
     const [winStart, winEnd] = useMemo(() => {
         if (gran === 'sem') { const m = sub === 1 ? 0 : 6; return [new Date(year, m, 1), new Date(year, m + 6, 1)]; }
         if (gran === 'tri') { const m = (sub - 1) * 3; return [new Date(year, m, 1), new Date(year, m + 3, 1)]; }
+        if (gran === 'mes') return [new Date(year, sub - 1, 1), new Date(year, sub, 1)];
         return [new Date(year, 0, 1), new Date(year + 1, 0, 1)];
     }, [year, gran, sub]);
 
     const periodoLabel = gran === 'year' ? `Año ${year}`
         : gran === 'sem' ? `${sub === 1 ? '1.er' : '2.º'} semestre ${year}`
+        : gran === 'mes' ? `${MESES[sub - 1]} ${year}`
         : `${sub}.º trimestre ${year}`;
+
+    // Dueño VIGENTE de cada factura: por carnet (clientes_zoho) y, sin carnet,
+    // por el vendedor con que quedó la factura.
+    const cliPorId = useMemo(() => new Map(clientes.filter(c => c.customerId).map(c => [String(c.customerId), c])), [clientes]);
+    const duenoDe = (f) => {
+        const c = f.zohoCustomerId ? cliPorId.get(String(f.zohoCustomerId)) : null;
+        if (c) return c.esOficina ? CARTERA_OFICINA : (c.vendedorId || f.vendedorId || CARTERA_SIN);
+        return f.vendedorId || CARTERA_SIN;
+    };
+    const canalDe = useMemo(() => buildCanalResolver(clientes), [clientes]);
+    const udsDe = (f) => unidadesReales(f, { canal: canalDe(f) });
+    const nombreCartera = carteraSel === CARTERA_TODOS ? 'Toda la empresa'
+        : carteraSel === CARTERA_OFICINA ? 'Oficina'
+        : carteraSel === CARTERA_SIN ? 'Sin asignar'
+        : (vendedores.find(v => v.id === carteraSel)?.name || 'Vendedor');
 
     const grupos = useMemo(() => {
         const map = new Map();
@@ -81,6 +115,7 @@ export default function FacturacionClientes() {
             if (!cuentaEnCartera(f)) continue;
             const t = toDate(f.fecha);
             if (!t || t < winStart || t >= winEnd) continue; // ← filtro de período
+            if (carteraSel !== CARTERA_TODOS && duenoDe(f) !== carteraSel) continue; // ← filtro de cartera
             const key = groupBy === 'razon'
                 ? (f.razonSocialCanonica || f.clienteName || '—')
                 : (f.clienteName || f.razonSocialCanonica || '—');
@@ -88,21 +123,22 @@ export default function FacturacionClientes() {
             const g = map.get(key);
             const monto = Number(f.monto) || 0;
             g.facturas += 1;
-            g.unidades += Number(f.unidades) || 0;
+            g.unidades += udsDe(f);
             g.facturado += monto;
-            if (f.estado === 'pagada') {
-                g.cobrado += monto;
-            } else {
-                g.porCobrar += monto;
+            // Por cobrar = SALDO real (abonos parciales), no el monto entero.
+            const saldo = f.estado === 'pagada' ? 0 : saldoAbierto(f);
+            g.cobrado += monto - saldo;
+            if (saldo > 0.005) {
+                g.porCobrar += saldo;
                 const venc = toDate(f.vencimiento);
-                if (f.estado === 'vencida' || (venc && venc < now)) g.vencido += monto;
+                if (f.estado === 'vencida' || (venc && venc < now)) g.vencido += saldo;
             }
         }
         let arr = [...map.values()].sort((a, b) => b.facturado - a.facturado);
         const term = search.trim().toLowerCase();
         if (term) arr = arr.filter(g => (g.nombre || '').toLowerCase().includes(term));
         return arr;
-    }, [facturas, groupBy, search, winStart, winEnd]); // eslint-disable-line
+    }, [facturas, groupBy, search, winStart, winEnd, carteraSel, cliPorId, canalDe]); // eslint-disable-line
 
     const totales = useMemo(() => grupos.reduce((t, g) => ({
         facturas: t.facturas + g.facturas, unidades: t.unidades + g.unidades, facturado: t.facturado + g.facturado,
@@ -127,7 +163,8 @@ export default function FacturacionClientes() {
         <div className="p-1">
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div>
-                    <h2 className="text-xl font-black text-slate-800">Facturación · <span className="text-brand-blue">{periodoLabel}</span></h2>
+                    <h2 className="text-xl font-black text-slate-800">Ventas por cliente · <span className="text-brand-blue">{periodoLabel}</span></h2>
+                    {carteraSel !== CARTERA_TODOS && <p className="text-xs font-bold text-slate-500">Cartera: {nombreCartera}</p>}
                     <p className="text-slate-400 text-xs">Colocación y cobranza por cliente, desde Zoho Books (excluye anuladas).</p>
                 </div>
                 <button
@@ -147,8 +184,8 @@ export default function FacturacionClientes() {
                     {years.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
                 <div className="rounded-lg bg-slate-100 p-1 flex">
-                    {[['year', 'Año'], ['sem', 'Semestre'], ['tri', 'Trimestre']].map(([v, l]) => (
-                        <button key={v} onClick={() => { setGran(v); setSub(1); }}
+                    {[['year', 'Año'], ['sem', 'Semestre'], ['tri', 'Trimestre'], ['mes', 'Mes']].map(([v, l]) => (
+                        <button key={v} onClick={() => { setGran(v); setSub(v === 'mes' ? (year === now.getFullYear() ? now.getMonth() + 1 : 1) : 1); }}
                             className={`text-xs py-1.5 px-2.5 rounded-md font-semibold ${gran === v ? 'bg-white shadow text-brand-blue' : 'text-slate-500'}`}>{l}</button>
                     ))}
                 </div>
@@ -162,6 +199,23 @@ export default function FacturacionClientes() {
                         {[1, 2, 3, 4].map(s => <button key={s} onClick={() => setSub(s)} className={`text-xs py-1.5 px-2.5 rounded-md font-semibold ${sub === s ? 'bg-white shadow text-brand-blue' : 'text-slate-500'}`}>T{s}</button>)}
                     </div>
                 )}
+                {gran === 'mes' && (
+                    <select value={sub} onChange={e => setSub(Number(e.target.value))}
+                        className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm font-bold text-slate-700 focus:outline-none focus:border-brand-blue">
+                        {MESES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                    </select>
+                )}
+            </div>
+
+            {/* Filtro de cartera: por vendedor (su cartera ACTUAL), Oficina o sin asignar */}
+            <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
+                <div className="flex items-center gap-1.5 text-slate-500 text-xs font-bold shrink-0"><Users size={14} /> Cartera</div>
+                {[[CARTERA_TODOS, 'Toda la empresa'], ...vendedores.map(v => [v.id, v.name || v.email]), [CARTERA_OFICINA, 'Oficina'], [CARTERA_SIN, 'Sin asignar']].map(([id, lbl]) => (
+                    <button key={id} onClick={() => setCarteraSel(id)}
+                        className={`shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${carteraSel === id ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'}`}>
+                        {lbl}
+                    </button>
+                ))}
             </div>
 
             {/* Resumen */}
@@ -173,7 +227,7 @@ export default function FacturacionClientes() {
                 <StatChip label="Vencido" value={money(totales.vencido)} color="text-red-600" />
             </div>
             <p className="text-[11px] text-slate-400 mb-4">
-                Las <b className="text-slate-500">unidades</b> son la cantidad real facturada (líneas de Zoho), no derivada del precio. El <b className="text-slate-500">precio prom.</b> refleja precios distintos por cliente o época.
+                Las <b className="text-slate-500">unidades</b> son unidades de venta de 250 g (las facturas por kilo de foodservice se convierten). El <b className="text-slate-500">precio prom.</b> refleja precios distintos por cliente o época. La cartera se filtra por el dueño <b className="text-slate-500">actual</b> de cada cliente.
             </p>
 
             {/* Controles: agrupar + buscar */}
@@ -233,7 +287,7 @@ export default function FacturacionClientes() {
             </div>
 
             {showDoc && (
-                <FacturacionDoc modo={groupBy} grupos={grupos} totales={totales} periodoLabel={periodoLabel} onClose={() => setShowDoc(false)} />
+                <FacturacionDoc modo={groupBy} grupos={grupos} totales={totales} periodoLabel={carteraSel === CARTERA_TODOS ? periodoLabel : `${periodoLabel} · ${nombreCartera}`} onClose={() => setShowDoc(false)} />
             )}
         </div>
     );

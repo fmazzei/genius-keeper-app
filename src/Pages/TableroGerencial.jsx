@@ -156,7 +156,10 @@ const Fila = ({ titulo, sub, derecha, subDerecha, tono }) => (
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-export default function TableroGerencial({ onVerIndicadores = null }) {
+// `onIrComercial(tab)`: las tarjetas 03 (clientes) y 05 (ventas) llevan a la
+// sección Comercial en vez de repetir aquí sus listas (decisión del dueño,
+// 2026-09: una información no debe vivir repetida en dos secciones).
+export default function TableroGerencial({ onVerIndicadores = null, onIrComercial = null }) {
     const t = useTableroGerencial();
     const [abierto, setAbierto] = useState(null);   // clave de la hoja abierta
     const [dossier, setDossier] = useState(false);
@@ -231,7 +234,7 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                     valor={num(k.nPdvActivos)}
                     sub={`puntos de venta activos · ${num(k.clientesConPdv.length)} cliente${k.clientesConPdv.length === 1 ? '' : 's'}`}
                     nota={`${num(k.nPdvInactivos)} inactivo${k.nPdvInactivos === 1 ? '' : 's'} · ${num(k.ciudades.length)} ciudad${k.ciudades.length === 1 ? '' : 'es'}`}
-                    onClick={() => setAbierto('clientes')} />
+                    disabled={!onIrComercial} onClick={() => onIrComercial?.('clientes')} />
 
                 <Card n="04" icon={Truck} titulo="Lista de proveedores" valor={num(k.nProveedores)}
                     sub="Registrados en Kroma"
@@ -241,8 +244,8 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                 <Card n="05" icon={TrendingUp} titulo="Ventas / histórico" tono="emerald"
                     valor={money0(k.ventasMes)}
                     sub={`${num(k.ventasMesN)} factura${k.ventasMesN === 1 ? '' : 's'} este mes`}
-                    nota="Toca para el histórico de 12 meses"
-                    onClick={() => setAbierto('ventas')} />
+                    nota="Meta, histórico y ventas por cliente →"
+                    disabled={!onIrComercial} onClick={() => onIrComercial?.('meta')} />
 
                 <Card n="06" icon={RotateCcw} titulo="Devoluciones / histórico"
                     tono={k.devMes > 0 ? 'amber' : 'slate'}
@@ -317,10 +320,6 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                 </Hoja>
             )}
 
-            {abierto === 'clientes' && (
-                <HojaClientes k={k} onClose={cerrar} />
-            )}
-
             {abierto === 'proveedores' && (
                 <Hoja titulo="Proveedores" subtitulo="Maestro de Kroma (planta)" onClose={cerrar}>
                     <Lista
@@ -335,16 +334,6 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
                                 derecha={p.telefono || '—'}
                                 subDerecha={p.contacto || ''} />
                         )} />
-                </Hoja>
-            )}
-
-            {abierto === 'ventas' && (
-                <Hoja titulo="Ventas · histórico" subtitulo="Facturado por mes (últimos 12 meses)" onClose={cerrar}>
-                    <PorMes datos={k.ventasPorMes} valorDe={(m) => m?.monto} etiqueta="de ventas" />
-                    <p className="text-[11px] text-slate-400 mt-4 leading-relaxed">
-                        Monto facturado por fecha de emisión, excluyendo anuladas y las que Zoho ya no
-                        reconoce. Facturar no es cobrar: lo cobrado vive en "Cuentas por cobrar".
-                    </p>
                 </Hoja>
             )}
 
@@ -431,137 +420,3 @@ export default function TableroGerencial({ onVerIndicadores = null }) {
     );
 }
 
-// ─── Hoja: clientes con sus puntos de venta ──────────────────────────────────
-//
-// Como lo pidió el socio: la lista es por CLIENTE (razón social) y cada uno se
-// despliega como un acordeón con sus puntos de venta. Primero a quién le
-// vendemos, después dónde se ejecuta esa venta — un cliente puede tener una
-// tienda o quince sucursales, y en una lista plana de PDV eso no se ve.
-//
-// Todo va ordenado por PESO de facturación desde 2026, arriba lo que más pesa.
-function HojaClientes({ k, onClose }) {
-    const [estado, setEstado]   = useState('activos');   // activos | inactivos | todos
-    const [ciudad, setCiudad]   = useState('todas');
-    const [abiertos, setAbiertos] = useState({});
-
-    const pasa = (p) => (estado === 'activos' ? p.activo : estado === 'inactivos' ? !p.activo : true)
-        && (ciudad === 'todas' || p.ciudad === ciudad);
-
-    // Los filtros actúan sobre los PUNTOS: un cliente cuyos puntos no pasan el
-    // filtro no tiene por qué ocupar espacio.
-    const grupos = k.clientesConPdv
-        .map(g => ({ ...g, visibles: g.pdv.filter(pasa) }))
-        .filter(g => g.visibles.length > 0);
-
-    const nPuntos = grupos.reduce((s, g) => s + g.visibles.length, 0);
-    const total   = grupos.reduce((s, g) => s + g.visibles.reduce((x, p) => x + p.facturado, 0), 0);
-
-    const Pill = ({ activa, onClick, children }) => (
-        <button type="button" onClick={onClick}
-            className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors ${
-                activa ? 'bg-slate-800 text-white border-slate-800'
-                       : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}>
-            {children}
-        </button>
-    );
-
-    return (
-        <Hoja titulo="Lista de clientes"
-            subtitulo="Cada cliente con sus puntos de venta, por peso de facturación desde 2026"
-            onClose={onClose}>
-
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-                <Pill activa={estado === 'activos'}   onClick={() => setEstado('activos')}>
-                    Activos ({num(k.nPdvActivos)})
-                </Pill>
-                <Pill activa={estado === 'inactivos'} onClick={() => setEstado('inactivos')}>
-                    Inactivos ({num(k.nPdvInactivos)})
-                </Pill>
-                <Pill activa={estado === 'todos'}     onClick={() => setEstado('todos')}>
-                    Todos ({num(k.pdv.length)})
-                </Pill>
-            </div>
-
-            <div className="flex gap-2 overflow-x-auto pb-2 -mx-1 px-1 mt-1">
-                <Pill activa={ciudad === 'todas'} onClick={() => setCiudad('todas')}>Todas las ciudades</Pill>
-                {k.ciudades.map(c => (
-                    <Pill key={c} activa={ciudad === c} onClick={() => setCiudad(c)}>{c}</Pill>
-                ))}
-            </div>
-
-            <div className="flex items-baseline justify-between gap-3 mt-3 pb-2 border-b border-slate-200">
-                <p className="text-sm font-bold text-slate-700">
-                    {num(grupos.length)} cliente{grupos.length === 1 ? '' : 's'} · {num(nPuntos)} punto{nPuntos === 1 ? '' : 's'} de venta
-                </p>
-                <p className="text-xs text-slate-500">{money0(total)}</p>
-            </div>
-
-            <div className="mt-2 space-y-1.5">
-                {grupos.length === 0 ? (
-                    <p className="text-sm text-slate-500 py-6 text-center">Ningún punto de venta con ese filtro.</p>
-                ) : grupos.map((g, i) => {
-                    const abierto = !!abiertos[g.clave];
-                    const facturadoVisible = g.visibles.reduce((s, p) => s + p.facturado, 0);
-                    return (
-                        <div key={g.clave}
-                            className={`rounded-xl border overflow-hidden ${
-                                g.sinCliente ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-white'}`}>
-                            <button type="button"
-                                onClick={() => setAbiertos(p => ({ ...p, [g.clave]: !abierto }))}
-                                className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 transition-colors">
-                                <span className="w-6 shrink-0 text-[11px] font-black text-slate-300 tabular-nums">{i + 1}</span>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-bold text-slate-800 truncate">{g.nombre}</p>
-                                    <p className="text-xs text-slate-500">
-                                        {num(g.visibles.length)} punto{g.visibles.length === 1 ? '' : 's'}
-                                        {estado === 'todos' && g.inactivos > 0 && (
-                                            <span className="text-slate-400"> · {num(g.inactivos)} inactivo{g.inactivos === 1 ? '' : 's'}</span>
-                                        )}
-                                    </p>
-                                </div>
-                                <div className="text-right shrink-0">
-                                    <p className="text-sm font-black text-slate-800 tabular-nums">
-                                        {facturadoVisible > 0 ? money0(facturadoVisible) : '—'}
-                                    </p>
-                                    <p className="text-[11px] text-slate-400">
-                                        {facturadoVisible > 0 ? 'desde 2026' : 'sin ventas'}
-                                    </p>
-                                </div>
-                                <ChevronRight size={15}
-                                    className={`shrink-0 text-slate-400 transition-transform ${abierto ? 'rotate-90' : ''}`} />
-                            </button>
-
-                            {abierto && (
-                                <div className="border-t border-slate-200 divide-y divide-slate-100">
-                                    {g.visibles.map(p => (
-                                        <div key={p.id} className="flex items-center gap-3 px-3 py-2 pl-12">
-                                            <div className="flex-1 min-w-0">
-                                                <p className={`text-sm truncate ${p.activo ? 'text-slate-700 font-semibold' : 'text-slate-500'}`}>
-                                                    {p.name || p.nombre || '—'}
-                                                </p>
-                                                <p className="text-xs text-slate-500 truncate">
-                                                    {p.ciudad}
-                                                    {!p.activo && <span className="text-slate-400"> · inactivo</span>}
-                                                </p>
-                                            </div>
-                                            <div className="text-right shrink-0">
-                                                <p className="text-sm font-bold text-slate-700 tabular-nums">
-                                                    {p.facturado > 0 ? money0(p.facturado) : '—'}
-                                                </p>
-                                                <p className="text-[11px] text-slate-400">
-                                                    {p.facturado > 0
-                                                        ? `${num(p.nFacturas)} factura${p.nFacturas === 1 ? '' : 's'}`
-                                                        : 'sin ventas'}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
-        </Hoja>
-    );
-}

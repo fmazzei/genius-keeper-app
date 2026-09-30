@@ -181,6 +181,34 @@ export function useFinancialKpis() {
             .sort((a, b) => b.unidades - a.unidades)
             .slice(0, 5);
 
+        // ── Aporte a la META DE LA EMPRESA por dueño de la venta (mes calendario)
+        // Se atribuye por el CARNET vigente (clientes_zoho) y, sin carnet, por el
+        // vendedorId de la factura. Oficina y "sin asignar" se declaran aparte:
+        // también son ventas de la empresa, solo que no son de ningún vendedor.
+        const cliPorId = new Map(clientes.filter(c => c.customerId).map(c => [String(c.customerId), c]));
+        const aportePorVendedorMes = {};
+        mesF.forEach(f => {
+            const c = f.zohoCustomerId ? cliPorId.get(String(f.zohoCustomerId)) : null;
+            const k = c ? (c.esOficina ? 'oficina' : (c.vendedorId || f.vendedorId || 'sin_asignar'))
+                        : (f.vendedorId || 'sin_asignar');
+            const a = aportePorVendedorMes[k] || (aportePorVendedorMes[k] = { unidades: 0, monto: 0, facturas: 0 });
+            a.unidades += uds(f); a.monto += Number(f.monto) || 0; a.facturas += 1;
+        });
+
+        // ── Histórico de 12 meses (unidades y $), para la meta de la empresa
+        const historico12 = [];
+        for (let i = 11; i >= 0; i--) {
+            const a = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const b = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
+            const lista = activas.filter(f => inWin(f, a, b));
+            historico12.push({
+                key: `${a.getFullYear()}-${String(a.getMonth() + 1).padStart(2, '0')}`,
+                label: a.toLocaleString('es', { month: 'short' }).replace('.', ''),
+                anio: a.getFullYear(),
+                unidades: sum(lista, uds), monto: sum(lista, f => f.monto), facturas: lista.length,
+            });
+        }
+
         // ── Cobrado DENTRO del mes calendario en curso (caja del mes) ────────
         // No es "lo facturado que ya se cobró": es todo lo que ENTRÓ este mes,
         // sin importar de qué mes venga la factura. Es la lectura que pide el
@@ -237,6 +265,7 @@ export function useFinancialKpis() {
             facturasMesCount: mesF.length, facturasPrevCount: prevF.length,
             unidadesAjustadasMes, unidadesAjustadasPrev,
             cobradoMes, nCobradasMes,
+            aportePorVendedorMes, historico12,
             porCobrar, aging: { d0_30: a0, d31_45: a1, d45p: a2 }, clientesMas45,
             diasTrasVencimiento, dso: diasTrasVencimiento, diasPagoAnio, aTiempoPct,
             facturas,

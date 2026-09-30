@@ -694,7 +694,7 @@ const MODULE_ROLE_CONFIG = [
         groupLabel: 'Máster',
         roles: ['master'],
         items: [
-            { key: 'rendimientoComercial', label: 'Vendedores (Rendimiento)',  icon: 'Users'      },
+            { key: 'rendimientoComercial', label: 'Comercial (meta, vendedores, clientes)', icon: 'Users' },
             { key: 'marketTrends',         label: 'Análisis de Tendencias', icon: 'TrendingUp' },
             { key: 'plannerManager',       label: 'Planificador',           icon: 'MapIcon'    },
             { key: 'almacenComercial',     label: 'Almacén Comercial',      icon: 'Warehouse'  },
@@ -707,7 +707,7 @@ const MODULE_ROLE_CONFIG = [
         // para todos ellos. Una columna 'sales_manager' aquí sería letra muerta.
         roles: ['gerencia'],
         items: [
-            { key: 'rendimientoComercial', label: 'Vendedores (Rendimiento)', icon: 'Users'     },
+            { key: 'rendimientoComercial', label: 'Comercial (meta, vendedores, clientes)', icon: 'Users' },
             { key: 'plannerManager',       label: 'Planificador',          icon: 'MapIcon'   },
             { key: 'almacenComercial',     label: 'Almacén Comercial',     icon: 'Warehouse' },
         ],
