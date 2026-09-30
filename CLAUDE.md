@@ -3047,6 +3047,7 @@ Una operaria con Android no encontraba "Agregar a la pantalla principal" en el m
   - Si en 4 s no llega el evento, da los pasos a mano: Android ⋮ → bajar → "Agregar a la pantalla principal"; iOS Compartir → "Agregar a inicio". En escritorio no aparece.
   - No aparece si ya corre instalada (`display-mode: standalone`).
   - Se puede cerrar y no vuelve en 14 días (`localStorage`, en try/catch).
+- **Por qué no salía el botón verde (arreglo posterior):** Chrome en Android solo dispara `beforeinstallprompt` si el service worker atiende las cargas de página. `public/firebase-messaging-sw.js` solo hacía notificaciones. Ahora tiene un manejador `fetch` de **pase directo** (solo `mode === 'navigate'`, `respondWith(fetch(req))`, SIN caché: no toca el arranque), `skipWaiting` + `clients.claim` para que la versión nueva tome control ya, y los `importScripts` de Firebase en try/catch: si gstatic no carga, el SW se instala igual (antes fallaba entero). **No agregar caché offline aquí** (ver "NO usar caché offline").
 
 ### Máster/gerencia: Comercial, Esta semana y Mercaderistas (2026-09) ✅
 

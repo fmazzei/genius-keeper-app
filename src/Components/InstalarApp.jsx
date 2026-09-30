@@ -101,7 +101,8 @@ export default function InstalarApp() {
                             </p>
                         ) : (
                             <p className="text-xs text-slate-300 mt-1">
-                                Abre este enlace en <b>Chrome</b>, toca los <b>tres puntos ⋮</b> arriba a la derecha, baja en el menú y toca <b>"Agregar a la pantalla principal"</b> (o <b>"Instalar app"</b>).
+                                Toca los <b>tres puntos ⋮</b> arriba a la derecha. Con el menú abierto, <b>desliza el menú hacia arriba</b> hasta pasar
+                                "Traducir…" y toca <b>"Agregar a la pantalla principal"</b> (o <b>"Instalar app"</b>). Luego toca <b>"Instalar"</b>.
                             </p>
                         )}
                     </div>
