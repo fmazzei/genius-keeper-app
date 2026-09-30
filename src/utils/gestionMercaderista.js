@@ -10,10 +10,13 @@
 //     siempre 4, comparables entre meses; el último absorbe los días 29–31.
 //   · La META de visitas sale de la frecuencia de cada PDV (`visitInterval`),
 //     con el mismo cálculo que "Mi Semana" (`metaVisitasPeriodo`).
-//   · GK no guarda qué PDV le toca a cada mercaderista. Se usa su RUTA DE HECHO:
-//     cada PDV se le atribuye al mercaderista que más lo visitó en los 90 días
-//     previos al cierre del mes. Se declara en pantalla. Si hay un solo
-//     mercaderista, todos los PDV con visita son suyos.
+//   · La RUTA de cada mercaderista = la cartera de los vendedores que lo tienen
+//     asignado (`users_metadata.reporterId` del vendedor + `vendor_clients`, por
+//     PDV o por cadena). Así lo definió el dueño: "los puntos de venta del
+//     mercaderista son los que tiene asignados su vendedor". Llega ya resuelta
+//     en `rutas` (reporterId → { nombre, pos:Set, vendedores:[] }).
+//   · Solo si un mercaderista reporta y NINGÚN vendedor lo tiene asignado se usa
+//     su ruta de hecho (los PDV que más visitó en 90 días), y se marca así.
 
 import { metaVisitasPeriodo } from '@/utils/seguidorSemanal.js';
 
@@ -116,7 +119,7 @@ function metricas(reportes, { metaPdv = [], devoluciones = [] } = {}) {
  * @param {number} p.anio, p.mes   mes a evaluar (mes 0–11)
  * @param {Date}   [p.ahora]
  */
-export function informeMercaderistas({ reports = [], posList = [], devoluciones = [], anio, mes, ahora = new Date() } = {}) {
+export function informeMercaderistas({ reports = [], posList = [], devoluciones = [], rutas = {}, anio, mes, ahora = new Date() } = {}) {
     const bloques = bloquesDelMes(anio, mes);
     const inicioMes = bloques[0].desde, finMes = bloques[3].hasta;
     const corte = finMes < ahora ? finMes : ahora;
@@ -159,10 +162,11 @@ export function informeMercaderistas({ reports = [], posList = [], devoluciones 
     })).filter(p => p.meta > 0);
 
     const delMes = conFecha.filter(r => r._t >= inicioMes && r._t < finMes);
-    const quienes = [...new Set(delMes.map(r => r._k))];
-    // Si solo hay UN mercaderista activo, toda la ruta es suya (incluidos PDV
-    // que no visitó en 90 días: esos son justamente los que faltan).
-    const unico = quienes.length === 1 ? quienes[0] : null;
+    // Personas: las que tienen ruta asignada (aunque no hayan reportado nada en
+    // el mes — justamente esas son las que más importa ver) + las que reportaron.
+    const conRuta = Object.keys(rutas || {}).filter(k => rutas[k]?.pos?.size > 0);
+    const quienes = [...new Set([...conRuta, ...delMes.map(r => r._k)])];
+    conRuta.forEach(k => { if (!nombres[k] && rutas[k].nombre) nombres[k] = rutas[k].nombre; });
 
     const devsDe = (k, a, b) => (devoluciones || []).filter(d => {
         const t = parseFecha(d.fecha) || toDate(d.createdAt);
@@ -173,7 +177,10 @@ export function informeMercaderistas({ reports = [], posList = [], devoluciones 
     const bloqueFuturo = (b) => b.desde > ahora;
 
     const personas = quienes.map(k => {
-        const suyos = pdvMerch.filter(p => unico ? true : duenoPdv[p.id] === k);
+        const asignada = conRuta.includes(k);
+        const suyos = asignada
+            ? pdvMerch.filter(p => rutas[k].pos.has(p.id))
+            : pdvMerch.filter(p => duenoPdv[p.id] === k);
         const reps = delMes.filter(r => r._k === k);
         const porBloque = bloques.map(b => {
             if (bloqueFuturo(b)) return { ...b, futuro: true };
@@ -184,7 +191,10 @@ export function informeMercaderistas({ reports = [], posList = [], devoluciones 
         const total = sumar(validos);
         total.pdvDistintos = new Set(reps.map(r => r.posId || r.posName)).size;
         total.durProm = promedioDur(reps);
-        return { id: k, nombre: nombres[k] || 'Mercaderista', pdvRuta: suyos.length, bloques: porBloque, total };
+        return {
+            id: k, nombre: nombres[k] || 'Mercaderista', pdvRuta: suyos.length, bloques: porBloque, total,
+            rutaAsignada: asignada, vendedores: asignada ? (rutas[k].vendedores || []) : [],
+        };
     }).sort((a, b) => b.total.visitas - a.total.visitas);
 
     // Empresa: todos los mercaderistas y TODOS los PDV con ruta.
@@ -197,7 +207,9 @@ export function informeMercaderistas({ reports = [], posList = [], devoluciones 
     empTotal.pdvDistintos = new Set(delMes.map(r => r.posId || r.posName)).size;
     empTotal.durProm = promedioDur(delMes);
 
-    const sinDueno = unico ? 0 : pdvMerch.filter(p => !duenoPdv[p.id]).length;
+    // PDV con ruta que no están en la cartera de ningún vendedor con mercaderista.
+    const cubiertos = new Set(conRuta.flatMap(k => [...rutas[k].pos]));
+    const sinDueno = pdvMerch.filter(p => !cubiertos.has(p.id)).length;
 
     return {
         bloques, personas,

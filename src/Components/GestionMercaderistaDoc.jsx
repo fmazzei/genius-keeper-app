@@ -70,8 +70,8 @@ function Pagina({ titulo, sub, bloques, total, mesLabel }) {
                 </tbody>
             </table>
             <p style={{ fontSize: 9, color: '#94a3b8', marginTop: 10, lineHeight: 1.5 }}>
-                Semanas fijas 1–7, 8–14, 15–21 y 22–fin de mes. Las visitas que tocaban salen de la frecuencia de cada PDV; cada PDV
-                cuenta para el mercaderista que más lo visitó en los últimos 90 días. "Por vencer" = lotes que vencen en 7 días o menos desde la visita.
+                Semanas fijas 1–7, 8–14, 15–21 y 22–fin de mes. Las visitas que tocaban salen de la frecuencia de cada PDV; la ruta
+                de cada mercaderista es la cartera de los vendedores que lo tienen asignado. "Por vencer" = lotes que vencen en 7 días o menos desde la visita.
             </p>
         </div>
     );
@@ -97,7 +97,7 @@ export default function GestionMercaderistaDoc({ informe, onClose }) {
                 <Pagina titulo="Todo el equipo" sub={`${informe.personas.length} mercaderista${informe.personas.length === 1 ? '' : 's'} · ${informe.empresa.pdvRuta} PDV con ruta`}
                     bloques={informe.empresa.bloques} total={informe.empresa.total} mesLabel={informe.mesLabel} />
                 {informe.personas.map(p => (
-                    <Pagina key={p.id} titulo={p.nombre} sub={`${p.pdvRuta} PDV en su ruta`} bloques={p.bloques} total={p.total} mesLabel={informe.mesLabel} />
+                    <Pagina key={p.id} titulo={p.nombre} sub={p.rutaAsignada ? `${p.pdvRuta} PDV en su ruta · cartera de ${p.vendedores.join(', ')}` : `${p.pdvRuta} PDV (sin vendedor asignado: ruta de hecho)`} bloques={p.bloques} total={p.total} mesLabel={informe.mesLabel} />
                 ))}
             </div>
         </div>

@@ -5,7 +5,7 @@
 // `src/utils/gestionMercaderista.js`; PDF en `GestionMercaderistaDoc.jsx`.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { ChevronLeft, ChevronRight, FileDown, Info, Building2, User } from 'lucide-react';
 import { informeMercaderistas, FILAS_INFORME, valorFila } from '@/utils/gestionMercaderista.js';
@@ -17,6 +17,8 @@ export default function MercaderistasView({ posList = [], reports = [] }) {
     const hoy = new Date();
     const [offset, setOffset] = useState(0);
     const [devoluciones, setDevoluciones] = useState([]);
+    const [vendedores, setVendedores] = useState([]);
+    const [vclients, setVclients] = useState([]);
     const [sel, setSel] = useState(EMPRESA);
     const [doc, setDoc] = useState(false);
 
@@ -24,13 +26,36 @@ export default function MercaderistasView({ posList = [], reports = [] }) {
         getDocs(collection(db, 'devoluciones'))
             .then(s => setDevoluciones(s.docs.map(d => ({ id: d.id, ...d.data() }))))
             .catch(() => setDevoluciones([]));
+        // La ruta del mercaderista = la cartera de los vendedores que lo tienen asignado.
+        getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')))
+            .then(s => setVendedores(s.docs.map(d => ({ id: d.id, ...d.data() })).filter(v => v.active !== false)))
+            .catch(() => setVendedores([]));
+        getDocs(collection(db, 'vendor_clients'))
+            .then(s => setVclients(s.docs.map(d => d.data())))
+            .catch(() => setVclients([]));
     }, []);
+
+    // reporterId → { nombre, pos:Set(posId), vendedores:[nombre] }. La cartera se
+    // resuelve por PDV directo O por cadena completa, igual que en Comercial.
+    const rutas = useMemo(() => {
+        const out = {};
+        vendedores.forEach(v => {
+            if (!v.reporterId) return;
+            const mis = vclients.filter(c => c.vendedorId === v.id && c.active !== false && (!c.estado || c.estado === 'activo'));
+            const ids = new Set(mis.map(c => c.posId).filter(Boolean));
+            const cadenas = new Set(mis.map(c => c.chain).filter(ch => ch && ch !== 'Automercados Individuales'));
+            const r = out[v.reporterId] || (out[v.reporterId] = { nombre: v.reporterName || '', pos: new Set(), vendedores: [] });
+            r.vendedores.push(v.name || v.email);
+            (posList || []).forEach(p => { if (ids.has(p.id) || (p.chain && cadenas.has(p.chain))) r.pos.add(p.id); });
+        });
+        return out;
+    }, [vendedores, vclients, posList]);
 
     const ref = new Date(hoy.getFullYear(), hoy.getMonth() + offset, 1);
     const inf = useMemo(() => informeMercaderistas({
-        reports, posList, devoluciones, anio: ref.getFullYear(), mes: ref.getMonth(),
+        reports, posList, devoluciones, rutas, anio: ref.getFullYear(), mes: ref.getMonth(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [reports, posList, devoluciones, offset]);
+    }), [reports, posList, devoluciones, rutas, offset]);
 
     const persona = sel === EMPRESA ? null : inf.personas.find(p => p.id === sel);
     const vista = persona
@@ -120,10 +145,14 @@ export default function MercaderistasView({ posList = [], reports = [] }) {
                         <p className="text-[11px] text-slate-400 flex gap-1.5">
                             <Info size={13} className="shrink-0 mt-0.5" />
                             <span>
-                                Las visitas que tocaban salen de la frecuencia de cada PDV (la misma de "Mi Semana"). Como GK no guarda qué PDV
-                                le toca a cada mercaderista, se usa su ruta de hecho: cada PDV cuenta para quien más lo visitó en los últimos 90 días
-                                {persona ? ` (${persona.pdvRuta} PDV para ${persona.nombre})` : ` (${inf.empresa.pdvRuta} PDV con ruta en total${inf.empresa.sinDueno ? `, ${inf.empresa.sinDueno} sin visitas recientes de nadie` : ''})`}.
-                                "Por vencer" = lotes que vencen en 7 días o menos contados desde la visita.
+                                Las visitas que tocaban salen de la frecuencia de cada PDV (la misma de "Mi Semana"). La ruta de cada mercaderista
+                                es la cartera de los vendedores que lo tienen asignado
+                                {persona
+                                    ? (persona.rutaAsignada
+                                        ? `: ${persona.pdvRuta} PDV de ${persona.vendedores.join(', ')}.`
+                                        : `. ${persona.nombre} no está asignado a ningún vendedor: se usan los PDV que más visitó en 90 días (${persona.pdvRuta}). Asígnalo en Personas → Vendedores.`)
+                                    : `: ${inf.empresa.pdvRuta} PDV con ruta en total${inf.empresa.sinDueno ? `, ${inf.empresa.sinDueno} fuera de la cartera de cualquier vendedor con mercaderista` : ''}.`}
+                                {' '}"Por vencer" = lotes que vencen en 7 días o menos contados desde la visita.
                             </span>
                         </p>
                     </>
