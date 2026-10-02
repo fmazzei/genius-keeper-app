@@ -14,8 +14,14 @@ self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim(
 self.addEventListener('fetch', (event) => {
   // Solo las cargas de PÁGINA; el resto (JS, imágenes, Firestore) sigue su
   // camino normal sin pasar por aquí.
+  // Se pide SIN caché HTTP: una página vieja en caché apunta a archivos de
+  // código que el deploy ya borró, y la app se queda en el splash.
   if (event.request.mode === 'navigate') {
-    event.respondWith(fetch(event.request));
+    event.respondWith(
+      fetch(event.request.url, { cache: 'no-store', credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r : fetch(event.request); })
+        .catch(function () { return fetch(event.request); })
+    );
   }
 });
 

@@ -3076,6 +3076,21 @@ Una operaria con Android no encontraba "Agregar a la pantalla principal" en el m
   - Se puede cerrar y no vuelve en 14 días (`localStorage`, en try/catch).
 - **Por qué no salía el botón verde (arreglo posterior):** Chrome en Android solo dispara `beforeinstallprompt` si el service worker atiende las cargas de página. `public/firebase-messaging-sw.js` solo hacía notificaciones. Ahora tiene un manejador `fetch` de **pase directo** (solo `mode === 'navigate'`, `respondWith(fetch(req))`, SIN caché: no toca el arranque), `skipWaiting` + `clients.claim` para que la versión nueva tome control ya, y los `importScripts` de Firebase en try/catch: si gstatic no carga, el SW se instala igual (antes fallaba entero). **No agregar caché offline aquí** (ver "NO usar caché offline").
 
+### Spinner infinito tras un deploy: la página vieja en caché (2026-10) ✅
+
+Reporte del dueño: la app se quedaba en "Cargando Genius Keeper…" (el splash de `index.html`): React nunca montaba.
+
+**Causa:** la regla `no-cache` de `firebase.json` solo cubría `/index.html`, pero la app se abre por `/` (reescrita a `index.html`), y Firebase la servía con su caché por defecto de 1 h. Tras un deploy, un navegador con la página vieja pedía el JS de entrada de la versión anterior. Ese archivo ya no existe, la reescritura devuelve HTML, el módulo falla y el splash gira para siempre.
+
+**Tres capas:**
+- **`firebase.json`:** `no-cache` para TODA ruta que no sea `/assets/**` (`regex ^/(?!assets/).*$`). Los assets con hash siguen `immutable`.
+- **Service worker:** las cargas de página se piden con `cache:'no-store'`; si fallan, cae al `fetch` normal.
+- **Vigilante de arranque en `index.html`** (ES5, `sessionStorage` en try/catch):
+  - si falla un script de `/assets/`, recarga UNA vez;
+  - si a los 20 s la app no montó (el `#gk-splash` sigue ahí), muestra "Recargar" en vez de girar en silencio.
+
+Probado con Playwright: arranque normal, entry roto una vez (se repara solo) y entry roto siempre (una recarga y luego el botón). **No quitar el `id="gk-splash"`:** el vigilante lo usa para saber si React montó.
+
 ### Máster/gerencia: Comercial, Esta semana y Mercaderistas (2026-09) ✅
 
 Pedido del dueño: "Seguimiento" y "Vendedores" decían casi lo mismo, y las ventas por cliente vivían escondidas como 2.ª página deslizable del Dashboard. Nuevo menú de `ManagerLayout`: **Dashboard · Comercial · Esta semana · Mercaderistas** (resto igual). Se ELIMINARON `SeguimientoComercial.jsx` y `RendimientoComercialView.jsx`.
