@@ -51,6 +51,18 @@ export const kgPorUnidadDeSku = (sku) => {
     return sku?.unidad === 'kg' ? p : p / 1000;
 };
 
+function sinEnvasarInicial(log) {
+    const kg = Number(log?.kgSinEnvasar) || 0;
+    if (kg <= 0) return '';
+    const kilos = kgProducidos(log) || 0;
+    const envasado = (log.productosFinales || [])
+        .reduce((s, p) => s + (Number(p.pesoPorUnidad) || 0) * (Number(p.unidades) || 0), 0);
+    const sugerido = Math.max(0, kilos - envasado);
+    if (Math.abs(kg - sugerido) < 0.0005) return '';          // es lo sugerido
+    if (kilos > 0 && kg + envasado > kilos + 0.0005) return ''; // incoherente: quedó viejo
+    return txt(kg);
+}
+
 /** El estado inicial del formulario a partir de un log ya guardado. */
 export function formularioDesdeLog(log) {
     if (!log) return null;
@@ -88,7 +100,11 @@ export function formularioDesdeLog(log) {
             fechaVencimiento: p.fechaVencimiento || '',
         })),
         // `null` = no se declaró queso sin envasar (la pill queda apagada).
-        sinEnvasar: log.kgSinEnvasar > 0 ? txt(log.kgSinEnvasar) : '',
+        // Vacío = sigue a lo sugerido (kilos − envasado), así que corregir los
+        // kilos o agregar bolsas recalcula solo lo sin envasar. Solo se
+        // conserva escrito si alguien declaró a propósito un valor distinto
+        // y coherente (no más de lo producido).
+        sinEnvasar: sinEnvasarInicial(log),
         vencSinEnvasar: log.fechaVencimientoSinEnvasar || '',
         modo: modoDeLog(log),
         precioLeche: txt(recs.find(r => r.costoUsdLitro)?.costoUsdLitro),

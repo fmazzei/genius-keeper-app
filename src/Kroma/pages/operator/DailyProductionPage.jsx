@@ -2864,7 +2864,10 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                 });
             }
 
-            const disponible = log.kgSinEnvasar ?? 0;
+            // Lo que de verdad queda sin envasar es lo que HAY en cava (un
+            // ajuste en Almacenes lo pudo cambiar), no el número del registro.
+            const enCava = granel.reduce((s, g) => s + (g.kgTotales || 0), 0);
+            const disponible = granel.length > 0 ? enCava : (log.kgSinEnvasar ?? 0);
             const resto = cerrarResto ? 0 : Math.max(0, +(disponible - kgEmpacados).toFixed(3));
             const update = {
                 kgSinEnvasar: resto,

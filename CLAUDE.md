@@ -2766,6 +2766,25 @@ Pedido del dueño con capturas de la Cava y de Almacenes.
 
 Reporte del dueño: no había forma de declarar que un insumo se acabó. El botón de `EntradaSheet` (`MaterialsInventoryPage`) exigía `addCerrado > 0` en los tres modos. Ahora `cantidadValida` = `>= 0` en **Corregir** (el conteo reemplaza el stock, y 0 es un conteo válido) y `> 0` en Compra / Inventario inicial (hay que sumar algo). La vista previa aparece también en 0 ("Ajustar a: 0") y el botón dice **"Dejar en cero"**. `handleEntrada` ya aceptaba el 0; el bloqueo era solo de la pantalla.
 
+### Corregir una planilla MUEVE la cava (2026-10) ✅
+
+Caso real del dueño, lote LCO20260722-H: redesueró, perdió 31 kg, ajustó la partida en Almacenes, corrigió los kilos de la planilla y declaró 99 bolsas de 1 kg con el resto en cava. **El almacén no se movió.**
+
+**Causa:** `ptReemplazable` solo dejaba que una corrección tocara la cava si sus partidas seguían intactas. Con el ajuste manual previo, la corrección se saltaba la cava. Encima, el campo "sin envasar" se reabría con los kg viejos (500) aunque ya no cuadraran con los kilos.
+
+**Ahora (`reconciliarCava` en `ptPlanilla.js`, reemplaza a `ptReemplazable`):**
+- Al corregir, se compara lo que HAY en cava del lote (todas las partidas vivas con su `logId`, de cualquier origen) contra lo que DECLARA la planilla.
+- Salen cambios `ajustar` / `crear` / `retirar`. Se empareja por presentación + vencimiento, y si no, solo por presentación.
+- Cada diferencia va al libro como `correccion_planilla`, con la cantidad con signo.
+- **Antes de guardar se ve** (`CambiosCava`): "Sin envasar 469 → 370 kg (−99) · 1 kg 0 → 99 ud (+99)".
+- **Cuándo se aplica:** automático si se tocó algo de lo que va a cava (`firmaCava`). Si no (p.ej. se corrigió un pH), no se toca, porque entre medias pudo haber ventas. Igual se muestra la diferencia con una casilla para aplicarla: así se arreglan las planillas que ya quedaron descuadradas.
+- Si vuelve a quedar queso sin envasar, se borra `fechaFinalizacionEmpaque` y la producción vuelve a "Pendiente de empacar".
+- `formularioDesdeLog`: "sin envasar" se reabre vacío (= kilos − envasado, que se recalcula al corregir) si era lo sugerido o si quedó incoherente.
+
+**Dos sincronizaciones más:**
+- Ajustar en Almacenes una partida **sin envasar** de una producción actualiza `kgSinEnvasar` del registro. Si llega a 0, la producción queda cerrada.
+- "Finalizar empaque" calcula lo que queda por envasar con lo que HAY en cava, no con el número del registro.
+
 ### Cava en docenas (2026-09) ✅
 
 Pedido del dueño: en planta se cuenta y se despacha por docena, así que cada partida envasada muestra **unidades Y docenas** ("30 ud · 2 docenas y 6 sueltas"; "36 ud · 3 docenas"; "8 ud · 8 sueltas"). Una sola función, **`enDocenas(unidades)`** en `src/Kroma/inventarioPT.js`, usada en la partida (`PartidaCava`), en las cifras del resumen por presentación (`ResumenCava`) y en la tarjeta del almacén (reemplazó el `formatDocenas` local, que decía "2 doc + 6 sueltas"). Las docenas acompañan a las unidades, nunca las reemplazan; el granel sigue en kg.

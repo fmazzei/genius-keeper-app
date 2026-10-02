@@ -36,15 +36,16 @@
 //     disponible en el tanque, que es exactamente la "leche fantasma" que se
 //     acaba de corregir.
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { collection, doc, writeBatch, serverTimestamp, deleteField, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
-import { partidasDePlanilla, ptReemplazable, modoSugerido, kgSinEnvasarSugerido, filasSinVencimiento } from '@/Kroma/ptPlanilla.js';
+import { partidasDePlanilla, reconciliarCava, firmaCava, modoSugerido, kgSinEnvasarSugerido, filasSinVencimiento } from '@/Kroma/ptPlanilla.js';
 import { leerSello, fmtSello } from '@/Kroma/selloDatos.js';
 import { redondear, fmtNum } from '@/Kroma/formato.js';
+import { fmtVence } from '@/utils/fechaCorta.js';
 import { formularioDesdeLog, nombrePresentacion, pesoPresentacion, kgPorUnidadDeSku } from '@/Kroma/planillaForm.js';
 
 const MERMA_SUGERIDA = 10;   // lo que traen las planillas revisadas
@@ -134,10 +135,9 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             .catch(() => { if (vivo) setPtExistente([]); });
         return () => { vivo = false; };
     }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-    // Si lo que está en cava ya se tocó (despacho, envasado, ajuste), corregir
-    // la planilla NO lo recrea: devolvería a cava producto que ya salió.
-    const ptBloqueado = editando && ptExistente !== null && ptExistente.length > 0
-        && (!ptReemplazable(ptExistente) || !!logEditar?.fechaFinalizacionEmpaque);
+    // Al corregir: ¿se deja la cava como la declara la planilla? `null` =
+    // automático (sí, si se tocó algo de lo que va a cava).
+    const [aplicarElegido, setAplicarElegido] = useState(null);
     const [error, setError]         = useState('');
 
     // `redondear` en la SUMA, no solo al mostrar: sumar 591,37 + 153,73 en coma
@@ -216,6 +216,19 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     const setEnvasado = (i, valor) => setEmpaques(prev => prev.map((e, j) => j === i
         ? { ...e, fechaEnvasado: valor, fechaVencimiento: sumarDiasInput(valor, DIAS_VENCIMIENTO_ENVASADO) || e.fechaVencimiento }
         : e));
+
+    // Lo que la planilla declara que hay HOY en cava de este lote.
+    const deseadas = partidasDePlanilla({ empaques: esActual ? empaques : [], kgSinEnvasar: kgSinEnvasarNum, vencimientoSinEnvasar: vencSinEnvasarEf });
+    const firmaInicial = useRef(null);
+    if (firmaInicial.current === null) firmaInicial.current = firmaCava(deseadas);
+    const tocoCava = firmaCava(deseadas) !== firmaInicial.current;
+    // Lo que cambia en el almacén al guardar (contra lo que HAY, no contra lo
+    // que la planilla puso al principio: un ajuste hecho en Almacenes cuenta).
+    const cambiosCava = editando && ptExistente !== null ? reconciliarCava(ptExistente, deseadas) : [];
+    // Si no se tocó nada de lo que va a cava (p.ej. se corrigió un pH), no se
+    // toca la cava: entre medias pudo haber ventas o despachos que no hay que
+    // deshacer. Si se tocó, la cava queda exactamente como se declara.
+    const aplicarCava = !editando || (aplicarElegido ?? tocoCava);
 
     const puedeGuardar = fecha && ficha && totalRecibido > 0 && kilosNum > 0 && !guardando && ptExistente !== null
         && faltanVenc.length === 0;
@@ -377,9 +390,9 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 // envase desde Producción → Pendiente de empacar. Sin eso, la
                 // planilla queda cerrada (si quedara abierta, las 32 planillas
                 // aparecerían como pendientes en el inicio del operario).
-                ...(ptBloqueado
-                    // Lo que hay en cava ya se tocó: el estado de empaque lo
-                    // manda la operación real, no la planilla.
+                ...(!aplicarCava
+                    // La cava no se toca: el estado de empaque lo manda la
+                    // operación real, no la planilla.
                     ? {}
                     : kgSinEnvasarNum > 0
                         ? { kgSinEnvasar: kgSinEnvasarNum, disposicion: productosFinalesPlanilla.length > 0 ? 'mixto' : 'guardar_todo', empaqueFinalizado: false }
@@ -405,6 +418,9 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     // Huella del esquema viejo: si quedara, `kgProducidos` la
                     // seguiría prefiriendo y la corrección de los kilos no se vería.
                     rendimientoLitrosPorKg: deleteField(),
+                    // Si vuelve a quedar queso sin envasar, la producción vuelve
+                    // a "Pendiente de empacar": su cierre de empaque ya no vale.
+                    ...(aplicarCava && kgSinEnvasarNum > 0 && { fechaFinalizacionEmpaque: deleteField() }),
                     corregidoPorId:     kromaUser?.id || null,
                     corregidoPorNombre: kromaUser?.name || null,
                     corregidoAt:        serverTimestamp(),
@@ -417,33 +433,19 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             // hoy". En el mismo batch, con su entrada en el libro de
             // movimientos (un almacén no gana existencias sin un evento que lo
             // explique). Sin `warehouseId` el Almacén lo ubica en la Cava.
-            if (!ptBloqueado) {
+            if (aplicarCava) {
                 const lote = datosLog.lote;
                 const actor = { creadoPorId: kromaUser?.id || null, creadoPorNombre: kromaUser?.name || null };
                 const mov = (extra) => batch.set(doc(collection(db, 'kroma_warehouse_movements')), sinUndefined({
                     empresaId, productoNombre: ficha.productoNombre, lote, logId: logRef.id,
                     origenId: null, destinoId: null, ...actor, createdAt: serverTimestamp(), ...extra,
                 }));
-                // Al corregir: lo que la planilla había puesto (intacto) se
-                // reemplaza por lo que dice el formulario ahora.
-                for (const it of (ptExistente || [])) {
-                    batch.update(doc(db, 'kroma_inventory_pt', it.id), {
-                        active: false, deletedAt: serverTimestamp(),
-                        deletedMotivo: 'Reemplazada al corregir la planilla.',
-                    });
-                    mov({
-                        tipo: 'correccion_planilla', origenNombre: 'Cava', destinoNombre: 'Corrección de planilla',
-                        presentacion: it.tipo === 'sin_envasar' ? 'Sin envasar' : it.presentacion,
-                        fechaVencimiento: it.fechaVencimiento || null,
-                        cantidad: -(it.tipo === 'sin_envasar' ? it.kgTotales : it.unidades),
-                        unidad: it.tipo === 'sin_envasar' ? 'kg' : 'unidades',
-                    });
-                }
-                // SIN costo congelado a propósito: con solo la leche del papel
-                // quedaba subvaluado (sin insumos ni empaque). Sin costo, gerencia
-                // lo costea con el cálculo completo del lote (leche + insumos de
-                // la ficha + empaque), el mismo de cualquier otro lote.
-                for (const pt of partidasDePlanilla({ empaques: esActual ? empaques : [], kgSinEnvasar: kgSinEnvasarNum, vencimientoSinEnvasar: vencSinEnvasarEf })) {
+                const unidadDe = (p) => p.tipo === 'sin_envasar' ? 'kg' : 'unidades';
+                const nombreDe = (p) => p.tipo === 'sin_envasar' ? 'Sin envasar' : p.presentacion;
+                // Las partidas nuevas van donde ya vive este lote (sin
+                // `warehouseId` el Almacén las ubica en la Cava).
+                const warehouseId = (ptExistente || []).find(i => i.warehouseId)?.warehouseId || null;
+                const nueva = (pt) => {
                     batch.set(doc(collection(db, 'kroma_inventory_pt')), sinUndefined({
                         empresaId,
                         productoId: ficha.productoId, productoNombre: ficha.productoNombre,
@@ -451,17 +453,56 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                         lote, loteLabel: `${lote} — ${ficha.productoNombre}`,
                         operarioId: kromaUser?.id || '', operarioNombre: kromaUser?.name || '',
                         origen: 'planilla_papel',
+                        ...(warehouseId && { warehouseId }),
                         ...pt,
                         active: true,
                         createdAt: serverTimestamp(),
                     }));
-                    mov({
-                        tipo: 'entrada_produccion', origenNombre: 'Producción (planilla)', destinoNombre: 'Cava',
-                        presentacion: pt.tipo === 'sin_envasar' ? 'Sin envasar' : pt.presentacion,
-                        fechaVencimiento: pt.fechaVencimiento || null,
-                        cantidad: pt.tipo === 'sin_envasar' ? pt.kgTotales : pt.unidades,
-                        unidad: pt.tipo === 'sin_envasar' ? 'kg' : 'unidades',
-                    });
+                };
+                if (!editando) {
+                    // SIN costo congelado a propósito: con solo la leche del
+                    // papel quedaba subvaluado. Gerencia lo costea con el
+                    // cálculo completo del lote, el mismo de cualquier otro.
+                    for (const pt of deseadas) {
+                        nueva(pt);
+                        mov({
+                            tipo: 'entrada_produccion', origenNombre: 'Producción (planilla)', destinoNombre: 'Cava',
+                            presentacion: nombreDe(pt), fechaVencimiento: pt.fechaVencimiento || null,
+                            cantidad: pt.tipo === 'sin_envasar' ? pt.kgTotales : pt.unidades, unidad: unidadDe(pt),
+                        });
+                    }
+                } else {
+                    // Corrección: la cava del lote queda EXACTAMENTE como se
+                    // declara, partiendo de lo que hay hoy. Cada diferencia deja
+                    // su renglón en el libro de movimientos.
+                    for (const op of cambiosCava) {
+                        const p = op.partida || op.item;
+                        const delta = +(op.a - op.de).toFixed(3);
+                        if (op.accion === 'crear') {
+                            nueva(op.partida);
+                        } else if (op.accion === 'ajustar') {
+                            const d = op.partida;
+                            batch.update(doc(db, 'kroma_inventory_pt', op.item.id), sinUndefined(d.tipo === 'sin_envasar'
+                                ? { kgTotales: op.a, fechaVencimiento: d.fechaVencimiento || null, vencimientoTentativo: !!d.vencimientoTentativo, active: true }
+                                : { unidades: op.a, totalKg: +(d.pesoPorUnidad * op.a).toFixed(3), presentacion: d.presentacion,
+                                    fechaEnvasado: d.fechaEnvasado || op.item.fechaEnvasado || null,
+                                    fechaVencimiento: d.fechaVencimiento || null, active: true }));
+                        } else {
+                            // Retirar: sin envasar se da de baja; una partida
+                            // envasada queda en 0 (lote cerrado, con su pista).
+                            batch.update(doc(db, 'kroma_inventory_pt', op.item.id), op.item.tipo === 'sin_envasar'
+                                ? { kgTotales: 0, active: false, deletedMotivo: 'Retirada al corregir la planilla.' }
+                                : { unidades: 0, totalKg: 0 });
+                        }
+                        if (Math.abs(delta) > 0.0005) mov({
+                            tipo: 'correccion_planilla',
+                            origenNombre: delta > 0 ? 'Corrección de planilla' : 'Cava',
+                            destinoNombre: delta > 0 ? 'Cava' : 'Corrección de planilla',
+                            presentacion: nombreDe(p), fechaVencimiento: (op.partida || op.item).fechaVencimiento || null,
+                            cantidad: delta, unidad: unidadDe(p),
+                            motivo: 'Corrección de la planilla de producción',
+                        });
+                    }
                 }
             }
 
@@ -489,8 +530,9 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
                 <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
                     <p className="text-slate-400 text-xs leading-snug">
-                        No mueve el inventario ni crea producto terminado: esos insumos ya se
-                        consumieron y ese queso ya salió. Se guarda como histórico del lote.
+                        No descuenta insumos ni materiales: esos ya se consumieron. Si su queso
+                        sigue en cava (planilla <strong className="text-slate-300">actual</strong>), lo que declares
+                        abajo es lo que queda en el almacén.
                     </p>
                 </div>
 
@@ -673,16 +715,6 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                             : ' Lo envasado queda solo como dato del lote (rendimiento y costo).'}
                     </p>
 
-                    {ptBloqueado && (
-                        <div className="flex items-start gap-2 bg-amber-900/20 border border-amber-700/40 rounded-xl px-3 py-2.5 mb-3">
-                            <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                            <p className="text-amber-200 text-xs leading-snug">
-                                Lo que esta planilla puso en cava ya se movió (despacho, envasado o ajuste).
-                                Esta corrección <strong>no cambia la cava</strong>: ajústala desde Almacenes.
-                            </p>
-                        </div>
-                    )}
-
                     {skus.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mb-3">
                             {skus.map(sku => (
@@ -790,6 +822,11 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                             )}
                         </p>
                     )}
+
+                    {editando && ptExistente !== null && (
+                        <CambiosCava cambios={cambiosCava} aplicar={aplicarCava}
+                            onAplicar={setAplicarElegido} tocoCava={tocoCava} />
+                    )}
                 </section>
 
                 {/* ── Costo de la leche ──
@@ -841,6 +878,67 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     </p>
                 )}
             </div>
+        </div>
+    );
+}
+
+// Lo que la corrección le hace al almacén, antes de guardar: nada se mueve
+// sin que se vea. Si no se tocó nada de lo que va a cava, se ofrece igual
+// dejarla como la planilla (por ejemplo, cuando la cava y la planilla se
+// separaron por una corrección anterior).
+function CambiosCava({ cambios, aplicar, onAplicar, tocoCava }) {
+    const etiqueta = (op) => {
+        const p = op.partida || op.item;
+        return p.tipo === 'sin_envasar' ? 'Sin envasar' : (p.presentacion || 'Presentación');
+    };
+    const unidad = (op) => ((op.partida || op.item).tipo === 'sin_envasar' ? 'kg' : 'ud');
+    if (cambios.length === 0) {
+        return (
+            <div className="mt-3 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5">
+                <p className="text-slate-400 text-xs">La cava de este lote ya está igual a lo que declara la planilla.</p>
+            </div>
+        );
+    }
+    return (
+        <div className={`mt-3 rounded-xl p-3 border ${aplicar ? 'bg-emerald-950/30 border-emerald-700/40' : 'bg-amber-900/20 border-amber-700/40'}`}>
+            <p className={`text-xs font-bold uppercase tracking-widest mb-2 ${aplicar ? 'text-emerald-400' : 'text-amber-300'}`}>
+                {aplicar ? 'Al guardar, el almacén queda así' : 'La cava no coincide con esta planilla'}
+            </p>
+            <div className="space-y-1.5 mb-2.5">
+                {cambios.map((op, i) => {
+                    const delta = +(op.a - op.de).toFixed(3);
+                    return (
+                        <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="text-slate-200 min-w-0 truncate">
+                                {etiqueta(op)}
+                                {(op.partida || op.item).fechaVencimiento && (
+                                    <span className="text-slate-500"> · vence {fmtVence((op.partida || op.item).fechaVencimiento)}</span>
+                                )}
+                            </span>
+                            <span className="font-mono shrink-0 text-slate-300">
+                                {fmtNum(op.de, 3)} → <strong className="text-white">{fmtNum(op.a, 3)}</strong> {unidad(op)}
+                                {Math.abs(delta) > 0.0005 && (
+                                    <span className={delta > 0 ? 'text-emerald-400' : 'text-rose-400'}> ({delta > 0 ? '+' : ''}{fmtNum(delta, 3)})</span>
+                                )}
+                            </span>
+                        </div>
+                    );
+                })}
+            </div>
+            <button type="button" onClick={() => onAplicar(!aplicar)}
+                className={`flex items-center gap-2 text-xs font-semibold ${aplicar ? 'text-emerald-300' : 'text-slate-300'}`}>
+                <span className={`w-4 h-4 rounded border flex items-center justify-center ${aplicar ? 'bg-emerald-600 border-emerald-500' : 'border-slate-500'}`}>
+                    {aplicar && <span className="text-white text-[10px] leading-none">✓</span>}
+                </span>
+                Dejar la cava de este lote como dice la planilla
+            </button>
+            <p className="text-slate-500 text-[11px] leading-snug mt-1.5">
+                {aplicar
+                    ? 'Cada diferencia queda en el libro de movimientos como corrección de planilla.'
+                    : tocoCava
+                        ? 'La corrección se guarda en la planilla, pero el almacén no se mueve.'
+                        : 'No cambiaste nada de lo que va a cava. Márcalo si el almacén tiene que quedar así (si hubo ventas o despachos de este lote, revisa que la planilla los descuente).'}
+            </p>
         </div>
     );
 }

@@ -54,19 +54,69 @@ export function partidasDePlanilla({ empaques = [], kgSinEnvasar = 0, vencimient
 /** Cantidad actual de una partida (unidades o kg). */
 export const cantidadActual = (i) => i?.tipo === 'sin_envasar' ? (i.kgTotales || 0) : (i?.unidades || 0);
 
+/** Cantidad de una partida DESEADA (de `partidasDePlanilla`). */
+const cantidadDeseada = (p) => p.tipo === 'sin_envasar' ? (p.kgTotales || 0) : (p.unidades || 0);
+const claveExacta = (p) => p.tipo === 'sin_envasar' ? 'S' : `E|${r3(p.pesoPorUnidad || 0)}|${p.fechaVencimiento || ''}`;
+const clavePeso   = (p) => p.tipo === 'sin_envasar' ? 'S' : `E|${r3(p.pesoPorUnidad || 0)}`;
+
 /**
- * ¿Se puede REEMPLAZAR lo que la planilla puso en cava al corregirla?
- * Solo si nadie lo tocó desde entonces: todas las partidas vivas del lote las
- * creó la planilla y siguen con la cantidad con que entraron. Si algo se
- * despachó, se envasó o se ajustó, recrearlo desde el formulario devolvería a
- * la cava producto que ya salió — en ese caso se deja como está.
+ * Corregir una planilla deja la cava de ESE lote exactamente como la declara.
+ *
+ * Antes, si lo que la planilla había puesto en cava ya se había tocado (un
+ * ajuste en Almacenes, un envasado), la corrección NO tocaba la cava — y el
+ * dueño corregía kilos y declaraba 99 bolsas sin que el almacén se moviera.
+ * Ahora se compara lo que HAY (todas las partidas vivas del lote, vengan de
+ * donde vengan) contra lo que DECLARA el formulario, y sale la lista de cambios:
+ *   · 'ajustar' — una partida existente pasa de `de` a `a` (o cambia su vencimiento);
+ *   · 'crear'   — una presentación que hoy no está en cava;
+ *   · 'retirar' — una partida que la planilla ya no declara: queda en 0.
+ * Se empareja primero por presentación + vencimiento, después solo por
+ * presentación (y entonces se le actualiza el vencimiento). Dos partidas
+ * iguales se funden en la primera.
+ *
+ * @returns {Array<{accion:'ajustar'|'crear'|'retirar', item?, partida?, de:number, a:number}>}
  */
-export function ptReemplazable(itemsVivos = []) {
-    return itemsVivos.every(i =>
-        i.origen === 'planilla_papel'
-        && typeof i.cantidadCargada === 'number'
-        && Math.abs(cantidadActual(i) - i.cantidadCargada) < 0.0005);
+export function reconciliarCava(existentes = [], deseadas = []) {
+    const libres = existentes.filter(i => i && i.active !== false);
+    const tomar = (pred) => {
+        const idx = libres.findIndex(pred);
+        return idx < 0 ? null : libres.splice(idx, 1)[0];
+    };
+    // Lo deseado, sumado por presentación + vencimiento.
+    const des = [];
+    for (const d of deseadas) {
+        const igual = des.find(x => claveExacta(x) === claveExacta(d));
+        if (!igual) { des.push({ ...d }); continue; }
+        if (d.tipo === 'sin_envasar') igual.kgTotales = r3((igual.kgTotales || 0) + (d.kgTotales || 0));
+        else { igual.unidades += d.unidades; igual.totalKg = r3(igual.pesoPorUnidad * igual.unidades); }
+    }
+    const ops = [];
+    const asignar = (item, d) => {
+        const de = r3(cantidadActual(item)), a = r3(cantidadDeseada(d));
+        const vencDistinto = (d.fechaVencimiento || null) !== (item.fechaVencimiento || null);
+        if (Math.abs(de - a) > 0.0005 || vencDistinto) ops.push({ accion: 'ajustar', item, partida: d, de, a });
+    };
+    const pendientes = [];
+    for (const d of des) {
+        const ex = tomar(i => claveExacta(i) === claveExacta(d));
+        if (ex) asignar(ex, d); else pendientes.push(d);
+    }
+    for (const d of pendientes) {
+        const ex = tomar(i => clavePeso(i) === clavePeso(d) && cantidadActual(i) > 0)
+            || tomar(i => clavePeso(i) === clavePeso(d));
+        if (ex) asignar(ex, d);
+        else if (cantidadDeseada(d) > 0) ops.push({ accion: 'crear', partida: d, de: 0, a: r3(cantidadDeseada(d)) });
+    }
+    for (const ex of libres) {
+        const de = r3(cantidadActual(ex));
+        if (de > 0.0005) ops.push({ accion: 'retirar', item: ex, de, a: 0 });
+    }
+    return ops;
 }
+
+/** Huella de lo que declara la planilla para la cava (para saber si se cambió). */
+export const firmaCava = (deseadas = []) => deseadas
+    .map(d => `${claveExacta(d)}=${r3(cantidadDeseada(d))}`).sort().join(';');
 
 // ─── Histórica vs. actual ────────────────────────────────────────────────────
 //

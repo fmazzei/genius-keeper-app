@@ -1924,6 +1924,23 @@ export default function WarehousesPage({ onNavigate }) {
                     });
                 }
 
+                // Ajustar el queso SIN ENVASAR de una producción cambia lo que
+                // le queda por empacar: se sincroniza su registro, si no
+                // "Pendiente de empacar" (y "Finalizar empaque") seguían con
+                // los kilos de antes del ajuste.
+                if (item.logId && item.tipo === 'sin_envasar' && cambios['kgTotales']) {
+                    const restoKg = +inventoryPT
+                        .filter(i => i.logId === item.logId && i.tipo === 'sin_envasar' && i.active !== false)
+                        .reduce((s, i) => s + (i.id === item.id ? (cambios['kgTotales'].a || 0) : (i.kgTotales || 0)), 0)
+                        .toFixed(3);
+                    try {
+                        await updateDoc(doc(db, 'kroma_production_logs', item.logId), {
+                            kgSinEnvasar: restoKg,
+                            ...(restoKg <= 0.0005 && { empaqueFinalizado: true, cierreMotivo: 'Sin envasar ajustado a 0 en Almacenes' }),
+                        });
+                    } catch (e) { console.warn('No se pudo sincronizar la producción', e); }
+                }
+
                 setInventoryPT(prev => prev.map(i => i.id === item.id ? { ...i, ...updateData } : i));
                 setEditItem(null);
                 setSuccessMsg('Ajuste aplicado');
