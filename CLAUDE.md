@@ -2785,6 +2785,20 @@ Caso real del dueño, lote LCO20260722-H: redesueró, perdió 31 kg, ajustó la 
 - Ajustar en Almacenes una partida **sin envasar** de una producción actualiza `kgSinEnvasar` del registro. Si llega a 0, la producción queda cerrada.
 - "Finalizar empaque" calcula lo que queda por envasar con lo que HAY en cava, no con el número del registro.
 
+### Tablero de gerencia de Kroma: "vacío" el día 2 del mes (2026-10) ✅
+
+Reporte del dueño, captura del 2-oct: "Producciones / mes 0", "Litros procesados —", "Rendimiento —", "Costo/kg — sin lotes costeables este mes". Parecía desconectado.
+
+**Causa:** cuatro tarjetas de `ManagerHome` (`ManagerPages.jsx`) medían SOLO el **mes calendario en curso**. El 2 de octubre no había ninguna producción cerrada en octubre (la última era del 18-sept). El cálculo era correcto, pero sobre una ventana vacía. Además fechaban cada lote con `fechaCierre || createdAt`, no con `fechaProduccion` como el resto de Kroma.
+
+**Ahora:**
+- **Selector de período**: 30 días (por defecto) / Este mes / Mes anterior / 90 días. Se recuerda por equipo en `localStorage` (con try/catch).
+- `rangoPeriodo(id)` y `enRango(log, desde, hasta)` en `estadoPlanta.js` (puros). La comparación es contra el período anterior de IGUAL duración (`comparaCon`), no contra "el mes anterior" fijo.
+- Cada tarjeta dice su período y el valor del período anterior ("Últimos 30 días · antes 1").
+- Si el período sale vacío, lo DICE y nombra la última producción ("La última fue el 18 de septiembre: elige un período más largo").
+- Capital, Lotes sin envasar e Inventario PT son una foto de HOY y no dependen del período (lo dicen).
+- `logDate` = `fechaProduccion`: una planilla de julio cargada en octubre cuenta en julio.
+
 ### Cava en docenas (2026-09) ✅
 
 Pedido del dueño: en planta se cuenta y se despacha por docena, así que cada partida envasada muestra **unidades Y docenas** ("30 ud · 2 docenas y 6 sueltas"; "36 ud · 3 docenas"; "8 ud · 8 sueltas"). Una sola función, **`enDocenas(unidades)`** en `src/Kroma/inventarioPT.js`, usada en la partida (`PartidaCava`), en las cifras del resumen por presentación (`ResumenCava`) y en la tarjeta del almacén (reemplazó el `formatDocenas` local, que decía "2 doc + 6 sueltas"). Las docenas acompañan a las unidades, nunca las reemplazan; el granel sigue en kg.

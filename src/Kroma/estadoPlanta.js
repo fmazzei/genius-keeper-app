@@ -116,3 +116,51 @@ export function mermaDeLog(log, mermaDeBloque = null) {
     if (ing > 0 && Number.isFinite(net) && net > 0) return Math.max(0, +(ing - net).toFixed(2));
     return mermaDeBloque || 0;
 }
+
+// ─── Período de los tableros ─────────────────────────────────────────────────
+//
+// Los indicadores de producción se miraban SOLO en el mes calendario en curso.
+// El día 2 del mes eso es un tablero vacío ("0 producciones", "—") aunque la
+// planta haya trabajado la semana pasada: parece desconectado y no dice nada.
+// Por eso el período por defecto es una ventana MÓVIL de 30 días, y la
+// comparación es contra la ventana anterior de igual duración.
+
+export const PERIODOS_TABLERO = [
+    { id: '30d',         label: '30 días' },
+    { id: 'mes',         label: 'Este mes' },
+    { id: 'mesAnterior', label: 'Mes anterior' },
+    { id: '90d',         label: '90 días' },
+];
+
+/**
+ * Rango [desde, hasta) del período y el anterior de igual duración.
+ * @returns {{desde:Date, hasta:Date, prevDesde:Date, prevHasta:Date, etiqueta:string, comparaCon:string}}
+ */
+export function rangoPeriodo(id, ahora = new Date()) {
+    const DIA = 86400000;
+    const finHoy = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + 1);
+    const ventana = (dias) => {
+        const desde = new Date(finHoy.getTime() - dias * DIA);
+        return { desde, hasta: finHoy, prevDesde: new Date(desde.getTime() - dias * DIA), prevHasta: desde,
+            etiqueta: `Últimos ${dias} días`, comparaCon: `los ${dias} días anteriores` };
+    };
+    const nombreMes = (d) => d.toLocaleDateString('es-VE', { month: 'long' });
+    if (id === 'mes') {
+        const desde = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+        return { desde, hasta: finHoy, prevDesde: new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1), prevHasta: desde,
+            etiqueta: `En ${nombreMes(desde)}`, comparaCon: 'el mes anterior' };
+    }
+    if (id === 'mesAnterior') {
+        const desde = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+        const hasta = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+        return { desde, hasta, prevDesde: new Date(ahora.getFullYear(), ahora.getMonth() - 2, 1), prevHasta: desde,
+            etiqueta: `En ${nombreMes(desde)}`, comparaCon: `${nombreMes(new Date(ahora.getFullYear(), ahora.getMonth() - 2, 1))}` };
+    }
+    return ventana(id === '90d' ? 90 : 30);
+}
+
+/** ¿La fecha de producción del lote cae en [desde, hasta)? */
+export const enRango = (log, desde, hasta) => {
+    const d = fechaProduccion(log);
+    return !!d && d >= desde && d < hasta;
+};

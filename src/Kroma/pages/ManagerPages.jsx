@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { kgProducidos, rendimientoLkg } from '@/Kroma/estadoPlanta.js';
+import { kgProducidos, rendimientoLkg, fechaProduccion, rangoPeriodo, enRango, PERIODOS_TABLERO } from '@/Kroma/estadoPlanta.js';
 import { kgDePartida, tieneExistencia, conExistencia, esHuerfana } from '@/Kroma/inventarioPT.js';
 import { fmtL, fmtNum } from '@/Kroma/formato.js';
 import Lote from '@/Kroma/Components/Lote.jsx';
@@ -36,11 +36,9 @@ const PIE_COLORS = [C.emerald, C.blue, C.amber, C.rose, C.violet, C.cyan];
 
 // ─── Data helpers ─────────────────────────────────────────────────────────────
 
-function logDate(log) {
-    const ts = log.fechaCierre || log.createdAt;
-    if (!ts) return null;
-    return ts?.toDate ? ts.toDate() : new Date(ts);
-}
+// La fecha EN QUE SE PRODUJO el lote (la misma de todo Kroma), no la de cierre
+// ni la de carga: una planilla de julio cargada en septiembre es de julio.
+const logDate = fechaProduccion;
 function getRendimiento(log) {
     const l = getLitrosNetos(log);
     const k = getTotalKg(log);
@@ -113,7 +111,7 @@ function useKromaDashboard() {
 // ─── Shared UI primitives ─────────────────────────────────────────────────────
 
 function KpiCard({ label, value, sub, Icon, color = 'emerald', onClick }) {
-    const cls = { emerald: 'text-emerald-400', blue: 'text-blue-400', amber: 'text-amber-400', rose: 'text-rose-400', cyan: 'text-cyan-400', slate: 'text-slate-500' };
+    const cls = { emerald: 'text-emerald-400', blue: 'text-blue-400', amber: 'text-amber-400', rose: 'text-rose-400', cyan: 'text-cyan-400', violet: 'text-violet-400', slate: 'text-slate-500' };
     const Wrap = onClick ? 'button' : 'div';
     return (
         <Wrap
@@ -267,17 +265,27 @@ export function ManagerHome({ onNavigate }) {
     const { data, loading, error, reload } = useKromaDashboard();
     const [modal, setModal] = useState(null);
     const shortcuts = (kromaUser?.shortcuts || []).map(id => SHORTCUT_DEFS[id]).filter(Boolean);
+    // Período de los indicadores de producción. Por defecto una ventana móvil de
+    // 30 días: con el mes calendario, el día 2 el tablero salía vacío.
+    const [periodo, setPeriodo] = useState(() => {
+        try { return localStorage.getItem('kroma_tablero_periodo') || '30d'; } catch { return '30d'; }
+    });
+    const elegirPeriodo = (id) => {
+        setPeriodo(id);
+        try { localStorage.setItem('kroma_tablero_periodo', id); } catch { /* sin almacenamiento */ }
+    };
+    const rango = useMemo(() => rangoPeriodo(periodo), [periodo]);
 
     const c = useMemo(() => {
         if (!data) return null;
         const { logs, matInv, materials, ptItems, ptCatalog, allLogs } = data;
         const ptCatalogById = indexById(ptCatalog || []);
         const materialsById = indexById(materials);
-        const now = new Date();
-        const thisKey = monthKey(now);
-        const prevKey = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-        const mLogs  = logs.filter(l => { const d = logDate(l); return d && monthKey(d) === thisKey; });
-        const pLogs  = logs.filter(l => { const d = logDate(l); return d && monthKey(d) === prevKey; });
+        const mLogs  = logs.filter(l => enRango(l, rango.desde, rango.hasta));
+        const pLogs  = logs.filter(l => enRango(l, rango.prevDesde, rango.prevHasta));
+        // La última producción, para decir cuánto hace que no se produce cuando
+        // el período elegido sale vacío (en vez de un "—" que no explica nada).
+        const ultimaFecha = logs.reduce((m, l) => { const d = logDate(l); return d && (!m || d > m) ? d : m; }, null);
 
         const totalLitros = mLogs.reduce((s, l) => s + (l.litrosIngresados || 0), 0);
         const rends  = mLogs.map(getRendimiento).filter(Boolean);
@@ -340,8 +348,9 @@ export function ManagerHome({ onNavigate }) {
         }, 0);
         const hayPrecioVenta = valorVentaPT > 0;
 
-        return { mLogs, totalLitros, totalMermaL, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent, costoXkg, mCostos, capitalPT, valorVentaPT, hayPrecioVenta, ptHuerfanas, valorHuerfanas };
-    }, [data]);
+        const pLitros = pLogs.reduce((s, l) => s + (l.litrosIngresados || 0), 0);
+        return { pLogs, pLitros, ultimaFecha, mLogs, totalLitros, totalMermaL, avgRend, rendTrend, mermaP, capitalMat, sinEmpacar, recent, costoXkg, mCostos, capitalPT, valorVentaPT, hayPrecioVenta, ptHuerfanas, valorHuerfanas };
+    }, [data, rango]);
 
     // ── Limpiar el producto cuya producción ya no existe ──
     //
@@ -443,17 +452,42 @@ export function ManagerHome({ onNavigate }) {
                         </section>
                     )}
 
+                    {/* Período de los indicadores de producción. Capital, lotes sin
+                        envasar e inventario PT son una foto de HOY y no dependen de él. */}
+                    <div className="flex items-center gap-1.5 mb-2 overflow-x-auto">
+                        {PERIODOS_TABLERO.map(p => (
+                            <button key={p.id} onClick={() => elegirPeriodo(p.id)}
+                                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                                    periodo === p.id ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-300'
+                                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'}`}>
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                    {c.mLogs.length === 0 && (
+                        <p className="text-amber-400/90 text-xs mb-3 leading-snug">
+                            No hay producciones cerradas en este período.
+                            {c.ultimaFecha
+                                ? ` La última fue el ${c.ultimaFecha.toLocaleDateString('es-VE', { day: 'numeric', month: 'long' })}: elige un período más largo para verla.`
+                                : ' Todavía no hay ninguna producción cerrada.'}
+                        </p>
+                    )}
+
                     {/* KPI grid — each card is interactive */}
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6">
-                        <KpiCard label="Capital en Inventario" value={c.capitalMat > 0 ? `$${c.capitalMat.toFixed(0)}` : '—'} sub="Materiales (USD)" Icon={DollarSign} color="emerald" onClick={() => setModal('capital')} />
-                        <KpiCard label="Producciones / mes"    value={c.mLogs.length} Icon={Factory} color="blue" onClick={() => setModal('producciones')} />
-                        <KpiCard label="Litros procesados"     value={c.totalLitros > 0 ? `${c.totalLitros} L` : '—'} sub="Este mes" Icon={Droplets} color="cyan" onClick={() => setModal('litros')} />
+                        <KpiCard label="Capital en Inventario" value={c.capitalMat > 0 ? `$${c.capitalMat.toFixed(0)}` : '—'} sub="Materiales (USD) · hoy" Icon={DollarSign} color="emerald" onClick={() => setModal('capital')} />
+                        <KpiCard label="Producciones"          value={c.mLogs.length}
+                            sub={`${rango.etiqueta} · antes ${c.pLogs.length}`} Icon={Factory} color="blue" onClick={() => setModal('producciones')} />
+                        <KpiCard label="Litros procesados"     value={c.totalLitros > 0 ? `${fmtNum(c.totalLitros, 0)} L` : '—'}
+                            sub={`${rango.etiqueta}${c.pLitros > 0 ? ` · antes ${fmtNum(c.pLitros, 0)} L` : ''}`} Icon={Droplets} color="cyan" onClick={() => setModal('litros')} />
                         <KpiCard label="Rendimiento prom."     value={c.avgRend ? `${c.avgRend.toFixed(2)} L/kg` : '—'}
-                            sub={c.rendTrend != null ? `${c.rendTrend >= 0 ? '↑' : '↓'} ${Math.abs(c.rendTrend).toFixed(1)}% vs mes anterior` : undefined}
+                            sub={c.rendTrend != null
+                                ? `${c.rendTrend >= 0 ? '↑' : '↓'} ${Math.abs(c.rendTrend).toFixed(1)}% vs ${rango.comparaCon}`
+                                : rango.etiqueta}
                             Icon={TrendingUp} color={c.rendTrend == null ? 'amber' : c.rendTrend >= 0 ? 'emerald' : 'amber'}
                             onClick={() => setModal('rendimiento')} />
                         <KpiCard label="Costo / kg envasado"   value={c.costoXkg != null ? `$${c.costoXkg.toFixed(2)}` : '—'}
-                            sub={c.costoXkg != null ? 'Prom. ponderado este mes' : 'Sin lotes costeable este mes'}
+                            sub={c.costoXkg != null ? `Prom. ponderado · ${rango.etiqueta.toLowerCase()}` : 'Sin lotes costeables en el período'}
                             Icon={FlaskConical} color="violet"
                             onClick={() => setModal('costo_kg')} />
                         <KpiCard label="Lotes sin envasar"     value={c.sinEmpacar} sub={c.sinEmpacar > 0 ? 'Requiere atención' : 'Al día'}
@@ -602,14 +636,14 @@ export function ManagerHome({ onNavigate }) {
                     {modal === 'producciones' && (() => {
                         const sorted = [...c.mLogs].sort((a, b) => { const da = logDate(a), db_ = logDate(b); return da && db_ ? db_ - da : 0; });
                         return (
-                            <KpiModal title="Producciones este mes" onClose={close}>
+                            <KpiModal title={`Producciones · ${rango.etiqueta.toLowerCase()}`} onClose={close}>
                                 <div className="space-y-3">
                                     <div className="flex gap-3 text-xs text-slate-400">
                                         <span>{sorted.length} produccion{sorted.length !== 1 ? 'es' : ''}</span>
                                         <span>·</span>
                                         <span>{c.totalLitros} L procesados</span>
                                     </div>
-                                    {sorted.length === 0 ? <Empty msg="Sin producciones este mes" /> : (
+                                    {sorted.length === 0 ? <Empty msg="Sin producciones en el período" /> : (
                                         <div className="divide-y divide-slate-700/50">
                                             {sorted.map(log => {
                                                 const d = logDate(log);
@@ -794,7 +828,7 @@ export function ManagerHome({ onNavigate }) {
                                     {c.mCostos.length === 0 ? (
                                         <div className="text-center py-8 space-y-2">
                                             <FlaskConical size={28} className="text-slate-600 mx-auto" />
-                                            <p className="text-slate-400 text-sm">Sin lotes costeables este mes.</p>
+                                            <p className="text-slate-400 text-sm">Sin lotes costeables en el período.</p>
                                             <p className="text-slate-500 text-xs">Se requiere: kg registrados en empaque + costo de insumos en el Maestro de Materiales.</p>
                                         </div>
                                     ) : (
@@ -814,7 +848,7 @@ export function ManagerHome({ onNavigate }) {
                                                 </div>
                                             </div>
                                             <div>
-                                                <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Por Lote (este mes)</p>
+                                                <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Por lote · {rango.etiqueta.toLowerCase()}</p>
                                                 <div className="divide-y divide-slate-700/40">
                                                     {c.mLogs.map(log => {
                                                         const r = calcCostoTeoricoLote(log, materialsById, packagingByKey, milkLookup);
