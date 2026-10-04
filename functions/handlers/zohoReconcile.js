@@ -803,6 +803,17 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
         } catch (e) {
             res.porPagar = { autorizado: false, motivo: String(e?.message || e).slice(0, 200) };
         }
+        // El resultado queda guardado, autorizado o no: sin esto la tarjeta de
+        // cuentas por pagar no podía distinguir "Zoho no da permiso" de "no se
+        // debe nada", y mostraba la misma frase en los dos casos.
+        try {
+            await admin.firestore().doc('settings/appConfig').set({ zohoPorPagarEstado: {
+                autorizado: !!res.porPagar?.autorizado,
+                motivo: res.porPagar?.motivo || null,
+                facturas: res.porPagar?.nAbiertas ?? null,
+                at: admin.firestore.FieldValue.serverTimestamp(),
+            } }, { merge: true });
+        } catch (e) { /* diagnóstico: no tumba la conciliación */ }
         // Clientes de Zoho SIN facturas todavía: sin esto no aparecen en la
         // lista de razones sociales del alta de PDV hasta su primera factura.
         try {

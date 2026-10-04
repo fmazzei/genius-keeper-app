@@ -860,6 +860,30 @@ una sola empresa, de ahí la constante.
 encender la tarjeta 02. Si Proveedores/Producción salen vacíos, falta correr
 "Migrar datos de Lacteoca" (backfill de `empresaId`) en Kroma → Control del Sistema.
 
+### Tablero Gerencial: producción, compras, proveedores y cuentas por pagar con datos reales (2026-10) ✅
+
+Pedido del dueño con capturas: las tarjetas 04, 07 y 08 no decían lo que hacía falta, y la 02 nunca se llenaba.
+
+- **08 Producción**: el número grande son los **lotes activos ahora** (`esProduccionAbierta`), con los litros en proceso y cuántos lotes tienen queso sin envasar. La hoja lista los lotes en proceso (paso actual o "en espera") y los cerrados con **rendimiento L/kg, costo por kg y costo por unidad de cada presentación** (más el $/kg del granel). Si falta algún componente se marca "costo incompleto: falta …".
+  - El costo sale de `src/utils/tableroPlanta.js` → `costeoLote`, que usa las MISMAS funciones de `costeoLote.js` que las pantallas de gerencia de Kroma, para que las dos apps den la misma cifra.
+  - Por unidad = base (leche + insumos) × peso + empaque de esa presentación. Cuadra con el total del lote.
+- **07 Compras por hacer** (`listaDeCompras`):
+  - Entra a la lista todo insumo en su mínimo o por debajo; es la regla de `stockInsumos.js`, la misma de Kroma → Insumos.
+  - Cantidad = lo que falta para volver al mínimo, **redondeado hacia arriba a envases completos** (no se compra medio sobre de fermento), con un mínimo de uno.
+  - Valor = envases × costo promedio actual del maestro.
+  - Se agrupa por Producción / Empaque / Higiene / General. La tarjeta muestra Producción + Empaque.
+  - También lista los insumos sin mínimo definido y los que no tienen existencias cargadas.
+- **Bug del "$0,00 inmovilizado en insumos"**: el hook tenía `capitalInsumos: 0` fijo y la pantalla leía `costoBaseUSD`, un campo que no existe en el inventario. Ahora usa `materialValue` de `costeoLote.js`, la misma cifra del inicio de gerencia de Kroma.
+- **04 Proveedores** (`relacionProveedores`): todos los proveedores con su última compra (insumos del libro `kroma_compras`, o leche de `kroma_milk_reception`: litros × precio), el total comprado y la deuda abierta en Zoho.
+  - La deuda se cruza por NOMBRE comercial o fiscal (`nombreComparable`), porque Kroma no guarda el id del proveedor en Zoho.
+  - La deuda de Zoho con proveedores que no están en Kroma se lista aparte.
+  - Regla nueva: `kroma_milk_reception` también se puede leer con `isAdmin()` (solo lectura).
+- **02 Cuentas por pagar — dos causas, no una**:
+  1. El token de Zoho no tiene `ZohoBooks.bills.READ`. Esto lo hace el dueño: regenerar el Self Client con los cinco scopes.
+  2. **`cuentas_por_pagar` no tenía regla de Firestore**, así que la lectura se negaba por defecto: la tarjeta habría seguido vacía aun con el scope concedido. Ahora `read: isAdmin()`, `write: false` (solo la conciliación escribe).
+  - La conciliación guarda además `settings/appConfig.zohoPorPagarEstado` (`autorizado`, `motivo`, `at`) en cada corrida. Así la tarjeta distingue "Zoho no da permiso" de "no se debe nada" y muestra la última respuesta de Zoho.
+- Verificado: 22 casos de la lógica pura (costo por kg y por unidad, redondeo a envases, capital, deuda por nombre) y 8 de reglas en el emulador.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

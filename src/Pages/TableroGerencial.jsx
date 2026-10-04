@@ -24,7 +24,8 @@ import {
     X, AlertTriangle, Search, ChevronRight,
 } from 'lucide-react';
 import { useTableroGerencial, ultimosMeses } from '@/hooks/useTableroGerencial.js';
-import { kgProducidos, fechaProduccion, msProduccion } from '@/Kroma/estadoPlanta.js';
+import { fechaProduccion } from '@/Kroma/estadoPlanta.js';
+import { SECCIONES_COMPRA } from '@/utils/tableroPlanta.js';
 import DossierComercialDoc from '@/Components/DossierComercialDoc.jsx';
 import CarteraVencidaModal from '@/Components/CarteraVencidaModal.jsx';
 
@@ -176,13 +177,13 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
     }
     if (!k) return <p className="p-6 text-sm text-slate-500">{t.error || 'Sin datos.'}</p>;
 
-    // Capital inmovilizado en insumos: el inventario de materiales valorado al
-    // costo promedio del maestro. Es la única cifra de "compras" disponible
-    // hacia atrás — el libro de compras arranca vacío (ver nota de la tarjeta).
-    const capitalInsumos = (t.invMateriales || []).reduce((s, i) => {
-        const base = (Number(i.stockCerrado) || 0) * (Number(i.cantidadPorUnidad) || 1) + (Number(i.stockEnUso) || 0);
-        return s + base * (Number(i.costoBaseUSD) || 0);
-    }, 0);
+    // Capital inmovilizado en insumos: el mismo cálculo que el inicio de
+    // gerencia de Kroma (stock × precio del maestro). Antes esta cifra salía
+    // de un campo que no existe en el inventario y daba siempre $0,00.
+    const capitalInsumos = k.capitalInsumos || 0;
+    const compra = k.compra || { items: [], sinMinimo: [], sinInventario: [], totalProduccion: 0, totalOtros: 0, sinPrecio: 0 };
+    const nComprar = compra.items.length;
+    const estadoPP = k.estadoPorPagar;
 
     const provPorId = {};
     (t.proveedores || []).forEach(p => { provPorId[p.id] = p.nombreComercial || p.nombre || p.nombreFiscal || '—'; });
@@ -221,10 +222,12 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
 
                 <Card n="02" icon={Receipt} titulo="Cuentas por pagar" tono={k.pagarVencido > 0 ? 'red' : 'slate'}
                     valor={k.nPorPagar > 0 ? money0(k.porPagar) : '—'}
-                    sub={k.nPorPagar > 0 ? `${num(k.nPorPagar)} factura${k.nPorPagar === 1 ? '' : 's'} de proveedor` : 'Sin datos de Zoho todavía'}
+                    sub={k.nPorPagar > 0 ? `${num(k.nPorPagar)} factura${k.nPorPagar === 1 ? '' : 's'} de proveedor`
+                        : estadoPP?.autorizado ? 'Nada pendiente con proveedores' : 'Sin datos de Zoho todavía'}
                     nota={k.nPorPagar > 0
                         ? (k.pagarVencido > 0 ? `${money0(k.pagarVencido)} ya vencido` : 'Nada vencido')
-                        : 'Falta autorizar el scope de facturas de proveedor'}
+                        : estadoPP?.autorizado ? 'Según la última lectura de Zoho'
+                        : 'Zoho no autoriza leer facturas de proveedor'}
                     onClick={() => setAbierto('pagar')} />
 
                 {/* El número grande son los PUNTOS DE VENTA ACTIVOS: es lo que
@@ -237,8 +240,11 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                     disabled={!onIrComercial} onClick={() => onIrComercial?.('clientes')} />
 
                 <Card n="04" icon={Truck} titulo="Lista de proveedores" valor={num(k.nProveedores)}
-                    sub="Registrados en Kroma"
-                    nota={k.nProveedores === 0 ? 'Sin acceso o sin datos migrados' : 'Maestro de planta'}
+                    tono={k.provConDeuda > 0 ? 'amber' : 'slate'}
+                    sub={`${num(k.provConCompras)} con compras registradas`}
+                    nota={k.nProveedores === 0 ? 'Sin acceso o sin datos migrados'
+                        : k.nPorPagar > 0 ? `Se le debe a ${num(k.provConDeuda)}: ${money0(k.porPagar)}`
+                        : 'Deuda: sin datos de Zoho'}
                     onClick={() => setAbierto('proveedores')} />
 
                 <Card n="05" icon={TrendingUp} titulo="Ventas / histórico" tono="emerald"
@@ -254,16 +260,22 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                     nota="Toca para el histórico de 12 meses"
                     onClick={() => setAbierto('devoluciones')} />
 
-                <Card n="07" icon={ShoppingCart} titulo="Compras"
-                    valor={k.comprasMes > 0 ? money0(k.comprasMes) : '—'}
-                    sub={k.comprasMes > 0 ? 'Entradas de material con costo' : 'El libro arranca ahora'}
+                <Card n="07" icon={ShoppingCart} titulo="Compras por hacer"
+                    tono={compra.items.some(i => i.agotado) ? 'red' : nComprar > 0 ? 'amber' : 'slate'}
+                    valor={nComprar > 0 ? money0(compra.totalProduccion) : '—'}
+                    sub={nComprar > 0
+                        ? `${num(nComprar)} insumo${nComprar === 1 ? '' : 's'} en su mínimo o por debajo`
+                        : 'Ningún insumo bajo su mínimo'}
                     nota={`${money0(capitalInsumos)} inmovilizado en insumos`}
                     onClick={() => setAbierto('compras')} />
 
                 <Card n="08" icon={Factory} titulo="Producción"
-                    valor={`${num(k.prodMes.lotes)} lote${k.prodMes.lotes === 1 ? '' : 's'}`}
-                    sub={`${num(k.prodMes.litros)} L · ${num(k.prodMes.kg)} kg`}
-                    nota="Toca para el histórico de 12 meses"
+                    tono={k.lotesActivos.length > 0 ? 'emerald' : 'slate'}
+                    valor={`${num(k.lotesActivos.length)} activo${k.lotesActivos.length === 1 ? '' : 's'}`}
+                    sub={k.lotesActivos.length > 0 ? `${num(k.litrosEnCurso)} L en proceso` : 'Ningún lote en proceso ahora'}
+                    nota={k.lotesSinEnvasar > 0
+                        ? `${num(k.lotesSinEnvasar)} lote${k.lotesSinEnvasar === 1 ? '' : 's'} con queso sin envasar · costos por lote →`
+                        : 'Rendimiento y costo por lote →'}
                     onClick={() => setAbierto('produccion')} />
 
             </div>
@@ -277,14 +289,28 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                 <Hoja titulo="Cuentas por pagar" subtitulo="Facturas de proveedor según Zoho Books" onClose={cerrar}>
                     {k.nPorPagar === 0 ? (
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 leading-relaxed">
-                            <p className="font-bold flex items-center gap-2 mb-1"><AlertTriangle size={16} /> Todavía no hay datos</p>
-                            <p>
-                                GK ya sabe pedirle a Zoho las facturas de proveedor, pero el token actual
-                                solo tiene permiso para leer las facturas de venta. Para que esta tarjeta
-                                se llene hay que <b>regenerar el Self Client de Zoho</b> agregando el scope{' '}
-                                <code className="bg-white px-1 rounded">ZohoBooks.bills.READ</code> a los que ya tiene,
-                                y volver a guardarlo en Integraciones. En el siguiente barrido aparece solo.
+                            <p className="font-bold flex items-center gap-2 mb-1"><AlertTriangle size={16} />
+                                {estadoPP?.autorizado ? 'No hay facturas de proveedor pendientes' : 'Zoho todavía no entrega las facturas de proveedor'}
                             </p>
+                            {estadoPP?.autorizado ? (
+                                <p>La última lectura de Zoho{estadoPP.at ? ` (${fmt(toDate(estadoPP.at))})` : ''} no encontró saldos abiertos con proveedores.</p>
+                            ) : (
+                                <>
+                                    <p className="mb-2">
+                                        {estadoPP?.motivo
+                                            ? <>Última respuesta de Zoho{estadoPP.at ? ` (${fmt(toDate(estadoPP.at))})` : ''}: <i>{estadoPP.motivo}</i></>
+                                            : 'GK lee las facturas de proveedor en cada conciliación con Zoho, pero el permiso actual no lo autoriza.'}
+                                    </p>
+                                    <p>
+                                        Para activarla: en Zoho (api-console.zoho.com → Self Client) genera un código nuevo con
+                                        estos permisos y pégalo en Configuraciones → Integraciones → Zoho:
+                                    </p>
+                                    <code className="block bg-white rounded px-2 py-1.5 mt-2 text-[11px] break-all">
+                                        ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ
+                                    </code>
+                                    <p className="mt-2">La siguiente conciliación (cada hora de 7:00 a 20:00) la llena sola.</p>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <>
@@ -321,19 +347,57 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
             )}
 
             {abierto === 'proveedores' && (
-                <Hoja titulo="Proveedores" subtitulo="Maestro de Kroma (planta)" onClose={cerrar}>
+                <Hoja titulo="Proveedores" subtitulo="Última compra, total comprado y deuda abierta" onClose={cerrar}>
+                    {k.nPorPagar === 0 && (
+                        <p className="text-[11px] text-slate-500 mb-3 bg-amber-50 border border-amber-200 rounded-xl p-3 leading-relaxed">
+                            La deuda con cada proveedor sale de las facturas de proveedor de Zoho, que todavía no llegan
+                            (ver tarjeta Cuentas por pagar). Las compras de insumos vienen del libro de compras de Kroma,
+                            que registra desde septiembre de 2026; la leche, de las recepciones.
+                        </p>
+                    )}
                     <Lista
-                        items={t.proveedores || []}
-                        clave={(p) => `${p.nombreComercial || ''} ${p.nombreFiscal || ''} ${p.rif || ''}`}
+                        items={k.proveedoresRel || []}
+                        clave={(p) => `${p.nombre} ${p.nombreFiscal} ${p.rif}`}
                         placeholder="Buscar proveedor…"
                         vacio="No hay proveedores visibles. Si Kroma tiene datos, falta correr la migración de empresaId."
                         render={(p) => (
-                            <Fila key={p.id}
-                                titulo={p.nombreComercial || p.nombreFiscal || '—'}
-                                sub={[p.rif, Array.isArray(p.categorias) ? p.categorias.join(', ') : p.categoria].filter(Boolean).join(' · ') || 'Sin categoría'}
-                                derecha={p.telefono || '—'}
-                                subDerecha={p.contacto || ''} />
+                            <div key={p.id} className={`bg-white border border-slate-200 rounded-xl p-3 ${p.deuda > 0.005 ? 'border-l-4 border-l-amber-500' : ''}`}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <p className="font-bold text-slate-800 text-sm">{p.nombre}</p>
+                                        <p className="text-[11px] text-slate-400">{[p.rif, p.categoria].filter(Boolean).join(' · ') || 'Sin RIF ni categoría'}</p>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Deuda</p>
+                                        <p className={`font-black tabular-nums text-sm ${p.deuda > 0.005 ? 'text-amber-700' : 'text-slate-500'}`}>
+                                            {p.deuda > 0.005 ? money(p.deuda) : (k.nPorPagar > 0 ? '$0,00' : '—')}
+                                        </p>
+                                        {p.facturas.length > 0 && <p className="text-[11px] text-slate-400">{p.facturas.length} factura{p.facturas.length === 1 ? '' : 's'}</p>}
+                                    </div>
+                                </div>
+                                <div className="mt-2 pt-2 border-t border-slate-100 text-[12px] text-slate-600 flex items-start justify-between gap-3">
+                                    {p.ultima ? (
+                                        <>
+                                            <span className="min-w-0">Última compra {fmt(p.ultima.fecha)} · {p.ultima.detalle}</span>
+                                            <span className="font-bold tabular-nums shrink-0">{p.ultima.sinPrecio ? 'sin precio' : money(p.ultima.monto)}</span>
+                                        </>
+                                    ) : <span className="text-slate-400">Sin compras registradas</span>}
+                                </div>
+                                {p.nMovimientos > 1 && (
+                                    <p className="text-[11px] text-slate-400 mt-1">{p.nMovimientos} compras registradas · {money(p.totalComprado)} en total</p>
+                                )}
+                            </div>
                         )} />
+                    {(k.facturasSinProveedor || []).length > 0 && (
+                        <div className="mt-4">
+                            <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">Deuda en Zoho con proveedores que no están en Kroma</p>
+                            <div className="space-y-2">
+                                {k.facturasSinProveedor.map(b => (
+                                    <Fila key={b.id} titulo={b.proveedor || '—'} sub={`${b.numero} · vence ${fmt(toDate(b.vencimiento))}`} derecha={money(b.balance)} />
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </Hoja>
             )}
 
@@ -362,27 +426,65 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
             )}
 
             {abierto === 'compras' && (
-                <Hoja titulo="Compras · histórico" subtitulo="Entradas de material con costo (Kroma)" onClose={cerrar}>
+                <Hoja titulo="Compras por hacer" subtitulo="Insumos en su mínimo o por debajo, en presentaciones completas" onClose={cerrar}>
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                        <div className="bg-white border border-slate-200 rounded-xl p-3">
+                            <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Producción y empaque</p>
+                            <p className="text-xl font-black text-slate-800 tabular-nums">{money(compra.totalProduccion)}</p>
+                        </div>
+                        <div className="bg-white border border-slate-200 rounded-xl p-3">
+                            <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Higiene y general</p>
+                            <p className="text-xl font-black text-slate-800 tabular-nums">{money(compra.totalOtros)}</p>
+                        </div>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mb-3 leading-relaxed">
+                        Cantidad = lo que falta para volver al mínimo, redondeado hacia arriba a envases completos
+                        (no se compra medio sobre ni medio saco), con un mínimo de uno. Valor al costo promedio actual del maestro.
+                    </p>
+                    {nComprar === 0 ? (
+                        <p className="text-sm text-slate-400 text-center py-6">Ningún insumo está en su mínimo o por debajo.</p>
+                    ) : SECCIONES_COMPRA.map(sec => {
+                        const its = compra.items.filter(i => i.seccion === sec.id);
+                        if (!its.length) return null;
+                        return (
+                            <div key={sec.id} className="mb-4">
+                                <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">{sec.label}</p>
+                                <div className="space-y-2">
+                                    {its.map(i => (
+                                        <Fila key={i.materialId}
+                                            titulo={i.nombre}
+                                            sub={`Hay ${i.stockPres != null ? `${num(Math.floor(i.stockPres * 100) / 100)} ${i.presentacion}` : `${num(i.stockBase)} ${i.unidadBase}`} · mínimo ${num(i.minimo)} ${i.minimoEnPres ? i.presentacion : i.unidadBase}${provPorId[i.proveedorId] ? ` · ${provPorId[i.proveedorId]}` : ''}`}
+                                            derecha={i.valor != null ? money(i.valor) : 'sin precio'}
+                                            subDerecha={i.presentaciones != null ? `comprar ${num(i.presentaciones)} ${i.presentacion}${i.presentaciones === 1 ? '' : 's'}` : 'falta el tamaño del envase'}
+                                            tono={i.agotado ? 'border-l-red-500' : 'border-l-amber-400'} />
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {(compra.sinMinimo.length > 0 || compra.sinInventario.length > 0) && (
+                        <div className="bg-slate-100 rounded-xl p-3 text-[11px] text-slate-600 leading-relaxed mb-4">
+                            {compra.sinMinimo.length > 0 && (
+                                <p><b>{compra.sinMinimo.length} insumo{compra.sinMinimo.length === 1 ? '' : 's'} sin mínimo definido</b> (no se puede saber si hay que comprarlos): {compra.sinMinimo.map(m => m.nombre).join(', ')}. Se define en Kroma → Insumos.</p>
+                            )}
+                            {compra.sinInventario.length > 0 && (
+                                <p className={compra.sinMinimo.length ? 'mt-1' : ''}><b>{compra.sinInventario.length} sin existencias cargadas:</b> {compra.sinInventario.map(m => m.nombre).join(', ')}.</p>
+                            )}
+                        </div>
+                    )}
                     <div className="bg-white border border-slate-200 rounded-xl p-4 mb-3">
                         <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Capital inmovilizado en insumos</p>
                         <p className="text-2xl font-black text-slate-800 tabular-nums">{money(capitalInsumos)}</p>
-                        <p className="text-[11px] text-slate-400 mt-1">Inventario de materiales valorado al costo promedio del maestro.</p>
+                        <p className="text-[11px] text-slate-400 mt-1">Stock de insumos valorado al costo promedio del maestro (la misma cifra que el inicio de gerencia de Kroma).</p>
                     </div>
+                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">Compras registradas por mes</p>
                     <PorMes datos={k.comprasPorMes} valorDe={(m) => m?.monto} etiqueta="de compras" />
-                    {(t.compras || []).length === 0 && (
-                        <p className="text-[11px] text-slate-500 mt-4 leading-relaxed bg-amber-50 border border-amber-200 rounded-xl p-3">
-                            <b>El libro de compras arranca ahora.</b> Hasta hoy, registrar una entrada de
-                            material actualizaba el stock y el costo promedio pero no dejaba rastro de la
-                            compra (fecha, proveedor, monto), así que no hay histórico hacia atrás. Desde
-                            este cambio, cada entrada con costo queda registrada y el gráfico se va llenando.
-                        </p>
-                    )}
                     {(t.compras || []).length > 0 && (
                         <div className="mt-4 space-y-2">
                             <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Últimas compras</p>
                             {[...(t.compras || [])]
                                 .sort((a, b) => (toDate(b.fecha) || 0) - (toDate(a.fecha) || 0))
-                                .slice(0, 15)
+                                .slice(0, 10)
                                 .map(c => (
                                     <Fila key={c.id} titulo={c.materialNombre || '—'}
                                         sub={`${fmt(toDate(c.fecha))} · ${provPorId[c.proveedorId] || c.proveedorNombre || 'proveedor no indicado'}`}
@@ -397,23 +499,80 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
             {dossier && <DossierComercialDoc onClose={() => setDossier(false)} />}
 
             {abierto === 'produccion' && (
-                <Hoja titulo="Producción · histórico" subtitulo="Lotes producidos por mes (Kroma)" onClose={cerrar}>
-                    <PorMes datos={k.prodPorMes} valorDe={(m) => m?.lotes} formato={(v) => `${num(v)} lotes`} etiqueta="de producción" />
-                    <div className="mt-4 space-y-2">
-                        <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Últimos lotes</p>
-                        {(t.produccion || []).length === 0
-                            ? <p className="text-sm text-slate-400 py-4">Sin producción visible. Si Kroma tiene datos, falta correr la migración de empresaId.</p>
-                            : [...(t.produccion || [])]
-                                .sort((a, b) => msProduccion(b) - msProduccion(a))
-                                .slice(0, 15)
-                                .map(p => (
+                <Hoja titulo="Producción" subtitulo="Lotes en proceso y costo de cada lote cerrado (Kroma)" onClose={cerrar}>
+                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">
+                        En proceso ahora ({num(k.lotesActivos.length)})
+                    </p>
+                    {k.lotesActivos.length === 0 ? (
+                        <p className="text-sm text-slate-400 py-3">Ningún lote en proceso.</p>
+                    ) : (
+                        <div className="space-y-2 mb-4">
+                            {k.lotesActivos.map(p => {
+                                const paso = (p.bloquesSnapshot || [])[p.bloqueActualIdx];
+                                return (
                                     <Fila key={p.id} titulo={p.productoNombre || '—'}
-                                        sub={`Lote ${p.lote || '—'} · ${fmt(fechaProduccion(p))} · ${p.operarioNombre || ''}`}
-                                        derecha={`${num(kgProducidos(p))} kg`}
-                                        subDerecha={`${num(p.litrosNetos)} L${p.estado !== 'completada' ? ' · en curso' : ''}`}
-                                        tono={p.estado !== 'completada' ? 'border-l-emerald-500' : 'border-l-slate-200'} />
-                                ))}
-                    </div>
+                                        sub={`Lote ${p.lote || '—'} · inició ${fmt(fechaProduccion(p))}${p.operarioNombre ? ` · ${p.operarioNombre}` : ''}`}
+                                        derecha={`${num(p.litrosNetos || p.litrosIngresados)} L`}
+                                        subDerecha={p.estado === 'en_hold' ? 'en espera' : paso?.tipo ? `paso: ${String(paso.tipo).replace(/_/g, ' ')}` : 'en curso'}
+                                        tono="border-l-emerald-500" />
+                                );
+                            })}
+                            <p className="text-[11px] text-slate-400">El rendimiento y el costo se calculan al cerrar el empaque, cuando se conocen los kilos.</p>
+                        </div>
+                    )}
+
+                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">Lotes cerrados: rendimiento y costo</p>
+                    {k.lotesCerrados.length === 0 ? (
+                        <p className="text-sm text-slate-400 py-3">Sin producción cerrada visible. Si Kroma tiene datos, falta correr la migración de empresaId.</p>
+                    ) : (
+                        <div className="space-y-2 mb-4">
+                            {k.lotesCerrados.slice(0, 12).map(({ log: p, costo: c }) => (
+                                <div key={p.id} className={`bg-white border border-slate-200 rounded-xl p-3 ${c.faltan.length ? 'border-l-4 border-l-amber-400' : ''}`}>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="font-bold text-slate-800 text-sm">{p.productoNombre || '—'}</p>
+                                            <p className="text-[11px] text-slate-400">Lote {p.lote || '—'} · {fmt(fechaProduccion(p))} · {num(c.litros)} L → {num(c.kg)} kg</p>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                            <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Costo por kg</p>
+                                            <p className="font-black text-slate-800 tabular-nums text-sm">{c.costoPorKg != null ? money(c.costoPorKg) : '—'}</p>
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 pt-2 border-t border-slate-100 grid grid-cols-2 gap-x-3 gap-y-1 text-[12px]">
+                                        <span className="text-slate-500">Rendimiento</span>
+                                        <span className="text-right font-bold tabular-nums text-slate-700">
+                                            {c.rendimientoLkg != null ? `${c.rendimientoLkg.toFixed(2)} L/kg` : '—'}
+                                        </span>
+                                        {c.presentaciones.map(pr => (
+                                            <React.Fragment key={pr.nombre}>
+                                                <span className="text-slate-500 truncate">Costo por unidad · {pr.nombre}</span>
+                                                <span className="text-right font-bold tabular-nums text-slate-700">
+                                                    {pr.costoUnidad != null ? money(pr.costoUnidad) : '—'}
+                                                    <span className="font-normal text-slate-400"> · {num(pr.unidades)} ud</span>
+                                                </span>
+                                            </React.Fragment>
+                                        ))}
+                                        {c.kgSinEnvasar > 0 && (
+                                            <>
+                                                <span className="text-slate-500">Sin envasar ({num(c.kgSinEnvasar)} kg)</span>
+                                                <span className="text-right font-bold tabular-nums text-slate-700">{c.costoBasePorKg != null ? `${money(c.costoBasePorKg)}/kg` : '—'}</span>
+                                            </>
+                                        )}
+                                    </div>
+                                    {c.faltan.length > 0 && (
+                                        <p className="text-[11px] text-amber-700 mt-1.5">Costo incompleto: falta {c.faltan.join(', ')}.</p>
+                                    )}
+                                </div>
+                            ))}
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                                Costo = leche de sus recepciones + insumos de la ficha técnica al precio del maestro + empaque de cada presentación,
+                                dividido entre los kilos del lote. Es el mismo cálculo de las pantallas de gerencia de Kroma. Mano de obra y costos fijos no están incluidos.
+                            </p>
+                        </div>
+                    )}
+
+                    <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">Lotes por mes</p>
+                    <PorMes datos={k.prodPorMes} valorDe={(m) => m?.lotes} formato={(v) => `${num(v)} lotes`} etiqueta="de producción" />
                 </Hoja>
             )}
         </div>

@@ -345,6 +345,14 @@ service cloud.firestore {
       allow read, write: if isAuthenticated() && (isAdmin() || isMerchandiser());
     }
 
+    // Cuentas por pagar (facturas de proveedor de Zoho). Las escribe SOLO la
+    // conciliación (Admin SDK). Sin esta regla Firestore niega la lectura por
+    // defecto y la tarjeta del Tablero quedaba vacía aunque hubiera datos.
+    match /cuentas_por_pagar/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     match /settings/{settingId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
@@ -532,7 +540,9 @@ service cloud.firestore {
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
     match /kroma_milk_reception/{id} {
-      allow read:   if isKromaAccess() && kromaSameEmpresaDoc();
+      // Gerencia/máster de GK leen (solo lectura) para el Tablero Gerencial:
+      // la recepción es la "compra" a los proveedores de leche.
+      allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);
       allow update: if isKromaAccess() && kromaSameEmpresaDoc();
       allow delete: if isKromaAdmin() && kromaSameEmpresaDoc();

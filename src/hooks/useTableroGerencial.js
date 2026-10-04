@@ -17,10 +17,12 @@
 // el mismo default que usan las reglas cuando el campo falta.
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { cuentaEnCartera, saldoAbierto } from '@/utils/facturaEstado.js';
-import { kgProducidos, fechaProduccion } from '@/Kroma/estadoPlanta.js';
+import { kgProducidos, fechaProduccion, esProduccionAbierta, faltaEmpacar } from '@/Kroma/estadoPlanta.js';
+import { indexById, indexPackagingAssignments, buildMilkPriceLookup } from '@/Kroma/costeoLote.js';
+import { costeoLote, listaDeCompras, capitalEnInsumos, relacionProveedores } from '@/utils/tableroPlanta.js';
 import { facturacionPorPdv, pdvActivo, ciudadDePdv, agruparPdvPorCliente, DESDE_VENTAS } from '@/utils/facturacionPdv.js';
 
 const EMPRESA_GK = 'lacteoca';
@@ -63,7 +65,7 @@ export function useTableroGerencial() {
                 // datos sin migrar) NO debe dejar en blanco el lado comercial.
                 const vacio = { docs: [] };
                 const kq = (col) => getDocs(query(collection(db, col), where('empresaId', '==', EMPRESA_GK))).catch(() => vacio);
-                const [fact, cli, dev, pagar, prov, compras, prod, invMat, posSnap] = await Promise.all([
+                const [fact, cli, dev, pagar, prov, compras, prod, invMat, posSnap, mats, leche, cfg] = await Promise.all([
                     getDocs(collection(db, 'facturas_vendedor')).catch(() => vacio),
                     getDocs(collection(db, 'clientes_zoho')).catch(() => vacio),
                     getDocs(collection(db, 'devoluciones')).catch(() => vacio),
@@ -76,6 +78,13 @@ export function useTableroGerencial() {
                     // significa frecuencia de visita 0, no borrado, y el tablero
                     // los muestra por separado.
                     getDocs(collection(db, 'pos')).catch(() => vacio),
+                    // Maestro de materiales: precios para el costo de cada lote,
+                    // la lista de compras y el capital en insumos.
+                    kq('kroma_materials'),
+                    // Recepciones de leche: la "compra" de los proveedores de leche.
+                    kq('kroma_milk_reception'),
+                    // Estado de la última lectura de cuentas por pagar en Zoho.
+                    getDoc(doc(db, 'settings', 'appConfig')).catch(() => null),
                 ]);
                 if (!alive) return;
                 const m = (s) => (s.docs || []).map(d => ({ id: d.id, ...d.data() }));
@@ -89,6 +98,9 @@ export function useTableroGerencial() {
                     produccion: m(prod).filter(p => p.active !== false),
                     invMateriales: m(invMat).filter(i => i.active !== false),
                     pos: m(posSnap).filter(p => p.type !== 'deposito'),
+                    materiales: m(mats).filter(x => x.active !== false),
+                    recepcionesLeche: m(leche),
+                    appConfig: cfg?.exists?.() ? cfg.data() : {},
                 });
             } catch (e) {
                 console.error(e);
@@ -166,6 +178,35 @@ export function useTableroGerencial() {
             prodPorMes[k].kg     += kgProducidos(p) || 0;
         });
 
+        // ── Planta: lotes activos con su costo, compras y proveedores ──
+        const materialsById = indexById(data.materiales || []);
+        const ctxCosto = {
+            materialsById,
+            packagingByKey: indexPackagingAssignments(data.materiales || []),
+            milkLookup: buildMilkPriceLookup(data.materiales || []),
+        };
+        const lotesActivos = data.produccion.filter(esProduccionAbierta)
+            .sort((a, b) => (fechaProduccion(b) || 0) - (fechaProduccion(a) || 0));
+        const lotesCerrados = data.produccion.filter(p => p.estado === 'completada')
+            .sort((a, b) => (fechaProduccion(b) || 0) - (fechaProduccion(a) || 0))
+            .map(p => ({ log: p, costo: costeoLote(p, ctxCosto) }));
+        const compra = listaDeCompras(data.materiales, data.invMateriales);
+        const relProv = relacionProveedores(data.proveedores, data.compras, data.recepcionesLeche, pagarAbiertas);
+        const estadoPorPagar = data.appConfig?.zohoPorPagarEstado || null;
+        const planta = {
+            lotesActivos,
+            litrosEnCurso: lotesActivos.reduce((s, p) => s + (Number(p.litrosNetos) || Number(p.litrosIngresados) || 0), 0),
+            lotesSinEnvasar: data.produccion.filter(faltaEmpacar).length,
+            lotesCerrados,
+            compra,
+            capitalInsumos: capitalEnInsumos(materialsById, data.invMateriales),
+            proveedoresRel: relProv.filas,
+            facturasSinProveedor: relProv.facturasSinProveedor,
+            provConCompras: relProv.filas.filter(f => f.nMovimientos > 0).length,
+            provConDeuda: relProv.filas.filter(f => f.deuda > 0.005).length,
+            estadoPorPagar,
+        };
+
         // ── Puntos de venta, por PESO de facturación ──
         // Desde 2026: es el corte que pidió el socio para las ventas, y la lista
         // se ordena por lo que cada PDV facturó en ese período.
@@ -196,9 +237,9 @@ export function useTableroGerencial() {
             ventasMes: ventasPorMes[mEste]?.monto || 0, ventasMesN: ventasPorMes[mEste]?.n || 0, ventasPorMes,
             devMes: devPorMes[mEste]?.unidades || 0, devMesMonto: devPorMes[mEste]?.monto || 0, devPorMes,
             comprasMes: comprasPorMes[mEste]?.monto || 0, comprasPorMes,
-            capitalInsumos: 0,   // se calcula abajo (necesita el costo del material)
             prodMes: prodPorMes[mEste] || { lotes: 0, litros: 0, kg: 0 }, prodPorMes,
             mesActual: mEste,
+            ...planta,
         };
     }, [data]);
 
