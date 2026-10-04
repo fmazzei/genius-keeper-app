@@ -61,10 +61,14 @@ jobs:
         env:
           SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           ZOHO_SECRET: ${{ secrets.ZOHO_SECRET }}
+          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
         run: |
           printf '%s' "$SA_JSON" > /tmp/firebase-sa.json
           printf 'ZOHO_SECRET=%s\n' "$ZOHO_SECRET" > functions/.env.geniuskeeper-36553
+          # Clave del conector MCP (claude.ai). Si el secreto no existe, la
+          # función queda desplegada pero responde 401 a todo.
+          if [ -n "$MCP_API_KEY" ]; then printf 'MCP_API_KEY=%s\n' "$MCP_API_KEY" >> functions/.env.geniuskeeper-36553; fi
           npm install -g firebase-tools
           ok=0
           for i in 1 2 3; do
