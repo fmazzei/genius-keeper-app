@@ -315,15 +315,18 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                     {ppDescuadre && (
                                         <div className="mt-3 bg-white rounded-lg border border-amber-200 p-3">
                                             <p className="font-bold">Pero las fichas de proveedor en Zoho suman {money(saldoProv.total)} por pagar</p>
-                                            {saldoProv.creditos > 0.005 && (
-                                                <p className="text-xs">Con créditos de proveedor sin aplicar por {money(saldoProv.creditos)}.</p>
-                                            )}
+                                            <p className="text-xs mt-1">
+                                                Es lo que la FICHA de cada proveedor dice en Zoho (saldos iniciales incluidos), no la lista de facturas.
+                                                {saldoProv.creditos > 0.005 && <> "A favor" son pagos adelantados o notas de crédito del proveedor que en Zoho no se han aplicado a ninguna factura ({money(saldoProv.creditos)} en total): lo que de verdad se debe es el neto.</>}
+                                            </p>
                                             <div className="mt-2 divide-y divide-amber-100">
                                                 {(saldoProv.proveedores || []).map(v => (
                                                     <div key={v.vendorId || v.nombre} className="flex justify-between gap-3 py-1 text-xs">
                                                         <span className="truncate">{v.nombre}</span>
-                                                        <span className="tabular-nums font-semibold">
-                                                            {money(v.porPagar)}{v.creditos > 0.005 ? ` · crédito ${money(v.creditos)}` : ''}
+                                                        <span className="tabular-nums font-semibold text-right">
+                                                            {v.creditos > 0.005
+                                                                ? <>neto {money(Math.max(0, v.porPagar - v.creditos))}<span className="block font-normal text-[10px]">{money(v.porPagar)} − {money(v.creditos)} a favor</span></>
+                                                                : money(v.porPagar)}
                                                         </span>
                                                     </div>
                                                 ))}

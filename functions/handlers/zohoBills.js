@@ -52,11 +52,11 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
         const msg = e?.response?.data?.message || e.message;
         // 401 = el token no tiene el scope de bills. Es lo esperado hasta que se
         // regenere el Self Client; se declara, no se trata como fallo genérico.
-        if (status === 401 || /scope|unauthor/i.test(String(msg))) {
+        if (status === 401 || e?.zohoCode === 57 || /scope|unauthor|not authorized/i.test(String(msg))) {
             return {
                 autorizado: false,
-                motivo: 'El token de Zoho no tiene permiso para leer facturas de proveedor. '
-                      + 'Regenera el Self Client agregando el scope ZohoBooks.bills.READ.',
+                motivo: `Zoho no deja leer las facturas de proveedor (${String(msg).slice(0, 160)}). `
+                      + 'Revisa que el código se haya generado con ZohoBooks.bills.READ y que el usuario de Zoho que lo generó tenga acceso a Compras.',
             };
         }
         return { autorizado: false, motivo: `Zoho: ${msg}` };

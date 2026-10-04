@@ -112,8 +112,19 @@ async function listBillsPage({ accessToken, organizationId, dataCenter, page, pe
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
         timeout: 30000,
     });
+    // Zoho puede responder 200 con un código de error en el cuerpo (p.ej. sin
+    // permiso) y sin la lista: eso NO es "cero facturas", es un error, y se
+    // lanza con el mensaje de Zoho para que se vea en pantalla.
+    if (res.data && res.data.code != null && Number(res.data.code) !== 0) {
+        const err = new Error(`Zoho (código ${res.data.code}): ${res.data.message || 'error sin mensaje'}`);
+        err.zohoCode = res.data.code;
+        throw err;
+    }
+    if (!Array.isArray(res.data?.bills)) {
+        throw new Error(`Zoho respondió sin lista de facturas de proveedor (claves: ${Object.keys(res.data || {}).join(', ') || 'ninguna'})`);
+    }
     return {
-        bills:   Array.isArray(res.data?.bills) ? res.data.bills : [],
+        bills:   res.data.bills,
         hasMore: res.data?.page_context?.has_more_page === true,
     };
 }
