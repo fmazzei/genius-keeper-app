@@ -189,6 +189,9 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
     // fichas de proveedor sí dicen que se debe: no es "nada pendiente".
     const ppDescuadre = k.nPorPagar === 0 && estadoPP?.autorizado && (saldoProv?.total || 0) > 0.005;
     const ppFichas = k.fuentePorPagar === 'fichas';
+    // Facturas vs. fichas de proveedor: si no cuadran, hay deuda registrada por
+    // asiento manual en vez de factura. Solo aplica cuando sí hay facturas.
+    const ppCruce = k.nPorPagar > 0 && k.crucePorPagar && Math.abs(k.crucePorPagar.diferencia || 0) > 0.005 ? k.crucePorPagar : null;
 
     const provPorId = {};
     (t.proveedores || []).forEach(p => { provPorId[p.id] = p.nombreComercial || p.nombre || p.nombreFiscal || '—'; });
@@ -231,7 +234,8 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                         : ppFichas ? `${num(k.nPorPagarFichas)} proveedor${k.nPorPagarFichas === 1 ? '' : 'es'} con saldo`
                         : estadoPP?.autorizado ? 'Nada pendiente con proveedores' : 'Sin datos de Zoho todavía'}
                     nota={k.nPorPagar > 0
-                        ? (k.pagarVencido > 0 ? `${money0(k.pagarVencido)} ya vencido` : 'Nada vencido')
+                        ? (ppCruce ? `⚠ No cuadra con las fichas de Zoho por ${money0(Math.abs(ppCruce.diferencia))}`
+                            : k.pagarVencido > 0 ? `${money0(k.pagarVencido)} ya vencido` : 'Nada vencido')
                         : ppFichas ? 'Saldo de Zoho (= balanza) · aún sin facturas de proveedor'
                         : estadoPP?.autorizado ? 'Según la última lectura de Zoho'
                         : 'Zoho no autoriza leer facturas de proveedor'}
@@ -358,7 +362,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                         estos permisos y pégalo en Configuraciones → Integraciones → Zoho:
                                     </p>
                                     <code className="block bg-white rounded px-2 py-1.5 mt-2 text-[11px] break-all">
-                                        ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ
+                                        ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ,ZohoBooks.accountants.READ
                                     </code>
                                     <p className="mt-2">La siguiente conciliación (cada hora de 7:00 a 20:00) la llena sola.</p>
                                 </>
@@ -378,6 +382,26 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                     </div>
                                 )}
                             </div>
+                            {ppCruce ? (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-xs text-amber-900 leading-relaxed">
+                                    <p className="font-bold text-sm flex items-center gap-2"><AlertTriangle size={14} />
+                                        Las facturas ({money(ppCruce.totalFacturas)}) no cuadran con las fichas de proveedor ({money(ppCruce.totalFichas)})
+                                    </p>
+                                    <p className="mt-1">Diferencia {money(ppCruce.diferencia)}. Suele ser deuda registrada en Zoho con un asiento manual en vez de una factura de proveedor.</p>
+                                    <div className="mt-2 divide-y divide-amber-100">
+                                        {(ppCruce.porProveedor || []).map(f => (
+                                            <div key={f.nombre} className="flex justify-between gap-3 py-1">
+                                                <span className="truncate">{f.nombre}</span>
+                                                <span className="tabular-nums text-right">facturas {money(f.facturas)} · ficha {money(f.ficha)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : k.crucePorPagar ? (
+                                <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-2 mb-3">
+                                    Cuadra con las fichas de proveedor de Zoho: diferencia $0,00.
+                                </p>
+                            ) : null}
                             <Lista
                                 items={[...k.pagarAbiertas].sort((a, b) => (toDate(a.vencimiento) || 0) - (toDate(b.vencimiento) || 0))}
                                 clave={(b) => `${b.numero} ${b.proveedor}`}
@@ -387,13 +411,25 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                     const vencida = v && v < new Date();
                                     return (
                                         <Fila key={b.id} titulo={b.proveedor || '—'}
-                                            sub={`${b.numero} · vence ${fmt(v)}`}
+                                            sub={`${b.numero} · ${fmt(toDate(b.fecha))} · vence ${fmt(v)}`}
                                             derecha={money(b.balance)}
                                             subDerecha={vencida ? `vencida ${Math.floor((new Date() - v) / 86400000)} d` : 'vigente'}
                                             tono={vencida ? 'border-l-red-500' : 'border-l-slate-200'} />
                                     );
                                 }} />
                         </>
+                    )}
+                    {k.nomina && (
+                        <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600">
+                            <p className="font-bold text-slate-700">Nómina por pagar (aparte, no es de proveedores)</p>
+                            {k.nomina.autorizado && k.nomina.encontrada && k.nomina.saldo != null ? (
+                                <p className="mt-1">{k.nomina.nombre || 'Sueldos y salarios por pagar'} ({k.nomina.codigo}): <b className="tabular-nums">{money(k.nomina.saldo)}</b></p>
+                            ) : k.nomina.autorizado ? (
+                                <p className="mt-1">No se encontró la cuenta {k.nomina.codigo || '2.1.1.04.01'} en el plan de cuentas de Zoho.</p>
+                            ) : (
+                                <p className="mt-1">Zoho no deja leer el saldo de la cuenta de nómina: hace falta el permiso <code>ZohoBooks.accountants.READ</code> en el Self Client. {k.nomina.motivo ? <i>({k.nomina.motivo})</i> : null}</p>
+                            )}
+                        </div>
                     )}
                 </Hoja>
             )}

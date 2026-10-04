@@ -139,11 +139,46 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
     }
 
     const saldoProveedores = proveedores ? proveedores.reduce((s, v) => s + v.porPagar, 0) : null;
+
+    // CONTROL CRUZADO: lo abierto en facturas de proveedor, por proveedor,
+    // contra el neto de su ficha (por pagar − créditos sin aplicar). Si no
+    // cuadran, alguien registró deuda por un asiento manual en vez de factura.
+    let cruce = null;
+    if (proveedores) {
+        const porVendor = new Map();
+        const llave = (id, nombre) => id || `n:${String(nombre || '').trim().toLowerCase()}`;
+        bills.forEach(b => {
+            const estado = String(b.status || '');
+            if (['paid', 'void', 'draft'].includes(estado)) return;
+            const saldo = b.balance != null ? Number(b.balance) : 0;
+            if (!(saldo > 0.005)) return;
+            const k = llave(b.vendor_id != null ? String(b.vendor_id) : null, b.vendor_name);
+            const e = porVendor.get(k) || { nombre: b.vendor_name || '—', facturas: 0, ficha: 0 };
+            e.facturas += saldo; porVendor.set(k, e);
+        });
+        proveedores.forEach(v => {
+            const k = llave(v.vendorId, v.nombre);
+            const e = porVendor.get(k) || { nombre: v.nombre, facturas: 0, ficha: 0 };
+            e.ficha += Math.max(0, v.porPagar - v.creditos); porVendor.set(k, e);
+        });
+        const filas = [...porVendor.values()];
+        const r2 = (n) => Math.round(n * 100) / 100;
+        const totalFacturas = r2(filas.reduce((s, f) => s + f.facturas, 0));
+        const totalFichas = r2(filas.reduce((s, f) => s + f.ficha, 0));
+        cruce = {
+            totalFacturas, totalFichas, diferencia: r2(totalFichas - totalFacturas),
+            porProveedor: filas
+                .map(f => ({ nombre: f.nombre, facturas: r2(f.facturas), ficha: r2(f.ficha), dif: r2(f.ficha - f.facturas) }))
+                .filter(f => Math.abs(f.dif) > 0.005)
+                .slice(0, 40),
+        };
+    }
     await db.doc('settings/appConfig').set({
         zohoPorPagar: {
             total: porPagar, facturas: nAbiertas, vencido: vencidas,
             actualizado: admin.firestore.FieldValue.serverTimestamp(),
         },
+        zohoCrucePorPagar: cruce ? { ...cruce, at: admin.firestore.FieldValue.serverTimestamp() } : null,
         zohoSaldoProveedores: proveedores ? {
             total: saldoProveedores,
             creditos: proveedores.reduce((s, v) => s + v.creditos, 0),

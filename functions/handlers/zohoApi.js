@@ -331,4 +331,33 @@ async function listVendorBalances({ accessToken, organizationId, dataCenter, max
         .filter(v => v.porPagar > 0.005 || v.creditos > 0.005);
 }
 
-module.exports = { listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };
+/**
+ * Saldo de UNA cuenta del plan de cuentas, buscada por código (p.ej. la nómina
+ * por pagar 2.1.1.04.01). GET /chartofaccounts?showbalance=true. Probablemente
+ * requiere ZohoBooks.accountants.READ: si Zoho lo rechaza, se lanza con su
+ * mensaje y quien llama lo declara en pantalla.
+ * @returns {Promise<{encontrada:boolean, nombre?:string, codigo?:string, saldo?:number}>}
+ */
+async function getAccountBalanceByCode({ accessToken, organizationId, dataCenter, codigo }) {
+    const { api } = dcUrls(dataCenter);
+    for (let page = 1; page <= 10; page++) {
+        const res = await axios.get(`${api}/books/v3/chartofaccounts`, {
+            params: { organization_id: organizationId, showbalance: true, page, per_page: 200 },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+            timeout: 30000,
+        });
+        if (res.data && res.data.code != null && Number(res.data.code) !== 0) {
+            throw new Error(`Zoho (código ${res.data.code}): ${res.data.message || 'error sin mensaje'}`);
+        }
+        const cuentas = Array.isArray(res.data?.chartofaccounts) ? res.data.chartofaccounts : [];
+        const c = cuentas.find(a => String(a.account_code || '').trim() === codigo);
+        if (c) {
+            const saldo = Number(c.current_balance ?? c.balance ?? c.closing_balance);
+            return { encontrada: true, nombre: c.account_name || '', codigo, saldo: Number.isFinite(saldo) ? saldo : null };
+        }
+        if (res.data?.page_context?.has_more_page !== true || cuentas.length === 0) break;
+    }
+    return { encontrada: false, codigo };
+}
+
+module.exports = { getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };

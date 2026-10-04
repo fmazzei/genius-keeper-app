@@ -222,6 +222,8 @@ export function useTableroGerencial() {
             // Control cruzado: saldo que cada ficha de proveedor de Zoho dice que
             // se le debe. Se muestra cuando el listado de bills no cuadra.
             saldoProveedores: data.appConfig?.zohoSaldoProveedores || null,
+            crucePorPagar: data.appConfig?.zohoCrucePorPagar || null,
+            nomina: data.appConfig?.zohoNomina || null,
         };
 
         // ── Puntos de venta, por PESO de facturación ──
