@@ -17,7 +17,7 @@
 // el código y se alcanza desde "Ventas / histórico" → "Indicadores de campo",
 // para no perder la auditoría de KPIs de 2026-07.
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Wallet, Receipt, Users, Truck, TrendingUp, RotateCcw, ShoppingCart, Factory, FileText,
@@ -38,7 +38,10 @@ const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 const fmt    = (d) => d ? d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
 
 // ── Tarjeta ──────────────────────────────────────────────────────────────────
-const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick, disabled }) => {
+const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick, disabled, cargando = false }) => {
+    // Sin datos todavía: la tarjeta ya muestra QUÉ es (ícono y título) y deja
+    // la cifra en gris parpadeando; las demás no esperan por ella.
+    if (cargando) { disabled = true; tono = 'slate'; }
     const TONO = {
         slate:   'border-slate-200',
         emerald: 'border-emerald-200',
@@ -55,7 +58,7 @@ const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick
             {...(onClick && !disabled ? { type: 'button', onClick } : {})}
             className={`relative bg-white border ${TONO} rounded-2xl p-3.5 sm:p-4 pb-7 sm:pb-8 text-left w-full h-full min-w-0 overflow-hidden shadow-sm flex flex-col
                 ${onClick && !disabled ? 'hover:shadow-md hover:border-slate-300 transition-all' : ''}
-                ${disabled ? 'opacity-70' : ''}`}
+                ${disabled && !cargando ? 'opacity-70' : ''}`}
         >
             {/* El título va en su propia línea y a todo el ancho. Antes compartía
                 fila con el ícono y el número y llevaba `truncate`: en dos
@@ -67,9 +70,19 @@ const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick
                 <span className="text-[10px] font-extrabold text-slate-300 shrink-0">{n}</span>
             </div>
             <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mt-2 leading-tight">{titulo}</p>
-            <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums mt-1 truncate">{valor}</p>
-            {sub  && <p className="text-xs text-slate-500 mt-0.5 leading-snug">{sub}</p>}
-            {nota && <p className="text-[11px] text-slate-400 mt-1 leading-snug pr-4">{nota}</p>}
+            {cargando ? (
+                <div className="mt-2 space-y-2 animate-pulse" aria-label="Cargando">
+                    <div className="h-6 w-24 rounded-md bg-slate-200" />
+                    <div className="h-3 w-full rounded bg-slate-100" />
+                    <div className="h-3 w-2/3 rounded bg-slate-100" />
+                </div>
+            ) : (
+                <>
+                    <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums mt-1 truncate">{valor}</p>
+                    {sub  && <p className="text-xs text-slate-500 mt-0.5 leading-snug">{sub}</p>}
+                    {nota && <p className="text-[11px] text-slate-400 mt-1 leading-snug pr-4">{nota}</p>}
+                </>
+            )}
             {onClick && !disabled && (
                 <span className="absolute bottom-3 right-3 text-slate-300"><ChevronRight size={16} /></span>
             )}
@@ -165,30 +178,20 @@ const Fila = ({ titulo, sub, derecha, subDerecha, tono }) => (
 // `onIrComercial(tab)`: las tarjetas 03 (clientes) y 05 (ventas) llevan a la
 // sección Comercial en vez de repetir aquí sus listas (decisión del dueño,
 // 2026-09: una información no debe vivir repetida en dos secciones).
-export default function TableroGerencial({ onVerIndicadores = null, onIrComercial = null }) {
+export default function TableroGerencial({ onVerIndicadores = null, onIrComercial = null, refreshKey = 0 }) {
     const t = useTableroGerencial();
+    // "Tirar para actualizar" relee los datos SIN desmontar el tablero: antes
+    // cambiaba la `key`, se perdían los números en pantalla (vuelta a los
+    // recuadros vacíos) y se cerraba cualquier hoja abierta.
+    const primeraVez = useRef(true);
+    useEffect(() => {
+        if (primeraVez.current) { primeraVez.current = false; return; }
+        t.refetch();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refreshKey]);
     const [abierto, setAbierto] = useState(null);   // clave de la hoja abierta
     const [dossier, setDossier] = useState(false);
     const k = t.kpis;
-
-    if (t.loading && !k) {
-        return (
-            <div className="p-4 md:p-6 space-y-3">
-                <p className="text-sm text-slate-500 font-semibold">Cargando el tablero…</p>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                    {Array.from({ length: 8 }).map((_, i) => (
-                        <div key={i} className="h-36 rounded-2xl bg-white border border-slate-200 animate-pulse" />
-                    ))}
-                </div>
-            </div>
-        );
-    }
-    if (!k) return (
-        <div className="p-6 text-center space-y-3">
-            <p className="text-sm text-slate-500">{t.error || 'Sin datos.'}</p>
-            <button type="button" onClick={t.refetch} className="text-sm font-bold text-white bg-slate-800 rounded-xl px-4 py-2">Reintentar</button>
-        </div>
-    );
 
     // Capital inmovilizado en insumos: el mismo cálculo que el inicio de
     // gerencia de Kroma (stock × precio del maestro). Antes esta cifra salía
@@ -234,25 +237,30 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                 </div>
             </div>
 
-            {t.incompleto?.length > 0 && (
+            {/* Qué sigue en camino: si una tarjeta tarda, se dice cuál dato es,
+                en vez de dejar recuadros vacíos sin explicación. */}
+            {t.loading && t.enCamino.length > 0 && (
+                <p className="text-[11px] text-slate-400 leading-snug">
+                    Actualizando… falta{t.enCamino.length === 1 ? '' : 'n'}: {t.enCamino.join(', ')}
+                </p>
+            )}
+            {!t.loading && t.incompleto?.length > 0 && (
                 <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
                     <p className="text-xs text-amber-800 leading-snug">
-                        {t.loading ? 'Actualizando…' : 'Algunos datos no llegaron a tiempo (red lenta). Se vuelven a pedir solos.'}
+                        No llegó a tiempo: <b>{t.incompleto.join(', ')}</b>. Se vuelve a pedir solo.
                     </p>
-                    {!t.loading && (
-                        <button type="button" onClick={t.refetch} className="shrink-0 text-xs font-bold text-amber-900 bg-white border border-amber-300 rounded-lg px-3 py-1.5">Reintentar</button>
-                    )}
+                    <button type="button" onClick={t.refetch} className="shrink-0 text-xs font-bold text-amber-900 bg-white border border-amber-300 rounded-lg px-3 py-1.5">Reintentar</button>
                 </div>
             )}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <Card n="01" icon={Wallet} titulo="Cuentas por cobrar" tono={k.cobrarVencido > 0 ? 'red' : 'emerald'}
+                <Card n="01" cargando={t.esperando('facturas')} icon={Wallet} titulo="Cuentas por cobrar" tono={k.cobrarVencido > 0 ? 'red' : 'emerald'}
                     valor={money0(k.porCobrar)}
                     sub={`${num(k.nPorCobrar)} factura${k.nPorCobrar === 1 ? '' : 's'} abiertas`}
                     nota={k.cobrarVencido > 0 ? `${money0(k.cobrarVencido)} ya vencido` : 'Nada vencido'}
                     onClick={() => setAbierto('cobrar')} />
 
-                <Card n="02" icon={Receipt} titulo="Cuentas por pagar" tono={k.pagarVencido > 0 ? 'red' : ppFichas ? 'amber' : 'slate'}
+                <Card n="02" cargando={t.esperando('porPagar', 'appConfig')} icon={Receipt} titulo="Cuentas por pagar" tono={k.pagarVencido > 0 ? 'red' : ppFichas ? 'amber' : 'slate'}
                     valor={k.nPorPagar > 0 ? money0(k.porPagar) : ppFichas ? money0(k.porPagarFichas) : '—'}
                     sub={k.nPorPagar > 0 ? `${num(k.nPorPagar)} factura${k.nPorPagar === 1 ? '' : 's'} de proveedor`
                         : ppFichas ? `${num(k.nPorPagarFichas)} proveedor${k.nPorPagarFichas === 1 ? '' : 'es'} con saldo`
@@ -268,13 +276,13 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                 {/* El número grande son los PUNTOS DE VENTA ACTIVOS: es lo que
                     el socio quiere ver de un vistazo. La hoja los abre por
                     razón social, cada cliente con sus puntos adentro. */}
-                <Card n="03" icon={Users} titulo="Lista de clientes" tono="emerald"
+                <Card n="03" cargando={t.esperando('pos', 'clientes')} icon={Users} titulo="Lista de clientes" tono="emerald"
                     valor={num(k.nPdvActivos)}
                     sub={`puntos de venta activos · ${num(k.clientesConPdv.length)} cliente${k.clientesConPdv.length === 1 ? '' : 's'}`}
                     nota={`${num(k.nPdvInactivos)} inactivo${k.nPdvInactivos === 1 ? '' : 's'} · ${num(k.ciudades.length)} ciudad${k.ciudades.length === 1 ? '' : 'es'}`}
                     disabled={!onIrComercial} onClick={() => onIrComercial?.('clientes')} />
 
-                <Card n="04" icon={Truck} titulo="Lista de proveedores" valor={num(k.nProveedores)}
+                <Card n="04" cargando={t.esperando('proveedores', 'compras', 'recepcionesLeche', 'appConfig')} icon={Truck} titulo="Lista de proveedores" valor={num(k.nProveedores)}
                     tono={k.provConDeuda > 0 ? 'amber' : 'slate'}
                     sub={`${num(k.provConCompras)} con compras registradas`}
                     nota={k.nProveedores === 0 ? 'Sin acceso o sin datos migrados'
@@ -283,20 +291,20 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                         : 'Deuda: sin datos de Zoho'}
                     onClick={() => setAbierto('proveedores')} />
 
-                <Card n="05" icon={TrendingUp} titulo="Ventas / histórico" tono="emerald"
+                <Card n="05" cargando={t.esperando('facturas')} icon={TrendingUp} titulo="Ventas / histórico" tono="emerald"
                     valor={money0(k.ventasMes)}
                     sub={`${num(k.ventasMesN)} factura${k.ventasMesN === 1 ? '' : 's'} este mes`}
                     nota="Meta, histórico y ventas por cliente →"
                     disabled={!onIrComercial} onClick={() => onIrComercial?.('meta')} />
 
-                <Card n="06" icon={RotateCcw} titulo="Devoluciones / histórico"
+                <Card n="06" cargando={t.esperando('devoluciones')} icon={RotateCcw} titulo="Devoluciones / histórico"
                     tono={k.devMes > 0 ? 'amber' : 'slate'}
                     valor={`${num(k.devMes)} uds`}
                     sub={k.devMesMonto > 0 ? `${money0(k.devMesMonto)} en notas de crédito` : 'Sin notas de crédito'}
                     nota="Toca para el histórico de 12 meses"
                     onClick={() => setAbierto('devoluciones')} />
 
-                <Card n="07" icon={ShoppingCart} titulo="Compras por hacer"
+                <Card n="07" cargando={t.esperando('compras', 'invMateriales', 'materiales')} icon={ShoppingCart} titulo="Compras por hacer"
                     tono={compra.items.some(i => i.agotado) ? 'red' : nComprar > 0 ? 'amber' : 'slate'}
                     valor={nComprar > 0 ? money0(compra.totalProduccion) : '—'}
                     sub={nComprar > 0
@@ -305,7 +313,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                     nota={`${money0(capitalInsumos)} inmovilizado en insumos`}
                     onClick={() => setAbierto('compras')} />
 
-                <Card n="08" icon={Factory} titulo="Producción"
+                <Card n="08" cargando={t.esperando('produccion', 'materiales')} icon={Factory} titulo="Producción"
                     tono={k.lotesActivos.length > 0 ? 'emerald' : 'slate'}
                     valor={`${num(k.lotesActivos.length)} activo${k.lotesActivos.length === 1 ? '' : 's'}`}
                     sub={k.lotesActivos.length > 0 ? `${num(k.litrosEnCurso)} L en proceso` : 'Ningún lote en proceso ahora'}

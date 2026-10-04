@@ -209,7 +209,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                             TABLERO de 8 bloques. Los 15 KPIs de campo viven un toque
                             más adentro, en "Indicadores de campo". */}
                         {vistaDash === 'tablero'
-                            ? <TableroGerencial key={refreshKey} onVerIndicadores={() => setVistaDash('kpis')} onIrComercial={modules.rendimientoComercial !== false ? irAComercial : null} />
+                            ? <TableroGerencial refreshKey={refreshKey} onVerIndicadores={() => setVistaDash('kpis')} onIrComercial={modules.rendimientoComercial !== false ? irAComercial : null} />
                             : (
                                 <>
                                     <div className="px-4 md:px-6 pt-4">

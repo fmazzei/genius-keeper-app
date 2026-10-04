@@ -25,8 +25,13 @@ export default function PullToRefresh({ onRefresh, children, className = '' }) {
 
     const onTouchStart = useCallback((e) => {
         if (cargando) return;
-        // El gesto solo existe si ya estamos arriba del todo; si no, es scroll normal.
         const cont = ref.current;
+        // Las hojas de detalle se pintan con un portal (fuera de este div en el
+        // DOM), pero React igual les hace subir los eventos táctiles hasta aquí.
+        // Sin esta guarda, un deslizamiento fuerte hacia arriba DENTRO de una
+        // hoja disparaba la actualización del tablero de abajo y la cerraba.
+        if (!cont || !cont.contains(e.target)) { inicio.current = null; return; }
+        // El gesto solo existe si ya estamos arriba del todo; si no, es scroll normal.
         const top = cont ? cont.scrollTop : 0;
         inicio.current = top <= 0 ? e.touches[0].clientY : null;
     }, [cargando]);
