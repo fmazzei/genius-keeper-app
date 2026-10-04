@@ -15,7 +15,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
-const { getAccessToken, listAllInvoices, listBillsPage, getAccountBalanceByCode, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
+const { getAccessToken, listAllInvoices, listBillsPage, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
 const { upsertFacturaFromZoho, resolveVendedorFromPreload, esClienteOficina, extraerRif, stripSucursal } = require('./facturaSync');
 const { revertirAcumulados } = require('./facturaCommissionOps');
 const { upsertClientesRegistry, loadClienteMap, sincronizarClientesDesdeContactos } = require('./clientesRegistry');
@@ -849,22 +849,17 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
                 listadas: res.porPagar?.total ?? null,
                 saldoProveedores: res.porPagar?.saldoProveedores ?? null,
                 diag: res.porPagar?.diag || null,
+                porCategoria: res.porPagar?.porCategoria || null,
                 at: admin.firestore.FieldValue.serverTimestamp(),
             } }, { merge: true });
         } catch (e) { /* diagnóstico: no tumba la conciliación */ }
-        // Nómina por pagar: NO son facturas de proveedor, vive en su cuenta
-        // contable (2.1.1.04.01). Se lee aparte y se muestra aparte, nunca
-        // sumada a proveedores. Si el token no tiene permiso, se dice.
+        // La nómina ya NO vive en una cuenta contable aparte: cada quincena es
+        // una factura de proveedor a nombre del empleado (categoría "Personal -
+        // nómina" en su ficha) y entra por la vía de arriba. Se limpia el dato
+        // viejo para que la pantalla no muestre una cifra que ya no aplica.
         try {
-            let nomina;
-            try {
-                const r = await getAccountBalanceByCode({ accessToken, organizationId, dataCenter: creds.dataCenter, codigo: '2.1.1.04.01' });
-                nomina = { autorizado: true, ...r };
-            } catch (e) {
-                nomina = { autorizado: false, motivo: String(e?.response?.data?.message || e.message).slice(0, 200) };
-            }
-            await admin.firestore().doc('settings/appConfig').set({ zohoNomina: { ...nomina, at: admin.firestore.FieldValue.serverTimestamp() } }, { merge: true });
-        } catch (e) { /* diagnóstico: no tumba la conciliación */ }
+            await admin.firestore().doc('settings/appConfig').set({ zohoNomina: admin.firestore.FieldValue.delete() }, { merge: true });
+        } catch (e) { /* diagnóstico */ }
         // Clientes de Zoho SIN facturas todavía: sin esto no aparecen en la
         // lista de razones sociales del alta de PDV hasta su primera factura.
         try {

@@ -174,6 +174,86 @@ const Fila = ({ titulo, sub, derecha, subDerecha, tono }) => (
     </div>
 );
 
+// Cuentas por pagar en tres bloques (personal primero). Un solo buscador para
+// los tres; cada bloque con su subtotal y cada factura con sus días vencida.
+const CxPPorCategoria = ({ grupos }) => {
+    const [term, setTerm] = useState('');
+    const t = term.trim().toLowerCase();
+    const hoy = new Date();
+    const total = grupos.reduce((n, g) => n + g.items.length, 0);
+    return (
+        <>
+            {total > 6 && (
+                <div className="relative mb-3">
+                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input value={term} onChange={e => setTerm(e.target.value)} placeholder="Buscar por proveedor o número…"
+                        className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-slate-400" />
+                </div>
+            )}
+            <div className="space-y-4">
+                {grupos.map(g => {
+                    const items = [...g.items]
+                        .filter(b => !t || `${b.proveedor} ${b.numero}`.toLowerCase().includes(t))
+                        .sort((a, b) => (toDate(a.vencimiento) || 0) - (toDate(b.vencimiento) || 0));
+                    if (g.items.length === 0) return null;
+                    return (
+                        <section key={g.id}>
+                            <div className="flex items-baseline justify-between gap-3 mb-2 px-1">
+                                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                                    {g.nombre} <span className="font-semibold normal-case tracking-normal text-slate-400">· {g.items.length}</span>
+                                </h3>
+                                <p className="text-sm font-black text-slate-800 tabular-nums">
+                                    {money(g.total)}
+                                    {g.vencido > 0.005 && <span className="block text-[10px] font-bold text-red-600 text-right">{money(g.vencido)} vencido</span>}
+                                </p>
+                            </div>
+                            {items.length === 0
+                                ? <p className="text-xs text-slate-400 px-1">Nada con esa búsqueda.</p>
+                                : <div className="space-y-2">{items.map(b => {
+                                    const v = toDate(b.vencimiento);
+                                    const dias = v && v < hoy ? Math.floor((hoy - v) / 86400000) : 0;
+                                    return (
+                                        <Fila key={b.id} titulo={b.proveedor || '—'}
+                                            sub={`${b.numero} · ${fmt(toDate(b.fecha))} · vence ${fmt(v)}`}
+                                            derecha={money(b.balance)}
+                                            subDerecha={dias > 0 ? `vencida ${dias} d` : 'vigente'}
+                                            tono={dias > 0 ? 'border-l-red-500' : g.id === 'proveedor' ? 'border-l-slate-200' : 'border-l-violet-400'} />
+                                    );
+                                })}</div>}
+                        </section>
+                    );
+                })}
+            </div>
+        </>
+    );
+};
+
+// La próxima quincena según los perfiles de facturas recurrentes de Zoho.
+const ProximaNomina = ({ pn }) => {
+    if (!pn) return null;
+    return (
+        <div className="mt-4 bg-violet-50 border border-violet-200 rounded-xl p-3 text-xs text-violet-900">
+            <p className="font-bold text-sm">Próxima nómina</p>
+            {pn.autorizado && pn.fecha ? (
+                <>
+                    <p className="mt-1">
+                        <b>{fmt(toDate(pn.fecha))}</b>: <b className="tabular-nums">{money(pn.monto)}</b>
+                        {' '}({pn.perfiles?.length || 0} perfil{pn.perfiles?.length === 1 ? '' : 'es'} de {pn.perfilesActivos} activos)
+                    </p>
+                    {pn.perfiles?.length > 0 && (
+                        <p className="mt-1 text-violet-700">{pn.perfiles.map(x => `${x.proveedor} ${money(x.monto)}`).join(' · ')}</p>
+                    )}
+                </>
+            ) : pn.autorizado ? (
+                <p className="mt-1">Zoho respondió, pero no se encontró la fecha de la próxima factura recurrente
+                    {pn.perfilesActivos != null ? ` (${pn.perfilesActivos} perfiles activos)` : ''}.</p>
+            ) : (
+                <p className="mt-1">Zoho no dejó leer las facturas recurrentes{pn.motivo ? <>: <i>{pn.motivo}</i></> : ''}.</p>
+            )}
+        </div>
+    );
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // `onIrComercial(tab)`: las tarjetas 03 (clientes) y 05 (ventas) llevan a la
 // sección Comercial en vez de repetir aquí sus listas (decisión del dueño,
@@ -262,7 +342,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
 
                 <Card n="02" cargando={t.esperando('porPagar', 'appConfig')} icon={Receipt} titulo="Cuentas por pagar" tono={k.pagarVencido > 0 ? 'red' : ppFichas ? 'amber' : 'slate'}
                     valor={k.nPorPagar > 0 ? money0(k.porPagar) : ppFichas ? money0(k.porPagarFichas) : '—'}
-                    sub={k.nPorPagar > 0 ? `${num(k.nPorPagar)} factura${k.nPorPagar === 1 ? '' : 's'} de proveedor`
+                    sub={k.nPorPagar > 0 ? (() => { const g = Object.fromEntries((k.pagarPorCategoria || []).map(x => [x.id, x.total])); const pers = (g.nomina || 0) + (g.destajo || 0); return pers > 0.005 ? `Personal ${money0(pers)} · Proveedores ${money0(g.proveedor || 0)}` : `${num(k.nPorPagar)} factura${k.nPorPagar === 1 ? '' : 's'} de proveedor`; })()
                         : ppFichas ? `${num(k.nPorPagarFichas)} proveedor${k.nPorPagarFichas === 1 ? '' : 'es'} con saldo`
                         : estadoPP?.autorizado ? 'Nada pendiente con proveedores' : 'Sin datos de Zoho todavía'}
                     nota={k.nPorPagar > 0
@@ -330,7 +410,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
             )}
 
             {abierto === 'pagar' && (
-                <Hoja titulo="Cuentas por pagar" subtitulo="Facturas de proveedor según Zoho Books" onClose={cerrar}>
+                <Hoja titulo="Cuentas por pagar" subtitulo="Facturas de proveedor abiertas en Zoho Books: personal primero" onClose={cerrar}>
                     {k.nPorPagar === 0 ? (
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 leading-relaxed">
                             <p className="font-bold flex items-center gap-2 mb-1"><AlertTriangle size={16} />
@@ -414,6 +494,15 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                     </div>
                                 )}
                             </div>
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                                {(k.pagarPorCategoria || []).map(g => (
+                                    <div key={g.id} className={`rounded-xl border p-2.5 ${g.id === 'proveedor' ? 'bg-white border-slate-200' : 'bg-violet-50 border-violet-200'}`}>
+                                        <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-500 leading-tight">{g.nombre}</p>
+                                        <p className="text-base sm:text-lg font-black text-slate-800 tabular-nums leading-tight mt-1">{money(g.total)}</p>
+                                        <p className="text-[10px] text-slate-400">{g.items.length} factura{g.items.length === 1 ? '' : 's'}</p>
+                                    </div>
+                                ))}
+                            </div>
                             {ppCruce ? (
                                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 text-xs text-amber-900 leading-relaxed">
                                     <p className="font-bold text-sm flex items-center gap-2"><AlertTriangle size={14} />
@@ -431,38 +520,13 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                 </div>
                             ) : k.crucePorPagar ? (
                                 <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl p-2 mb-3">
-                                    Cuadra con las fichas de proveedor de Zoho: diferencia $0,00.
+                                    Control cruzado: las facturas cuadran con las fichas de proveedor de Zoho (diferencia $0,00).
                                 </p>
                             ) : null}
-                            <Lista
-                                items={[...k.pagarAbiertas].sort((a, b) => (toDate(a.vencimiento) || 0) - (toDate(b.vencimiento) || 0))}
-                                clave={(b) => `${b.numero} ${b.proveedor}`}
-                                placeholder="Buscar por proveedor o número…"
-                                render={(b) => {
-                                    const v = toDate(b.vencimiento);
-                                    const vencida = v && v < new Date();
-                                    return (
-                                        <Fila key={b.id} titulo={b.proveedor || '—'}
-                                            sub={`${b.numero} · ${fmt(toDate(b.fecha))} · vence ${fmt(v)}`}
-                                            derecha={money(b.balance)}
-                                            subDerecha={vencida ? `vencida ${Math.floor((new Date() - v) / 86400000)} d` : 'vigente'}
-                                            tono={vencida ? 'border-l-red-500' : 'border-l-slate-200'} />
-                                    );
-                                }} />
+                            <CxPPorCategoria grupos={k.pagarPorCategoria || []} />
                         </>
                     )}
-                    {k.nomina && (
-                        <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600">
-                            <p className="font-bold text-slate-700">Nómina por pagar (aparte, no es de proveedores)</p>
-                            {k.nomina.autorizado && k.nomina.encontrada && k.nomina.saldo != null ? (
-                                <p className="mt-1">{k.nomina.nombre || 'Sueldos y salarios por pagar'} ({k.nomina.codigo}): <b className="tabular-nums">{money(k.nomina.saldo)}</b></p>
-                            ) : k.nomina.autorizado ? (
-                                <p className="mt-1">No se encontró la cuenta {k.nomina.codigo || '2.1.1.04.01'} en el plan de cuentas de Zoho.</p>
-                            ) : (
-                                <p className="mt-1">Zoho no deja leer el saldo de la cuenta de nómina: hace falta el permiso <code>ZohoBooks.accountants.READ</code> en el Self Client. {k.nomina.motivo ? <i>({k.nomina.motivo})</i> : null}</p>
-                            )}
-                        </div>
-                    )}
+                    <ProximaNomina pn={k.proximaNomina} />
                 </Hoja>
             )}
 

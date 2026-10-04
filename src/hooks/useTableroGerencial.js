@@ -27,6 +27,14 @@ import { facturacionPorPdv, pdvActivo, ciudadDePdv, agruparPdvPorCliente, DESDE_
 
 const EMPRESA_GK = 'lacteoca';
 
+// Categorías de cuentas por pagar, en el orden en que se muestran. Salen del
+// campo "Categoría CxP" de la ficha del proveedor en Zoho (vacío = proveedor).
+export const CATEGORIAS_CXP = [
+    { id: 'nomina',    nombre: 'Personal – nómina' },
+    { id: 'destajo',   nombre: 'Personal – destajo' },
+    { id: 'proveedor', nombre: 'Proveedores' },
+];
+
 const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 const mesKey = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : null;
 
@@ -173,8 +181,23 @@ export function useTableroGerencial() {
             .reduce((s, f) => s + saldoAbierto(f), 0);
 
         // ── 2. Cuentas por PAGAR (bills de Zoho)
+        // Abierta = lo que el servidor marcó (`abierta`: estatus open / overdue /
+        // partially_paid con saldo). Los documentos anteriores a ese campo caen
+        // al criterio viejo hasta la siguiente conciliación.
         const pagarAbiertas = data.porPagar.filter(b =>
-            b.ausenteEnZoho !== true && !['pagada', 'anulada', 'borrador'].includes(b.estado) && Number(b.balance) > 0.005);
+            b.ausenteEnZoho !== true && Number(b.balance) > 0.005
+            && (typeof b.abierta === 'boolean' ? b.abierta : !['pagada', 'anulada', 'borrador'].includes(b.estado)))
+            .map(b => ({ ...b, categoria: CATEGORIAS_CXP.some(c => c.id === b.categoria) ? b.categoria : 'proveedor' }));
+        // Tres bloques: el personal primero, porque son los pagos más urgentes.
+        const pagarPorCategoria = CATEGORIAS_CXP.map(c => {
+            const items = pagarAbiertas.filter(b => b.categoria === c.id);
+            return {
+                ...c, items,
+                total: items.reduce((s, b) => s + (Number(b.balance) || 0), 0),
+                vencido: items.filter(b => { const v = toDate(b.vencimiento); return v && v < now; })
+                    .reduce((s, b) => s + (Number(b.balance) || 0), 0),
+            };
+        });
         const porPagar = pagarAbiertas.reduce((s, b) => s + (Number(b.balance) || 0), 0);
         const pagarVencido = pagarAbiertas
             .filter(b => { const v = toDate(b.vencimiento); return v && v < now; })
@@ -251,8 +274,10 @@ export function useTableroGerencial() {
             : [];
         const fuentePorPagar = pagarAbiertas.length > 0 ? 'bills' : (fichasNeto.length > 0 ? 'fichas' : null);
         const porPagarFichas = fichasNeto.reduce((s, v) => s + v.balance, 0);
+        // La deuda con el PERSONAL (nómina y destajo) no es de proveedores de la
+        // planta: no se cruza contra la lista de proveedores de Kroma.
         const relProv = relacionProveedores(data.proveedores, data.compras, data.recepcionesLeche,
-            fuentePorPagar === 'fichas' ? fichasNeto : pagarAbiertas);
+            fuentePorPagar === 'fichas' ? fichasNeto : pagarAbiertas.filter(b => b.categoria === 'proveedor'));
         const estadoPorPagar = data.appConfig?.zohoPorPagarEstado || null;
         const planta = {
             lotesActivos,
@@ -271,7 +296,7 @@ export function useTableroGerencial() {
             // se le debe. Se muestra cuando el listado de bills no cuadra.
             saldoProveedores: data.appConfig?.zohoSaldoProveedores || null,
             crucePorPagar: data.appConfig?.zohoCrucePorPagar || null,
-            nomina: data.appConfig?.zohoNomina || null,
+            proximaNomina: data.appConfig?.zohoProximaNomina || null,
         };
 
         // ── Puntos de venta, por PESO de facturación ──
@@ -298,7 +323,7 @@ export function useTableroGerencial() {
             pdv: conPeso, pdvActivos, pdvInactivos, ciudades, clientesConPdv,
             nPdvActivos: pdvActivos.length, nPdvInactivos: pdvInactivos.length,
             porCobrar, cobrarVencido, nPorCobrar: abiertas.length, abiertas,
-            porPagar, pagarVencido, nPorPagar: pagarAbiertas.length, pagarAbiertas,
+            porPagar, pagarVencido, nPorPagar: pagarAbiertas.length, pagarAbiertas, pagarPorCategoria,
             nClientes: data.clientes.length, conVendedor, oficina,
             nProveedores: data.proveedores.length,
             ventasMes: ventasPorMes[mEste]?.monto || 0, ventasMesN: ventasPorMes[mEste]?.n || 0, ventasPorMes,

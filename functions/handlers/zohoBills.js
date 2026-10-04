@@ -14,7 +14,12 @@
 // inventa un cero, que sería peor que no mostrar nada.
 
 const admin = require("firebase-admin");
-const { listAllBills, listVendorBalances } = require('./zohoApi');
+const { listAllBills, listVendorBalances, listRecurringBills } = require('./zohoApi');
+
+// Estatus de Zoho que cuentan como deuda abierta. Lo demás (draft, void, paid…)
+// no se paga.
+const ESTATUS_ABIERTOS = ['open', 'overdue', 'partially_paid'];
+const CATEGORIAS = ['nomina', 'destajo', 'proveedor'];
 
 const toDate = (v) => {
     if (!v) return null;
@@ -74,6 +79,21 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
     let proveedores = null;
     try { proveedores = await listVendorBalances({ accessToken, organizationId, dataCenter }); }
     catch (e) { diag.proveedoresError = String(e?.response?.data?.message || e.message).slice(0, 160); }
+    // Categoría de cada factura: la de la ficha de su proveedor (por vendor_id).
+    const catPorVendor = new Map();
+    (proveedores || []).forEach(v => { if (v.vendorId) catPorVendor.set(v.vendorId, v.categoria); });
+    const categoriaDe = (b) => catPorVendor.get(b.vendor_id != null ? String(b.vendor_id) : '') || 'proveedor';
+    const porCategoria = Object.fromEntries(CATEGORIAS.map(c => [c, { total: 0, facturas: 0, vencido: 0 }]));
+
+    // Control: lo que Zoho devuelve con su propio filtro de "sin pagar" tiene
+    // que coincidir con lo que GK considera abierto. Solo diagnóstico.
+    try {
+        const r = await listAllBills({ accessToken, organizationId, dataCenter, filterBy: 'Status.Unpaid' });
+        diag.unpaid = { listadas: r.bills.length, saldo: Math.round(r.bills.reduce((s2, b) => s2 + (Number(b.balance) || 0), 0) * 100) / 100 };
+    } catch (e) {
+        diag.unpaid = { error: String(e?.response?.data?.message || e.message).slice(0, 160) };
+    }
+
     const seen = new Set();
     let escritas = 0, porPagar = 0, vencidas = 0, nAbiertas = 0;
 
@@ -92,11 +112,14 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
                 : 'pendiente';
             const venc  = toDate(b.due_date);
             const saldo = b.balance != null ? Number(b.balance) : (Number(b.total) || 0);
-            const abierta = estado !== 'pagada' && estado !== 'anulada' && estado !== 'borrador' && saldo > 0.005;
+            const abierta = ESTATUS_ABIERTOS.includes(String(b.status || '')) && saldo > 0.005;
+            const categoria = categoriaDe(b);
             if (abierta) {
                 nAbiertas++;
                 porPagar += saldo;
-                if (venc && venc < hoy) vencidas += saldo;
+                const pc = porCategoria[categoria];
+                pc.total += saldo; pc.facturas++;
+                if (venc && venc < hoy) { vencidas += saldo; pc.vencido += saldo; }
             }
 
             batch.set(db.doc(`cuentas_por_pagar/${numero.replace(/\//g, '-')}`), {
@@ -109,6 +132,9 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
                 fecha:       ts(toDate(b.date)),
                 vencimiento: ts(venc),
                 estado,
+                estatusZoho: b.status || null,
+                abierta,
+                categoria,
                 ausenteEnZoho: false,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             }, { merge: true });
@@ -139,6 +165,36 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
     }
 
     const saldoProveedores = proveedores ? proveedores.reduce((s, v) => s + v.porPagar, 0) : null;
+    const r2c = (n) => Math.round(n * 100) / 100;
+    CATEGORIAS.forEach(c => { porCategoria[c].total = r2c(porCategoria[c].total); porCategoria[c].vencido = r2c(porCategoria[c].vencido); });
+
+    // PRÓXIMA NÓMINA: perfiles de facturas recurrentes ACTIVOS. La próxima
+    // quincena = los perfiles con la fecha siguiente más cercana, sumados.
+    // Si el token no alcanza para leerlos, se dice; no se inventa una fecha.
+    let proximaNomina;
+    try {
+        const perfiles = await listRecurringBills({ accessToken, organizationId, dataCenter });
+        const activos = perfiles.filter(p => String(p.status || '').toLowerCase() === 'active');
+        const proxDe = (p) => toDate(p.next_bill_date || p.next_invoice_date || p.next_date || null);
+        const conFecha = activos.map(p => ({ p, f: proxDe(p) })).filter(x => x.f);
+        const minMs = conFecha.length ? Math.min(...conFecha.map(x => x.f.getTime())) : null;
+        const siguientes = minMs == null ? [] : conFecha.filter(x => x.f.getTime() === minMs);
+        proximaNomina = {
+            autorizado: true,
+            perfilesActivos: activos.length,
+            fecha: minMs != null ? ts(new Date(minMs)) : null,
+            monto: r2c(siguientes.reduce((s2, x) => s2 + (Number(x.p.total) || 0), 0)),
+            perfiles: siguientes.map(x => ({ proveedor: x.p.vendor_name || '—', monto: Number(x.p.total) || 0 })),
+            // Para verificar los nombres de campo contra la respuesta real.
+            clavesMuestra: perfiles[0] ? Object.keys(perfiles[0]).slice(0, 40) : [],
+        };
+    } catch (e) {
+        proximaNomina = {
+            autorizado: false,
+            motivo: String(e?.response?.data?.message || e.message).slice(0, 200),
+            status: e?.response?.status || null,
+        };
+    }
 
     // CONTROL CRUZADO: lo abierto en facturas de proveedor, por proveedor,
     // contra el neto de su ficha (por pagar − créditos sin aplicar). Si no
@@ -148,8 +204,7 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
         const porVendor = new Map();
         const llave = (id, nombre) => id || `n:${String(nombre || '').trim().toLowerCase()}`;
         bills.forEach(b => {
-            const estado = String(b.status || '');
-            if (['paid', 'void', 'draft'].includes(estado)) return;
+            if (!ESTATUS_ABIERTOS.includes(String(b.status || ''))) return;
             const saldo = b.balance != null ? Number(b.balance) : 0;
             if (!(saldo > 0.005)) return;
             const k = llave(b.vendor_id != null ? String(b.vendor_id) : null, b.vendor_name);
@@ -159,6 +214,7 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
         proveedores.forEach(v => {
             const k = llave(v.vendorId, v.nombre);
             const e = porVendor.get(k) || { nombre: v.nombre, facturas: 0, ficha: 0 };
+            if (!(v.porPagar > 0.005 || v.creditos > 0.005)) return;
             e.ficha += Math.max(0, v.porPagar - v.creditos); porVendor.set(k, e);
         });
         const filas = [...porVendor.values()];
@@ -175,19 +231,21 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
     }
     await db.doc('settings/appConfig').set({
         zohoPorPagar: {
-            total: porPagar, facturas: nAbiertas, vencido: vencidas,
+            total: porPagar, facturas: nAbiertas, vencido: vencidas, porCategoria,
             actualizado: admin.firestore.FieldValue.serverTimestamp(),
         },
         zohoCrucePorPagar: cruce ? { ...cruce, at: admin.firestore.FieldValue.serverTimestamp() } : null,
+        zohoProximaNomina: { ...proximaNomina, at: admin.firestore.FieldValue.serverTimestamp() },
         zohoSaldoProveedores: proveedores ? {
             total: saldoProveedores,
             creditos: proveedores.reduce((s, v) => s + v.creditos, 0),
-            proveedores: proveedores.sort((a, b) => b.porPagar - a.porPagar).slice(0, 60),
+            proveedores: proveedores.filter(v => v.porPagar > 0.005 || v.creditos > 0.005)
+                .sort((a, b) => b.porPagar - a.porPagar).slice(0, 60),
             at: admin.firestore.FieldValue.serverTimestamp(),
         } : null,
     }, { merge: true });
 
-    return { autorizado: true, total: bills.length, escritas, ausentes, porPagar, vencidas, nAbiertas, saldoProveedores, diag };
+    return { autorizado: true, total: bills.length, escritas, ausentes, porPagar, vencidas, nAbiertas, porCategoria, saldoProveedores, proximaNomina, diag };
 }
 
 module.exports = { sincronizarCuentasPorPagar };

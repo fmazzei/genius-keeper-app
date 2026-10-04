@@ -890,6 +890,18 @@ Pedido del dueño con capturas: las tarjetas 04, 07 y 08 no decían lo que hací
   - **Nómina por pagar** (cuenta 2.1.1.04.01, no es de proveedores): `getAccountBalanceByCode` (GET /chartofaccounts?showbalance=true) → `settings/appConfig.zohoNomina`; se muestra en línea aparte en la hoja. Requiere `ZohoBooks.accountants.READ` (agregado a las instrucciones de scopes); sin él, la hoja lo dice. El campo de saldo (`current_balance`) NO está verificado contra un payload real.
 - **Renovar permisos de Zoho sin romper lo que funciona** (`intercambiarCodigoZoho`): basta pegar el CÓDIGO nuevo. Client ID y Secret vacíos = se usan los guardados en `zoho_secure/creds`. Antes de reemplazar el token, se prueba el nuevo leyendo facturas; si falla, NO se guarda y queda la conexión anterior. Devuelve `permisos {facturas, cuentasPorPagar}` y la pantalla los muestra.
 
+### Cuentas por pagar en tres bloques: personal (nómina / destajo) y proveedores (2026-10) ✅
+
+Zoho reorganizado (4-oct): TODA la deuda —proveedores y personal— está en facturas de proveedor abiertas (4.983,59). La nómina ya NO es una cuenta contable aparte: cada quincena es una factura a nombre del empleado, emitida sola por 10 perfiles recurrentes (5 empleados × 2 quincenas).
+
+- **Categoría** = campo personalizado "Categoría CxP" de la ficha del proveedor, api_name `cf_categor_a_cxp` (Proveedor / Personal - nómina / Personal - destajo; vacío = Proveedor). **Verificado**: el LISTADO de contactos (`contact_type=vendor`) ya trae la clave `cf_categor_a_cxp`. `categoriaCxP()` en `zohoApi.js` → `proveedor|nomina|destajo`. `listVendorBalances` devuelve ahora TODAS las fichas con su categoría; la factura se clasifica por `vendor_id`.
+- **Abierta** = estatus `open`/`overdue`/`partially_paid` con `balance` > 0 (antes: "todo lo que no sea pagada/anulada/borrador"). Cada doc de `cuentas_por_pagar` lleva `abierta`, `estatusZoho` y `categoria`. Se suma `balance`, no `total`. Como control, se lee también `filter_by=Status.Unpaid` y su saldo queda en `diag.unpaid`.
+- **`settings/appConfig.zohoPorPagar.porCategoria`** = `{nomina, destajo, proveedor}` con total, nº de facturas y vencido.
+- **Próxima nómina**: `listRecurringBills` (GET /recurringbills) → perfiles `active`; la próxima quincena = los perfiles con la fecha siguiente más cercana, sumados → `settings/appConfig.zohoProximaNomina`. ⚠️ NO verificado contra un payload real: el nombre del campo de fecha (`next_bill_date`, con respaldos) y si basta `ZohoBooks.bills.READ`. Si falla, se guarda el motivo; `clavesMuestra` registra las claves que vino a ver.
+- **Se retiró** la lectura de la cuenta 2.1.1.04.01 (`getAccountBalanceByCode` queda exportada, sin uso) y se borra `zohoNomina` en cada conciliación.
+- **Tablero, tarjeta 02**: sub "Personal $X · Proveedores $Y". Hoja: total, tres subtotales, control cruzado, un solo buscador y la lista en tres bloques —Personal – nómina, Personal – destajo, Proveedores— con proveedor, número, fecha, vencimiento, saldo y días vencida; al pie la próxima nómina. La tarjeta 04 (Proveedores de Kroma) solo cruza la deuda de categoría `proveedor`.
+- Simulado con las fichas reales de Zoho (una factura por proveedor con saldo + una pagada y un borrador que deben excluirse): Proveedores 3.788,59 · Nómina 770,00 · Destajo 425,00 · Total 4.983,59 · cruce 0,00.
+
 ### Tablero en blanco al abrir + "Volver" en todas las hojas del Dashboard (2026-10) ✅
 
 Reporte del dueño: al abrir la app el Tablero Gerencial se quedaba en los 8 recuadros vacíos hasta cambiar de vista y regresar, y varias hojas de detalle no tenían cómo volver.

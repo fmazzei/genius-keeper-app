@@ -304,9 +304,25 @@ async function listAllContacts({ accessToken, organizationId, dataCenter, maxPag
 }
 
 /**
- * Saldo por pagar de cada PROVEEDOR según su ficha de contacto en Zoho
- * (`outstanding_payable_amount` y `unused_credits_payable_amount`). Sirve de
- * control cruzado contra el listado de bills: si no cuadran, se dice.
+ * Categoría de cuentas por pagar de una ficha de proveedor: campo personalizado
+ * "Categoría CxP" (api_name `cf_categor_a_cxp`), que Zoho entrega como clave
+ * `cf_categor_a_cxp` en el LISTADO de contactos (verificado contra el listado
+ * real de Lacteoca). Vacío = proveedor.
+ *   "Proveedor" → 'proveedor' · "Personal - nómina" → 'nomina' · "Personal - destajo" → 'destajo'
+ */
+function categoriaCxP(contacto) {
+    const crudo = String(contacto?.cf_categor_a_cxp_unformatted ?? contacto?.cf_categor_a_cxp ?? '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (crudo.includes('nomina')) return 'nomina';
+    if (crudo.includes('destajo')) return 'destajo';
+    return 'proveedor';
+}
+
+/**
+ * TODAS las fichas de PROVEEDOR de Zoho, con su saldo (`outstanding_payable_amount`
+ * y `unused_credits_payable_amount`) y su categoría de cuentas por pagar. Sirve
+ * para clasificar cada factura de proveedor (por `vendor_id`) y como control
+ * cruzado contra el listado de bills.
  */
 async function listVendorBalances({ accessToken, organizationId, dataCenter, maxPages = 10, perPage = 200 }) {
     const { api } = dcUrls(dataCenter);
@@ -317,18 +333,49 @@ async function listVendorBalances({ accessToken, organizationId, dataCenter, max
             headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
             timeout: 30000,
         });
+        if (res.data && res.data.code != null && Number(res.data.code) !== 0) {
+            throw new Error(`Zoho (código ${res.data.code}): ${res.data.message || 'error sin mensaje'}`);
+        }
         const contacts = Array.isArray(res.data?.contacts) ? res.data.contacts : [];
         all.push(...contacts);
         if (res.data?.page_context?.has_more_page !== true || contacts.length === 0) break;
     }
-    return all
-        .map(c => ({
-            vendorId: c.contact_id != null ? String(c.contact_id) : null,
-            nombre: c.contact_name || c.vendor_name || '—',
-            porPagar: Number(c.outstanding_payable_amount) || 0,
-            creditos: Number(c.unused_credits_payable_amount) || 0,
-        }))
-        .filter(v => v.porPagar > 0.005 || v.creditos > 0.005);
+    return all.map(c => ({
+        vendorId: c.contact_id != null ? String(c.contact_id) : null,
+        nombre: c.contact_name || c.vendor_name || '—',
+        porPagar: Number(c.outstanding_payable_amount) || 0,
+        creditos: Number(c.unused_credits_payable_amount) || 0,
+        categoria: categoriaCxP(c),
+    }));
+}
+
+/**
+ * Perfiles de FACTURAS DE PROVEEDOR RECURRENTES (GET /recurringbills): la
+ * nómina se emite sola el 15 y el 30. Se usa para anunciar la próxima quincena.
+ * Los nombres de campo de la respuesta no están verificados contra un payload
+ * real de Lacteoca: quien llama lee con respaldos y guarda las claves que vio.
+ */
+async function listRecurringBills({ accessToken, organizationId, dataCenter, maxPages = 5, perPage = 200 }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    for (let page = 1; page <= maxPages; page++) {
+        const res = await axios.get(`${api}/books/v3/recurringbills`, {
+            params: { organization_id: organizationId, page, per_page: perPage },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+            timeout: 30000,
+        });
+        if (res.data && res.data.code != null && Number(res.data.code) !== 0) {
+            const err = new Error(`Zoho (código ${res.data.code}): ${res.data.message || 'error sin mensaje'}`);
+            err.zohoCode = res.data.code;
+            throw err;
+        }
+        const lista = Array.isArray(res.data?.recurring_bills) ? res.data.recurring_bills
+            : Array.isArray(res.data?.recurringbills) ? res.data.recurringbills : null;
+        if (!lista) throw new Error(`Zoho respondió sin lista de facturas recurrentes (claves: ${Object.keys(res.data || {}).join(', ') || 'ninguna'})`);
+        all.push(...lista);
+        if (res.data?.page_context?.has_more_page !== true || lista.length === 0) break;
+    }
+    return all;
 }
 
 /**
@@ -360,4 +407,4 @@ async function getAccountBalanceByCode({ accessToken, organizationId, dataCenter
     return { encontrada: false, codigo };
 }
 
-module.exports = { getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };
+module.exports = { categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };
