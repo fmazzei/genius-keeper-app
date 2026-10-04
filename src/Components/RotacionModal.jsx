@@ -8,7 +8,9 @@
 
 import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Info, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
+import { Info, TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
+import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
+import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 import { rotacionPorMes, MIN_PARES_CONFIABLE, MIN_PDV_CONFIABLE } from '@/utils/rotacion.js';
 
 // Una rotación de 0,03 uds/día mostrada como "0.0" hace creer que fue CERO. Se
@@ -21,6 +23,7 @@ const nRot = (v) => {
 };
 
 export default function RotacionModal({ reports = [], rotacionVentana = null, ventanaLabel = '', onClose }) {
+    useAtrasCierra(onClose);
     const meses = useMemo(() => rotacionPorMes(reports, 12), [reports]);
     const conDato = meses.filter(m => m.porDia !== null);
     const max = Math.max(0.1, ...conDato.map(m => m.porDia));
@@ -35,17 +38,11 @@ export default function RotacionModal({ reports = [], rotacionVentana = null, ve
     const delta = comparable ? ((actual.porDia - previo.porDia) / previo.porDia) * 100 : null;
 
     return createPortal(
-        <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-            <div className="bg-slate-50 w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] flex flex-col shadow-2xl"
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-stretch sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+            <div className="bg-slate-50 w-full h-full sm:h-auto sm:max-w-lg sm:rounded-2xl sm:max-h-[90vh] flex flex-col shadow-2xl overflow-hidden"
                  onClick={e => e.stopPropagation()}>
 
-                <div className="flex items-start justify-between px-5 py-4 border-b border-slate-200 shrink-0">
-                    <div>
-                        <h2 className="text-lg font-black text-slate-800">Rotación por PDV</h2>
-                        <p className="text-xs text-slate-500">Unidades por día y por punto de venta, mes a mes</p>
-                    </div>
-                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-200 text-slate-500"><X size={20} /></button>
-                </div>
+                <EncabezadoHoja titulo="Rotación por PDV" subtitulo="Unidades por día y por punto de venta, mes a mes" onVolver={onClose} />
 
                 {/* Mes en curso */}
                 <div className="px-5 py-4 shrink-0">
@@ -103,7 +100,7 @@ export default function RotacionModal({ reports = [], rotacionVentana = null, ve
                 </div>
 
                 {/* Serie mensual */}
-                <div className="px-5 pb-5 overflow-y-auto">
+                <div className="flex-1 min-h-0 px-4 sm:px-5 pb-5 overflow-y-auto overscroll-contain" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
                     {conDato.length === 0 ? (
                         <p className="text-sm text-slate-400 text-center py-10">
                             Aún no hay suficientes visitas repetidas para estimar la rotación.

@@ -8,7 +8,9 @@
 
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Clock, Info } from 'lucide-react';
+import { Clock, Info } from 'lucide-react';
+import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
+import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 import { computeDiasPago } from '@/hooks/useFinancialKpis.js';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -49,6 +51,7 @@ const fmtDias = (d, modo) => {
 };
 
 export default function DiasPagoModal({ facturas = [], onClose }) {
+    useAtrasCierra(onClose);
     // Rango de años disponible (año actual → primer año con factura de emisión).
     const { anioActual, anios } = useMemo(() => {
         const ahora = new Date();
@@ -92,19 +95,13 @@ export default function DiasPagoModal({ facturas = [], onClose }) {
     const setGranReset = (g) => { setGran(g); setSub(0); };
 
     return createPortal(
-        <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-stretch sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
             <div
-                className="bg-slate-50 w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col shadow-2xl"
+                className="bg-slate-50 w-full h-full sm:h-auto sm:max-w-3xl sm:rounded-2xl sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
-                    <div>
-                        <h2 className="text-lg font-black text-slate-800 flex items-center gap-2"><Clock size={18} /> Días de pago por cliente</h2>
-                        <p className="text-xs text-slate-500">Ponderado por peso del cliente en la facturación</p>
-                    </div>
-                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-200 text-slate-500"><X size={20} /></button>
-                </div>
+                <EncabezadoHoja titulo="Días de pago por cliente" subtitulo="Ponderado por peso del cliente en la facturación" icono={<Clock size={18} className="shrink-0" />} onVolver={onClose} />
 
                 {/* Toggle de tipo de cálculo */}
                 <div className="px-5 pt-4 shrink-0">
@@ -172,7 +169,7 @@ export default function DiasPagoModal({ facturas = [], onClose }) {
                 </div>
 
                 {/* Tabla por cliente */}
-                <div className="px-5 pb-5 overflow-y-auto">
+                <div className="flex-1 min-h-0 px-4 sm:px-5 pb-5 overflow-y-auto overscroll-contain" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
                     {res.porCliente.length === 0 ? (
                         <div className="text-center text-slate-400 text-sm py-10">
                             <Info size={22} className="mx-auto mb-2 opacity-50" />

@@ -16,7 +16,7 @@
 // app comercial de UNA empresa: Lacteoca. Por eso la constante, que además es
 // el mismo default que usan las reglas cuando el campo falta.
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { collection, getDocs, getDoc, doc, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { cuentaEnCartera, saldoAbierto } from '@/utils/facturaEstado.js';
@@ -53,23 +53,51 @@ export function useTableroGerencial() {
     const [loading, setLoading] = useState(true);
     const [error, setError]     = useState('');
     const [nonce, setNonce]     = useState(0);
+    const [incompleto, setIncompleto] = useState([]);   // fuentes que no respondieron a tiempo
     const refetch = useCallback(() => setNonce(n => n + 1), []);
+
+    // Lectura que no se queda colgada. En el arranque en frío Firestore puede
+    // dejar una consulta esperando sin responder (canal de long-polling que no
+    // "despierta" hasta que otra pantalla abre sus propias consultas): el
+    // tablero salía en blanco hasta cambiar de vista y regresar. Si a los
+    // `espera` ms no llegó, se lanza la MISMA consulta otra vez —la primera
+    // respuesta que llegue gana— y, si tras varios intentos sigue sin llegar,
+    // cae a vacío y lo declara, en vez de girar para siempre.
+    const leer = (fn, vacio, faltantes, nombre, espera = 7000, intentos = 3) => new Promise(resolve => {
+        let hecho = false; let lanzados = 0; const timers = [];
+        const fin = (r, falto) => {
+            if (hecho) return;
+            hecho = true; timers.forEach(clearTimeout);
+            if (falto) faltantes.push(nombre);
+            resolve(r);
+        };
+        const lanzar = () => {
+            lanzados++;
+            // Un error (reglas, colección inexistente) no se arregla reintentando.
+            fn().then(r => fin(r, false), () => fin(vacio, false));
+            if (lanzados < intentos) timers.push(setTimeout(() => { if (!hecho) lanzar(); }, espera));
+            else timers.push(setTimeout(() => fin(vacio, true), espera * 2));
+        };
+        lanzar();
+    });
 
     useEffect(() => {
         let alive = true;
         (async () => {
             setLoading(true); setError('');
             try {
-                // Una sola tanda: 8 lecturas en paralelo, no en cascada. Cada
-                // una cae a vacío por su cuenta — que Kroma no responda (reglas,
+                // Una sola tanda: lecturas en paralelo, no en cascada. Cada una
+                // cae a vacío por su cuenta — que Kroma no responda (reglas,
                 // datos sin migrar) NO debe dejar en blanco el lado comercial.
                 const vacio = { docs: [] };
-                const kq = (col) => getDocs(query(collection(db, col), where('empresaId', '==', EMPRESA_GK))).catch(() => vacio);
+                const faltantes = [];
+                const col = (nombre) => leer(() => getDocs(collection(db, nombre)), vacio, faltantes, nombre);
+                const kq = (nombre) => leer(() => getDocs(query(collection(db, nombre), where('empresaId', '==', EMPRESA_GK))), vacio, faltantes, nombre);
                 const [fact, cli, dev, pagar, prov, compras, prod, invMat, posSnap, mats, leche, cfg] = await Promise.all([
-                    getDocs(collection(db, 'facturas_vendedor')).catch(() => vacio),
-                    getDocs(collection(db, 'clientes_zoho')).catch(() => vacio),
-                    getDocs(collection(db, 'devoluciones')).catch(() => vacio),
-                    getDocs(collection(db, 'cuentas_por_pagar')).catch(() => vacio),
+                    col('facturas_vendedor'),
+                    col('clientes_zoho'),
+                    col('devoluciones'),
+                    col('cuentas_por_pagar'),
                     kq('kroma_suppliers'),
                     kq('kroma_compras'),
                     kq('kroma_production_logs'),
@@ -77,17 +105,18 @@ export function useTableroGerencial() {
                     // TODOS los PDV, activos e inactivos: "inactivo" en GK
                     // significa frecuencia de visita 0, no borrado, y el tablero
                     // los muestra por separado.
-                    getDocs(collection(db, 'pos')).catch(() => vacio),
+                    col('pos'),
                     // Maestro de materiales: precios para el costo de cada lote,
                     // la lista de compras y el capital en insumos.
                     kq('kroma_materials'),
                     // Recepciones de leche: la "compra" de los proveedores de leche.
                     kq('kroma_milk_reception'),
                     // Estado de la última lectura de cuentas por pagar en Zoho.
-                    getDoc(doc(db, 'settings', 'appConfig')).catch(() => null),
+                    leer(() => getDoc(doc(db, 'settings', 'appConfig')), null, faltantes, 'settings'),
                 ]);
                 if (!alive) return;
-                const m = (s) => (s.docs || []).map(d => ({ id: d.id, ...d.data() }));
+                const m = (s) => (s?.docs || []).map(d => ({ id: d.id, ...d.data() }));
+                setIncompleto(faltantes);
                 setData({
                     facturas:   m(fact),
                     clientes:   m(cli),
@@ -111,6 +140,23 @@ export function useTableroGerencial() {
         })();
         return () => { alive = false; };
     }, [nonce]);
+
+    // Si algo no llegó, se vuelve a pedir solo: a los 20 s y cada vez que la
+    // persona regresa a la app (el teléfono suele tener mejor red al volver).
+    const autoReintentos = useRef(0);
+    useEffect(() => {
+        if (!incompleto.length) { autoReintentos.current = 0; return undefined; }
+        if (loading) return undefined;
+        // Solo 3 reintentos automáticos seguidos: con la red caída no tiene
+        // sentido releer todo cada 20 s. El botón "Reintentar" sigue ahí.
+        const t = autoReintentos.current < 3 ? setTimeout(() => { autoReintentos.current++; refetch(); }, 20000) : null;
+        const alVolver = () => { if (document.visibilityState === 'visible') refetch(); };
+        try { document.addEventListener('visibilitychange', alVolver); } catch (_) { /* nada */ }
+        return () => {
+            if (t) clearTimeout(t);
+            try { document.removeEventListener('visibilitychange', alVolver); } catch (_) { /* nada */ }
+        };
+    }, [incompleto, loading, refetch]);
 
     const kpis = useMemo(() => {
         if (!data) return null;
@@ -262,5 +308,5 @@ export function useTableroGerencial() {
         };
     }, [data]);
 
-    return { ...data, kpis, loading, error, refetch };
+    return { ...data, kpis, loading, error, refetch, incompleto };
 }

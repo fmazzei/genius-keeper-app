@@ -28,6 +28,8 @@ import { fechaProduccion } from '@/Kroma/estadoPlanta.js';
 import { SECCIONES_COMPRA } from '@/utils/tableroPlanta.js';
 import DossierComercialDoc from '@/Components/DossierComercialDoc.jsx';
 import CarteraVencidaModal from '@/Components/CarteraVencidaModal.jsx';
+import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
+import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 
 const money  = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
@@ -51,7 +53,7 @@ const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick
     return (
         <Tag
             {...(onClick && !disabled ? { type: 'button', onClick } : {})}
-            className={`relative bg-white border ${TONO} rounded-2xl p-4 text-left w-full min-w-0 overflow-hidden shadow-sm
+            className={`relative bg-white border ${TONO} rounded-2xl p-3.5 sm:p-4 pb-7 sm:pb-8 text-left w-full h-full min-w-0 overflow-hidden shadow-sm flex flex-col
                 ${onClick && !disabled ? 'hover:shadow-md hover:border-slate-300 transition-all' : ''}
                 ${disabled ? 'opacity-70' : ''}`}
         >
@@ -65,9 +67,9 @@ const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick
                 <span className="text-[10px] font-extrabold text-slate-300 shrink-0">{n}</span>
             </div>
             <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mt-2 leading-tight">{titulo}</p>
-            <p className="text-2xl font-black text-slate-800 tabular-nums mt-1 truncate">{valor}</p>
+            <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums mt-1 truncate">{valor}</p>
             {sub  && <p className="text-xs text-slate-500 mt-0.5 leading-snug">{sub}</p>}
-            {nota && <p className="text-[11px] text-slate-400 mt-1 leading-snug">{nota}</p>}
+            {nota && <p className="text-[11px] text-slate-400 mt-1 leading-snug pr-4">{nota}</p>}
             {onClick && !disabled && (
                 <span className="absolute bottom-3 right-3 text-slate-300"><ChevronRight size={16} /></span>
             )}
@@ -76,22 +78,25 @@ const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick
 };
 
 // ── Hoja de detalle genérica ────────────────────────────────────────────────
-const Hoja = ({ titulo, subtitulo, onClose, children }) => createPortal(
-    <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
-        <div className="bg-slate-50 w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col shadow-2xl"
-             onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
-                <div className="min-w-0">
-                    <h2 className="text-lg font-black text-slate-800 truncate">{titulo}</h2>
-                    {subtitulo && <p className="text-xs text-slate-500">{subtitulo}</p>}
+// En el teléfono ocupa la pantalla entera (como una página, con "Volver" arriba
+// y el gesto atrás del teléfono cerrándola); en tableta y escritorio es una
+// ventana centrada. El cuerpo es lo único que se desplaza.
+const Hoja = ({ titulo, subtitulo, onClose, children }) => {
+    useAtrasCierra(onClose);
+    return createPortal(
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-stretch sm:items-center justify-center sm:p-4" onClick={onClose}>
+            <div className="bg-slate-50 w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl lg:max-w-3xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden"
+                 onClick={e => e.stopPropagation()}>
+                <EncabezadoHoja titulo={titulo} subtitulo={subtitulo} onVolver={onClose} />
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-5 py-4"
+                     style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
+                    {children}
                 </div>
-                <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-200 text-slate-500 shrink-0"><X size={20} /></button>
             </div>
-            <div className="px-5 py-4 overflow-y-auto">{children}</div>
-        </div>
-    </div>,
-    document.body,
-);
+        </div>,
+        document.body,
+    );
+};
 
 /** Barras por mes — el histórico que pidió el dueño, sin librería de gráficos. */
 const PorMes = ({ datos, valorDe, formato = money0, etiqueta = '' }) => {
@@ -168,14 +173,22 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
 
     if (t.loading && !k) {
         return (
-            <div className="p-4 md:p-6 grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="h-28 rounded-2xl bg-white border border-slate-200 animate-pulse" />
-                ))}
+            <div className="p-4 md:p-6 space-y-3">
+                <p className="text-sm text-slate-500 font-semibold">Cargando el tablero…</p>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                        <div key={i} className="h-36 rounded-2xl bg-white border border-slate-200 animate-pulse" />
+                    ))}
+                </div>
             </div>
         );
     }
-    if (!k) return <p className="p-6 text-sm text-slate-500">{t.error || 'Sin datos.'}</p>;
+    if (!k) return (
+        <div className="p-6 text-center space-y-3">
+            <p className="text-sm text-slate-500">{t.error || 'Sin datos.'}</p>
+            <button type="button" onClick={t.refetch} className="text-sm font-bold text-white bg-slate-800 rounded-xl px-4 py-2">Reintentar</button>
+        </div>
+    );
 
     // Capital inmovilizado en insumos: el mismo cálculo que el inicio de
     // gerencia de Kroma (stock × precio del maestro). Antes esta cifra salía
@@ -200,26 +213,37 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
 
     return (
         <div className="p-4 md:p-6 space-y-4">
-            <div className="flex items-end justify-between gap-3 flex-wrap">
-                <div>
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+                <div className="min-w-0">
                     <h2 className="text-xl font-black text-slate-800 tracking-tight">Tablero Gerencial</h2>
                     <p className="text-sm text-slate-500">El negocio de un vistazo. Toca cualquier tarjeta para ver el detalle.</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className={`grid ${onVerIndicadores ? 'grid-cols-2' : 'grid-cols-1'} sm:flex sm:items-center gap-2 shrink-0`}>
                     {/* El dossier lo generan gerencia y el máster: es el documento
                         que se le entrega a un tercero que evalúa distribuir. */}
                     <button type="button" onClick={() => setDossier(true)}
-                        className="flex items-center gap-1.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl px-3 py-2">
+                        className="flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 rounded-xl px-3 py-2.5 sm:py-2">
                         <FileText size={14} /> Dossier comercial
                     </button>
                     {onVerIndicadores && (
                         <button type="button" onClick={onVerIndicadores}
-                            className="text-xs font-bold text-brand-blue bg-white border border-slate-200 rounded-xl px-3 py-2 hover:shadow-md">
+                            className="text-xs font-bold text-brand-blue bg-white border border-slate-200 rounded-xl px-3 py-2.5 sm:py-2 hover:shadow-md text-center">
                             Indicadores de campo →
                         </button>
                     )}
                 </div>
             </div>
+
+            {t.incompleto?.length > 0 && (
+                <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                    <p className="text-xs text-amber-800 leading-snug">
+                        {t.loading ? 'Actualizando…' : 'Algunos datos no llegaron a tiempo (red lenta). Se vuelven a pedir solos.'}
+                    </p>
+                    {!t.loading && (
+                        <button type="button" onClick={t.refetch} className="shrink-0 text-xs font-bold text-amber-900 bg-white border border-amber-300 rounded-lg px-3 py-1.5">Reintentar</button>
+                    )}
+                </div>
+            )}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <Card n="01" icon={Wallet} titulo="Cuentas por cobrar" tono={k.cobrarVencido > 0 ? 'red' : 'emerald'}

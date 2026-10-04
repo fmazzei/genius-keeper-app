@@ -18,7 +18,9 @@
 
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertTriangle, Search } from 'lucide-react';
+import { AlertTriangle, Search } from 'lucide-react';
+import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
+import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 import { saldoAbierto, cuentaEnCartera } from '@/utils/facturaEstado.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 
@@ -46,6 +48,7 @@ export default function CarteraVencidaModal({
     const [term, setTerm] = useState('');
     const [tramoSel, setTramoSel] = useState(minDias >= 46 ? 'd45p' : minDias >= 31 ? 'd31_45' : null);
     const { zohoCuadre } = useAppConfig();
+    useAtrasCierra(onClose);
 
     const { filas, totalSaldo, nClientes, porTramo } = useMemo(() => {
         const now = new Date();
@@ -95,28 +98,25 @@ export default function CarteraVencidaModal({
     const descuadra = difZoho !== null && Math.abs(difZoho) > 1;
 
     return createPortal(
-        <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-stretch sm:items-center justify-center sm:p-4" onClick={onClose}>
             <div
-                className="bg-slate-50 w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col shadow-2xl"
+                className="bg-slate-50 w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-2xl lg:max-w-3xl sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden"
                 onClick={e => e.stopPropagation()}
             >
-                {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
-                    <div className="min-w-0">
-                        <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                            <AlertTriangle size={18} className="text-red-500" /> {titulo}
-                        </h2>
-                        <p className="text-xs text-slate-500">Toda la cartera abierta · color por antigüedad desde la emisión · toca un tramo para filtrar (o para quitarlo)</p>
-                    </div>
-                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-200 text-slate-500 shrink-0"><X size={20} /></button>
-                </div>
+                <EncabezadoHoja titulo={titulo} onVolver={onClose}
+                    icono={<AlertTriangle size={18} className="text-red-500 shrink-0" />}
+                    subtitulo="Toda la cartera abierta · color por antigüedad desde la emisión · toca un tramo para filtrar" />
 
+                {/* Todo el cuerpo se desplaza junto: en el teléfono el resumen
+                    fijo se comía la pantalla y la lista quedaba en una rendija. */}
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain"
+                     style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
                 {/* Resumen + tramos */}
-                <div className="px-5 py-3 shrink-0 space-y-3">
+                <div className="px-4 sm:px-5 py-3 space-y-3">
                     <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-3">
                         <div className="min-w-0">
                             <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Saldo total por cobrar</p>
-                            <p className="text-3xl font-black text-slate-800 tabular-nums">{money(totalSaldo)}</p>
+                            <p className="text-2xl sm:text-3xl font-black text-slate-800 tabular-nums">{money(totalSaldo)}</p>
                         </div>
                         <div className="text-right text-xs text-slate-500 space-y-0.5 shrink-0">
                             <p><b className="tabular-nums text-sm text-slate-700">{filas.length}</b> factura{filas.length === 1 ? '' : 's'}</p>
@@ -191,7 +191,7 @@ export default function CarteraVencidaModal({
                 </div>
 
                 {/* Lista */}
-                <div className="px-5 pb-5 overflow-y-auto">
+                <div className="px-4 sm:px-5 pb-5">
                     {visibles.length === 0 ? (
                         <p className="text-center text-slate-400 text-sm py-10">
                             {filas.length === 0 ? 'No hay facturas por cobrar. 🎉' : 'Nada con ese filtro.'}
@@ -224,6 +224,7 @@ export default function CarteraVencidaModal({
                         (0–30 · 31–45 · +45, las ventanas de cobro del negocio); "vencida N d" es respecto al
                         vencimiento de cada factura. No se incluyen las facturas anuladas ni las que Zoho ya no reconoce.
                     </p>
+                </div>
                 </div>
             </div>
         </div>,

@@ -890,6 +890,16 @@ Pedido del dueño con capturas: las tarjetas 04, 07 y 08 no decían lo que hací
   - **Nómina por pagar** (cuenta 2.1.1.04.01, no es de proveedores): `getAccountBalanceByCode` (GET /chartofaccounts?showbalance=true) → `settings/appConfig.zohoNomina`; se muestra en línea aparte en la hoja. Requiere `ZohoBooks.accountants.READ` (agregado a las instrucciones de scopes); sin él, la hoja lo dice. El campo de saldo (`current_balance`) NO está verificado contra un payload real.
 - **Renovar permisos de Zoho sin romper lo que funciona** (`intercambiarCodigoZoho`): basta pegar el CÓDIGO nuevo. Client ID y Secret vacíos = se usan los guardados en `zoho_secure/creds`. Antes de reemplazar el token, se prueba el nuevo leyendo facturas; si falla, NO se guarda y queda la conexión anterior. Devuelve `permisos {facturas, cuentasPorPagar}` y la pantalla los muestra.
 
+### Tablero en blanco al abrir + "Volver" en todas las hojas del Dashboard (2026-10) ✅
+
+Reporte del dueño: al abrir la app el Tablero Gerencial se quedaba en los 8 recuadros vacíos hasta cambiar de vista y regresar, y varias hojas de detalle no tenían cómo volver.
+
+- **Carga que no se cuelga** (`useTableroGerencial`): cada una de las 12 lecturas pasa por `leer()`. Si a los 7 s no respondió, se lanza la MISMA consulta otra vez y gana la primera respuesta (en el arranque en frío el canal de long-polling de Firestore puede quedarse esperando hasta que otra pantalla hace sus propias consultas, que es por qué "cambiar de vista" lo destrababa). Tras 3 intentos cae a vacío y queda en `incompleto`; el tablero lo dice en un aviso ámbar con "Reintentar" y vuelve a pedir solo (a los 20 s, máx. 3 veces seguidas, y al regresar a la app). Un error de reglas no se reintenta. Si no hay datos, "Reintentar" en vez de "Sin datos".
+- **`EncabezadoHoja.jsx`**: encabezado único de las hojas — botón "← Volver" grande a la izquierda (antes una "X" chica que en el teléfono no se encontraba), título, subtítulo, respeta el notch.
+- **`useAtrasCierra.js`**: el gesto/botón "atrás" del teléfono CIERRA la hoja abierta en vez de salir de la app. Pila de hojas (con dos abiertas cierra solo la de arriba); al cerrar por el botón retira su entrada del historial. Todo en try/catch.
+- Aplicado en: hojas del Tablero (`Hoja`), `CarteraVencidaModal`, `DossierComercialDoc`, `RotacionModal`, `DiasPagoModal` y **`Modal.jsx`** (lo usan los 15 KPIs de Indicadores de campo). En el teléfono ocupan la pantalla entera con un solo scroll; en tableta y escritorio, centradas con ancho máximo.
+- Tablero: tarjetas del mismo alto, cifra que cabe en dos columnas de teléfono, la flecha ya no tapa la nota; botones "Dossier" e "Indicadores de campo" en dos columnas a todo el ancho en el teléfono.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

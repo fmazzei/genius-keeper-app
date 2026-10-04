@@ -20,7 +20,8 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
-import { X, Printer, Loader } from 'lucide-react';
+import { Printer, Loader, ArrowLeft } from 'lucide-react';
+import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 import { construirDossier, DESDE_VENTAS } from '@/utils/dossierComercial.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 
@@ -92,6 +93,7 @@ const Campo = ({ label, value, onChange, placeholder }) => (
 );
 
 export default function DossierComercialDoc({ onClose }) {
+    useAtrasCierra(onClose);
     const [d, setD]         = useState(null);
     const [error, setError] = useState('');
     // Los dos puntos que GK no puede contestar: son decisiones, no datos.
@@ -150,9 +152,9 @@ export default function DossierComercialDoc({ onClose }) {
     return createPortal((
         <div id="gk-dossier-portal" className="fixed inset-0 z-[100] bg-slate-900/80 flex flex-col overflow-auto">
             <style>{PRINT_CSS}</style>
-            <div className="gk-no-print sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-900 px-4 py-3">
-                <button onClick={onClose} className="flex items-center gap-1.5 text-slate-300 text-sm font-semibold hover:text-white">
-                    <X size={18} /> Cerrar
+            <div className="gk-no-print sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-900 px-3 sm:px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+                <button onClick={onClose} className="flex items-center gap-1.5 text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl pl-2 pr-3 py-2 text-sm font-bold">
+                    <ArrowLeft size={18} /> Volver
                 </button>
                 <button onClick={() => window.print()} disabled={!d}
                     className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-white font-bold text-sm px-4 py-2 rounded-lg">
@@ -161,7 +163,7 @@ export default function DossierComercialDoc({ onClose }) {
             </div>
 
             <div className="flex-1 p-3 sm:p-6 flex justify-center">
-                <div id="gk-dossier-sheet" className="bg-white w-full max-w-[820px] shadow-2xl self-start px-8 py-8" style={{ fontFamily: SANS }}>
+                <div id="gk-dossier-sheet" className="bg-white w-full max-w-[820px] shadow-2xl self-start px-4 py-5 sm:px-8 sm:py-8" style={{ fontFamily: SANS }}>
 
                     <div className="flex items-center gap-3 mb-4">
                         <div className="w-11 h-11 rounded-lg flex items-center justify-center shrink-0" style={{ background: NAVY }}>
