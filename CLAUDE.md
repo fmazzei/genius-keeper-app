@@ -3122,7 +3122,8 @@ Reporte del dueño: la app se quedaba en "Cargando Genius Keeper…" (el splash 
 **Causa:** la regla `no-cache` de `firebase.json` solo cubría `/index.html`, pero la app se abre por `/` (reescrita a `index.html`), y Firebase la servía con su caché por defecto de 1 h. Tras un deploy, un navegador con la página vieja pedía el JS de entrada de la versión anterior. Ese archivo ya no existe, la reescritura devuelve HTML, el módulo falla y el splash gira para siempre.
 
 **Tres capas:**
-- **`firebase.json`:** `no-cache` para TODA ruta que no sea `/assets/**` (`regex ^/(?!assets/).*$`). Los assets con hash siguen `immutable`.
+- **`firebase.json`:** `no-cache` para las rutas de la app (`regex ^/[^.]*$` = toda ruta sin punto, incluida `/`) y para `/index.html`. Los assets con hash siguen `immutable`.
+  - **⚠️ Firebase Hosting usa RE2: NO acepta lookahead `(?!…)`.** La primera versión (`^/(?!assets/).*$`) hizo FALLAR todo deploy de Hosting del 2 al 4-oct, y como ese paso lleva `continue-on-error` el run salía verde: funciones y reglas sí se publicaban, la web NO (el Tablero Gerencial y la renovación de Zoho no se veían). Ahora el workflow termina con **"Verificar que la web publicada es la nueva"**: compara el script de entrada de `dist/index.html` con el del sitio en vivo y sale en ROJO si no coinciden.
 - **Service worker:** las cargas de página se piden con `cache:'no-store'`; si fallan, cae al `fetch` normal.
 - **Vigilante de arranque en `index.html`** (ES5, `sessionStorage` en try/catch):
   - si falla un script de `/assets/`, recarga UNA vez;

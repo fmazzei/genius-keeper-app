@@ -22,6 +22,7 @@ jobs:
       # aunque el deploy SÍ se aplicó). Un error real de build se atrapa antes,
       # en el paso "Construir la app". Así el falso rojo no bloquea Rules/Functions.
       - name: Deploy a Firebase Hosting
+        id: hosting
         continue-on-error: true
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -73,3 +74,21 @@ jobs:
           done
           rm -f /tmp/firebase-sa.json functions/.env.geniuskeeper-36553
           if [ "$ok" != "1" ]; then echo "::error::Deploy de funciones falló tras 3 intentos"; exit 1; fi
+
+      # El paso de Hosting lleva continue-on-error, así que un fallo REAL (p.ej.
+      # una regla inválida en firebase.json) quedaba verde y la web no se
+      # actualizaba durante días. Aquí se comprueba contra el sitio en vivo que
+      # sirve el MISMO script de entrada que se acaba de construir.
+      - name: Verificar que la web publicada es la nueva
+        if: ${{ !cancelled() }}
+        run: |
+          esperado=$(grep -o 'assets/index-[^"]*\.js' dist/index.html | head -1)
+          echo "Esperado: $esperado"
+          for i in 1 2 3 4 5 6; do
+            vivo=$(curl -sS -H 'Cache-Control: no-cache' "https://geniuskeeper-36553.web.app/?v=$GITHUB_SHA" | grep -o 'assets/index-[^"]*\.js' | head -1)
+            echo "En vivo:  $vivo"
+            if [ -n "$esperado" ] && [ "$vivo" = "$esperado" ]; then echo "La web publicada es la nueva."; exit 0; fi
+            sleep 20
+          done
+          echo "::error::La web en vivo NO es la versión recién construida: el deploy de Hosting falló (ver el paso 'Deploy a Firebase Hosting')."
+          exit 1
