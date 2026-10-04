@@ -188,6 +188,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
     // Zoho dio permiso pero el listado de bills no trajo saldos, mientras las
     // fichas de proveedor sí dicen que se debe: no es "nada pendiente".
     const ppDescuadre = k.nPorPagar === 0 && estadoPP?.autorizado && (saldoProv?.total || 0) > 0.005;
+    const ppFichas = k.fuentePorPagar === 'fichas';
 
     const provPorId = {};
     (t.proveedores || []).forEach(p => { provPorId[p.id] = p.nombreComercial || p.nombre || p.nombreFiscal || '—'; });
@@ -224,14 +225,14 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                     nota={k.cobrarVencido > 0 ? `${money0(k.cobrarVencido)} ya vencido` : 'Nada vencido'}
                     onClick={() => setAbierto('cobrar')} />
 
-                <Card n="02" icon={Receipt} titulo="Cuentas por pagar" tono={k.pagarVencido > 0 ? 'red' : 'slate'}
-                    valor={k.nPorPagar > 0 ? money0(k.porPagar) : '—'}
+                <Card n="02" icon={Receipt} titulo="Cuentas por pagar" tono={k.pagarVencido > 0 ? 'red' : ppFichas ? 'amber' : 'slate'}
+                    valor={k.nPorPagar > 0 ? money0(k.porPagar) : ppFichas ? money0(k.porPagarFichas) : '—'}
                     sub={k.nPorPagar > 0 ? `${num(k.nPorPagar)} factura${k.nPorPagar === 1 ? '' : 's'} de proveedor`
-                        : ppDescuadre ? 'Zoho no entregó las facturas de proveedor'
+                        : ppFichas ? `${num(k.nPorPagarFichas)} proveedor${k.nPorPagarFichas === 1 ? '' : 'es'} con saldo`
                         : estadoPP?.autorizado ? 'Nada pendiente con proveedores' : 'Sin datos de Zoho todavía'}
                     nota={k.nPorPagar > 0
                         ? (k.pagarVencido > 0 ? `${money0(k.pagarVencido)} ya vencido` : 'Nada vencido')
-                        : ppDescuadre ? 'Pero sus fichas sí registran deuda · toca para ver'
+                        : ppFichas ? 'Saldo de Zoho (= balanza) · aún sin facturas de proveedor'
                         : estadoPP?.autorizado ? 'Según la última lectura de Zoho'
                         : 'Zoho no autoriza leer facturas de proveedor'}
                     onClick={() => setAbierto('pagar')} />
@@ -250,6 +251,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                     sub={`${num(k.provConCompras)} con compras registradas`}
                     nota={k.nProveedores === 0 ? 'Sin acceso o sin datos migrados'
                         : k.nPorPagar > 0 ? `Se le debe a ${num(k.provConDeuda)}: ${money0(k.porPagar)}`
+                        : ppFichas ? `Se le debe a ${num(k.nPorPagarFichas)}: ${money0(k.porPagarFichas)}`
                         : 'Deuda: sin datos de Zoho'}
                     onClick={() => setAbierto('proveedores')} />
 
@@ -296,10 +298,20 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                     {k.nPorPagar === 0 ? (
                         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 leading-relaxed">
                             <p className="font-bold flex items-center gap-2 mb-1"><AlertTriangle size={16} />
-                                {estadoPP?.autorizado ? 'No hay facturas de proveedor pendientes' : 'Zoho todavía no entrega las facturas de proveedor'}
+                                {ppFichas ? `Por pagar según la balanza de Zoho: ${money(k.porPagarFichas)}`
+                                    : estadoPP?.autorizado ? 'No hay facturas de proveedor pendientes' : 'Zoho todavía no entrega las facturas de proveedor'}
                             </p>
                             {estadoPP?.autorizado ? (
                                 <>
+                                    {ppFichas && (
+                                        <p className="mb-2">
+                                            En Zoho todavía no hay facturas de proveedor: la deuda está cargada como saldos iniciales
+                                            de cada proveedor y asientos de corte. Por eso esta cifra es el <b>neto de cada ficha</b>
+                                            (por pagar − créditos sin aplicar), que coincide con la cuenta Cuentas por pagar de la balanza.
+                                            No trae vencimientos. Cuando se carguen las facturas de proveedor en Zoho, la tarjeta pasa a
+                                            mostrarlas solas, con vencidas y por vencer.
+                                        </p>
+                                    )}
                                     <p>
                                         La última lectura de Zoho{estadoPP.at ? ` (${fmt(toDate(estadoPP.at))})` : ''} trajo
                                         {' '}<b>{estadoPP.listadas ?? '—'}</b> factura(s) de proveedor y ninguna con saldo abierto.
@@ -314,10 +326,10 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                     )}
                                     {ppDescuadre && (
                                         <div className="mt-3 bg-white rounded-lg border border-amber-200 p-3">
-                                            <p className="font-bold">Pero las fichas de proveedor en Zoho suman {money(saldoProv.total)} por pagar</p>
+                                            <p className="font-bold">Detalle por proveedor</p>
                                             <p className="text-xs mt-1">
-                                                Es lo que la FICHA de cada proveedor dice en Zoho (saldos iniciales incluidos), no la lista de facturas.
-                                                {saldoProv.creditos > 0.005 && <> "A favor" son pagos adelantados o notas de crédito del proveedor que en Zoho no se han aplicado a ninguna factura ({money(saldoProv.creditos)} en total): lo que de verdad se debe es el neto.</>}
+                                                Bruto de las fichas {money(saldoProv.total)}
+                                                {saldoProv.creditos > 0.005 && <> − {money(saldoProv.creditos)} "a favor". En este caso no son anticipos: son los débitos de los asientos de corte que Zoho deja sin cruzar con el saldo inicial. Lo que cuenta es el neto.</>}
                                             </p>
                                             <div className="mt-2 divide-y divide-amber-100">
                                                 {(saldoProv.proveedores || []).map(v => (
@@ -390,8 +402,9 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                 <Hoja titulo="Proveedores" subtitulo="Última compra, total comprado y deuda abierta" onClose={cerrar}>
                     {k.nPorPagar === 0 && (
                         <p className="text-[11px] text-slate-500 mb-3 bg-amber-50 border border-amber-200 rounded-xl p-3 leading-relaxed">
-                            La deuda con cada proveedor sale de las facturas de proveedor de Zoho, que todavía no llegan
-                            (ver tarjeta Cuentas por pagar). Las compras de insumos vienen del libro de compras de Kroma,
+                            {ppFichas
+                                ? 'La deuda sale del neto de cada ficha de proveedor en Zoho (= balanza), porque todavía no hay facturas de proveedor.'
+                                : 'La deuda con cada proveedor sale de las facturas de proveedor de Zoho, que todavía no llegan (ver tarjeta Cuentas por pagar).'} Las compras de insumos vienen del libro de compras de Kroma,
                             que registra desde septiembre de 2026; la leche, de las recepciones.
                         </p>
                     )}
@@ -410,9 +423,9 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                     <div className="text-right shrink-0">
                                         <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Deuda</p>
                                         <p className={`font-black tabular-nums text-sm ${p.deuda > 0.005 ? 'text-amber-700' : 'text-slate-500'}`}>
-                                            {p.deuda > 0.005 ? money(p.deuda) : (k.nPorPagar > 0 ? '$0,00' : '—')}
+                                            {p.deuda > 0.005 ? money(p.deuda) : (k.nPorPagar > 0 || ppFichas ? '$0,00' : '—')}
                                         </p>
-                                        {p.facturas.length > 0 && <p className="text-[11px] text-slate-400">{p.facturas.length} factura{p.facturas.length === 1 ? '' : 's'}</p>}
+                                        {p.facturas.length > 0 && <p className="text-[11px] text-slate-400">{p.facturas.some(b => b.deFicha) ? 'según su ficha en Zoho' : `${p.facturas.length} factura${p.facturas.length === 1 ? '' : 's'}`}</p>}
                                     </div>
                                 </div>
                                 <div className="mt-2 pt-2 border-t border-slate-100 text-[12px] text-slate-600 flex items-start justify-between gap-3">
@@ -433,7 +446,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                             <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">Deuda en Zoho con proveedores que no están en Kroma</p>
                             <div className="space-y-2">
                                 {k.facturasSinProveedor.map(b => (
-                                    <Fila key={b.id} titulo={b.proveedor || '—'} sub={`${b.numero} · vence ${fmt(toDate(b.vencimiento))}`} derecha={money(b.balance)} />
+                                    <Fila key={b.id || b.proveedor} titulo={b.proveedor || '—'} sub={b.deFicha ? 'Saldo de su ficha en Zoho · no está en el catálogo de proveedores de Kroma' : `${b.numero} · vence ${fmt(toDate(b.vencimiento))}`} derecha={money(b.balance)} />
                                 ))}
                             </div>
                         </div>

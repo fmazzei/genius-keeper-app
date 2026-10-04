@@ -191,7 +191,20 @@ export function useTableroGerencial() {
             .sort((a, b) => (fechaProduccion(b) || 0) - (fechaProduccion(a) || 0))
             .map(p => ({ log: p, costo: costeoLote(p, ctxCosto) }));
         const compra = listaDeCompras(data.materiales, data.invMateriales);
-        const relProv = relacionProveedores(data.proveedores, data.compras, data.recepcionesLeche, pagarAbiertas);
+        // Sin facturas de proveedor en Zoho (hoy la deuda vive en saldos iniciales
+        // y asientos), la cifra fiel es el NETO de cada ficha de proveedor:
+        // por pagar − créditos sin aplicar = saldo de Cuentas por pagar en la
+        // balanza. Cuando existan bills, mandan ellas.
+        const saldoProvZ = data.appConfig?.zohoSaldoProveedores || null;
+        const fichasNeto = pagarAbiertas.length === 0 && saldoProvZ
+            ? (saldoProvZ.proveedores || [])
+                .map(v => ({ proveedor: v.nombre, balance: Math.max(0, (Number(v.porPagar) || 0) - (Number(v.creditos) || 0)), deFicha: true }))
+                .filter(v => v.balance > 0.005)
+            : [];
+        const fuentePorPagar = pagarAbiertas.length > 0 ? 'bills' : (fichasNeto.length > 0 ? 'fichas' : null);
+        const porPagarFichas = fichasNeto.reduce((s, v) => s + v.balance, 0);
+        const relProv = relacionProveedores(data.proveedores, data.compras, data.recepcionesLeche,
+            fuentePorPagar === 'fichas' ? fichasNeto : pagarAbiertas);
         const estadoPorPagar = data.appConfig?.zohoPorPagarEstado || null;
         const planta = {
             lotesActivos,
@@ -205,6 +218,7 @@ export function useTableroGerencial() {
             provConCompras: relProv.filas.filter(f => f.nMovimientos > 0).length,
             provConDeuda: relProv.filas.filter(f => f.deuda > 0.005).length,
             estadoPorPagar,
+            fuentePorPagar, porPagarFichas, nPorPagarFichas: fichasNeto.length,
             // Control cruzado: saldo que cada ficha de proveedor de Zoho dice que
             // se le debe. Se muestra cuando el listado de bills no cuadra.
             saldoProveedores: data.appConfig?.zohoSaldoProveedores || null,
