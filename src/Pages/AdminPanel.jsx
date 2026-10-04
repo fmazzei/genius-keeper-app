@@ -4230,10 +4230,11 @@ const IntegracionesSection = () => {
         setCredSaving(true); setCredMsg('');
         try {
             const fn = httpsCallable(functions, 'intercambiarCodigoZoho');
-            await fn(creds);
-            setCredMsg('¡Conectado con Zoho! Ya puedes usar el botón de actualizar.');
+            const { data } = await fn(creds);
+            const p = data?.permisos || {};
+            setCredMsg(`¡Conectado con Zoho! Facturas: ${p.facturas ? 'OK' : 'sin probar'} · Cuentas por pagar: ${p.cuentasPorPagar ? 'OK' : (p.cuentasPorPagar === false ? 'sin permiso (falta bills.READ)' : 'sin probar')}.`);
             setCreds(c => ({ ...c, clientSecret: '', code: '' })); // no conservar secretos en pantalla
-            setTimeout(() => setCredMsg(''), 6000);
+            setTimeout(() => setCredMsg(''), 15000);
         } catch (e) {
             setCredMsg(e.message || 'Error al conectar con Zoho.');
         } finally { setCredSaving(false); }
@@ -4621,10 +4622,11 @@ const IntegracionesSection = () => {
                     <summary className="cursor-pointer text-xs font-semibold text-slate-600 select-none">Credenciales de la API de Zoho (configurar una vez)</summary>
                     <div className="mt-3 space-y-2">
                         <p className="text-[11px] text-slate-400">
-                            En el Zoho API Console crea un <b>Self Client</b>. Pega aquí el <b>Client ID</b> y el <b>Client Secret</b>. Luego, en la pestaña <b>Generate Code</b> de Zoho, con scope <code className="bg-slate-100 px-1 rounded">ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ</code> (los cinco, separados por coma — <b>CREATE</b> permite facturar desde GK, <b>bills.READ</b> trae las cuentas por pagar al Tablero Gerencial y <b>contacts.READ</b> trae los clientes nuevos, aún sin facturas, a la lista de razones sociales) y duración 10 min, genera el <b>código</b> y pégalo abajo. GK lo canjea por el token permanente. El código dura solo 10 minutos — pégalo apenas lo generes.
+                            En la pestaña <b>Generate Code</b> del Self Client de Zoho, con scope <code className="bg-slate-100 px-1 rounded break-all">ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ</code> (los cinco, separados por coma — <b>CREATE</b> permite facturar desde GK, <b>bills.READ</b> trae las cuentas por pagar al Tablero Gerencial y <b>contacts.READ</b> trae los clientes nuevos a la lista de razones sociales), genera el <b>código</b>, pégalo abajo y pulsa <b>Conectar</b> enseguida: el código dura pocos minutos.
+                            {' '}<b>Si GK ya estaba conectado, deja vacíos Client ID y Client Secret</b>: usa los que ya tiene. Antes de reemplazar la conexión, GK prueba el token nuevo; si no puede leer facturas, no lo guarda y todo sigue como estaba.
                         </p>
-                        <input type="text" value={creds.clientId} onChange={e => setCreds(c => ({ ...c, clientId: e.target.value }))} placeholder="Client ID" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
-                        <input type="password" value={creds.clientSecret} onChange={e => setCreds(c => ({ ...c, clientSecret: e.target.value }))} placeholder="Client Secret" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        <input type="text" value={creds.clientId} onChange={e => setCreds(c => ({ ...c, clientId: e.target.value }))} placeholder="Client ID (vacío = el ya guardado)" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        <input type="password" value={creds.clientSecret} onChange={e => setCreds(c => ({ ...c, clientSecret: e.target.value }))} placeholder="Client Secret (vacío = el ya guardado)" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
                         <input type="text" value={creds.code} onChange={e => setCreds(c => ({ ...c, code: e.target.value }))} placeholder="Código (Generate Code de Zoho)" className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
                         <select value={creds.dataCenter} onChange={e => setCreds(c => ({ ...c, dataCenter: e.target.value }))} className={SELECT_CLS} style={SELECT_STYLE}>
                             <option value="com">Data center: .com (EE.UU. — usual en Venezuela)</option>

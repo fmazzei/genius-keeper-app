@@ -883,6 +883,7 @@ Pedido del dueño con capturas: las tarjetas 04, 07 y 08 no decían lo que hací
   2. **`cuentas_por_pagar` no tenía regla de Firestore**, así que la lectura se negaba por defecto: la tarjeta habría seguido vacía aun con el scope concedido. Ahora `read: isAdmin()`, `write: false` (solo la conciliación escribe).
   - La conciliación guarda además `settings/appConfig.zohoPorPagarEstado` (`autorizado`, `motivo`, `at`) en cada corrida. Así la tarjeta distingue "Zoho no da permiso" de "no se debe nada" y muestra la última respuesta de Zoho.
 - Verificado: 22 casos de la lógica pura (costo por kg y por unidad, redondeo a envases, capital, deuda por nombre) y 8 de reglas en el emulador.
+- **Renovar permisos de Zoho sin romper lo que funciona** (`intercambiarCodigoZoho`): basta pegar el CÓDIGO nuevo. Client ID y Secret vacíos = se usan los guardados en `zoho_secure/creds`. Antes de reemplazar el token, se prueba el nuevo leyendo facturas; si falla, NO se guarda y queda la conexión anterior. Devuelve `permisos {facturas, cuentasPorPagar}` y la pantalla los muestra.
 
 ## Notificaciones y versiones (2026-08) ✅
 

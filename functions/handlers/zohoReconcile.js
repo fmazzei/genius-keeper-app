@@ -15,7 +15,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
-const { getAccessToken, listAllInvoices, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
+const { getAccessToken, listAllInvoices, listBillsPage, getInvoiceDetail, getContactDetail, exchangeCode } = require('./zohoApi');
 const { upsertFacturaFromZoho, resolveVendedorFromPreload, esClienteOficina, extraerRif, stripSucursal } = require('./facturaSync');
 const { revertirAcumulados } = require('./facturaCommissionOps');
 const { upsertClientesRegistry, loadClienteMap, sincronizarClientesDesdeContactos } = require('./clientesRegistry');
@@ -155,22 +155,57 @@ exports.intercambiarCodigoZoho = onCall({ region: "us-central1", timeoutSeconds:
     if (!request.auth) throw new HttpsError("unauthenticated", "No autorizado");
     await requireRole(request.auth.uid, ["master"]);
 
+    // Para RENOVAR permisos (mismo Self Client, scopes nuevos) basta el código:
+    // Client ID y Secret se toman de los ya guardados si no se escriben.
     const { clientId, clientSecret, code, dataCenter } = request.data || {};
-    if (!clientId || !clientSecret || !code) {
-        throw new HttpsError("invalid-argument", "Faltan Client ID, Client Secret o el código.");
+    const db = admin.firestore();
+    const [credsSnap, cfgSnap] = await Promise.all([
+        db.doc('zoho_secure/creds').get(),
+        db.doc('settings/appConfig').get(),
+    ]);
+    const prev = credsSnap.data() || {};
+    const cid = (clientId && clientId.trim()) || prev.clientId;
+    const csec = (clientSecret && clientSecret.trim()) || prev.clientSecret;
+    if (!code || !code.trim()) throw new HttpsError("invalid-argument", "Falta el código generado en Zoho.");
+    if (!cid || !csec) {
+        throw new HttpsError("invalid-argument", "GK no tiene guardados el Client ID y el Client Secret: escríbelos (pestaña \"Client Secret\" del Self Client en Zoho).");
     }
-    const dc = (dataCenter && dataCenter.trim()) || 'com';
+    const dc = (dataCenter && dataCenter.trim()) || prev.dataCenter || 'com';
     let refreshToken;
     try {
-        refreshToken = await exchangeCode({ clientId: clientId.trim(), clientSecret: clientSecret.trim(), code: code.trim(), dataCenter: dc });
+        refreshToken = await exchangeCode({ clientId: cid, clientSecret: csec, code: code.trim(), dataCenter: dc });
     } catch (e) {
-        throw new HttpsError("internal", `Zoho: ${e.response?.data?.error || e.message}`);
+        const msg = e.response?.data?.error || e.message;
+        throw new HttpsError("internal", `Zoho: ${msg}${/invalid_code/i.test(msg) ? ' — el código expiró (dura 3 min) o ya se usó: genera uno nuevo y pégalo enseguida.' : ''}`);
     }
-    await admin.firestore().doc('zoho_secure/creds').set({
-        clientId: clientId.trim(), clientSecret: clientSecret.trim(), refreshToken, dataCenter: dc,
+
+    // RED DE SEGURIDAD: antes de reemplazar el token que hoy funciona, se prueba
+    // el nuevo contra lo que GK ya usa (leer facturas). Si no puede, NO se guarda
+    // y la integración actual sigue intacta.
+    const organizationId = cfgSnap.data()?.zohoOrgIdLacteoca;
+    const nuevas = { clientId: cid, clientSecret: csec, refreshToken, dataCenter: dc };
+    const permisos = { facturas: null, cuentasPorPagar: null };
+    if (organizationId) {
+        let accessToken;
+        try {
+            accessToken = await getAccessToken(nuevas);
+            await listAllInvoices({ accessToken, organizationId, dataCenter: dc, maxPages: 1, perPage: 1 });
+            permisos.facturas = true;
+        } catch (e) {
+            throw new HttpsError("failed-precondition",
+                `El token nuevo NO puede leer facturas (${e.response?.data?.message || e.message}). No se guardó: GK sigue con la conexión anterior. Revisa que el scope incluya ZohoBooks.invoices.READ.`);
+        }
+        try {
+            await listBillsPage({ accessToken, organizationId, dataCenter: dc, page: 1, perPage: 1 });
+            permisos.cuentasPorPagar = true;
+        } catch (_) { permisos.cuentasPorPagar = false; }
+    }
+
+    await db.doc('zoho_secure/creds').set({
+        ...nuevas,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedBy: request.auth.uid,
     }, { merge: true });
-    return { ok: true };
+    return { ok: true, permisos };
 });
 
 /**
