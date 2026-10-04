@@ -129,11 +129,13 @@ function error(msg) {
     return { content: [{ type: "text", text: msg }], isError: true };
 }
 
-async function auditar(herramienta, parametros, documentos) {
+async function auditar(herramienta, parametros, documentos, contexto = {}) {
     try {
         await admin.firestore().collection("mcp_auditoria").add({
             fecha: admin.firestore.FieldValue.serverTimestamp(),
             herramienta,
+            // Por dónde llegó la clave ("encabezado" o "url"). Nunca la clave.
+            via: contexto.via || null,
             parametros: JSON.parse(JSON.stringify(parametros ?? {})),
             documentos: documentos ?? 0,
         });
@@ -141,14 +143,14 @@ async function auditar(herramienta, parametros, documentos) {
 }
 
 /** Ejecuta una herramienta con auditoría y manejo de errores uniformes. */
-function herramienta(nombre, fn) {
+function herramienta(nombre, fn, contexto = {}) {
     return async (args) => {
         try {
             const { salida, documentos } = await fn(args || {});
-            await auditar(nombre, args, documentos);
+            await auditar(nombre, args, documentos, contexto);
             return respuesta(salida);
         } catch (e) {
-            await auditar(nombre, { ...args, error: String(e?.message || e).slice(0, 300) }, 0);
+            await auditar(nombre, { ...args, error: String(e?.message || e).slice(0, 300) }, 0, contexto);
             return error(`Error: ${String(e?.message || e).slice(0, 500)}`);
         }
     };
@@ -163,14 +165,15 @@ const FILTRO = z.object({
     tipo: z.enum(["fecha"]).optional().describe("'fecha' convierte un valor ISO 8601 en Timestamp antes de filtrar"),
 });
 
-function crearServidor() {
+function crearServidor(contexto = {}) {
+    const h = (nombre, fn) => herramienta(nombre, fn, contexto);
     const db = admin.firestore();
     const server = new McpServer({ name: "gk-kroma-firestore", version: "1.0.0" });
 
     server.registerTool("listar_colecciones", {
         description: "Lista las colecciones raíz de Firestore (GK y Kroma comparten el proyecto). Con `rutaDocumento` lista las subcolecciones de ese documento.",
         inputSchema: { rutaDocumento: z.string().optional().describe("p. ej. users_metadata/abc123") },
-    }, herramienta("listar_colecciones", async ({ rutaDocumento }) => {
+    }, h("listar_colecciones", async ({ rutaDocumento }) => {
         if (rutaDocumento && rutaSecreta(rutaDocumento)) throw new Error("Ruta no disponible.");
         const cols = rutaDocumento ? await db.doc(rutaDocumento).listCollections() : await db.listCollections();
         const lista = cols.map(c => ({ id: c.id, ruta: c.path, ...(COLECCIONES_SECRETAS.has(c.id) ? { nota: "secreta: no se lee" } : {}) }))
@@ -184,7 +187,7 @@ function crearServidor() {
             coleccion: z.string().describe("Nombre o ruta de la colección (p. ej. kroma_despachos o users_metadata/abc/tokens)"),
             muestra: z.number().int().min(1).max(200).optional().default(20),
         },
-    }, herramienta("esquema_coleccion", async ({ coleccion, muestra = 20 }) => {
+    }, h("esquema_coleccion", async ({ coleccion, muestra = 20 }) => {
         if (rutaSecreta(coleccion)) throw new Error("Colección no disponible.");
         const snap = await db.collection(coleccion).limit(muestra).get();
         const campos = {};
@@ -220,7 +223,7 @@ function crearServidor() {
             filtros: z.array(FILTRO).optional(),
             grupo: z.boolean().optional().describe("true = collectionGroup (todas las colecciones con ese nombre)"),
         },
-    }, herramienta("contar", async ({ coleccion, filtros, grupo }) => {
+    }, h("contar", async ({ coleccion, filtros, grupo }) => {
         if (rutaSecreta(coleccion)) throw new Error("Colección no disponible.");
         const base = grupo ? db.collectionGroup(coleccion) : db.collection(coleccion);
         const agg = await aplicarFiltros(base, filtros).count().get();
@@ -238,7 +241,7 @@ function crearServidor() {
             cursor: z.string().optional().describe("Ruta del último documento devuelto en la página anterior"),
             grupo: z.boolean().optional().describe("true = collectionGroup"),
         },
-    }, herramienta("consultar_coleccion", async ({ coleccion, filtros, ordenarPor, direccion = "asc", limite = 100, cursor, grupo }) => {
+    }, h("consultar_coleccion", async ({ coleccion, filtros, ordenarPor, direccion = "asc", limite = 100, cursor, grupo }) => {
         if (rutaSecreta(coleccion)) throw new Error("Colección no disponible.");
         let q = aplicarFiltros(grupo ? db.collectionGroup(coleccion) : db.collection(coleccion), filtros);
         if (ordenarPor) q = q.orderBy(ordenarPor, direccion);
@@ -268,7 +271,7 @@ function crearServidor() {
     server.registerTool("leer_documento", {
         description: "Lee un documento por su ruta completa, p. ej. kroma_despachos/abc123.",
         inputSchema: { ruta: z.string() },
-    }, herramienta("leer_documento", async ({ ruta }) => {
+    }, h("leer_documento", async ({ ruta }) => {
         if (rutaSecreta(ruta)) throw new Error("Documento no disponible.");
         const snap = await db.doc(ruta).get();
         if (!snap.exists) return { salida: { ruta, existe: false }, documentos: 0 };
@@ -287,7 +290,7 @@ function crearServidor() {
             limite: z.number().int().min(1).max(1000).optional().default(100),
             cursor: z.string().optional().describe("Token de página devuelto en la llamada anterior"),
         },
-    }, herramienta("listar_usuarios", async ({ limite = 100, cursor }) => {
+    }, h("listar_usuarios", async ({ limite = 100, cursor }) => {
         const r = await admin.auth().listUsers(limite, cursor || undefined);
         const usuarios = r.users.map(u => ({
             uid: u.uid,
@@ -312,7 +315,8 @@ exports.mcp = onRequest({
     invoker: "public",
     cors: false,
 }, async (req, res) => {
-    const recibida = req.get("x-api-key") || (typeof req.query?.key === "string" ? req.query.key : "");
+    const porEncabezado = req.get("x-api-key") || "";
+    const recibida = porEncabezado || (typeof req.query?.key === "string" ? req.query.key : "");
     const esperada = claveEsperada();
     if (esperada.length < 40 || !claveValida(recibida, esperada)) {
         res.status(401).send("Unauthorized");
@@ -323,7 +327,7 @@ exports.mcp = onRequest({
         res.status(405).set("Allow", "POST").json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null });
         return;
     }
-    const server = crearServidor();
+    const server = crearServidor({ via: porEncabezado ? "encabezado" : "url" });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => { transport.close(); server.close(); });
     try {
