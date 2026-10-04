@@ -20,10 +20,18 @@ jobs:
       - name: Instalar dependencias de Functions
         run: npm install --prefix functions
 
+      # Mismo .env que el deploy automático: sin él, las funciones quedan sin
+      # ZOHO_SECRET (webhooks de Zoho en 401) y sin MCP_API_KEY (conector en 401).
       - name: Deploy Cloud Functions
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
-        run: firebase deploy --only functions --project geniuskeeper-36553 --non-interactive
+          ZOHO_SECRET: ${{ secrets.ZOHO_SECRET }}
+          MCP_API_KEY: ${{ secrets.MCP_API_KEY }}
+        run: |
+          printf 'ZOHO_SECRET=%s\n' "$ZOHO_SECRET" > functions/.env.geniuskeeper-36553
+          if [ -n "$MCP_API_KEY" ]; then printf 'MCP_API_KEY=%s\n' "$MCP_API_KEY" >> functions/.env.geniuskeeper-36553; fi
+          firebase deploy --only functions --project geniuskeeper-36553 --non-interactive --force
+          rm -f functions/.env.geniuskeeper-36553
 
       - name: Limpiar credenciales
         if: always()
