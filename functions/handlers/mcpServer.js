@@ -7,9 +7,9 @@
 // - Transporte Streamable HTTP SIN ESTADO: un servidor y un transporte nuevos
 //   por solicitud (Cloud Functions no garantiza que dos solicitudes caigan en
 //   la misma instancia).
-// - Autenticación por clave (variable MCP_API_KEY): encabezado `X-API-Key`. claude.ai no deja poner
-//   encabezados propios en un conector personalizado, así que también se acepta
-//   en la URL (`?key=…`). Sin clave o con una incorrecta: 401, sin más detalle.
+// - Autenticación por clave (variable MCP_API_KEY), SOLO en el encabezado
+//   `X-API-Key` (claude.ai lo configura en "Encabezados de solicitud"). Sin
+//   clave o con una incorrecta: 401. GET /estado = diagnóstico sin secretos.
 // - NO escribe en Firestore, salvo la bitácora `mcp_auditoria`.
 // - Redacta lo sensible (contraseñas, PIN, tokens, credenciales, secretos) y
 //   reemplaza las imágenes en base64 por un marcador con su tamaño. Algunas
@@ -47,6 +47,9 @@ const PATRON_SENSIBLE = /(password|passwd|contrase|^pass$|hash|token|secret|api_
 const REDACTADO = "[redactado]";
 
 // ── Utilidades ──────────────────────────────────────────────────────────────
+
+/** 8 caracteres del SHA-256: sirve para comparar dos claves sin mostrarlas. */
+const huella = (v) => crypto.createHash("sha256").update(String(v)).digest("hex").slice(0, 8);
 
 function claveValida(recibida, esperada) {
     if (!recibida || !esperada) return false;
@@ -315,19 +318,60 @@ exports.mcp = onRequest({
     invoker: "public",
     cors: false,
 }, async (req, res) => {
-    const porEncabezado = req.get("x-api-key") || "";
-    const recibida = porEncabezado || (typeof req.query?.key === "string" ? req.query.key : "");
-    const esperada = claveEsperada();
-    if (esperada.length < 40 || !claveValida(recibida, esperada)) {
-        res.status(401).send("Unauthorized");
+    const ruta = String(req.path || "/").replace(/\/+$/, "") || "/";
+
+    // Diagnóstico público (no exige clave y no revela nada usable): dice si la
+    // clave está configurada, una HUELLA de ella (8 caracteres de su SHA-256,
+    // irreversible) y los últimos rechazos con su motivo. Sirve para saber, desde
+    // el navegador, si la clave que se pegó en claude.ai es la que tiene el
+    // servidor, sin tener que mostrar ninguna de las dos.
+    if (ruta === "/estado" && req.method === "GET") {
+        const esperada = claveEsperada();
+        let rechazos = [];
+        try {
+            const snap = await admin.firestore().collection("mcp_rechazos").orderBy("fecha", "desc").limit(10).get();
+            rechazos = snap.docs.map(d => limpiar(d.data()));
+        } catch (e) { rechazos = [{ error: "no se pudieron leer" }]; }
+        res.status(200).json({
+            claveConfigurada: esperada.length >= 40,
+            huellaClaveServidor: esperada ? huella(esperada) : null,
+            ultimosRechazos: rechazos,
+        });
         return;
     }
-    // Sin estado: no hay sesiones que abrir (GET/SSE) ni cerrar (DELETE).
+    // Cualquier otra ruta (p. ej. /.well-known/oauth-*) no existe: 404 ANTES de
+    // pedir clave. Si respondiera 401, claude.ai creería que el conector usa
+    // OAuth e intentaría registrarse, que es el error "No se pudo registrar con
+    // el servicio de inicio de sesión".
+    if (ruta !== "/") { res.status(404).send("Not found"); return; }
+    // Sin estado: no hay sesiones que abrir (GET/SSE) ni cerrar (DELETE). Va
+    // antes de la clave por la misma razón: un sondeo GET no debe ver un 401.
     if (req.method !== "POST") {
         res.status(405).set("Allow", "POST").json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null });
         return;
     }
-    const server = crearServidor({ via: porEncabezado ? "encabezado" : "url" });
+
+    // La clave llega SOLO por el encabezado X-API-Key (en la URL quedaba a la
+    // vista en la configuración del conector y en los registros de Cloud Run).
+    const recibida = req.get("x-api-key") || "";
+    const esperada = claveEsperada();
+    if (esperada.length < 40 || !claveValida(recibida, esperada)) {
+        const motivo = esperada.length < 40 ? "servidor_sin_clave"
+            : !recibida ? (typeof req.query?.key === "string" ? "clave_en_url_ya_no_se_acepta" : "sin_encabezado")
+            : "clave_incorrecta";
+        try {
+            await admin.firestore().collection("mcp_rechazos").add({
+                fecha: admin.firestore.FieldValue.serverTimestamp(),
+                motivo,
+                huellaRecibida: recibida ? huella(recibida) : null,
+                largoRecibido: recibida.length,
+                cliente: String(req.get("user-agent") || "").slice(0, 80),
+            });
+        } catch (e) { /* diagnóstico */ }
+        res.status(401).send("Unauthorized");
+        return;
+    }
+    const server = crearServidor({ via: "encabezado" });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => { transport.close(); server.close(); });
     try {
@@ -340,4 +384,4 @@ exports.mcp = onRequest({
 });
 
 // Para pruebas locales.
-exports._internos = { limpiar, rutaSecreta, PATRON_SENSIBLE, crearServidor, claveValida };
+exports._internos = { huella, limpiar, rutaSecreta, PATRON_SENSIBLE, crearServidor, claveValida };

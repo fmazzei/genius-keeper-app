@@ -47,7 +47,7 @@ await admin.auth().setCustomUserClaims('auth1', { role: 'master' });
 // ── La función, servida en local ───────────────────────────────────────────
 const app = express();
 app.use(express.json());
-app.all('/', (req, res) => mcp(req, res));
+app.use((req, res) => mcp(req, res));
 const srv = await new Promise(r => { const s = app.listen(0, () => r(s)); });
 const url = `http://127.0.0.1:${srv.address().port}/`;
 
@@ -125,11 +125,24 @@ ok(aud.total >= 15, `auditoría registrada: ${aud.total} llamadas`);
 const ultimas = await llamar('consultar_coleccion', { coleccion: 'mcp_auditoria', limite: 3 });
 ok(!JSON.stringify(ultimas).includes(process.env.MCP_API_KEY), 'la clave no aparece en la auditoría');
 
-// Clave en la URL (claude.ai no deja poner encabezados).
-const client2 = await conectar(`${url}?key=${encodeURIComponent(process.env.MCP_API_KEY)}`, {});
-const viaUrl = await client2.callTool({ name: 'listar_colecciones', arguments: {} });
-ok(!viaUrl.isError, 'clave por ?key= en la URL');
+// La clave en la URL YA NO se acepta: solo el encabezado X-API-Key.
+r = await fetch(`${url}?key=${encodeURIComponent(process.env.MCP_API_KEY)}`, { method: 'POST', headers: hdr, body });
+ok(r.status === 401, `clave en la URL → ${r.status}`);
+// Rutas de descubrimiento OAuth: 404 (no 401), para que claude.ai no intente OAuth.
+r = await fetch(`${url}.well-known/oauth-protected-resource`);
+ok(r.status === 404, `/.well-known/... → ${r.status}`);
+// Un sondeo GET sin clave: 405, no 401.
+r = await fetch(url);
+ok(r.status === 405, `GET sin clave → ${r.status}`);
+// Diagnóstico: huella de la clave del servidor y rechazos con su motivo.
+r = await fetch(`${url}estado`);
+const est = await r.json();
+ok(r.status === 200 && est.claveConfigurada === true && /^[0-9a-f]{8}$/.test(est.huellaClaveServidor) && !JSON.stringify(est).includes(process.env.MCP_API_KEY),
+    `/estado: huella ${est.huellaClaveServidor}, sin la clave`);
+const motivos = (est.ultimosRechazos || []).map(x => x.motivo);
+ok(motivos.includes('sin_encabezado') && motivos.includes('clave_incorrecta') && motivos.includes('clave_en_url_ya_no_se_acepta'),
+    `rechazos con motivo: ${[...new Set(motivos)].join(', ')}`);
 
-await client.close(); await client2.close(); srv.close();
+await client.close(); srv.close();
 console.log(fallos ? `\n${fallos} verificación(es) fallaron` : '\nTodas las verificaciones en verde');
 process.exit(fallos ? 1 : 0);
