@@ -846,6 +846,9 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
                 autorizado: !!res.porPagar?.autorizado,
                 motivo: res.porPagar?.motivo || null,
                 facturas: res.porPagar?.nAbiertas ?? null,
+                listadas: res.porPagar?.total ?? null,
+                saldoProveedores: res.porPagar?.saldoProveedores ?? null,
+                diag: res.porPagar?.diag || null,
                 at: admin.firestore.FieldValue.serverTimestamp(),
             } }, { merge: true });
         } catch (e) { /* diagnóstico: no tumba la conciliación */ }

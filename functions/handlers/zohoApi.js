@@ -103,10 +103,12 @@ async function listAllInvoices({ accessToken, organizationId, dataCenter, maxPag
  * Requiere el scope `ZohoBooks.bills.READ` en el Self Client: sin él Zoho
  * responde 401 y la sincronización lo reporta como "falta autorizar".
  */
-async function listBillsPage({ accessToken, organizationId, dataCenter, page, perPage = 200 }) {
+async function listBillsPage({ accessToken, organizationId, dataCenter, page, perPage = 200, filterBy }) {
     const { api } = dcUrls(dataCenter);
+    const params = { organization_id: organizationId, page, per_page: perPage, sort_column: 'date', sort_order: 'D' };
+    if (filterBy) params.filter_by = filterBy;
     const res = await axios.get(`${api}/books/v3/bills`, {
-        params: { organization_id: organizationId, page, per_page: perPage, sort_column: 'date', sort_order: 'D' },
+        params,
         headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
         timeout: 30000,
     });
@@ -117,11 +119,11 @@ async function listBillsPage({ accessToken, organizationId, dataCenter, page, pe
 }
 
 /** Todas las facturas de proveedor, paginando. `complete` = se agotó el listado. */
-async function listAllBills({ accessToken, organizationId, dataCenter, maxPages = 20, perPage = 200 }) {
+async function listAllBills({ accessToken, organizationId, dataCenter, maxPages = 20, perPage = 200, filterBy }) {
     const all = [];
     let complete = true;
     for (let page = 1; page <= maxPages; page++) {
-        const { bills, hasMore } = await listBillsPage({ accessToken, organizationId, dataCenter, page, perPage });
+        const { bills, hasMore } = await listBillsPage({ accessToken, organizationId, dataCenter, page, perPage, filterBy });
         all.push(...bills);
         if (!hasMore || bills.length === 0) { complete = true; break; }
         if (page === maxPages && hasMore) complete = false;
@@ -290,4 +292,32 @@ async function listAllContacts({ accessToken, organizationId, dataCenter, maxPag
     return { contacts: all, complete };
 }
 
-module.exports = { getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };
+/**
+ * Saldo por pagar de cada PROVEEDOR según su ficha de contacto en Zoho
+ * (`outstanding_payable_amount` y `unused_credits_payable_amount`). Sirve de
+ * control cruzado contra el listado de bills: si no cuadran, se dice.
+ */
+async function listVendorBalances({ accessToken, organizationId, dataCenter, maxPages = 10, perPage = 200 }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    for (let page = 1; page <= maxPages; page++) {
+        const res = await axios.get(`${api}/books/v3/contacts`, {
+            params: { organization_id: organizationId, contact_type: 'vendor', page, per_page: perPage },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` },
+            timeout: 30000,
+        });
+        const contacts = Array.isArray(res.data?.contacts) ? res.data.contacts : [];
+        all.push(...contacts);
+        if (res.data?.page_context?.has_more_page !== true || contacts.length === 0) break;
+    }
+    return all
+        .map(c => ({
+            vendorId: c.contact_id != null ? String(c.contact_id) : null,
+            nombre: c.contact_name || c.vendor_name || '—',
+            porPagar: Number(c.outstanding_payable_amount) || 0,
+            creditos: Number(c.unused_credits_payable_amount) || 0,
+        }))
+        .filter(v => v.porPagar > 0.005 || v.creditos > 0.005);
+}
+
+module.exports = { listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };

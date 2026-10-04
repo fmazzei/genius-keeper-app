@@ -14,7 +14,7 @@
 // inventa un cero, que sería peor que no mostrar nada.
 
 const admin = require("firebase-admin");
-const { listAllBills } = require('./zohoApi');
+const { listAllBills, listVendorBalances } = require('./zohoApi');
 
 const toDate = (v) => {
     if (!v) return null;
@@ -32,8 +32,21 @@ const ts = (d) => d ? admin.firestore.Timestamp.fromDate(d) : null;
  */
 async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCenter }) {
     let bills, complete;
+    const diag = { intentos: [] };
     try {
         ({ bills, complete } = await listAllBills({ accessToken, organizationId, dataCenter }));
+        diag.intentos.push({ filtro: 'ninguno', listadas: bills.length });
+        // Si el listado sin filtro llega vacío, se reintenta pidiendo
+        // explícitamente todos los estatus. Un fallo aquí no tumba nada.
+        if (bills.length === 0) {
+            try {
+                const r = await listAllBills({ accessToken, organizationId, dataCenter, filterBy: 'Status.All' });
+                diag.intentos.push({ filtro: 'Status.All', listadas: r.bills.length });
+                if (r.bills.length > 0) ({ bills, complete } = r);
+            } catch (e2) {
+                diag.intentos.push({ filtro: 'Status.All', error: String(e2?.response?.data?.message || e2.message).slice(0, 160) });
+            }
+        }
     } catch (e) {
         const status = e?.response?.status;
         const msg = e?.response?.data?.message || e.message;
@@ -51,6 +64,16 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
 
     const db = admin.firestore();
     const hoy = new Date();
+    diag.porEstado = {};
+    bills.forEach(b => { const k = String(b.status || 'sin_estatus'); diag.porEstado[k] = (diag.porEstado[k] || 0) + 1; });
+    diag.muestra = bills.slice(0, 5).map(b => ({
+        numero: b.bill_number || b.bill_id || null, estatus: b.status || null,
+        saldo: b.balance != null ? Number(b.balance) : null, proveedor: b.vendor_name || null,
+    }));
+    // Control cruzado: lo que cada ficha de proveedor de Zoho dice que se le debe.
+    let proveedores = null;
+    try { proveedores = await listVendorBalances({ accessToken, organizationId, dataCenter }); }
+    catch (e) { diag.proveedoresError = String(e?.response?.data?.message || e.message).slice(0, 160); }
     const seen = new Set();
     let escritas = 0, porPagar = 0, vencidas = 0, nAbiertas = 0;
 
@@ -115,14 +138,21 @@ async function sincronizarCuentasPorPagar({ accessToken, organizationId, dataCen
         }
     }
 
+    const saldoProveedores = proveedores ? proveedores.reduce((s, v) => s + v.porPagar, 0) : null;
     await db.doc('settings/appConfig').set({
         zohoPorPagar: {
             total: porPagar, facturas: nAbiertas, vencido: vencidas,
             actualizado: admin.firestore.FieldValue.serverTimestamp(),
         },
+        zohoSaldoProveedores: proveedores ? {
+            total: saldoProveedores,
+            creditos: proveedores.reduce((s, v) => s + v.creditos, 0),
+            proveedores: proveedores.sort((a, b) => b.porPagar - a.porPagar).slice(0, 60),
+            at: admin.firestore.FieldValue.serverTimestamp(),
+        } : null,
     }, { merge: true });
 
-    return { autorizado: true, total: bills.length, escritas, ausentes, porPagar, vencidas, nAbiertas };
+    return { autorizado: true, total: bills.length, escritas, ausentes, porPagar, vencidas, nAbiertas, saldoProveedores, diag };
 }
 
 module.exports = { sincronizarCuentasPorPagar };

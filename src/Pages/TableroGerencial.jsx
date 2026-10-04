@@ -184,6 +184,10 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
     const compra = k.compra || { items: [], sinMinimo: [], sinInventario: [], totalProduccion: 0, totalOtros: 0, sinPrecio: 0 };
     const nComprar = compra.items.length;
     const estadoPP = k.estadoPorPagar;
+    const saldoProv = k.saldoProveedores;
+    // Zoho dio permiso pero el listado de bills no trajo saldos, mientras las
+    // fichas de proveedor sí dicen que se debe: no es "nada pendiente".
+    const ppDescuadre = k.nPorPagar === 0 && estadoPP?.autorizado && (saldoProv?.total || 0) > 0.005;
 
     const provPorId = {};
     (t.proveedores || []).forEach(p => { provPorId[p.id] = p.nombreComercial || p.nombre || p.nombreFiscal || '—'; });
@@ -223,9 +227,11 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                 <Card n="02" icon={Receipt} titulo="Cuentas por pagar" tono={k.pagarVencido > 0 ? 'red' : 'slate'}
                     valor={k.nPorPagar > 0 ? money0(k.porPagar) : '—'}
                     sub={k.nPorPagar > 0 ? `${num(k.nPorPagar)} factura${k.nPorPagar === 1 ? '' : 's'} de proveedor`
+                        : ppDescuadre ? 'Zoho no entregó las facturas de proveedor'
                         : estadoPP?.autorizado ? 'Nada pendiente con proveedores' : 'Sin datos de Zoho todavía'}
                     nota={k.nPorPagar > 0
                         ? (k.pagarVencido > 0 ? `${money0(k.pagarVencido)} ya vencido` : 'Nada vencido')
+                        : ppDescuadre ? 'Pero sus fichas sí registran deuda · toca para ver'
                         : estadoPP?.autorizado ? 'Según la última lectura de Zoho'
                         : 'Zoho no autoriza leer facturas de proveedor'}
                     onClick={() => setAbierto('pagar')} />
@@ -293,7 +299,38 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                 {estadoPP?.autorizado ? 'No hay facturas de proveedor pendientes' : 'Zoho todavía no entrega las facturas de proveedor'}
                             </p>
                             {estadoPP?.autorizado ? (
-                                <p>La última lectura de Zoho{estadoPP.at ? ` (${fmt(toDate(estadoPP.at))})` : ''} no encontró saldos abiertos con proveedores.</p>
+                                <>
+                                    <p>
+                                        La última lectura de Zoho{estadoPP.at ? ` (${fmt(toDate(estadoPP.at))})` : ''} trajo
+                                        {' '}<b>{estadoPP.listadas ?? '—'}</b> factura(s) de proveedor y ninguna con saldo abierto.
+                                        {estadoPP.diag?.porEstado && Object.keys(estadoPP.diag.porEstado).length > 0 && (
+                                            <> Por estatus: {Object.entries(estadoPP.diag.porEstado).map(([k2, v]) => `${k2} ${v}`).join(' · ')}.</>
+                                        )}
+                                    </p>
+                                    {estadoPP.diag?.intentos?.length > 0 && (
+                                        <p className="text-xs mt-1 text-amber-800">
+                                            Lecturas: {estadoPP.diag.intentos.map(i => `${i.filtro}: ${i.error ? 'error — ' + i.error : i.listadas}`).join(' · ')}
+                                        </p>
+                                    )}
+                                    {ppDescuadre && (
+                                        <div className="mt-3 bg-white rounded-lg border border-amber-200 p-3">
+                                            <p className="font-bold">Pero las fichas de proveedor en Zoho suman {money(saldoProv.total)} por pagar</p>
+                                            {saldoProv.creditos > 0.005 && (
+                                                <p className="text-xs">Con créditos de proveedor sin aplicar por {money(saldoProv.creditos)}.</p>
+                                            )}
+                                            <div className="mt-2 divide-y divide-amber-100">
+                                                {(saldoProv.proveedores || []).map(v => (
+                                                    <div key={v.vendorId || v.nombre} className="flex justify-between gap-3 py-1 text-xs">
+                                                        <span className="truncate">{v.nombre}</span>
+                                                        <span className="tabular-nums font-semibold">
+                                                            {money(v.porPagar)}{v.creditos > 0.005 ? ` · crédito ${money(v.creditos)}` : ''}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
                             ) : (
                                 <>
                                     <p className="mb-2">

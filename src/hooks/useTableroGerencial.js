@@ -205,6 +205,9 @@ export function useTableroGerencial() {
             provConCompras: relProv.filas.filter(f => f.nMovimientos > 0).length,
             provConDeuda: relProv.filas.filter(f => f.deuda > 0.005).length,
             estadoPorPagar,
+            // Control cruzado: saldo que cada ficha de proveedor de Zoho dice que
+            // se le debe. Se muestra cuando el listado de bills no cuadra.
+            saldoProveedores: data.appConfig?.zohoSaldoProveedores || null,
         };
 
         // ── Puntos de venta, por PESO de facturación ──
