@@ -1,8 +1,10 @@
 // RUTA: functions/handlers/mcpServer.js
 //
-// CONECTOR MCP DE SOLO LECTURA para GK y Kroma (comparten el proyecto Firebase).
-// Claude (claude.ai) lo agrega como "conector personalizado" y puede consultar
-// cualquier colección de Firestore y los usuarios de Firebase Auth.
+// CONECTOR MCP para GK y Kroma (comparten el proyecto Firebase). Claude
+// (claude.ai) lo agrega como "conector personalizado": consulta cualquier
+// colección de Firestore y los usuarios de Firebase Auth, y ESCRIBE en
+// Firestore (crear, editar, borrar, lotes) con copia previa y deshacer.
+// Firebase Auth es solo lectura.
 //
 // - Transporte Streamable HTTP SIN ESTADO: un servidor y un transporte nuevos
 //   por solicitud (Cloud Functions no garantiza que dos solicitudes caigan en
@@ -10,7 +12,8 @@
 // - Autenticación por clave (variable MCP_API_KEY), SOLO en el encabezado
 //   `X-API-Key` (claude.ai lo configura en "Encabezados de solicitud"). Sin
 //   clave o con una incorrecta: 401. GET /estado = diagnóstico sin secretos.
-// - NO escribe en Firestore, salvo la bitácora `mcp_auditoria`.
+// - Cada llamada queda en `mcp_auditoria`; cada documento escrito, con su
+//   versión anterior exacta, en `mcp_cambios`.
 // - Redacta lo sensible (contraseñas, PIN, tokens, credenciales, secretos) y
 //   reemplaza las imágenes en base64 por un marcador con su tamaño. Algunas
 //   colecciones son secretas ENTERAS (el secreto es el id del documento o el
@@ -139,7 +142,12 @@ async function auditar(herramienta, parametros, documentos, contexto = {}) {
             herramienta,
             // Por dónde llegó la clave ("encabezado" o "url"). Nunca la clave.
             via: contexto.via || null,
-            parametros: JSON.parse(JSON.stringify(parametros ?? {})),
+            // Los datos de una escritura pueden traer fotos: se recortan (la copia
+            // completa vive en mcp_cambios).
+            parametros: (() => {
+                const txt = JSON.stringify(parametros ?? {});
+                return txt.length > 20000 ? { recortado: true, vista: txt.slice(0, 20000) } : JSON.parse(txt);
+            })(),
             documentos: documentos ?? 0,
         });
     } catch (e) { /* la bitácora no puede tumbar la consulta */ }
@@ -159,6 +167,206 @@ function herramienta(nombre, fn, contexto = {}) {
     };
 }
 
+// ── Escritura ──────────────────────────────────────────────────────────────
+//
+// Toda escritura pasa por `aplicarOperaciones`: una transacción que lee cada
+// documento, guarda en `mcp_cambios` una copia EXACTA de cómo estaba (tipos de
+// Firestore incluidos) y luego escribe. `deshacer_cambio` restaura esa copia.
+//
+// Lo que el conector no deja ver tampoco lo deja escribir: colecciones
+// secretas, campos sensibles (contraseñas, PIN, tokens…) y sus propias
+// bitácoras. Los marcadores que devuelve la lectura ("[redactado]",
+// "[imagen base64, N KB]") se reemplazan por el valor real guardado, para que
+// leer → editar → guardar no destruya una foto ni un PIN.
+
+const COLECCIONES_PROPIAS = new Set(["mcp_auditoria", "mcp_cambios", "mcp_rechazos"]);
+const MARCADOR = /^\[(redactado|imagen base64, \d+ KB|binario, \d+ KB)\]$/;
+const MAX_OPERACIONES = 100;
+
+function validarRutaEscritura(ruta, { esDocumento = true } = {}) {
+    const seg = String(ruta || "").split("/").filter(Boolean);
+    if (!seg.length) throw new Error("Ruta vacía.");
+    if (esDocumento && seg.length % 2 !== 0) throw new Error(`"${ruta}" no es la ruta de un documento (colección/id).`);
+    if (!esDocumento && seg.length % 2 !== 1) throw new Error(`"${ruta}" no es la ruta de una colección.`);
+    if (rutaSecreta(ruta)) throw new Error("Colección secreta: no se escribe desde el conector.");
+    if (segmentosColeccion(ruta).some(c => COLECCIONES_PROPIAS.has(c))) throw new Error("Las bitácoras del conector no se escriben a mano.");
+    return seg.join("/");
+}
+
+/** Valor guardado en `antes` en la ruta de campos dada, o undefined. */
+function valorEn(obj, camino) {
+    let v = obj;
+    for (const k of camino) {
+        if (v === null || v === undefined || typeof v !== "object") return undefined;
+        v = v[k];
+    }
+    return v;
+}
+
+/**
+ * Convierte los valores que manda Claude en valores de Firestore:
+ *   {"$fecha":"ISO"} → Timestamp · {"$ahora":true} → hora del servidor
+ *   {"$ref":"col/id"} → referencia · {"$geo":[lat,lng]} → GeoPoint
+ *   {"$incrementar":n} · {"$agregarALista":[..]} · {"$quitarDeLista":[..]}
+ *   {"$borrar":true} → elimina el campo (solo al combinar)
+ * y los marcadores de lectura por el valor real que había.
+ */
+function aFirestore(valor, camino, antes, opciones) {
+    const FV = admin.firestore.FieldValue;
+    const nombre = camino[camino.length - 1];
+    if (typeof valor === "string" && MARCADOR.test(valor)) {
+        const real = valorEn(antes, camino);
+        if (real === undefined) throw new Error(`"${camino.join(".")}" trae el marcador ${valor} pero el documento no tiene ese campo: no hay valor real que conservar.`);
+        return real;
+    }
+    if (nombre && PATRON_SENSIBLE.test(String(nombre))) {
+        throw new Error(`"${camino.join(".")}" es un campo sensible (contraseña, PIN, token…): no se escribe desde el conector.`);
+    }
+    if (valor === null || typeof valor !== "object") return valor;
+    if (Array.isArray(valor)) return valor.map((v, i) => aFirestore(v, [...camino, i], antes, opciones));
+    const claves = Object.keys(valor);
+    if (claves.length === 1 && claves[0].startsWith("$")) {
+        const [k] = claves; const v = valor[k];
+        switch (k) {
+            case "$fecha": {
+                const d = new Date(v);
+                if (isNaN(d)) throw new Error(`"${camino.join(".")}": fecha inválida (${v}).`);
+                return admin.firestore.Timestamp.fromDate(d);
+            }
+            case "$ahora": return FV.serverTimestamp();
+            case "$ref": return admin.firestore().doc(validarRutaEscritura(v));
+            case "$geo": return new admin.firestore.GeoPoint(Number(v[0]), Number(v[1]));
+            case "$incrementar": return FV.increment(Number(v));
+            case "$agregarALista": return FV.arrayUnion(...(Array.isArray(v) ? v : [v]));
+            case "$quitarDeLista": return FV.arrayRemove(...(Array.isArray(v) ? v : [v]));
+            case "$borrar":
+                if (!opciones.permiteBorrarCampo) throw new Error(`"${camino.join(".")}": $borrar solo se usa en actualizar con modo "combinar".`);
+                return FV.delete();
+            default: throw new Error(`"${camino.join(".")}": operador desconocido ${k}.`);
+        }
+    }
+    const out = {};
+    for (const [k, v] of Object.entries(valor)) out[k] = aFirestore(v, [...camino, k], antes, opciones);
+    return out;
+}
+
+/** Al reemplazar, los campos sensibles que había (y Claude no ve) se conservan. */
+function conservarSensibles(nuevo, antes) {
+    if (!antes || typeof antes !== "object" || Array.isArray(antes)) return nuevo;
+    if (!nuevo || typeof nuevo !== "object" || Array.isArray(nuevo)) return nuevo;
+    const out = { ...nuevo };
+    for (const [k, v] of Object.entries(antes)) {
+        if (PATRON_SENSIBLE.test(k)) { if (!(k in out)) out[k] = v; }
+        else if (k in out && v && typeof v === "object" && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype) {
+            out[k] = conservarSensibles(out[k], v);
+        }
+    }
+    return out;
+}
+
+/** Serialización estable para saber si un documento cambió desde una escritura. */
+function firma(datos) {
+    const s = (v) => {
+        if (v === null || v === undefined) return "null";
+        if (v instanceof admin.firestore.Timestamp) return `T${v.seconds}.${v.nanoseconds}`;
+        if (v instanceof admin.firestore.GeoPoint) return `G${v.latitude},${v.longitude}`;
+        if (v instanceof admin.firestore.DocumentReference) return `R${v.path}`;
+        if (Buffer.isBuffer(v) || v instanceof Uint8Array) return `B${Buffer.from(v).toString("base64")}`;
+        if (Array.isArray(v)) return `[${v.map(s).join(",")}]`;
+        if (typeof v === "object") return `{${Object.keys(v).sort().map(k => `${JSON.stringify(k)}:${s(v[k])}`).join(",")}}`;
+        return JSON.stringify(v);
+    };
+    return datos === null ? "inexistente" : crypto.createHash("sha256").update(s(datos)).digest("hex");
+}
+
+/**
+ * Aplica operaciones {accion: crear|actualizar|reemplazar|borrar, ruta, datos}
+ * en UNA transacción (todo o nada), con copia previa de cada documento.
+ */
+async function aplicarOperaciones(operaciones, { motivo = null } = {}) {
+    const db = admin.firestore();
+    if (!operaciones.length) throw new Error("No hay operaciones.");
+    if (operaciones.length > MAX_OPERACIONES) throw new Error(`Máximo ${MAX_OPERACIONES} operaciones por llamada.`);
+    const ops = operaciones.map(o => ({ ...o, ruta: validarRutaEscritura(o.ruta) }));
+    const rutas = ops.map(o => o.ruta);
+    if (new Set(rutas).size !== rutas.length) throw new Error("Hay dos operaciones sobre el mismo documento: júntalas en una.");
+    const lote = db.collection("mcp_cambios").doc().id;
+    const cambiosRefs = ops.map(() => db.collection("mcp_cambios").doc());
+
+    await db.runTransaction(async (tx) => {
+        const snaps = await Promise.all(ops.map(o => tx.get(db.doc(o.ruta))));
+        const escrituras = ops.map((o, i) => {
+            const snap = snaps[i];
+            const antes = snap.exists ? snap.data() : null;
+            if (o.accion === "crear" && snap.exists) throw new Error(`${o.ruta} ya existe: usa actualizar.`);
+            if ((o.accion === "actualizar" || o.accion === "borrar") && !snap.exists) throw new Error(`${o.ruta} no existe.`);
+            let datos = null;
+            if (o.accion !== "borrar") {
+                if (!o.datos || typeof o.datos !== "object" || Array.isArray(o.datos)) throw new Error(`${o.ruta}: faltan los datos (un objeto).`);
+                if (o.accion === "actualizar") {
+                    // Las claves con punto ("a.b") editan un campo anidado.
+                    datos = {};
+                    for (const [k, v] of Object.entries(o.datos)) datos[k] = aFirestore(v, k.split("."), antes, { permiteBorrarCampo: true });
+                } else {
+                    datos = aFirestore(o.datos, [], antes, { permiteBorrarCampo: false });
+                    if (o.accion === "reemplazar") datos = conservarSensibles(datos, antes);
+                }
+            }
+            return { o, antes, datos };
+        });
+        escrituras.forEach(({ o, antes, datos }, i) => {
+            const ref = db.doc(o.ruta);
+            if (o.accion === "borrar") tx.delete(ref);
+            else if (o.accion === "actualizar") tx.update(ref, datos);
+            else tx.set(ref, datos);
+            tx.set(cambiosRefs[i], {
+                fecha: admin.firestore.FieldValue.serverTimestamp(),
+                lote, accion: o.accion, ruta: o.ruta, motivo,
+                existiaAntes: antes !== null,
+                antes,
+                deshecho: false,
+            });
+        });
+    });
+
+    // Huella de cómo quedó cada documento: deshacer la usa para no pisar un
+    // cambio hecho después por la app o por una persona.
+    const despues = await Promise.all(ops.map(o => db.doc(o.ruta).get()));
+    await Promise.all(despues.map((s, i) => cambiosRefs[i].update({ firmaDespues: firma(s.exists ? s.data() : null) })));
+    return ops.map((o, i) => ({ accion: o.accion, ruta: o.ruta, cambioId: cambiosRefs[i].id, existe: despues[i].exists }));
+}
+
+async function deshacer(cambioId, forzar) {
+    const db = admin.firestore();
+    const cref = db.collection("mcp_cambios").doc(String(cambioId));
+    let ruta = null;
+    const nuevoCambio = db.collection("mcp_cambios").doc();
+    await db.runTransaction(async (tx) => {
+        const c = await tx.get(cref);
+        if (!c.exists) throw new Error("No existe ese cambio.");
+        const cambio = c.data();
+        if (cambio.deshecho) throw new Error("Ese cambio ya se deshizo.");
+        ruta = cambio.ruta;
+        const ref = db.doc(validarRutaEscritura(ruta));
+        const actual = await tx.get(ref);
+        const datosActuales = actual.exists ? actual.data() : null;
+        if (!forzar && cambio.firmaDespues && firma(datosActuales) !== cambio.firmaDespues) {
+            throw new Error(`${ruta} cambió después de ese cambio (lo tocó la app u otra persona). Revísalo con leer_documento; si igual quieres volver a la versión anterior, repite con forzar=true.`);
+        }
+        if (cambio.existiaAntes) tx.set(ref, cambio.antes);
+        else if (actual.exists) tx.delete(ref);
+        tx.update(cref, { deshecho: true, deshechoEn: admin.firestore.FieldValue.serverTimestamp() });
+        tx.set(nuevoCambio, {
+            fecha: admin.firestore.FieldValue.serverTimestamp(),
+            lote: nuevoCambio.id, accion: "deshacer", deshaceA: cref.id, ruta,
+            motivo: `Deshace ${cref.id}`, existiaAntes: actual.exists, antes: datosActuales, deshecho: false,
+        });
+    });
+    const s = await db.doc(ruta).get();
+    await nuevoCambio.update({ firmaDespues: firma(s.exists ? s.data() : null) });
+    return { ruta, restaurado: true, existe: s.exists, cambioId: nuevoCambio.id };
+}
+
 // ── Servidor MCP ───────────────────────────────────────────────────────────
 
 const FILTRO = z.object({
@@ -171,9 +379,13 @@ const FILTRO = z.object({
 function crearServidor(contexto = {}) {
     const h = (nombre, fn) => herramienta(nombre, fn, contexto);
     const db = admin.firestore();
-    const server = new McpServer({ name: "gk-kroma-firestore", version: "1.0.0" });
+    const server = new McpServer({ name: "gk-kroma-firestore", version: "2.0.0" });
+    const lectura = (nombre, cfg, cb) =>
+        server.registerTool(nombre, { ...cfg, annotations: { readOnlyHint: true, openWorldHint: false } }, cb);
+    const escritura = (nombre, cfg, cb, destructiva = false) =>
+        server.registerTool(nombre, { ...cfg, annotations: { readOnlyHint: false, destructiveHint: destructiva, openWorldHint: false } }, cb);
 
-    server.registerTool("listar_colecciones", {
+    lectura("listar_colecciones", {
         description: "Lista las colecciones raíz de Firestore (GK y Kroma comparten el proyecto). Con `rutaDocumento` lista las subcolecciones de ese documento.",
         inputSchema: { rutaDocumento: z.string().optional().describe("p. ej. users_metadata/abc123") },
     }, h("listar_colecciones", async ({ rutaDocumento }) => {
@@ -184,7 +396,7 @@ function crearServidor(contexto = {}) {
         return { salida: { colecciones: lista }, documentos: 0 };
     }));
 
-    server.registerTool("esquema_coleccion", {
+    lectura("esquema_coleccion", {
         description: "Lee una muestra de documentos y devuelve los campos encontrados, su tipo y un valor de ejemplo.",
         inputSchema: {
             coleccion: z.string().describe("Nombre o ruta de la colección (p. ej. kroma_despachos o users_metadata/abc/tokens)"),
@@ -219,7 +431,7 @@ function crearServidor(contexto = {}) {
         return { salida, documentos: snap.size };
     }));
 
-    server.registerTool("contar", {
+    lectura("contar", {
         description: "Cuenta los documentos de una colección (agregación count() de Firestore), con filtros opcionales.",
         inputSchema: {
             coleccion: z.string(),
@@ -233,7 +445,7 @@ function crearServidor(contexto = {}) {
         return { salida: { coleccion, grupo: !!grupo, total: agg.data().count }, documentos: 0 };
     }));
 
-    server.registerTool("consultar_coleccion", {
+    lectura("consultar_coleccion", {
         description: "Consulta documentos con filtros, orden y paginación. Devuelve {id, ruta, datos} y el `cursor` siguiente (ruta del último documento).",
         inputSchema: {
             coleccion: z.string(),
@@ -271,7 +483,7 @@ function crearServidor(contexto = {}) {
         return { salida, documentos: docs.length };
     }));
 
-    server.registerTool("leer_documento", {
+    lectura("leer_documento", {
         description: "Lee un documento por su ruta completa, p. ej. kroma_despachos/abc123.",
         inputSchema: { ruta: z.string() },
     }, h("leer_documento", async ({ ruta }) => {
@@ -287,7 +499,7 @@ function crearServidor(contexto = {}) {
         return { salida, documentos: 1 };
     }));
 
-    server.registerTool("listar_usuarios", {
+    lectura("listar_usuarios", {
         description: "Usuarios de Firebase Auth: uid, email, displayName, fecha de creación, último acceso y custom claims (rol).",
         inputSchema: {
             limite: z.number().int().min(1).max(1000).optional().default(100),
@@ -304,6 +516,66 @@ function crearServidor(contexto = {}) {
             claims: u.customClaims ? limpiar(u.customClaims) : {},
         }));
         return { salida: { devueltos: usuarios.length, cursor: r.pageToken || null, usuarios }, documentos: usuarios.length };
+    }));
+
+    // ── Escritura (con copia previa y deshacer) ────────────────────────────
+    const AYUDA_VALORES = "Valores especiales: {\"$fecha\":\"2026-10-05T12:00:00-04:00\"} (Timestamp), {\"$ahora\":true}, {\"$ref\":\"coleccion/id\"}, {\"$geo\":[lat,lng]}, {\"$incrementar\":n}, {\"$agregarALista\":[…]}, {\"$quitarDeLista\":[…]}. Un texto con forma de fecha se guarda como TEXTO, no como fecha. Los marcadores \"[redactado]\" e \"[imagen base64, N KB]\" conservan el valor real. Campos sensibles (contraseñas, PIN, tokens) y colecciones secretas no se escriben.";
+    const MOTIVO = z.string().max(300).optional().describe("Por qué se hace el cambio (queda en mcp_cambios)");
+    const resultado = (cambios) => ({
+        salida: { aplicado: true, cambios, nota: "Cada cambio se puede revertir con deshacer_cambio(cambioId)." },
+        documentos: cambios.length,
+    });
+
+    escritura("crear_documento", {
+        description: `Crea un documento nuevo. Sin \`id\` se genera uno. Falla si ya existe. ${AYUDA_VALORES}`,
+        inputSchema: {
+            coleccion: z.string().describe("Ruta de la colección, p. ej. kroma_suppliers o users_metadata/abc/notas"),
+            id: z.string().optional(),
+            datos: z.record(z.any()),
+            motivo: MOTIVO,
+        },
+    }, h("crear_documento", async ({ coleccion, id, datos, motivo }) => {
+        const col = validarRutaEscritura(coleccion, { esDocumento: false });
+        const docId = id || admin.firestore().collection(col).doc().id;
+        return resultado(await aplicarOperaciones([{ accion: "crear", ruta: `${col}/${docId}`, datos }], { motivo }));
+    }));
+
+    escritura("actualizar_documento", {
+        description: `Edita un documento existente. modo "combinar" (por defecto) cambia SOLO los campos enviados; las claves con punto ("a.b") editan un campo anidado y {"$borrar":true} elimina un campo. modo "reemplazar" deja el documento EXACTAMENTE como \`datos\` (conserva los campos sensibles que no ves). En los datos de negocio, la regla del proyecto es dar de baja con active:false en vez de borrar. ${AYUDA_VALORES}`,
+        inputSchema: {
+            ruta: z.string(),
+            datos: z.record(z.any()),
+            modo: z.enum(["combinar", "reemplazar"]).optional().default("combinar"),
+            motivo: MOTIVO,
+        },
+    }, h("actualizar_documento", async ({ ruta, datos, modo = "combinar", motivo }) =>
+        resultado(await aplicarOperaciones([{ accion: modo === "reemplazar" ? "reemplazar" : "actualizar", ruta, datos }], { motivo }))));
+
+    escritura("borrar_documento", {
+        description: "Borra un documento (sus subcolecciones NO se borran). Antes guarda una copia exacta: se recupera con deshacer_cambio. Para datos de negocio, prefiere actualizar con active:false (regla del proyecto: soft-delete).",
+        inputSchema: { ruta: z.string(), motivo: MOTIVO },
+    }, h("borrar_documento", async ({ ruta, motivo }) =>
+        resultado(await aplicarOperaciones([{ accion: "borrar", ruta }], { motivo }))), true);
+
+    escritura("escribir_lote", {
+        description: `Hasta ${MAX_OPERACIONES} operaciones en UNA transacción: se aplican todas o ninguna. Cada una es {accion: "crear"|"actualizar"|"reemplazar"|"borrar", ruta: "coleccion/id", datos}. "actualizar" combina como actualizar_documento. Cada documento queda con su copia previa. ${AYUDA_VALORES}`,
+        inputSchema: {
+            operaciones: z.array(z.object({
+                accion: z.enum(["crear", "actualizar", "reemplazar", "borrar"]),
+                ruta: z.string(),
+                datos: z.record(z.any()).optional(),
+            })).min(1).max(MAX_OPERACIONES),
+            motivo: MOTIVO,
+        },
+    }, h("escribir_lote", async ({ operaciones, motivo }) =>
+        resultado(await aplicarOperaciones(operaciones, { motivo }))), true);
+
+    escritura("deshacer_cambio", {
+        description: "Devuelve un documento a como estaba antes de un cambio hecho por este conector (el `cambioId` lo devuelve cada escritura; el historial está en la colección mcp_cambios). Si el documento cambió después por otra vía, se detiene y avisa; forzar=true lo restaura igual. Deshacer también queda registrado y se puede deshacer.",
+        inputSchema: { cambioId: z.string(), forzar: z.boolean().optional().default(false) },
+    }, h("deshacer_cambio", async ({ cambioId, forzar = false }) => {
+        const r = await deshacer(cambioId, forzar);
+        return { salida: r, documentos: 1 };
     }));
 
     return server;
@@ -384,4 +656,4 @@ exports.mcp = onRequest({
 });
 
 // Para pruebas locales.
-exports._internos = { huella, limpiar, rutaSecreta, PATRON_SENSIBLE, crearServidor, claveValida };
+exports._internos = { huella, limpiar, rutaSecreta, PATRON_SENSIBLE, crearServidor, claveValida, firma, aplicarOperaciones };

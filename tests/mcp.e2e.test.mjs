@@ -73,7 +73,9 @@ const llamar = async (name, args = {}) => {
 };
 
 const tools = await client.listTools();
-ok(tools.tools.length === 6, `herramientas: ${tools.tools.map(t => t.name).join(', ')}`);
+ok(tools.tools.length === 11, `herramientas: ${tools.tools.map(t => t.name).join(', ')}`);
+ok(tools.tools.find(t => t.name === 'leer_documento')?.annotations?.readOnlyHint === true
+    && tools.tools.find(t => t.name === 'borrar_documento')?.annotations?.destructiveHint === true, 'anotaciones de lectura / destructiva');
 
 const cols = await llamar('listar_colecciones');
 const ids = cols.colecciones.map(c => c.id);
@@ -118,6 +120,66 @@ ok(grp.devueltos === 2, `collectionGroup: ${grp.devueltos}`);
 const us = await llamar('listar_usuarios');
 const ana = us.usuarios.find(u => u.uid === 'auth1');
 ok(ana && ana.email === 'ana@example.com' && ana.claims.role === 'master' && !('passwordHash' in ana), 'listar_usuarios con rol y sin hash');
+
+// ── Escritura ──────────────────────────────────────────────────────────────
+const cr = await llamar('crear_documento', { coleccion: 'kroma_suppliers', id: 's1', datos: { nombre: 'Lácteos Guanare', active: true, alta: { $fecha: '2026-10-05T12:00:00Z' }, ubic: { $geo: [8.6, -70.2] } }, motivo: 'prueba' });
+const s1 = (await db.doc('kroma_suppliers/s1').get()).data();
+ok(cr.aplicado && s1.alta instanceof admin.firestore.Timestamp && s1.ubic instanceof admin.firestore.GeoPoint, 'crear_documento con $fecha y $geo');
+const dup = await llamar('crear_documento', { coleccion: 'kroma_suppliers', id: 's1', datos: { nombre: 'x' } });
+ok(dup._error, 'crear sobre uno existente → error');
+
+const up = await llamar('actualizar_documento', { ruta: 'kroma_suppliers/s1', datos: { telefono: '0414', 'alta': { $borrar: true }, compras: { $incrementar: 2 } } });
+const s1b = (await db.doc('kroma_suppliers/s1').get()).data();
+ok(s1b.telefono === '0414' && !('alta' in s1b) && s1b.compras === 2 && s1b.nombre === 'Lácteos Guanare', 'actualizar combina, $borrar e $incrementar');
+
+// Leer → editar → guardar con marcadores: la foto y el PIN NO se pierden.
+const leido = (await llamar('leer_documento', { ruta: 'kroma_despachos/d1' })).datos;
+await llamar('actualizar_documento', { ruta: 'kroma_despachos/d1', modo: 'reemplazar', datos: { ...leido, fecha: { $fecha: leido.fecha }, ubicacion: { $geo: [8.6, -70.2] }, ref: { $ref: 'kroma_products/p1' }, lote: 'LCO-EDITADO' } });
+const d1b = (await db.doc('kroma_despachos/d1').get()).data();
+ok(d1b.fotoPlanilla === foto && d1b.lote === 'LCO-EDITADO' && d1b.fecha instanceof admin.firestore.Timestamp, 'reemplazar conserva la foto real tras el marcador');
+const kuLeido = (await llamar('leer_documento', { ruta: 'kroma_users/u1' })).datos;
+const { pin, pinHash, ...sinSensibles } = kuLeido;
+await llamar('actualizar_documento', { ruta: 'kroma_users/u1', modo: 'reemplazar', datos: { ...sinSensibles, name: 'Ana María' } });
+const u1b = (await db.doc('kroma_users/u1').get()).data();
+ok(u1b.pin === '1234' && u1b.pinHash === 'abc' && u1b.fcmToken === 'tok' && u1b.name === 'Ana María', 'reemplazar conserva PIN/hash/token aunque no vengan');
+
+for (const [desc, args] of [
+    ['campo sensible', { ruta: 'kroma_users/u1', datos: { pin: '9999' } }],
+    ['colección secreta', { ruta: 'zoho_secure/creds', datos: { clientId: 'x' } }],
+    ['bitácora del conector', { ruta: 'mcp_auditoria/x', datos: { a: 1 }, modo: 'reemplazar' }],
+    ['documento inexistente', { ruta: 'kroma_suppliers/nadie', datos: { a: 1 } }],
+]) ok((await llamar('actualizar_documento', args))._error, `rechazado: ${desc}`);
+ok((await db.doc('kroma_users/u1').get()).data().pin === '1234' && (await db.doc('zoho_secure/creds').get()).data().clientId === 'cid', 'los rechazos no tocaron nada');
+
+// Lote atómico: si una falla, no se aplica ninguna.
+const malo = await llamar('escribir_lote', { operaciones: [
+    { accion: 'crear', ruta: 'kroma_suppliers/s2', datos: { nombre: 'B' } },
+    { accion: 'actualizar', ruta: 'kroma_suppliers/nadie', datos: { a: 1 } },
+] });
+ok(malo._error && !(await db.doc('kroma_suppliers/s2').get()).exists, 'lote con un error → no aplica nada');
+const bueno = await llamar('escribir_lote', { operaciones: [
+    { accion: 'crear', ruta: 'kroma_suppliers/s2', datos: { nombre: 'B' } },
+    { accion: 'actualizar', ruta: 'kroma_suppliers/s1', datos: { active: false } },
+] });
+ok(bueno.cambios?.length === 2 && (await db.doc('kroma_suppliers/s2').get()).exists, 'lote correcto → aplica todo');
+
+// Borrar y deshacer.
+const br = await llamar('borrar_documento', { ruta: 'facturas_vendedor/INV-1', motivo: 'prueba' });
+ok(!(await db.doc('facturas_vendedor/INV-1').get()).exists, 'borrar_documento');
+await llamar('deshacer_cambio', { cambioId: br.cambios[0].cambioId });
+const inv = await db.doc('facturas_vendedor/INV-1').get();
+ok(inv.exists && inv.data().total === 56, 'deshacer devuelve el documento borrado');
+ok((await llamar('deshacer_cambio', { cambioId: br.cambios[0].cambioId }))._error, 'no se deshace dos veces');
+
+// Deshacer un cambio cuando el documento se tocó después: se detiene salvo forzar.
+const c2 = await llamar('actualizar_documento', { ruta: 'kroma_suppliers/s2', datos: { nombre: 'C' } });
+await db.doc('kroma_suppliers/s2').update({ nombre: 'D (la app)' });
+ok((await llamar('deshacer_cambio', { cambioId: c2.cambios[0].cambioId }))._error, 'deshacer avisa si otro lo cambió después');
+await llamar('deshacer_cambio', { cambioId: c2.cambios[0].cambioId, forzar: true });
+ok((await db.doc('kroma_suppliers/s2').get()).data().nombre === 'B', 'deshacer con forzar restaura');
+// Deshacer una creación borra el documento.
+await llamar('deshacer_cambio', { cambioId: cr.cambios[0].cambioId, forzar: true });
+ok(!(await db.doc('kroma_suppliers/s1').get()).exists, 'deshacer una creación la elimina');
 
 await new Promise(res => setTimeout(res, 500));
 const aud = await llamar('contar', { coleccion: 'mcp_auditoria' });
