@@ -11,7 +11,7 @@ import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import { faltaEmpacar, kgProducidos, rendimientoLkg, fechaProduccion, msProduccion } from '@/Kroma/estadoPlanta.js';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
-import { costoBasePorKgTeorico } from '@/Kroma/costeoLote.js';
+import { costoBasePorKgTeorico, precioLecheDeProveedor } from '@/Kroma/costeoLote.js';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta } from '@/Kroma/eliminarProduccion.js';
 import CargaPlanillaSheet from './CargaPlanillaSheet.jsx';
@@ -410,13 +410,10 @@ function extractBlockIngredients(bloque, reg) {
     return out;
 }
 
-// Milk price snapshot — mirrors MilkInventoryPage.milkPriceFor: looks up the
-// kroma_materials doc with categoria 'leche' linked to this proveedor and
-// freezes its costoUSD (price per liter) at the moment of reception.
+// Precio de la leche congelado al recibir: la MISMA fórmula que gerencia
+// (`precioLecheDeProveedor`, costeoLote.js). Null si el maestro no lo permite.
 function milkPriceFor(provId, materialsMap) {
-    const mat = Object.values(materialsMap || {}).find(m => m.categoria === 'leche' && m.proveedorId === provId);
-    const price = parseFloat(mat?.costoUSD);
-    return price > 0 ? price : null;
+    return precioLecheDeProveedor(provId, materialsMap).precio;
 }
 
 // Internal cost snapshot for ingredients consumed in a block — mirrors the
@@ -463,9 +460,14 @@ function realCostoInsumos(bloquesData, materialsMap) {
     });
     return total;
 }
-function realCostoLeche(recepciones) {
+// Recepción sin precio congelado: se valora al precio ACTUAL del maestro para
+// ese productor. Antes contaba $0 y el lote nacía con un costo absurdamente
+// bajo (una bolsa de 250 g a $0,08). Si tampoco hay precio en el maestro,
+// sigue en 0 y el control de costo del lote lo marca "sin costo de leche".
+function realCostoLeche(recepciones, materialsMap) {
     return (recepciones || []).reduce((sum, r) => {
-        const price = parseFloat(r.costoUsdLitro);
+        let price = parseFloat(r.costoUsdLitro);
+        if (!(price > 0)) price = precioLecheDeProveedor(r.proveedorId, materialsMap).precio || 0;
         return price > 0 ? sum + price * (r.litros || 0) : sum;
     }, 0);
 }
@@ -494,7 +496,7 @@ function packagingCostForPresentacion(productoId, presentacionId, unidades, mate
 // Packaging is priced per-SKU instead, at the moment it's actually consumed —
 // see costoEmpaqueUnitario — so every unit carries exactly its own cost.
 function calcCostoBasePorKg(log, bloquesData, totalKgProducido, materialsMap) {
-    const costoLeche   = realCostoLeche(log.recepciones);
+    const costoLeche   = realCostoLeche(log.recepciones, materialsMap);
     const costoInsumos = realCostoInsumos(bloquesData, materialsMap);
     const costoBase    = costoLeche + costoInsumos;
     return totalKgProducido > 0 ? costoBase / totalKgProducido : null;
@@ -2884,6 +2886,16 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             await batch.commit();
             setHistorial(prev => prev.map(l => l.id === log.id ? { ...l, ...update } : l));
             setFinalizarLog(null);
+            // Los envases, bolsas y etiquetas de lo que se acaba de envasar salen
+            // del inventario de materiales, igual que al cerrar una producción.
+            // Antes "Finalizar empaque" los costeaba pero no los descontaba.
+            const empaqueConsumo = mergePackagingConsumption(
+                pres.flatMap(p => packagingConsumptionForPresentacion(log.productoId, p.catalogId, p.unidades, materialsMap))
+            );
+            if (empaqueConsumo.length > 0) {
+                try { await decrementInventory(empaqueConsumo); }
+                catch (e) { alert(`El envasado quedó registrado, pero no se pudo descontar el empaque: ${e.message}`); }
+            }
         } catch (e) { alert(e.message); }
         finally { setFinSaving(false); }
     }

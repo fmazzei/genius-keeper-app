@@ -34,6 +34,8 @@ const TIPOS = {
     transferencia:          { cat: 'transferencia', label: 'Traslado entre almacenes', signo: 0 },
     despacho_salida:        { cat: 'transferencia', label: 'Despacho a Caracas', signo: -1 },
     despacho_entregado:     { cat: 'transferencia', label: 'Despacho entregado', signo: -1 },
+    // Despacho a otra ciudad (no pasa por Frimaca): sale del inventario al despachar.
+    despacho_ciudad:        { cat: 'venta', label: 'Despacho a otra ciudad', signo: -1 },
 };
 
 /** Clase, etiqueta y signo de un movimiento. */

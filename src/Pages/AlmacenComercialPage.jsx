@@ -19,7 +19,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import {
     Warehouse, Truck, Package, Plus, ChevronDown, ChevronRight,
-    Loader, CheckCircle, MapPin, RefreshCw, Download, PackageMinus, History, Archive,
+    Loader, CheckCircle, MapPin, RefreshCw, PackageMinus, History, Archive,
 } from 'lucide-react';
 import StockAdjustSheet from '@/Components/StockAdjustSheet.jsx';
 import RecepcionFrimacaSheet from '@/Components/RecepcionFrimacaSheet.jsx';
@@ -129,8 +129,6 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
     const [creatingAlmacen, setCreatingAlmacen] = useState(false);
     const [showCreateAlmacen, setShowCreateAlmacen] = useState(false);
     const [expanded, setExpanded]           = useState({});
-    const [syncing, setSyncing]             = useState(false);
-    const [syncMessage, setSyncMessage]     = useState('');
 
     // Actor de las declaraciones: el reporter pasado (mercaderista) o el usuario.
     const actorLabel = actorProp?.id || actorProp?.nombre
@@ -242,67 +240,9 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
         });
     };
 
-    // Importa stock de PT que ya existe físicamente en los depósitos comerciales
-    // de Kroma (kroma_inventory_pt) pero que nunca pasó por el flujo de
-    // Recepción de despachos (p.ej. existencias previas a este puente).
-    // Idempotente: no duplica lotes ya presentes en inventario_comercial.
-    const handleSyncFromKroma = async () => {
-        if (syncing) return;
-        setSyncing(true);
-        setSyncMessage('');
-        try {
-            const [whSnap, ptSnap] = await Promise.all([
-                getDocs(collection(db, 'kroma_warehouses')),
-                getDocs(query(collection(db, 'kroma_inventory_pt'), where('active', '==', true))),
-            ]);
-            const comercialWarehouses = whSnap.docs
-                .map(d => ({ id: d.id, ...d.data() }))
-                .filter(w => /comercial/i.test(w.nombre || ''));
-
-            const ptItems = ptSnap.docs
-                .map(d => ({ id: d.id, ...d.data() }))
-                .filter(i => i.tipo === 'empacado' && (i.unidades || 0) > 0
-                    && comercialWarehouses.some(w => w.id === i.warehouseId));
-
-            let imported = 0;
-            for (const item of ptItems) {
-                const wh = comercialWarehouses.find(w => w.id === item.warehouseId);
-                const almacen = almacenes.find(a => (a.nombre || '').trim().toLowerCase() === (wh?.nombre || '').trim().toLowerCase());
-                if (!almacen) continue;
-
-                const lote = item.lote || '';
-                const existing = inventario.find(i =>
-                    i.almacenId === almacen.id &&
-                    i.productoNombre === item.productoNombre &&
-                    (i.lote || '') === lote
-                );
-                if (existing) continue;
-
-                await addDoc(collection(db, 'inventario_comercial'), {
-                    almacenId:        almacen.id,
-                    almacenNombre:    almacen.nombre,
-                    productoNombre:   item.productoNombre,
-                    presentacion:     item.presentacion || '',
-                    tipo:             'empacado',
-                    unit:             'ud',
-                    lote,
-                    fechaVencimiento: item.fechaVencimiento || '',
-                    unidades:         item.unidades || 0,
-                    updatedAt:        serverTimestamp(),
-                });
-                imported++;
-            }
-            await load();
-            setSyncMessage(imported > 0
-                ? `${imported} lote(s) importado(s) desde Kroma.`
-                : 'No hay stock nuevo de Kroma para importar.');
-        } catch (e) {
-            setSyncMessage('No se pudo sincronizar con Kroma. ' + e.message);
-        } finally {
-            setSyncing(false);
-            setTimeout(() => setSyncMessage(''), 4000);
-        }
-    };
+    // Se retiró "Sincronizar desde Kroma" (importaba a Frimaca partidas de
+    // kroma_inventory_pt sin pasar por la recepción ni dejar movimiento: otra vía
+    // de doble conteo). La mercancía entra a Frimaca SOLO por la Recepción.
 
     const inventarioPorAlmacen = almacenes.map(a => ({
         almacen: a,
@@ -385,14 +325,6 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                 <button onClick={load} className={`ml-auto p-2 rounded-lg transition-colors ${t.iconBtn}`}>
                     <RefreshCw size={18} />
                 </button>
-                <button
-                    onClick={handleSyncFromKroma}
-                    disabled={syncing}
-                    title="Sincronizar stock existente desde Kroma"
-                    className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${t.iconBtn}`}
-                >
-                    {syncing ? <Loader size={18} className="animate-spin" /> : <Download size={18} />}
-                </button>
                 {tab === 'inventario' && (
                     <button
                         onClick={() => setShowCreateAlmacen(s => !s)}
@@ -404,11 +336,6 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                 )}
             </div>
 
-            {syncMessage && (
-                <p className={`text-xs font-medium rounded-lg px-3 py-2 mb-4 ${t.syncMsg}`}>
-                    {syncMessage}
-                </p>
-            )}
 
             {error && <p className={`text-sm p-3 rounded-lg font-medium mb-4 ${t.error}`}>{error}</p>}
 

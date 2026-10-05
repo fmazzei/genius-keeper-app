@@ -140,14 +140,43 @@ export function packagingCostForItem(productoId, item, packagingByKey) {
         return sum + unidades * (asignacion.cantidadPorUnidad || 0) * price;
     }, 0);
 }
-// Builds a milk-price lookup from the Maestro de Materiales (kroma_materials):
-// per-supplier price and a single fallback. Used to value milk when a receipt
-// never stored costoUsdLitro (same fallback strategy as computeBackfillCosts).
+// ── Precio de la leche: UNA sola fórmula (auditoría 2026-10) ────────────────
+// Había dos: al recibir se tomaba `costoUSD` tal cual como $/L, y gerencia lo
+// dividía entre `cantidadPresentacion`. Solo coincidían si la presentación era
+// 1 L. Ahora las dos usan esta: precio por LITRO = costoUSD ÷ cantidad de la
+// presentación, convertida a litros (ml ÷ 1000). Si la unidad no es de volumen,
+// o el productor tiene dos materiales de leche activos con precios distintos,
+// NO se adivina: devuelve el aviso.
+const A_LITROS = { l: 1, lt: 1, litro: 1, litros: 1, ml: 0.001 };
+export function precioLechePorLitro(mat) {
+    if (!mat) return { precio: null, aviso: 'sin material de leche' };
+    const factor = A_LITROS[String(mat.unidad || 'l').trim().toLowerCase()];
+    if (factor == null) return { precio: null, aviso: `unidad "${mat.unidad}" no es de volumen` };
+    const cost = parseFloat(mat.costoUSD);
+    const qty = parseFloat(mat.cantidadPresentacion || 1) * factor;
+    if (!(cost > 0) || !(qty > 0)) return { precio: null, aviso: 'sin precio en el maestro' };
+    return { precio: cost / qty, aviso: null };
+}
+/** Precio por litro del productor (o null) + aviso si el maestro no permite saberlo. */
+export function precioLecheDeProveedor(provId, materials) {
+    const mats = (Array.isArray(materials) ? materials : Object.values(materials || {}))
+        .filter(m => m.categoria === 'leche' && m.active !== false && m.proveedorId === provId);
+    if (!mats.length) return { precio: null, aviso: 'el productor no tiene material de leche en el maestro' };
+    const precios = [...new Set(mats.map(m => precioLechePorLitro(m).precio).filter(p => p > 0).map(p => +p.toFixed(6)))];
+    if (precios.length > 1) return { precio: null, aviso: `el productor tiene ${precios.length} precios de leche distintos en el maestro` };
+    if (!precios.length) return { precio: null, aviso: precioLechePorLitro(mats[0]).aviso };
+    return { precio: precios[0], aviso: null };
+}
+// Lookup por productor + respaldo, con la MISMA fórmula. Se usa para valorar la
+// leche de recepciones que nunca guardaron costoUsdLitro.
 export function buildMilkPriceLookup(materials) {
     const milkMats = (materials || []).filter(m => m.categoria === 'leche' && m.active !== false);
     const milkByProv = {};
-    milkMats.forEach(m => { const p = pricePerBaseUnit(m); if (p > 0 && m.proveedorId) milkByProv[m.proveedorId] = p; });
-    const fallbackMilkPrice = milkMats.map(m => pricePerBaseUnit(m)).find(p => p > 0) ?? 0;
+    [...new Set(milkMats.map(m => m.proveedorId).filter(Boolean))].forEach(pid => {
+        const { precio } = precioLecheDeProveedor(pid, milkMats);
+        if (precio > 0) milkByProv[pid] = precio;
+    });
+    const fallbackMilkPrice = milkMats.map(m => precioLechePorLitro(m).precio).find(p => p > 0) ?? 0;
     return { milkByProv, fallbackMilkPrice };
 }
 

@@ -2882,6 +2882,17 @@ Reporte del dueño, captura del 2-oct: "Producciones / mes 0", "Litros procesado
 
 Pedido del dueño: en planta se cuenta y se despacha por docena, así que cada partida envasada muestra **unidades Y docenas** ("30 ud · 2 docenas y 6 sueltas"; "36 ud · 3 docenas"; "8 ud · 8 sueltas"). Una sola función, **`enDocenas(unidades)`** en `src/Kroma/inventarioPT.js`, usada en la partida (`PartidaCava`), en las cifras del resumen por presentación (`ResumenCava`) y en la tarjeta del almacén (reemplazó el `formatDocenas` local, que decía "2 doc + 6 sueltas"). Las docenas acompañan a las unidades, nunca las reemplazan; el granel sigue en kg.
 
+## Inventario perpetuo — Etapa 0: lo que descuadraba el inventario (2026-10) ✅
+
+Antes de construir el libro valorado se corrigió lo que la auditoría encontró descuadrando la cava. **Decisiones del dueño (5-oct)**: arranque = día de la puesta en marcha de la Etapa 1, con conteo físico; en Frimaca la SALIDA es el picking (punto de venta opcional); un despacho a otra ciudad (no Caracas) SALE al despachar; lo que Frimaca recibe de menos es merma automática.
+
+- **Doble y triple conteo retirado.** Kroma → Despachos ya no tiene "Registrar en almacén" (`applyHistoricalTransfer`: sobre un despacho ya recibido en Frimaca volvía a descontar la planta y creaba una partida fantasma en "Depósito Comercial Caracas") ni "Sincronizar inventario en GK" (`syncGKInventory`: volvía a sumar a Frimaca). GK → Almacén Comercial ya no tiene "Sincronizar desde Kroma" (importaba partidas de Kroma sin recepción ni movimiento). La mercancía entra a Frimaca SOLO por la Recepción.
+- **Despacho a otra ciudad = salida al despachar.** `registrarDespacho` descuenta TODAS las líneas en la misma transacción (antes las de otra ciudad se descontaban recién al "Marcar como Entregado", sin verificar stock ni dejar movimiento). Movimientos: a Caracas `despacho_salida` (traslado), a otra ciudad **`despacho_ciudad`** (clase Ventas en `libroMovimientos.js`). Las líneas quedan `plantaDeducida`, así que "Entregado" solo cambia el estado (los despachos viejos sin la marca se siguen descontando ahí).
+- **Precio de la leche: una sola fórmula** (`precioLechePorLitro` / `precioLecheDeProveedor` / `buildMilkPriceLookup` en `costeoLote.js`): costoUSD ÷ cantidad de la presentación en LITROS (ml ÷ 1000). Si la unidad no es de volumen o el productor tiene dos precios distintos activos, devuelve aviso y no adivina. La usan la recepción (`MilkInventoryPage`, alta rápida de `DailyProductionPage`), gerencia y los estimadores. Una recepción sin precio crea un aviso `leche_sin_precio` en `kroma_alerts` (sin cifras). El costo real (`realCostoLeche`) valora una recepción sin precio congelado al precio actual del maestro (antes contaba $0).
+- **Empaque contado dos veces** en `computeBackfillCosts` y `buildPTInventoryDetails` (ManagerPages): el $/kg base ya no incluye el empaque del lote; se suma por unidad según la presentación, igual que el costo real.
+- **"Finalizar empaque" descuenta los materiales de empaque** (`packagingConsumptionForPresentacion` → `decrementInventory`), como el cierre normal.
+- Pruebas: `tests/despacho.e2e.test.mjs` (18 verificaciones) y `tests/salidasCava.e2e.test.mjs` en verde.
+
 ## GK — Una sola ficha para crear y editar PDV (2026-09) ✅
 
 Reporte del dueño: agregar un cliente/PDV era "sumamente enredado". Había TRES

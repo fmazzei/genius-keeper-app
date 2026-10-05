@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '@/Firebase/config.js';
 import {
-    collection, getDocs, getDoc, addDoc, updateDoc, doc,
+    collection, getDocs, getDoc, updateDoc, doc,
     serverTimestamp, query, where,
 } from 'firebase/firestore';
 import { useKroma } from '../../KromaContext';
 import CampoFecha, { hoyInput } from '@/Kroma/Components/CampoFecha.jsx';
 import {
     Truck, Plus, Trash2, Loader, CheckCircle,
-    MapPin, Clock, ChevronDown, Search, X, Package, RefreshCw,
+    MapPin, Clock, ChevronDown, Search, X, Package,
 } from 'lucide-react';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { esDestinoCaracas } from '@/utils/destinoDespacho.js';
@@ -356,18 +356,14 @@ function CityPicker({ onSelect, onClose }) {
 
 // ─── Despacho history card ────────────────────────────────────────────────────
 
-function DespachoCard({ despacho, onMarkEntregado, onApplyTransfer, onSyncGK }) {
+function DespachoCard({ despacho, onMarkEntregado }) {
     const [expanded, setExpanded]         = useState(false);
     const [marking, setMarking]           = useState(false);
-    const [applying, setApplying]         = useState(false);
-    const [syncingGK, setSyncingGK]       = useState(false);
     const [confirmOpen, setConfirmOpen]   = useState(false);
     const lineas   = despacho.lineas || [];
     const destinos = [...new Set(lineas.map(l => destinoDisplay(l.destino)).filter(Boolean))];
     const isTransito    = despacho.estado === 'en_transito';
-    const needsTransfer = !isTransito && !despacho.transferApplied;
     const hasCaracasLines = lineas.some(l => isCaracasDestino(l.destino));
-    const needsGKSync = !isTransito && despacho.transferApplied && !despacho.gkSynced && hasCaracasLines;
     // Un despacho a Caracas lo cierra la RECEPCIÓN en Frimaca (GK), no este
     // botón — por eso, si es a Caracas, la planta ya descontó su stock al
     // despachar (en handleSubmit) y aquí no hay "Marcar como Entregado" que
@@ -381,18 +377,6 @@ function DespachoCard({ despacho, onMarkEntregado, onApplyTransfer, onSyncGK }) 
         setConfirmOpen(false);
         await onMarkEntregado();
         setMarking(false);
-    };
-
-    const handleApplyTransfer = async () => {
-        setApplying(true);
-        await onApplyTransfer();
-        setApplying(false);
-    };
-
-    const handleSyncGK = async () => {
-        setSyncingGK(true);
-        await onSyncGK();
-        setSyncingGK(false);
     };
 
     return (
@@ -439,27 +423,6 @@ function DespachoCard({ despacho, onMarkEntregado, onApplyTransfer, onSyncGK }) 
                     {despacho.notas && (
                         <p className="text-xs text-slate-500 italic border-t border-slate-700 pt-2">{despacho.notas}</p>
                     )}
-                    {needsTransfer && (
-                        <button
-                            onClick={handleApplyTransfer}
-                            disabled={applying}
-                            className="w-full mt-1 bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/30 text-sky-400 font-medium py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-60"
-                        >
-                            {applying ? <Loader size={14} className="animate-spin" /> : <Package size={14} />}
-                            {applying ? 'Registrando en almacén…' : 'Registrar en almacén'}
-                        </button>
-                    )}
-                    {needsGKSync && (
-                        <button
-                            onClick={handleSyncGK}
-                            disabled={syncingGK}
-                            className="w-full mt-1 bg-violet-600/15 hover:bg-violet-600/25 border border-violet-500/30 text-violet-400 font-medium py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm disabled:opacity-60"
-                        >
-                            {syncingGK ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                            {syncingGK ? 'Sincronizando inventario GK…' : 'Sincronizar inventario en GK'}
-                        </button>
-                    )}
-
                     {bloqueadoPorCaracas && (
                         <div className="w-full mt-1 bg-sky-500/10 border border-sky-500/30 text-sky-300 text-xs rounded-xl px-3 py-2.5 flex items-start gap-2">
                             <MapPin size={13} className="shrink-0 mt-0.5" />
@@ -716,117 +679,12 @@ export default function DespachoPage({ onNavigate, params }) {
         }
     };
 
-    // Retroactive transfer for despachos marked "entregado" before the inventory logic existed
-    const applyHistoricalTransfer = async (despacho) => {
-        const id = despacho.id;
-        try {
-            const caracasWh = warehouses.find(w => w.nombre === 'Depósito Comercial Caracas');
-            for (const linea of (despacho.lineas || [])) {
-                const { inventoryId, cantidad, destino } = linea;
-                if (!inventoryId) continue;
-                const srcRef  = doc(db, 'kroma_inventory_pt', inventoryId);
-                const srcSnap = await getDoc(srcRef);
-                if (!srcSnap.exists()) continue;
-                const srcData    = srcSnap.data();
-                const isEmpacado = srcData.tipo === 'empacado';
-                const field      = isEmpacado ? 'unidades' : 'kgTotales';
-                const current    = srcData[field] || 0;
-                const deducir    = isEmpacado ? Math.round(cantidad) : (parseFloat(cantidad) || 0);
-                const remaining  = Math.max(0, +(current - deducir).toFixed(3));
-                await updateDoc(srcRef, remaining === 0 ? { [field]: 0, active: false } : { [field]: remaining });
-                const isCaracasDest = isCaracasDestino(destino);
-                if (isCaracasDest && caracasWh) {
-                    const { id: _id, warehouseNombre: _wn, ...itemBase } = srcData;
-                    await addDoc(collection(db, 'kroma_inventory_pt'), {
-                        ...itemBase,
-                        [field]: deducir, warehouseId: caracasWh.id,
-                        active: true, origenDespachoId: id, createdAt: serverTimestamp(),
-                    });
-                    await addDoc(collection(db, 'kroma_warehouse_movements'), {
-                        tipo: 'despacho_entregado',
-                        origenId: srcData.warehouseId || null,
-                        origenNombre: warehouses.find(w => w.id === srcData.warehouseId)?.nombre || 'Planta',
-                        destinoId: caracasWh.id, destinoNombre: caracasWh.nombre,
-                        productoNombre: linea.productoNombre, presentacion: linea.presentacion || '',
-                        lote: linea.lote || '', cantidad: deducir,
-                        unidad: isEmpacado ? 'unidades' : 'kg', despachoId: id, createdAt: serverTimestamp(),
-                    });
-                }
-            }
-            await updateDoc(doc(db, 'kroma_despachos', id), { transferApplied: true });
-            setHistorial(h => h.map(d => d.id === id ? { ...d, transferApplied: true } : d));
-        } catch (err) {
-            console.error('applyHistoricalTransfer:', err);
-        }
-    };
-
-    // Write delivered quantities to GK inventario_comercial without touching kroma_inventory_pt.
-    // Used to reconcile despachos that were marked entregado before this sync was implemented.
-    const syncGKInventory = async (despacho) => {
-        const id = despacho.id;
-        try {
-            const caracasWh = warehouses.find(w => w.nombre === 'Depósito Comercial Caracas');
-            const norm = s => (s || '').trim().toLowerCase();
-
-            const [almSnap, invComSnap] = await Promise.all([
-                getDocs(collection(db, 'almacenes_comerciales')),
-                getDocs(collection(db, 'inventario_comercial')),
-            ]);
-            const gkAlmacenes = almSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            let invCom = invComSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-            for (const linea of (despacho.lineas || [])) {
-                const { cantidad, destino, productoNombre, lote, fechaVencimiento, presentacion, unit } = linea;
-                const isCaracasDest = isCaracasDestino(destino);
-                if (!isCaracasDest || !caracasWh) continue;
-
-                const isEmpacado = (unit || 'ud') === 'ud';
-                const deducir    = isEmpacado ? Math.round(cantidad) : (parseFloat(cantidad) || 0);
-                const loteKey    = lote || '';
-                const vencKey    = fechaVencimiento || '';
-                const gkAlmacen  = gkAlmacenes.find(a => norm(a.nombre) === norm(caracasWh.nombre));
-
-                const existing = invCom.find(i =>
-                    norm(i.almacenNombre) === norm(caracasWh.nombre) &&
-                    norm(i.productoNombre) === norm(productoNombre) &&
-                    (i.lote || '') === loteKey &&
-                    (i.fechaVencimiento || '') === vencKey
-                );
-                if (existing) {
-                    await updateDoc(doc(db, 'inventario_comercial', existing.id), {
-                        unidades:  (existing.unidades || 0) + deducir,
-                        updatedAt: serverTimestamp(),
-                    });
-                    invCom = invCom.map(i => i.id === existing.id
-                        ? { ...i, unidades: (i.unidades || 0) + deducir }
-                        : i
-                    );
-                } else {
-                    const newRef = await addDoc(collection(db, 'inventario_comercial'), {
-                        almacenId:        gkAlmacen?.id || null,
-                        almacenNombre:    caracasWh.nombre,
-                        productoNombre,
-                        presentacion:     presentacion || '',
-                        tipo:             isEmpacado ? 'empacado' : 'sin_envasar',
-                        unit:             isEmpacado ? 'ud' : 'kg',
-                        lote:             loteKey,
-                        fechaVencimiento: vencKey,
-                        unidades:         deducir,
-                        updatedAt:        serverTimestamp(),
-                    });
-                    invCom = [...invCom, {
-                        id: newRef.id, almacenNombre: caracasWh.nombre,
-                        productoNombre, lote: loteKey, fechaVencimiento: vencKey, unidades: deducir,
-                    }];
-                }
-            }
-
-            await updateDoc(doc(db, 'kroma_despachos', id), { gkSynced: true });
-            setHistorial(h => h.map(d => d.id === id ? { ...d, gkSynced: true } : d));
-        } catch (err) {
-            console.error('syncGKInventory:', err);
-        }
-    };
+    // Se retiraron "Registrar en almacén" (applyHistoricalTransfer) y
+    // "Sincronizar inventario en GK" (syncGKInventory), dos arreglos de datos
+    // viejos: sobre un despacho ya recibido en Frimaca volvían a descontar la
+    // planta, creaban una partida fantasma en "Depósito Comercial Caracas" y
+    // volvían a sumar la mercancía a Frimaca — doble y triple conteo (auditoría
+    // del inventario perpetuo, 2026-10).
 
     const today = new Date().toLocaleDateString('es-VE', {
         weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
@@ -1045,7 +903,7 @@ export default function DespachoPage({ onNavigate, params }) {
                         </div>
                     ) : (
                         historial.map(d => (
-                            <DespachoCard key={d.id} despacho={d} onMarkEntregado={() => markEntregado(d)} onApplyTransfer={() => applyHistoricalTransfer(d)} onSyncGK={() => syncGKInventory(d)} />
+                            <DespachoCard key={d.id} despacho={d} onMarkEntregado={() => markEntregado(d)} />
                         ))
                     )}
                 </div>

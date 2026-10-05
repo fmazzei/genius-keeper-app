@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc, query, where, serverTimestamp } from 'firebase/firestore';
+import { precioLecheDeProveedor } from '@/Kroma/costeoLote.js';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import { esLecheEnTanque } from '@/Kroma/estadoPlanta.js';
@@ -659,10 +660,9 @@ export default function MilkInventoryPage({ onNavigate }) {
 
     const recepcionesEnProceso = allReceptions.filter(r => r.status === 'en_proceso');
 
+    // Misma fórmula que gerencia y que la producción (costeoLote.js).
     function milkPriceFor(provId) {
-        const mat = milkPrices.find(m => m.proveedorId === provId);
-        const price = parseFloat(mat?.costoUSD);
-        return price > 0 ? price : null;
+        return precioLecheDeProveedor(provId, milkPrices).precio;
     }
 
     const thirtyDaysAgo = Date.now() - 30 * 24 * 3600 * 1000;
@@ -783,6 +783,20 @@ export default function MilkInventoryPage({ onNavigate }) {
                 };
                 const ref = await addDoc(collection(db, 'kroma_milk_reception'), data);
                 setAllReceptions(prev => [{ id: ref.id, ...data, fecha: fechaDate, createdAt: new Date() }, ...prev]);
+                // Sin precio en el maestro, el costo del lote no se puede congelar
+                // bien: se avisa al administrador (sin cifras: el operario también
+                // ve los avisos). El costo real usará el precio del maestro cuando
+                // exista; el control de costo del lote lo marcará mientras tanto.
+                if (!costoUsdLitro) {
+                    const { aviso } = precioLecheDeProveedor(proveedorId, milkPrices);
+                    addDoc(collection(db, 'kroma_alerts'), {
+                        tipo: 'leche_sin_precio',
+                        empresaId: data.empresaId,
+                        proveedorId, recepcionId: ref.id,
+                        mensaje: `⚠ Leche de ${supplierName(prov)} recibida sin precio: ${aviso}. Cárgalo en el Maestro de Materiales (precio por litro).`,
+                        createdAt: serverTimestamp(), leidaPor: [], active: true,
+                    }).catch(() => {});
+                }
             }
             setView('list');
         } catch (e) {

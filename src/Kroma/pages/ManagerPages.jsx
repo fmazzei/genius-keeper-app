@@ -1130,10 +1130,7 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
         if (da && db && da > db) refLogByProd[log.productoId] = log;
     });
 
-    const milkMats = materials.filter(m => m.categoria === 'leche' && m.active !== false);
-    const milkByProv = {};
-    milkMats.forEach(m => { const p = pricePerBaseUnit(m); if (p > 0 && m.proveedorId) milkByProv[m.proveedorId] = p; });
-    const fallbackMilkPrice = milkMats.map(m => pricePerBaseUnit(m)).find(p => p > 0) ?? 0;
+    const { milkByProv, fallbackMilkPrice } = buildMilkPriceLookup(materials);
 
     const results = [];
     (ptItems || []).forEach(item => {
@@ -1185,7 +1182,8 @@ function buildPTInventoryDetails(ptItems, logs, materials) {
             costoUnit = item.costoUnitarioUsd;
             valor     = item.tipo === 'empacado' ? costoUnit * (item.unidades || 0) : costoUnit * kgItem;
         } else {
-            const costoTotal = costoLeche + costoInsumos + costoEmpaque;
+            // Sin el empaque del lote: se suma por unidad abajo (antes iba dos veces).
+            const costoTotal = costoLeche + costoInsumos;
             const costoPorKg = totalKgProducido > 0 ? costoTotal / totalKgProducido : 0;
             if (!(costoPorKg > 0)) { costoUnit = 0; valor = 0; }
             else {
@@ -1264,10 +1262,7 @@ function computeBackfillCosts(ptItems, logs, materials) {
         if (da && db && da > db) refLogByProd[log.productoId] = log;
     });
 
-    const milkMats = materials.filter(m => m.categoria === 'leche' && m.active !== false);
-    const milkByProv = {};
-    milkMats.forEach(m => { const p = pricePerBaseUnit(m); if (p > 0 && m.proveedorId) milkByProv[m.proveedorId] = p; });
-    const fallbackMilkPrice = milkMats.map(m => pricePerBaseUnit(m)).find(p => p > 0) ?? 0;
+    const { milkByProv, fallbackMilkPrice } = buildMilkPriceLookup(materials);
 
     const results = [];
     (ptItems || []).forEach(item => {
@@ -1310,13 +1305,12 @@ function computeBackfillCosts(ptItems, logs, materials) {
         // Insumos — theoretical from bloquesSnapshot (either direct or reference log)
         const costoInsumos = costoPorLitroDesdeFicha(log.bloquesSnapshot, materialsById) * litrosNetos;
 
-        // Lot-level empaque — only available when we have the direct production log
-        const costoEmpaque = directLog
-            ? (directLog.productosFinales || []).reduce(
-                (sum, pf) => sum + packagingCostForItem(log.productoId, pf, packagingByKey), 0)
-            : 0;
-
-        const costoTotal = costoLeche + costoInsumos + costoEmpaque;
+        // El empaque NO entra al $/kg base: se suma por unidad abajo, según la
+        // presentación de esta partida. Antes se sumaba aquí (empaque de todo el
+        // lote repartido por kg) Y otra vez por unidad: la partida quedaba con el
+        // empaque contado dos veces (auditoría del inventario perpetuo, 2026-10).
+        // Es la misma separación que el costo real (calcCostoBasePorKg).
+        const costoTotal = costoLeche + costoInsumos;
         const costoPorKg = costoTotal / totalKgProducido;
         if (!(costoPorKg > 0)) return;
 
@@ -1343,7 +1337,9 @@ function computeBackfillCosts(ptItems, logs, materials) {
             desglose: {
                 leche:   +costoLeche.toFixed(2),
                 insumos: +costoInsumos.toFixed(2),
-                empaque: +costoEmpaque.toFixed(2),
+                // Empaque de ESTA partida (no del lote): lo que el costo unitario
+                // suma por encima del $/kg base.
+                empaque: +Math.max(0, valorTotal - costoPorKg * kgItem).toFixed(2),
                 total:   +costoTotal.toFixed(2),
                 porKg:   +costoPorKg.toFixed(4),
             },

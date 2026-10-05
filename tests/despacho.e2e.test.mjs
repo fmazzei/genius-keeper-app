@@ -54,13 +54,17 @@ ok(ids.length === 2, 'se guardan 2 despachos: uno a Caracas y otro a Valencia (y
 
 const leer = async (db, c, id) => (await getDoc(doc(db, c, id))).data();
 let a = await leer(planta, 'kroma_inventory_pt', 'kg1');
-ok(a.unidades === 6, `1 kg: 10 − 4 a Caracas = 6 (la línea de Valencia se descuenta al "Entregado") → ${a.unidades}`);
+ok(a.unidades === 5, `1 kg: 10 − 4 a Caracas − 1 a Valencia = 5 (todo se descuenta al despachar) → ${a.unidades}`);
 let b = await leer(planta, 'kroma_inventory_pt', 'g250');
 ok(b.unidades === 0 && b.active === false, '250 g: se despacharon las 20 → lote queda en 0 e inactivo');
 let g = await leer(planta, 'kroma_inventory_pt', 'gran');
 ok(g.kgTotales === 2.5, `granel: 5 − 2,5 = 2,5 kg → ${g.kgTotales}`);
 const movs = await getDocs(query(collection(planta, 'kroma_warehouse_movements'), where('empresaId', '==', 'lacteoca')));
-ok(movs.size === 3, `3 movimientos de salida en el libro → ${movs.size}`);
+ok(movs.size === 4, `4 movimientos en el libro (3 a Caracas + 1 a Valencia) → ${movs.size}`);
+ok(movs.docs.filter(d => d.data().tipo === 'despacho_ciudad').length === 1 && movs.docs.filter(d => d.data().tipo === 'despacho_salida').length === 3,
+  'Caracas = traslado (despacho_salida) · Valencia = salida (despacho_ciudad)');
+const despVal = await leer(planta, 'kroma_despachos', ids[1]);
+ok(despVal.lineas.every(l => l.plantaDeducida), 'despacho a Valencia: líneas marcadas descontadas (Entregado ya no descuenta)');
 const despCar = await leer(planta, 'kroma_despachos', ids[0]);
 ok(despCar.estado === 'en_transito' && despCar.lineas.length === 3 && despCar.lineas.every(l => l.plantaDeducida), 'despacho a Caracas en tránsito, 3 líneas, marcadas descontadas');
 
@@ -69,10 +73,10 @@ let fallo = null;
 try {
   await registrarDespacho(planta, { aCaracas: [linea('kg1', kg1, 7, CARACAS)], fecha: '2026-09-28', hoy: '2026-09-28' });
 } catch (e) { fallo = e.message; }
-ok(!!fallo && /solo quedan 6/.test(fallo), `pedir 7 con 6 en stock se rechaza con mensaje claro → "${fallo}"`);
+ok(!!fallo && /solo quedan 5/.test(fallo), `pedir 7 con 5 en stock se rechaza con mensaje claro → "${fallo}"`);
 a = await leer(planta, 'kroma_inventory_pt', 'kg1');
 const despTodos = await getDocs(query(collection(planta, 'kroma_despachos'), where('empresaId', '==', 'lacteoca')));
-ok(a.unidades === 6 && despTodos.size === 2, 'tras el rechazo: stock intacto (6) y ningún despacho nuevo');
+ok(a.unidades === 5 && despTodos.size === 2, 'tras el rechazo: stock intacto (5) y ningún despacho nuevo');
 
 // ── 3. GK recibe en Frimaca (mercaderista) ────────────────────────────────
 const merch = env.authenticatedContext('merch').firestore();
