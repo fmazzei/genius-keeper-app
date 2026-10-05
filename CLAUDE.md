@@ -2878,6 +2878,10 @@ Reporte del dueño, captura del 2-oct: "Producciones / mes 0", "Litros procesado
 - Capital, Lotes sin envasar e Inventario PT son una foto de HOY y no dependen del período (lo dicen).
 - `logDate` = `fechaProduccion`: una planilla de julio cargada en octubre cuenta en julio.
 
+### Tarjeta del almacén por presentación (2026-10) ✅
+
+Reporte del dueño: adentro de la Cava decía "250 g 468 ud" y "1 kg 109 ud", y la tarjeta de Almacenes "577 ud". No era un descuadre: la tarjeta SUMABA bolsas de 250 g y de 1 kg en una sola cifra, que no sirve para nada. Ahora `warehouseStock` trae `porPresentacion` (el mismo `resumenCava` de adentro) y la tarjeta muestra una línea por presentación con sus docenas. Regla: **nunca sumar unidades de presentaciones distintas**.
+
 ### Cava en docenas (2026-09) ✅
 
 Pedido del dueño: en planta se cuenta y se despacha por docena, así que cada partida envasada muestra **unidades Y docenas** ("30 ud · 2 docenas y 6 sueltas"; "36 ud · 3 docenas"; "8 ud · 8 sueltas"). Una sola función, **`enDocenas(unidades)`** en `src/Kroma/inventarioPT.js`, usada en la partida (`PartidaCava`), en las cifras del resumen por presentación (`ResumenCava`) y en la tarjeta del almacén (reemplazó el `formatDocenas` local, que decía "2 doc + 6 sueltas"). Las docenas acompañan a las unidades, nunca las reemplazan; el granel sigue en kg.

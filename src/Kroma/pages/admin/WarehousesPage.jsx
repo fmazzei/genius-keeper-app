@@ -1596,10 +1596,23 @@ function WarehouseCard({ wh, count, stock, matCount, matLow, warn, canEdit, canD
                         ) : <p className="text-slate-500 text-sm font-semibold">Vacío</p>
                     ) : (stock.totalUnidades > 0 || stock.totalKgSinEnvasar > 0) ? (
                         <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <p className="text-emerald-400 font-bold font-mono text-2xl leading-none">{stock.totalUnidades.toLocaleString('es-VE')}<span className="text-slate-400 text-sm font-sans font-semibold ml-1">ud</span></p>
-                                <p className="text-slate-500 text-[11px] mt-1">{stock.totalUnidades > 0 ? enDocenas(stock.totalUnidades) : 'envasadas'}</p>
-                            </div>
+                            {stock.porPresentacion?.length ? (
+                                <div className="space-y-1.5">
+                                    {stock.porPresentacion.map(p => (
+                                        <div key={p.clave}>
+                                            <p className="text-emerald-400 font-bold font-mono text-xl leading-none">
+                                                {p.unidades.toLocaleString('es-VE')}<span className="text-slate-400 text-xs font-sans font-semibold ml-1">ud · {p.etiqueta}</span>
+                                            </p>
+                                            <p className="text-slate-500 text-[11px] mt-0.5">{enDocenas(p.unidades)}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div>
+                                    <p className="text-emerald-400 font-bold font-mono text-2xl leading-none">{stock.totalUnidades.toLocaleString('es-VE')}<span className="text-slate-400 text-sm font-sans font-semibold ml-1">ud</span></p>
+                                    <p className="text-slate-500 text-[11px] mt-1">{stock.totalUnidades > 0 ? enDocenas(stock.totalUnidades) : 'envasadas'}</p>
+                                </div>
+                            )}
                             {stock.totalKgSinEnvasar > 0 && (
                                 <div>
                                     <p className="text-amber-300 font-bold font-mono text-2xl leading-none">{(+stock.totalKgSinEnvasar.toFixed(2)).toLocaleString('es-VE')}<span className="text-slate-400 text-sm font-sans font-semibold ml-1">kg</span></p>
@@ -2150,6 +2163,11 @@ export default function WarehousesPage({ onNavigate }) {
             };
         }
         const items = inventoryPT.filter(i => i.warehouseId === wh.id);
+        // Por presentación, igual que adentro (resumenCava): 250 g y 1 kg no
+        // se suman en una sola cifra — 468 bolsas de 250 g + 109 de 1 kg
+        // mostradas como "577 ud" no le dicen nada a nadie (reporte del dueño).
+        const porPresentacion = resumenCava(items).presentaciones
+            .map(p => ({ clave: p.clave, etiqueta: etiquetaPeso(p.peso) || 'Envasado', unidades: p.unidades }));
         const totalUnidades = items
             .filter(i => i.tipo === 'empacado')
             .reduce((sum, i) => sum + (i.unidades ?? 0), 0);
@@ -2161,6 +2179,7 @@ export default function WarehousesPage({ onNavigate }) {
             docenas: Math.floor(totalUnidades / 12),
             sueltas: totalUnidades % 12,
             totalKgSinEnvasar,
+            porPresentacion,
         };
     }
 
