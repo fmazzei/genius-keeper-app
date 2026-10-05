@@ -13,6 +13,7 @@ import {
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { esDestinoCaracas } from '@/utils/destinoDespacho.js';
 import { registrarDespacho } from '@/Kroma/despachoOps.js';
+import { marcaMov } from '@/utils/movInventario.js';
 import VentasPlanta from './VentasPlanta.jsx';
 
 // ─── Venezuela — estados y ciudades ──────────────────────────────────────────
@@ -664,7 +665,10 @@ export default function DespachoPage({ onNavigate, params }) {
                 const deducir    = isEmpacado ? Math.round(cantidad) : (parseFloat(cantidad) || 0);
                 const remaining  = Math.max(0, +(current - deducir).toFixed(3));
 
-                await updateDoc(srcRef, remaining === 0 ? { [field]: 0, active: false } : { [field]: remaining });
+                await updateDoc(srcRef, {
+                    ...(remaining === 0 ? { [field]: 0, active: false } : { [field]: remaining }),
+                    ...marcaMov('despacho_ciudad', { motivo: `Despacho a ${destinoDisplay(linea.destino)} (entregado)`, ref: { despachoId: id }, usuario: kromaUser }),
+                });
             }
 
             await updateDoc(doc(db, 'kroma_despachos', id), {

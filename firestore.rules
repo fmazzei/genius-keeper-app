@@ -559,6 +559,26 @@ service cloud.firestore {
     // (fecha, proveedor, monto), así que "Compras / histórico" no tenía de dónde
     // salir. Lo escribe Kroma al registrar una entrada con costo; lo lee también
     // gerencia/máster de GK para el Tablero Gerencial. Inmutable: es un libro.
+    // INVENTARIO PERPETUO (libro valorado, costos por lote, reportes diarios y
+    // configuración). Lo escribe SOLO el servidor (functions/handlers/
+    // inventarioPerpetuo.js): Kroma entra con una cuenta compartida, así que un
+    // libro que pudiera escribir el teléfono se podría editar o borrar.
+    match /kroma_inv_libro/{id} {
+      allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow write: if false;
+    }
+    match /kroma_inv_costos_lote/{id} {
+      allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow write: if false;
+    }
+    match /kroma_inv_reportes/{id} {
+      allow read: if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
+      allow write: if false;
+    }
+    match /kroma_inv_config/{id} {
+      allow read: if isKromaAccess() || isAdmin();
+      allow write: if false;
+    }
     match /kroma_compras/{id} {
       allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);

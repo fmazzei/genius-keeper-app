@@ -3,6 +3,7 @@ import Lote from '@/Kroma/Components/Lote.jsx';
 import {
     collection, getDocs, getDoc, addDoc, updateDoc, doc, query, where, serverTimestamp,
 } from 'firebase/firestore';
+import { marcaMov } from '@/utils/movInventario.js';
 import { db } from '@/Firebase/config.js';
 import {
     Warehouse, Package, Archive, Truck, Droplets, Plus, ChevronLeft,
@@ -1063,7 +1064,10 @@ function PendingEditsSection({ warehouseId, kromaUser, kromaRole, onInventoryUpd
             Object.entries(req.cambios || {}).forEach(([field, change]) => {
                 updateData[field] = change.a;
             });
-            await updateDoc(doc(db, 'kroma_inventory_pt', req.documentId), updateData);
+            await updateDoc(doc(db, 'kroma_inventory_pt', req.documentId), {
+                ...updateData,
+                ...marcaMov('ajuste', { motivo: req.motivo || 'Ajuste aprobado', ref: { solicitudId: req.id }, usuario: kromaUser }),
+            });
 
             // Update the edit request
             await updateDoc(doc(db, 'kroma_edit_requests', req.id), {
@@ -1843,13 +1847,19 @@ export default function WarehousesPage({ onNavigate }) {
             } else {
                 // Partial transfer: reduce source, create new entry at destination
                 const remaining = +(maxQty - qty).toFixed(3);
-                await updateDoc(doc(db, 'kroma_inventory_pt', transferItem.id), { [field]: remaining });
-                const { id: _id, ...itemBase } = transferItem;
+                // Las dos mitades llevan la MISMA marca de traslado: en el libro
+                // valorado una resta y la otra suma, y el valor no cambia.
+                const ref = { trasladoDesde: transferItem.id, almacenDestino: destId };
+                await updateDoc(doc(db, 'kroma_inventory_pt', transferItem.id), {
+                    [field]: remaining, ...marcaMov('traslado', { ref, usuario: kromaUser }),
+                });
+                const { id: _id, _mov: _m, warehouseNombre: _wn, ...itemBase } = transferItem;
                 const newRef = await addDoc(collection(db, 'kroma_inventory_pt'), {
                     ...itemBase,
                     [field]: qty,
                     warehouseId: destId,
                     createdAt: serverTimestamp(),
+                    ...marcaMov('traslado', { ref, usuario: kromaUser }),
                 });
                 updatedInv = [
                     ...updatedInv.map(i => i.id === transferItem.id ? { ...i, [field]: remaining } : i),
@@ -1895,7 +1905,10 @@ export default function WarehousesPage({ onNavigate }) {
                 Object.entries(cambios).forEach(([field, change]) => {
                     updateData[field] = change.a;
                 });
-                await updateDoc(doc(db, 'kroma_inventory_pt', item.id), updateData);
+                await updateDoc(doc(db, 'kroma_inventory_pt', item.id), {
+                    ...updateData,
+                    ...marcaMov('ajuste', { motivo: motivo || 'Ajuste', usuario: kromaUser, fecha: fechaAjuste || null }),
+                });
 
                 // Log adjustment as a warehouse movement for full traceability
                 const whId = item.warehouseId || editItemWId;
@@ -2012,7 +2025,9 @@ export default function WarehousesPage({ onNavigate }) {
     /** El caso chico: una caja dañada, un conteo mal cargado. No toca la planilla. */
     async function borrarSoloPartida(item) {
         try {
-            await updateDoc(doc(db, 'kroma_inventory_pt', item.id), { active: false });
+            await updateDoc(doc(db, 'kroma_inventory_pt', item.id), {
+                active: false, ...marcaMov('eliminacion', { motivo: 'Partida eliminada en Almacenes', usuario: kromaUser }),
+            });
             // Antes esto desaparecía el ítem del inventario sin dejar rastro en
             // el libro de movimientos — se registra como una salida total.
             const wh = warehouses.find(w => w.id === item.warehouseId);
@@ -2068,6 +2083,7 @@ export default function WarehousesPage({ onNavigate }) {
                 creadoPorId:     kromaUser?.id || null,
                 creadoPorNombre: kromaUser?.name || null,
                 createdAt: serverTimestamp(),
+                ...marcaMov('entrada_manual', { motivo: 'Entrada manual en Almacenes', usuario: kromaUser }),
             });
             const newItem = { id: ref.id, ...data };
             setInventoryPT(prev => [...prev, newItem]);

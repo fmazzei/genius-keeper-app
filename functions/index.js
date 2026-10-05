@@ -19,9 +19,10 @@ const masterTools    = require('./handlers/masterTools');
 const zohoInvoicing  = require('./handlers/zohoInvoicing');
 const ventasPlanta   = require('./handlers/ventasPlanta');
 const kromaEmpresas  = require('./handlers/kromaEmpresas');
+const { _internos: _invInternos, ...inventarioPerpetuo } = require('./handlers/inventarioPerpetuo');
 
 // Conector MCP de solo lectura (claude.ai). Se exporta SOLO la función: el
 // módulo también expone utilidades internas para pruebas.
 exports.mcp = require('./handlers/mcpServer').mcp;
 
-Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools, zohoReconcile, masterTools, zohoInvoicing, kromaEmpresas, ventasPlanta);
+Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools, zohoReconcile, masterTools, zohoInvoicing, kromaEmpresas, ventasPlanta, inventarioPerpetuo);

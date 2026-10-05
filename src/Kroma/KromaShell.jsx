@@ -17,6 +17,7 @@ import CavaRotacionPage from './pages/admin/CavaRotacionPage';
 import CostosFijosPage from './pages/admin/CostosFijosPage';
 import PuestaEnMarchaPage from './pages/PuestaEnMarchaPage';
 import LibroMovimientosPage from './pages/admin/LibroMovimientosPage';
+import InventarioValoradoPage from './pages/admin/InventarioValoradoPage';
 
 // Manager pages
 import { ManagerHome, FinancialBoard, ProductionKPIsPage, QualityBoard } from './pages/ManagerPages';
@@ -32,7 +33,7 @@ import {
     LayoutDashboard, Warehouse, Truck, Package, ClipboardList, Users, Tag,
     BarChart3, DollarSign, TrendingUp, ShieldCheck,
     Droplets, PackageOpen, FlaskConical, Workflow, Factory,
-    LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell, RotateCcw, Rocket, BookText,
+    LogOut, Menu, X, ChevronRight, ChevronLeft, BookOpen, Shield, Bell, RotateCcw, Rocket, BookText, Scale,
 } from 'lucide-react';
 
 // ─── Module defaults per role ─────────────────────────────────────────────────
@@ -56,6 +57,7 @@ const ALL_NAV_ITEMS = [
     // — Administración —
     { id: 'warehouses',    label: 'Almacenes',           Icon: Warehouse,     modulo: 'almacenes',            section: 'Administración' },
     { id: 'libro',         label: 'Libro de movimientos', Icon: BookText,   modulo: 'libroMovimientos',     section: 'Administración' },
+    { id: 'inv_valorado',  label: 'Inventario valorado', Icon: Scale,        modulo: 'inventarioValorado',   section: 'Administración' },
     { id: 'cava_rotacion', label: 'Rotación de Cava',   Icon: RotateCcw,     masterOnly: true,               section: 'Administración' },
     { id: 'costos_fijos',  label: 'Costos Fijos',       Icon: DollarSign,    masterOnly: true,               section: 'Administración' },
     { id: 'history',       label: 'Historial',           Icon: ClipboardList, modulo: 'historialProduccion',  section: 'Administración' },
@@ -105,6 +107,7 @@ function renderPage(view, role, kromaUser, onNavigate, navParams) {
         case 'despacho':      return <DespachoPage onNavigate={onNavigate} params={navParams} />;
         case 'warehouses':    return <WarehousesPage onNavigate={onNavigate} />;
         case 'libro':         return <LibroMovimientosPage />;
+        case 'inv_valorado':  return <InventarioValoradoPage />;
         case 'cava_rotacion': return <CavaRotacionPage />;
         case 'costos_fijos':  return <CostosFijosPage />;
         case 'history':       return <ProductionHistoryPage params={navParams} onNavigate={onNavigate} />;

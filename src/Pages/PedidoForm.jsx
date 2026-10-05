@@ -1,6 +1,7 @@
 // RUTA: src/Pages/PedidoForm.jsx
 
 import React, { useState, useEffect } from 'react';
+import { marcaMov } from '@/utils/movInventario.js';
 import { db } from '@/Firebase/config.js';
 import { collection, addDoc, updateDoc, doc, getDocs, query, where, increment, serverTimestamp } from 'firebase/firestore';
 import { ShoppingCart, ChevronLeft, CheckCircle, Camera, Loader, Package, Edit3 } from 'lucide-react';
@@ -153,6 +154,7 @@ const PedidoForm = ({ pos, selectedReporter, onBack }) => {
                 await updateDoc(doc(db, 'inventario_comercial', selectedLote.id), {
                     unidades:  increment(-Number(quantity)),
                     updatedAt: serverTimestamp(),
+                    ...marcaMov('picking', { motivo: `Despacho a ${pos?.name || 'PDV'}`, ref: { posId: pos?.id || null }, usuario: { id: selectedReporter?.id, nombre: selectedReporter?.name } }),
                 });
             }
 

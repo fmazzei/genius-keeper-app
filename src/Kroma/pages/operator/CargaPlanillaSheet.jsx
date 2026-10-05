@@ -41,6 +41,7 @@ import { collection, doc, writeBatch, serverTimestamp, deleteField, getDocs, que
 import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
+import { marcaMov } from '@/utils/movInventario.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
 import { partidasDePlanilla, reconciliarCava, firmaCava, modoSugerido, kgSinEnvasarSugerido, filasSinVencimiento } from '@/Kroma/ptPlanilla.js';
 import { leerSello, fmtSello } from '@/Kroma/selloDatos.js';
@@ -445,8 +446,12 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 // Las partidas nuevas van donde ya vive este lote (sin
                 // `warehouseId` el Almacén las ubica en la Cava).
                 const warehouseId = (ptExistente || []).find(i => i.warehouseId)?.warehouseId || null;
+                // Inventario perpetuo: qué movimiento es cada cambio de la cava.
+                const marcaPlanilla = (tipo, motivo) => marcaMov(tipo, { motivo, ref: { logId: logRef.id }, usuario: kromaUser });
                 const nueva = (pt) => {
                     batch.set(doc(collection(db, 'kroma_inventory_pt')), sinUndefined({
+                        ...(editando ? marcaPlanilla('correccion', 'Corrección de la planilla de producción')
+                            : marcaPlanilla('produccion_planilla', 'Producción cargada por planilla')),
                         empresaId,
                         productoId: ficha.productoId, productoNombre: ficha.productoNombre,
                         fichaId: ficha.id, logId: logRef.id,
@@ -487,12 +492,16 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                                 : { unidades: op.a, totalKg: +(d.pesoPorUnidad * op.a).toFixed(3), presentacion: d.presentacion,
                                     fechaEnvasado: d.fechaEnvasado || op.item.fechaEnvasado || null,
                                     fechaVencimiento: d.fechaVencimiento || null, active: true }));
+                            batch.update(doc(db, 'kroma_inventory_pt', op.item.id), marcaPlanilla('correccion', 'Corrección de la planilla de producción'));
                         } else {
                             // Retirar: sin envasar se da de baja; una partida
                             // envasada queda en 0 (lote cerrado, con su pista).
-                            batch.update(doc(db, 'kroma_inventory_pt', op.item.id), op.item.tipo === 'sin_envasar'
-                                ? { kgTotales: 0, active: false, deletedMotivo: 'Retirada al corregir la planilla.' }
-                                : { unidades: 0, totalKg: 0 });
+                            batch.update(doc(db, 'kroma_inventory_pt', op.item.id), {
+                                ...(op.item.tipo === 'sin_envasar'
+                                    ? { kgTotales: 0, active: false, deletedMotivo: 'Retirada al corregir la planilla.' }
+                                    : { unidades: 0, totalKg: 0 }),
+                                ...marcaPlanilla('correccion', 'Corrección de la planilla de producción'),
+                            });
                         }
                         if (Math.abs(delta) > 0.0005) mov({
                             tipo: 'correccion_planilla',

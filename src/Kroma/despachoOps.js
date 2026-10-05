@@ -17,6 +17,7 @@
 // Entregado", sin verificar stock y sin dejar movimiento en el libro.
 
 import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { marcaMov } from '../utils/movInventario.js';
 
 const destinoTexto = (d) => {
     if (!d) return 'Otra ciudad';
@@ -32,6 +33,10 @@ export async function registrarDespacho(db, {
     const ids = [];
     await runTransaction(db, async (tx) => {
         ids.length = 0;   // la transacción puede reintentarse
+        // Los ids de los despachos se conocen ANTES de descontar: cada partida
+        // queda marcada con el despacho al que salió (inventario perpetuo).
+        const refCaracas = aCaracas.length ? doc(collection(db, 'kroma_despachos')) : null;
+        const refOtros = aOtros.length ? doc(collection(db, 'kroma_despachos')) : null;
         // Lecturas primero (regla de las transacciones): el stock REAL del
         // momento. Dos líneas del mismo lote se suman antes de validar.
         // Un mismo lote puede ir a las dos vías: se valida contra el TOTAL y se
@@ -59,8 +64,32 @@ export async function registrarDespacho(db, {
                 lineas: todas.filter(l => l.inventoryId === invId) });
         }
 
+        // Lo que viaja con cada línea: el costo del lote y su identidad, para
+        // que Frimaca reciba la mercancía con su costo (y el libro la valore).
+        const datosPartida = new Map(leidos.map(r => [r.ref.id, r.data]));
+        const enriquecer = (l) => {
+            const d = datosPartida.get(l.inventoryId) || {};
+            const c = Number(d.costoUnitarioUsd);
+            return {
+                ...l, plantaDeducida: true,
+                productoId: d.productoId || null, catalogId: d.catalogId || null, logId: d.logId || null,
+                pesoPorUnidad: Number(d.pesoPorUnidad) || null,
+                costoUnitarioUsd: c > 0 ? c : null,
+            };
+        };
+
         for (const r of leidos) {
-            tx.update(r.ref, r.restante <= 0 ? { [r.field]: 0, active: false } : { [r.field]: r.restante });
+            const partes = r.lineas.map(l => {
+                const cant = r.isEmpacado ? Math.round(Number(l.cantidad) || 0) : +(+l.cantidad).toFixed(3);
+                return l._caracas
+                    ? { tipo: 'despacho_caracas', cantidad: -cant, ref: { despachoId: refCaracas.id } }
+                    : { tipo: 'despacho_ciudad', cantidad: -cant, ref: { despachoId: refOtros.id }, motivo: `Despacho a ${destinoTexto(l.destino)}` };
+            });
+            const marca = marcaMov(partes[0].tipo, {
+                ref: partes[0].ref, usuario: responsable, fecha: fecha !== hoy ? fecha : null,
+                partes: partes.length > 1 ? partes : null, motivo: partes[0].motivo || null,
+            });
+            tx.update(r.ref, { ...(r.restante <= 0 ? { [r.field]: 0, active: false } : { [r.field]: r.restante }), ...marca });
             for (const l of r.lineas) {
                 const cant = r.isEmpacado ? Math.round(Number(l.cantidad) || 0) : +(+l.cantidad).toFixed(3);
                 tx.set(doc(collection(db, 'kroma_warehouse_movements')), {
@@ -97,15 +126,13 @@ export async function registrarDespacho(db, {
             active:      true,
             createdAt:   serverTimestamp(),
         };
-        if (aCaracas.length) {
-            const ref = doc(collection(db, 'kroma_despachos'));
-            tx.set(ref, { ...base, destinoCaracas: true, lineas: aCaracas.map(l => ({ ...l, plantaDeducida: true })) });
-            ids.push(ref.id);
+        if (refCaracas) {
+            tx.set(refCaracas, { ...base, destinoCaracas: true, lineas: aCaracas.map(enriquecer) });
+            ids.push(refCaracas.id);
         }
-        if (aOtros.length) {
-            const ref = doc(collection(db, 'kroma_despachos'));
-            tx.set(ref, { ...base, destinoCaracas: false, lineas: aOtros.map(l => ({ ...l, plantaDeducida: true })) });
-            ids.push(ref.id);
+        if (refOtros) {
+            tx.set(refOtros, { ...base, destinoCaracas: false, lineas: aOtros.map(enriquecer) });
+            ids.push(refOtros.id);
         }
     });
     return ids;

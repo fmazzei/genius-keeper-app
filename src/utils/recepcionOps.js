@@ -6,6 +6,7 @@
 // el mismo código de la app.
 
 import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { marcaMov } from './movInventario.js';
 
 const norm = (s) => (s || '').trim().toLowerCase();
 
@@ -23,7 +24,10 @@ export async function recibirDespacho(db, {
     lineas.forEach((l, i) => {
         const recibida = Number(rows[i]?.cantidadRecibida) || 0;
         if (recibida <= 0) return;
-        const k = [norm(l.productoNombre), norm(l.presentacion), l.lote || '', l.fechaVencimiento || ''].join('|');
+        // También por lote de producción y costo: dos lotes con el mismo texto
+        // (las planillas "-H" se repiten) no se mezclan en una fila con un
+        // costo que no es de ninguno (inventario perpetuo).
+        const k = [norm(l.productoNombre), norm(l.presentacion), l.lote || '', l.fechaVencimiento || '', l.logId || '', l.costoUnitarioUsd || ''].join('|');
         const g = grupos.get(k) || { l, recibida: 0, notas: [] };
         g.recibida += recibida;
         if (!rows[i]?.estadoOk) g.notas.push(rows[i]?.novedad || 'novedad');
@@ -53,6 +57,8 @@ export async function recibirDespacho(db, {
                 norm(inv.presentacion) === norm(l.presentacion) &&
                 (inv.lote || '') === (l.lote || '') &&
                 (inv.fechaVencimiento || '') === (l.fechaVencimiento || '') &&
+                (inv.logId || null) === (l.logId || null) &&
+                (Number(inv.costoUnitarioUsd) || null) === (Number(l.costoUnitarioUsd) || null) &&
                 (Number(inv.unidades) || 0) > 0
             );
             let antes = 0; let ref = null;
@@ -68,15 +74,21 @@ export async function recibirDespacho(db, {
         for (const { g, ref, antes } of planes) {
             const { l, recibida } = g;
             const despues = +(antes + recibida).toFixed(3);
+            const marca = marcaMov('recepcion', { motivo: `Recepción del despacho ${despachoId}`, ref: { despachoId }, usuario: actor });
             if (ref) {
-                tx.update(ref, { unidades: despues, updatedAt: serverTimestamp(), updatedBy: actor });
+                tx.update(ref, { unidades: despues, updatedAt: serverTimestamp(), updatedBy: actor, ...marca });
             } else {
                 tx.set(doc(collection(db, 'inventario_comercial')), {
                     almacenId, almacenNombre: almacenNombre,
                     productoNombre: l.productoNombre, presentacion: l.presentacion || '',
                     tipo: l.tipo || 'empacado', unit: l.unit || 'ud',
                     lote: l.lote || '', fechaVencimiento: l.fechaVencimiento || '', unidades: despues,
-                    origenDespachoId: despachoId, updatedAt: serverTimestamp(), updatedBy: actor,
+                    // Identidad y costo del lote de Kroma (viajan en la línea del despacho).
+                    productoId: l.productoId || null, catalogId: l.catalogId || null, logId: l.logId || null,
+                    pesoPorUnidad: Number(l.pesoPorUnidad) || null,
+                    ...(Number(l.costoUnitarioUsd) > 0 ? { costoUnitarioUsd: Number(l.costoUnitarioUsd) } : {}),
+                    empresaId: 'lacteoca',
+                    origenDespachoId: despachoId, updatedAt: serverTimestamp(), updatedBy: actor, ...marca,
                 });
             }
             tx.set(doc(collection(db, 'inventario_movimientos')), {
@@ -102,6 +114,9 @@ export async function recibirDespacho(db, {
                 lote: l.lote || '', fechaVencimiento: l.fechaVencimiento || '',
                 unit: l.unit || 'ud',
                 cantidadEnviada: Number(l.cantidad) || 0,
+                logId: l.logId || null, inventoryId: l.inventoryId || null,
+                pesoPorUnidad: Number(l.pesoPorUnidad) || null,
+                costoUnitarioUsd: Number(l.costoUnitarioUsd) > 0 ? Number(l.costoUnitarioUsd) : null,
                 cantidadRecibida: Number(rows[i]?.cantidadRecibida) || 0,
                 estadoOk: rows[i]?.estadoOk !== false,
                 novedad: rows[i]?.estadoOk ? '' : (rows[i]?.novedad || ''),

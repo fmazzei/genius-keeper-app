@@ -3,6 +3,7 @@ import { kgProducidos, rendimientoLkg, fechaProduccion, rangoPeriodo, enRango, P
 import { kgDePartida, tieneExistencia, conExistencia, esHuerfana } from '@/Kroma/inventarioPT.js';
 import { fmtL, fmtNum } from '@/Kroma/formato.js';
 import Lote from '@/Kroma/Components/Lote.jsx';
+import { marcaMov } from '@/utils/movInventario.js';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, doc, query, where, writeBatch, serverTimestamp } from 'firebase/firestore';
 import {
@@ -378,6 +379,7 @@ export function ManagerHome({ onNavigate }) {
                     deletedPorId: kromaUser?.id || null,
                     deletedPorNombre: kromaUser?.name || null,
                     deletedMotivo: 'Su producción fue eliminada: el registro quedó huérfano.',
+                    ...marcaMov('eliminacion', { motivo: 'Partida huérfana: su producción fue eliminada', usuario: kromaUser }),
                 });
                 batch.set(doc(collection(db, 'kroma_warehouse_movements')), {
                     empresaId,
@@ -1357,7 +1359,7 @@ const CAT_LABELS = {
 };
 
 export function FinancialBoard() {
-    const { kromaRole } = useKroma();
+    const { kromaRole, kromaUser } = useKroma();
     const { data, loading, error, reload } = useKromaDashboard();
     const [backfill, setBackfill] = useState(null);   // null | 'preview' | 'saving' | 'done'
     const [backfillRows, setBackfillRows]   = useState([]);
@@ -1538,6 +1540,8 @@ export function FinancialBoard() {
                                         costoUnitarioUsd: r.costoUnitarioUsd,
                                         costoEstimado:    true,
                                         costoEstimadoAt:  serverTimestamp(),
+                                        origenCosto:      'estimado_ficha',
+                                        ...marcaMov('asignacion_costo', { motivo: 'Costo estimado desde la ficha', usuario: kromaUser }),
                                     });
                                 });
                                 await batch.commit();

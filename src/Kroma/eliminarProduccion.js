@@ -31,6 +31,7 @@
 import {
     collection, query, where, getDocs, doc, updateDoc, addDoc, serverTimestamp,
 } from 'firebase/firestore';
+import { marcaMov } from '../utils/movInventario.js';
 
 /** ¿Esta producción llegó a dar queso? Decide qué pasa con su leche. */
 export const produjoQueso = (log) =>
@@ -133,6 +134,7 @@ export async function eliminarProduccionCompleta(db, {
             deletedAt: serverTimestamp(),
             deletedPorId: actor?.id || null,
             deletedPorNombre: actor?.name || null,
+            ...marcaMov('eliminacion', { motivo: `Producción ${log.lote || log.id} eliminada`, ref: { logId: log.id }, usuario: actor }),
         });
         const { cantidad, unidad } = cantidadDePartida(i);
         if (unidad === 'unidades') unidades += cantidad; else kg += cantidad;

@@ -51,6 +51,7 @@ const MODULES = [
     { id: 'despachos',             label: 'Despachos',               desc: 'Declarar mercancía en tránsito',        Icon: Truck },
     { id: 'almacenes',             label: 'Almacenes',               desc: 'Gestión de almacenes y PT',             Icon: Warehouse },
     { id: 'libroMovimientos',      label: 'Libro de movimientos',    desc: 'Entradas, ventas, reposiciones y traslados', Icon: BookText, soloLectura: true },
+    { id: 'inventarioValorado',    label: 'Inventario valorado',     desc: 'Saldo a costo, reporte diario de controles y conteo físico', Icon: BookText, soloLectura: true },
     { id: 'historialProduccion',   label: 'Historial de Producción', desc: 'Reportes históricos',                  Icon: ClipboardList },
     { id: 'catalogos',             label: 'Catálogos',               desc: 'Productos, materiales y proveedores',   Icon: Tag },
     { id: 'usuarios',              label: 'Usuarios Kroma',          desc: 'Gestión de personal',                  Icon: Users },

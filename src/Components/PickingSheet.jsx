@@ -4,16 +4,21 @@
 // 2 toques. Descuenta al instante, deja un movimiento en el libro y registra el
 // picking (`pickings`) — que el vendedor ve como alerta.
 //
-// VELOCIDAD: la hoja se cierra de inmediato (actualización optimista) y las
-// escrituras van EN PARALELO en segundo plano. Nadie espera a que la app piense:
-// si algo falla, la pantalla lo avisa y recarga (onError).
+// VELOCIDAD: la hoja se cierra de inmediato (actualización optimista) y la
+// escritura va en segundo plano, en UNA transacción contra el stock real
+// (`pickingOps.js`): si alguien retiró del mismo lote entretanto, no se pisan;
+// si no alcanza, la pantalla lo avisa y recarga (onError).
+//
+// INVENTARIO PERPETUO: el picking es la SALIDA de Frimaca. El punto de venta es
+// opcional: un retiro para la ruta del día no tiene uno solo.
 //
 // IRREVERSIBLE: un picking confirmado no se revierte desde la app. Si hubo una
 // equivocación se notifica al administrador (máster) para que ajuste.
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '@/Firebase/config.js';
-import { collection, doc, addDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
+import { registrarPicking } from '@/utils/pickingOps.js';
 import { X, PackageMinus, Minus, Plus, CheckCircle, AlertTriangle } from 'lucide-react';
 import { fmtVence } from '@/utils/fechaCorta.js';
 
@@ -56,6 +61,21 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
     const [fecha, setFecha] = useState(`${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
     const [hora, setHora]   = useState(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
     const [error, setError] = useState('');
+    // Punto de venta de destino (opcional).
+    const [pdvs, setPdvs] = useState([]);
+    const [pdvId, setPdvId] = useState('');
+    useEffect(() => {
+        let vivo = true;
+        getDocs(collection(db, 'pos')).then(snap => {
+            if (!vivo) return;
+            setPdvs(snap.docs.map(d => ({ id: d.id, ...d.data() }))
+                .filter(p => p.active !== false && p.eliminado !== true && p.type !== 'depot')
+                .map(p => ({ id: p.id, nombre: p.name || p.nombre || p.id }))
+                .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+        }).catch(() => {});
+        return () => { vivo = false; };
+    }, []);
+    const pdv = pdvs.find(p => p.id === pdvId) || null;
 
     const clamp = (n) => {
         const v = esKg ? r2(n) : Math.round(n);
@@ -75,30 +95,9 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
         onDone?.({ itemId: item.id, unidades: despues });
         onClose?.();
 
-        // 2) Persistencia en segundo plano, en una sola tanda paralela.
-        Promise.all([
-            updateDoc(doc(db, 'inventario_comercial', item.id), {
-                unidades: despues, updatedAt: serverTimestamp(), updatedBy: actorLabel,
-            }),
-            addDoc(collection(db, 'inventario_movimientos'), {
-                almacenId: item.almacenId || null, almacenNombre: item.almacenNombre || '',
-                productoNombre: item.productoNombre, presentacion: item.presentacion || '',
-                lote: item.lote || '', fechaVencimiento: item.fechaVencimiento || '',
-                tipo: 'picking', cantidad: -qty, unidadesAntes: stock, unidadesDespues: despues,
-                unit, ref: { itemId: item.id },
-                actorId: actorLabel.id, actorNombre: actorLabel.nombre, actorRole: actorLabel.role,
-                nota: `Picking ${fecha} ${hora}`, createdAt: serverTimestamp(),
-            }),
-            addDoc(collection(db, 'pickings'), {
-                almacenId: item.almacenId || null, almacenNombre: item.almacenNombre || '',
-                productoNombre: item.productoNombre, presentacion: item.presentacion || '',
-                lote: item.lote || '', fechaVencimiento: item.fechaVencimiento || '',
-                unit, cantidad: qty, fecha, hora,
-                stockAntes: stock, stockDespues: despues,
-                mercaderistaId: actorLabel.id, mercaderistaNombre: actorLabel.nombre, mercaderistaRole: actorLabel.role,
-                estado: 'aplicado', createdAt: serverTimestamp(),
-            }),
-        ]).catch(e => onError?.('No se pudo registrar el picking: ' + (e?.message || '')));
+        // 2) Persistencia en segundo plano, en una transacción.
+        registrarPicking(db, { itemId: item.id, cantidad: qty, fecha, hora, actor: actorLabel, pdv })
+            .catch(e => onError?.('No se pudo registrar el picking: ' + (e?.message || '')));
     };
 
     return (
@@ -185,6 +184,15 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                             <input type="time" value={hora} onChange={e => setHora(e.target.value)}
                                 className={`block w-full min-w-0 max-w-full appearance-none px-2 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 ${t.field}`} />
                         </div>
+                    </div>
+
+                    <div className="mb-4">
+                        <p className={`text-xs font-semibold mb-1 ${t.label}`}>¿Para qué punto de venta? <span className="opacity-60">(opcional)</span></p>
+                        <select value={pdvId} onChange={e => setPdvId(e.target.value)}
+                            className={`block w-full min-w-0 px-2 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 ${t.field}`}>
+                            <option value="">Para la ruta (varios puntos)</option>
+                            {pdvs.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                        </select>
                     </div>
 
                     <button onClick={guardar} disabled={stock <= 0 || !(cantidad > 0)}

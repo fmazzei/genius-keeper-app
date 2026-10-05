@@ -12,6 +12,7 @@
 // (regla Firestore aparte) — esta pantalla es exclusiva de GK.
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { marcaMov } from '@/utils/movInventario.js';
 import { db } from '@/Firebase/config.js';
 import {
     collection, query, where, getDocs, doc, addDoc, updateDoc, serverTimestamp,
@@ -210,6 +211,12 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                 lastAjusteNota: notas || '',
                 updatedAt:      serverTimestamp(),
                 updatedBy:      userLabel,
+                // Inventario perpetuo: un descuento sin venta en Frimaca es merma;
+                // la corrección y la entrada manual del máster son ajustes.
+                ...marcaMov(modo === 'salida' ? 'salida' : (modo === 'correccion' ? 'correccion' : 'ajuste'), {
+                    motivo: modo === 'salida' ? 'merma' : (notas || (modo === 'correccion' ? 'Corrección en Frimaca' : 'Entrada manual en Frimaca')),
+                    ref: { itemId: adjustItem.id, nota: notas || null }, usuario: actorLabel,
+                }),
             }),
             // Movimiento en el libro — ningún cambio de stock queda sin rastro.
             addDoc(collection(db, 'inventario_movimientos'), {

@@ -23,6 +23,7 @@
 // probarlo contra el emulador con el mismo código que corre en la app.
 
 import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { marcaMov } from '../utils/movInventario.js';
 
 export const MOTIVOS_SALIDA = [
     { key: 'merma',           label: 'Merma o producto dañado' },
@@ -153,7 +154,15 @@ export async function registrarSalidaCava(db, {
         if (ventaRef) ventaId = ventaRef.id;
 
         for (const r of leidos) {
-            tx.update(r.ref, r.restante <= 0 ? { [r.field]: 0, active: false } : { [r.field]: r.restante });
+            tx.update(r.ref, {
+                ...(r.restante <= 0 ? { [r.field]: 0, active: false } : { [r.field]: r.restante }),
+                // Inventario perpetuo: qué salida fue (venta, reposición o salida con motivo).
+                ...marcaMov(tipo, {
+                    motivo: tipo === 'venta' ? (cliente?.customerName ? `Venta a ${cliente.customerName}` : null)
+                        : tipo === 'reposicion' ? `${motivo} · ${cliente?.customerName || ''}` : motivo,
+                    ref: ventaId ? { ventaId } : null, usuario: responsable, fecha: fecha !== hoy ? fecha : null,
+                }),
+            });
             tx.set(doc(collection(db, 'kroma_warehouse_movements')), {
                 // `venta` o `salida_<motivo>`: el libro dice QUÉ salió y POR QUÉ.
                 tipo:            tipo === 'salida' ? `salida_${motivo}` : tipo,

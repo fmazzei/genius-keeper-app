@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import CampoFecha, { hoyInput, sumarDiasInput, inputDeFecha, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
 import { db } from '@/Firebase/config.js';
+import { marcaMov } from '@/utils/movInventario.js';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import { faltaEmpacar, kgProducidos, rendimientoLkg, fechaProduccion, msProduccion } from '@/Kroma/estadoPlanta.js';
@@ -500,6 +501,45 @@ function calcCostoBasePorKg(log, bloquesData, totalKgProducido, materialsMap) {
     const costoInsumos = realCostoInsumos(bloquesData, materialsMap);
     const costoBase    = costoLeche + costoInsumos;
     return totalKgProducido > 0 ? costoBase / totalKgProducido : null;
+}
+// La TABLA DE COMPONENTES del costo del lote (inventario perpetuo): leche por
+// recepción, cada insumo consumido y el empaque por presentación. El servidor
+// la congela en kroma_inv_costos_lote (con historial). Mano de obra e
+// indirectos quedan reservados (null) hasta la etapa que los agregue.
+function desgloseCostoReal(log, bloquesData, totalKgProducido, materialsMap, presentaciones = []) {
+    const componentes = [];
+    (log.recepciones || []).forEach(r => {
+        let precio = parseFloat(r.costoUsdLitro);
+        let origenPrecio = 'recepcion';
+        if (!(precio > 0)) { precio = precioLecheDeProveedor(r.proveedorId, materialsMap).precio || 0; origenPrecio = precio > 0 ? 'maestro' : 'sin_precio'; }
+        componentes.push({ tipo: 'leche', proveedorId: r.proveedorId || null, nombre: r.proveedorNombre || 'Leche',
+            cantidad: r.litros || 0, unidad: 'l', costoUnitario: +(precio || 0).toFixed(6), monto: +((precio || 0) * (r.litros || 0)).toFixed(6), origenPrecio });
+    });
+    Object.values(bloquesData || {}).forEach(b => {
+        (b.consumosCosteo || []).forEach(c => {
+            if (!(c.amount > 0)) return;
+            const factor = unitConvFactor(c.unidad, c.unidadMaterial);
+            const monto = (c.costoUsdUnidad > 0 && factor != null) ? c.costoUsdUnidad * c.amount * factor : 0;
+            componentes.push({ tipo: 'insumo', materialId: c.materialId || null, nombre: c.nombre || '', cantidad: c.amount,
+                unidad: c.unidad || null, costoUnitario: c.costoUsdUnidad != null ? +(+c.costoUsdUnidad).toFixed(6) : null,
+                monto: +monto.toFixed(6), sinCosto: !(monto > 0) });
+        });
+    });
+    const costoBaseTotal = componentes.reduce((s, c) => s + (c.monto || 0), 0);
+    const empaquePorPresentacion = {};
+    presentaciones.filter(p => p.unidades > 0 && p.catalogId).forEach(p => {
+        empaquePorPresentacion[p.catalogId] = +costoEmpaqueUnitario(log.productoId, p.catalogId, p.unidades, materialsMap).toFixed(6);
+    });
+    return {
+        origen: 'produccion',
+        componentes,
+        costoBaseTotal: +costoBaseTotal.toFixed(6),
+        kgProducidos: +(totalKgProducido || 0),
+        costoBasePorKg: totalKgProducido > 0 ? +(costoBaseTotal / totalKgProducido).toFixed(6) : 0,
+        empaquePorPresentacion,
+        litros: +(log.litrosIngresados || 0),
+        litrosRecepciones: (log.recepciones || []).reduce((s, r) => s + (r.litros || 0), 0),
+    };
 }
 // Real packaging cost of a single unit of a given SKU/presentación, priced
 // against the Maestro de Materiales assignments in effect right now (the
@@ -2673,18 +2713,28 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         // ni desviaciones — alimentando "Costo Teórico vs Real" y margen bruto
         // por SKU en Módulo 2.
         const costoBasePorKg = calcCostoBasePorKg(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap);
-        const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(4) } : {};
+        const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(6) } : {};
+        // Inventario perpetuo: cada partida nace marcada como producción de
+        // este lote, y el costo del lote se guarda con sus componentes.
+        const marcaProd = () => marcaMov('produccion', { ref: { logId }, usuario: kromaUser });
+        try {
+            await updateDoc(doc(db, 'kroma_production_logs', logId), {
+                costeo: desgloseCostoReal(log, log.bloquesData, empaqReg.totalKgProducido, materialsMap, presentacionesCreadas),
+            });
+        } catch (e) { console.error('costeo del lote:', e); }
 
         const ops = [];
         if (disposicion !== 'guardar_todo') {
             for (const pr of presentacionesCreadas) {
                 const empaqueUnit = costoEmpaqueUnitario(log.productoId, pr.catalogId, pr.unidades, materialsMap);
                 const costoUnitarioUsd = costoBasePorKg > 0
-                    ? +(costoBasePorKg * (pr.pesoPorUnidad || 0) + empaqueUnit).toFixed(4)
+                    ? +(costoBasePorKg * (pr.pesoPorUnidad || 0) + empaqueUnit).toFixed(6)
                     : null;
                 ops.push(addDoc(collection(db, 'kroma_inventory_pt'), {
                     ...base,
+                    ...marcaProd(),
                     tipo:           'empacado',
+                    catalogId:      pr.catalogId || null,
                     presentacion:   pr.nombre || 'Sin nombre',
                     pesoPorUnidad:  pr.pesoPorUnidad || 0,
                     unidades:       pr.unidades,
@@ -2708,12 +2758,13 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         if (kgSinEnv > 0) {
             ops.push(addDoc(collection(db, 'kroma_inventory_pt'), {
                 ...base,
+                ...marcaProd(),
                 tipo:     'sin_envasar',
                 kgTotales: kgSinEnv,
                 fechaVencimiento: vencSinEnv,
                 vencimientoTentativo: true,
                 ...baseSnapshot,
-                ...(costoBasePorKg > 0 && { costoUnitarioUsd: +costoBasePorKg.toFixed(4) }),
+                ...(costoBasePorKg > 0 && { costoUnitarioUsd: +costoBasePorKg.toFixed(6) }),
             }));
         }
         await Promise.all(ops);
@@ -2818,7 +2869,8 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             const costoBasePorKg = log.origen === 'planilla_papel'
                 ? costoBasePorKgTeorico(log, materialsMap)
                 : calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap);
-            const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(4) } : {};
+            const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(6) } : {};
+            const refEnv = { logId: log.id, envasado: fechaEnvasado || null };
 
             const batch = writeBatch(db);
             const mov = (extra) => batch.set(doc(collection(db, 'kroma_warehouse_movements')), {
@@ -2829,10 +2881,11 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             for (const p of pres) {
                 const empaqueUnit = costoEmpaqueUnitario(log.productoId, p.catalogId, p.unidades, materialsMap);
                 const costoUnitarioUsd = costoBasePorKg > 0
-                    ? +(costoBasePorKg * (p.pesoPorUnidad || 0) + empaqueUnit).toFixed(4)
+                    ? +(costoBasePorKg * (p.pesoPorUnidad || 0) + empaqueUnit).toFixed(6)
                     : null;
                 batch.set(doc(collection(db, 'kroma_inventory_pt')), {
-                    ...base, tipo: 'empacado',
+                    ...base, tipo: 'empacado', catalogId: p.catalogId || null,
+                    ...marcaMov('envasado', { motivo: 'Envasado de queso a granel', ref: refEnv, usuario: kromaUser }),
                     presentacion: p.nombre, pesoPorUnidad: p.pesoPorUnidad,
                     unidades: p.unidades,
                     totalKg: +((p.pesoPorUnidad || 0) * p.unidades).toFixed(3),
@@ -2853,13 +2906,24 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             let porDescontar = cerrarResto
                 ? granel.reduce((s, g) => s + (g.kgTotales || 0), 0)
                 : kgEmpacados;
+            // Lo envasado se transforma (granel → unidades); lo que se cierra
+            // sin envasar es merma. Cada kg descontado dice cuál de las dos fue.
+            let porEnvasar = kgEmpacados;
             for (const g of granel) {
                 if (porDescontar <= 0.0005) break;
                 const quita = Math.min(g.kgTotales || 0, porDescontar);
                 const queda = +((g.kgTotales || 0) - quita).toFixed(3);
                 porDescontar = +(porDescontar - quita).toFixed(3);
+                const env = +Math.min(quita, porEnvasar).toFixed(3);
+                porEnvasar = +(porEnvasar - env).toFixed(3);
+                const merma = +(quita - env).toFixed(3);
+                const partes = [
+                    ...(env > 0 ? [{ tipo: 'envasado', cantidad: -env, motivo: 'Envasado de queso a granel', ref: refEnv }] : []),
+                    ...(merma > 0 ? [{ tipo: 'merma', cantidad: -merma, motivo: 'Resto sin envasar declarado merma al cerrar', ref: refEnv }] : []),
+                ];
+                const marca = marcaMov(partes[0]?.tipo || 'envasado', { ref: refEnv, usuario: kromaUser, partes: partes.length > 1 ? partes : null, motivo: partes[0]?.motivo });
                 batch.update(doc(db, 'kroma_inventory_pt', g.id),
-                    queda > 0.0005 ? { kgTotales: queda } : { kgTotales: 0, active: false });
+                    queda > 0.0005 ? { kgTotales: queda, ...marca } : { kgTotales: 0, active: false, ...marca });
                 mov({
                     tipo: 'envasado', origenNombre: 'Sin envasar', destinoNombre: 'Envasado',
                     presentacion: 'Sin envasar', cantidad: -+quita.toFixed(3), unidad: 'kg',
