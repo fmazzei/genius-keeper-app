@@ -2867,7 +2867,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
             // Una planilla de papel no tiene insumos reales en `bloquesData`:
             // se costea con leche + insumos de la ficha, como en gerencia.
             const costoBasePorKg = log.origen === 'planilla_papel'
-                ? costoBasePorKgTeorico(log, materialsMap)
+                ? (Number(log.costeo?.costoBasePorKg) > 0 ? Number(log.costeo.costoBasePorKg) : costoBasePorKgTeorico(log, materialsMap))
                 : calcCostoBasePorKg(log, log.bloquesData, log.totalKgProducido, materialsMap);
             const baseSnapshot = costoBasePorKg > 0 ? { costoBasePorKgUsd: +costoBasePorKg.toFixed(6) } : {};
             const refEnv = { logId: log.id, envasado: fechaEnvasado || null };
@@ -4225,6 +4225,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                     fichas={fichas}
                     suppliers={suppliers}
                     productsMap={productsMap}
+                    materialsMap={materialsMap}
                     verCostos={verCostos}
                     kromaUser={kromaUser}
                     logEditar={planillaEditar}

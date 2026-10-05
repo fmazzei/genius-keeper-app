@@ -222,3 +222,61 @@ export function costoBasePorKgTeorico(log, materialsById) {
     const r = calcCostoTeoricoLote({ ...log, productosFinales: [] }, materialsById, {}, buildMilkPriceLookup(mats));
     return r.totalKg > 0 ? (r.costoLeche + r.costoInsumos) / r.totalKg : 0;
 }
+
+// ── Costo de una planilla de papel, con componentes (inventario perpetuo) ──
+// Mientras la planta carga las producciones por planilla, este es el costo con
+// el que nace su queso en la cava. La planilla trae los insumos como texto
+// libre (sin unidad ni material), así que se costean con la FICHA: dosis por
+// litro × litros procesados × precio del maestro — lo mismo que gerencia. La
+// leche, al precio declarado en la planilla o, si no, al del maestro para ese
+// productor. Devuelve la misma forma que el costeo de una producción en la app.
+export function costeoPlanilla(log, materialsById, packagingByKey = {}) {
+    const mats = Object.values(materialsById || {});
+    const componentes = [];
+    (log.recepciones || []).forEach(r => {
+        let precio = parseFloat(r.costoUsdLitro);
+        let origenPrecio = 'planilla';
+        if (!(precio > 0)) { precio = precioLecheDeProveedor(r.proveedorId, mats).precio || 0; origenPrecio = precio > 0 ? 'maestro' : 'sin_precio'; }
+        componentes.push({ tipo: 'leche', proveedorId: r.proveedorId || null, nombre: r.proveedorNombre || 'Leche',
+            cantidad: r.litros || 0, unidad: 'l', costoUnitario: +(precio || 0).toFixed(6), monto: +((precio || 0) * (r.litros || 0)).toFixed(6), origenPrecio });
+    });
+    const litrosNetos = getLitrosNetos(log) || 0;
+    extractFichaDoseRefs(log.bloquesSnapshot).forEach(({ materialId, cantidad, unidad }) => {
+        const mat = materialsById?.[materialId];
+        const price = mat ? pricePerBaseUnit(mat) : 0;
+        const factor = mat ? unitConversionFactor(unidad, mat.unidad) : null;
+        const usado = cantidad * litrosNetos;
+        const monto = price && factor != null ? price * usado * factor : 0;
+        componentes.push({ tipo: 'insumo', materialId, nombre: mat?.nombre || '', cantidad: +usado.toFixed(6), unidad: unidad || null,
+            costoUnitario: price ? +price.toFixed(6) : null, monto: +monto.toFixed(6), origen: 'ficha', sinCosto: !(monto > 0) });
+    });
+    const kg = kgProducidos(log) || 0;
+    const costoBaseTotal = componentes.reduce((s, c) => s + (c.monto || 0), 0);
+    const empaquePorPresentacion = {};
+    (log.productosFinales || []).filter(p => p.catalogId).forEach(p => {
+        empaquePorPresentacion[p.catalogId] = +packagingCostForItem(log.productoId, { catalogId: p.catalogId, unidades: 1 }, packagingByKey).toFixed(6);
+    });
+    return {
+        origen: 'planilla',
+        componentes,
+        costoBaseTotal: +costoBaseTotal.toFixed(6),
+        kgProducidos: kg,
+        costoBasePorKg: kg > 0 ? +(costoBaseTotal / kg).toFixed(6) : 0,
+        empaquePorPresentacion,
+        litros: +(log.litrosIngresados || 0),
+        litrosRecepciones: (log.recepciones || []).reduce((s, r) => s + (r.litros || 0), 0),
+    };
+}
+
+/** Costo unitario de una partida a partir del costeo: por kg si es granel, por unidad si está envasada. */
+export function costoUnitarioDePartida(costeo, partida, productoId, packagingByKey = {}) {
+    const base = Number(costeo?.costoBasePorKg) || 0;
+    if (!(base > 0)) return null;
+    if (partida.tipo === 'sin_envasar') return +base.toFixed(6);
+    const peso = Number(partida.pesoPorUnidad) || 0;
+    if (!(peso > 0)) return null;
+    const emp = partida.catalogId
+        ? (costeo.empaquePorPresentacion?.[partida.catalogId] ?? packagingCostForItem(productoId, { catalogId: partida.catalogId, unidades: 1 }, packagingByKey))
+        : 0;
+    return +(base * peso + (emp || 0)).toFixed(6);
+}

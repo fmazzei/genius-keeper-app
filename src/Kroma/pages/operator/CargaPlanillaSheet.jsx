@@ -41,6 +41,7 @@ import { collection, doc, writeBatch, serverTimestamp, deleteField, getDocs, que
 import { db } from '@/Firebase/config.js';
 import { X, Plus, Trash2, Loader, AlertCircle, FileText } from 'lucide-react';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
+import { costeoPlanilla, costoUnitarioDePartida, indexPackagingAssignments } from '@/Kroma/costeoLote.js';
 import { marcaMov } from '@/utils/movInventario.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
 import { partidasDePlanilla, reconciliarCava, firmaCava, modoSugerido, kgSinEnvasarSugerido, filasSinVencimiento } from '@/Kroma/ptPlanilla.js';
@@ -83,7 +84,7 @@ function loteHistorico(productoNombre, fecha) {
     return `${iniciales}${fecha.getFullYear()}${p(fecha.getMonth() + 1)}${p(fecha.getDate())}-H`;
 }
 
-export default function CargaPlanillaSheet({ fichas = [], suppliers = [], productsMap = {}, verCostos = false, kromaUser, logEditar = null, onClose, onSaved }) {
+export default function CargaPlanillaSheet({ fichas = [], suppliers = [], productsMap = {}, materialsMap = {}, verCostos = false, kromaUser, logEditar = null, onClose, onSaved }) {
     // Corregir una planilla es REABRIRLA con todo lo que ya tenía, no volver a
     // teclearla. Con `logEditar` el formulario arranca precargado y el guardado
     // escribe sobre ese mismo registro en vez de crear otro.
@@ -412,6 +413,14 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 createdAt: serverTimestamp(),
             });
 
+            // Costo del lote con sus componentes (leche, insumos de la ficha y
+            // empaque por presentación). Mientras la planta carga por planilla,
+            // es el costo con el que su queso entra a la cava y al libro
+            // valorado: antes entraba SIN costo y había que estimarlo después.
+            const empaquesPorKey = indexPackagingAssignments(Object.values(materialsMap || {}));
+            datosLog.costeo = costeoPlanilla(datosLog, materialsMap || {}, empaquesPorKey);
+            const costoDe = (pt) => costoUnitarioDePartida(datosLog.costeo, pt, ficha.productoId, empaquesPorKey);
+
             if (editando) {
                 const { createdAt, ...resto } = datosLog;   // la fecha de alta no cambia
                 batch.update(logRef, {
@@ -449,7 +458,9 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 // Inventario perpetuo: qué movimiento es cada cambio de la cava.
                 const marcaPlanilla = (tipo, motivo) => marcaMov(tipo, { motivo, ref: { logId: logRef.id }, usuario: kromaUser });
                 const nueva = (pt) => {
+                    const costo = costoDe(pt);
                     batch.set(doc(collection(db, 'kroma_inventory_pt')), sinUndefined({
+                        ...(costo > 0 ? { costoUnitarioUsd: costo, costoBasePorKgUsd: datosLog.costeo.costoBasePorKg, origenCosto: 'planilla' } : {}),
                         ...(editando ? marcaPlanilla('correccion', 'Corrección de la planilla de producción')
                             : marcaPlanilla('produccion_planilla', 'Producción cargada por planilla')),
                         empresaId,
@@ -465,9 +476,8 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     }));
                 };
                 if (!editando) {
-                    // SIN costo congelado a propósito: con solo la leche del
-                    // papel quedaba subvaluado. Gerencia lo costea con el
-                    // cálculo completo del lote, el mismo de cualquier otro.
+                    // Cada partida nace con el costo completo del lote
+                    // (`costeoPlanilla`: leche + insumos de la ficha + empaque).
                     for (const pt of deseadas) {
                         nueva(pt);
                         mov({
@@ -492,7 +502,13 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                                 : { unidades: op.a, totalKg: +(d.pesoPorUnidad * op.a).toFixed(3), presentacion: d.presentacion,
                                     fechaEnvasado: d.fechaEnvasado || op.item.fechaEnvasado || null,
                                     fechaVencimiento: d.fechaVencimiento || null, active: true }));
-                            batch.update(doc(db, 'kroma_inventory_pt', op.item.id), marcaPlanilla('correccion', 'Corrección de la planilla de producción'));
+                            // Corregir kilos o litros cambia el costo del lote: la
+                            // partida toma el costo nuevo (en el libro, una revaluación).
+                            const costoNuevo = costoDe(d);
+                            batch.update(doc(db, 'kroma_inventory_pt', op.item.id), {
+                                ...(costoNuevo > 0 ? { costoUnitarioUsd: costoNuevo, costoBasePorKgUsd: datosLog.costeo.costoBasePorKg, origenCosto: 'planilla' } : {}),
+                                ...marcaPlanilla('correccion', 'Corrección de la planilla de producción'),
+                            });
                         } else {
                             // Retirar: sin envasar se da de baja; una partida
                             // envasada queda en 0 (lote cerrado, con su pista).
