@@ -11,7 +11,9 @@
 //   la misma instancia).
 // - Autenticación por clave (variable MCP_API_KEY), SOLO en el encabezado
 //   `X-API-Key` (claude.ai lo configura en "Encabezados de solicitud"). Sin
-//   clave o con una incorrecta: 401. GET /estado = diagnóstico sin secretos.
+//   clave o con una incorrecta la conexión se atiende (nunca 401: claude.ai lo
+//   toma como "reconectar") pero ninguna herramienta lee ni escribe.
+//   GET /estado = diagnóstico sin secretos.
 // - Cada llamada queda en `mcp_auditoria`; cada documento escrito, con su
 //   versión anterior exacta, en `mcp_cambios`.
 // - Redacta lo sensible (contraseñas, PIN, tokens, credenciales, secretos) y
@@ -30,7 +32,7 @@ const { z } = require("zod");
 // `.env` del deploy desde el secreto MCP_API_KEY, igual que ZOHO_SECRET. NO se
 // usa Secret Manager porque la cuenta de servicio del deploy recibe 403 ahí, y
 // eso tumbaría el deploy de TODAS las funciones (ver CLAUDE.md). Si la variable
-// falta o está vacía, todo responde 401: falla cerrado.
+// falta o está vacía, ninguna herramienta funciona: falla cerrado.
 const claveEsperada = () => process.env.MCP_API_KEY || "";
 
 const TAM_MAX = 200 * 1024;          // ~200 KB por respuesta
@@ -153,9 +155,33 @@ async function auditar(herramienta, parametros, documentos, contexto = {}) {
     } catch (e) { /* la bitácora no puede tumbar la consulta */ }
 }
 
+async function registrarRechazo(r = {}) {
+    try {
+        await admin.firestore().collection("mcp_rechazos").add({
+            fecha: admin.firestore.FieldValue.serverTimestamp(),
+            motivo: r.motivo || "desconocido",
+            metodo: r.metodo || null,
+            herramienta: r.herramienta || null,
+            huellaRecibida: r.huellaRecibida || null,
+            largoRecibido: r.largoRecibido || 0,
+            cliente: r.cliente || "",
+        });
+    } catch (e) { /* diagnóstico */ }
+}
+
 /** Ejecuta una herramienta con auditoría y manejo de errores uniformes. */
 function herramienta(nombre, fn, contexto = {}) {
     return async (args) => {
+        // Sin clave válida la conexión se mantiene (ver la función HTTP), pero
+        // ninguna herramienta lee ni escribe: devuelve el motivo y queda anotado.
+        if (!contexto.autenticado) {
+            await registrarRechazo({ ...contexto.rechazo, herramienta: nombre });
+            return error(contexto.rechazo?.motivo === "servidor_sin_clave"
+                ? "El servidor del conector no tiene la clave configurada (MCP_API_KEY). Avísale al administrador."
+                : contexto.rechazo?.motivo === "clave_incorrecta"
+                    ? "La clave X-API-Key del conector no coincide con la del servidor. Hay que eliminar el conector en claude.ai y crearlo de nuevo con la clave vigente."
+                    : "Esta llamada llegó sin el encabezado X-API-Key. Vuelve a intentarlo; si se repite, desconecta y reconecta el conector GK y Kroma en claude.ai.");
+        }
         try {
             const { salida, documentos } = await fn(args || {});
             await auditar(nombre, args, documentos, contexto);
@@ -586,7 +612,11 @@ function crearServidor(contexto = {}) {
 exports.mcp = onRequest({
     region: "us-central1",
     memory: "512MiB",
-    timeoutSeconds: 120,
+    timeoutSeconds: 300,
+    // Una instancia siempre encendida: sin ella, la primera llamada tras un rato
+    // quieto paga el arranque en frío (cargar el SDK y Firebase Admin, varios
+    // segundos) y claude.ai puede darla por fallida.
+    minInstances: 1,
     invoker: "public",
     cors: false,
 }, async (req, res) => {
@@ -625,25 +655,31 @@ exports.mcp = onRequest({
 
     // La clave llega SOLO por el encabezado X-API-Key (en la URL quedaba a la
     // vista en la configuración del conector y en los registros de Cloud Run).
+    //
+    // NUNCA se responde 401 aquí. claude.ai, al recibir un 401, da el conector
+    // por caído ("needs_reconnect") o intenta OAuth, y hay que abrir un chat
+    // nuevo. Algunas de sus llamadas de fondo (iniciar, listar herramientas,
+    // sondeos) a veces llegan SIN el encabezado. Por eso la conexión se atiende
+    // siempre (initialize, tools/list, ping) y la clave se exige en cada
+    // HERRAMIENTA: sin clave válida no se lee ni se escribe nada, se devuelve el
+    // motivo y queda anotado en `mcp_rechazos`.
     const recibida = req.get("x-api-key") || "";
     const esperada = claveEsperada();
-    if (esperada.length < 40 || !claveValida(recibida, esperada)) {
-        const motivo = esperada.length < 40 ? "servidor_sin_clave"
+    const autenticado = esperada.length >= 40 && claveValida(recibida, esperada);
+    const metodos = (Array.isArray(req.body) ? req.body : [req.body]).map(m => m?.method).filter(Boolean);
+    const rechazo = autenticado ? null : {
+        motivo: esperada.length < 40 ? "servidor_sin_clave"
             : !recibida ? (typeof req.query?.key === "string" ? "clave_en_url_ya_no_se_acepta" : "sin_encabezado")
-            : "clave_incorrecta";
-        try {
-            await admin.firestore().collection("mcp_rechazos").add({
-                fecha: admin.firestore.FieldValue.serverTimestamp(),
-                motivo,
-                huellaRecibida: recibida ? huella(recibida) : null,
-                largoRecibido: recibida.length,
-                cliente: String(req.get("user-agent") || "").slice(0, 80),
-            });
-        } catch (e) { /* diagnóstico */ }
-        res.status(401).send("Unauthorized");
-        return;
-    }
-    const server = crearServidor({ via: "encabezado" });
+            : "clave_incorrecta",
+        metodo: metodos.join(",").slice(0, 80) || null,
+        huellaRecibida: recibida ? huella(recibida) : null,
+        largoRecibido: recibida.length,
+        cliente: String(req.get("user-agent") || "").slice(0, 80),
+    };
+    // Las llamadas a herramientas sin clave se anotan dentro de `herramienta`
+    // (con su nombre); el resto de lo que llega sin clave, aquí.
+    if (rechazo && !metodos.includes("tools/call")) await registrarRechazo(rechazo);
+    const server = crearServidor({ via: autenticado ? "encabezado" : null, autenticado, rechazo });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => { transport.close(); server.close(); });
     try {

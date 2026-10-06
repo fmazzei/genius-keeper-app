@@ -51,13 +51,23 @@ app.use((req, res) => mcp(req, res));
 const srv = await new Promise(r => { const s = app.listen(0, () => r(s)); });
 const url = `http://127.0.0.1:${srv.address().port}/`;
 
-// Sin clave / con clave mala: 401.
+// Sin clave / con clave mala: NUNCA 401 (claude.ai lo toma como "reconectar").
+// La conexión se atiende, pero ninguna herramienta devuelve datos.
 const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
 const hdr = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' };
 let r = await fetch(url, { method: 'POST', headers: hdr, body });
-ok(r.status === 401, `sin clave → ${r.status}`);
-r = await fetch(url, { method: 'POST', headers: { ...hdr, 'X-API-Key': 'mala' }, body });
-ok(r.status === 401, `clave incorrecta → ${r.status}`);
+ok(r.status === 200, `tools/list sin clave → ${r.status} (no 401)`);
+const llamadaSin = (h) => fetch(url, { method: 'POST', headers: h, body: JSON.stringify({
+    jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'leer_documento', arguments: { ruta: 'facturas_vendedor/INV-1' } } }) })
+    .then(x => x.json());
+let rs = await llamadaSin(hdr);
+ok(rs.result?.isError === true && !JSON.stringify(rs).includes('pagada'), `herramienta sin clave → error sin datos: ${rs.result?.content?.[0]?.text?.slice(0, 60)}`);
+rs = await llamadaSin({ ...hdr, 'X-API-Key': 'mala' });
+ok(rs.result?.isError === true && /no coincide/.test(rs.result?.content?.[0]?.text || '') && !JSON.stringify(rs).includes('pagada'),
+    'herramienta con clave incorrecta → error sin datos');
+r = await fetch(url, { method: 'POST', headers: hdr, body: JSON.stringify({
+    jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'crear_documento', arguments: { coleccion: 'kroma_suppliers', id: 'intruso', datos: { x: 1 } } } }) });
+ok(!(await db.doc('kroma_suppliers/intruso').get()).exists, 'escritura sin clave → no escribe');
 
 // Con la clave: cliente MCP oficial, por encabezado.
 const conectar = async (u, headers) => {
@@ -65,6 +75,10 @@ const conectar = async (u, headers) => {
     await c.connect(new StreamableHTTPClientTransport(new URL(u), { requestInit: { headers } }));
     return c;
 };
+// Un cliente sin clave se conecta y lista herramientas (no queda "por reconectar").
+const sinClave = await conectar(url, {});
+ok((await sinClave.listTools()).tools.length === 11, 'cliente sin clave: conecta y lista herramientas');
+await sinClave.close();
 const client = await conectar(url, { 'X-API-Key': process.env.MCP_API_KEY });
 const llamar = async (name, args = {}) => {
     const res = await client.callTool({ name, arguments: args });
@@ -188,8 +202,9 @@ const ultimas = await llamar('consultar_coleccion', { coleccion: 'mcp_auditoria'
 ok(!JSON.stringify(ultimas).includes(process.env.MCP_API_KEY), 'la clave no aparece en la auditoría');
 
 // La clave en la URL YA NO se acepta: solo el encabezado X-API-Key.
-r = await fetch(`${url}?key=${encodeURIComponent(process.env.MCP_API_KEY)}`, { method: 'POST', headers: hdr, body });
-ok(r.status === 401, `clave en la URL → ${r.status}`);
+rs = await fetch(`${url}?key=${encodeURIComponent(process.env.MCP_API_KEY)}`, { method: 'POST', headers: hdr, body: JSON.stringify({
+    jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'leer_documento', arguments: { ruta: 'facturas_vendedor/INV-1' } } }) }).then(x => x.json());
+ok(rs.result?.isError === true && !JSON.stringify(rs).includes('pagada'), 'clave en la URL → no da datos');
 // Rutas de descubrimiento OAuth: 404 (no 401), para que claude.ai no intente OAuth.
 r = await fetch(`${url}.well-known/oauth-protected-resource`);
 ok(r.status === 404, `/.well-known/... → ${r.status}`);
