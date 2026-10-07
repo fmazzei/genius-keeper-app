@@ -57,13 +57,13 @@ function Caso({ c }) {
             ) : (
                 <>
                     <p className="text-[11px] text-slate-600 mt-1">
-                        Antes {fmtRot(c.antes.porDia)} uds/día ({c.antes.tramos} tramos, {Math.round(c.antes.dias)} días) → después {fmtRot(c.despues.porDia)} ({c.despues.tramos} tramos, {Math.round(c.despues.dias)} días).
+                        Antes {fmtRot(c.antes.porDia)} uds/día ({c.antes.tramos} intervalos de visitas, {Math.round(c.antes.dias)} días) → después {fmtRot(c.despues.porDia)} ({c.despues.tramos} intervalos de visitas, {Math.round(c.despues.dias)} días).
                         {c.medible && <> Resto de la red en esas fechas: {fmtSigno(c.cambioRed)}.</>}
                         {!c.medible && c.falta && <> Falta {c.falta}.</>}
                     </p>
                     {(c.antes.quiebres + c.despues.quiebres > 0 || c.antes.devueltas + c.despues.devueltas > 0) && (
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                            {c.antes.quiebres + c.despues.quiebres > 0 && <>{c.antes.quiebres + c.despues.quiebres} tramo(s) con quiebre fuera del cálculo. </>}
+                            {c.antes.quiebres + c.despues.quiebres > 0 && <>{c.antes.quiebres + c.despues.quiebres} intervalo(s) de visitas con quiebre fuera del cálculo. </>}
                             {c.antes.devueltas + c.despues.devueltas > 0 && <>{c.antes.devueltas + c.despues.devueltas} uds devueltas restadas.</>}
                         </p>
                     )}
@@ -141,7 +141,7 @@ export default function AnaquelAntesDespues({ cambios, dimension, onDimension, c
             {/* Cómo se limpió la medición */}
             <div className="bg-white border border-slate-200 rounded-xl p-3 text-[11px] text-slate-600 space-y-1">
                 <p className="font-bold text-slate-700 flex items-center gap-1.5"><Filter size={13} /> Cómo se limpió la medición</p>
-                <p>• <b>Quiebres:</b> {t.tramosQuiebre} tramo(s) que terminaron con el anaquel vacío no cuentan: ahí la venta quedó topada por falta de producto.</p>
+                <p>• <b>Quiebres:</b> {t.tramosQuiebre} intervalo(s) de visitas que terminaron con el anaquel vacío no cuentan: ahí la venta quedó topada por falta de producto.</p>
                 <p>• <b>Devoluciones:</b> {cargandoExtra ? 'leyendo…' : t.devolucionesLeidas
                     ? <>{t.udsDevueltas} uds retiradas por vencimiento o daño se restaron: bajaron el inventario sin ser venta.</>
                     : 'no se pudieron leer; la venta puede estar algo sobrestimada.'}</p>
@@ -155,7 +155,7 @@ export default function AnaquelAntesDespues({ cambios, dimension, onDimension, c
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
                 {[
                     ['Cambios detectados', t.cambios, `en ${t.pdv} PDV`],
-                    ['Medibles y limpios', t.medibles, `≥${MIN_TRAMOS_LADO} tramos y ≥${MIN_DIAS_LADO} días a cada lado`],
+                    ['Medibles y limpios', t.medibles, `≥${MIN_TRAMOS_LADO} intervalos de visitas y ≥${MIN_DIAS_LADO} días a cada lado`],
                     ['Con otros cambios', t.contaminados, 'aparte del resumen'],
                     ['Falta medir', t.pendientes, 'aún sin visitas suficientes'],
                     ['Posible error', t.posiblesErrores, 'cambio de una visita que volvió'],

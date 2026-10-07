@@ -29,7 +29,7 @@ export default function RotacionModal({ reports = [], rotacionVentana = null, ve
     const max = Math.max(0.1, ...conDato.map(m => m.porDia));
 
     // Comparación del mes en curso contra el ÚLTIMO MES CON MUESTRA SUFICIENTE.
-    // Un mes con 7 tramos en 5 PDV no es una base: comparar contra él producía
+    // Un mes con 7 intervalos de visitas en 5 PDV no es una base: comparar contra él producía
     // porcentajes de cuatro cifras que no dicen nada del negocio.
     const actual = meses[0];
     const previo = meses.find((m, i) => i > 0 && m.confiable && m.porDia > 0);
@@ -74,15 +74,15 @@ export default function RotacionModal({ reports = [], rotacionVentana = null, ve
                         {delta === null && (
                             <p className="text-[11px] text-slate-500 mt-2 leading-snug">
                                 {!actual?.confiable
-                                    ? <>Este mes lleva <b>{actual?.pares || 0} tramo{actual?.pares === 1 ? '' : 's'}</b> en <b>{actual?.pdv || 0} PDV</b>: aún no alcanza para comparar (hacen falta {MIN_PARES_CONFIABLE} tramos en {MIN_PDV_CONFIABLE} PDV).</>
+                                    ? <>Este mes lleva <b>{actual?.pares || 0} {actual?.pares === 1 ? 'intervalo de visitas' : 'intervalos de visitas'}</b> en <b>{actual?.pdv || 0} PDV</b>: aún no alcanza para comparar (hacen falta {MIN_PARES_CONFIABLE} intervalos de visitas en {MIN_PDV_CONFIABLE} PDV).</>
                                     : <>{baseFina
-                                        ? <>El mes anterior solo tuvo <b>{baseFina.pares} tramo{baseFina.pares === 1 ? '' : 's'}</b> en <b>{baseFina.pdv} PDV</b> ({nRot(baseFina.porDia)} uds/día): es una muestra demasiado chica para usarla de base — un % contra ella daría cifras de cuatro dígitos que no significan nada.</>
+                                        ? <>El mes anterior solo tuvo <b>{baseFina.pares} {baseFina.pares === 1 ? 'intervalo de visitas' : 'intervalos de visitas'}</b> en <b>{baseFina.pdv} PDV</b> ({nRot(baseFina.porDia)} uds/día): es una muestra demasiado chica para usarla de base — un % contra ella daría cifras de cuatro dígitos que no significan nada.</>
                                         : <>No hay un mes anterior con muestra suficiente para comparar.</>}</>}
                             </p>
                         )}
                         {delta !== null && previo && (
                             <p className="text-[11px] text-slate-400 mt-2">
-                                vs. <span className="capitalize">{previo.label}</span> ({nRot(previo.porDia)} uds/día · {previo.pares} tramos · {previo.pdv} PDV)
+                                vs. <span className="capitalize">{previo.label}</span> ({nRot(previo.porDia)} uds/día · {previo.pares} intervalos · {previo.pdv} PDV)
                             </p>
                         )}
                     </div>
@@ -125,7 +125,7 @@ export default function RotacionModal({ reports = [], rotacionVentana = null, ve
                                     <p className="text-[11px] text-slate-400 mt-1 tabular-nums">
                                         {m.pares === 0
                                             ? 'Sin visitas repetidas: no medible'
-                                            : `${Math.round(m.unidades)} uds · ${m.pares} tramo${m.pares === 1 ? '' : 's'} entre visitas · ${m.pdv} PDV`}
+                                            : `${Math.round(m.unidades)} uds · ${m.pares} ${m.pares === 1 ? 'intervalo de visitas' : 'intervalos de visitas'} · ${m.pdv} PDV`}
                                     </p>
                                     {m.pares > 0 && !m.confiable && (
                                         <p className="flex items-center gap-1 text-[11px] font-semibold text-amber-600 mt-0.5">
@@ -146,7 +146,7 @@ export default function RotacionModal({ reports = [], rotacionVentana = null, ve
                             Supone que lo pedido se entregó antes de la visita siguiente y descarta las diferencias
                             negativas (reposiciones no registradas), lo que lo sesga levemente <b>hacia arriba</b>.
                             Con pocas visitas repetidas el número es muy sensible: por eso los meses con menos de{' '}
-                            <b>{MIN_PARES_CONFIABLE} tramos</b> en <b>{MIN_PDV_CONFIABLE} PDV</b> se marcan como muestra
+                            <b>{MIN_PARES_CONFIABLE} intervalos de visitas</b> en <b>{MIN_PDV_CONFIABLE} PDV</b> se marcan como muestra
                             insuficiente y no se usan como base de comparación.
                         </div>
                     </div>

@@ -69,7 +69,7 @@ function TablaSegmentos({ titulo, segmentos }) {
                             <td style={td}>{total ? `${Math.round(s.pdvActuales.length / total * 100)} %` : '—'}</td>
                             <td style={{ ...td, fontWeight: 800 }}>{fmtRot(s.rotacion)}</td>
                             <td style={td}>{s.margen != null ? fmtRot(s.margen) : '—'}</td>
-                            <td style={td}>{s.pdv} PDV · {s.pares} tramos</td>
+                            <td style={td}>{s.pdv} PDV · {s.pares} intervalos</td>
                             <td style={td}><Conf c={s.confianza} />{textoFalta(s) && <span style={{ display: 'block', fontSize: 8.5, color: '#64748b' }}>{textoFalta(s).replace('Para ser confiable le faltan ', 'faltan ')}</span>}</td>
                         </tr>
                     ))}
@@ -155,7 +155,7 @@ function TablaCambios({ titulo, c }) {
             <H2>{titulo}</H2>
             <Nota>
                 {t.cambios} cambios en {t.pdv} PDV · {t.medibles} medibles y limpios · {t.contaminados} con otros cambios a la vez (aparte) · {t.pendientes} sin visitas suficientes · {t.posiblesErrores} posible{t.posiblesErrores === 1 ? '' : 's'} error{t.posiblesErrores === 1 ? '' : 'es'} de registro.
-                Limpieza: {t.tramosQuiebre} tramo(s) con quiebre fuera del cálculo{t.devolucionesLeidas ? `; ${t.udsDevueltas} uds devueltas restadas` : '; devoluciones no disponibles'}.
+                Limpieza: {t.tramosQuiebre} intervalo(s) de visitas con quiebre fuera del cálculo{t.devolucionesLeidas ? `; ${t.udsDevueltas} uds devueltas restadas` : '; devoluciones no disponibles'}.
                 {t.facturasLeidas && t.conFactura > 0 ? ` Facturas reales: la dirección coincide en ${t.facturaCoincide} de ${t.conFactura} cambios comparables.` : ''}
                 {' '}Efecto = cambio de venta del PDV menos el de la red en las mismas fechas (solo los PDV que no cambiaron de lugar), en unidades por día; la cifra del grupo es la mediana.
             </Nota>
@@ -251,12 +251,12 @@ export default function AnaquelDoc({ analisis: a, cambios, ventanaLabel, onClose
                 {/* Resumen */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     <Kpi k="PDV con dato" v={`${m.pdvConDato}${m.pdvActivos ? ` / ${m.pdvActivos}` : ''}`} sub={m.pdvActivos ? `${Math.round(m.pdvConDato / m.pdvActivos * 100)} % de los activos` : null} />
-                    <Kpi k="Venta medida" v={`${m.pdvConVenta} PDV`} sub={`${m.tramos} tramos entre visitas`} />
+                    <Kpi k="Venta medida" v={`${m.pdvConVenta} PDV`} sub={`${m.tramos} intervalos de visitas`} />
                     <Kpi k="Venta de la red" v={`${fmtRot(a.redActual)} uds/día`} sub={`${Math.round(a.redActual * 30)} uds/mes`} />
                     <Kpi k="Reportes" v={`${m.conUbicacion} / ${m.reportes}`} sub={`con ubicación · ${m.sinCategoria} sin categoría`} />
                 </div>
 
-                <Nota>Tamaño de muestra: una cifra es <b>confiable</b> con al menos {MIN_PDV_CONFIABLE} PDV y {MIN_PARES_CONFIABLE} tramos medidos (un tramo = el tiempo entre dos visitas seguidas a un PDV); <b>orientativa</b> de {MIN_PDV_ORIENTATIVO} a {MIN_PDV_CONFIABLE - 1} PDV; con menos de {MIN_PDV_ORIENTATIVO} PDV, <b>insuficiente</b> y fuera de las conclusiones. Un grupo con pocos PDV describe bien a esos puntos, pero es menos seguro para predecir otros: por eso lleva margen de error.</Nota>
+                <Nota>Tamaño de muestra: una cifra es <b>confiable</b> con al menos {MIN_PDV_CONFIABLE} PDV y {MIN_PARES_CONFIABLE} intervalos de visitas medidos (un intervalo de visitas = el tiempo entre dos visitas seguidas a un PDV); <b>orientativa</b> de {MIN_PDV_ORIENTATIVO} a {MIN_PDV_CONFIABLE - 1} PDV; con menos de {MIN_PDV_ORIENTATIVO} PDV, <b>insuficiente</b> y fuera de las conclusiones. Un grupo con pocos PDV describe bien a esos puntos, pero es menos seguro para predecir otros: por eso lleva margen de error.</Nota>
                 <div className="gk-anaq-bloque" style={{ marginTop: 12, padding: 10, border: '1px solid #fde68a', background: '#fffbeb' }}>
                     <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: 1 }}>Conclusiones</p>
                     <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 11, color: '#334155', lineHeight: 1.6 }}>
@@ -322,9 +322,9 @@ export default function AnaquelDoc({ analisis: a, cambios, ventanaLabel, onClose
                     <H2>Metodología</H2>
                     <Nota>
                         Venta estimada: entre dos visitas seguidas al mismo PDV, (inventario anterior + lo repuesto en esa visita) − inventario actual, dividido entre los días transcurridos; es la misma
-                        rotación estimada del Dashboard. Cada tramo se asigna a la altura y la categoría vistas en la visita anterior, que es donde estuvo el producto mientras se vendía. La unidad es el
+                        rotación estimada del Dashboard. Cada intervalo de visitas se asigna a la altura y la categoría vistas en la visita anterior, que es donde estuvo el producto mientras se vendía. La unidad es el
                         PDV: cada punto aporta su propia rotación y cada grupo promedia sus PDV, para que un punto muy visitado no pese más. El error es el margen al 95 % de ese promedio.
-                        Confianza: confiable desde {MIN_PDV_CONFIABLE} PDV y {MIN_PARES_CONFIABLE} tramos; orientativa desde {MIN_PDV_ORIENTATIVO} PDV; por debajo, insuficiente y fuera de las proyecciones.
+                        Confianza: confiable desde {MIN_PDV_CONFIABLE} PDV y {MIN_PARES_CONFIABLE} intervalos de visitas; orientativa desde {MIN_PDV_ORIENTATIVO} PDV; por debajo, insuficiente y fuera de las proyecciones.
                         Proyección: (rotación del grupo destino − rotación del grupo de origen) × PDV movidos, sobre la venta medida de la red; el rango prudente descuenta los dos márgenes de error.
                     </Nota>
                     <Nota>

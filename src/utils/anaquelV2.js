@@ -11,14 +11,14 @@
 // la categoría vecina vistas en la visita con la que EMPIEZA (donde estuvo el
 // producto mientras se vendía).
 //
-// Venta del tramo (M1, regla A aprobada por el dueño):
+// Venta del intervalo de visitas (M1, regla A aprobada por el dueño):
 //   inventario inicial + reposición facturada (orderQuantity)
 //   + unidades repuestas por devolución + unidades recibidas por traslado
 //   − unidades retiradas por devolución − inventario final
 // Los movimientos (devoluciones y traslados) se asignan a la visita con la que
 // EMPIEZA el tramo: el inventario se cuenta primero y luego se retira, repone o
 // deja producto. Una devolución hecha el MISMO DÍA que una visita pertenece al
-// tramo que empieza en esa visita, aunque se haya registrado minutos antes del
+// intervalo de visitas que empieza en esa visita, aunque se haya registrado minutos antes del
 // reporte. El motivo de la devolución NO cambia la fórmula (solo los
 // indicadores de merma).
 //
@@ -27,14 +27,14 @@
 // orderQuantity, y que los traslados de producto por vencer no se registraban
 // (puede subestimar la rotación del PDV que recibía).
 //
-// Estados de un tramo (solo "valido" y "minimo" cuentan en la rotación):
+// Estados de un intervalo de visitas (solo "valido" y "minimo" cuentan en la rotación):
 //   · error_captura — la venta dio NEGATIVA. No se recorta a cero: se excluye y
 //                     se lista en "Datos por corregir".
 //   · largo         — más de MAX_DIAS_TRAMO días.
 //   · corto         — menos de MIN_DIAS_TRAMO días, aun después de unirlo con
 //                     los siguientes (se unen solo si altura, categoría, precio y
 //                     POP no cambiaron y no hubo quiebre en medio).
-//   · sin_producto  — no hubo producto que vender en todo el tramo.
+//   · sin_producto  — no hubo producto que vender en todo el intervalo de visitas.
 //   · minimo        — terminó con el anaquel vacío: la venta real fue IGUAL O
 //                     MAYOR. Cuenta en la rotación (excluirlo la sesgaría hacia
 //                     abajo en los PDV que más venden) pero NO en la capa B del
@@ -217,7 +217,7 @@ export function unidadesDevolucion(d) {
 }
 
 /**
- * Asigna devoluciones y traslados a la visita con la que empieza su tramo.
+ * Asigna devoluciones y traslados a la visita con la que empieza su intervalo de visitas.
  * @returns {{ porVisita: Object<string,{retiradas,repuestas,entradas,porMotivo,devoluciones:[],traslados:[]}>, sinVisita: object[] }}
  */
 export function asignarMovimientos(porPos, devoluciones = [], traslados = []) {
@@ -260,11 +260,11 @@ export function asignarMovimientos(porPos, devoluciones = [], traslados = []) {
     return { porVisita, sinVisita };
 }
 
-// ── Tramos ──────────────────────────────────────────────────────────────────
+// ── Intervalos de visitas ──────────────────────────────────────────────────────────────────
 
 export const METODO_NUEVO = {
     recortarNegativos: false,   // negativo = error de captura, no cero
-    unirCortos: true,           // une tramos cortos consecutivos si nada cambió
+    unirCortos: true,           // une intervalos de visitas cortos consecutivos si nada cambió
     usarMovimientos: true,      // regla A: devoluciones y traslados
     filtrarDuracion: true,      // fuera corto (<5 d) y largo (>21 d)
     excluirSinProducto: true,
@@ -279,7 +279,7 @@ const CUENTAN = new Set(['valido', 'minimo']);
 export const cuentaEnRotacion = (t) => CUENTAN.has(t.estado);
 
 /**
- * Tramos de UN PDV.
+ * Intervalos de visitas de UN PDV.
  * @param {object[]} visitas  normalizadas y ordenadas
  * @param {object}   movs     porVisita de asignarMovimientos
  * @param {object}   metodo   opciones (ver METODO_NUEVO)
@@ -318,7 +318,7 @@ export function tramosDePos(visitas, movs = {}, metodo = METODO_NUEVO) {
 
         let estado;
         if (!metodo.recortarNegativos && crudo < 0) estado = 'error_captura';
-        else if (metodo.filtrarDuracion && dias > C.MAX_DIAS_TRAMO) estado = 'largo';
+        else if (metodo.filtrarDuracion && !metodo.admitirLargos && dias > C.MAX_DIAS_TRAMO) estado = 'largo';
         else if (metodo.filtrarDuracion && dias < C.MIN_DIAS_TRAMO) estado = 'corto';
         else if (metodo.excluirSinProducto && disponible <= 0) estado = 'sin_producto';
         else if (fin.vacio) estado = 'minimo';
@@ -337,7 +337,7 @@ export function tramosDePos(visitas, movs = {}, metodo = METODO_NUEVO) {
     return out;
 }
 
-/** Rotación ponderada por tiempo (Σventas / Σdías) de los tramos que cuentan. */
+/** Rotación ponderada por tiempo (Σventas / Σdías) de los intervalos de visitas que cuentan. */
 export function rotacionDe(tramos) {
     const c = tramos.filter(cuentaEnRotacion);
     const dias = c.reduce((s, t) => s + t.dias, 0);
@@ -397,6 +397,81 @@ export const claveNombre = (s) => String(s || '').toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean).sort().join(' ');
 
+// Forma jurídica y conectores que no distinguen un PDV de otro.
+const RUIDO_NOMBRE = new Set(['c', 'a', 'ca', 's', 'sa', 'srl', 'de', 'del', 'la', 'el', 'los', 'las']);
+const claveDuplicado = (s) => claveNombre(s).split(' ').filter(w => w && !RUIDO_NOMBRE.has(w)).join(' ');
+
+function distanciaEdicion(a, b) {
+    if (a === b) return 0;
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+        const cur = [i];
+        for (let j = 1; j <= b.length; j++) {
+            cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+        prev = cur;
+    }
+    return prev[b.length];
+}
+
+/**
+ * Posibles PDV duplicados (solo SUGERIR: nunca se fusiona nada).
+ * Mismo nombre sin acentos, signos, orden ni forma jurídica, o casi igual
+ * (distancia de edición ≤ MAX_DISTANCIA_DUPLICADO). Dos nombres que solo
+ * difieren en un número ("Páramo 1" / "Páramo 2") se tratan como sucursales.
+ * Incluye los posId que aparecen en los reportes aunque no estén en la lista.
+ * @returns {{ motivo, miembros: {posId, nombre, chain, razonSocial, activo, visitas, ultimaVisita}[] }[]}
+ */
+export function posiblesDuplicados(posList = [], reports = []) {
+    const visitas = {};
+    (reports || []).forEach(r => {
+        if (!r?.posId) return;
+        const v = visitas[r.posId] = visitas[r.posId] || { n: 0, ultima: 0, nombre: null };
+        v.n++;
+        const t = seg(r);
+        if (t > v.ultima) { v.ultima = t; v.nombre = r.posName || v.nombre; }
+    });
+    const lista = [];
+    const vistos = new Set();
+    (posList || []).filter(p => p && !p.eliminado).forEach(p => {
+        vistos.add(p.id);
+        lista.push({ posId: p.id, nombre: p.name || p.nombre || p.id, chain: p.chain || null,
+            razonSocial: p.razonSocialZoho || null, activo: p.active !== false });
+    });
+    Object.entries(visitas).forEach(([id, v]) => {
+        if (!vistos.has(id) && v.nombre) lista.push({ posId: id, nombre: v.nombre, chain: null, razonSocial: null, activo: null, fueraDeLista: true });
+    });
+    lista.forEach(x => {
+        x.visitas = visitas[x.posId]?.n || 0;
+        x.ultimaVisita = visitas[x.posId]?.ultima ? visitas[x.posId].ultima * 1000 : null;
+        x.clave = claveDuplicado(x.nombre);
+    });
+
+    const padre = lista.map((_, i) => i);
+    const raiz = (i) => (padre[i] === i ? i : (padre[i] = raiz(padre[i])));
+    const unir = (i, j) => { const a = raiz(i), b = raiz(j); if (a !== b) padre[b] = a; };
+    const sinDigitos = (k) => k.replace(/[0-9]+/g, '').replace(/\s+/g, ' ').trim();
+    for (let i = 0; i < lista.length; i++) {
+        const a = lista[i].clave;
+        if (!a) continue;
+        for (let j = i + 1; j < lista.length; j++) {
+            const b = lista[j].clave;
+            if (!b) continue;
+            if (a === b) { unir(i, j); continue; }
+            if (Math.min(a.length, b.length) < C.MIN_LARGO_DUPLICADO) continue;
+            if (Math.abs(a.length - b.length) > C.MAX_DISTANCIA_DUPLICADO) continue;
+            if (sinDigitos(a) === sinDigitos(b)) continue;   // sucursales numeradas
+            if (distanciaEdicion(a, b) <= C.MAX_DISTANCIA_DUPLICADO) unir(i, j);
+        }
+    }
+    const grupos = {};
+    lista.forEach((x, i) => { (grupos[raiz(i)] = grupos[raiz(i)] || []).push(x); });
+    return Object.values(grupos).filter(g => g.length > 1).map(g => ({
+        motivo: g.every(x => x.clave === g[0].clave) ? 'mismo' : 'parecido',
+        miembros: g.map(({ clave, ...x }) => x).sort((p, q) => q.visitas - p.visitas),
+    })).sort((p, q) => q.miembros.length - p.miembros.length);
+}
+
 // ── Análisis completo ───────────────────────────────────────────────────────
 
 const pdvActivo = (p) => (p.type ? p.type === 'pos' : true) && p.active !== false && !p.eliminado
@@ -431,7 +506,7 @@ export function analizarAnaquelV2({ reports = [], posList = [], devoluciones = [
     const idsActivos = new Set(activos.map(p => p.id));
     const enRango = (t, a, b) => t.finT > a && t.finT <= b;
 
-    // ── Índice (M3): base = mediana de los tramos válidos del PDV en 90 días ──
+    // ── Índice (M3): base = mediana de los intervalos de visitas válidos del PDV en 90 días ──
     const baseIndice = {};
     Object.entries(tramosPorPos).forEach(([id, ts]) => {
         const v = ts.filter(t => t.estado === 'valido' && enRango(t, desdeIndice, hasta)).map(t => t.rotacion);
@@ -687,12 +762,7 @@ function datosPorCorregir({ porPos, tramosPorPos, todos, pdv, posList, devolucio
     const enPer = todos.filter(t => t.finT > desde && t.finT <= hasta);
 
     // Posibles PDV duplicados por nombre parecido (solo SUGERIR).
-    const grupos = {};
-    (posList || []).filter(p => !p.eliminado).forEach(p => {
-        const k = claveNombre(p.name);
-        if (k) (grupos[k] = grupos[k] || []).push({ posId: p.id, nombre: p.name });
-    });
-    const duplicados = Object.values(grupos).filter(g => g.length > 1);
+    const duplicados = posiblesDuplicados(posList, []).map(g => g.miembros.map(m => ({ posId: m.posId, nombre: m.nombre })));
 
     const negativos = enPer.filter(t => t.estado === 'error_captura')
         .map(t => ({ posId: t.posId, nombre: nombreDe(t.posId), desde: t.ini * 1000, hasta: t.finT * 1000, ventas: t.crudo, visitaId: t.fin.id }));
@@ -711,7 +781,7 @@ function datosPorCorregir({ porPos, tramosPorPos, todos, pdv, posList, devolucio
     const pctSinVencimiento = ultimasConProducto.length
         ? ultimasConProducto.filter(v => !v.lotes.length).length / ultimasConProducto.length : null;
 
-    // Atípicos: la rotación cambia más de FACTOR_ATIPICO veces entre tramos seguidos.
+    // Atípicos: la rotación cambia más de FACTOR_ATIPICO veces entre intervalos de visitas seguidos.
     const atipicos = [];
     Object.entries(tramosPorPos).forEach(([id, ts]) => {
         const c = ts.filter(t => cuentaEnRotacion(t) && t.finT > desde && t.finT <= hasta);
@@ -763,14 +833,58 @@ function datosPorCorregir({ porPos, tramosPorPos, todos, pdv, posList, devolucio
     };
 }
 
+// ── Diagnóstico de intervalos de visitas negativos ─────────────────────────
+
+// Intervalos de visitas crudos con devoluciones: sin unir, sin filtrar y sin
+// recortar. Es la materia prima del diagnóstico.
+const METODO_CRUDO_MOV = { recortarNegativos: false, unirCortos: false, usarMovimientos: true, filtrarDuracion: false, excluirSinProducto: false };
+
+/**
+ * Cada intervalo de visitas negativo del periodo, con sus dos vecinos del mismo
+ * PDV, para separar dos causas:
+ *  · desfase entre facturación y despacho: un vecino sale anormalmente alto y
+ *    lo compensa (juntos dan una rotación normal);
+ *  · producto que entró sin registrarse: el negativo está aislado.
+ */
+function diagnosticoNegativos(crudosPorPos, nombreDe, desde, hasta) {
+    const rot = (t) => (t && t.dias > 0 ? t.crudo / t.dias : null);
+    const filas = [];
+    Object.entries(crudosPorPos).forEach(([id, ts]) => {
+        ts.forEach((t, k) => {
+            if (!(t.finT > desde && t.finT <= hasta)) return;
+            const sinDev = t.invInicial + t.rep - t.invFinal;
+            if (!(t.crudo < 0 || sinDev < 0)) return;
+            const prev = ts[k - 1] || null, sig = ts[k + 1] || null;
+            const resto = ts.filter((x, j) => Math.abs(j - k) > 1 && x.crudo >= 0 && x.dias > 0).map(rot);
+            const medianaPdv = resto.length >= 2 ? mediana(resto) : null;
+            const alto = (n) => !!n && n.crudo > 0 && n.crudo >= C.PCT_VECINO_COMPENSA * Math.abs(t.crudo)
+                && (medianaPdv != null ? rot(n) >= C.FACTOR_VECINO_ALTO * medianaPdv : n.crudo >= Math.abs(t.crudo));
+            const juntos = (n) => (n ? (t.crudo + n.crudo) / (t.dias + n.dias) : null);
+            const altoPrev = alto(prev), altoSig = alto(sig);
+            filas.push({
+                posId: id, nombre: nombreDe(id),
+                desde: t.ini * 1000, hasta: t.finT * 1000, dias: t.dias,
+                invAnterior: t.invInicial, facturadas: t.rep, repuestas: t.repuestas, retiradas: t.retiradas,
+                entradas: t.entradas, invActual: t.invFinal,
+                resultado: t.crudo, resultadoSinDevoluciones: sinDev,
+                rotAnterior: rot(prev), rotSiguiente: rot(sig), medianaPdv,
+                vecinoAlto: altoPrev && altoSig ? 'ambos' : altoPrev ? 'anterior' : altoSig ? 'siguiente' : null,
+                juntosAnterior: juntos(prev), juntosSiguiente: juntos(sig),
+                lectura: altoPrev || altoSig ? 'desfase' : (!prev && !sig ? 'sin_vecinos' : 'aislado'),
+            });
+        });
+    });
+    return filas.sort((a, b) => a.resultado - b.resultado);
+}
+
 // ── Comparar métodos (pestaña oculta del máster) ────────────────────────────
 
 /**
  * Rotación de la red con el método del Dashboard y con el nuevo, paso a paso.
- * Rotación = Σventas / Σdías de los tramos que terminan en el periodo (venta
+ * Rotación = Σventas / Σdías de los intervalos de visitas que terminan en el periodo (venta
  * por PDV por día, la misma definición que el Dashboard).
  */
-// Tramos de días para ver dónde cae el mínimo de 5 días (calibración).
+// Intervalos de visitas de días para ver dónde cae el mínimo de 5 días (calibración).
 export const CUBETAS_DIAS = [
     { id: '0-2', label: '0 a 2 días', max: 3 }, { id: '3-4', label: '3 a 4 días', max: 5 },
     { id: '5-6', label: '5 a 6 días', max: 7 }, { id: '7-9', label: '7 a 9 días', max: 10 },
@@ -785,6 +899,8 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
     const hasta = ahora.getTime() / 1000, desde = hasta - dias * DIA;
     const desde90 = hasta - 90 * DIA;
     const porPos = visitasPorPos(reports);
+    const nombreLista = Object.fromEntries((posList || []).map(p => [p.id, p.name || p.nombre]));
+    const nombreDe = (id) => nombreLista[id] || (porPos[id] || []).find(v => v.nombre)?.nombre || id;
     const { porVisita } = asignarMovimientos(porPos, devoluciones || [], traslados || []);
     const tramos = (metodo) => Object.values(porPos).flatMap(vs => tramosDePos(vs, porVisita, metodo));
     const enPer = (ts) => ts.filter(t => t.finT > desde && t.finT <= hasta);
@@ -794,9 +910,9 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
     const pasos = [
         { clave: 'dashboard', nombre: 'Método del Dashboard (negativos en cero)', metodo: METODO_DASHBOARD },
         { clave: 'negativos', nombre: '+ negativos sin recortar (se excluyen como error)', metodo: { ...METODO_DASHBOARD, recortarNegativos: false } },
-        { clave: 'unidos', nombre: '+ tramos cortos unidos y largos excluidos', metodo: { ...METODO_DASHBOARD, recortarNegativos: false, unirCortos: true, filtrarDuracion: true } },
+        { clave: 'unidos', nombre: '+ intervalos de visitas cortos unidos y largos excluidos', metodo: { ...METODO_DASHBOARD, recortarNegativos: false, unirCortos: true, filtrarDuracion: true } },
         { clave: 'devoluciones', nombre: '+ devoluciones (regla A)', metodo: { ...METODO_DASHBOARD, recortarNegativos: false, unirCortos: true, filtrarDuracion: true, usarMovimientos: true } },
-        { clave: 'nuevo', nombre: '+ tramos sin producto excluidos (método nuevo)', metodo: METODO_NUEVO },
+        { clave: 'nuevo', nombre: '+ intervalos de visitas sin producto excluidos (método nuevo)', metodo: METODO_NUEVO },
     ].map(p => ({ ...p, ...rot(tramos(p.metodo)) }));
     pasos.forEach((p, k) => { p.cambio = k > 0 && pasos[k - 1].porDia != null && p.porDia != null ? p.porDia - pasos[k - 1].porDia : null; });
 
@@ -805,7 +921,7 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
     const sinQuiebre = rotacionDe(enP.filter(t => t.estado !== 'minimo'));
     const crudos = enPer(tramos({ ...METODO_DASHBOARD, recortarNegativos: false, filtrarDuracion: false }));
 
-    // Tramos que cambian de estado: todo tramo del Dashboard que el método nuevo
+    // Intervalos de visitas que cambian de estado: todo intervalo de visitas del Dashboard que el método nuevo
     // no cuenta igual (excluido o unido con otro).
     const crudosDash = enPer(tramos(METODO_DASHBOARD));
     const cambian = [];
@@ -824,11 +940,11 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
         return t > desde90 && t <= hasta && unidadesDevolucion(d).porMotivo.por_vencer > 0;
     });
 
-    // Distribución de días por tramo (tramos crudos, sin unir ni filtrar).
+    // Distribución de días por intervalo de visitas (intervalos de visitas crudos, sin unir ni filtrar).
     const histDias = CUBETAS_DIAS.map(c => ({ ...c, tramos: 0 }));
     crudos.forEach(t => { const c = histDias.find(x => t.dias < x.max); if (c) c.tramos++; });
 
-    // Tramos cortos que el método nuevo unió con los siguientes.
+    // Intervalos de visitas cortos que el método nuevo unió con los siguientes.
     const unidosT = enP.filter(t => t.unidos > 1);
 
     // Devoluciones de los últimos 90 días por motivo: registros y unidades.
@@ -845,12 +961,11 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
     });
 
     // Por PDV: método anterior vs nuevo, para ver quién mueve la diferencia.
-    const nombreLista = Object.fromEntries((posList || []).map(p => [p.id, p.name || p.nombre]));
     const porPdv = Object.entries(porPos).map(([posId, vs]) => {
         const viejo = rotacionDe(enPer(tramosDePos(vs, porVisita, METODO_DASHBOARD)));
         const nuevo = rotacionDe(enPer(tramosDePos(vs, porVisita, METODO_NUEVO)));
         const visitas = vs.filter(v => v.t > desde && v.t <= hasta).length;
-        const nombre = nombreLista[posId] || vs.find(v => v.nombre)?.nombre || posId;
+        const nombre = nombreDe(posId);
         const diferencia = viejo.porDia != null && nuevo.porDia != null ? nuevo.porDia - viejo.porDia : null;
         return {
             posId, nombre, visitas,
@@ -860,8 +975,49 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
     }).filter(p => p.visitas > 0 || p.tramosAnterior > 0)
         .sort((a, b) => Math.abs(b.diferencia ?? (b.rotAnterior ?? 0)) - Math.abs(a.diferencia ?? (a.rotAnterior ?? 0)));
 
+    // ── Diagnóstico (solo lectura) ──
+    const crudosMov = {};
+    Object.entries(porPos).forEach(([id, vs]) => { crudosMov[id] = tramosDePos(vs, porVisita, METODO_CRUDO_MOV); });
+    const negativos = diagnosticoNegativos(crudosMov, nombreDe, desde, hasta);
+
+    const ventana = (d) => [hasta - d * DIA, hasta];
+    const enV = (ts, [a, b]) => ts.filter(t => t.finT > a && t.finT <= b);
+    const conLargos = tramos({ ...METODO_NUEVO, admitirLargos: true });
+    const largosPorPeriodo = C.PERIODOS_DIAS.map(d => {
+        const v = ventana(d);
+        return {
+            dias: d,
+            sin: rotacionDe(enV(nuevos, v)).porDia,
+            con: rotacionDe(enV(conLargos, v)).porDia,
+            largos: enV(nuevos, v).filter(t => t.estado === 'largo').length,
+        };
+    });
+    const largos = enP.filter(t => t.estado === 'largo').map(t => ({
+        posId: t.posId, nombre: nombreDe(t.posId), desde: t.ini * 1000, hasta: t.finT * 1000,
+        dias: t.dias, unidades: t.crudo, rotacion: t.dias > 0 ? t.crudo / t.dias : null,
+    })).sort((a, b) => b.dias - a.dias);
+
+    // Cobertura: PDV con ≥1, ≥2 y ≥3 intervalos de visitas VÁLIDOS en cada periodo.
+    const activos = (posList || []).filter(pdvActivo);
+    const universo = activos.length ? new Set(activos.map(p => p.id)) : null;
+    const coberturaPorPeriodo = C.PERIODOS_DIAS.map(d => {
+        const v = ventana(d);
+        const n = {};
+        enV(nuevos, v).forEach(t => {
+            if (t.estado !== 'valido' || (universo && !universo.has(t.posId))) return;
+            n[t.posId] = (n[t.posId] || 0) + 1;
+        });
+        const cuentas = Object.values(n);
+        return {
+            dias: d, pdvActivos: universo ? universo.size : null,
+            al1: cuentas.filter(x => x >= 1).length, al2: cuentas.filter(x => x >= 2).length, al3: cuentas.filter(x => x >= 3).length,
+        };
+    });
+
     return {
         dias, dashboard: dashboard.porDia, pasos,
+        negativos, largos, largosPorPeriodo, coberturaPorPeriodo,
+        duplicados: posiblesDuplicados(posList, reports),
         histDias,
         pctTerminanVacio: crudos.length ? crudos.filter(t => t.fin.vacio).length / crudos.length : null,
         tramosCortosUnidos: { tramos: unidosT.length, absorbidos: unidosT.reduce((s, t) => s + t.unidos, 0) },

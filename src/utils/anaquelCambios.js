@@ -12,9 +12,9 @@
 //  1. Detecta, por PDV, cada vez que la categoría vecina o la altura que anota
 //     el mercaderista es distinta de la anterior.
 //  2. Mide la venta estimada (inventario anterior + lo repuesto − inventario
-//     actual, por día) en el tramo continuo ANTES del cambio y en el DESPUÉS,
+//     actual, por día) en el intervalo de visitas continuo ANTES del cambio y en el DESPUÉS,
 //     LIMPIA de lo que no es venta:
-//       · los tramos que terminan en QUIEBRE (anaquel vacío) no cuentan: ahí la
+//       · los intervalos de visitas que terminan en QUIEBRE (anaquel vacío) no cuentan: ahí la
 //         venta quedó topada por falta de producto, no por la ubicación;
 //       · las unidades RETIRADAS por devolución (vencido/dañado, colección
 //         `devoluciones`) se restan: bajaron el inventario sin ser venta.
@@ -41,7 +41,7 @@ const seg = (r) => r?.createdAt?.seconds ?? (r?.createdAt?.toDate ? r.createdAt.
 const LBL_UB = Object.fromEntries(UBICACIONES.map(u => [u.id, u.label]));
 const LBL_CAT = Object.fromEntries(CATEGORIAS.map(c => [c.id, c.label]));
 
-// Un lado (antes o después) es medible con al menos 2 tramos limpios y 7 días.
+// Un lado (antes o después) es medible con al menos 2 intervalos de visitas limpios y 7 días.
 export const MIN_TRAMOS_LADO = 2;
 export const MIN_DIAS_LADO = 7;
 // Por debajo de ~1 unidad por semana el porcentaje no significa nada.
@@ -77,9 +77,9 @@ const normNombre = (s) => String(s || '').toLowerCase()
 const netoDevolucion = (d) => Math.max(0, (Number(d.unidades) || 0) - (Number(d.unidadesRepuestas) || 0));
 
 /**
- * Tramos entre visitas seguidas de un PDV, con la posición donde estuvo el
- * producto. `quiebre` = la venta de ese tramo quedó topada por falta de
- * producto; `devueltas` = unidades retiradas por devolución dentro del tramo.
+ * Intervalos de visitas (entre visitas seguidas) de un PDV, con la posición donde estuvo el
+ * producto. `quiebre` = la venta de ese intervalo de visitas quedó topada por falta de
+ * producto; `devueltas` = unidades retiradas por devolución dentro del intervalo de visitas.
  */
 function tramosDe(lista, devs = []) {
     const orden = [...lista].sort((a, b) => seg(a) - seg(b));
@@ -206,7 +206,7 @@ export function analizarCambios({ allReports = [], posList = [], dimension = 'ca
         return { estado: 'ok', lista };
     };
 
-    // Tramos de toda la red, para la corrección por la marea general.
+    // Intervalos de visitas de toda la red, para la corrección por la marea general.
     const tramosRed = [];
     const tramosPorPos = {};
     Object.entries(porPos).forEach(([posId, lista]) => {
@@ -383,7 +383,7 @@ function faltaLado(t) {
     const v = Math.max(0, MIN_TRAMOS_LADO - t.tramos);
     const d = Math.max(0, Math.ceil(MIN_DIAS_LADO - t.dias));
     const partes = [v ? `${v} visita${v > 1 ? 's' : ''} más` : null, d ? `${d} día${d > 1 ? 's' : ''} más` : null].filter(Boolean).join(' y ');
-    return t.quiebres ? `${partes}${partes ? ' ' : ''}(${t.quiebres} tramo${t.quiebres > 1 ? 's' : ''} con quiebre no cuenta${t.quiebres > 1 ? 'n' : ''})` : partes;
+    return t.quiebres ? `${partes}${partes ? ' ' : ''}(${t.quiebres} ${t.quiebres > 1 ? 'intervalos de visitas' : 'intervalo de visitas'} con quiebre no cuenta${t.quiebres > 1 ? 'n' : ''})` : partes;
 }
 
 export const fmtSigno = (v, dec = 0) => v == null ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toLocaleString('es-VE', { maximumFractionDigits: dec })}\u00a0%`;

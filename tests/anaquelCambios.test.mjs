@@ -82,7 +82,7 @@ const caso = (id) => k.casos.find(c => c.posId === id);
 const l1 = caso('L1'), q = caso('Q'), bb = caso('B'), cc = caso('C'), dd = caso('D');
 ok(l1 && Math.abs(l1.ajustadoUds - 1) < 1e-9 && Math.abs(l1.ajustado - 100) < 1e-9, `L1: +1 ud/día, +100 % (${l1?.ajustadoUds})`);
 ok(q && q.despues.quiebres === 1 && q.despues.tramos === 3 && Math.abs(q.despues.porDia - 2) < 1e-9,
-    `Q: el tramo con quiebre no cuenta (quiebres ${q?.despues.quiebres}, después ${q?.despues.porDia})`);
+    `Q: el intervalo de visitas con quiebre no cuenta (quiebres ${q?.despues.quiebres}, después ${q?.despues.porDia})`);
 ok(bb && bb.baseBaja && bb.ajustado === null && Math.abs(bb.ajustadoUds - 0.2) < 1e-9, `B: base baja, sin %, +0,2 uds/día (${bb?.ajustadoUds})`);
 ok(cc && cc.contaminado && /precio/.test(cc.contaminantes[0]), `C: contaminado (${cc?.contaminantes.join(', ')})`);
 const g2 = k.resumen.find(r => r.desde === 'Charcutería' && r.hacia === 'Quesos crema');

@@ -363,7 +363,7 @@ visita no se estaba declarando**, así que GK seguía viendo el problema abierto
 
 ### Rotación: muestra mínima para comparar (2026-08) ✅
 El modal mostraba **+1139%** de agosto contra julio. La aritmética estaba bien
-(0,400 vs 0,032 uds/día) — el problema era la BASE: julio tenía **7 tramos entre
+(0,400 vs 0,032 uds/día) — el problema era la BASE: julio tenía **7 intervalos de visitas entre
 visitas en 5 PDV** (5 uds en total). Eso no es "rotación baja", es un mes sin
 medir; y mostrado como "0.0" parecía un cero real.
 - `rotacion.js` expone `confiable` por mes (`MIN_PARES_CONFIABLE = 12`,
@@ -2964,16 +2964,16 @@ Pedido del dueño: verificar que el cálculo sea correcto y agregar tres cosas: 
 - No decía con cuántos datos se calculaba.
 
 **Motor puro `src/utils/anaquelAnalisis.js` (`analizarAnaquel`)**, compartido por la hoja del Dashboard, el PDF y el mapa del vendedor:
-- **Venta** = la misma rotación estimada del dashboard (`rotacion.js`): entre dos visitas seguidas al mismo PDV, (inventario anterior + lo repuesto) − inventario actual, entre los días transcurridos. Solo cuentan los tramos que terminan dentro de la ventana del dashboard (por id de reporte); la visita anterior puede ser previa a la ventana.
-- **Atribución**: cada tramo va a la altura y categoría de la visita ANTERIOR (donde estuvo el producto mientras se vendía).
+- **Venta** = la misma rotación estimada del dashboard (`rotacion.js`): entre dos visitas seguidas al mismo PDV, (inventario anterior + lo repuesto) − inventario actual, entre los días transcurridos. Solo cuentan los intervalos de visitas que terminan dentro de la ventana del dashboard (por id de reporte); la visita anterior puede ser previa a la ventana.
+- **Atribución**: cada intervalo de visitas va a la altura y categoría de la visita ANTERIOR (donde estuvo el producto mientras se vendía).
 - **Unidad = PDV**: cada PDV aporta su rotación (uds/día) a cada grupo en que estuvo, y el grupo promedia sus PDV. Se reporta además el margen de error al 95 %.
-- **Confianza** por grupo: confiable desde 8 PDV y 12 tramos (los mismos umbrales de `rotacion.js`); orientativa desde 3 PDV; por debajo, insuficiente. Los grupos insuficientes se pintan en gris y quedan fuera de la "ubicación dorada" y de las proyecciones.
+- **Confianza** por grupo: confiable desde 8 PDV y 12 intervalos de visitas (los mismos umbrales de `rotacion.js`); orientativa desde 3 PDV; por debajo, insuficiente. Los grupos insuficientes se pintan en gris y quedan fuera de la "ubicación dorada" y de las proyecciones.
 - **PDV por grupo** = estado ACTUAL (última visita con ubicación en la ventana), con la rotación de cada uno.
 - **Proyección** = (rotación del grupo destino − la del grupo origen) × PDV movidos, sobre la venta medida de la red (suma de la rotación de cada PDV). Es lineal y escalable a 25/50/100 % (`escalar`). El **rango prudente** descuenta los dos márgenes de error; si queda en cero, se dice "no concluyente".
 - Se dice siempre que es una asociación, no una causa.
 
 **Pantalla** (`PositioningModalContent.jsx`, Dashboard → ¿Vendemos? → Mapa de calor):
-- La muestra: PDV con dato de los activos, PDV con venta medida y tramos, reportes con ubicación y sin categoría, período, y PDV que cambiaron de posición.
+- La muestra: PDV con dato de los activos, PDV con venta medida y intervalos de visitas, reportes con ubicación y sin categoría, período, y PDV que cambiaron de posición.
 - La ubicación dorada.
 - El mapa: rotación + nº de PDV por celda; al tocar una celda lista sus PDV de hoy.
 - Altura y categoría: torta de PDV de hoy y filas con rotación, ± error, muestra y confianza; al tocar una fila se ve la lista de PDV.
@@ -2981,7 +2981,7 @@ Pedido del dueño: verificar que el cálculo sea correcto y agregar tres cosas: 
 - Botón **Informe PDF** (`AnaquelDoc.jsx`): conclusiones, KPIs de muestra, mapa, tablas por grupo, proyecciones a 25/50/100 % con el rango prudente, lista de PDV por grupo y metodología.
 - `GerencialDashboard` pasa `ventanaLabel` al modal.
 
-**Tamaño de muestra a la vista** (pedido del dueño): la hoja y el PDF explican cuándo una cifra es confiable (≥8 PDV y ≥12 tramos), orientativa (3–7 PDV) o insuficiente, y cada grupo dice cuánto le falta (`falta` en el resumen + `textoFalta`). También aclara que un grupo chico no está mal medido (son todos los PDV que hay en esa posición), pero es menos seguro para predecir otros puntos.
+**Tamaño de muestra a la vista** (pedido del dueño): la hoja y el PDF explican cuándo una cifra es confiable (≥8 PDV y ≥12 intervalos de visitas), orientativa (3–7 PDV) o insuficiente, y cada grupo dice cuánto le falta (`falta` en el resumen + `textoFalta`). También aclara que un grupo chico no está mal medido (son todos los PDV que hay en esa posición), pero es menos seguro para predecir otros puntos.
 
 **Mapa del vendedor** (`VendedorAnaquelMap.jsx`) usa el mismo motor (antes tenía el mismo error de `orderQuantity`).
 
@@ -2994,9 +2994,9 @@ Pregunta del dueño: el mapa de calor dice que junto a quesos crema se rota meno
 **Motor puro `src/utils/anaquelCambios.js` (`analizarCambios({allReports, posList, dimension})`):**
 - Usa el historial COMPLETO (`allReports`), porque el "antes" de un cambio puede quedar fuera de la ventana del dashboard.
 - Por PDV, agrupa en bloques las visitas seguidas que anotaron el mismo valor (`adjacentCategory` o `shelfLocation`). Cada salto de un bloque a otro es un cambio.
-- **Antes** = tramos del bloque A, desde que empezó hasta el cambio. **Después** = tramos del bloque B, hasta el siguiente cambio. Usa la misma rotación estimada del mapa.
+- **Antes** = intervalos de visitas del bloque A, desde que empezó hasta el cambio. **Después** = intervalos de visitas del bloque B, hasta el siguiente cambio. Usa la misma rotación estimada del mapa.
 - **Corrección por la red**: el cambio de venta de los OTROS PDV en esas mismas fechas, promediado por PDV. Solo cuentan los PDV que NO cambiaron de lugar en ese lapso; si no, el efecto se colaría en la referencia. Efecto = cambio del PDV − cambio de la red.
-- **Medible**: cada lado necesita ≥2 tramos y ≥7 días (`MIN_TRAMOS_LADO`, `MIN_DIAS_LADO`). Si no se cumple, `falta` dice qué falta ("después: 1 visita más").
+- **Medible**: cada lado necesita ≥2 intervalos de visitas y ≥7 días (`MIN_TRAMOS_LADO`, `MIN_DIAS_LADO`). Si no se cumple, `falta` dice qué falta ("después: 1 visita más").
 - **Posible error de registro**: un cambio que dura UNA visita y vuelve al valor anterior. No entra al resumen.
 - `resumen` por tipo de cambio ("Charcutería → Quesos crema"): número de PDV, efecto promedio, margen al 95 %, cuántos subieron y bajaron, y confianza. Usa los mismos umbrales del mapa: 8 PDV confiable, 3 orientativo.
 
@@ -3010,8 +3010,8 @@ Prueba: `tests/anaquelCambios.test.mjs`, 13 verificaciones en verde. Cubre: dete
 
 **Más confiable (2026-10, puntos 1–4 que pidió el dueño):**
 1. **Medición limpia.**
-   - Un tramo que termina en quiebre no cuenta (anaquel vacío, `stockout`, o venía vacío y no se repuso): la venta quedó topada por falta de producto. El lado lo declara en `quiebres`.
-   - Las unidades retiradas por devolución (`devoluciones`, netas de lo repuesto en el acto) que caen dentro del tramo se restan: bajaron el inventario sin ser venta.
+   - Un intervalo de visitas que termina en quiebre no cuenta (anaquel vacío, `stockout`, o venía vacío y no se repuso): la venta quedó topada por falta de producto. El lado lo declara en `quiebres`.
+   - Las unidades retiradas por devolución (`devoluciones`, netas de lo repuesto en el acto) que caen dentro del intervalo de visitas se restan: bajaron el inventario sin ser venta.
    - Los envases dañados cuentan cuando se retiran por esa vía.
 2. **Efecto en unidades por día.**
    - Por caso: `ajustadoUds` = cambio del PDV − (base × cambio % de la red). El % solo se da si la base es ≥ `MIN_BASE_PCT` (0,15 uds/día ≈ 1 por semana); por debajo, `baseBaja`.
@@ -3043,7 +3043,7 @@ Rediseño pedido por el dueño: una sección corta (1 página carta), mediciones
   - Aviso de duplicado en los dos sentidos.
   - Sin abrir reglas: la nota de crédito la sigue completando solo el máster.
 - **Regla A** (M1): venta = inv. inicial + facturado despachado (`orderQuantity`) + repuestas + recibidas por traslado − retiradas − inv. final.
-  - Los movimientos van al tramo que EMPIEZA en la visita.
+  - Los movimientos van al intervalo de visitas que EMPIEZA en la visita.
   - Una devolución del mismo día pertenece a esa visita.
   - El motivo no cambia la fórmula.
   - Las repuestas NO están dentro de `orderQuantity`. La pregunta del formulario lo dirá en la Fase 2.
@@ -3055,8 +3055,8 @@ Rediseño pedido por el dueño: una sección corta (1 página carta), mediciones
 - **Vencimiento.**
   - El lote más viejo se deduce de `batches[].expiryDate`; la alerta es "orientativa" solo si la visita no tiene lotes.
   - Umbral de la alerta = **`UMBRAL_ALERTA_VENCIMIENTO_DIAS`** (7, en `anaquelConstantes.js`), DESACOPLADO a propósito de `DIAS_POR_VENCER` de `retiros.js` (también 7), que es del módulo Devoluciones y no se toca. El dueño confirmará el valor; cambiarlo no mueve Devoluciones.
-- **Quiebre.** "% de visitas que encontraron el anaquel vacío". Los tramos que terminan vacíos cuentan como **mínimo**: entran en la rotación, pero no en la capa B ni en la tabla de efecto.
-- **Tramos cortos (<5 d).** Se unen con los siguientes solo si altura, categoría, precio y POP no cambiaron y no hubo quiebre en medio.
+- **Quiebre.** "% de visitas que encontraron el anaquel vacío". Los intervalos de visitas que terminan vacíos cuentan como **mínimo**: entran en la rotación, pero no en la capa B ni en la tabla de efecto.
+- **Intervalos de visitas cortos (<5 d).** Se unen con los siguientes solo si altura, categoría, precio y POP no cambiaron y no hubo quiebre en medio.
 - **Otras.** Tamaño carta. El formulario a cambiar es el del mercaderista (`VisitReportForm` + `EditReportForm`). Corregir un retiro guardado es solo del máster.
 - **Pendientes anotados:**
   - el mapa del vendedor (`VendedorAnaquelMap`) sigue con el motor viejo y puede contradecir la sección nueva;
@@ -3071,8 +3071,8 @@ Rediseño pedido por el dueño: una sección corta (1 página carta), mediciones
   - `tramosDePos`, con estados `valido` / `minimo` / `error_captura` (negativo, sin recortar) / `corto` / `largo` / `sin_producto`;
   - `asignarMovimientos` (regla A), `cobertura` (M5), `veredictoEfecto` (bootstrap de la mediana con semilla fija);
   - `analizarAnaquelV2`: red, PDV, semáforo, mapa en capas A y B, tabla de efecto, pruebas en curso, datos por corregir y línea de conclusión por reglas;
-  - `compararMetodos`: Dashboard → nuevo, paso a paso, con % de negativos, devoluciones, "por vencer" y tramos que cambian de estado.
-- Prueba: `node --import ./tests/alias.mjs tests/anaquelV2.test.mjs`, 48 verificaciones en verde.
+  - `compararMetodos`: Dashboard → nuevo, paso a paso, con % de negativos, devoluciones, "por vencer" y intervalos de visitas que cambian de estado.
+- Prueba: `node --import ./tests/alias.mjs tests/anaquelV2.test.mjs`, 56 verificaciones en verde.
 - La tabla de efecto lista solo cambios de **ubicación** (altura o categoría). Un cambio de precio o de POP solo "ensucia" el cambio de ubicación.
 
 **"Comparar métodos" publicada (7-oct) ✅** — la pestaña para ver el método nuevo con datos REALES antes de la Fase 2.
@@ -3080,13 +3080,26 @@ Rediseño pedido por el dueño: una sección corta (1 página carta), mediciones
 - Solo lectura: `ComparadorMetodosAnaquel.jsx` (hoja por portal) recibe el historial de reportes y las devoluciones que la hoja del mapa ya leyó; no escribe nada.
 - Muestra, en 30/60/90 días:
   - la cifra del Dashboard y cuánto mueve cada paso del método la rotación de la red;
-  - % de tramos negativos (error de captura) y % que terminan en anaquel vacío;
-  - tramos cortos unidos y la distribución de días por tramo (para calibrar el mínimo de 5 y el máximo de 21);
-  - devoluciones de 90 días por motivo (registros y unidades) y cuántos tramos incluyen devoluciones;
-  - por PDV: rotación anterior vs nueva, tramos y visitas, ordenados por la diferencia;
-  - la lista de tramos que el método nuevo cuenta distinto.
+  - % de intervalos de visitas negativos (error de captura) y % que terminan en anaquel vacío;
+  - intervalos de visitas cortos unidos y la distribución de días por intervalo de visitas (para calibrar el mínimo de 5 y el máximo de 21);
+  - devoluciones de 90 días por motivo (registros y unidades) y cuántos intervalos de visitas incluyen devoluciones;
+  - por PDV: rotación anterior vs nueva, intervalos de visitas y visitas, ordenados por la diferencia;
+  - la lista de intervalos de visitas que el método nuevo cuenta distinto.
 - `compararMetodos` ganó `histDias` (`CUBETAS_DIAS`), `pctTerminanVacio`, `tramosCortosUnidos`, `devoluciones90.porMotivo`, `tramosContados` y `porPdv`.
 - **La Fase 2 NO arranca hasta que el dueño lo diga**, después de ver estos resultados.
+
+**Primera lectura con datos reales (7-oct, 30 días):** Dashboard 0,74 uds/día vs. método nuevo 1,27; 64 intervalos de visitas crudos, 10 negativos (15,6 %); el paso 3 excluye 9 intervalos con 218 días y pocas unidades; 1 sola devolución en 90 días. El dueño NO autorizó la Fase 2: pidió primero este diagnóstico.
+
+**Diagnóstico dentro de "Comparar métodos" (7-oct) ✅** — solo lectura, todo en `compararMetodos`:
+- **a) Negativos** (`negativos`, de `diagnosticoNegativos`): cada intervalo de visitas negativo del período con inventario anterior, facturadas, repuestas, retiradas, inventario actual, resultado (con y sin devoluciones), días, y la rotación del intervalo anterior y del siguiente del mismo PDV. Se usan los intervalos CRUDOS con devoluciones (`METODO_CRUDO_MOV`: sin unir, sin filtrar, sin recortar). `lectura`:
+  - `desfase`: un vecino rota ≥ `FACTOR_VECINO_ALTO` (2) × la mediana del PDV (sin el negativo ni sus vecinos) y compensa ≥ `PCT_VECINO_COMPENSA` (50 %) del negativo; se muestra la rotación de los dos juntos. Huella de lo facturado que llega en otra visita.
+  - `aislado`: ningún vecino así ⇒ posible producto que entró sin registrarse.
+- **b) Largos** (> 21 días): lista (PDV, días, unidades, rotación) y la cifra de la red con el método nuevo con y sin ellos en 30/60/90 días (`largosPorPeriodo`; `metodo.admitirLargos`).
+- **c) Cobertura** (`coberturaPorPeriodo`): PDV activos con ≥1, ≥2 y ≥3 intervalos de visitas VÁLIDOS en 30/60/90 días.
+- **d) Posibles duplicados** (`posiblesDuplicados`, exportada; también la usa `datosPorCorregir`): mismo nombre sin acentos, signos, orden ni forma jurídica, o casi igual (distancia de edición ≤ `MAX_DISTANCIA_DUPLICADO`, largo ≥ `MIN_LARGO_DUPLICADO`). Nombres que solo difieren en un número son sucursales y no se marcan. La pantalla lee la colección `pos` COMPLETA (incluye inactivos) y suma los posId que solo aparecen en reportes. Nunca fusiona nada.
+- Prueba: 56 verificaciones en verde.
+
+**Terminología (7-oct, decisión del dueño):** en todo lo que ve el usuario, "tramo" pasó a **"intervalo de visitas"** ("intervalo" solo donde falta espacio): pantallas del mapa, antes/después, rotación, mapa del vendedor, "Comparar métodos", PDF, comentarios y mensajes de las pruebas. Las cobranzas siguen diciendo "tramos de antigüedad" (otro concepto). **Los identificadores internos NO se renombraron** (`MIN_DIAS_TRAMO`, `tramosDePos`, `tramos`, `pares`…): alimentan pantallas en uso (Dashboard, rotación, antes/después, mapa del vendedor) y en `anaquelV2.js` el nombre `intervalo` ya es el intervalo de confianza del bootstrap, así que un renombre mecánico chocaría con él.
 
 **Las ventanas del Dashboard se cortaban arriba y abajo (2026-10) ✅.**
 - **Causa:** `PullToRefresh` dejaba `transform: translateY(0px)` puesto aun en reposo. Un `transform` convierte al elemento en el marco de todo `position: fixed` que tenga adentro. Así, `Modal.jsx` (los 15 KPIs y el Mapa de calor) quedaba encerrado en el área desplazable, debajo del encabezado de la app y sin llegar al final.

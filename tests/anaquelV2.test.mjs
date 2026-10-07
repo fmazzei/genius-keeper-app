@@ -39,26 +39,26 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
 }
 {
     const t = tramosDe([V('A', 0, 20, 0), V('A', 3, 15, 0)]);
-    ok(t[0].estado === 'corto', 'tramo de 3 días sin visita siguiente: corto, excluido');
+    ok(t[0].estado === 'corto', 'intervalo de visitas de 3 días sin visita siguiente: corto, excluido');
 }
 {
     const t = tramosDe([V('A', 0, 20, 10), V('A', 7, 0, 0, { stockout: true })]);
     const r = rotacionDe(t);
-    ok(t[0].estado === 'minimo' && r.porDia > 0 && r.minimo, 'tramo que termina en quiebre: cuenta como "mínimo"');
+    ok(t[0].estado === 'minimo' && r.porDia > 0 && r.minimo, 'intervalo de visitas que termina en quiebre: cuenta como "mínimo"');
 }
 {
     const t = tramosDe([V('A', 0, 0, 0, { stockout: true }), V('A', 7, 0, 0, { stockout: true })]);
-    ok(t[0].estado === 'sin_producto', 'tramo sin producto que vender: excluido');
+    ok(t[0].estado === 'sin_producto', 'intervalo de visitas sin producto que vender: excluido');
 }
 {
     const t = tramosDe([V('A', 0, 20, 0), V('A', 30, 5, 0)]);
-    ok(t[0].estado === 'largo', 'tramo de 30 días: largo, excluido');
+    ok(t[0].estado === 'largo', 'intervalo de visitas de 30 días: largo, excluido');
 }
-// ── Unión de tramos cortos ──
+// ── Unión de intervalos de visitas cortos ──
 {
     const t = tramosDe([V('A', 0, 20, 5), V('A', 3, 18, 4), V('A', 6, 15, 0)]);
     ok(t.length === 1 && t[0].unidos === 2 && t[0].dias === 6 && t[0].ventas === 20 + 9 - 15,
-        `dos tramos de 3 días sin cambios se unen: 6 días, (20 + 5 + 4) − 15 = ${t[0]?.ventas}`);
+        `dos intervalos de visitas de 3 días sin cambios se unen: 6 días, (20 + 5 + 4) − 15 = ${t[0]?.ventas}`);
 }
 {
     const t = tramosDe([V('A', 0, 20, 5), V('A', 3, 18, 4, { price: 6.2 }), V('A', 6, 15, 0)]);
@@ -78,9 +78,9 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     ok(t[0].ventas === 20 + 10 + 2 - 6 - 12, 'reposición parcial: se suman 2 repuestas y se restan 6 retiradas');
 }
 {
-    // Registrada 1 h ANTES del reporte del día 7: va al tramo que EMPIEZA el día 7.
+    // Registrada 1 h ANTES del reporte del día 7: va al intervalo de visitas que EMPIEZA el día 7.
     const t = tramosDe([V('A', 0, 20, 0), V('A', 7, 15, 5), V('A', 14, 10, 0)], [dev('A', 7, 3, 0, 'vencido', -3600)]);
-    ok(t[0].retiradas === 0 && t[1].retiradas === 3, 'devolución del mismo día, aunque se registre antes del reporte: tramo que empieza en esa visita');
+    ok(t[0].retiradas === 0 && t[1].retiradas === 3, 'devolución del mismo día, aunque se registre antes del reporte: intervalo de visitas que empieza en esa visita');
 }
 {
     const t = tramosDe([V('B', 0, 10, 0), V('B', 7, 8, 0)], [], [{ posIdDestino: 'B', unidades: 4, createdAt: { seconds: T0 + 3600 } }]);
@@ -154,7 +154,7 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     ok(Math.abs(r1.mermaVencimientoPct - 3 / fact * 100) < 1e-9 && Math.abs(r1.deterioroPct - 2 / fact * 100) < 1e-9 && r1.porVencerUds === 5,
         `merma por vencimiento = solo "Vencido" (${fmtNum(r1.mermaVencimientoPct)} %); deterioro = dañado + calidad; "Por vencer" aparte`);
     ok(a.calidad.duplicados.some(g => g.length === 2 && g.every(x => x.nombre.startsWith('Páramo'))), '"Páramo (Libertador)" y "Páramo Libertador": posible duplicado (solo sugerido)');
-    ok(a.calidad.atipicos.some(x => x.posId === 'X'), 'atípico: la rotación salta más de 3 veces entre tramos → "revisar reposición"');
+    ok(a.calidad.atipicos.some(x => x.posId === 'X'), 'atípico: la rotación salta más de 3 veces entre intervalos de visitas → "revisar reposición"');
     ok(claveNombre('Páramo (Libertador)') === claveNombre('Páramo Libertador'), 'clave de nombre sin acentos ni paréntesis');
 }
 // ── Mapa: celda con 2 PDV sin cifra, con 3 PDV con cifra ──
@@ -170,11 +170,11 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     ok(a.mapa.pdvCapaB === 0, 'capa B: ningún PDV estuvo en 2 celdas, queda vacía (el índice no informa)');
     ok(celda('ojos', 'Quesos crema').mayoria, 'marca la celda donde está hoy la mayoría de los PDV');
 }
-// ── Índice con 2 tramos válidos: sin índice ──
+// ── Índice con 2 intervalos de visitas válidos: sin índice ──
 {
     const R = [V('I', 0, 20, 7), V('I', 7, 20, 7, { shelfLocation: 'manos' }), V('I', 14, 20, 7)];
     const a = analizarAnaquelV2({ reports: R, posList: [{ id: 'I', name: 'I', type: 'pos' }], ahora: new Date((T0 + 20 * D) * 1000) });
-    ok(a.mapa.pdvCapaB === 0, 'PDV con 2 tramos válidos en la ventana: sin índice, no entra a la capa B');
+    ok(a.mapa.pdvCapaB === 0, 'PDV con 2 intervalos de visitas válidos en la ventana: sin índice, no entra a la capa B');
 }
 // ── Comparar métodos ──
 {
@@ -183,8 +183,8 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     const c = compararMetodos({ reports: R, dias: 30, ahora });
     const dash = computeRotacion(R, r => r.createdAt.seconds > T0 - 5 * D);
     ok(Math.abs(c.pasos[0].porDia - dash.porDia) < 1e-9 && Math.abs(c.dashboard - dash.porDia) < 1e-9, 'el paso 1 reproduce exactamente la rotación del Dashboard');
-    ok(Math.abs(c.pctNegativos - 1 / 3) < 1e-9, `% de tramos negativos: ${fmtNum(c.pctNegativos * 100, 1)} %`);
-    ok(c.cambian.some(x => x.estadoNuevo === 'error_captura'), 'lista los tramos que cambian de estado (el negativo pasa a error de captura)');
+    ok(Math.abs(c.pctNegativos - 1 / 3) < 1e-9, `% de intervalos de visitas negativos: ${fmtNum(c.pctNegativos * 100, 1)} %`);
+    ok(c.cambian.some(x => x.estadoNuevo === 'error_captura'), 'lista los intervalos de visitas que cambian de estado (el negativo pasa a error de captura)');
 }
 // ── Comparar métodos: unidos, días, anaquel vacío, devoluciones por motivo, por PDV ──
 {
@@ -196,19 +196,55 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     ];
     const ahora = new Date((T0 + 20 * D) * 1000);
     const c = compararMetodos({ reports: R, devoluciones: devs, posList: [{ id: 'B', name: 'Tienda Bé' }], dias: 30, ahora });
-    ok(c.tramosCortosUnidos.tramos === 1 && c.tramosCortosUnidos.absorbidos === 2, `el tramo de 2 días se une con el siguiente (${JSON.stringify(c.tramosCortosUnidos)})`);
+    ok(c.tramosCortosUnidos.tramos === 1 && c.tramosCortosUnidos.absorbidos === 2, `el intervalo de visitas de 2 días se une con el siguiente (${JSON.stringify(c.tramosCortosUnidos)})`);
     const cub = (id) => c.histDias.find(h => h.id === id).tramos;
-    ok(cub('0-2') === 1 && cub('7-9') === 4 && c.histDias.reduce((s, h) => s + h.tramos, 0) === c.tramosTotales, 'distribución de días por tramo cuadra con el total');
-    ok(Math.abs(c.pctTerminanVacio - 1 / 5) < 1e-9, `% de tramos que terminan en anaquel vacío: ${fmtNum(c.pctTerminanVacio * 100, 1)} %`);
+    ok(cub('0-2') === 1 && cub('7-9') === 4 && c.histDias.reduce((s, h) => s + h.tramos, 0) === c.tramosTotales, 'distribución de días por intervalo de visitas cuadra con el total');
+    ok(Math.abs(c.pctTerminanVacio - 1 / 5) < 1e-9, `% de intervalos de visitas que terminan en anaquel vacío: ${fmtNum(c.pctTerminanVacio * 100, 1)} %`);
     const m = (k) => c.devoluciones90.porMotivo.find(x => x.motivo === k);
     ok(c.devoluciones90.registros === 2 && m('vencido').registros === 1 && m('vencido').unidades === 2
         && m('por_vencer').unidades === 1 && m('danado').unidades === 2 && m('calidad').registros === 0, 'devoluciones de 90 días por motivo: registros y unidades');
-    ok(c.devoluciones.tramos === 2, `tramos que incluyen devoluciones: ${c.devoluciones.tramos}`);
+    ok(c.devoluciones.tramos === 2, `intervalos de visitas que incluyen devoluciones: ${c.devoluciones.tramos}`);
     const b = c.porPdv.find(p => p.posId === 'B');
     ok(b && b.nombre === 'Tienda Bé' && b.visitas === 4 && b.tramosAnterior === 3 && b.tramosNuevo === 2,
-        `por PDV: visitas, tramos antes (3) y después (2) (${JSON.stringify(b)})`);
+        `por PDV: visitas, intervalos de visitas antes (3) y después (2) (${JSON.stringify(b)})`);
     ok(b && Math.abs(b.rotAnterior - 20 / 16) < 1e-9 && Math.abs(b.rotNueva - 18 / 16) < 1e-9 && Math.abs(b.diferencia - (18 - 20) / 16) < 1e-9,
         'por PDV: rotación con el método anterior y con el nuevo (descuenta las 2 uds vencidas)');
+}
+
+// ── Diagnóstico: negativos con vecinos, largos, cobertura y duplicados ──
+{
+    const R = [
+        // N: facturó 30 en d7 pero la mercancía llegó después de d14 (desfase).
+        V('N', 0, 20, 0), V('N', 7, 10, 30), V('N', 14, 12, 0), V('N', 21, 34, 0), V('N', 28, 27, 0), V('N', 35, 20, 0),
+        // M: vende 1/día; en d21 aparecen 20 uds sin registro (aislado).
+        V('M', 0, 20, 7), V('M', 7, 20, 7), V('M', 14, 20, 7), V('M', 21, 40, 0), V('M', 28, 33, 0), V('M', 35, 26, 0),
+        // L: un intervalo de visitas de 26 días.
+        V('L', 4, 30, 0), V('L', 30, 4, 20), V('L', 37, 17, 0),
+    ];
+    const posList = [
+        { id: 'N', name: 'Páramo (Libertador)', type: 'pos' }, { id: 'M', name: 'Paramo Libertador', type: 'pos' },
+        { id: 'L', name: 'Páramo Libertado', type: 'pos' },
+        { id: 'E1', name: 'Excelsior Gama 1', type: 'pos' }, { id: 'E2', name: 'Excelsior Gama 2', type: 'pos' },
+    ];
+    const ahora = new Date((T0 + 40 * D) * 1000);
+    const c = compararMetodos({ reports: R, posList, dias: 30, ahora });
+    const nN = c.negativos.find(x => x.posId === 'N');
+    ok(nN && nN.resultado === -22 && nN.facturadas === 0 && nN.invAnterior === 12 && nN.invActual === 34,
+        `negativo de N con sus cifras (${JSON.stringify(nN && { r: nN.resultado, a: nN.invAnterior, b: nN.invActual })})`);
+    ok(nN && nN.lectura === 'desfase' && nN.vecinoAlto === 'anterior' && Math.abs(nN.rotAnterior - 4) < 1e-9
+        && Math.abs(nN.juntosAnterior - 6 / 14) < 1e-9, 'N: el intervalo anterior sale alto y lo compensa ⇒ desfase facturación–despacho');
+    const nM = c.negativos.find(x => x.posId === 'M');
+    ok(nM && nM.resultado === -13 && nM.lectura === 'aislado', `M: negativo aislado ⇒ entrada sin registrar (${nM?.lectura})`);
+    ok(c.largos.length === 1 && c.largos[0].posId === 'L' && c.largos[0].dias === 26 && c.largos[0].unidades === 26,
+        `intervalos de más de 21 días (${JSON.stringify(c.largos.map(x => [x.posId, x.dias, x.unidades]))})`);
+    const p30 = c.largosPorPeriodo.find(x => x.dias === 30);
+    ok(p30 && p30.largos === 1 && p30.con !== p30.sin, `cifra de red con y sin los largos (${fmtNum(p30?.con)} vs ${fmtNum(p30?.sin)})`);
+    const cob30 = c.coberturaPorPeriodo.find(x => x.dias === 30);
+    ok(cob30 && cob30.pdvActivos === 5 && cob30.al1 >= cob30.al2 && cob30.al2 >= cob30.al3 && cob30.al1 === 3,
+        `cobertura por intervalos válidos (${JSON.stringify(cob30)})`);
+    const g = c.duplicados.find(x => x.miembros.some(m => m.posId === 'N'));
+    ok(g && g.miembros.length === 3, `posibles duplicados: Páramo (Libertador) / Paramo Libertador / Páramo Libertado (${g?.miembros.length})`);
+    ok(!c.duplicados.some(x => x.miembros.some(m => m.posId === 'E1')), 'sucursales numeradas (Excelsior Gama 1 y 2) no se marcan como duplicadas');
 }
 
 console.log(fallas ? `\n${fallas} verificación(es) fallaron` : '\nTodas las verificaciones en verde');

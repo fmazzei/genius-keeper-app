@@ -19,7 +19,7 @@
 const seg = (r) => r?.createdAt?.seconds ?? (r?.createdAt?.toDate ? r.createdAt.toDate().getTime() / 1000 : 0);
 
 // Muestra mínima para que el número de un mes sirva para COMPARAR. Por debajo de
-// esto el estimado existe, pero su varianza es enorme: un mes con 7 tramos en 5
+// esto el estimado existe, pero su varianza es enorme: un mes con 7 intervalos de visitas en 5
 // PDV no es "rotación baja", es "mes sin medir". Comparar contra él producía
 // saltos absurdos (+1139% de agosto contra un julio de 0,03 uds/día).
 export const MIN_PARES_CONFIABLE = 12;

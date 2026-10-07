@@ -20,12 +20,12 @@
 //  · Venta = la MISMA rotación estimada del dashboard (`rotacion.js`): entre dos
 //    visitas seguidas al mismo PDV, (inventario anterior + lo repuesto) −
 //    inventario actual, dividido entre los días transcurridos.
-//  · Cada tramo entre visitas se atribuye a la ubicación y la categoría que se
+//  · Cada intervalo de visitas se atribuye a la ubicación y la categoría que se
 //    vieron en la visita ANTERIOR: es donde estuvo el producto mientras se vendía.
 //  · La unidad es el PDV: cada punto aporta su propia rotación (uds/día) a cada
 //    ubicación o categoría en la que estuvo, y un segmento promedia sus PDV.
 //    Así una tienda muy visitada no pesa más que las demás.
-//  · Cada cifra lleva su muestra (PDV y tramos) y un nivel de confianza.
+//  · Cada cifra lleva su muestra (PDV y intervalos de visitas) y un nivel de confianza.
 //
 // Límite que se dice en pantalla y en el informe: es una ASOCIACIÓN, no una
 // prueba de causa. Las tiendas que ponen el producto a la altura de los ojos
@@ -45,7 +45,7 @@ export const CATEGORIAS = [
     { id: 'Nevera Charcutería', label: 'Charcutería' },
 ];
 
-// Confianza de un segmento, por número de PDV y de tramos medidos.
+// Confianza de un segmento, por número de PDV y de intervalos de visitas medidos.
 // Mismos umbrales que la rotación mensual (`rotacion.js`) para "confiable".
 export const MIN_PDV_CONFIABLE = 8;
 export const MIN_PARES_CONFIABLE = 12;
@@ -110,7 +110,7 @@ export function analizarAnaquel({ reports = [], allReports = [], posList = [] })
     });
     const cambiaron = [...vistos.values()].filter(s => s.ub.size > 1 || s.cat.size > 1).length;
 
-    // ── 2. Venta estimada por tramo entre visitas (historial completo) ──
+    // ── 2. Venta estimada por intervalo de visitas (historial completo) ──
     const porPos = {};
     (allReports.length ? allReports : reports).forEach(r => {
         if (!r?.posId || !seg(r)) return;
@@ -130,7 +130,7 @@ export function analizarAnaquel({ reports = [], allReports = [], posList = [] })
         const orden = [...lista].sort((a, b) => seg(a) - seg(b));
         for (let i = 1; i < orden.length; i++) {
             const prev = orden[i - 1], curr = orden[i];
-            // Solo los tramos que TERMINAN dentro de la ventana del dashboard.
+            // Solo los intervalos de visitas que TERMINAN dentro de la ventana del dashboard.
             if (ventanaPorId ? !enVentana.has(curr.id) : (tiempos.length && seg(curr) < tiempos[0])) continue;
             const dias = (seg(curr) - seg(prev)) / 86400;
             if (!(dias > 0)) continue;
@@ -242,12 +242,12 @@ export function escalar(esc, fraccion, redActual) {
 export const fmtRot = (v) => v == null ? '—' : (v < 0.1 ? v.toFixed(2) : v.toFixed(1)).replace('.', ',');
 export const fmtPct = (v) => v == null ? '—' : `${r2(v).toLocaleString('es-VE', { maximumFractionDigits: 1 })} %`;
 
-/** "Faltan 3 PDV y 4 tramos" para que el grupo sea confiable; null si ya lo es. */
+/** "Faltan 3 PDV y 4 intervalos de visitas" para que el grupo sea confiable; null si ya lo es. */
 export function textoFalta(seg) {
     const f = seg?.falta;
     if (!f || (!f.pdv && !f.tramos)) return null;
     const partes = [];
     if (f.pdv) partes.push(`${f.pdv} PDV`);
-    if (f.tramos) partes.push(`${f.tramos} tramo${f.tramos === 1 ? '' : 's'}`);
+    if (f.tramos) partes.push(`${f.tramos} ${f.tramos === 1 ? 'intervalo de visitas' : 'intervalos de visitas'}`);
     return `Para ser confiable le faltan ${partes.join(' y ')} medidos.`;
 }

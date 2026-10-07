@@ -77,7 +77,7 @@ function Segmentos({ titulo, explicacion, segmentos }) {
                                 <span className="flex-1 min-w-0">
                                     <span className="text-sm font-semibold text-slate-800">{s.label}</span>
                                     <span className="block text-[11px] text-slate-500">
-                                        {s.pdvActuales.length} PDV hoy{total ? ` (${Math.round(s.pdvActuales.length / total * 100)}%)` : ''} · venta medida en {s.pdv} PDV, {s.pares} tramos
+                                        {s.pdvActuales.length} PDV hoy{total ? ` (${Math.round(s.pdvActuales.length / total * 100)}%)` : ''} · venta medida en {s.pdv} PDV, {s.pares} intervalos de visitas
                                     </span>
                                 </span>
                                 <span className="text-right shrink-0">
@@ -217,7 +217,7 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
                         <Info className="h-5 w-5 flex-shrink-0 mt-0.5 text-brand-blue" />
                         <p className="text-sm">
                             <b>Cuánto vende el producto según dónde está.</b> Venta estimada entre dos visitas al mismo PDV (inventario anterior + lo repuesto − inventario actual, por día).
-                            Cada PDV cuenta una vez, y cada tramo se asigna a la ubicación que tenía el producto mientras se vendía.
+                            Cada PDV cuenta una vez, y cada intervalo de visitas se asigna a la ubicación que tenía el producto mientras se vendía.
                         </p>
                     </div>
                 </div>
@@ -236,14 +236,14 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
                 </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     <Dato k="PDV con dato" v={`${m.pdvConDato}${m.pdvActivos ? ` de ${m.pdvActivos}` : ''}`} sub={m.pdvActivos ? `${Math.round(m.pdvConDato / m.pdvActivos * 100)}% de los PDV activos` : null} />
-                    <Dato k="PDV con venta medida" v={m.pdvConVenta} sub={`${m.tramos} tramos entre visitas`} />
+                    <Dato k="PDV con venta medida" v={m.pdvConVenta} sub={`${m.tramos} intervalos de visitas`} />
                     <Dato k="Reportes con ubicación" v={`${m.conUbicacion} de ${m.reportes}`} sub={m.sinCategoria ? `${m.sinCategoria} sin categoría vecina` : 'todos con categoría'} />
                     <Dato k="Período" v={ventanaLabel || '—'} sub={`${fecha(m.desde)} – ${fecha(m.hasta)}`} />
                 </div>
                 <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600 space-y-1">
                     <p className="font-bold text-slate-700">¿Cuándo una cifra es confiable?</p>
-                    <p><b className="text-emerald-700">Confiable:</b> al menos {MIN_PDV_CONFIABLE} PDV y {MIN_PARES_CONFIABLE} tramos medidos. <b className="text-amber-700">Orientativa:</b> de {MIN_PDV_ORIENTATIVO} a {MIN_PDV_CONFIABLE - 1} PDV. <b className="text-slate-500">Insuficiente:</b> menos de {MIN_PDV_ORIENTATIVO} PDV (no se usa para conclusiones).</p>
-                    <p>Un tramo es el tiempo entre dos visitas seguidas a un mismo PDV: ahí se mide cuánto se vendió. Para la cifra total: hoy hay {m.pdvConVenta} PDV y {m.tramos} tramos.</p>
+                    <p><b className="text-emerald-700">Confiable:</b> al menos {MIN_PDV_CONFIABLE} PDV y {MIN_PARES_CONFIABLE} intervalos de visitas medidos. <b className="text-amber-700">Orientativa:</b> de {MIN_PDV_ORIENTATIVO} a {MIN_PDV_CONFIABLE - 1} PDV. <b className="text-slate-500">Insuficiente:</b> menos de {MIN_PDV_ORIENTATIVO} PDV (no se usa para conclusiones).</p>
+                    <p>Un intervalo de visitas es el tiempo entre dos visitas seguidas a un mismo PDV: ahí se mide cuánto se vendió. Para la cifra total: hoy hay {m.pdvConVenta} PDV y {m.tramos} intervalos de visitas.</p>
                     <p>Un grupo con pocos PDV no está mal medido: es que hay pocos puntos en esa posición. Su cifra describe bien a esos puntos, pero es menos segura para predecir qué pasaría en otros; por eso lleva su margen de error (±).</p>
                 </div>
                 {m.cambiaron > 0 && <p className="text-[11px] text-slate-500 mt-2">{m.cambiaron} PDV cambiaron de ubicación o de categoría en el período: su venta se reparte entre las posiciones que tuvieron.</p>}

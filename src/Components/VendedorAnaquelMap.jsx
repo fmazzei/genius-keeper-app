@@ -131,7 +131,7 @@ export default function VendedorAnaquelMap({ reports = [], onClose }) {
                             </div>
                         )}
 
-                        <p className="text-center text-[11px] text-slate-600">Uds vendidas por día y por PDV, estimadas entre visitas · {a.nPdv} PDV y {a.nTramos} tramos de tu cartera ({a.nValid} reportes con ubicación). En gris, celdas con menos de 3 PDV.</p>
+                        <p className="text-center text-[11px] text-slate-600">Uds vendidas por día y por PDV, estimadas entre visitas · {a.nPdv} PDV y {a.nTramos} intervalos de visitas de tu cartera ({a.nValid} reportes con ubicación). En gris, celdas con menos de 3 PDV.</p>
                     </>
                 )}
             </div>
