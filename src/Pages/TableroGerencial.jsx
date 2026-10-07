@@ -474,7 +474,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                                         estos permisos y pégalo en Configuraciones → Integraciones → Zoho:
                                     </p>
                                     <code className="block bg-white rounded px-2 py-1.5 mt-2 text-[11px] break-all">
-                                        ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ,ZohoBooks.accountants.READ
+                                        ZohoBooks.invoices.CREATE,ZohoBooks.invoices.READ,ZohoBooks.bills.READ,ZohoBooks.contacts.READ,ZohoBooks.settings.READ,ZohoBooks.accountants.READ,ZohoBooks.accountants.CREATE,ZohoBooks.accountants.UPDATE,ZohoBooks.accountants.DELETE
                                     </code>
                                     <p className="mt-2">La siguiente conciliación (cada hora de 7:00 a 20:00) la llena sola.</p>
                                 </>

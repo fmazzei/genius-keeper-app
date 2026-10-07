@@ -579,6 +579,11 @@ service cloud.firestore {
       allow read: if isKromaAccess() || isAdmin();
       allow write: if false;
     }
+    // Asiento diario a Zoho, uno por fecha (lo escribe solo el servidor).
+    match /kroma_inv_zoho/{fecha} {
+      allow read: if isKromaAccess() || isAdmin();
+      allow write: if false;
+    }
     match /kroma_compras/{id} {
       allow read:   if (isKromaAccess() || isAdmin()) && kromaSameEmpresaDoc();
       allow create: if isKromaAccess() && kromaSameEmpresa(request.resource.data);

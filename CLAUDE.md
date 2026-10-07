@@ -2916,6 +2916,43 @@ Perímetro: cava de planta (`kroma_inventory_pt`) + en camino a Caracas (tránsi
 - Pruebas: `tests/inventarioPerpetuo.test.mjs` (motor, casos 1–4 del pedido y controles, 25 en verde) y `tests/inventarioPerpetuo.e2e.test.mjs` (emulador + reglas + el mismo código de despacho, recepción, picking y salidas: el libro cuadra con las partidas y ningún movimiento queda sin tipo, 17 en verde). Guía para el equipo: `docs/GUIA_INVENTARIO_PERPETUO.md`.
 - **Límites conocidos**: el envasado sube el valor del inventario en el costo del empaque (el empaque pasa de materia prima a producto terminado; la contrapartida en Zoho es tema de la etapa 2). **Mientras el personal de planta no use la app, el dueño carga las producciones por planilla** (lote con sufijo `-H`, modo Histórica o Actual): la planilla es la vía PRINCIPAL de producción, no una excepción. Por eso guarda `costeo` (`costeoPlanilla` en `costeoLote.js`: leche al precio declarado o del maestro + insumos de la FICHA × litros —los declarados son texto libre sin unidad— + empaque por presentación) y cada partida que deja en cava nace con `costoUnitarioUsd` (`costoUnitarioDePartida`, `origenCosto:'planilla'`). Corregir la planilla re-costea sus partidas (revaluación en el libro). "Finalizar empaque" de un lote de planilla usa ese mismo `costeo`. Los movimientos de materia prima siguen fuera (fase 2 del plan).
 
+### Dos errores del libro corregidos (2026-10-07) ✅
+
+- **Apertura del tránsito sin producto.** Los despachos anteriores al inventario perpetuo no traían `productoId`/`catalogId`/`logId`/`pesoPorUnidad`. La apertura del camión y su recepción caían en dos filas distintas del saldo, y el control 4 marcaba "stock negativo" en tránsito.
+  - `completarLineaDespacho` toma esos datos de la partida de planta (`inventoryId`). Si falta el peso, lo deduce de la presentación (`pesoDePresentacion`). La apertura lo usa y además lo guarda en la línea del despacho.
+  - `repararAperturaTransito` completa los asientos ya escritos (kg, `precioPlantaKg`, `valorPlanta`). Es idempotente. Corre sola antes de "Recalcular" (acción `reporte` y `recalcular`) y en el cierre diario.
+- **Deshacer un picking se anotaba como otra recepción.** `deshacer_cambio` del conector restauraba la versión anterior con su marca VIEJA (`recepcion`), y el libro sumaba en Frimaca y restaba del camión.
+  - En partidas de inventario (`kroma_inventory_pt`, `inventario_comercial`), deshacer ahora estampa **`_mov.tipo:'reversa'`** con `revierte` (el tipo deshecho) y su `ref`.
+  - Deshacer una partida creada la deja en cero (`active:false`) en vez de borrarla.
+  - El libro manda la reversa a la categoría del movimiento original, con signo contrario. Solo hay asiento espejo en tránsito si lo deshecho era despacho o recepción.
+  - Defensa general: una marca más de 1 h más vieja que la anterior se toma como restaurada y queda `sin_tipo`. Nunca se repite como movimiento real.
+  - El caso del 6-oct ya estaba compensado a mano (`ev_manual-20261006-reversa-picking-0_0`) y no se reprocesa.
+- Pruebas: `tests/inventarioReparar.e2e.test.mjs` (9) y 4 casos nuevos en `tests/inventarioPerpetuo.test.mjs`.
+
+## Inventario perpetuo — Etapa 2: asiento diario a Zoho Books (2026-10) ✅ (en simulación)
+
+`functions/handlers/inventarioZoho.js` + pestaña **Zoho** en Kroma → Inventario valorado. Un asiento por día con la VARIACIÓN del valor a costo del producto terminado:
+- La variación es `cierre del día − cierre anterior`, tomados de `kroma_inv_reportes/{fecha}.totales.valorCosto`, a 2 decimales.
+- Positiva: débito a inventario y crédito a la contrapartida. Negativa: al revés.
+- Si da 0,00, no hay asiento; si un día ya tenía asiento y queda en 0,00, se borra.
+- El día de apertura no lleva asiento.
+
+**Detalles:**
+- **Referencia** `KROMA-INV-AAAA-MM-DD`, con `status:'published'` y notas (cierre, anterior, variación, partidas). Sin `currency_id`: la moneda base de Lacteoca es USD.
+- **Cuentas desde configuración, no fijas en el código.** Se eligen del plan de cuentas de Zoho (acción `cuentas`). Se validan contra Zoho (que existan y estén activas) al guardarlas, al activar el envío real y antes de cada corrida real. Se guardan en `kroma_inv_config/lacteoca.zoho` (`cuentaInventarioId`, `contrapartidaId`, `cuentas`).
+- **Modo simulación por defecto**: calcula y guarda el asiento sin llamar a Zoho. El envío real se activa con un botón (con confirmación).
+- **Idempotencia** (`decidir`): se busca por `reference_number` exacto. Si el asiento ya está igual (total, cuentas y lados; se lee el detalle) no se hace nada. Si cambió, se actualiza (PUT). Si hay dos con la misma referencia, se detiene y avisa.
+- **Corrección de una fecha pasada**: `recalcularPendientes` marca `zoho.pendienteDesde`, y la siguiente corrida revisa ese día y los posteriores.
+- **Reintentos** con espera creciente (3; solo red, 429 y 5xx). Cada intento queda registrado.
+- **Estado por día** en `kroma_inv_zoho/{fecha}`: simulado, enviado, sin_cambios, sin_variacion, pendiente o error, con payload, respuesta, `journalId`, intentos y mensaje de Zoho. Lectura en reglas para Kroma y admin; escritura solo el servidor.
+- **Control 6** (contra Zoho): saldo de la cuenta (`GET /chartofaccounts/{id}` → `closing_balance`, verificado en Lacteoca) contra el valor de Kroma más la **diferencia base**. La base se fija una sola vez antes del primer envío real (botón para reiniciarla). Se escribe en el reporte y se conserva al regenerarlo.
+- **Cuándo corre**: con el cierre de las 23:55. El botón "Sincronizar días cerrados" llega hasta ayer.
+- **Endpoints** (`zohoApi.js`): `GET /chartofaccounts`, `GET /chartofaccounts/{id}`, `GET/POST /journals`, `GET/PUT/DELETE /journals/{id}`. Verificado contra Lacteoca: el listado de diarios trae `journal_id`, `reference_number`, `total` y `status`.
+- **Scope necesario**: `ZohoBooks.accountants.READ,ZohoBooks.accountants.CREATE,ZohoBooks.accountants.UPDATE,ZohoBooks.accountants.DELETE`.
+- Credenciales: las de siempre (`zoho_secure/creds`, solo Admin SDK); nada en el repositorio.
+- Pruebas: `tests/inventarioZoho.e2e.test.mjs`, 18 verificaciones en verde. Usa un Zoho falso y cubre simulación, envío, reenvío sin duplicar, 0,00, corrección de una fecha pasada (actualiza, crea o borra), error 503 con reintento, error definitivo guardado, duplicados y control.
+- **Pendiente del dueño**: elegir la contrapartida con el contador (en Zoho existe "Costo de ventas (variación de inventarios)"). Correr unos días en simulación. Renovar permisos con el scope `accountants`. Después, activar el envío real.
+
 ## GK — Una sola ficha para crear y editar PDV (2026-09) ✅
 
 Reporte del dueño: agregar un cliente/PDV era "sumamente enredado". Había TRES

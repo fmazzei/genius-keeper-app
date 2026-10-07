@@ -136,7 +136,15 @@ function asientosDeCambio({ coleccion, docId, before, after, fechaHoy }) {
     if (!base) return [];
     // La marca es FRESCA solo si este cambio la trajo (id distinto al anterior).
     const marca = after?._mov || null;
-    const fresca = !!(marca && marca.id && marca.id !== before?._mov?.id);
+    // Una marca RESTAURADA (más vieja que la que había, p.ej. al volver un
+    // documento a una versión anterior) no describe este cambio: sin ella el
+    // asiento queda "sin tipo" para revisión, en vez de repetir un movimiento
+    // viejo (una recepción repetida descuadraba el tránsito).
+    // Más de una hora de diferencia: los relojes de dos teléfonos pueden
+    // diferir unos minutos y eso no puede volver "sin tipo" un movimiento real.
+    const tA = Date.parse(marca?.at || ""), tB = Date.parse(before?._mov?.at || "");
+    const restaurada = Number.isFinite(tA) && Number.isFinite(tB) && tB - tA > 3600 * 1000;
+    const fresca = !!(marca && marca.id && marca.id !== before?._mov?.id && !restaurada);
     const mov = fresca ? marca : null;
     if (mov?.tipo === "apertura") return [];   // la apertura escribe sus propios asientos
 
@@ -177,19 +185,27 @@ function asientosDeCambio({ coleccion, docId, before, after, fechaHoy }) {
             && casiCero(mov.partes.reduce((s, p) => s + (Number(p.cantidad) || 0), 0) - dq)
             ? mov.partes.map(p => ({ tipo: p.tipo || tipo, motivo: p.motivo ?? mov.motivo ?? null, ref: p.ref ?? mov.ref ?? null, cantidad: r6(Number(p.cantidad)) }))
             : [{ tipo, motivo: mov?.motivo || null, ref: mov?.ref || null, cantidad: dq }];
+        // REVERSA (deshacer un movimiento): va a la MISMA categoría que el
+        // movimiento que deshace, con el signo contrario. Deshacer un picking
+        // es devolver una venta, no recibir otra vez el camión.
+        const revierte = tipo === "reversa" ? (mov?.revierte || "sin_tipo") : null;
         for (const p of partes) {
             const valor = costoNuevo ? r6(p.cantidad * costoNuevo) : 0;
             const kg = r6(p.cantidad * kgPorUnidad);
+            const efectivo = revierte || p.tipo;
             out.push({
-                ...comun, tipo: p.tipo, motivo: p.motivo, ref: p.ref,
-                ubicacion: ubicacionDe(coleccion), categoria: categoria(p.tipo, p.motivo),
+                ...comun, tipo: p.tipo, motivo: p.motivo, ref: p.ref, ...(revierte ? { revierte } : {}),
+                ubicacion: ubicacionDe(coleccion), categoria: categoria(efectivo, p.motivo),
                 cantidad: p.cantidad, kg, costoUnitario: costoNuevo, valorCosto: valor, sinCosto: !costoNuevo,
             });
             // Contrapartida en TRÁNSITO: lo que sale de la planta hacia Caracas
             // entra al camión; lo que entra a Frimaca sale del camión. El valor
-            // del inventario no cambia en un traslado.
+            // del inventario no cambia en un traslado. Deshacer uno de esos dos
+            // movimientos devuelve también lo del camión (signo contrario).
             const despachoId = p.ref?.despachoId || null;
-            if (despachoId && ((p.tipo === "despacho_caracas" && p.cantidad < 0) || (p.tipo === "recepcion" && p.cantidad > 0))) {
+            const esTraslado = (efectivo === "despacho_caracas" && (revierte ? p.cantidad > 0 : p.cantidad < 0))
+                || (efectivo === "recepcion" && (revierte ? p.cantidad < 0 : p.cantidad > 0));
+            if (despachoId && esTraslado) {
                 out.push({
                     ...comun, tipo: p.tipo, motivo: p.motivo, ref: p.ref,
                     coleccion: "kroma_despachos", docId: despachoId, ubicacion: "transito",
@@ -386,7 +402,7 @@ function controlLotes(lotes, fecha, tolerancia = 0.15) {
 }
 
 /** Arma el reporte de un día con todo lo anterior. */
-function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioKg = {} }) {
+function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioKg = {}, controlZoho = null }) {
     const hasta = asientos.filter(a => a.fecha <= fecha);
     const sal = saldos(hasta, fecha, precioKg);
     const porUbic = {};
@@ -428,7 +444,9 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
             estado: conteos.length ? (conteos.some(a => !casiCero(a.cantidad)) ? "diferencia" : "aprobado") : "no_aplica",
             nota: conteos.length ? null : "No hubo conteo físico este día.",
             detalle: { ajustes: conteos.map(lineaAsiento), cantidadTotal: r6(conteos.reduce((s, a) => s + a.cantidad, 0)), valorTotal: r2(conteos.reduce((s, a) => s + a.valorCosto, 0)) } },
-        { n: 6, nombre: "Control contra Zoho", estado: "no_aplica", nota: "Etapa 2: el asiento diario a Zoho todavía no está activo." },
+        // Lo escribe la sincronización con Zoho (inventarioZoho.js) después de enviar el asiento.
+        controlZoho ? { n: 6, nombre: "Control contra Zoho", ...controlZoho }
+            : { n: 6, nombre: "Control contra Zoho", estado: "no_aplica", nota: "Todavía no se sincronizó este día con Zoho." },
     ];
     return {
         fecha,
@@ -438,6 +456,12 @@ function armarReporte({ fecha, asientos, partidasHoy = null, lotes = [], precioK
             .map(s => ({ ...s, valorCosto: r2(s.valorCosto), valorPlanta: r2(s.valorPlanta), kg: r2(s.kg) }))
             .sort((a, b) => a.ubicacion.localeCompare(b.ubicacion) || a.productoNombre.localeCompare(b.productoNombre, "es")),
         movimientosDelDia: delDia.length,
+        // Partidas (lotes por ubicación) con existencia al cierre: va en las notas del asiento.
+        partidasConExistencia: (() => {
+            const m = new Map();
+            hasta.forEach(a => { const k = `${a.coleccion}/${a.docId}/${a.lote}`; m.set(k, r6((m.get(k) || 0) + (a.cantidad || 0))); });
+            return [...m.values()].filter(q => q > 0.0005).length;
+        })(),
         controles,
         conDiferencias: controles.filter(c => c.estado === "diferencia").map(c => c.n),
     };
@@ -562,6 +586,79 @@ async function leerAsientos(hasta) {
     return snap.docs.map(d => d.data());
 }
 
+/** Peso por unidad (kg) escrito en la presentación: "250 g" → 0.25, "1 kg" → 1. */
+function pesoDePresentacion(txt) {
+    const m = String(txt || "").replace(",", ".").match(/(\d+(?:\.\d+)?)\s*(kg|g)\b/i);
+    if (!m) return 0;
+    const n = Number(m[1]);
+    return m[2].toLowerCase() === "kg" ? n : n / 1000;
+}
+
+/**
+ * Datos de producto de una línea de despacho. Los despachos anteriores al
+ * inventario perpetuo no traen productoId/catalogId/logId/peso: se toman de la
+ * partida de planta de la que salió (`inventoryId`). Sin esto la apertura del
+ * camión y su recepción quedaban en dos filas distintas del saldo y el control
+ * 4 marcaba "stock negativo" en tránsito.
+ */
+async function completarLineaDespacho(l) {
+    let pt = {};
+    if ((!l.productoId || !l.catalogId || !l.logId || !(Number(l.pesoPorUnidad) > 0)) && l.inventoryId) {
+        try { pt = (await db().doc(`${COL_PLANTA}/${l.inventoryId}`).get()).data() || {}; } catch (e) { pt = {}; }
+    }
+    const peso = Number(l.pesoPorUnidad) || Number(pt.pesoPorUnidad) || pesoDePresentacion(l.presentacion || pt.presentacion);
+    return {
+        productoId: l.productoId || pt.productoId || null,
+        catalogId: l.catalogId || pt.catalogId || null,
+        logId: l.logId || pt.logId || null,
+        pesoPorUnidad: peso || null,
+    };
+}
+
+/**
+ * Completa los asientos de APERTURA de tránsito escritos sin datos de producto
+ * (ver `completarLineaDespacho`). Idempotente: solo toca los que les falta el
+ * producto o los kg. Deja marcado recalcular los reportes desde la apertura.
+ */
+async function repararAperturaTransito() {
+    const snap = await db().collection(COL_LIBRO).where("tipo", "==", "apertura").get();
+    const malos = snap.docs.filter(d => {
+        const a = d.data();
+        return a.ubicacion === "transito" && (!a.productoId || !(Number(a.kg) > 0));
+    });
+    if (!malos.length) return { reparados: [] };
+    const despachos = new Map();
+    const reparados = [];
+    const batch = db().batch();
+    let minFecha = null;
+    for (const d of malos) {
+        const a = d.data();
+        const despId = a.ref?.despachoId || a.docId;
+        if (!despachos.has(despId)) despachos.set(despId, (await db().doc(`kroma_despachos/${despId}`).get()).data() || {});
+        const lineas = despachos.get(despId).lineas || [];
+        // La línea del asiento: la del mismo lote y presentación (y cantidad si hay dos).
+        const cands = lineas.filter(l => (l.lote || "") === (a.lote || "") && (l.presentacion || "") === (a.presentacion || ""));
+        const l = cands.find(x => Number(x.cantidad) === Number(a.cantidad)) || cands[0];
+        if (!l) continue;
+        const info = await completarLineaDespacho(l);
+        const kg = a.unidad === "kg" ? Number(a.cantidad) : r6(Number(a.cantidad) * (info.pesoPorUnidad || 0));
+        const precio = info.productoId ? ((await preciosPlanta([info.productoId]))[info.productoId] || 0) : 0;
+        const upd = {
+            productoId: info.productoId, catalogId: info.catalogId, logId: info.logId,
+            pesoPorUnidad: info.pesoPorUnidad, kg, precioPlantaKg: precio || null, valorPlanta: r6(kg * precio),
+            reparadoAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        batch.update(d.ref, upd);
+        reparados.push({ id: d.id, ...upd, reparadoAt: undefined });
+        if (!minFecha || a.fecha < minFecha) minFecha = a.fecha;
+    }
+    if (reparados.length) {
+        batch.set(db().doc(DOC_CONFIG), { recalcularDesde: minFecha }, { merge: true });
+        await batch.commit();
+    }
+    return { reparados: JSON.parse(JSON.stringify(reparados)) };
+}
+
 /** Lo que hay HOY en cada partida y en cada camión en tránsito, a su costo. */
 async function partidasActuales() {
     const [pt, fr, desp] = await Promise.all([
@@ -608,7 +705,8 @@ async function generarReporte(fecha) {
         lotesParaControl(fecha),
         preciosPlanta(asientos.map(a => a.productoId)),
     ]);
-    const rep = armarReporte({ fecha, asientos, partidasHoy, lotes, precioKg });
+    const z = await db().doc(`kroma_inv_zoho/${fecha}`).get().catch(() => null);
+    const rep = armarReporte({ fecha, asientos, partidasHoy, lotes, precioKg, controlZoho: z?.exists ? (z.data().control || null) : null });
     await db().doc(`${COL_REPORTES}/${fecha}`).set({
         ...JSON.parse(JSON.stringify(rep)), empresaId: EMPRESA,
         generadoAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -633,12 +731,21 @@ async function recalcularPendientes(desdeForzado = null) {
         n++;
     }
     await db().doc(DOC_CONFIG).set({ recalcularDesde: admin.firestore.FieldValue.delete(), ultimoReporte: hoy }, { merge: true });
+    // Una fecha pasada recalculada cambia su asiento en Zoho y los siguientes.
+    if (hechos.length && hechos[0] < hoy) {
+        try { await require("./inventarioZoho").marcarPendienteDesde(hechos[0]); } catch (e) { console.error("marcarPendienteDesde", e); }
+    }
     return { generado: hechos };
 }
 
 exports.inventarioCierreDiario = onSchedule({
     schedule: "55 23 * * *", timeZone: TZ, region: "us-central1", timeoutSeconds: 540, memory: "1GiB", retryCount: 0,
-}, async () => { await recalcularPendientes(); });
+}, async () => {
+    try { await repararAperturaTransito(); } catch (e) { console.error("repararAperturaTransito", e); }
+    await recalcularPendientes();
+    // Asiento del día a Zoho (o su simulación). Un fallo queda registrado por día.
+    try { await require("./inventarioZoho").sincronizarPendientes(); } catch (e) { console.error("inventarioZoho", e); }
+});
 
 // ── Acciones de la pantalla ────────────────────────────────────────────────
 
@@ -718,24 +825,30 @@ async function abrir(data, usuario) {
         const x = d.data();
         if ((x.empresaId || EMPRESA) !== EMPRESA || !x.destinoCaracas) continue;
         const lineas = [...(x.lineas || [])]; let cambio = false;
-        lineas.forEach((l, idx) => {
+        for (let idx = 0; idx < lineas.length; idx++) {
+            const l = lineas[idx];
             const t = trans.get(`${d.id}/${idx}`);
             const costo = Number(t?.costoUnitarioUsd) > 0 ? r6(Number(t.costoUnitarioUsd)) : (Number(l.costoUnitarioUsd) > 0 ? r6(Number(l.costoUnitarioUsd)) : null);
             const q = Number(l.cantidad) || 0;
-            if (!(q > 0)) return;
-            if (!costo) { sinCosto.push(`${l.productoNombre} ${l.lote} (en tránsito)`); return; }
-            if (costo !== l.costoUnitarioUsd) { lineas[idx] = { ...l, costoUnitarioUsd: costo }; cambio = true; }
-            const peso = Number(l.pesoPorUnidad) || 0; const unidad = l.unit === "kg" ? "kg" : "ud";
+            if (!(q > 0)) continue;
+            if (!costo) { sinCosto.push(`${l.productoNombre} ${l.lote} (en tránsito)`); continue; }
+            // Los datos de producto se completan desde la partida de planta y se
+            // guardan en la línea: la recepción los copia a Frimaca, y así la
+            // apertura del camión y su recepción caen en la MISMA fila del saldo.
+            const info = await completarLineaDespacho(l);
+            const completa = { ...l, costoUnitarioUsd: costo, ...info };
+            if (JSON.stringify(completa) !== JSON.stringify(l)) { lineas[idx] = completa; cambio = true; }
+            const peso = info.pesoPorUnidad || 0; const unidad = l.unit === "kg" ? "kg" : "ud";
             asientos.push({
                 empresaId: EMPRESA, coleccion: "kroma_despachos", docId: d.id, ubicacion: "transito",
-                productoId: l.productoId || null, productoNombre: l.productoNombre || "", presentacion: l.presentacion || "",
-                catalogId: l.catalogId || null, logId: l.logId || null, lote: l.lote || "", unidad, pesoPorUnidad: peso || null,
+                productoId: info.productoId, productoNombre: l.productoNombre || "", presentacion: l.presentacion || "",
+                catalogId: info.catalogId, logId: info.logId, lote: l.lote || "", unidad, pesoPorUnidad: peso || null,
                 fechaVencimiento: l.fechaVencimiento || null, fecha, tipo: "apertura", categoria: "apertura",
                 motivo: "En camino a Caracas al abrir", ref: { despachoId: d.id }, usuario, movId: null,
                 cantidad: q, kg: r6(unidad === "kg" ? q : q * peso), costoUnitario: costo, valorCosto: r6(q * costo), sinCosto: false,
                 origenCosto: t?.origenCosto || "produccion",
             });
-        });
+        }
         if (cambio) ops.push({ ref: d.ref, upd: { lineas } });
     }
     if (sinCosto.length) {
@@ -805,9 +918,19 @@ exports.inventarioPerpetuo = onCall({ region: "us-central1", timeoutSeconds: 540
         if (accion === "conteo") return await contar(request.data, usuario);
         if (accion === "reporte") {
             const f = /^\d{4}-\d{2}-\d{2}$/.test(request.data?.fecha || "") ? request.data.fecha : fechaCaracas();
+            // El botón "Recalcular" de la pantalla pasa por aquí: completa antes
+            // los asientos viejos de apertura de tránsito (no toca nada si están bien).
+            try { await repararAperturaTransito(); } catch (e) { console.error("repararAperturaTransito", e); }
             return JSON.parse(JSON.stringify(await generarReporte(f)));
         }
-        if (accion === "recalcular") return await recalcularPendientes(request.data?.desde || null);
+        if (accion === "recalcular") {
+            // Antes de recalcular se completan los asientos viejos de apertura
+            // de tránsito que quedaron sin producto (no toca nada si están bien).
+            const rep = await repararAperturaTransito();
+            const desdeRep = rep.reparados.length ? (await leerConfig()).recalcularDesde : null;
+            const desde = [request.data?.desde, desdeRep].filter(Boolean).sort()[0] || null;
+            return { ...(await recalcularPendientes(desde)), apertura: rep };
+        }
         throw new HttpsError("invalid-argument", "Acción desconocida.");
     } catch (e) {
         if (e instanceof HttpsError) throw e;
@@ -820,4 +943,5 @@ exports._internos = {
     estadoDe, asientosDeCambio, asientosDeRecepcion, saldos, controlIdentidad, controlCuadre, controlLotes,
     armarReporte, asignarFIFO, categoria, fechaCaracas, diaAnterior, r2, r6, CATEGORIAS,
     procesarCambioPartida, generarReporte, abrir, contar, escribirAsientos,
+    pesoDePresentacion, completarLineaDespacho, repararAperturaTransito,
 };

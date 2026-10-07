@@ -56,4 +56,37 @@ En la pestaña **Reporte diario** se elige cualquier fecha pasada. Si se corrige
 - **Sin costo:** suele ser una planilla de papel cargada después de abrir. Asígnale costo en Gerencia → Financiero → "costo estimado". El sistema lo registra como revaluación.
 - **Cuadre contra lotes:** la partida se cambió por fuera de la app. Hace falta un conteo físico de esa partida para dejar el libro igual a lo real.
 
-El estado "error" con el mensaje de Zoho llega en la etapa 2, cuando el sistema empiece a enviar el asiento diario a Zoho Books.
+## 5. El asiento diario a Zoho (pestaña Zoho)
+
+Cada noche, a las 23:55, el sistema calcula cuánto cambió el valor del inventario
+en el día y prepara UN asiento de diario para Zoho Books, con la referencia
+`KROMA-INV-AAAA-MM-DD`. Si el valor subió, el asiento suma a la cuenta de
+inventario; si bajó, le resta. Si no cambió, no hay asiento.
+
+**Primero en simulación.** Al principio el sistema solo muestra el asiento que
+enviaría, sin enviarlo. Déjalo así varios días y compara con Zoho.
+
+**Para empezar:**
+1. Pestaña **Zoho** → **Elegir cuentas de Zoho**.
+2. Elige la **cuenta de inventario** (1.1.3.01.02 Inventario de productos
+   terminados) y la **contrapartida** (la cuenta de costo de ventas que indique
+   el contador). Pulsa **Guardar cuentas**.
+3. Pulsa **Sincronizar días cerrados**: aparece un renglón por día con el asiento
+   simulado. Tócalo para ver el detalle.
+4. Cuando los días simulados estén bien, pulsa **Activar envío real**. Desde ese
+   momento el sistema crea los asientos en Zoho solo.
+
+**Si un día queda en "Error":**
+- Toca el renglón: dice el mensaje exacto de Zoho.
+- Los motivos más comunes: Zoho no da permiso (hay que renovar los permisos con
+  `ZohoBooks.accountants`), el período contable está cerrado en Zoho, o alguna
+  de las dos cuentas se desactivó.
+- Corrige la causa y pulsa **Sincronizar días cerrados**. El sistema vuelve a
+  intentar desde el primer día con error. No duplica: si el asiento ya está en
+  Zoho, lo deja como está; si cambió, lo actualiza.
+
+**Control contra Zoho (control 6 del reporte):** compara el saldo de la cuenta de
+inventario en Zoho con el valor del sistema. La diferencia que había el primer
+día (por ejemplo, ajustes que el contador aún no hizo) se toma como base. Si
+la diferencia de un día no es la de la base, el control lo muestra con las dos
+cifras.

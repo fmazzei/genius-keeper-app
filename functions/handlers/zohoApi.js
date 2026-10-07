@@ -407,4 +407,101 @@ async function getAccountBalanceByCode({ accessToken, organizationId, dataCenter
     return { encontrada: false, codigo };
 }
 
-module.exports = { categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };
+// ── Asientos de diario (inventario perpetuo, functions/handlers/inventarioZoho.js) ──
+// Endpoints de la API v3 de Zoho Books: GET /chartofaccounts, GET/POST /journals,
+// GET/PUT/DELETE /journals/{id}. Scope: ZohoBooks.accountants.(READ|CREATE|UPDATE|DELETE).
+// Verificado contra Lacteoca: el listado de diarios devuelve `journals[]` con
+// `journal_id`, `reference_number`, `total` y `status`.
+
+/** Zoho responde 200 con `code` ≠ 0 cuando algo falla: eso también es error. */
+function exigirOk(res, que) {
+    if (res.data && res.data.code != null && Number(res.data.code) !== 0) {
+        const err = new Error(`Zoho (código ${res.data.code}) al ${que}: ${res.data.message || 'error sin mensaje'}`);
+        err.zohoCode = res.data.code;
+        throw err;
+    }
+    return res.data || {};
+}
+
+async function listChartOfAccounts({ accessToken, organizationId, dataCenter }) {
+    const { api } = dcUrls(dataCenter);
+    const all = [];
+    for (let page = 1; page <= 10; page++) {
+        const res = await axios.get(`${api}/books/v3/chartofaccounts`, {
+            params: { organization_id: organizationId, page, per_page: 200 },
+            headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+        });
+        const d = exigirOk(res, 'leer el plan de cuentas');
+        const cuentas = Array.isArray(d.chartofaccounts) ? d.chartofaccounts : [];
+        all.push(...cuentas);
+        if (d.page_context?.has_more_page !== true || cuentas.length === 0) break;
+    }
+    return all.map(c => ({ accountId: String(c.account_id), nombre: c.account_name || '', codigo: c.account_code || '',
+        tipo: c.account_type || '', activa: c.is_active !== false }));
+}
+
+/** Detalle de una cuenta; `closing_balance` es su saldo actual (verificado en Lacteoca). */
+async function getAccount({ accessToken, organizationId, dataCenter, accountId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/chartofaccounts/${accountId}`, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+    });
+    const c = exigirOk(res, 'leer la cuenta').chart_of_account || {};
+    return { accountId: String(c.account_id || accountId), nombre: c.account_name || '', codigo: c.account_code || '',
+        saldo: Number.isFinite(Number(c.closing_balance)) ? Number(c.closing_balance) : null };
+}
+
+async function findJournalsByReference({ accessToken, organizationId, dataCenter, referencia }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/journals`, {
+        params: { organization_id: organizationId, reference_number: referencia, per_page: 50 },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+    });
+    const lista = exigirOk(res, 'buscar el asiento').journals || [];
+    // La búsqueda por referencia puede devolver coincidencias parciales: solo la exacta.
+    return lista.filter(j => String(j.reference_number || '') === referencia);
+}
+
+async function getJournal({ accessToken, organizationId, dataCenter, journalId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.get(`${api}/books/v3/journals/${journalId}`, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+    });
+    return exigirOk(res, 'leer el asiento').journal || null;
+}
+
+async function createJournal({ accessToken, organizationId, dataCenter, journal }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.post(`${api}/books/v3/journals`, journal, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 30000,
+    });
+    const j = exigirOk(res, 'crear el asiento').journal;
+    if (!j?.journal_id) throw new Error('Zoho no devolvió el asiento creado.');
+    return j;
+}
+
+async function updateJournal({ accessToken, organizationId, dataCenter, journalId, journal }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.put(`${api}/books/v3/journals/${journalId}`, journal, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 30000,
+    });
+    return exigirOk(res, 'actualizar el asiento').journal || { journal_id: journalId };
+}
+
+async function deleteJournal({ accessToken, organizationId, dataCenter, journalId }) {
+    const { api } = dcUrls(dataCenter);
+    const res = await axios.delete(`${api}/books/v3/journals/${journalId}`, {
+        params: { organization_id: organizationId },
+        headers: { Authorization: `Zoho-oauthtoken ${accessToken}` }, timeout: 30000,
+    });
+    exigirOk(res, 'borrar el asiento');
+    return true;
+}
+
+module.exports = {
+    listChartOfAccounts, getAccount, findJournalsByReference, getJournal, createJournal, updateJournal, deleteJournal,
+    categoriaCxP, listRecurringBills, getAccountBalanceByCode, listVendorBalances, getAccessToken, listInvoicesPage, listAllInvoices, listBillsPage, listAllBills, getInvoiceDetail, findInvoiceIdByNumber, getContactDetail, listAllContacts, exchangeCode, listItems, createInvoice };

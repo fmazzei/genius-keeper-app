@@ -129,5 +129,24 @@ ok(c3.revision.length === 1 && c3.revision[0].motivos.length === 3, `control 3: 
 // Redondeo: totales a 2 decimales, costos con 6.
 ok(libro.every(a => a.costoUnitario == null || Number.isFinite(a.costoUnitario)) && rep.totales.valorCosto === M.r2(rep.totales.valorCosto), 'totales a 2 decimales');
 
+// ── Deshacer un picking (2026-10-07) ───────────────────────────────────────
+// Antes: el conector restauraba la versión anterior con su marca VIEJA de
+// recepción y el libro anotaba otra recepción (Frimaca +84, tránsito −84).
+const antesPk = { ...partida({ unidad: 'ud', unit: 'ud', unidades: 228, costoUnitarioUsd: 2.579167 }),
+    _mov: { id: 'rec1', tipo: 'recepcion', ref: { despachoId: 'D1' }, at: '2026-10-06T10:00:00Z' } };
+const trasPk = { ...antesPk, unidades: 144, _mov: { id: 'pk1', tipo: 'picking', at: '2026-10-06T12:00:00Z' } };
+const rev = M.asientosDeCambio({ coleccion: FR, docId: 'R', before: trasPk, fechaHoy: '2026-10-06',
+    after: { ...antesPk, _mov: { id: 'mcp_x', tipo: 'reversa', revierte: 'picking', at: '2026-10-06T13:00:00Z' } } });
+ok(rev.length === 1 && rev[0].ubicacion === 'frimaca' && rev[0].categoria === 'venta' && rev[0].cantidad === 84,
+    'deshacer un picking = reversa de la venta, solo en Frimaca (sin tocar tránsito)');
+const vieja = M.asientosDeCambio({ coleccion: FR, docId: 'R', before: trasPk, after: antesPk, fechaHoy: '2026-10-06' });
+ok(vieja.length === 1 && vieja[0].categoria === 'sin_tipo' && !vieja.some(a => a.ubicacion === 'transito'),
+    'una marca vieja restaurada NO repite la recepción: queda "sin tipo" y no toca tránsito');
+const revRec = M.asientosDeCambio({ coleccion: FR, docId: 'R', fechaHoy: '2026-10-06',
+    before: antesPk, after: { ...antesPk, unidades: 0, _mov: { id: 'mcp_y', tipo: 'reversa', revierte: 'recepcion', ref: { despachoId: 'D1' }, at: '2026-10-06T14:00:00Z' } } });
+ok(revRec.length === 2 && revRec.find(a => a.ubicacion === 'transito')?.cantidad === 228 && revRec.every(a => a.categoria === 'traslado'),
+    'deshacer una recepción devuelve la mercancía al camión');
+ok(M.pesoDePresentacion('250 g') === 0.25 && M.pesoDePresentacion('Bolsa 1 Kg') === 1 && M.pesoDePresentacion('') === 0, 'peso desde la presentación');
+
 console.log(fallas ? `\n${fallas} verificación(es) fallaron` : '\nTodas las verificaciones en verde');
 process.exit(fallas ? 1 : 0);

@@ -206,6 +206,8 @@ function herramienta(nombre, fn, contexto = {}) {
 // leer → editar → guardar no destruya una foto ni un PIN.
 
 const COLECCIONES_PROPIAS = new Set(["mcp_auditoria", "mcp_cambios", "mcp_rechazos"]);
+// Partidas que alimentan el inventario perpetuo (functions/handlers/inventarioPerpetuo.js).
+const COLECCIONES_INVENTARIO = new Set(["kroma_inventory_pt", "inventario_comercial"]);
 const MARCADOR = /^\[(redactado|imagen base64, \d+ KB|binario, \d+ KB)\]$/;
 const MAX_OPERACIONES = 100;
 
@@ -379,8 +381,25 @@ async function deshacer(cambioId, forzar) {
         if (!forzar && cambio.firmaDespues && firma(datosActuales) !== cambio.firmaDespues) {
             throw new Error(`${ruta} cambió después de ese cambio (lo tocó la app u otra persona). Revísalo con leer_documento; si igual quieres volver a la versión anterior, repite con forzar=true.`);
         }
-        if (cambio.existiaAntes) tx.set(ref, cambio.antes);
-        else if (actual.exists) tx.delete(ref);
+        // Partidas de inventario (cava de planta o Frimaca): el libro valorado
+        // lee la marca `_mov` de cada cambio. Restaurar la versión anterior tal
+        // cual repetiría la marca VIEJA (p.ej. deshacer un picking se anotaba
+        // como otra recepción del camión). Se estampa una REVERSA del
+        // movimiento que se deshace, y una creación se deja en cero en vez de
+        // borrarla, para que el libro registre la salida con su tipo.
+        const esPartida = COLECCIONES_INVENTARIO.has(segmentosColeccion(ruta)[0]);
+        const movDeshecho = datosActuales?._mov || null;
+        const reversa = esPartida ? { _mov: {
+            id: `mcp_${nuevoCambio.id}`, tipo: "reversa", revierte: movDeshecho?.tipo || "sin_tipo",
+            motivo: `Deshacer ${cref.id} (conector)${movDeshecho?.motivo ? ` · ${String(movDeshecho.motivo).slice(0, 200)}` : ""}`,
+            ref: movDeshecho?.ref || null, revierteMovId: movDeshecho?.id || null,
+            usuario: { id: null, nombre: "Conector Claude" }, at: new Date().toISOString(),
+        } } : null;
+        if (cambio.existiaAntes) tx.set(ref, reversa ? { ...cambio.antes, ...reversa } : cambio.antes);
+        else if (actual.exists && esPartida) {
+            const campo = segmentosColeccion(ruta)[0] === "kroma_inventory_pt" && datosActuales?.tipo === "sin_envasar" ? "kgTotales" : "unidades";
+            tx.set(ref, { ...datosActuales, [campo]: 0, active: false, ...reversa });
+        } else if (actual.exists) tx.delete(ref);
         tx.update(cref, { deshecho: true, deshechoEn: admin.firestore.FieldValue.serverTimestamp() });
         tx.set(nuevoCambio, {
             fecha: admin.firestore.FieldValue.serverTimestamp(),
@@ -692,4 +711,4 @@ exports.mcp = onRequest({
 });
 
 // Para pruebas locales.
-exports._internos = { huella, limpiar, rutaSecreta, PATRON_SENSIBLE, crearServidor, claveValida, firma, aplicarOperaciones };
+exports._internos = { huella, limpiar, rutaSecreta, PATRON_SENSIBLE, crearServidor, claveValida, firma, aplicarOperaciones, deshacer };
