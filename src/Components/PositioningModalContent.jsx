@@ -9,6 +9,8 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { HelpCircle, Info, FileText, ChevronDown, ChevronRight, TrendingUp, AlertTriangle } from 'lucide-react';
 import { analizarAnaquel, escalar, fmtRot, fmtPct, ETIQUETA_CONFIANZA, textoFalta, MIN_PDV_CONFIABLE, MIN_PARES_CONFIABLE, MIN_PDV_ORIENTATIVO } from '@/utils/anaquelAnalisis.js';
 import AnaquelDoc from '@/Components/AnaquelDoc.jsx';
+import AnaquelAntesDespues from '@/Components/AnaquelAntesDespues.jsx';
+import { analizarCambios } from '@/utils/anaquelCambios.js';
 
 const COLORES = ['#0D2B4C', '#F5B800', '#64748b', '#94a3b8'];
 const CONF_CLS = {
@@ -152,6 +154,16 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
     const [fraccion, setFraccion] = useState(0.5);
     const [celda, setCelda] = useState(null);
     const [doc, setDoc] = useState(false);
+    const [dimCambio, setDimCambio] = useState('categoria');
+    // Para "antes y después" hace falta el historial COMPLETO: un cambio de
+    // categoría pudo ocurrir hace meses y su "antes" queda fuera de la ventana.
+    const historial = (allReports && allReports.length) ? allReports : (reports || []);
+    const cambios = useMemo(() => analizarCambios({ allReports: historial, posList: posList || [], dimension: dimCambio }), [historial, posList, dimCambio]);
+    // El informe lleva las dos dimensiones; se calcula solo al abrirlo.
+    const cambiosPdf = useMemo(() => !doc ? null : {
+        categoria: dimCambio === 'categoria' ? cambios : analizarCambios({ allReports: historial, posList: posList || [], dimension: 'categoria' }),
+        ubicacion: dimCambio === 'ubicacion' ? cambios : analizarCambios({ allReports: historial, posList: posList || [], dimension: 'ubicacion' }),
+    }, [doc, dimCambio, cambios, historial, posList]);
 
     if (!a.hayDatos) {
         return (
@@ -300,7 +312,10 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
                 </div>
             </div>
 
-            {doc && <AnaquelDoc analisis={a} ventanaLabel={ventanaLabel} onClose={() => setDoc(false)} />}
+            {/* 5. El mismo PDV antes y después de cambiar de lugar */}
+            <AnaquelAntesDespues cambios={cambios} dimension={dimCambio} onDimension={setDimCambio} />
+
+            {doc && <AnaquelDoc analisis={a} cambios={cambiosPdf} ventanaLabel={ventanaLabel} onClose={() => setDoc(false)} />}
         </div>
     );
 };

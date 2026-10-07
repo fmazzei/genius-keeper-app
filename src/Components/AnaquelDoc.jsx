@@ -8,6 +8,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
+import { fmtSigno } from '@/utils/anaquelCambios.js';
 import { escalar, fmtRot, fmtPct, ETIQUETA_CONFIANZA, textoFalta, MIN_PDV_CONFIABLE, MIN_PARES_CONFIABLE, MIN_PDV_ORIENTATIVO } from '@/utils/anaquelAnalisis.js';
 
 const NAVY = '#12386b';
@@ -139,7 +140,66 @@ function TablaProyeccion({ titulo, proy, red }) {
     );
 }
 
-export default function AnaquelDoc({ analisis: a, ventanaLabel, onClose }) {
+/** Antes y después: el mismo PDV antes y después de que su producto cambió de lugar. */
+function TablaCambios({ titulo, c }) {
+    if (!c) return null;
+    const t = c.totales;
+    const casos = c.casos.filter(x => !x.posibleError);
+    return (
+        <div>
+            <H2>{titulo}</H2>
+            <Nota>
+                {t.cambios} cambios en {t.pdv} PDV · {t.medibles} medibles · {t.pendientes} sin visitas suficientes · {t.posiblesErrores} posible{t.posiblesErrores === 1 ? '' : 's'} error{t.posiblesErrores === 1 ? '' : 'es'} de registro (fuera del cálculo).
+                Efecto = cambio de venta del PDV menos el de la red en las mismas fechas (solo los PDV que no cambiaron de lugar).
+            </Nota>
+            {!t.cambios ? null : (
+                <>
+                    {c.resumen.length > 0 && (
+                        <table className="gk-anaq-bloque" style={{ width: '100%', borderCollapse: 'collapse', marginTop: 4 }}>
+                            <thead><tr>
+                                <th style={{ ...th, textAlign: 'left' }}>Cambio</th><th style={th}>PDV</th><th style={th}>Suben / bajan</th>
+                                <th style={th}>Efecto promedio</th><th style={th}>± error</th><th style={th}>Confianza</th>
+                            </tr></thead>
+                            <tbody>
+                                {c.resumen.map(g => (
+                                    <tr key={`${g.desde}→${g.hacia}`}>
+                                        <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>{g.desdeLabel} → {g.haciaLabel}</td>
+                                        <td style={td}>{g.n}</td>
+                                        <td style={td}>{g.suben} / {g.bajan}</td>
+                                        <td style={{ ...td, fontWeight: 800, color: g.ajustado > 0 ? '#047857' : g.ajustado < 0 ? '#dc2626' : '#0f172a' }}>{fmtSigno(g.ajustado)}</td>
+                                        <td style={td}>{g.margen != null ? `± ${Math.round(g.margen)} %` : '—'}</td>
+                                        <td style={td}><Conf c={g.confianza} /></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                    <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
+                        <thead><tr>
+                            <th style={{ ...th, textAlign: 'left' }}>PDV</th><th style={{ ...th, textAlign: 'left' }}>Cambio</th><th style={th}>Fecha</th>
+                            <th style={th}>Antes</th><th style={th}>Después</th><th style={th}>Red</th><th style={th}>Efecto</th>
+                        </tr></thead>
+                        <tbody>
+                            {casos.map(x => (
+                                <tr key={x.posId + x.fechaCambio}>
+                                    <td style={{ ...td, textAlign: 'left', fontSize: 10 }}>{x.nombre}</td>
+                                    <td style={{ ...td, textAlign: 'left', fontSize: 10 }}>{x.desdeLabel} → {x.haciaLabel}</td>
+                                    <td style={{ ...td, fontSize: 10 }}>{fecha(x.fechaCambio)}</td>
+                                    <td style={{ ...td, fontSize: 10 }}>{fmtRot(x.antes.porDia)}</td>
+                                    <td style={{ ...td, fontSize: 10 }}>{fmtRot(x.despues.porDia)}</td>
+                                    <td style={{ ...td, fontSize: 10 }}>{fmtSigno(x.cambioRed)}</td>
+                                    <td style={{ ...td, fontSize: 10, fontWeight: 800 }}>{x.medible ? fmtSigno(x.ajustado) : <span style={{ color: '#94a3b8', fontWeight: 400 }}>falta {x.falta}</span>}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </>
+            )}
+        </div>
+    );
+}
+
+export default function AnaquelDoc({ analisis: a, cambios, ventanaLabel, onClose }) {
     if (!a) return null;
     const m = a.muestra;
     const catLabel = (id) => a.categorias.find(c => c.id === id)?.label || id;
@@ -234,6 +294,15 @@ export default function AnaquelDoc({ analisis: a, ventanaLabel, onClose }) {
 
                 <TablaProyeccion titulo="Proyección · cambiar de categoría vecina" proy={a.proyeccion.categoria} red={a.redActual} />
                 <TablaProyeccion titulo="Proyección · cambiar de altura en el estante" proy={a.proyeccion.ubicacion} red={a.redActual} />
+
+                {cambios && (
+                    <>
+                        <div className="gk-anaq-salto" />
+                        <TablaCambios titulo="Antes y después · cambio de categoría vecina" c={cambios.categoria} />
+                        <TablaCambios titulo="Antes y después · cambio de altura" c={cambios.ubicacion} />
+                        <Nota>El mismo PDV antes y después de que su producto cambió de lugar: es la comparación más limpia que permiten los reportes, porque la tienda y sus clientes son los mismos. Aun así no descarta otras causas que coincidieron en esa tienda; por eso importa cuántos PDV repiten el resultado.</Nota>
+                    </>
+                )}
 
                 <div className="gk-anaq-salto" />
                 <ListaPdv titulo="Puntos de venta por altura (hoy)" segmentos={a.ubicaciones} />

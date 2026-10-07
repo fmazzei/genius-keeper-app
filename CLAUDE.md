@@ -2987,6 +2987,27 @@ Pedido del dueño: verificar que el cálculo sea correcto y agregar tres cosas: 
 
 Prueba: `tests/anaquelAnalisis.test.mjs`, 12 verificaciones en verde: reposición ≠ venta, PDV muy visitado pesa uno, celda vacía ≠ 0, ubicación dorada, proyección y escalado, niveles de confianza.
 
+### Antes y después del cambio: el mismo PDV que cambió de lugar (2026-10) ✅
+
+Pregunta del dueño: el mapa de calor dice que junto a quesos crema se rota menos, y él cree lo contrario. El mapa compara tiendas DISTINTAS, y una puede vender más por motivos ajenos a la posición. La prueba más limpia es el mismo PDV antes y después de que su producto cambió de categoría vecina o de altura.
+
+**Motor puro `src/utils/anaquelCambios.js` (`analizarCambios({allReports, posList, dimension})`):**
+- Usa el historial COMPLETO (`allReports`), porque el "antes" de un cambio puede quedar fuera de la ventana del dashboard.
+- Por PDV, agrupa en bloques las visitas seguidas que anotaron el mismo valor (`adjacentCategory` o `shelfLocation`). Cada salto de un bloque a otro es un cambio.
+- **Antes** = tramos del bloque A, desde que empezó hasta el cambio. **Después** = tramos del bloque B, hasta el siguiente cambio. Usa la misma rotación estimada del mapa.
+- **Corrección por la red**: el cambio de venta de los OTROS PDV en esas mismas fechas, promediado por PDV. Solo cuentan los PDV que NO cambiaron de lugar en ese lapso; si no, el efecto se colaría en la referencia. Efecto = cambio del PDV − cambio de la red.
+- **Medible**: cada lado necesita ≥2 tramos y ≥7 días (`MIN_TRAMOS_LADO`, `MIN_DIAS_LADO`). Si no se cumple, `falta` dice qué falta ("después: 1 visita más").
+- **Posible error de registro**: un cambio que dura UNA visita y vuelve al valor anterior. No entra al resumen.
+- `resumen` por tipo de cambio ("Charcutería → Quesos crema"): número de PDV, efecto promedio, margen al 95 %, cuántos subieron y bajaron, y confianza. Usa los mismos umbrales del mapa: 8 PDV confiable, 3 orientativo.
+
+**Pantalla**:
+- Sección "Antes y después del cambio" al final de la hoja del mapa (`AnaquelAntesDespues.jsx`), con selector Categoría vecina / Altura.
+- KPIs: cambios detectados, medibles, falta medir y posible error.
+- Resumen desplegable con los PDV de cada tipo de cambio, y la lista de todos los cambios, del más reciente al más viejo.
+- **PDF** (`AnaquelDoc`, prop `cambios`): tablas de las dos dimensiones. Se calculan solo al abrir el informe.
+
+Prueba: `tests/anaquelCambios.test.mjs`, 13 verificaciones en verde. Cubre: detección, antes/después exactos, ajuste por la red, red sin los que también cambiaron, posible error, lado no medible y resumen.
+
 ## GK — Una sola ficha para crear y editar PDV (2026-09) ✅
 
 Reporte del dueño: agregar un cliente/PDV era "sumamente enredado". Había TRES
