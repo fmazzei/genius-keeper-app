@@ -8,7 +8,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
-import { fmtSigno } from '@/utils/anaquelCambios.js';
+import { fmtSigno, fmtUds } from '@/utils/anaquelCambios.js';
 import { escalar, fmtRot, fmtPct, ETIQUETA_CONFIANZA, textoFalta, MIN_PDV_CONFIABLE, MIN_PARES_CONFIABLE, MIN_PDV_ORIENTATIVO } from '@/utils/anaquelAnalisis.js';
 
 const NAVY = '#12386b';
@@ -141,6 +141,11 @@ function TablaProyeccion({ titulo, proy, red }) {
 }
 
 /** Antes y después: el mismo PDV antes y después de que su producto cambió de lugar. */
+const facturaTxt = (f) => !f ? '—'
+    : f.estado === 'ok' ? `${fmtSigno(f.cambio)}${f.coincide === true ? ' ✓' : f.coincide === false ? ' ✗' : ''}`
+    : f.estado === 'compartida' ? 'de cadena' : f.estado === 'pocas' ? 'pocas' : 'sin vínculo';
+const colorV = (v) => v > 0 ? '#047857' : v < 0 ? '#dc2626' : '#0f172a';
+
 function TablaCambios({ titulo, c }) {
     if (!c) return null;
     const t = c.totales;
@@ -149,8 +154,10 @@ function TablaCambios({ titulo, c }) {
         <div>
             <H2>{titulo}</H2>
             <Nota>
-                {t.cambios} cambios en {t.pdv} PDV · {t.medibles} medibles · {t.pendientes} sin visitas suficientes · {t.posiblesErrores} posible{t.posiblesErrores === 1 ? '' : 's'} error{t.posiblesErrores === 1 ? '' : 'es'} de registro (fuera del cálculo).
-                Efecto = cambio de venta del PDV menos el de la red en las mismas fechas (solo los PDV que no cambiaron de lugar).
+                {t.cambios} cambios en {t.pdv} PDV · {t.medibles} medibles y limpios · {t.contaminados} con otros cambios a la vez (aparte) · {t.pendientes} sin visitas suficientes · {t.posiblesErrores} posible{t.posiblesErrores === 1 ? '' : 's'} error{t.posiblesErrores === 1 ? '' : 'es'} de registro.
+                Limpieza: {t.tramosQuiebre} tramo(s) con quiebre fuera del cálculo{t.devolucionesLeidas ? `; ${t.udsDevueltas} uds devueltas restadas` : '; devoluciones no disponibles'}.
+                {t.facturasLeidas && t.conFactura > 0 ? ` Facturas reales: la dirección coincide en ${t.facturaCoincide} de ${t.conFactura} cambios comparables.` : ''}
+                {' '}Efecto = cambio de venta del PDV menos el de la red en las mismas fechas (solo los PDV que no cambiaron de lugar), en unidades por día; la cifra del grupo es la mediana.
             </Nota>
             {!t.cambios ? null : (
                 <>
@@ -158,16 +165,18 @@ function TablaCambios({ titulo, c }) {
                         <table className="gk-anaq-bloque" style={{ width: '100%', borderCollapse: 'collapse', marginTop: 4 }}>
                             <thead><tr>
                                 <th style={{ ...th, textAlign: 'left' }}>Cambio</th><th style={th}>PDV</th><th style={th}>Suben / bajan</th>
-                                <th style={th}>Efecto promedio</th><th style={th}>± error</th><th style={th}>Confianza</th>
+                                <th style={th}>Mediana</th><th style={th}>Por PDV al mes</th><th style={th}>En %</th><th style={th}>Facturas coinciden</th><th style={th}>Confianza</th>
                             </tr></thead>
                             <tbody>
                                 {c.resumen.map(g => (
                                     <tr key={`${g.desde}→${g.hacia}`}>
-                                        <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>{g.desdeLabel} → {g.haciaLabel}</td>
+                                        <td style={{ ...td, textAlign: 'left', fontWeight: 700 }}>{g.desdeLabel} → {g.haciaLabel}{g.contaminados.length ? <span style={{ display: 'block', fontSize: 8.5, color: '#b45309', fontWeight: 400 }}>+{g.contaminados.length} con otros cambios (aparte)</span> : null}</td>
                                         <td style={td}>{g.n}</td>
                                         <td style={td}>{g.suben} / {g.bajan}</td>
-                                        <td style={{ ...td, fontWeight: 800, color: g.ajustado > 0 ? '#047857' : g.ajustado < 0 ? '#dc2626' : '#0f172a' }}>{fmtSigno(g.ajustado)}</td>
-                                        <td style={td}>{g.margen != null ? `± ${Math.round(g.margen)} %` : '—'}</td>
+                                        <td style={{ ...td, fontWeight: 800, color: colorV(g.medianaUds) }}>{fmtUds(g.medianaUds)}</td>
+                                        <td style={td}>{g.medianaUds != null ? `${g.medianaUds > 0 ? '+' : ''}${Math.round(g.medianaUds * 30)} uds` : '—'}</td>
+                                        <td style={td}>{g.medianaPct != null ? `${fmtSigno(g.medianaPct)} (${g.nPct})` : '—'}</td>
+                                        <td style={td}>{g.facturas.n ? `${g.facturas.coinciden} de ${g.facturas.n}` : '—'}</td>
                                         <td style={td}><Conf c={g.confianza} /></td>
                                     </tr>
                                 ))}
@@ -177,18 +186,19 @@ function TablaCambios({ titulo, c }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 8 }}>
                         <thead><tr>
                             <th style={{ ...th, textAlign: 'left' }}>PDV</th><th style={{ ...th, textAlign: 'left' }}>Cambio</th><th style={th}>Fecha</th>
-                            <th style={th}>Antes</th><th style={th}>Después</th><th style={th}>Red</th><th style={th}>Efecto</th>
+                            <th style={th}>Antes</th><th style={th}>Después</th><th style={th}>Red</th><th style={th}>Efecto</th><th style={th}>Facturas</th>
                         </tr></thead>
                         <tbody>
                             {casos.map(x => (
                                 <tr key={x.posId + x.fechaCambio}>
                                     <td style={{ ...td, textAlign: 'left', fontSize: 10 }}>{x.nombre}</td>
-                                    <td style={{ ...td, textAlign: 'left', fontSize: 10 }}>{x.desdeLabel} → {x.haciaLabel}</td>
+                                    <td style={{ ...td, textAlign: 'left', fontSize: 10 }}>{x.desdeLabel} → {x.haciaLabel}{x.contaminado ? <span style={{ display: 'block', fontSize: 8.5, color: '#b45309' }}>a la vez: {x.contaminantes.join(' · ')}</span> : null}</td>
                                     <td style={{ ...td, fontSize: 10 }}>{fecha(x.fechaCambio)}</td>
                                     <td style={{ ...td, fontSize: 10 }}>{fmtRot(x.antes.porDia)}</td>
                                     <td style={{ ...td, fontSize: 10 }}>{fmtRot(x.despues.porDia)}</td>
                                     <td style={{ ...td, fontSize: 10 }}>{fmtSigno(x.cambioRed)}</td>
-                                    <td style={{ ...td, fontSize: 10, fontWeight: 800 }}>{x.medible ? fmtSigno(x.ajustado) : <span style={{ color: '#94a3b8', fontWeight: 400 }}>falta {x.falta}</span>}</td>
+                                    <td style={{ ...td, fontSize: 10, fontWeight: 800, color: x.contaminado ? '#94a3b8' : colorV(x.ajustadoUds) }}>{x.medible ? fmtUds(x.ajustadoUds) : <span style={{ color: '#94a3b8', fontWeight: 400 }}>falta {x.falta}</span>}</td>
+                                    <td style={{ ...td, fontSize: 10 }}>{facturaTxt(x.factura)}</td>
                                 </tr>
                             ))}
                         </tbody>

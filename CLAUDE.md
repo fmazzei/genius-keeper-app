@@ -3008,6 +3008,30 @@ Pregunta del dueño: el mapa de calor dice que junto a quesos crema se rota meno
 
 Prueba: `tests/anaquelCambios.test.mjs`, 13 verificaciones en verde. Cubre: detección, antes/después exactos, ajuste por la red, red sin los que también cambiaron, posible error, lado no medible y resumen.
 
+**Más confiable (2026-10, puntos 1–4 que pidió el dueño):**
+1. **Medición limpia.**
+   - Un tramo que termina en quiebre no cuenta (anaquel vacío, `stockout`, o venía vacío y no se repuso): la venta quedó topada por falta de producto. El lado lo declara en `quiebres`.
+   - Las unidades retiradas por devolución (`devoluciones`, netas de lo repuesto en el acto) que caen dentro del tramo se restan: bajaron el inventario sin ser venta.
+   - Los envases dañados cuentan cuando se retiran por esa vía.
+2. **Efecto en unidades por día.**
+   - Por caso: `ajustadoUds` = cambio del PDV − (base × cambio % de la red). El % solo se da si la base es ≥ `MIN_BASE_PCT` (0,15 uds/día ≈ 1 por semana); por debajo, `baseBaja`.
+   - El resumen usa la **mediana** (`medianaUds`, `medianaPct` con `nPct`), más el promedio ± margen.
+3. **Cambios contaminados** (`contaminantes`), comparando los reportes del bloque anterior con los del nuevo:
+   - el precio propio movió ≥5 %;
+   - cambió el POP;
+   - cambió también la otra dimensión;
+   - apareció degustación de la competencia o un competidor nuevo.
+   
+   Se muestran aparte (`g.contaminados`) y no entran al resumen.
+4. **Facturas reales.**
+   - Se cruzan con `facturas_vendedor` del PDV: por carnet (`pos.zohoCustomerId`) o por razón social exacta normalizada, con `unidadesReales` y `cuentaEnCartera`.
+   - Se compara lo facturado por día en las mismas ventanas: mínimo 14 días por lado y 2 facturas en total. `coincide` = la dirección es la misma que la del anaquel.
+   - Si el carnet o la razón social lo comparten varios PDV, la factura es de la cadena y no se usa (`compartida`).
+
+`PositioningModalContent` lee `devoluciones` y `facturas_vendedor` una vez. Si una lectura falla queda en `null` y la sección dice que no se usó. La sección y el PDF explican cómo se limpió la medición.
+
+Las pruebas corren con el alias `@/` vía `node --import ./tests/alias.mjs tests/anaquelCambios.test.mjs`: 23 verificaciones en verde.
+
 ## GK — Una sola ficha para crear y editar PDV (2026-09) ✅
 
 Reporte del dueño: agregar un cliente/PDV era "sumamente enredado". Había TRES

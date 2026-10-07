@@ -1,5 +1,5 @@
 // RUTA: tests/anaquelCambios.test.mjs — "Antes y después del cambio" del anaquel.
-//   node tests/anaquelCambios.test.mjs
+//   node --import ./tests/alias.mjs tests/anaquelCambios.test.mjs
 import { analizarCambios } from '../src/utils/anaquelCambios.js';
 
 let fallas = 0;
@@ -54,6 +54,45 @@ const b1 = b.casos.find(c => c.posId === 'P1');
 ok(b1 && Math.abs(b1.cambioRed - c1.cambioRed) < 1e-9, `la red no incluye a Q1, que también cambió (${b1?.cambioRed?.toFixed(1)} %)`);
 const ub = analizarCambios({ allReports: reports, dimension: 'ubicacion' });
 ok(ub.casos.length === 0, 'por altura: nadie cambió de altura');
+
+// ── Limpieza, unidades, contaminación y facturas (escenario aparte) ─────────
+n = 0;
+const R2 = [];
+const red = (id) => { for (let s = 0; s <= 8; s++) R2.push(rep(id, s * 7, 20, 7, 'ojos', 'Delicatessen')); };
+['N1', 'N2', 'N3'].forEach(red);
+const cambio = (id, ventaAntes, ventaDespues, extra = () => ({})) => {
+    for (let s = 0; s <= 3; s++) R2.push({ ...rep(id, s * 7, 20, ventaAntes, 'ojos', 'Charcutería'), ...extra(s) });
+    for (let s = 4; s <= 8; s++) R2.push({ ...rep(id, s * 7, 20, ventaDespues, 'ojos', 'Quesos crema'), ...extra(s) });
+};
+cambio('L1', 7, 14);                                    // limpio: 1 → 2 uds/día
+cambio('Q', 7, 14, (s) => (s === 6 ? { inventoryLevel: 0, stockout: true, orderQuantity: 34 } : {}));  // un quiebre después
+cambio('B', 0.7, 2.1);                                  // base baja: 0,1 → 0,3 uds/día
+cambio('C', 7, 14, (s) => ({ price: s >= 4 ? 4.2 : 5.6 }));  // bajó el precio a la vez
+cambio('D', 7, 7, (s) => (s === 5 ? { orderQuantity: 28 } : {}));  // repone de más para cubrir lo retirado: sin cambio real
+const T0 = 1_800_000_000;
+const devoluciones = [{ posId: 'D', createdAt: { seconds: T0 + 35 * D }, unidades: 21, unidadesRepuestas: 0 }];  // retiró 21 uds en la semana 5
+const posList2 = [
+    { id: 'L1', name: 'Tienda L1', zohoCustomerId: 'z1' },
+    { id: 'C', name: 'Tienda C', zohoCustomerId: 'zc' }, { id: 'D', name: 'Tienda D', zohoCustomerId: 'zc' },  // carnet compartido
+];
+const fact = (cid, dia, unidades) => ({ zohoCustomerId: cid, fecha: { seconds: T0 + dia * D }, unidades, estado: 'pagada', monto: unidades * 5.6 });
+const facturas = [fact('z1', 3, 24), fact('z1', 17, 24), fact('z1', 31, 48), fact('z1', 45, 48)];
+const k = analizarCambios({ allReports: R2, posList: posList2, devoluciones, facturas, ahora: (T0 + 56 * D) * 1000 });
+const caso = (id) => k.casos.find(c => c.posId === id);
+const l1 = caso('L1'), q = caso('Q'), bb = caso('B'), cc = caso('C'), dd = caso('D');
+ok(l1 && Math.abs(l1.ajustadoUds - 1) < 1e-9 && Math.abs(l1.ajustado - 100) < 1e-9, `L1: +1 ud/día, +100 % (${l1?.ajustadoUds})`);
+ok(q && q.despues.quiebres === 1 && q.despues.tramos === 3 && Math.abs(q.despues.porDia - 2) < 1e-9,
+    `Q: el tramo con quiebre no cuenta (quiebres ${q?.despues.quiebres}, después ${q?.despues.porDia})`);
+ok(bb && bb.baseBaja && bb.ajustado === null && Math.abs(bb.ajustadoUds - 0.2) < 1e-9, `B: base baja, sin %, +0,2 uds/día (${bb?.ajustadoUds})`);
+ok(cc && cc.contaminado && /precio/.test(cc.contaminantes[0]), `C: contaminado (${cc?.contaminantes.join(', ')})`);
+const g2 = k.resumen.find(r => r.desde === 'Charcutería' && r.hacia === 'Quesos crema');
+ok(g2 && g2.n === 4 && g2.contaminados.length === 1 && !g2.casos.some(c => c.posId === 'C'), `resumen sin el contaminado (${g2?.n} casos, ${g2?.contaminados.length} aparte)`);
+ok(g2 && Math.abs(g2.medianaUds - 0.6) < 1e-9 && g2.nPct === 3, `mediana en uds/día (${g2?.medianaUds}) y % solo con base suficiente (${g2?.nPct})`);
+ok(dd && Math.abs(dd.despues.porDia - 1) < 1e-9 && Math.abs(dd.ajustadoUds) < 1e-9 && dd.despues.devueltas === 21, `D: las 21 uds devueltas no cuentan como venta (${dd?.despues.porDia})`);
+ok(l1?.factura?.estado === 'ok' && l1.factura.coincide === true && Math.abs(l1.factura.cambio - 100) < 1e-9,
+    `L1: las facturas también suben (${l1?.factura?.cambio?.toFixed(0)} %) y coinciden`);
+ok(cc?.factura?.estado === 'compartida' && caso('Q')?.factura?.estado === 'sin_vinculo', 'carnet compartido por 2 PDV = factura de cadena; sin carnet = sin vínculo');
+ok(k.totales.tramosQuiebre >= 1 && k.totales.udsDevueltas === 21 && k.totales.conFactura === 1 && k.totales.facturaCoincide === 1, `totales (${JSON.stringify(k.totales)})`);
 
 console.log(fallas ? `\n${fallas} verificación(es) fallaron` : '\nTodas las verificaciones en verde');
 process.exit(fallas ? 1 : 0);

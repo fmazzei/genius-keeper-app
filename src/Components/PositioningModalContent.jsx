@@ -4,7 +4,9 @@
 // en `src/utils/anaquelAnalisis.js`; aquí solo se muestra, y el informe PDF
 // (`AnaquelDoc.jsx`) usa el MISMO análisis.
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '@/Firebase/config.js';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { HelpCircle, Info, FileText, ChevronDown, ChevronRight, TrendingUp, AlertTriangle } from 'lucide-react';
 import { analizarAnaquel, escalar, fmtRot, fmtPct, ETIQUETA_CONFIANZA, textoFalta, MIN_PDV_CONFIABLE, MIN_PARES_CONFIABLE, MIN_PDV_ORIENTATIVO } from '@/utils/anaquelAnalisis.js';
@@ -158,12 +160,24 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
     // Para "antes y después" hace falta el historial COMPLETO: un cambio de
     // categoría pudo ocurrir hace meses y su "antes" queda fuera de la ventana.
     const historial = (allReports && allReports.length) ? allReports : (reports || []);
-    const cambios = useMemo(() => analizarCambios({ allReports: historial, posList: posList || [], dimension: dimCambio }), [historial, posList, dimCambio]);
+    // Para limpiar la medición (devoluciones) y contrastarla (facturas reales del
+    // PDV). Cada lectura cae a null por su cuenta: la sección dice qué no pudo usar.
+    const [extra, setExtra] = useState({ devoluciones: null, facturas: null, cargando: true });
+    useEffect(() => {
+        let vivo = true;
+        const leer = (col) => getDocs(collection(db, col)).then(s => s.docs.map(d => ({ id: d.id, ...d.data() }))).catch(() => null);
+        Promise.all([leer('devoluciones'), leer('facturas_vendedor')]).then(([devoluciones, facturas]) => {
+            if (vivo) setExtra({ devoluciones, facturas, cargando: false });
+        });
+        return () => { vivo = false; };
+    }, []);
+    const cambiosDe = (dimension) => analizarCambios({ allReports: historial, posList: posList || [], dimension, devoluciones: extra.devoluciones, facturas: extra.facturas });
+    const cambios = useMemo(() => cambiosDe(dimCambio), [historial, posList, dimCambio, extra]);
     // El informe lleva las dos dimensiones; se calcula solo al abrirlo.
     const cambiosPdf = useMemo(() => !doc ? null : {
-        categoria: dimCambio === 'categoria' ? cambios : analizarCambios({ allReports: historial, posList: posList || [], dimension: 'categoria' }),
-        ubicacion: dimCambio === 'ubicacion' ? cambios : analizarCambios({ allReports: historial, posList: posList || [], dimension: 'ubicacion' }),
-    }, [doc, dimCambio, cambios, historial, posList]);
+        categoria: dimCambio === 'categoria' ? cambios : cambiosDe('categoria'),
+        ubicacion: dimCambio === 'ubicacion' ? cambios : cambiosDe('ubicacion'),
+    }, [doc, dimCambio, cambios]);
 
     if (!a.hayDatos) {
         return (
@@ -313,7 +327,7 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
             </div>
 
             {/* 5. El mismo PDV antes y después de cambiar de lugar */}
-            <AnaquelAntesDespues cambios={cambios} dimension={dimCambio} onDimension={setDimCambio} />
+            <AnaquelAntesDespues cambios={cambios} dimension={dimCambio} onDimension={setDimCambio} cargandoExtra={extra.cargando} />
 
             {doc && <AnaquelDoc analisis={a} cambios={cambiosPdf} ventanaLabel={ventanaLabel} onClose={() => setDoc(false)} />}
         </div>
