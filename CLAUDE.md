@@ -2953,6 +2953,38 @@ Perímetro: cava de planta (`kroma_inventory_pt`) + en camino a Caracas (tránsi
 - Pruebas: `tests/inventarioZoho.e2e.test.mjs`, 18 verificaciones en verde. Usa un Zoho falso y cubre simulación, envío, reenvío sin duplicar, 0,00, corrección de una fecha pasada (actualiza, crea o borra), error 503 con reintento, error definitivo guardado, duplicados y control.
 - **Pendiente del dueño**: elegir la contrapartida con el contador (en Zoho existe "Costo de ventas (variación de inventarios)"). Correr unos días en simulación. Renovar permisos con el scope `accountants`. Después, activar el envío real.
 
+## Mapa de Calor del Anaquel: cálculo corregido, muestra, PDV, proyecciones y PDF (2026-10) ✅
+
+Pedido del dueño: verificar que el cálculo sea correcto y agregar tres cosas: la muestra que sustenta la estadística, los PDV de cada grupo, y proyecciones de venta ("si pasas el X % de tus PDV a quesos crema, tu venta podría subir X %"), siempre sustentadas en los datos. Además, un informe PDF con la estética de los demás informes.
+
+**El cálculo anterior estaba mal, por cuatro motivos:**
+- Medía **`orderQuantity`** (lo que el mercaderista REPUSO) como si fuera venta. Reponer no es vender.
+- La unidad era el **reporte**: un PDV visitado 8 veces pesaba 8 veces más. Las tortas contaban visitas, no PDV.
+- Una celda sin datos se mostraba como "0.0 unid.", igual que una que de verdad vende cero.
+- No decía con cuántos datos se calculaba.
+
+**Motor puro `src/utils/anaquelAnalisis.js` (`analizarAnaquel`)**, compartido por la hoja del Dashboard, el PDF y el mapa del vendedor:
+- **Venta** = la misma rotación estimada del dashboard (`rotacion.js`): entre dos visitas seguidas al mismo PDV, (inventario anterior + lo repuesto) − inventario actual, entre los días transcurridos. Solo cuentan los tramos que terminan dentro de la ventana del dashboard (por id de reporte); la visita anterior puede ser previa a la ventana.
+- **Atribución**: cada tramo va a la altura y categoría de la visita ANTERIOR (donde estuvo el producto mientras se vendía).
+- **Unidad = PDV**: cada PDV aporta su rotación (uds/día) a cada grupo en que estuvo, y el grupo promedia sus PDV. Se reporta además el margen de error al 95 %.
+- **Confianza** por grupo: confiable desde 8 PDV y 12 tramos (los mismos umbrales de `rotacion.js`); orientativa desde 3 PDV; por debajo, insuficiente. Los grupos insuficientes se pintan en gris y quedan fuera de la "ubicación dorada" y de las proyecciones.
+- **PDV por grupo** = estado ACTUAL (última visita con ubicación en la ventana), con la rotación de cada uno.
+- **Proyección** = (rotación del grupo destino − la del grupo origen) × PDV movidos, sobre la venta medida de la red (suma de la rotación de cada PDV). Es lineal y escalable a 25/50/100 % (`escalar`). El **rango prudente** descuenta los dos márgenes de error; si queda en cero, se dice "no concluyente".
+- Se dice siempre que es una asociación, no una causa.
+
+**Pantalla** (`PositioningModalContent.jsx`, Dashboard → ¿Vendemos? → Mapa de calor):
+- La muestra: PDV con dato de los activos, PDV con venta medida y tramos, reportes con ubicación y sin categoría, período, y PDV que cambiaron de posición.
+- La ubicación dorada.
+- El mapa: rotación + nº de PDV por celda; al tocar una celda lista sus PDV de hoy.
+- Altura y categoría: torta de PDV de hoy y filas con rotación, ± error, muestra y confianza; al tocar una fila se ve la lista de PDV.
+- Proyección con selector 25/50/100 %.
+- Botón **Informe PDF** (`AnaquelDoc.jsx`): conclusiones, KPIs de muestra, mapa, tablas por grupo, proyecciones a 25/50/100 % con el rango prudente, lista de PDV por grupo y metodología.
+- `GerencialDashboard` pasa `ventanaLabel` al modal.
+
+**Mapa del vendedor** (`VendedorAnaquelMap.jsx`) usa el mismo motor (antes tenía el mismo error de `orderQuantity`).
+
+Prueba: `tests/anaquelAnalisis.test.mjs`, 12 verificaciones en verde: reposición ≠ venta, PDV muy visitado pesa uno, celda vacía ≠ 0, ubicación dorada, proyección y escalado, niveles de confianza.
+
 ## GK — Una sola ficha para crear y editar PDV (2026-09) ✅
 
 Reporte del dueño: agregar un cliente/PDV era "sumamente enredado". Había TRES

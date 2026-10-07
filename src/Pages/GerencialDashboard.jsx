@@ -326,7 +326,8 @@ const GerencialDashboard = ({ reports, posList, loading, role, onNavigate, refre
     }
 
     const openModal = (title, type) => setActiveModal({ title, type });
-    const modalProps = { reports: kpis.reports, allReports: reports || [], posList: posList || [], kpis, ourProductWeight_g };
+    const modalProps = { reports: kpis.reports, allReports: reports || [], posList: posList || [], kpis, ourProductWeight_g,
+        ventanaLabel: timeRange === 'all' ? 'Todo el histórico' : `Últimos ${timeRange.replace('d', '')} días` };
     const renderModal = () => {
         if (!activeModal) return null;
         const fn = MODAL_COMPONENTS[activeModal.type];

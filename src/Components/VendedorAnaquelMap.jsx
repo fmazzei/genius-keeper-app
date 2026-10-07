@@ -7,6 +7,7 @@
 import React, { useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Crown, Info, MapPin } from 'lucide-react';
+import { analizarAnaquel, fmtRot } from '@/utils/anaquelAnalisis.js';
 
 const LOCS = { ojos: 'Nivel Ojos', manos: 'Nivel Manos', superior: 'Nivel Superior', inferior: 'Nivel Inferior' };
 const CATS = { 'Quesos crema': 'Q. Crema', 'Quesos de Cabra': 'Q. Cabra', 'Delicatessen': 'Delicatessen', 'Nevera Charcutería': 'Charcutería' };
@@ -25,29 +26,17 @@ const heatColor = (t) => {
 };
 
 export default function VendedorAnaquelMap({ reports = [], onClose }) {
+    // Mismo cálculo que el mapa del Dashboard Gerencial (`anaquelAnalisis.js`):
+    // venta estimada entre visitas por PDV, no la reposición de cada visita.
     const a = useMemo(() => {
-        const valid = (reports || []).filter(r => r.shelfLocation);
-        const matrix = valid.filter(r => r.adjacentCategory);
+        const an = analizarAnaquel({ reports: reports || [], allReports: reports || [] });
         const locKeys = Object.keys(LOCS);
         const catKeys = Object.keys(CATS);
-        const byPos = {};
-        matrix.forEach(r => {
-            if (!LOCS[r.shelfLocation] || !CATS[r.adjacentCategory]) return;
-            const key = `${r.shelfLocation}|${r.adjacentCategory}`;
-            (byPos[key] ||= []).push(Number(r.orderQuantity) || 0);
-        });
-        let max = 0, golden = null;
         const grid = {};
-        locKeys.forEach(loc => {
-            grid[loc] = {};
-            catKeys.forEach(cat => {
-                const arr = byPos[`${loc}|${cat}`] || [];
-                const avg = arr.length ? arr.reduce((s, n) => s + n, 0) / arr.length : 0;
-                grid[loc][cat] = avg;
-                if (avg > max) { max = avg; golden = { loc, cat }; }
-            });
-        });
-        return { hasData: valid.length > 0, hasMatrix: matrix.length > 0, grid, max, golden, locKeys, catKeys, nValid: valid.length };
+        an.matriz.forEach(f => { grid[f.id] = {}; f.celdas.forEach(c => { grid[f.id][c.categoria] = c; }); });
+        const golden = an.dorada ? { loc: an.dorada.ubicacion, cat: an.dorada.categoria } : null;
+        return { hasData: an.hayDatos, hasMatrix: an.muestra.conCategoria > 0, grid, max: an.maxCelda, golden, locKeys, catKeys,
+            nPdv: an.muestra.pdvConVenta, nTramos: an.muestra.tramos, nValid: an.muestra.conUbicacion };
     }, [reports]);
 
     return createPortal((
@@ -81,13 +70,13 @@ export default function VendedorAnaquelMap({ reports = [], onClose }) {
                 ) : (
                     <>
                         {/* Ubicación dorada */}
-                        {a.golden && a.max > 0 && (
+                        {a.golden && (
                             <div className="rounded-2xl p-4 bg-gradient-to-br from-amber-500/20 to-orange-500/5 border border-amber-500/30 flex items-center gap-3">
                                 <div className="w-12 h-12 rounded-2xl bg-amber-500/20 grid place-items-center text-2xl shrink-0">👑</div>
                                 <div className="min-w-0">
                                     <p className="text-[11px] font-black uppercase tracking-wider text-amber-400/80">Tu ubicación dorada</p>
                                     <p className="text-white font-black text-lg leading-tight">{LOCS[a.golden.loc]} · {CATS[a.golden.cat]}</p>
-                                    <p className="text-amber-200/70 text-xs">Rota {a.grid[a.golden.loc][a.golden.cat].toFixed(1)} uds — pide ubicarte aquí.</p>
+                                    <p className="text-amber-200/70 text-xs">Vende {fmtRot(a.grid[a.golden.loc][a.golden.cat].rotacion)} uds/día por PDV ({a.grid[a.golden.loc][a.golden.cat].pdv} PDV) — pide ubicarte aquí.</p>
                                 </div>
                             </div>
                         )}
@@ -109,16 +98,19 @@ export default function VendedorAnaquelMap({ reports = [], onClose }) {
                                             <div key={loc} className="grid mt-1" style={{ gridTemplateColumns: `96px repeat(${a.catKeys.length}, 1fr)`, gap: '4px' }}>
                                                 <div className="flex items-center text-[11px] font-bold text-slate-300 pr-1">{LOCS[loc]}</div>
                                                 {a.catKeys.map(cat => {
-                                                    const v = a.grid[loc][cat];
-                                                    const t = a.max > 0 ? v / a.max : 0;
-                                                    const isGolden = a.golden && a.golden.loc === loc && a.golden.cat === cat && v > 0;
+                                                    const c = a.grid[loc][cat];
+                                                    const v = c.rotacion;
+                                                    const t = v != null && a.max > 0 && c.confianza !== 'insuficiente' ? v / a.max : 0;
+                                                    const isGolden = a.golden && a.golden.loc === loc && a.golden.cat === cat;
                                                     const light = t > 0.45;
                                                     return (
                                                         <div key={cat}
                                                             className={`rounded-lg h-14 flex flex-col items-center justify-center transition-transform ${isGolden ? 'ring-2 ring-amber-300 scale-[1.03]' : ''}`}
                                                             style={{ background: heatColor(t) }}>
-                                                            <span className={`font-black text-sm ${light ? 'text-slate-900' : 'text-slate-200'}`}>{v.toFixed(1)}</span>
-                                                            <span className={`text-[9px] ${light ? 'text-slate-800/70' : 'text-slate-500'}`}>uds</span>
+                                                            {v == null ? <span className="text-[10px] text-slate-600">sin datos</span> : (<>
+                                                                <span className={`font-black text-sm ${light ? 'text-slate-900' : c.confianza === 'insuficiente' ? 'text-slate-500' : 'text-slate-200'}`}>{fmtRot(v)}</span>
+                                                                <span className={`text-[9px] ${light ? 'text-slate-800/70' : 'text-slate-500'}`}>{c.pdv} PDV</span>
+                                                            </>)}
                                                         </div>
                                                     );
                                                 })}
@@ -139,7 +131,7 @@ export default function VendedorAnaquelMap({ reports = [], onClose }) {
                             </div>
                         )}
 
-                        <p className="text-center text-[11px] text-slate-600">Basado en {a.nValid} reporte{a.nValid === 1 ? '' : 's'} de anaquel de tu cartera.</p>
+                        <p className="text-center text-[11px] text-slate-600">Uds vendidas por día y por PDV, estimadas entre visitas · {a.nPdv} PDV y {a.nTramos} tramos de tu cartera ({a.nValid} reportes con ubicación). En gris, celdas con menos de 3 PDV.</p>
                     </>
                 )}
             </div>
