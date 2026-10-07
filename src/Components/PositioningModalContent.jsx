@@ -7,7 +7,7 @@
 import React, { useMemo, useState } from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { HelpCircle, Info, FileText, ChevronDown, ChevronRight, TrendingUp, AlertTriangle } from 'lucide-react';
-import { analizarAnaquel, escalar, fmtRot, fmtPct, ETIQUETA_CONFIANZA } from '@/utils/anaquelAnalisis.js';
+import { analizarAnaquel, escalar, fmtRot, fmtPct, ETIQUETA_CONFIANZA, textoFalta, MIN_PDV_CONFIABLE, MIN_PARES_CONFIABLE, MIN_PDV_ORIENTATIVO } from '@/utils/anaquelAnalisis.js';
 import AnaquelDoc from '@/Components/AnaquelDoc.jsx';
 
 const COLORES = ['#0D2B4C', '#F5B800', '#64748b', '#94a3b8'];
@@ -80,7 +80,10 @@ function Segmentos({ titulo, explicacion, segmentos }) {
                                 </span>
                                 {abierto === s.id ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
                             </button>
-                            <div className="pb-1 -mt-1"><Conf c={s.confianza} /></div>
+                            <div className="pb-1 -mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <Conf c={s.confianza} />
+                                {textoFalta(s) && <span className="text-[10px] text-slate-500">{textoFalta(s)}</span>}
+                            </div>
                             {abierto === s.id && (
                                 <div className="mb-3 mt-1 bg-slate-50 rounded-xl p-2">
                                     {!s.pdvActuales.length ? <p className="text-xs text-slate-400 p-1">Ningún PDV está hoy en esta posición.</p> : (
@@ -189,6 +192,12 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
                     <Dato k="PDV con venta medida" v={m.pdvConVenta} sub={`${m.tramos} tramos entre visitas`} />
                     <Dato k="Reportes con ubicación" v={`${m.conUbicacion} de ${m.reportes}`} sub={m.sinCategoria ? `${m.sinCategoria} sin categoría vecina` : 'todos con categoría'} />
                     <Dato k="Período" v={ventanaLabel || '—'} sub={`${fecha(m.desde)} – ${fecha(m.hasta)}`} />
+                </div>
+                <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11px] text-slate-600 space-y-1">
+                    <p className="font-bold text-slate-700">¿Cuándo una cifra es confiable?</p>
+                    <p><b className="text-emerald-700">Confiable:</b> al menos {MIN_PDV_CONFIABLE} PDV y {MIN_PARES_CONFIABLE} tramos medidos. <b className="text-amber-700">Orientativa:</b> de {MIN_PDV_ORIENTATIVO} a {MIN_PDV_CONFIABLE - 1} PDV. <b className="text-slate-500">Insuficiente:</b> menos de {MIN_PDV_ORIENTATIVO} PDV (no se usa para conclusiones).</p>
+                    <p>Un tramo es el tiempo entre dos visitas seguidas a un mismo PDV: ahí se mide cuánto se vendió. Para la cifra total: hoy hay {m.pdvConVenta} PDV y {m.tramos} tramos.</p>
+                    <p>Un grupo con pocos PDV no está mal medido: es que hay pocos puntos en esa posición. Su cifra describe bien a esos puntos, pero es menos segura para predecir qué pasaría en otros; por eso lleva su margen de error (±).</p>
                 </div>
                 {m.cambiaron > 0 && <p className="text-[11px] text-slate-500 mt-2">{m.cambiaron} PDV cambiaron de ubicación o de categoría en el período: su venta se reparte entre las posiciones que tuvieron.</p>}
             </div>

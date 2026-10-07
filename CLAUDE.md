@@ -2981,6 +2981,8 @@ Pedido del dueño: verificar que el cálculo sea correcto y agregar tres cosas: 
 - Botón **Informe PDF** (`AnaquelDoc.jsx`): conclusiones, KPIs de muestra, mapa, tablas por grupo, proyecciones a 25/50/100 % con el rango prudente, lista de PDV por grupo y metodología.
 - `GerencialDashboard` pasa `ventanaLabel` al modal.
 
+**Tamaño de muestra a la vista** (pedido del dueño): la hoja y el PDF explican cuándo una cifra es confiable (≥8 PDV y ≥12 tramos), orientativa (3–7 PDV) o insuficiente, y cada grupo dice cuánto le falta (`falta` en el resumen + `textoFalta`). También aclara que un grupo chico no está mal medido (son todos los PDV que hay en esa posición), pero es menos seguro para predecir otros puntos.
+
 **Mapa del vendedor** (`VendedorAnaquelMap.jsx`) usa el mismo motor (antes tenía el mismo error de `orderQuantity`).
 
 Prueba: `tests/anaquelAnalisis.test.mjs`, 12 verificaciones en verde: reposición ≠ venta, PDV muy visitado pesa uno, celda vacía ≠ 0, ubicación dorada, proyección y escalado, niveles de confianza.

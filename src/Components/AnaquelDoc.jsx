@@ -8,7 +8,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
-import { escalar, fmtRot, fmtPct, ETIQUETA_CONFIANZA, MIN_PDV_CONFIABLE, MIN_PARES_CONFIABLE, MIN_PDV_ORIENTATIVO } from '@/utils/anaquelAnalisis.js';
+import { escalar, fmtRot, fmtPct, ETIQUETA_CONFIANZA, textoFalta, MIN_PDV_CONFIABLE, MIN_PARES_CONFIABLE, MIN_PDV_ORIENTATIVO } from '@/utils/anaquelAnalisis.js';
 
 const NAVY = '#12386b';
 const SANS = "'Helvetica Neue', Arial, 'Segoe UI', sans-serif";
@@ -69,7 +69,7 @@ function TablaSegmentos({ titulo, segmentos }) {
                             <td style={{ ...td, fontWeight: 800 }}>{fmtRot(s.rotacion)}</td>
                             <td style={td}>{s.margen != null ? fmtRot(s.margen) : '—'}</td>
                             <td style={td}>{s.pdv} PDV · {s.pares} tramos</td>
-                            <td style={td}><Conf c={s.confianza} /></td>
+                            <td style={td}><Conf c={s.confianza} />{textoFalta(s) && <span style={{ display: 'block', fontSize: 8.5, color: '#64748b' }}>{textoFalta(s).replace('Para ser confiable le faltan ', 'faltan ')}</span>}</td>
                         </tr>
                     ))}
                 </tbody>
@@ -186,6 +186,7 @@ export default function AnaquelDoc({ analisis: a, ventanaLabel, onClose }) {
                     <Kpi k="Reportes" v={`${m.conUbicacion} / ${m.reportes}`} sub={`con ubicación · ${m.sinCategoria} sin categoría`} />
                 </div>
 
+                <Nota>Tamaño de muestra: una cifra es <b>confiable</b> con al menos {MIN_PDV_CONFIABLE} PDV y {MIN_PARES_CONFIABLE} tramos medidos (un tramo = el tiempo entre dos visitas seguidas a un PDV); <b>orientativa</b> de {MIN_PDV_ORIENTATIVO} a {MIN_PDV_CONFIABLE - 1} PDV; con menos de {MIN_PDV_ORIENTATIVO} PDV, <b>insuficiente</b> y fuera de las conclusiones. Un grupo con pocos PDV describe bien a esos puntos, pero es menos seguro para predecir otros: por eso lleva margen de error.</Nota>
                 <div className="gk-anaq-bloque" style={{ marginTop: 12, padding: 10, border: '1px solid #fde68a', background: '#fffbeb' }}>
                     <p style={{ margin: 0, fontSize: 9.5, fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: 1 }}>Conclusiones</p>
                     <ul style={{ margin: '4px 0 0', paddingLeft: 16, fontSize: 11, color: '#334155', lineHeight: 1.6 }}>

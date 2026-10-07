@@ -155,7 +155,9 @@ export function analizarAnaquel({ reports = [], allReports = [], posList = [] })
         const tasas = Object.values(pdvs).filter(x => x.dias > 0).map(x => x.uds / x.dias);
         const pares = Object.values(pdvs).reduce((s, x) => s + x.pares, 0);
         const est = estadistica(tasas);
-        return { pdv: est.n, pares, rotacion: est.media, margen: est.margen, confianza: confianza(est.n, pares) };
+        return { pdv: est.n, pares, rotacion: est.media, margen: est.margen, confianza: confianza(est.n, pares),
+            // Lo que le falta para ser "confiable" (0 y 0 = ya lo es).
+            falta: { pdv: Math.max(0, MIN_PDV_CONFIABLE - est.n), tramos: Math.max(0, MIN_PARES_CONFIABLE - pares) } };
     };
 
     // PDV por segmento según su estado ACTUAL (lo que verían hoy en la tienda).
@@ -239,3 +241,13 @@ export function escalar(esc, fraccion, redActual) {
 
 export const fmtRot = (v) => v == null ? '—' : (v < 0.1 ? v.toFixed(2) : v.toFixed(1)).replace('.', ',');
 export const fmtPct = (v) => v == null ? '—' : `${r2(v).toLocaleString('es-VE', { maximumFractionDigits: 1 })} %`;
+
+/** "Faltan 3 PDV y 4 tramos" para que el grupo sea confiable; null si ya lo es. */
+export function textoFalta(seg) {
+    const f = seg?.falta;
+    if (!f || (!f.pdv && !f.tramos)) return null;
+    const partes = [];
+    if (f.pdv) partes.push(`${f.pdv} PDV`);
+    if (f.tramos) partes.push(`${f.tramos} tramo${f.tramos === 1 ? '' : 's'}`);
+    return `Para ser confiable le faltan ${partes.join(' y ')} medidos.`;
+}
