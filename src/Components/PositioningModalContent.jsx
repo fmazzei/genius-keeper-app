@@ -8,7 +8,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
-import { HelpCircle, Info, FileText, ChevronDown, ChevronRight, TrendingUp, AlertTriangle } from 'lucide-react';
+import { HelpCircle, Info, FileText, ChevronDown, ChevronRight, TrendingUp, AlertTriangle, FlaskConical } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import ComparadorMetodosAnaquel from '@/Components/ComparadorMetodosAnaquel.jsx';
 import { analizarAnaquel, escalar, fmtRot, fmtPct, ETIQUETA_CONFIANZA, textoFalta, MIN_PDV_CONFIABLE, MIN_PARES_CONFIABLE, MIN_PDV_ORIENTATIVO } from '@/utils/anaquelAnalisis.js';
 import AnaquelDoc from '@/Components/AnaquelDoc.jsx';
 import AnaquelAntesDespues from '@/Components/AnaquelAntesDespues.jsx';
@@ -157,6 +159,10 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
     const [celda, setCelda] = useState(null);
     const [doc, setDoc] = useState(false);
     const [dimCambio, setDimCambio] = useState('categoria');
+    // "Comparar métodos" (anaquel v2): solo el máster, solo lectura.
+    const { role } = useAuth();
+    const esMaster = role === 'master';
+    const [comparar, setComparar] = useState(false);
     // Para "antes y después" hace falta el historial COMPLETO: un cambio de
     // categoría pudo ocurrir hace meses y su "antes" queda fuera de la ventana.
     const historial = (allReports && allReports.length) ? allReports : (reports || []);
@@ -179,9 +185,21 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
         ubicacion: dimCambio === 'ubicacion' ? cambios : cambiosDe('ubicacion'),
     }, [doc, dimCambio, cambios]);
 
+    const botonComparar = esMaster && (
+        <button onClick={() => setComparar(true)} disabled={extra.cargando}
+            className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-700 text-sm font-bold px-3 py-2.5 rounded-xl disabled:opacity-50">
+            <FlaskConical size={15} /> {extra.cargando ? 'Cargando…' : 'Comparar métodos'}
+        </button>
+    );
+    const hojaComparar = comparar && (
+        <ComparadorMetodosAnaquel reports={historial} devoluciones={extra.devoluciones} posList={posList || []} onClose={() => setComparar(false)} />
+    );
+
     if (!a.hayDatos) {
         return (
             <div className="p-6 text-center">
+                {botonComparar && <div className="flex justify-end mb-2">{botonComparar}</div>}
+                {hojaComparar}
                 <HelpCircle className="mx-auto h-12 w-12 text-slate-400" />
                 <h3 className="mt-2 text-lg font-semibold text-slate-800">Sin datos de anaquel</h3>
                 <p className="mt-1 text-sm text-slate-500">Ningún reporte de visita de este período trae la ubicación en el estante.</p>
@@ -203,9 +221,12 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
                         </p>
                     </div>
                 </div>
-                <button onClick={() => setDoc(true)} className="flex items-center gap-1.5 bg-brand-blue text-white text-sm font-bold px-3 py-2.5 rounded-xl">
-                    <FileText size={15} /> Informe PDF
-                </button>
+                <div className="flex flex-wrap gap-2">
+                    {botonComparar}
+                    <button onClick={() => setDoc(true)} className="flex items-center gap-1.5 bg-brand-blue text-white text-sm font-bold px-3 py-2.5 rounded-xl">
+                        <FileText size={15} /> Informe PDF
+                    </button>
+                </div>
             </div>
 
             {/* 1. La muestra */}
@@ -329,6 +350,7 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
             {/* 5. El mismo PDV antes y después de cambiar de lugar */}
             <AnaquelAntesDespues cambios={cambios} dimension={dimCambio} onDimension={setDimCambio} cargandoExtra={extra.cargando} />
 
+            {hojaComparar}
             {doc && <AnaquelDoc analisis={a} cambios={cambiosPdf} ventanaLabel={ventanaLabel} onClose={() => setDoc(false)} />}
         </div>
     );

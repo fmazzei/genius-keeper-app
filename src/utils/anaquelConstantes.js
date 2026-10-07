@@ -7,12 +7,10 @@
 // umbral = cambiar este archivo.
 //
 // Lo que NO está aquí a propósito:
-//  · Los días para considerar un lote "por vencer": salen de `DIAS_POR_VENCER`
-//    en `src/utils/retiros.js`, el MISMO número que usa el módulo Devoluciones.
-//    La alerta de vencimiento de la cobertura (M5) usa ese umbral (decisión del
-//    dueño), para que la app no tenga dos definiciones de "por vencer".
-
-import { DIAS_POR_VENCER } from './retiros.js';
+//  · `DIAS_POR_VENCER` (src/utils/retiros.js, 7 días): es del módulo
+//    Devoluciones y NO se toca desde aquí. La alerta de vencimiento de la
+//    cobertura (M5) tiene su PROPIA constante, `UMBRAL_ALERTA_VENCIMIENTO_DIAS`,
+//    desacoplada a propósito (decisión del dueño): cambiar una no mueve la otra.
 
 // ── Tramos (tiempo entre dos visitas seguidas al mismo PDV) ──────────────────
 export const MIN_DIAS_TRAMO = 5;        // menos: se une con el siguiente (si nada cambió) o se descarta
@@ -53,7 +51,9 @@ export const UMBRAL_DETERIORO = null;
 
 // ── Cobertura y vencimiento (M5) ────────────────────────────────────────────
 export const VIDA_UTIL_DIAS = 90;
-export const UMBRAL_VIDA_RESTANTE_DIAS = DIAS_POR_VENCER;   // ver nota arriba
+// Alerta de cobertura: el lote más viejo vence en menos de esto. Valor inicial 7
+// (por confirmar con la práctica del equipo). Independiente de DIAS_POR_VENCER.
+export const UMBRAL_ALERTA_VENCIMIENTO_DIAS = 7;
 export const UMBRAL_COBERTURA_ORIENTATIVA_DIAS = 60;
 
 // ── Calidad de datos ────────────────────────────────────────────────────────

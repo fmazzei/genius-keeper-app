@@ -2,16 +2,18 @@
 //   node --import ./tests/alias.mjs tests/anaquelV2.test.mjs
 import {
     tramosDePos, normalizarVisita, asignarMovimientos, rotacionDe, cobertura, veredictoEfecto,
-    bootstrapMediana, analizarAnaquelV2, compararMetodos, fmtNum, fmtPct, fmtUds, claveNombre,
+    bootstrapMediana, analizarAnaquelV2, compararMetodos, fmtNum, fmtPct, fmtUds, claveNombre, diaLocal,
 } from '../src/utils/anaquelV2.js';
 import { computeRotacion } from '../src/utils/rotacion.js';
 import { DIAS_POR_VENCER } from '../src/utils/retiros.js';
-import { UMBRAL_VIDA_RESTANTE_DIAS } from '../src/utils/anaquelConstantes.js';
+import { UMBRAL_ALERTA_VENCIMIENTO_DIAS } from '../src/utils/anaquelConstantes.js';
 
 let fallas = 0;
 const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas++; };
 const D = 86400;
+
 const T0 = new Date(2026, 6, 1, 10).getTime() / 1000;   // 1-jul-2026 10:00 local
+const diaStr = (d) => diaLocal(T0 + d * D);
 let n = 0;
 const V = (posId, dia, inv, rep, extra = {}) => ({
     id: `v${++n}`, posId, posName: `Tienda ${posId}`, createdAt: { seconds: T0 + dia * D },
@@ -96,7 +98,8 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     ok(s.dias === 80 && s.alerta && s.orientativa, 'sin lotes: 80 días > 60 → alerta "orientativa"');
     const z = cobertura(10, 0, [], hoy);
     ok(z.dias === null && !z.alerta, 'rotación 0: cobertura "—", sin división por cero');
-    ok(UMBRAL_VIDA_RESTANTE_DIAS === DIAS_POR_VENCER, `el umbral de vida restante es el mismo "por vencer" del módulo Devoluciones (${DIAS_POR_VENCER} días)`);
+    ok(UMBRAL_ALERTA_VENCIMIENTO_DIAS === 7, 'la alerta de vencimiento de cobertura arranca en 7 días');
+    ok(DIAS_POR_VENCER === 7, 'el "por vencer" de Devoluciones sigue en 7, intacto');
 }
 // ── Veredicto ──
 {
@@ -182,6 +185,30 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     ok(Math.abs(c.pasos[0].porDia - dash.porDia) < 1e-9 && Math.abs(c.dashboard - dash.porDia) < 1e-9, 'el paso 1 reproduce exactamente la rotación del Dashboard');
     ok(Math.abs(c.pctNegativos - 1 / 3) < 1e-9, `% de tramos negativos: ${fmtNum(c.pctNegativos * 100, 1)} %`);
     ok(c.cambian.some(x => x.estadoNuevo === 'error_captura'), 'lista los tramos que cambian de estado (el negativo pasa a error de captura)');
+}
+// ── Comparar métodos: unidos, días, anaquel vacío, devoluciones por motivo, por PDV ──
+{
+    const R = [V('B', 0, 20, 0), V('B', 2, 18, 0), V('B', 9, 10, 0), V('B', 16, 0, 0, { stockout: true }),
+        V('X', 0, 20, 7), V('X', 7, 20, 7), V('X', 14, 20, 7)];
+    const devs = [
+        { posId: 'B', fecha: diaStr(9), createdAt: { seconds: T0 + 9 * D + 600 }, unidades: 2, unidadesRepuestas: 0, lotes: [{ unidades: 2, motivo: 'vencido' }] },
+        { posId: 'X', fecha: diaStr(7), createdAt: { seconds: T0 + 7 * D + 600 }, unidades: 3, unidadesRepuestas: 3, lotes: [{ unidades: 1, motivo: 'por_vencer' }, { unidades: 2, motivo: 'danado' }] },
+    ];
+    const ahora = new Date((T0 + 20 * D) * 1000);
+    const c = compararMetodos({ reports: R, devoluciones: devs, posList: [{ id: 'B', name: 'Tienda Bé' }], dias: 30, ahora });
+    ok(c.tramosCortosUnidos.tramos === 1 && c.tramosCortosUnidos.absorbidos === 2, `el tramo de 2 días se une con el siguiente (${JSON.stringify(c.tramosCortosUnidos)})`);
+    const cub = (id) => c.histDias.find(h => h.id === id).tramos;
+    ok(cub('0-2') === 1 && cub('7-9') === 4 && c.histDias.reduce((s, h) => s + h.tramos, 0) === c.tramosTotales, 'distribución de días por tramo cuadra con el total');
+    ok(Math.abs(c.pctTerminanVacio - 1 / 5) < 1e-9, `% de tramos que terminan en anaquel vacío: ${fmtNum(c.pctTerminanVacio * 100, 1)} %`);
+    const m = (k) => c.devoluciones90.porMotivo.find(x => x.motivo === k);
+    ok(c.devoluciones90.registros === 2 && m('vencido').registros === 1 && m('vencido').unidades === 2
+        && m('por_vencer').unidades === 1 && m('danado').unidades === 2 && m('calidad').registros === 0, 'devoluciones de 90 días por motivo: registros y unidades');
+    ok(c.devoluciones.tramos === 2, `tramos que incluyen devoluciones: ${c.devoluciones.tramos}`);
+    const b = c.porPdv.find(p => p.posId === 'B');
+    ok(b && b.nombre === 'Tienda Bé' && b.visitas === 4 && b.tramosAnterior === 3 && b.tramosNuevo === 2,
+        `por PDV: visitas, tramos antes (3) y después (2) (${JSON.stringify(b)})`);
+    ok(b && Math.abs(b.rotAnterior - 20 / 16) < 1e-9 && Math.abs(b.rotNueva - 18 / 16) < 1e-9 && Math.abs(b.diferencia - (18 - 20) / 16) < 1e-9,
+        'por PDV: rotación con el método anterior y con el nuevo (descuenta las 2 uds vencidas)');
 }
 
 console.log(fallas ? `\n${fallas} verificación(es) fallaron` : '\nTodas las verificaciones en verde');

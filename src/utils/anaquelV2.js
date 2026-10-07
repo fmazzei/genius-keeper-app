@@ -363,7 +363,7 @@ export function cobertura(inventario, rotacion, lotes = [], ahora = new Date()) 
         const vidas = vivos.map(l => diasParaVencer(l.expiryDate, ahora)).filter(x => x != null);
         const vidaRestante = vidas.length ? Math.min(...vidas) : null;
         const alerta = vidaRestante != null && inventario > 0 && (
-            (dias != null && dias > vidaRestante) || vidaRestante < C.UMBRAL_VIDA_RESTANTE_DIAS);
+            (dias != null && dias > vidaRestante) || vidaRestante < C.UMBRAL_ALERTA_VENCIMIENTO_DIAS);
         return { dias, vidaRestante, alerta, orientativa: false };
     }
     return { dias, vidaRestante: null, alerta: dias != null && dias > C.UMBRAL_COBERTURA_ORIENTATIVA_DIAS, orientativa: true };
@@ -770,7 +770,18 @@ function datosPorCorregir({ porPos, tramosPorPos, todos, pdv, posList, devolucio
  * Rotación = Σventas / Σdías de los tramos que terminan en el periodo (venta
  * por PDV por día, la misma definición que el Dashboard).
  */
-export function compararMetodos({ reports = [], devoluciones = [], traslados = [], dias = 30, ahora = new Date() } = {}) {
+// Tramos de días para ver dónde cae el mínimo de 5 días (calibración).
+export const CUBETAS_DIAS = [
+    { id: '0-2', label: '0 a 2 días', max: 3 }, { id: '3-4', label: '3 a 4 días', max: 5 },
+    { id: '5-6', label: '5 a 6 días', max: 7 }, { id: '7-9', label: '7 a 9 días', max: 10 },
+    { id: '10-14', label: '10 a 14 días', max: 15 }, { id: '15-21', label: '15 a 21 días', max: 22 },
+    { id: '22+', label: 'Más de 21 días', max: Infinity },
+];
+export const ETIQUETA_MOTIVO = {
+    vencido: 'Vencido', por_vencer: 'Por vencer', danado: 'Envase dañado', calidad: 'Calidad', sin_motivo: 'Sin motivo',
+};
+
+export function compararMetodos({ reports = [], devoluciones = [], traslados = [], posList = [], dias = 30, ahora = new Date() } = {}) {
     const hasta = ahora.getTime() / 1000, desde = hasta - dias * DIA;
     const desde90 = hasta - 90 * DIA;
     const porPos = visitasPorPos(reports);
@@ -813,8 +824,50 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
         return t > desde90 && t <= hasta && unidadesDevolucion(d).porMotivo.por_vencer > 0;
     });
 
+    // Distribución de días por tramo (tramos crudos, sin unir ni filtrar).
+    const histDias = CUBETAS_DIAS.map(c => ({ ...c, tramos: 0 }));
+    crudos.forEach(t => { const c = histDias.find(x => t.dias < x.max); if (c) c.tramos++; });
+
+    // Tramos cortos que el método nuevo unió con los siguientes.
+    const unidosT = enP.filter(t => t.unidos > 1);
+
+    // Devoluciones de los últimos 90 días por motivo: registros y unidades.
+    const dev90 = (devoluciones || []).filter(d => {
+        const t = aSeg(d.createdAt) || aSeg(d.fecha);
+        return t > desde90 && t <= hasta;
+    });
+    const porMotivo90 = [...MOTIVOS, 'sin_motivo'].map(m => {
+        const conM = dev90.filter(d => unidadesDevolucion(d).porMotivo[m] > 0);
+        return {
+            motivo: m, etiqueta: ETIQUETA_MOTIVO[m], registros: conM.length,
+            unidades: conM.reduce((s, d) => s + unidadesDevolucion(d).porMotivo[m], 0),
+        };
+    });
+
+    // Por PDV: método anterior vs nuevo, para ver quién mueve la diferencia.
+    const nombreLista = Object.fromEntries((posList || []).map(p => [p.id, p.name || p.nombre]));
+    const porPdv = Object.entries(porPos).map(([posId, vs]) => {
+        const viejo = rotacionDe(enPer(tramosDePos(vs, porVisita, METODO_DASHBOARD)));
+        const nuevo = rotacionDe(enPer(tramosDePos(vs, porVisita, METODO_NUEVO)));
+        const visitas = vs.filter(v => v.t > desde && v.t <= hasta).length;
+        const nombre = nombreLista[posId] || vs.find(v => v.nombre)?.nombre || posId;
+        const diferencia = viejo.porDia != null && nuevo.porDia != null ? nuevo.porDia - viejo.porDia : null;
+        return {
+            posId, nombre, visitas,
+            rotAnterior: viejo.porDia, tramosAnterior: viejo.tramos,
+            rotNueva: nuevo.porDia, tramosNuevo: nuevo.tramos, diferencia,
+        };
+    }).filter(p => p.visitas > 0 || p.tramosAnterior > 0)
+        .sort((a, b) => Math.abs(b.diferencia ?? (b.rotAnterior ?? 0)) - Math.abs(a.diferencia ?? (a.rotAnterior ?? 0)));
+
     return {
         dias, dashboard: dashboard.porDia, pasos,
+        histDias,
+        pctTerminanVacio: crudos.length ? crudos.filter(t => t.fin.vacio).length / crudos.length : null,
+        tramosCortosUnidos: { tramos: unidosT.length, absorbidos: unidosT.reduce((s, t) => s + t.unidos, 0) },
+        devoluciones90: { registros: dev90.length, porMotivo: porMotivo90 },
+        tramosContados: enP.filter(cuentaEnRotacion).length,
+        porPdv,
         rotacionSiSeExcluyeranQuiebres: sinQuiebre.porDia,
         tramosEnQuiebre: enP.filter(t => t.estado === 'minimo').length,
         pctNegativos: crudos.length ? crudos.filter(t => t.crudo < 0).length / crudos.length : null,
