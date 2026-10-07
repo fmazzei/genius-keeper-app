@@ -3032,6 +3032,13 @@ Prueba: `tests/anaquelCambios.test.mjs`, 13 verificaciones en verde. Cubre: dete
 
 Las pruebas corren con el alias `@/` vía `node --import ./tests/alias.mjs tests/anaquelCambios.test.mjs`: 23 verificaciones en verde.
 
+**Las ventanas del Dashboard se cortaban arriba y abajo (2026-10) ✅.**
+- **Causa:** `PullToRefresh` dejaba `transform: translateY(0px)` puesto aun en reposo. Un `transform` convierte al elemento en el marco de todo `position: fixed` que tenga adentro. Así, `Modal.jsx` (los 15 KPIs y el Mapa de calor) quedaba encerrado en el área desplazable, debajo del encabezado de la app y sin llegar al final.
+- **Arreglo, en dos capas:**
+  - `PullToRefresh` usa `transform: none` cuando no se está tirando.
+  - `Modal` se pinta con `createPortal` en `document.body`, con `z-[100]` como las hojas del Tablero.
+- **Regla:** toda ventana a pantalla completa va por portal.
+
 ## GK — Una sola ficha para crear y editar PDV (2026-09) ✅
 
 Reporte del dueño: agregar un cliente/PDV era "sumamente enredado". Había TRES

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Maximize, Minimize } from 'lucide-react';
 import EncabezadoHoja from './EncabezadoHoja.jsx';
 import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
@@ -25,8 +26,11 @@ const ModalAbierto = ({ onClose, title, children, footer = null, size = 'lg', ca
         ? 'w-screen h-screen max-w-none max-h-none rounded-none'
         : `w-full h-full md:h-auto ${sizeClasses[size]} md:max-h-[90vh] md:rounded-2xl`;
 
-    return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-0 md:p-4 overflow-hidden">
+    // Portal al <body>: si la ventana se pinta dentro de un contenedor con
+    // transform (p. ej. "tirar para actualizar"), `position: fixed` queda
+    // atrapado en ese contenedor y la ventana se corta arriba y abajo.
+    return createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-[100] p-0 md:p-4 overflow-hidden">
             <div className={`bg-white shadow-xl flex flex-col transition-[max-width,max-height,border-radius] duration-300 ${containerClasses} overflow-hidden`}>
 
                 {/* Header — never scrolls. "Volver" siempre a la vista: en el
@@ -51,7 +55,8 @@ const ModalAbierto = ({ onClose, title, children, footer = null, size = 'lg', ca
                 )}
 
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

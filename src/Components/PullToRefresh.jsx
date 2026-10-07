@@ -89,8 +89,11 @@ export default function PullToRefresh({ onRefresh, children, className = '' }) {
                 </span>
             </div>
 
+            {/* Sin transform en reposo: un transform (aunque sea 0px) convierte
+                este div en el marco de todo `position: fixed` de adentro, y las
+                ventanas que abre el contenido quedaban recortadas a esta área. */}
             <div style={{
-                transform: `translateY(${dist}px)`,
+                transform: dist > 0 ? `translateY(${dist}px)` : 'none',
                 transition: inicio.current === null ? 'transform .2s ease' : 'none',
             }}>
                 {children}
