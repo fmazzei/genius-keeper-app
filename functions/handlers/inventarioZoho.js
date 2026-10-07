@@ -107,7 +107,12 @@ function reintentable(e) {
     return !e?.response || s === 429 || (s >= 500 && s < 600);
 }
 function mensajeZoho(e) {
-    return String(e?.response?.data?.message || e?.message || e).slice(0, 500);
+    const m = String(e?.response?.data?.message || e?.message || e);
+    // Zoho responde así (código 57) cuando el token no tiene el scope pedido.
+    if (/not authorized to perform this operation/i.test(m) || /código 57\)/.test(m) || e?.response?.data?.code === 57) {
+        return "Zoho no le da permiso a GK para leer el plan de cuentas ni crear asientos. Renueva los permisos en GK → Integraciones (Self Client) incluyendo ZohoBooks.accountants.READ, .CREATE, .UPDATE y .DELETE.";
+    }
+    return m.slice(0, 500);
 }
 
 /** Reintentos con espera creciente; cada intento queda registrado. */
