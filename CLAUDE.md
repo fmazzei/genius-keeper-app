@@ -3032,6 +3032,47 @@ Prueba: `tests/anaquelCambios.test.mjs`, 13 verificaciones en verde. Cubre: dete
 
 Las pruebas corren con el alias `@/` vía `node --import ./tests/alias.mjs tests/anaquelCambios.test.mjs`: 23 verificaciones en verde.
 
+### Mapa de calor del anaquel v2 — en construcción por fases (2026-10)
+
+Rediseño pedido por el dueño: una sección corta (1 página carta), mediciones más estrictas y honestidad cuando no hay evidencia. Va detrás de la bandera `settings/appConfig.anaquelV2` (Fase 3). Con la bandera apagada todo queda como está. **El Dashboard y `rotacion.js` no se tocan.**
+
+**Fase 0 — decisiones del dueño (cerradas):**
+- **Merma.** Se lee de la colección `devoluciones` (una sola fuente).
+  - Fase 2: el reporte de visita gana un bloque de retiro que escribe en `devoluciones` con id fijo `visita_<id reporte>`.
+  - Si el reenvío sin señal encuentra el documento ya creado con el mismo contenido, eso cuenta como éxito, no como error.
+  - Aviso de duplicado en los dos sentidos.
+  - Sin abrir reglas: la nota de crédito la sigue completando solo el máster.
+- **Regla A** (M1): venta = inv. inicial + facturado despachado (`orderQuantity`) + repuestas + recibidas por traslado − retiradas − inv. final.
+  - Los movimientos van al tramo que EMPIEZA en la visita.
+  - Una devolución del mismo día pertenece a esa visita.
+  - El motivo no cambia la fórmula.
+  - Las repuestas NO están dentro de `orderQuantity`. La pregunta del formulario lo dirá en la Fase 2.
+- **"Por vencer" no es merma.**
+  - Se reubica en el anaquel o se cambia y se lleva a otro PDV el mismo día.
+  - Merma por vencimiento (%) = solo motivo "Vencido". Deterioro (%) = dañado + calidad.
+  - El denominador de los dos es lo facturado despachado en 90 días. Sin umbrales todavía.
+  - Traslados (Fase 2): colección `traslados`, id `traslado_<visita destino>_<devolución>`. La entrada se suma en el destino.
+- **Vencimiento.**
+  - El lote más viejo se deduce de `batches[].expiryDate`; la alerta es "orientativa" solo si la visita no tiene lotes.
+  - Umbral de vida restante = `DIAS_POR_VENCER` de `retiros.js` (7). No es un número nuevo.
+- **Quiebre.** "% de visitas que encontraron el anaquel vacío". Los tramos que terminan vacíos cuentan como **mínimo**: entran en la rotación, pero no en la capa B ni en la tabla de efecto.
+- **Tramos cortos (<5 d).** Se unen con los siguientes solo si altura, categoría, precio y POP no cambiaron y no hubo quiebre en medio.
+- **Otras.** Tamaño carta. El formulario a cambiar es el del mercaderista (`VisitReportForm` + `EditReportForm`). Corregir un retiro guardado es solo del máster.
+- **Pendientes anotados:**
+  - el mapa del vendedor (`VendedorAnaquelMap`) sigue con el motor viejo y puede contradecir la sección nueva;
+  - cruzar `orderQuantity` contra las facturas de Zoho del PDV (`zohoCustomerId`).
+
+**Fase 1 — cálculos ✅:**
+- `src/utils/anaquelConstantes.js`: todos los umbrales en un solo archivo.
+- `src/utils/anaquelCatalogo.js`: alturas, categorías y POP, con los `id` exactos guardados en `visit_reports`.
+- **`src/utils/anaquelV2.js`** (puro):
+  - `tramosDePos`, con estados `valido` / `minimo` / `error_captura` (negativo, sin recortar) / `corto` / `largo` / `sin_producto`;
+  - `asignarMovimientos` (regla A), `cobertura` (M5), `veredictoEfecto` (bootstrap de la mediana con semilla fija);
+  - `analizarAnaquelV2`: red, PDV, semáforo, mapa en capas A y B, tabla de efecto, pruebas en curso, datos por corregir y línea de conclusión por reglas;
+  - `compararMetodos`: Dashboard → nuevo, paso a paso, con % de negativos, devoluciones, "por vencer" y tramos que cambian de estado.
+- Prueba: `node --import ./tests/alias.mjs tests/anaquelV2.test.mjs`, 40 verificaciones en verde.
+- La tabla de efecto lista solo cambios de **ubicación** (altura o categoría). Un cambio de precio o de POP solo "ensucia" el cambio de ubicación.
+
 **Las ventanas del Dashboard se cortaban arriba y abajo (2026-10) ✅.**
 - **Causa:** `PullToRefresh` dejaba `transform: translateY(0px)` puesto aun en reposo. Un `transform` convierte al elemento en el marco de todo `position: fixed` que tenga adentro. Así, `Modal.jsx` (los 15 KPIs y el Mapa de calor) quedaba encerrado en el área desplazable, debajo del encabezado de la app y sin llegar al final.
 - **Arreglo, en dos capas:**
