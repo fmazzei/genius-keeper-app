@@ -87,6 +87,22 @@ export const MAX_DIAS_SUBIDA_TARDE = 30;
 // quitar acentos, signos y la forma jurídica) y de al menos este largo.
 export const MAX_DISTANCIA_DUPLICADO = 2;
 export const MIN_LARGO_DUPLICADO = 8;
+// ── Rotación por PDV y avisos al máster (8-oct) ─────────────────────────────
+// Control silencioso contra facturación: si el balance por ventana difiere de
+// la rotación medida más de esto, la rotación se muestra como rango.
+export const CONTROL_FACTURACION_PCT = 25;
+// Aviso "sin salida": días seguidos sin que el anaquel baje (con producto).
+export const DIAS_SIN_SALIDA = 30;
+// Un aviso solo mira PDV visitados en los últimos N días (lo demás es viejo).
+export const DIAS_VIGENCIA_AVISO = 21;
+// Aviso "conviene surtir más": cuartil de rotación desde el que un PDV es "alto".
+export const CUARTIL_ROTACION_ALTA = 0.75;
+// Aviso "caída en el registro de entregas": ventana reciente vs. base anterior.
+export const DIAS_VENTANA_ENTREGAS = 14;
+export const DIAS_BASE_ENTREGAS = 28;
+export const MIN_UDS_FACTURADAS_AVISO = 48;
+export const CAIDA_REGISTRO_ENTREGAS = 0.6;   // reciente < 60 % de la base ⇒ aviso
+
 // Fecha desde la que existe el registro de traslados (Fase 2). Mientras sea null,
 // NO se reporta "retiro Por vencer sin destino confirmado": antes de la función
 // ningún traslado estaba registrado y la lista saldría llena de falsos avisos.

@@ -1,7 +1,7 @@
 // RUTA: tests/anaquelV2.test.mjs — motor del Mapa de calor del anaquel v2.
 //   node --import ./tests/alias.mjs tests/anaquelV2.test.mjs
 import {
-    tramosDePos, normalizarVisita, asignarMovimientos, rotacionDe, cobertura, veredictoEfecto,
+    tramosDePos, normalizarVisita, METODO_NUEVO, rotacionPorPdv, textoRotacion, asignarMovimientos, rotacionDe, cobertura, veredictoEfecto,
     bootstrapMediana, analizarAnaquelV2, compararMetodos, fmtNum, fmtPct, fmtUds, claveNombre, diaLocal, tVisita,
 } from '../src/utils/anaquelV2.js';
 import { computeRotacion } from '../src/utils/rotacion.js';
@@ -20,11 +20,12 @@ const V = (posId, dia, inv, rep, extra = {}) => ({
     inventoryLevel: inv, orderQuantity: rep, shelfLocation: 'ojos', adjacentCategory: 'Quesos crema',
     price: 5.6, popStatus: 'Exhibido correctamente', facing: 4, batches: [], ...extra,
 });
-const tramosDe = (reps, devs = [], tras = []) => {
+const tramosDe = (reps, devs = [], tras = [], metodo = METODO_NUEVO) => {
     const vs = reps.map(normalizarVisita).sort((a, b) => a.t - b.t);
     const { porVisita } = asignarMovimientos({ [vs[0].posId]: vs }, devs, tras);
-    return tramosDePos(vs, porVisita);
+    return tramosDePos(vs, porVisita, metodo);
 };
+const UNIENDO = { ...METODO_NUEVO, unirCortos: true };
 const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0) =>
     ({ id: `d${++n}`, posId, createdAt: { seconds: T0 + dia * D + horaExtra }, unidades, unidadesRepuestas: repuestas, lotes: [{ expiryDate: '2026-07-01', unidades, motivo }] });
 
@@ -54,18 +55,23 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     const t = tramosDe([V('A', 0, 20, 0), V('A', 30, 5, 0)]);
     ok(t[0].estado === 'largo', 'intervalo de visitas de 30 días: largo, excluido');
 }
-// ── Unión de intervalos de visitas cortos ──
+// ── Intervalos cortos: por defecto se EXCLUYEN (8-oct, Francisco) ──
 {
     const t = tramosDe([V('A', 0, 20, 5), V('A', 3, 18, 4), V('A', 6, 15, 0)]);
+    ok(t.length === 2 && t.every(x => x.estado === 'corto'), 'intervalos de 3 días: excluidos como "corto" (ya no se unen)');
+}
+// ── Unión de intervalos de visitas cortos (opción, ya no es la predeterminada) ──
+{
+    const t = tramosDe([V('A', 0, 20, 5), V('A', 3, 18, 4), V('A', 6, 15, 0)], [], [], UNIENDO);
     ok(t.length === 1 && t[0].unidos === 2 && t[0].dias === 6 && t[0].ventas === 20 + 9 - 15,
         `dos intervalos de visitas de 3 días sin cambios se unen: 6 días, (20 + 5 + 4) − 15 = ${t[0]?.ventas}`);
 }
 {
-    const t = tramosDe([V('A', 0, 20, 5), V('A', 3, 18, 4, { price: 6.2 }), V('A', 6, 15, 0)]);
+    const t = tramosDe([V('A', 0, 20, 5), V('A', 3, 18, 4, { price: 6.2 }), V('A', 6, 15, 0)], [], [], UNIENDO);
     ok(t[0].estado === 'corto' && t[0].razonCorte === 'cambio', 'si cambió el precio en medio, no se unen: corto');
 }
 {
-    const t = tramosDe([V('A', 0, 20, 5), V('A', 3, 0, 4, { stockout: true }), V('A', 6, 15, 0)]);
+    const t = tramosDe([V('A', 0, 20, 5), V('A', 3, 0, 4, { stockout: true }), V('A', 6, 15, 0)], [], [], UNIENDO);
     ok(t[0].estado === 'corto' && t[0].razonCorte === 'quiebre', 'si hubo quiebre en medio, no se unen');
 }
 // ── Regla A: devoluciones y traslados ──
@@ -196,7 +202,7 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     ];
     const ahora = new Date((T0 + 20 * D) * 1000);
     const c = compararMetodos({ reports: R, devoluciones: devs, posList: [{ id: 'B', name: 'Tienda Bé' }], dias: 30, ahora });
-    ok(c.tramosCortosUnidos.tramos === 1 && c.tramosCortosUnidos.absorbidos === 2, `el intervalo de visitas de 2 días se une con el siguiente (${JSON.stringify(c.tramosCortosUnidos)})`);
+    ok(c.tramosCortosUnidos.tramos === 0, `el intervalo de visitas de 2 días ya no se une: se excluye (${JSON.stringify(c.tramosCortosUnidos)})`);
     const cub = (id) => c.histDias.find(h => h.id === id).tramos;
     ok(cub('0-2') === 1 && cub('7-9') === 4 && c.histDias.reduce((s, h) => s + h.tramos, 0) === c.tramosTotales, 'distribución de días por intervalo de visitas cuadra con el total');
     ok(Math.abs(c.pctTerminanVacio - 1 / 5) < 1e-9, `% de intervalos de visitas que terminan en anaquel vacío: ${fmtNum(c.pctTerminanVacio * 100, 1)} %`);
@@ -207,8 +213,8 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     const b = c.porPdv.find(p => p.posId === 'B');
     ok(b && b.nombre === 'Tienda Bé' && b.visitas === 4 && b.tramosAnterior === 3 && b.tramosNuevo === 2,
         `por PDV: visitas, intervalos de visitas antes (3) y después (2) (${JSON.stringify(b)})`);
-    ok(b && Math.abs(b.rotAnterior - 20 / 16) < 1e-9 && Math.abs(b.rotNueva - 18 / 16) < 1e-9 && Math.abs(b.diferencia - (18 - 20) / 16) < 1e-9,
-        'por PDV: rotación con el método anterior y con el nuevo (descuenta las 2 uds vencidas)');
+    ok(b && Math.abs(b.rotAnterior - 20 / 16) < 1e-9 && Math.abs(b.rotNueva - 16 / 14) < 1e-9,
+        `por PDV: rotación con el método anterior y con el nuevo (sin el intervalo de 2 días y descontando las 2 uds vencidas): ${b?.rotNueva}`);
 }
 
 // ── Diagnóstico: negativos con vecinos, largos, cobertura y duplicados ──

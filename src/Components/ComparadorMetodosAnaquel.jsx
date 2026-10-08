@@ -14,7 +14,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { collection, getDocs } from 'firebase/firestore';
 import { FlaskConical } from 'lucide-react';
-import { db } from '@/Firebase/config.js';
+import { db, functions } from '@/Firebase/config.js';
+import { httpsCallable } from 'firebase/functions';
 import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
 import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 import { compararMetodos, fmtNum, fmtUds } from '@/utils/anaquelV2.js';
@@ -24,6 +25,7 @@ import {
 } from '@/utils/anaquelConstantes.js';
 import { etiquetaAltura, etiquetaCategoria } from '@/utils/anaquelCatalogo.js';
 import { ETIQUETAS } from '@/utils/visitaOla1.js';
+import { fmtVence } from '@/utils/fechaCorta.js';
 
 const pct = (v) => (v == null || !Number.isFinite(v) ? '—' : `${fmtNum(v * 100, 1)} %`);
 const signo = (v) => (v == null || !Number.isFinite(v) ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtNum(Math.abs(v), 2)}`);
@@ -77,6 +79,67 @@ function Dato({ k, v, sub }) {
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{k}</p>
             <p className="text-xl font-black text-slate-800 leading-tight">{v}</p>
             {sub && <p className="text-[11px] text-slate-500 mt-0.5">{sub}</p>}
+        </div>
+    );
+}
+
+
+// Fusiones confirmadas por Francisco (8-oct). Aquí SOLO se simula: dice qué
+// cambiaría, sin tocar nada. La ejecución se construye con su OK.
+const FUSIONES_CONFIRMADAS = [
+    { nombre: 'Páramo Libertador', idQueda: 'CpIsxX46MnspK2HBRlTa', idSale: 'XmxkwkuCUp9om2coYjtU' },
+    { nombre: 'Maxi Quesos', idQueda: 'uBiiLfMmhWKvqwCXlPxl', idSale: 'jnL8ifNAGjDK3A6t3o6C' },
+];
+const ETIQ_CARNET = {
+    queda_con_su_carnet: 'El que queda conserva su carnet de Zoho.',
+    heredaria_el_carnet: 'El que queda no tiene carnet: heredaría el del que sale.',
+    carnets_distintos: 'OJO: los dos tienen carnets de Zoho DISTINTOS. Revisar antes de fusionar.',
+    ninguno_tiene_carnet: 'Ninguno de los dos está vinculado a un carnet de Zoho.',
+};
+const ETIQ_COL = {
+    visit_reports: 'Visitas', devoluciones: 'Devoluciones', pedidos_mercaderista: 'Pedidos', vendedor_alertas: 'Alertas del vendedor',
+    vendor_clients: 'Carteras', despachos: 'Despachos', pickings: 'Pickings', traslados: 'Traslados', agendas: 'Agendas del planificador',
+};
+function SimulacionFusiones() {
+    const [res, setRes] = useState({});
+    const simular = async (f) => {
+        setRes(p => ({ ...p, [f.nombre]: { cargando: true } }));
+        try {
+            const r = await httpsCallable(functions, 'simularFusionPdv', { timeout: 120000 })({ idQueda: f.idQueda, idSale: f.idSale });
+            setRes(p => ({ ...p, [f.nombre]: { datos: r.data } }));
+        } catch (e) {
+            setRes(p => ({ ...p, [f.nombre]: { error: e?.message || 'No se pudo simular.' } }));
+        }
+    };
+    return (
+        <div className="space-y-2 mb-4">
+            <p className="text-xs font-bold text-slate-600">Fusiones confirmadas: simulación (no cambia nada)</p>
+            {FUSIONES_CONFIRMADAS.map(f => {
+                const r = res[f.nombre] || {};
+                const d = r.datos;
+                return (
+                    <div key={f.nombre} className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="font-bold text-slate-800">{f.nombre}</p>
+                            <button onClick={() => simular(f)} disabled={r.cargando}
+                                className="shrink-0 font-bold text-indigo-700 border border-indigo-300 rounded-lg px-2.5 py-1.5 disabled:opacity-50">
+                                {r.cargando ? 'Simulando…' : 'Simular fusión'}
+                            </button>
+                        </div>
+                        {r.error && <p className="text-red-600 mt-1">{r.error}</p>}
+                        {d && (
+                            <div className="mt-2 space-y-1 text-slate-700">
+                                <p><b>Queda:</b> {d.queda.nombre} · {d.queda.visitas} visitas ({d.queda.primera ? `${fmtVence(d.queda.primera)} – ${fmtVence(d.queda.ultima)}` : 'sin visitas'}) · {d.queda.zohoCustomerId ? `carnet ${d.queda.zohoCustomerId}` : 'sin carnet'}{d.queda.razonSocialZoho ? ` · ${d.queda.razonSocialZoho}` : ''}</p>
+                                <p><b>Se absorbe:</b> {d.sale.nombre} · {d.sale.visitas} visitas ({d.sale.primera ? `${fmtVence(d.sale.primera)} – ${fmtVence(d.sale.ultima)}` : 'sin visitas'}) · {d.sale.zohoCustomerId ? `carnet ${d.sale.zohoCustomerId}` : 'sin carnet'}{d.sale.razonSocialZoho ? ` · ${d.sale.razonSocialZoho}` : ''}</p>
+                                <p><b>Pasarían al que queda:</b> {Object.entries(d.porColeccion).filter(([, n]) => n > 0).map(([k, n]) => `${ETIQ_COL[k] || k} ${n}`).join(' · ') || 'nada'} ({d.totalDocumentos} documentos)</p>
+                                <p><b>Visitas en total tras fusionar:</b> {d.visitasResultantes}{d.visitasMismoDia.length ? ` · ${d.visitasMismoDia.length} día(s) con visita en los dos (${d.visitasMismoDia.map(fmtVence).join(', ')}): quedarían dos visitas el mismo día` : ''}</p>
+                                <p className={d.carnet === 'carnets_distintos' ? 'text-red-700 font-bold' : ''}><b>Zoho:</b> {ETIQ_CARNET[d.carnet]}</p>
+                                <p className="text-slate-500">Para ejecutarla: tu OK; antes se respalda cada documento que se toque.</p>
+                            </div>
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 }
@@ -514,6 +577,7 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, factur
                     {/* 6. Diagnóstico d: duplicados */}
                     <Seccion titulo={`Posibles PDV duplicados (${c.duplicados.length})`}
                         nota="Nombres iguales o casi iguales tras quitar acentos, signos, orden de palabras y forma jurídica. Incluye PDV inactivos. Aquí no se fusiona nada.">
+                        <SimulacionFusiones />
                         {posTodos == null && <p className="text-[11px] text-slate-400 mb-2">Leyendo la lista completa de PDV…</p>}
                         {c.duplicados.length === 0 && <p className="text-sm text-slate-500">No se encontraron nombres parecidos.</p>}
                         <div className="space-y-2">

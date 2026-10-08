@@ -11,7 +11,31 @@
 //    versión 2, `orderQuantity` es "unidades que ENTRARON HOY al anaquel"
 //    (antes: "cuántas vas a despachar").
 
-export const FORM_VERSION = 2;
+// 3 (8-oct, tarde): entregas confirmadas por factura, retiro dentro de la visita
+// y control "¿contaste antes o después de reponer?". `orderQuantity` sigue
+// significando lo mismo que en la 2: unidades que ENTRARON HOY al anaquel.
+export const FORM_VERSION = 3;
+
+// Entregas: una respuesta por factura pendiente del PDV.
+export const OPCIONES_ENTREGA = [
+    { id: 'todo', label: 'Entregué todo' },
+    { id: 'otra', label: 'Otra cantidad' },
+    { id: 'no', label: 'No entregué' },
+];
+
+// Retiro en la visita (bloque mínimo; lo complejo sigue en Devoluciones).
+export const MOTIVOS_RETIRO = [
+    { id: 'vencido', label: 'Vencido' },
+    { id: 'por_vencer', label: 'Por vencer' },
+    { id: 'danado', label: 'Envase dañado' },
+    { id: 'calidad', label: 'Calidad' },
+];
+
+// Control de conteo: ¿se contó antes o después de reponer?
+export const RESPUESTAS_ANTES_DESPUES = [
+    { id: 'antes', label: 'Antes de reponer' },
+    { id: 'despues', label: 'Después de reponer' },
+];
 
 // V2 — conteo bloqueado: al volver al conteo después de pasar a reponer.
 export const MOTIVOS_CORRECCION_CONTEO = [
@@ -58,7 +82,42 @@ export const ETIQUETAS = {
     conteoIdentico: mapa(RESPUESTAS_CONTEO_IDENTICO),
     loteSinFecha: mapa(MOTIVOS_SIN_FECHA),
     gps: GPS_ERRORES,
+    entrega: mapa(OPCIONES_ENTREGA),
+    retiro: mapa(MOTIVOS_RETIRO),
+    antesDespues: mapa(RESPUESTAS_ANTES_DESPUES),
 };
+
+/** Unidades que entraron hoy: lo confirmado por factura más lo entregado sin factura. */
+export function totalEntregado(entregas = [], sinFactura = 0) {
+    const porFactura = (entregas || []).reduce((s, e) => s + (e && e.opcion !== 'no' ? (Number(e.unidadesEntregadas) || 0) : 0), 0);
+    return porFactura + (Number(sinFactura) || 0);
+}
+
+/**
+ * ¿El conteo parece hecho DESPUÉS de reponer? Solo si hoy entró producto:
+ *  · 'igual_a_entregado' — el anaquel tiene exactamente lo que se entregó;
+ *  · 'mayor_de_lo_esperado' — hay más de lo que quedó en la visita anterior
+ *    (su conteo más lo que entró ese día): sin una entrega en medio, el anaquel
+ *    no crece solo.
+ * @returns {null|{causa:string, esperadoMax:number|null}}
+ */
+export function pareceContadoDespues({ antes, entregado, anterior }) {
+    const a = Number(antes) || 0;
+    const e = Number(entregado) || 0;
+    if (e <= 0 || a <= 0) return null;
+    if (a === e) return { causa: 'igual_a_entregado', esperadoMax: null };
+    if (anterior && !anterior.stockout) {
+        const esperadoMax = (Number(anterior.inventoryLevel) || 0) + (Number(anterior.orderQuantity) || 0);
+        if (a > esperadoMax) return { causa: 'mayor_de_lo_esperado', esperadoMax };
+    }
+    return null;
+}
+
+/** Conteo "antes" corregido cuando se contó después: Antes − entregado + retirado − repuesto (nunca negativo). */
+export function corregirAntes({ antes, entregado, retirado = 0, repuesto = 0 }) {
+    const v = (Number(antes) || 0) - (Number(entregado) || 0) + (Number(retirado) || 0) - (Number(repuesto) || 0);
+    return { valor: Math.max(0, v), recortado: v < 0 };
+}
 
 /** Huella de los lotes (fechas y cantidades) para comparar dos conteos. */
 export function firmaLotes(batches = [], stockout = false) {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, Suspense, lazy } from 'react';
 // ✅ REPARACIÓN: Se restauran TODAS las rutas para usar el alias '@' que tu proyecto espera.
 import { db, functions } from '@/Firebase/config.js'; 
 import { httpsCallable } from 'firebase/functions';
-import { doc, getDoc, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { useMerchandiserData } from '@/hooks/useMerchandiserData.js';
 import { useOfflineSync } from '@/hooks/useOfflineSync.js';
 import { useDelegatedTasks } from '@/hooks/useDelegatedTasks.jsx';
@@ -25,20 +25,24 @@ import TaskList from '@/Components/TaskList.jsx';
 import Modal from '@/Components/Modal.jsx';
 import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx';
 import ProvisionalGpsModal from '@/Components/ProvisionalGpsModal.jsx';
+import { leerRuta, guardarRuta } from '@/utils/rutaOffline.js';
 // Lazy: el mercaderista abre la app casi siempre en 'hub', no en 'planner' —
 // cargar leaflet/react-beautiful-dnd solo cuando navega a esa vista.
 const Planner = lazy(() => import('./Planner/Planner.jsx'));
 
 const ReporterSelectionScreen = ({ onSelect }) => {
-    const [reporters, setReporters] = useState([]);
-    const [loading, setLoading] = useState(true);
+    // Sin señal, la lista sale de la copia guardada en el teléfono.
+    const [reporters, setReporters] = useState(() => leerRuta().reporters || []);
+    const [loading, setLoading] = useState(() => !Array.isArray(leerRuta().reporters));
 
     useEffect(() => {
         const q = query(collection(db, "reporters"), where("active", "==", true), orderBy("name"));
         const unsubscribe = onSnapshot(q, (snapshot) => {
+            if (snapshot.metadata.fromCache && snapshot.empty) { setLoading(false); return; }
             const reportersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setReporters(reportersData);
             setLoading(false);
+            if (!snapshot.metadata.fromCache) guardarRuta({ reporters: reportersData.map(r => ({ id: r.id, name: r.name, active: r.active })) });
         }, (error) => {
             console.error("Error al cargar reporters:", error);
             setLoading(false);
@@ -85,7 +89,9 @@ const AppShell = ({ user, role, onLogout }) => {
     const [selectedPos, setSelectedPos] = useState(null);
     const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [appConfig, setAppConfig] = useState({ gpsRequired: true, gpsRange: 500 });
+    // GPS: se usa la última configuración conocida. Sin ninguna (primera vez y
+    // sin señal) queda apagado, que es la decisión vigente del dueño.
+    const [appConfig, setAppConfig] = useState(() => ({ gpsRequired: false, gpsRange: 500, ...(leerRuta().appConfig || {}) }));
     const [posToUpdateGps, setPosToUpdateGps] = useState(null);
     const [posToConfirmProvisional, setPosToConfirmProvisional] = useState(null);
     const [isOutOfRangeModalOpen, setIsOutOfRangeModalOpen] = useState(false);
@@ -98,7 +104,38 @@ const AppShell = ({ user, role, onLogout }) => {
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole('merchandiser');
 
-    useOfflineSync();
+    const { pendientes } = useOfflineSync();
+
+    // Con señal, el teléfono guarda lo que necesita para la ruta sin red: último
+    // conteo de cada PDV y facturas por entregar (sin montos). Como mucho cada
+    // 10 minutos; si falla no pasa nada, queda la copia anterior.
+    useEffect(() => {
+        const refrescar = async () => {
+            if (navigator.onLine === false) return;
+            const ruta = leerRuta();
+            // Catálogo de competidores (paso 4 del reporte): también a la copia.
+            getDocs(query(collection(db, 'competitors'), where('active', '==', true)))
+                .then(snap => {
+                    if (snap.metadata.fromCache && snap.empty) return;
+                    guardarRuta({ competidores: snap.docs.map(d => {
+                        const x = d.data();
+                        return { id: d.id, brand: x.brand || '', name: x.name || '', weight_g: x.weight_g ?? null, text: `${x.brand} ${x.name} ${x.weight_g}g` };
+                    }) });
+                })
+                .catch(() => {});
+            if (ruta.datosRutaAt && Date.now() - ruta.datosRutaAt < 10 * 60000) return;
+            try {
+                const r = await httpsCallable(functions, 'datosRutaMercaderista', { timeout: 30000 })({});
+                const d = r.data || {};
+                guardarRuta({ ultimos: d.ultimos || {}, facturas: d.facturas || {}, datosRutaAt: Date.now() });
+            } catch (e) {
+                console.warn('No se pudieron bajar los datos de ruta (se usa la copia del teléfono):', e?.message);
+            }
+        };
+        refrescar();
+        window.addEventListener('online', refrescar);
+        return () => window.removeEventListener('online', refrescar);
+    }, []);
 
     useEffect(() => {
         if (currentView === 'planner' && !modules.plannerMerchandiser) setCurrentView('hub');
@@ -111,7 +148,9 @@ const AppShell = ({ user, role, onLogout }) => {
                 const configRef = doc(db, 'settings', 'appConfig');
                 const configSnap = await getDoc(configRef);
                 if (configSnap.exists()) {
-                    setAppConfig(prev => ({ ...prev, ...configSnap.data() }));
+                    const d = configSnap.data();
+                    setAppConfig(prev => ({ ...prev, ...d }));
+                    guardarRuta({ appConfig: { gpsRequired: d.gpsRequired === true, gpsRange: d.gpsRange || 500, competitorFrequencyDays: d.competitorFrequencyDays ?? null } });
                 }
             } catch (error) {
                 console.error("Error al cargar la configuración de la app:", error);
@@ -260,6 +299,9 @@ const AppShell = ({ user, role, onLogout }) => {
                         <span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>Cambiar Reporter</span>
                     </li>
                 </button>
+                <p className={`px-3 text-[11px] text-slate-400 ${!desktopSidebarOpen && 'md:hidden'}`}>
+                    Versión {(() => { try { const d = new Date(import.meta.env.VITE_GK_BUILD); return isNaN(d) ? '—' : d.toLocaleString('es-VE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); } catch { return '—'; } })()}
+                </p>
                 <button onClick={onLogout} className="w-full text-left">
                     <li className="flex items-center p-3 my-1 rounded-lg cursor-pointer text-slate-600 hover:bg-slate-100">
                         <LogOut size={24} />
@@ -320,7 +362,9 @@ const AppShell = ({ user, role, onLogout }) => {
         }
     };
     
-    if (merchandiserLoading || tasksLoading) {
+    // Las tareas NO detienen la entrada: sin señal tardan en responder y el
+    // mercaderista tiene que poder hacer su visita igual.
+    if (merchandiserLoading) {
         return <div className="flex justify-center items-center h-screen"><LoadingSpinner /></div>;
     }
 
@@ -332,7 +376,12 @@ const AppShell = ({ user, role, onLogout }) => {
             <div className="flex-1 flex flex-col overflow-hidden">
                 <header className="h-16 bg-white border-b flex items-center px-4 shadow-sm shrink-0">
                     <button onClick={() => setMobileMenuOpen(true)} className="p-2 mr-2 rounded-full hover:bg-slate-100 md:hidden"><Menu size={24} /></button>
-                    <h2 className="text-lg sm:text-2xl font-semibold text-slate-800 ml-2 truncate">{getGreeting()}</h2>
+                    <h2 className="text-lg sm:text-2xl font-semibold text-slate-800 ml-2 truncate flex-1">{getGreeting()}</h2>
+                    {pendientes > 0 && (
+                        <span title="Reportes guardados en el teléfono, pendientes de envío" className="shrink-0 ml-2 text-[11px] sm:text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                            {pendientes} sin enviar
+                        </span>
+                    )}
                 </header>
                 <main className="flex-1 overflow-y-auto bg-slate-50">
                     <Suspense fallback={<div className="flex justify-center items-center h-full"><LoadingSpinner /></div>}>

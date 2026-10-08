@@ -1,54 +1,41 @@
-import { useEffect, useRef } from 'react';
+// RUTA: src/hooks/useOfflineSync.js
+//
+// Sube los reportes guardados en el teléfono en cuanto hay señal: al abrir la
+// app, al volver la conexión, cada minuto y cada vez que entra uno nuevo a la
+// cola. El envío vive en `utils/colaEnvio.js` (id fijo por visita: un reenvío
+// nunca duplica).
+
+import { useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db as localDB } from '../db/local.js';
-import { db as firestoreDB } from '../Firebase/config.js';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { enviarPendientes } from '@/utils/colaEnvio.js';
 
 export const useOfflineSync = () => {
-    const pendingReports = useLiveQuery(() => localDB.pending_reports.toArray());
-    // IDs en proceso de sincronización — evita procesar el mismo reporte dos
-    // veces si el efecto se vuelve a disparar (p.ej. evento 'online' + cambio
-    // reactivo de pendingReports) antes de que termine el primer envío.
-    const inFlight = useRef(new Set());
+    const pendientes = useLiveQuery(() => localDB.pending_reports.count(), [], 0);
 
     useEffect(() => {
-        const syncData = async () => {
-            if (navigator.onLine && pendingReports?.length > 0) {
-                console.log(`Sincronizando ${pendingReports.length} reportes pendientes...`);
-
-                for (const report of pendingReports) {
-                    if (inFlight.current.has(report.id)) continue;
-                    inFlight.current.add(report.id);
-
-                    try {
-                        // 1. Preparamos los datos para Firestore.
-                        // Eliminamos el 'id' local de Dexie y reemplazamos la fecha ISO por la estampa de tiempo del servidor.
-                        const { id, createdAt, ...reportData } = report;
-
-                        await addDoc(collection(firestoreDB, "visit_reports"), {
-                            ...reportData,
-                            createdAt: serverTimestamp() // Usar la estampa de tiempo del servidor al sincronizar
-                        });
-
-                        // 2. Si el envío es exitoso, lo elimina de la base de datos local.
-                        await localDB.pending_reports.delete(id);
-
-                        console.log(`Reporte ${id} sincronizado y eliminado de la cola.`);
-                    } catch (error) {
-                        console.error("Fallo al sincronizar un reporte, se reintentará más tarde:", error);
-                    } finally {
-                        inFlight.current.delete(report.id);
-                    }
-                }
-            }
+        const intentar = () => { enviarPendientes(); };
+        window.addEventListener('online', intentar);
+        const reloj = setInterval(intentar, 60000);
+        intentar();
+        return () => {
+            window.removeEventListener('online', intentar);
+            clearInterval(reloj);
         };
+    }, []);
 
-        // Ejecutar al inicio y cada vez que el navegador vuelva a estar en línea.
-        window.addEventListener('online', syncData);
-        syncData(); // Intenta sincronizar tan pronto como el hook se carga.
+    useEffect(() => { if (pendientes > 0) enviarPendientes(); }, [pendientes]);
 
-        // Limpieza del listener al desmontar el componente.
-        return () => window.removeEventListener('online', syncData);
-
-    }, [pendingReports]); // El efecto se vuelve a ejecutar si la lista de reportes pendientes cambia.
+    return { pendientes };
 };
+
+/** ¿Este reporte sigue en el teléfono esperando envío? (null mientras se averigua) */
+export const useReportePendiente = (reportId) => useLiveQuery(
+    async () => {
+        if (!reportId) return false;
+        const lista = await localDB.pending_reports.toArray();
+        return lista.some(r => r.reportId === reportId);
+    },
+    [reportId],
+    null,
+);

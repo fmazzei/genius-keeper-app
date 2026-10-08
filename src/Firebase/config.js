@@ -1,10 +1,10 @@
 // RUTA: src/Firebase/config.js
 
 import { initializeApp } from "firebase/app";
-import { initializeAuth, browserLocalPersistence } from "firebase/auth";
-import { initializeFirestore } from "firebase/firestore";
+import { initializeAuth, browserLocalPersistence, connectAuthEmulator } from "firebase/auth";
+import { initializeFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getMessaging } from "firebase/messaging";
-import { getFunctions } from "firebase/functions";
+import { getFunctions, connectFunctionsEmulator } from "firebase/functions";
 // ✅ SE ELIMINA LA IMPORTACIÓN DE DYNAMIC LINKS
 // import { getDynamicLinks } from "firebase/dynamic-links";
 
@@ -47,5 +47,14 @@ try {
 }
 export { messaging };
 export const functions = getFunctions(app, 'us-central1');
+
+// SOLO para la prueba de punta a punta (modo avión) contra los emuladores
+// locales: se activa construyendo con VITE_EMULADORES=1. El build normal no lo
+// lleva (Vite elimina esta rama), así que producción no cambia.
+if (import.meta.env.VITE_EMULADORES === '1') {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+}
 // ✅ SE ELIMINA LA EXPORTACIÓN DE DYNAMIC LINKS
 // export const dynamicLinks = getDynamicLinks(app);

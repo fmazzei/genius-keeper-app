@@ -11,8 +11,12 @@ import { estadoLote, resumenLotes } from '@/utils/retiros.js';
 import {
     FORM_VERSION, MOTIVOS_CORRECCION_CONTEO, RESPUESTAS_DUPLICADO, RESPUESTAS_CONTEO_IDENTICO,
     MOTIVOS_SIN_FECHA, GPS_TIEMPO_MAX_MS, ETIQUETAS, firmaLotes, leerPrecio, horaVisitaMs,
-    diaLocalMs, distanciaM, conteoIdentico,
+    diaLocalMs, distanciaM, conteoIdentico, OPCIONES_ENTREGA, MOTIVOS_RETIRO, RESPUESTAS_ANTES_DESPUES,
+    totalEntregado, pareceContadoDespues, corregirAntes,
 } from '@/utils/visitaOla1.js';
+import { facturasPorEntregarDe, ultimoConteoDe, anotarVisitaEnRuta, leerRuta, guardarRuta } from '@/utils/rutaOffline.js';
+import { encolarReporte, enviarPendientes, enviarSinCola } from '@/utils/colaEnvio.js';
+import { useReportePendiente } from '@/hooks/useOfflineSync.js';
 import { useSwipeable } from 'react-swipeable';
 // ✅ CORRECCIÓN: Se añade 'Check' a la lista de importaciones para solucionar el error.
 import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, AlertTriangle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check, HelpCircle, Lock, EyeOff } from 'lucide-react';
@@ -61,14 +65,21 @@ const getUrgency = (days) => {
 const SHELF_LOCATIONS = [ { id: 'ojos', label: 'Nivel Ojos (Zona Caliente)' }, { id: 'manos', label: 'Nivel Manos (Zona Tibia)' }, { id: 'superior', label: 'Nivel Superior (Zona Fría)' }, { id: 'inferior', label: 'Nivel Inferior (Zona Fría)' } ];
 const ADJACENT_CATEGORIES = [ { id: 'Quesos crema', label: 'Quesos crema' }, { id: 'Quesos de Cabra', label: 'Quesos de Cabra' }, { id: 'Delicatessen', label: 'Delicatessen' }, { id: 'Nevera Charcutería', label: 'Nevera Charcutería' } ];
 const POP_STATUS_OPTIONS = [ { id: 'Exhibido correctamente', label: 'Exhibido OK', icon: <ThumbsUp/> }, { id: 'Dañado', label: 'Dañado', icon: <AlertCircle/> }, { id: 'Ausente', label: 'Ausente', icon: <X/> }, { id: 'Sin Campaña Activa', label: 'Sin Campaña', icon: <Info/> } ];
+// Catálogo de competidores. Sin señal sale de la copia guardada en el teléfono.
 const useCompetitorProducts = () => {
-    const [products, setProducts] = useState([]);
+    const [products, setProducts] = useState(() => leerRuta().competidores || []);
     useEffect(() => {
+        if (navigator.onLine === false) return;
         getDocs(query(collection(db, 'competitors'), where('active', '==', true)))
-            .then(snap => setProducts(snap.docs.map(d => {
-                const data = d.data();
-                return { id: d.id, brand: data.brand || '', name: data.name || '', weight_g: data.weight_g, text: `${data.brand} ${data.name} ${data.weight_g}g` };
-            })))
+            .then(snap => {
+                if (snap.metadata.fromCache && snap.empty) return;
+                const lista = snap.docs.map(d => {
+                    const data = d.data();
+                    return { id: d.id, brand: data.brand || '', name: data.name || '', weight_g: data.weight_g ?? null, text: `${data.brand} ${data.name} ${data.weight_g}g` };
+                });
+                setProducts(lista);
+                guardarRuta({ competidores: lista });
+            })
             .catch(() => {});
     }, []);
     return products;
@@ -81,17 +92,24 @@ const ProgressBar = ({ currentStep, totalSteps }) => (
     </div>
 );
 
-const SubmissionSuccess = ({ onFinish, isOffline }) => {
+const SubmissionSuccess = ({ onFinish, enCola, reportId }) => {
+    // Estado REAL del envío: mientras siga en el teléfono, "pendiente de envío";
+    // cuando la cola lo sube, cambia solo a "Enviado".
+    const pendiente = useReportePendiente(enCola ? reportId : null);
+    const isOffline = enCola && pendiente !== false;
     const tips = [ "Revisa que el anaquel quedó ordenado y limpio.", "Asegúrate que el precio de nuestro producto esté correctamente exhibido.", "Si hay campaña activa, ¿el material POP está visible y en buen estado?", "Conversar con el personal del automercado es vital para obtener información de la competencia.", "¡Un espacio más en el anaquel es una nueva ventana para una venta!" ];
     return (
         <div className="text-center p-4 sm:p-10 animate-fade-in">
             <CheckCircle className="mx-auto h-20 w-20 text-green-500"/>
             <h2 className="mt-4 text-2xl font-bold text-slate-800">
-                {isOffline ? "¡Reporte Guardado Localmente!" : "¡Excelente Trabajo! Reporte Enviado"}
+                {isOffline ? "Guardado en el teléfono" : "Enviado"}
             </h2>
+            <p className={`mt-2 inline-block text-sm font-bold px-3 py-1 rounded-full ${isOffline ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}>
+                {isOffline ? 'Pendiente de envío' : 'Ya está en el sistema'}
+            </p>
             <p className="text-slate-600 mt-2">
                 {isOffline
-                    ? "No tienes conexión ahora mismo. El reporte se enviará automáticamente cuando recuperes internet."
+                    ? "Se envía solo cuando vuelva la señal. Puedes seguir con tu ruta."
                     : "Tu labor en el punto de venta es fundamental para el éxito de Lacteoca. ¡Gracias!"}
             </p>
             <div className="text-left bg-slate-50 border rounded-lg p-4 mt-8">
@@ -444,13 +462,111 @@ const Step1_Inventory = ({ report, setReport, isReadOnly: soloLectura, conteoBlo
     );
 };
 
-const Step2_Sales = ({ report, setReport, isReadOnly }) => {
+const Step2_Sales = ({ report, setReport, isReadOnly, facturas = [] }) => {
     // Precio: texto con teclado decimal. Con type="number" y teclado en español,
     // "10,25" deja el campo inválido y el valor se pierde.
     const precioMal = String(report.price ?? '') !== '' && leerPrecio(report.price) === null;
+    const soloDigitos = (v) => String(v ?? '').replace(/[^\d]/g, '');
+    const elegir = (numero, opcion) => setReport(prev => ({
+        ...prev, entregas: { ...prev.entregas, [numero]: { opcion, cantidad: prev.entregas?.[numero]?.cantidad ?? '' } },
+    }));
+    const cantidad = (numero, v) => setReport(prev => ({
+        ...prev, entregas: { ...prev.entregas, [numero]: { ...(prev.entregas?.[numero] || {}), opcion: 'otra', cantidad: soloDigitos(v) } },
+    }));
+    const r = report.retiro || {};
+    const setRetiro = (cambio) => setReport(prev => ({ ...prev, retiro: { ...(prev.retiro || {}), ...cambio } }));
+    const entregadoHoy = totalEntregado(entregasDeFormulario(facturas, report.entregas), report.sinFactura);
+    const inputCls = "w-full p-3 border border-slate-300 rounded-md focus:ring-brand-yellow focus:border-brand-yellow disabled:bg-slate-100 disabled:text-slate-500";
+
     return (
-    <FormSection title="PVP y Reposición" icon={<DollarSign className="text-brand-blue mr-3"/>}>
-        <div className="space-y-4">
+    <FormSection title="Entregas y PVP" icon={<DollarSign className="text-brand-blue mr-3"/>}>
+        <div className="space-y-5">
+            {/* Entregas. Con facturas por entregar en el teléfono, se confirma
+                cada una con un toque; sin ellas, se escribe lo que entró
+                (queda "sin factura vinculada"). Nunca bloquea el reporte. */}
+            {facturas.length > 0 && !isReadOnly ? (
+                <div>
+                    <p className="text-base font-bold text-slate-800">Facturas por entregar en este punto</p>
+                    <p className="text-xs text-slate-500 mb-2">Marca lo que dejaste hoy en el anaquel.</p>
+                    <div className="space-y-2">
+                        {facturas.map(f => {
+                            const e = report.entregas?.[f.numero] || {};
+                            return (
+                                <div key={f.numero} className={`rounded-xl border-2 p-3 ${e.opcion ? 'border-slate-200 bg-white' : 'border-amber-300 bg-amber-50'}`}>
+                                    <div className="flex items-baseline justify-between gap-2">
+                                        <p className="font-bold text-slate-800 min-w-0 break-words">{f.numero}</p>
+                                        <p className="shrink-0 text-lg font-black text-brand-blue">{f.unidades} <span className="text-xs font-semibold text-slate-500">uds</span></p>
+                                    </div>
+                                    <p className="text-xs text-slate-500">Facturada el {fmtVence(f.fecha)}</p>
+                                    <div className="grid grid-cols-3 gap-1.5 mt-2">
+                                        {OPCIONES_ENTREGA.map(o => (
+                                            <button key={o.id} type="button" onClick={() => elegir(f.numero, o.id)}
+                                                className={`px-1.5 py-2.5 rounded-lg text-xs sm:text-sm font-bold border-2 leading-tight ${e.opcion === o.id
+                                                    ? (o.id === 'no' ? 'bg-slate-700 border-slate-700 text-white' : 'bg-brand-blue border-brand-blue text-white')
+                                                    : 'bg-white border-slate-200 text-slate-700'}`}>
+                                                {o.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {e.opcion === 'otra' && (
+                                        <input type="text" inputMode="numeric" value={e.cantidad ?? ''} placeholder="¿Cuántas entregaste?"
+                                            onChange={ev => cantidad(f.numero, ev.target.value)} className={`${inputCls} mt-2`} />
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <label className="block text-sm font-medium text-slate-700 mt-3">¿Entró otro producto sin factura? <span className="text-slate-400">(opcional)</span></label>
+                    <input type="text" inputMode="numeric" value={report.sinFactura} placeholder="0"
+                        onChange={e => setReport(prev => ({ ...prev, sinFactura: soloDigitos(e.target.value) }))} className={inputCls} />
+                    <p className="text-sm font-semibold text-slate-700 mt-2">Entraron hoy: <span className="text-brand-blue">{entregadoHoy} uds</span></p>
+                </div>
+            ) : (
+                <div>
+                    {/* Desde la versión 2 del formulario esta cifra es lo que ENTRÓ
+                        HOY al anaquel, no lo que "se va a despachar". */}
+                    <label className="block text-sm font-medium text-slate-700">¿Cuántas unidades entraron hoy a este anaquel? *</label>
+                    <p className="text-xs text-slate-500 mb-1">
+                        {isReadOnly ? '' : 'No hay facturas por entregar en este teléfono: escribe lo que entregaste (queda "sin factura vinculada"). Si no entró nada, escribe 0.'}
+                    </p>
+                    <input type="text" inputMode="numeric" value={report.sinFactura} placeholder="Ej: 12" disabled={isReadOnly}
+                        onChange={e => setReport(prev => ({ ...prev, sinFactura: soloDigitos(e.target.value) }))} className={inputCls} />
+                </div>
+            )}
+
+            {/* Retiro: bloque mínimo, solo si aplica. Lo complejo (varios lotes,
+                nota de crédito) sigue en Devoluciones. */}
+            {!isReadOnly && (
+                <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input type="checkbox" checked={!!r.activo} onChange={e => setRetiro({ activo: e.target.checked })} className="w-5 h-5" />
+                        <span className="font-semibold text-slate-800">Retiré producto de este anaquel hoy</span>
+                    </label>
+                    {r.activo && (
+                        <div className="mt-3 space-y-3">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700">Unidades retiradas</label>
+                                <input type="text" inputMode="numeric" value={r.unidades ?? ''} placeholder="0"
+                                    onChange={e => setRetiro({ unidades: soloDigitos(e.target.value) })} className={inputCls} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
+                                {MOTIVOS_RETIRO.map(m => (
+                                    <button key={m.id} type="button" onClick={() => setRetiro({ motivo: m.id })}
+                                        className={`py-2 rounded-lg text-sm font-bold border-2 ${r.motivo === m.id ? 'bg-brand-blue border-brand-blue text-white' : 'bg-white border-slate-200 text-slate-700'}`}>
+                                        {m.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700">¿Cuántas repusiste en el acto?</label>
+                                <input type="text" inputMode="numeric" value={r.repuestas ?? ''} placeholder="0"
+                                    onChange={e => setRetiro({ repuestas: soloDigitos(e.target.value) })} className={inputCls} />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             <div>
                 <label className="block text-sm font-medium text-slate-700">Precio de Venta al Público (PVP) *</label>
                 <input
@@ -459,29 +575,27 @@ const Step2_Sales = ({ report, setReport, isReadOnly }) => {
                     onChange={e => setReport(prev => ({ ...prev, price: e.target.value.replace(/[^\d.,]/g, '') }))}
                     placeholder="Ej: 10,25"
                     disabled={isReadOnly}
-                    className="w-full p-3 border border-slate-300 rounded-md focus:ring-brand-yellow focus:border-brand-yellow disabled:bg-slate-100 disabled:text-slate-500"
+                    className={inputCls}
                 />
                 {precioMal && !isReadOnly && <p className="text-xs text-red-600 mt-1">Escribe el precio con coma o punto, por ejemplo 10,25.</p>}
             </div>
-            <div>
-                {/* Desde la versión 2 del formulario esta cifra es lo que ENTRÓ
-                    HOY al anaquel, no lo que "se va a despachar". */}
-                <label className="block text-sm font-medium text-slate-700">¿Cuántas unidades entraron hoy a este anaquel? *</label>
-                <p className="text-xs text-slate-500 mb-1">Las que pusiste o recibió hoy el punto, aunque la factura sea de otro día. Si no entró nada, escribe 0.</p>
-                <input
-                    type="text" inputMode="numeric"
-                    value={report.orderQuantity}
-                    onChange={e => setReport(prev => ({ ...prev, orderQuantity: e.target.value.replace(/[^\d]/g, '') }))}
-                    placeholder="Ej: 12"
-                    disabled={isReadOnly}
-                    className="w-full p-3 border border-slate-300 rounded-md focus:ring-brand-yellow focus:border-brand-yellow disabled:bg-slate-100 disabled:text-slate-500"
-                />
-            </div>
-            {!isReadOnly && <p className="text-xs text-slate-400">* Ambos campos son obligatorios para continuar.</p>}
         </div>
     </FormSection>
     );
 };
+
+/** Respuestas del formulario → entregas guardadas (una por factura mostrada). */
+const entregasDeFormulario = (facturas = [], resp = {}) => facturas.map(f => {
+    const e = resp?.[f.numero] || {};
+    const opcion = e.opcion || null;
+    return {
+        numero: f.numero,
+        fecha: f.fecha || null,
+        unidadesFactura: Number(f.unidades) || 0,
+        opcion,
+        unidadesEntregadas: opcion === 'todo' ? (Number(f.unidades) || 0) : opcion === 'otra' ? (Number(e.cantidad) || 0) : 0,
+    };
+});
 
 const Step3_Execution = ({ report, setReport, isReadOnly }) => {
     const [isNumpadOpen, setNumpadOpen] = useState(false);
@@ -515,8 +629,7 @@ const Step3_Execution = ({ report, setReport, isReadOnly }) => {
     );
 };
 
-const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince }) => {
-    const competitorProducts = useCompetitorProducts();
+const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince, competitorProducts = [] }) => {
     // `brand` y `productName` se guardan por separado (además del texto `product`)
     // porque el Índice de Precios y Tendencias de Mercado los necesitan
     // estructurados; sin ellos esos tableros quedan vacíos con datos reales.
@@ -657,7 +770,15 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
     };
     const [submissionState, setSubmissionState] = useState('form');
     const [isOfflineSave, setIsOfflineSave] = useState(false);
-    const [report, setReport] = useState({ reporterName: '', price: '', orderQuantity: '', stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
+    const [report, setReport] = useState({ reporterName: '', price: '', sinFactura: '', entregas: {}, retiro: {}, stockout: false, batches: [], shelfLocation: '', adjacentCategory: '', popStatus: '', facing: '', competition: [], newEntrants: [], notes: '' });
+    // Facturas por entregar de este PDV, de la copia guardada en el teléfono
+    // (llega con señal desde datosRutaMercaderista). Sin copia: lista vacía y se
+    // escribe a mano lo que entró ("sin factura vinculada").
+    const facturas = useMemo(() => (isReadOnly || !pos?.id ? [] : facturasPorEntregarDe(pos.id)), [isReadOnly, pos?.id]);
+    const competitorProducts = useCompetitorProducts();
+    const hayCompetidores = competitorProducts.length > 0;
+    const [preguntaAntesDespues, setPreguntaAntesDespues] = useState(null);   // { causa, esperadoMax, clave }
+    const [antesDespues, setAntesDespues] = useState(null);
     const [reportDate, setReportDate] = useState(new Date().toLocaleDateString('es-VE', { year: 'numeric', month: 'long', day: 'numeric' }));
     const [isStepValid, setIsStepValid] = useState(false);
     // Determine competitor reporting mode for this PDV
@@ -690,7 +811,9 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             setReport({
                 reporterName: initialData.userName || '',
                 price: initialData.price || '',
-                orderQuantity: initialData.orderQuantity || '',
+                sinFactura: initialData.orderQuantity != null ? String(initialData.orderQuantity) : '',
+                entregas: {},
+                retiro: {},
                 stockout: initialData.stockout || false,
                 batches: initialData.batches || [],
                 shelfLocation: initialData.shelfLocation || '',
@@ -716,15 +839,26 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         let isValid = false;
         switch (currentStep) {
             case 1: isValid = report.batches.length > 0 || report.stockout; break;
-            case 2: isValid = leerPrecio(report.price) !== null && report.orderQuantity !== ''; break;
+            case 2: {
+                // Cada factura con su respuesta ("Otra cantidad" con el número);
+                // sin facturas, el campo de lo que entró (0 vale).
+                const respondidas = facturas.every(f => {
+                    const e = report.entregas?.[f.numero];
+                    return e?.opcion && (e.opcion !== 'otra' || String(e.cantidad ?? '') !== '');
+                });
+                isValid = leerPrecio(report.price) !== null && (facturas.length ? respondidas : String(report.sinFactura ?? '') !== '');
+                break;
+            }
             case 3: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
             case 4:
-                isValid = competitorMode === 'preloaded' || report.competition.length > 0;
+                // Sin catálogo de competidores (sin señal y sin copia) no se puede
+                // exigir uno: el reporte no se bloquea.
+                isValid = competitorMode === 'preloaded' || report.competition.length > 0 || !hayCompetidores;
                 break;
             default: isValid = false;
         }
         setIsStepValid(isValid);
-    }, [currentStep, report, isReadOnly, competitorMode]);
+    }, [currentStep, report, isReadOnly, competitorMode, facturas, hayCompetidores]);
 
     // ── OLA 1 (formVersion 2): preguntas que aparecen SOLO si algo no cuadra ──
     // Ninguna impide enviar el reporte; cada respuesta se guarda en él.
@@ -747,15 +881,27 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         let vivo = true;
         (async () => {
             let lista = [];
-            try {
-                const snap = await getDocs(query(collection(db, 'visit_reports'), where('posId', '==', pos.id), where('userId', '==', user.uid)));
-                lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            } catch { /* sin red: se revisan solo los pendientes del teléfono */ }
+            // Copia del teléfono: el último conteo conocido del PDV (de cualquier
+            // equipo), para que los avisos funcionen también sin señal.
+            const u = ultimoConteoDe(pos.id);
+            if (u && u.t) lista.push({ ...u, id: u.reportId, reportId: u.reportId, startTime: new Date(u.t).toISOString() });
+            if (navigator.onLine !== false) {
+                try {
+                    const snap = await Promise.race([
+                        getDocs(query(collection(db, 'visit_reports'), where('posId', '==', pos.id), where('userId', '==', user.uid))),
+                        new Promise((_, rej) => setTimeout(() => rej(new Error('tiempo')), 8000)),
+                    ]);
+                    lista = lista.concat(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                } catch { /* sin red: copia del teléfono + pendientes */ }
+            }
             try {
                 const pend = await localDB.pending_reports.where('posId').equals(pos.id).toArray();
                 lista = lista.concat(pend.map(r => ({ ...r, pendiente: true })));
             } catch { /* almacenamiento local no disponible */ }
             if (!vivo) return;
+            // Un mismo reporte puede venir de la copia y de Firestore.
+            const vistos = new Set();
+            lista = lista.filter(r => { const k = r.reportId || r.id; if (!k) return true; if (vistos.has(k)) return false; vistos.add(k); return true; });
             lista.sort((a, b) => horaVisitaMs(b) - horaVisitaMs(a));
             setReportesPdv(lista);
             const hoy = diaLocalMs(Date.now());
@@ -825,6 +971,23 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                 return;
             }
         }
+        // Control de conteo: si parece hecho DESPUÉS de reponer, una sola pregunta.
+        if (currentStep === 2 && !isReadOnly && !report.stockout) {
+            const entregado = totalEntregado(entregasDeFormulario(facturas, report.entregas), report.sinFactura);
+            const antes = resumenLotes(report.batches).inventoryLevel;
+            const sospecha = pareceContadoDespues({ antes, entregado, anterior: reportesPdv[0] || null });
+            const clave = `${antes}|${entregado}`;
+            if (sospecha && antesDespues?.clave !== clave) {
+                setPreguntaAntesDespues({ ...sospecha, clave, antes, entregado });
+                return;
+            }
+        }
+        avanzar();
+    };
+    const responderAntesDespues = (respuesta) => {
+        const p = preguntaAntesDespues;
+        setPreguntaAntesDespues(null);
+        setAntesDespues({ respuesta, causa: p.causa, esperadoMax: p.esperadoMax ?? null, clave: p.clave });
         avanzar();
     };
     const responderConteo = (respuesta) => {
@@ -875,23 +1038,49 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (isReadOnly) return;
+        if (isReadOnly || submissionState === 'submitting') return;
         setSubmissionState('submitting');
-        // El inventario en anaquel cuenta SOLO lo vendible: un lote retirado ya no
-        // está en el punto de venta. Lo retirado se guarda aparte, SEPARADO POR
-        // MOTIVO — solo el vencimiento es merma por caducidad; un daño o una
-        // devolución son otra cosa y mezclarlos ensucia el indicador.
         // El reporte observa: inventario total del anaquel, cuántas unidades traen
         // el envase dañado, y el desglose por estado DEDUCIDO de las fechas.
-        // El retiro efectivo se declara aparte, en Devoluciones.
-        const { inventoryLevel, envasesDanados, porEstado } = resumenLotes(report.batches);
+        const { inventoryLevel: contado, envasesDanados, porEstado } = resumenLotes(report.batches);
 
+        const entregas = entregasDeFormulario(facturas, report.entregas);
+        const sinFactura = Number(report.sinFactura) || 0;
+        const entregado = totalEntregado(entregas, sinFactura);
+        const r = report.retiro || {};
+        const retiradas = r.activo ? (Number(r.unidades) || 0) : 0;
+        const repuestas = r.activo ? (Number(r.repuestas) || 0) : 0;
+
+        // "¿Contaste antes o después de reponer?" → si fue después, el conteo de
+        // ANTES se reconstruye: Antes − entregado + retirado − repuesto. Se
+        // guardan los dos valores y la causa de la pregunta.
+        let inventoryLevel = contado;
+        let conteoAntesDespues = null;
+        if (antesDespues) {
+            conteoAntesDespues = { respuesta: antesDespues.respuesta, causa: antesDespues.causa, esperadoMax: antesDespues.esperadoMax ?? null, antesContado: contado, entregado, retirado: retiradas, repuesto: repuestas, antesCorregido: null, recortado: false };
+            if (antesDespues.respuesta === 'despues') {
+                const c = corregirAntes({ antes: contado, entregado, retirado: retiradas, repuesto: repuestas });
+                inventoryLevel = c.valor;
+                conteoAntesDespues.antesCorregido = c.valor;
+                conteoAntesDespues.recortado = c.recortado;
+            }
+        }
+
+        const ahoraISO = new Date().toISOString();
         const finalReportData = {
+            reportId,
             envasesDanados,
             lotesPorEstado: porEstado,
             formVersion: FORM_VERSION,
+            appBuild: import.meta.env.VITE_GK_BUILD || null,
             price: leerPrecio(report.price) ?? 0,
-            orderQuantity: Number(report.orderQuantity) || 0,
+            // Unidades que ENTRARON HOY al anaquel: confirmadas por factura + sin factura.
+            orderQuantity: entregado,
+            entregas,
+            entregaSinFactura: sinFactura,
+            facturasEnTelefono: facturas.length,
+            datosRutaAt: leerRuta().datosRutaAt || null,
+            retiroVisita: r.activo && retiradas > 0 ? { unidades: retiradas, motivo: r.motivo || null, repuestas } : null,
             stockout: report.stockout || false,
             batches: report.batches || [],
             shelfLocation: report.shelfLocation || null,
@@ -908,35 +1097,70 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             posName: pos.name,
             posZone: pos.zone || 'N/A',
             coordinates: pos.coordinates || null,
-            inventoryLevel: inventoryLevel,
+            inventoryLevel,
+            inventoryLevelContado: conteoAntesDespues ? contado : null,
+            conteoAntesDespues,
+            // Hora REAL de la visita: cuando se abrió el formulario, en el
+            // teléfono. Un envío tardío no la cambia.
             startTime: formOpenTime.current,
-            endTime: new Date().toISOString(),
+            endTime: ahoraISO,
             ...registroOla1(),
         };
-        
-        if (navigator.onLine) {
-            try {
-                await addDoc(collection(db, "visit_reports"), {
-                    ...finalReportData,
-                    reportId,
-                    createdAt: serverTimestamp(),
-                });
+        // El retiro declarado en la visita va a Devoluciones con un id fijo
+        // (visita_<id>): un reenvío no lo duplica.
+        const lotesVivos = (report.batches || []).filter(b => b?.expiryDate).map(b => b.expiryDate).sort();
+        const devolucion = finalReportData.retiroVisita ? {
+            posId: pos.id, posName: pos.name || '', posZone: pos.zone || '',
+            reporterId: selectedReporter?.id || null, reporterName: report.reporterName || 'Equipo de Campo', userId: user.uid,
+            fecha: diaLocalMs(Date.parse(formOpenTime.current) || Date.now()),
+            visitaReportId: reportId, visitaStartTime: formOpenTime.current, origen: 'visita',
+            lotes: [{ expiryDate: lotesVivos[0] || null, unidades: retiradas, motivo: r.motivo || 'sin_motivo' }],
+            unidades: retiradas,
+            resolucion: repuestas > 0 ? 'reposicion' : 'pendiente',
+            unidadesRepuestas: repuestas,
+            montoNotaCredito: null, notaCreditoNumero: null, notaCreditoFecha: null,
+            notas: 'Declarado en la visita', reporteOrigenId: null,
+        } : null;
 
-                // Efectos secundarios no críticos: si fallan, el reporte ya
-                // quedó guardado arriba — no debe reintentarse vía offline
-                // sync (eso crearía un reporte duplicado).
+        // SIEMPRE primero al teléfono: con red mala nunca queda colgado en
+        // "Enviando…", y cerrar la app no pierde el reporte.
+        let enCola = false;
+        try {
+            await encolarReporte({ ...finalReportData, devolucion, createdAt: ahoraISO });
+            enCola = true;
+        } catch (err) {
+            console.error('No se pudo guardar en el teléfono; se intenta enviar directo:', err);
+        }
+        if (!enCola) {
+            try {
+                await enviarSinCola({ ...finalReportData, devolucion });
+            } catch (err) {
+                console.error('Tampoco se pudo enviar:', err);
+                alert('No se pudo guardar el reporte en este teléfono ni enviarlo. No cierres esta pantalla y vuelve a intentarlo.');
+                setSubmissionState('form');
+                return;
+            }
+        }
+        anotarVisitaEnRuta(finalReportData);
+        setIsOfflineSave(enCola);
+        setSubmissionState('success');
+        if (enCola) enviarPendientes();
+
+        // Efectos secundarios no críticos (frecuencia de competencia y aviso de
+        // nuevos entrantes). Solo con señal y sin esperar: si fallan, el reporte
+        // ya está a salvo.
+        if (navigator.onLine !== false) {
+            (async () => {
                 try {
-                    // Update POS with latest competitor snapshot to track frequency
                     if (pos?.id) {
                         await updateDoc(doc(db, 'pos', pos.id), {
                             lastCompetitorReport: serverTimestamp(),
                             lastCompetitorData: finalReportData.competition,
                         });
                     }
-                    // Notify admins when new entrants are detected
                     if (finalReportData.newEntrants?.length > 0) {
                         const adminSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', 'in', ['master', 'sales_manager', 'gerencia', 'director'])));
-                        const entrantNames = finalReportData.newEntrants.map(e => `${e.brand} ${e.presentation}`).join(', ');
+                        const entrantNames = finalReportData.newEntrants.map(x => `${x.brand} ${x.presentation}`).join(', ');
                         await Promise.all(adminSnap.docs.map(adminDoc =>
                             addDoc(collection(db, 'notifications'), {
                                 userId: adminDoc.id,
@@ -952,26 +1176,9 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                         ));
                     }
                 } catch (sideEffectErr) {
-                    console.error("Reporte guardado, pero falló un efecto secundario (POS/notificaciones):", sideEffectErr);
+                    console.warn("Reporte a salvo; falló un efecto secundario (POS/notificaciones):", sideEffectErr);
                 }
-
-                setIsOfflineSave(false);
-                setSubmissionState('success');
-            } catch (err) {
-                console.error("Error al enviar el reporte a Firestore (online):", err);
-                await localDB.pending_reports.add({ ...finalReportData, reportId, createdAt: new Date().toISOString() });
-                setIsOfflineSave(true);
-                setSubmissionState('success');
-            }
-        } else {
-            try {
-                await localDB.pending_reports.add({ ...finalReportData, reportId, createdAt: new Date().toISOString() });
-                setIsOfflineSave(true);
-                setSubmissionState('success');
-            } catch (err) {
-                console.error("Error al guardar el reporte localmente:", err);
-                setSubmissionState('form');
-            }
+            })();
         }
     };
     
@@ -981,18 +1188,19 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             case 1: return <Step1_Inventory {...stepProps}
                 conteoBloqueado={!isReadOnly && conteoBloqueado}
                 onCorregirConteo={(motivo) => setCorreccionConteo({ motivo, at: new Date().toISOString() })} />;
-            case 2: return <Step2_Sales {...stepProps} />;
+            case 2: return <Step2_Sales {...stepProps} facturas={facturas} />;
             case 3: return <Step3_Execution {...stepProps} />;
             case 4: return <Step4_Intel
                 {...stepProps}
                 competitorMode={competitorMode}
                 daysSince={daysSince}
+                competitorProducts={competitorProducts}
             />;
             default: return <div>Paso no encontrado</div>;
         }
     };
 
-    if (submissionState === 'success') return <SubmissionSuccess onFinish={backToList} isOffline={isOfflineSave} />;
+    if (submissionState === 'success') return <SubmissionSuccess onFinish={backToList} enCola={isOfflineSave} reportId={reportId} />;
 
     return (
         <div className="max-w-4xl mx-auto p-2 sm:p-4 md:p-6 bg-slate-50 animate-fade-in relative pb-24">
@@ -1053,6 +1261,16 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                     </>}
                     opciones={RESPUESTAS_DUPLICADO}
                     onElegir={responderDuplicado}
+                />
+            )}
+            {!isReadOnly && preguntaAntesDespues && (
+                <PreguntaModal
+                    titulo="¿Contaste antes o después de reponer?"
+                    texto={preguntaAntesDespues.causa === 'igual_a_entregado'
+                        ? `Contaste ${preguntaAntesDespues.antes} y entraron ${preguntaAntesDespues.entregado}: es justo lo que entregaste.`
+                        : `Contaste ${preguntaAntesDespues.antes}, más de lo que quedó en la visita anterior (${preguntaAntesDespues.esperadoMax}).`}
+                    opciones={RESPUESTAS_ANTES_DESPUES}
+                    onElegir={responderAntesDespues}
                 />
             )}
             {!isReadOnly && preguntaConteo && (

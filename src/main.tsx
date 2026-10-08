@@ -19,7 +19,16 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/firebase-messaging-sw.js')
       .then((registration) => {
-        console.log('Service Worker para notificaciones registrado con éxito:', registration);
+        console.log('Service Worker registrado:', registration.scope);
+        // Con señal, pedirle que complete la copia para trabajar sin red (si ya
+        // está completa no descarga nada). Sin señal no hace falta.
+        try {
+          if (navigator.onLine !== false) {
+            navigator.serviceWorker.ready
+              .then((reg) => reg.active?.postMessage({ tipo: 'precache' }))
+              .catch(() => {});
+          }
+        } catch { /* nunca bloquear el arranque */ }
       })
       .catch((error) => {
         console.error('Error al registrar el Service Worker:', error);

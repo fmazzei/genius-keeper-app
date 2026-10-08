@@ -62,6 +62,20 @@ export const normNombreF = (s) => String(s || '').toLowerCase()
     .replace(/\b(c\s*a|s\s*a|s\s*r\s*l|c\s*v\s*a)\b\.?/g, ' ')
     .replace(/[^a-z0-9()]+/g, ' ').replace(/\s+/g, ' ').trim();
 
+/**
+ * Día de la factura. Zoho manda solo la fecha ('2026-10-07') y GK la guarda como
+ * Timestamp a las 00:00 UTC. Leída en hora de Venezuela (UTC−4) caía en el día
+ * ANTERIOR, así que el día se toma en UTC. Un texto 'AAAA-MM-DD' se usa tal cual.
+ */
+export function diaDeFactura(v) {
+    if (!v) return null;
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    const s = aSegF(v);
+    if (!s) return null;
+    return new Date(s * 1000).toISOString().slice(0, 10);
+}
+const segDeDia = (dia) => { const [y, m, d] = dia.split('-').map(Number); return new Date(y, m - 1, d, 12).getTime() / 1000; };
+
 /** ¿La factura representa mercancía que salió hacia un cliente? */
 export function esFacturaFisica(f) {
     if (!f) return false;
@@ -97,8 +111,8 @@ export function facturasPorPdv(facturas = [], posList = []) {
     const porPos = {};
     const noAsignadas = [];
     (facturas || []).filter(esFacturaFisica).forEach(f => {
-        const t = aSegF(f.fecha);
-        const x = { numero: f.numero || f.id || null, dia: diaDe(t), t, unidades: Number(f.unidades) || 0 };
+        const dia = diaDeFactura(f.fecha);
+        const x = { numero: f.numero || f.id || null, dia, t: segDeDia(dia), unidades: Number(f.unidades) || 0 };
         const kC = f.zohoCustomerId ? `c:${f.zohoCustomerId}` : null;
         const kN = f.clienteName ? `n:${normNombreF(f.clienteName)}` : null;
         const k = (kC && uso[kC]) ? kC : (kN && uso[kN]) ? kN : null;

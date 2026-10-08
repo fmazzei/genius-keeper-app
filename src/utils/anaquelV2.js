@@ -260,6 +260,19 @@ export function asignarMovimientos(porPos, devoluciones = [], traslados = []) {
 
     (devoluciones || []).forEach(d => {
         const visitas = porPos[d.posId];
+        // Retiro declarado EN la visita (formulario v3): pertenece a esa visita,
+        // aunque se haya subido horas después sin señal.
+        const deVisita = d.visitaReportId && visitas
+            ? visitas.find(v => v.id === d.visitaReportId || v.reportId === d.visitaReportId) : null;
+        if (deVisita) {
+            const u = unidadesDevolucion(d);
+            const s = slot(deVisita);
+            s.retiradas += u.retiradas;
+            s.repuestas += u.repuestas;
+            Object.entries(u.porMotivo).forEach(([m, x]) => { s.porMotivo[m] += x; });
+            s.devoluciones.push(d);
+            return;
+        }
         const t = aSeg(d.createdAt) || aSeg(d.fecha);
         if (!visitas || !t) { sinVisita.push({ tipo: 'devolucion', doc: d }); return; }
         const dia = (typeof d.fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d.fecha)) ? d.fecha : diaLocal(t);
@@ -293,7 +306,9 @@ export function asignarMovimientos(porPos, devoluciones = [], traslados = []) {
 
 export const METODO_NUEVO = {
     recortarNegativos: false,   // negativo = error de captura, no cero
-    unirCortos: true,           // une intervalos de visitas cortos consecutivos si nada cambió
+    // 8-oct (Francisco): los intervalos de menos de 5 días se EXCLUYEN con su
+    // razón ("corto"); ya no se unen con el siguiente.
+    unirCortos: false,
     usarMovimientos: true,      // regla A: devoluciones y traslados
     filtrarDuracion: true,      // fuera corto (<5 d) y largo (>21 d)
     excluirSinProducto: true,
@@ -1338,3 +1353,87 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
 
 // Reexporta para la interfaz (mismas etiquetas que el formulario).
 export { ALTURAS, CATEGORIAS_VECINAS, etiquetaAltura, etiquetaCategoria };
+
+
+// ── Rotación por PDV (instrucción de Francisco, 8-oct) ──────────────────────
+
+/** Etiquetas de por qué un intervalo de visitas no cuenta. */
+export const RAZON_EXCLUSION = {
+    error_captura: 'Imposible: la venta da negativa',
+    largo: `Más de ${C.MAX_DIAS_TRAMO} días entre visitas`,
+    corto: `Menos de ${C.MIN_DIAS_TRAMO} días entre visitas`,
+    sin_producto: 'No había producto que vender',
+};
+
+/**
+ * Rotación de cada PDV con la fórmula de Francisco por intervalo de visitas:
+ *   (unidades en la visita anterior + unidades que entraron − unidades en la
+ *    visita actual) ÷ días del intervalo.
+ * Se excluyen solos —con su razón— los intervalos imposibles (negativos), los de
+ * más de 21 días y los de menos de 5. Un intervalo que termina con el anaquel en
+ * 0 cuenta como MÍNIMO (la venta real fue igual o mayor).
+ * Por PDV: promedio de los intervalos que cuentan (Σ ventas ÷ Σ días). Con menos
+ * de MIN_TRAMOS_INDICE intervalos: "sin datos suficientes" (no se inventa cifra).
+ *
+ * Control silencioso contra facturación: balance de la ventana medida
+ *   (primer conteo + facturado − último conteo − retirado neto) ÷ días.
+ * No cambia la rotación; si difiere más de ±CONTROL_PCT, la rotación se muestra
+ * como RANGO entre las dos cifras.
+ */
+export function rotacionPorPdv({ reports = [], devoluciones = [], traslados = [], facturas = null, posList = [], ventanaDias = C.VENTANA_INDICE_DIAS, ahora = new Date() } = {}) {
+    const hasta = ahora.getTime() / 1000;
+    const desde = hasta - ventanaDias * DIA;
+    const porPos = visitasPorPos(reports);
+    const { porVisita } = asignarMovimientos(porPos, devoluciones, traslados);
+    const fx = facturas ? facturasPorPdv(facturas, posList) : null;
+    const nombres = Object.fromEntries((posList || []).map(p => [p.id, p.name]));
+    const out = {};
+    Object.entries(porPos).forEach(([posId, visitas]) => {
+        const tramos = tramosDePos(visitas, porVisita, METODO_NUEVO).filter(t => t.finT > desde && t.finT <= hasta);
+        const validos = tramos.filter(cuentaEnRotacion);
+        const excluidos = {};
+        tramos.filter(t => !cuentaEnRotacion(t)).forEach(t => { excluidos[t.estado] = (excluidos[t.estado] || 0) + 1; });
+        const rot = rotacionDe(tramos);
+        const suficiente = validos.length >= C.MIN_TRAMOS_INDICE && rot.porDia != null;
+        let control = null;
+        if (suficiente && fx && fx.estadoPdv[posId] === 'ok') {
+            const ini = validos[0].inicio;
+            const fin = validos[validos.length - 1].fin;
+            const dias = (fin.t - ini.t) / DIA;
+            if (dias > 0) {
+                const facturado = facturasDelIntervalo(fx.porPos[posId] || [], diaLocal(ini.t), diaLocal(fin.t))
+                    .reduce((acc, f) => acc + f.unidades, 0);
+                const netoRetiros = visitas.filter(v => v.t >= ini.t && v.t < fin.t)
+                    .reduce((acc, v) => acc + (porVisita[v.id] ? porVisita[v.id].retiradas - porVisita[v.id].repuestas - porVisita[v.id].entradas : 0), 0);
+                const balance = (ini.inv + facturado - fin.inv - netoRetiros) / dias;
+                const difPct = rot.porDia > 0 ? (balance - rot.porDia) / rot.porDia * 100 : null;
+                const fuera = difPct == null ? balance > 0 : Math.abs(difPct) > C.CONTROL_FACTURACION_PCT;
+                control = {
+                    balance: r2(balance), difPct: difPct == null ? null : r2(difPct), facturado, dias: r2(dias),
+                    rango: fuera ? [r2(Math.max(0, Math.min(balance, rot.porDia))), r2(Math.max(balance, rot.porDia))] : null,
+                };
+            }
+        }
+        out[posId] = {
+            posId,
+            nombre: nombres[posId] || visitas[visitas.length - 1]?.nombre || posId,
+            estado: suficiente ? 'ok' : 'sin_datos',
+            rotacion: suficiente ? r2(rot.porDia) : null,
+            minimo: validos.some(t => t.estado === 'minimo'),
+            intervalos: validos.length,
+            dias: r2(rot.dias),
+            excluidos,
+            control,
+            ultimaVisita: visitas[visitas.length - 1] || null,
+            movUltima: porVisita[visitas[visitas.length - 1]?.id] || null,
+        };
+    });
+    return out;
+}
+
+/** Texto de la rotación de un PDV: cifra, rango o "sin datos suficientes". */
+export function textoRotacion(x) {
+    if (!x || x.estado !== 'ok') return 'sin datos suficientes';
+    if (x.control?.rango) return `${fmtNum(x.control.rango[0])} a ${fmtNum(x.control.rango[1])} uds/día`;
+    return `${x.minimo ? 'al menos ' : ''}${fmtUds(x.rotacion)}`;
+}

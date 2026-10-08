@@ -65,6 +65,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        // SIN SEÑAL y con un rol ya conocido en este teléfono: se entra de una
+        // vez. Esperar a la red (hasta 25 s de timeouts) dejaba al mercaderista
+        // mirando un spinner en la calle. Las reglas del servidor siguen
+        // protegiendo los datos cuando vuelva la conexión.
+        const rolGuardado = safeGetRole(currentUser.uid);
+        if (typeof navigator !== 'undefined' && navigator.onLine === false && rolGuardado) {
+          setRole(rolGuardado);
+          setIsAccountSuspended(false);
+          setImpersonatedBy(null);
+          setLoading(false);
+          return;
+        }
         // Detecta si la sesión actual es una impersonación (llave maestra):
         // el custom token lleva el claim `impersonatedBy` con el uid del máster.
         try {

@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useGeniusEngine } from '@/hooks/useGeniusEngine';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useAvisosAnaquel } from '@/hooks/useAvisosAnaquel.js';
 import NotificationsBell from '@/Components/NotificationsBell.jsx';
 import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
@@ -35,6 +36,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     const [refreshKey, setRefreshKey] = useState(0);   // "tirar para actualizar" del tablero
     const [vistaDash, setVistaDash] = useState('tablero');   // 'tablero' (8 bloques) | 'kpis' (indicadores de campo)
     const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
+    // Avisos del anaquel: solo al máster, solo decisiones (sin salida, vencimiento,
+    // surtir más, caída en el registro de entregas). Van a la misma campanita.
+    const avisos = useAvisosAnaquel({ reports, posList, activo: role === 'master' });
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole(role);
     
@@ -289,11 +293,11 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                     {/* Campanita: las notificaciones se consultan desde aquí, no
                         desde una pestaña del menú lateral. */}
                     <NotificationsBell
-                        notifications={notifications}
-                        unreadCount={unreadCount}
-                        onMarkRead={markAsRead}
-                        onMarkAllRead={markAllAsRead}
-                        onDelete={deleteNotification}
+                        notifications={[...avisos.notificaciones, ...notifications]}
+                        unreadCount={unreadCount + avisos.noLeidas}
+                        onMarkRead={(id) => (avisos.esAviso(id) ? avisos.marcarLeido(id) : markAsRead(id))}
+                        onMarkAllRead={() => { avisos.marcarTodos(); markAllAsRead(); }}
+                        onDelete={(id) => (avisos.esAviso(id) ? avisos.eliminar(id) : deleteNotification(id))}
                         onOpenLink={() => setCurrentView('alerts')}
                     />
                 </header>
