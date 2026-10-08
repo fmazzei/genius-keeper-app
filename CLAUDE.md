@@ -3119,8 +3119,35 @@ Rediseño pedido por el dueño: una sección corta (1 página carta), mediciones
 4. **Respaldo previo:** copia completa de cada documento afectado en `fusiones_pdv/{fecha}_{idViejo}` antes de escribir, para poder deshacer.
 5. **Cómo:** callable solo máster `fusionarPdv({idQueda, idSale, simular})`: primero simula (lista por colección qué cambia, incluidas visitas del mismo día en los dos PDV, que al unirse darían un intervalo de 0 días) y luego ejecuta en lotes. Sirve también para Maxi Quesos.
 
+**Cruce con facturas y Ola 1 del formulario (8-oct) ✅.** Lo que destapó el cruce: 13 de los 21 negativos tienen facturas de Zoho fechadas entre las dos visitas (184 de 241 uds). Ejemplo: La Muralla 20→22/08, −48, con una factura del 21/08 por 48. No es error de quien reporta: entró mercancía que ninguna visita anotó.
+- **Hora de la visita = `startTime`** (`tVisita` en `anaquelV2.js`, `horaVisitaMs` en `visitaOla1.js`). La sincronización offline estampa `createdAt` al SUBIR, no al visitar. Se descarta `startTime` si va más de `TOLERANCIA_RELOJ_S` (1 h) por delante de `createdAt`, o más de `MAX_DIAS_SUBIDA_TARDE` (30) días por detrás. **La cifra del Dashboard sigue con `createdAt`**: no se toca.
+- **`src/utils/anaquelFacturas.js`** (puro):
+  - Facturas físicas: sin anuladas, borradores ni ausentes; la reposición SÍ cuenta.
+  - Unidades = `facturas_vendedor.unidades`: la SUMA de las cantidades de línea. **GK no guarda las líneas ni marca qué facturas derivaron sus unidades del monto.**
+  - Se asignan al PDV por carnet propio (o razón social si no hay carnet). Un carnet que comparten 2+ PDV (factura central o PDV duplicado) NO se asigna y se reporta.
+  - Intervalo = (día de la visita inicial, día de la visita final]. **Dudosa** = a ±`DIAS_FACTURA_DUDOSA` (1) día de una visita.
+- **`compararMetodos`** acepta `facturas` y devuelve:
+  - `cruceFacturas` (30/60/90: negativos, red, >21 días y por PDV, con lo anotado vs facturado);
+  - negativos en `grupo` con_factura / sin_factura / sin_fuente;
+  - `desglose` por mercaderista (= quien se eligió al reportar) y por cadena, SOLO de los sin factura y de los sospechosos: conteos absolutos, orden alfabético, sin % ni ranking;
+  - `sospechosos`: duplicados del mismo día, `reportId` repetido y **posible conteo copiado** (inventario idéntico, sin entrega, venta cero);
+  - `tipoVisita`: con/sin factura y subidos tarde;
+  - `formulario`: v2 vs v1, tiempo medio y cuántas veces salta cada alerta, con sus respuestas y el GPS leído o fallido por motivo;
+  - `centralizados`.
+
+  `metodo.fuenteEntregas:'facturas'` cambia lo anotado por lo facturado. `PositioningModalContent` le pasa las facturas que ya leía.
+- **Formulario de visita, Ola 1** (`VisitReportForm.jsx`, textos y opciones en **`src/utils/visitaOla1.js`**). Cada reporte lleva **`formVersion: 2`**. Desde v2, `orderQuantity` = "¿Cuántas unidades entraron hoy a este anaquel?" (antes: "vas a despachar"). **Ninguna pregunta impide enviar**, cada una sale solo si algo no cuadra y su respuesta queda en el reporte:
+  - **V2**: al volver al conteo después de pasar a reponer, queda bloqueado. Para corregirlo hay que elegir un motivo; la opción de depósito pasó a "producto en otra nevera o exhibición del punto". Se guarda `correccionConteo {motivo, at, cambio, original{batches,stockout,inventoryLevel}, nuevoInventoryLevel}`.
+  - **V3**: ya hay un reporte de hoy en el PDV, en Firestore (los del mismo `userId`, que es lo que dejan las reglas) o pendiente en el teléfono. Opciones: segunda visita real (se guarda `avisoDuplicado`) o salir sin enviar (no queda registro, porque no se crea reporte).
+  - **V4**: mismas fechas y cantidades que la visita anterior, y en ella no entró nada. Se guarda `avisoConteoIdentico {respuesta, anteriorReporte, anteriorHora, sigueIgual}`.
+  - **V5**: "El lote no tiene fecha legible" + motivo ⇒ lote `{expiryDate:null, sinFecha:true, motivoSinFecha}`. Cuenta en el inventario, pero no en Frescura ni en las alertas de vencimiento (se filtró en `useKpiCalculations`, `FreshnessModalContent`; `ReportesAnaquelView` y `EditReportForm` dicen "Sin fecha legible").
+  - **V8 — GPS solo registro** (decisión del dueño: GPS obligatorio sigue APAGADO). Se lee en segundo plano solo si el teléfono YA dio permiso (`navigator.permissions`); nunca pregunta ni bloquea. Se guarda `gpsVisita {lat,lng,precisionM,at,distanciaPdvM}` o `{error}`: `sin_permiso` / `permiso_no_concedido` / `tiempo_agotado` / `no_disponible` / `no_soportado` / `pendiente`.
+  - **Coma decimal** en el PVP y en el precio del competidor (`leerPrecio`, se guarda como número).
+- **NO autorizado (espera OK del dueño):** V1, V7 (foto), el flujo de Entrega, la fusión de PDV y el resto de la Fase 2.
+- Pruebas: `tests/anaquelV2.test.mjs` 76 y `tests/visitaOla1.test.mjs` 24, todas en verde.
+
 **Para la Fase 2 (sin autorizar todavía):**
-- El campo de reposición pasa a ser **"unidades que se entregaron HOY en el anaquel (aunque la factura sea de otro día)"**: se mide lo que físicamente entró, porque a veces se factura un día y se despacha 24 h después. Los reportes viejos conservan el significado anterior.
+- ✅ (hecho en la Ola 1, `formVersion: 2`) El campo de reposición pasa a ser **"unidades que se entregaron HOY en el anaquel (aunque la factura sea de otro día)"**: se mide lo que físicamente entró, porque a veces se factura un día y se despacha 24 h después. Los reportes viejos conservan el significado anterior.
 - **Bloque de retiro mínimo** (las devoluciones son muy pocas): "¿Retiraste producto hoy?" Sí/No sin valor por defecto; si Sí: unidades retiradas, UN motivo (Vencido / Por vencer / Envase dañado / Calidad) y unidades repuestas en el acto. Escribe `devoluciones/visita_<id>` con un solo lote (vencimiento precargado del lote más viejo, editable). **Se pospone:** varios lotes con motivo por lote, traslados de "por vencer", campos de nota de crédito, avisos de duplicado en los dos sentidos. Lo complejo sigue en el módulo Devoluciones.
 
 **Terminología (7-oct, decisión del dueño):** en todo lo que ve el usuario, "tramo" pasó a **"intervalo de visitas"** ("intervalo" solo donde falta espacio): pantallas del mapa, antes/después, rotación, mapa del vendedor, "Comparar métodos", PDF, comentarios y mensajes de las pruebas. Las cobranzas siguen diciendo "tramos de antigüedad" (otro concepto). **Los identificadores internos NO se renombraron** (`MIN_DIAS_TRAMO`, `tramosDePos`, `tramos`, `pares`…): alimentan pantallas en uso (Dashboard, rotación, antes/después, mapa del vendedor) y en `anaquelV2.js` el nombre `intervalo` ya es el intervalo de confianza del bootstrap, así que un renombre mecánico chocaría con él.

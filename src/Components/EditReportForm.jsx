@@ -153,7 +153,7 @@ const EditReportForm = ({ report, onSave, onClose }) => {
                                         <div key={i} className={`p-2.5 rounded-lg border ${tono} ${b.devuelto ? 'opacity-60' : ''}`}>
                                             <div className="flex items-center justify-between gap-2">
                                                 <div className="min-w-0">
-                                                    <p className="text-sm font-semibold text-slate-800">Vence: {b.expiryDate || '—'}</p>
+                                                    <p className="text-sm font-semibold text-slate-800">{b.expiryDate ? `Vence: ${b.expiryDate}` : (b.sinFecha ? 'Sin fecha legible' : 'Vence: —')}</p>
                                                     <p className="text-xs text-slate-500">
                                                         {Number(b.quantity) || 0} unid. · {ESTADO_LABEL[est]}
                                                         {b.devuelto && ' · DEVUELTO'}

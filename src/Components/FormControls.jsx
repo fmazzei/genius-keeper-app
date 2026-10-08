@@ -18,11 +18,12 @@ export const FormSection = ({ title, icon, children }) => (
 /**
  * Un campo de entrada de texto genérico con etiqueta.
  */
-export const FormInput = ({ label, type, value, onChange, placeholder, disabled = false }) => (
+export const FormInput = ({ label, type, value, onChange, placeholder, disabled = false, inputMode }) => (
     <div>
         <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
         <input 
             type={type} 
+            inputMode={inputMode}
             value={value} 
             onChange={onChange} 
             placeholder={placeholder} 

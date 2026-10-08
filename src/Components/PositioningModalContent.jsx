@@ -192,7 +192,7 @@ const PositioningModalContent = ({ reports, allReports, posList, ventanaLabel })
         </button>
     );
     const hojaComparar = comparar && (
-        <ComparadorMetodosAnaquel reports={historial} devoluciones={extra.devoluciones} posList={posList || []} onClose={() => setComparar(false)} />
+        <ComparadorMetodosAnaquel reports={historial} devoluciones={extra.devoluciones} facturas={extra.facturas} posList={posList || []} onClose={() => setComparar(false)} />
     );
 
     if (!a.hayDatos) {

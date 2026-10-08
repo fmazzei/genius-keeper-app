@@ -2,7 +2,7 @@
 //   node --import ./tests/alias.mjs tests/anaquelV2.test.mjs
 import {
     tramosDePos, normalizarVisita, asignarMovimientos, rotacionDe, cobertura, veredictoEfecto,
-    bootstrapMediana, analizarAnaquelV2, compararMetodos, fmtNum, fmtPct, fmtUds, claveNombre, diaLocal,
+    bootstrapMediana, analizarAnaquelV2, compararMetodos, fmtNum, fmtPct, fmtUds, claveNombre, diaLocal, tVisita,
 } from '../src/utils/anaquelV2.js';
 import { computeRotacion } from '../src/utils/rotacion.js';
 import { DIAS_POR_VENCER } from '../src/utils/retiros.js';
@@ -271,5 +271,59 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
         `red ponderada ${fmtNum(r.red)} (A pesa más por tener más días) vs mediana por PDV ${fmtNum(r.mediana)} con ${r.nPdv} PDV`);
 }
 
+
+// ── Hora real de la visita y cruce con facturas de Zoho ──
+{
+    const iso = (dia, h = 10) => new Date((T0 + dia * D) * 1000 + (h - 10) * 3600000).toISOString();
+    ok(tVisita({ createdAt: { seconds: T0 + 5 * D }, startTime: iso(3) }) === T0 + 3 * D, 'reporte subido 2 días después: manda la hora real de la visita');
+    ok(tVisita({ createdAt: { seconds: T0 + 5 * D }, startTime: iso(9) }) === T0 + 5 * D, 'reloj del teléfono adelantado: manda la fecha guardada');
+    const R = [
+        // LM (La Muralla): factura del día 1 entre las visitas de los días 0 y 2; luego conteo copiado.
+        V('LM', 0, 20, 0), V('LM', 2, 60, 0), V('LM', 11, 60, 0),
+        // MC (Mercato): factura del día 6 entre las visitas de los días 0 y 9.
+        V('MC', 0, 30, 0), V('MC', 9, 50, 0, { reportId: 'rid-1' }), V('MC', 9, 50, 0, { reportId: 'rid-1' }),
+        // SF: negativo sin factura; visita final repetida el mismo día por otra persona.
+        V('SF', 0, 10, 7, { userName: 'Luis' }), V('SF', 7, 25, 0, { userName: 'Ana' }),
+        { ...V('SF', 7, 25, 0, { userName: 'Luis' }), createdAt: { seconds: T0 + 7 * D + 3600 } },
+        // Subido tarde y del formulario nuevo.
+        { ...V('MC', 12, 40, 0, { userName: 'Ana', formVersion: 2, avisoDuplicado: { respuesta: 'segunda_visita' },
+            gpsVisita: { error: 'tiempo_agotado' }, endTime: iso(12, 10.1667) }), startTime: iso(12), createdAt: { seconds: T0 + 14 * D } },
+        V('P1', 0, 10, 0), V('P1', 7, 5, 0), V('P2', 0, 10, 0), V('P2', 7, 5, 0),
+    ];
+    const posList = [
+        { id: 'LM', name: 'La Muralla', zohoCustomerId: 'c-lm', chain: 'Muralla', type: 'pos' },
+        { id: 'MC', name: 'Mercato', zohoCustomerId: 'c-mc', chain: 'Mercato', type: 'pos' },
+        { id: 'SF', name: 'Sin Factura', zohoCustomerId: 'c-sf', chain: 'Otro', type: 'pos' },
+        { id: 'P1', name: 'Cadena 1', zohoCustomerId: 'c-sh', tipoDespacho: 'centralizado', chain: 'Central', type: 'pos' },
+        { id: 'P2', name: 'Cadena 2', zohoCustomerId: 'c-sh', tipoDespacho: 'centralizado', chain: 'Central', type: 'pos' },
+    ];
+    const fac = (cid, dia, uds, extra = {}) => ({ numero: `F-${cid}-${dia}`, zohoCustomerId: cid, fecha: { seconds: T0 + dia * D + 3600 }, unidades: uds, estado: 'pendiente', ...extra });
+    const facturas = [fac('c-lm', 1, 48), fac('c-mc', 6, 24), fac('c-sh', 3, 30), fac('c-mc', 4, 99, { estado: 'anulada' }), fac('c-otro', 2, 5)];
+    const c = compararMetodos({ reports: R, posList, facturas, dias: 30, ahora: new Date((T0 + 15 * D) * 1000) });
+    const lm = c.negativos.find(n => n.posId === 'LM'), mc = c.negativos.find(n => n.posId === 'MC'), sf = c.negativos.find(n => n.posId === 'SF');
+    ok(lm && lm.resultado === -40 && lm.grupo === 'con_factura' && lm.unidadesFacturadasEntre === 48 && lm.ventaSumandoFacturas === 8
+        && lm.resultadoConFacturas === 8 && lm.facturasEntre[0].dudosa === true,
+        `La Muralla: −40 con la visita, +8 con la factura del día 1 (dudosa: a ±1 día) (${JSON.stringify(lm && { r: lm.resultado, f: lm.resultadoConFacturas, d: lm.facturasEntre[0]?.dudosa })})`);
+    ok(mc && mc.resultado === -20 && mc.grupo === 'con_factura' && mc.resultadoConFacturas === 4 && mc.facturasEntre[0].dudosa === false,
+        'Mercato: −20 con la visita, +4 con la factura del día 6 (no dudosa); la anulada no cuenta');
+    ok(sf && sf.grupo === 'sin_factura' && sf.reporterFin === 'Ana' && sf.reporterInicio === 'Luis', 'negativo sin factura, con quién hizo cada visita');
+    const cr = c.cruceFacturas.find(x => x.dias === 30);
+    ok(cr && cr.negativosFa < cr.negativosOq && cr.noAsignadas.compartida === 1 && cr.noAsignadas.sinPdv === 1 && cr.facturasDudosas === 1,
+        `cruce 30 días: negativos ${cr?.negativosOq} → ${cr?.negativosFa}; factura de cadena compartida y sin PDV fuera (${JSON.stringify(cr?.noAsignadas)})`);
+    const lmPdv = cr.porPdv.find(p => p.posId === 'LM');
+    ok(lmPdv && lmPdv.orderQuantity === 0 && lmPdv.facturado === 48, 'por PDV: orderQuantity 0 frente a 48 facturadas');
+    ok(c.pdvSinFuente.length === 2 && c.pdvSinFuente.every(p => p.estado === 'compartido'), 'los dos PDV con el mismo carnet quedan sin fuente de facturas');
+    ok(c.sospechosos.copiados.some(x => x.posId === 'LM' && x.inventario === 60), 'La Muralla 60 y 60 sin entrega ni venta: posible conteo copiado');
+    ok(c.sospechosos.duplicadosDia.some(g => g.posId === 'SF') && c.sospechosos.reportIdRepetido.some(g => g.reportId === 'rid-1'),
+        'reporte duplicado el mismo día y mismo identificador de envío repetido');
+    const ana = c.desglose.porMercaderista.find(x => x.nombre === 'Ana');
+    ok(ana && ana.negFin === 1 && ana.duplicados === 1, `desglose por mercaderista con conteos absolutos (${JSON.stringify(ana)})`);
+    ok(c.desglose.porMercaderista.map(x => x.nombre).join() === [...c.desglose.porMercaderista.map(x => x.nombre)].sort((a, b) => a.localeCompare(b, 'es')).join(),
+        'desglose en orden alfabético, sin ranking');
+    ok(c.tipoVisita.subidosTarde === 1 && c.tipoVisita.negativos.conFactura === 2 && c.tipoVisita.negativos.sinFactura === 1, 'tipo de visita: con/sin factura y subidos más tarde');
+    ok(c.formulario.reportesV2 === 1 && c.formulario.alertas.duplicado === 1 && c.formulario.gps.fallas.tiempo_agotado === 1
+        && Math.abs(c.formulario.tiempoV2.minutos - 10) < 0.1, `formulario: tiempo medio y alertas (${JSON.stringify(c.formulario.tiempoV2)})`);
+    ok(c.centralizados.pdv === 2, 'PDV con despacho centralizado contados para el plan de Entrega');
+}
 console.log(fallas ? `\n${fallas} verificación(es) fallaron` : '\nTodas las verificaciones en verde');
 process.exit(fallas ? 1 : 0);

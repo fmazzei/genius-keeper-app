@@ -422,7 +422,7 @@ function ReportDetailSheet({ report, isMaster, onEdit, onClose, t }) {
                                                 )}
                                             </div>
                                             <div className={`flex items-center gap-2 text-xs mt-0.5 flex-wrap ${t.batchExpiry}`}>
-                                                {b.expiryDate && <span>Vence {b.expiryDate}</span>}
+                                                {b.expiryDate ? <span>Vence {b.expiryDate}</span> : b.sinFecha ? <span className="font-semibold">Sin fecha legible</span> : null}
                                                 {f && <span className={`font-semibold ${toneOf(f)}`}>· {f.label}</span>}
                                                 {Number(b.danadas) > 0 && <span className="font-bold">· {b.danadas} con envase dañado</span>}
                                                 {b.devuelto && <span className="font-bold">· DEVUELTO</span>}

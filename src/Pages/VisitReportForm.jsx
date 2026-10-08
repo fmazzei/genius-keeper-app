@@ -8,9 +8,14 @@ import { db as localDB } from '@/db/local.js';
 import { safeUUID } from '@/utils/safeId.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { estadoLote, resumenLotes } from '@/utils/retiros.js';
+import {
+    FORM_VERSION, MOTIVOS_CORRECCION_CONTEO, RESPUESTAS_DUPLICADO, RESPUESTAS_CONTEO_IDENTICO,
+    MOTIVOS_SIN_FECHA, GPS_TIEMPO_MAX_MS, ETIQUETAS, firmaLotes, leerPrecio, horaVisitaMs,
+    diaLocalMs, distanciaM, conteoIdentico,
+} from '@/utils/visitaOla1.js';
 import { useSwipeable } from 'react-swipeable';
 // ✅ CORRECCIÓN: Se añade 'Check' a la lista de importaciones para solucionar el error.
-import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, AlertTriangle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check, HelpCircle } from 'lucide-react';
+import { ArrowLeft, Send, DollarSign, Calendar, BarChart2, CheckCircle, AlertCircle, AlertTriangle, ChevronRight, ChevronLeft, Trash2, Camera, Shield, ThumbsUp, X, Sparkles, Loader, Info, Lightbulb, Search, Check, HelpCircle, Lock, EyeOff } from 'lucide-react';
 import ReporterGuideCoach, { GUIDE_SEEN_KEY } from '@/Components/ReporterGuideCoach.jsx';
 import { FormInput, ToggleButton, FormSection } from '@/Components/FormControls.jsx';
 import CameraScannerModal from '@/Components/CamScannerModal.jsx';
@@ -101,7 +106,36 @@ const SubmissionSuccess = ({ onFinish, isOffline }) => {
 };
 
 
-const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
+// Pregunta de la Ola 1: aparece SOLO cuando algo no cuadra. Ninguna impide
+// enviar el reporte; cada respuesta queda guardada en el reporte.
+const PreguntaModal = ({ titulo, texto, opciones, onElegir }) => (
+    <div className="fixed inset-0 z-[60] bg-black/50 flex items-end sm:items-center justify-center p-3">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-5 animate-fade-in">
+            <div className="flex items-start gap-3">
+                <AlertTriangle size={22} className="text-amber-500 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                    <p className="text-lg font-bold text-slate-800 leading-tight">{titulo}</p>
+                    {texto && <div className="text-sm text-slate-600 mt-1">{texto}</div>}
+                </div>
+            </div>
+            <div className="mt-4 space-y-2">
+                {opciones.map(o => (
+                    <button key={o.id} type="button" onClick={() => onElegir(o.id)}
+                        className="w-full text-left px-4 py-3 rounded-xl border-2 border-slate-200 font-semibold text-slate-800 active:bg-slate-100">
+                        {o.label}
+                    </button>
+                ))}
+            </div>
+        </div>
+    </div>
+);
+
+const Step1_Inventory = ({ report, setReport, isReadOnly: soloLectura, conteoBloqueado = false, onCorregirConteo }) => {
+    // V2: después de pasar a reponer, el conteo queda BLOQUEADO. Se ve igual,
+    // pero para cambiarlo hay que decir por qué (queda el rastro).
+    const isReadOnly = soloLectura || conteoBloqueado;
+    // V5: lote sin fecha legible — el motivo elegido espera su cantidad.
+    const [sinFechaPaso, setSinFechaPaso] = useState(null);   // null | 'eligiendo' | motivoId
     const [currentDate, setCurrentDate] = useState('');
     const [isScannerOpen, setScannerOpen] = useState(false);
     const [isNumpadOpen, setNumpadOpen] = useState(false);
@@ -154,7 +188,18 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
         }
     };
     
-    const handleNumpadConfirm = (quantity) => { if(!isReadOnly) { if (currentDate && quantity > 0) { setReport(prev => ({ ...prev, batches: [...prev.batches, { expiryDate: currentDate, quantity: parseInt(quantity) }] })); setCurrentDate(''); } setNumpadOpen(false); }};
+    const handleNumpadConfirm = (quantity) => {
+        if (isReadOnly) return;
+        const motivoSinFecha = sinFechaPaso && sinFechaPaso !== 'eligiendo' ? sinFechaPaso : null;
+        if (motivoSinFecha && quantity > 0) {
+            setReport(prev => ({ ...prev, batches: [...prev.batches, { expiryDate: null, quantity: parseInt(quantity), sinFecha: true, motivoSinFecha }] }));
+        } else if (currentDate && quantity > 0) {
+            setReport(prev => ({ ...prev, batches: [...prev.batches, { expiryDate: currentDate, quantity: parseInt(quantity) }] }));
+            setCurrentDate('');
+        }
+        setSinFechaPaso(null);
+        setNumpadOpen(false);
+    };
     const handleRemoveBatch = (index) => { if(!isReadOnly) setReport(prev => ({ ...prev, batches: prev.batches.filter((_, i) => i !== index) })); };
     // Retirar un lote del anaquel es una ACCIÓN de la visita, igual que reponer.
     // Si no se declara, el sistema sigue creyendo que ese producto está en el
@@ -193,6 +238,20 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                 Antes el quiebre era un botón rojo al final, debajo de todo el
                 formulario de lotes — había que recorrer lo que no aplicaba para
                 encontrarlo. */}
+            {conteoBloqueado && !soloLectura && (
+                <div className="mb-5 rounded-xl border-2 border-slate-300 bg-slate-50 p-4">
+                    <p className="flex items-center gap-2 font-bold text-slate-800"><Lock size={18} className="text-slate-500" /> El conteo de hoy ya quedó registrado</p>
+                    <p className="text-sm text-slate-600 mt-1">Se cuenta ANTES de reponer. Si de verdad hay que corregirlo, dinos por qué:</p>
+                    <div className="mt-3 space-y-2">
+                        {MOTIVOS_CORRECCION_CONTEO.map(m => (
+                            <button key={m.id} type="button" onClick={() => onCorregirConteo?.(m.id)}
+                                className="w-full text-left px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 active:bg-slate-100">
+                                {m.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
             {!isReadOnly && (
                 <div className="mb-5">
                     <p className="text-base font-bold text-slate-800 mb-2">¿Cómo está el anaquel?</p>
@@ -251,6 +310,25 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                             className="mt-2 w-full flex items-center justify-center gap-2 text-sm font-semibold text-brand-blue py-2.5 rounded-xl border border-slate-200 bg-white active:scale-95 transition-transform">
                             <Camera size={18}/> Escanear la fecha con la cámara
                         </button>
+                        {sinFechaPaso === 'eligiendo' ? (
+                            <div className="mt-2 rounded-xl border border-slate-300 bg-slate-50 p-3">
+                                <p className="text-sm font-bold text-slate-700 mb-2">¿Por qué no se lee la fecha?</p>
+                                <div className="space-y-2">
+                                    {MOTIVOS_SIN_FECHA.map(m => (
+                                        <button key={m.id} type="button" onClick={() => { setSinFechaPaso(m.id); setNumpadOpen(true); }}
+                                            className="w-full text-left px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 active:bg-slate-100">
+                                            {m.label}
+                                        </button>
+                                    ))}
+                                    <button type="button" onClick={() => setSinFechaPaso(null)} className="w-full text-center text-xs font-semibold text-slate-500 py-1">Cancelar</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button type="button" onClick={() => setSinFechaPaso('eligiendo')}
+                                className="mt-2 w-full flex items-center justify-center gap-2 text-sm font-semibold text-slate-500 py-2">
+                                <EyeOff size={16}/> El lote no tiene fecha legible
+                            </button>
+                        )}
                     </div>
 
                     {/* Paso 2 — Cantidad */}
@@ -279,13 +357,15 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
                             .sort((a, b) => daysUntilExpiry(a.expiryDate) - daysUntilExpiry(b.expiryDate))
                             .map((batch) => {
                                 const days = daysUntilExpiry(batch.expiryDate);
-                                const urg = getUrgency(days);
+                                const urg = batch.sinFecha || !batch.expiryDate
+                                    ? { label: ETIQUETAS.loteSinFecha[batch.motivoSinFecha] || 'Sin fecha', badge: 'bg-slate-400 text-white', row: 'bg-slate-100 border-l-4 border-slate-400' }
+                                    : getUrgency(days);
                                 return (
                                     <div key={batch.originalIdx} className={`p-3 rounded-xl animate-fade-in ${urg.row}`}>
                                         <div className="flex items-center gap-3">
                                             <div className="min-w-0 flex-grow">
-                                                <p className="text-xs text-slate-500">Vence</p>
-                                                <p className="font-bold text-slate-800 leading-tight">{fmtVence(batch.expiryDate)}</p>
+                                                <p className="text-xs text-slate-500">{batch.expiryDate ? 'Vence' : 'Lote'}</p>
+                                                <p className="font-bold text-slate-800 leading-tight">{batch.expiryDate ? fmtVence(batch.expiryDate) : 'Sin fecha legible'}</p>
                                                 <span className={`inline-block mt-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${urg.badge}`}>{urg.label}</span>
                                             </div>
                                             <p className="font-black text-2xl text-brand-blue leading-none">
@@ -359,22 +439,39 @@ const Step1_Inventory = ({ report, setReport, isReadOnly }) => {
 
             {!isReadOnly && <CameraScannerModal isOpen={isScannerOpen} onClose={() => setScannerOpen(false)} onCapture={handleScanComplete} onStatusChange={setScannerStatus}/>}
             {(isProcessing || isOptimizing) && <div className="fixed inset-0 bg-white bg-opacity-80 flex flex-col items-center justify-center z-50"><Loader className="animate-spin h-12 w-12 text-brand-blue"/> <p className="mt-4 font-semibold">{scannerStatus || "Procesando..."}</p></div>}
-            {!isReadOnly && <NumericKeypadModal isOpen={isNumpadOpen} onClose={() => setNumpadOpen(false)} onConfirm={handleNumpadConfirm} title={`Unidades del lote que vence ${fmtVence(currentDate)}`}/>}
+            {!isReadOnly && <NumericKeypadModal isOpen={isNumpadOpen} onClose={() => { setNumpadOpen(false); setSinFechaPaso(null); }} onConfirm={handleNumpadConfirm} title={sinFechaPaso && sinFechaPaso !== 'eligiendo' ? 'Unidades del lote sin fecha legible' : `Unidades del lote que vence ${fmtVence(currentDate)}`}/>}
         </FormSection>
     );
 };
 
-const Step2_Sales = ({ report, setReport, isReadOnly }) => (
+const Step2_Sales = ({ report, setReport, isReadOnly }) => {
+    // Precio: texto con teclado decimal. Con type="number" y teclado en español,
+    // "10,25" deja el campo inválido y el valor se pierde.
+    const precioMal = String(report.price ?? '') !== '' && leerPrecio(report.price) === null;
+    return (
     <FormSection title="PVP y Reposición" icon={<DollarSign className="text-brand-blue mr-3"/>}>
         <div className="space-y-4">
-            <FormInput label="Precio de Venta al Público (PVP) *" type="number" value={report.price} onChange={e => setReport(prev => ({...prev, price: e.target.value}))} placeholder="Ej: 10.25" disabled={isReadOnly} />
             <div>
-                <label className="block text-sm font-medium text-slate-700">Reposición de inventario en punto de venta *</label>
-                <p className="text-xs text-slate-500 mb-1">¿Cuántas unidades vas a despachar en esta visita?</p>
+                <label className="block text-sm font-medium text-slate-700">Precio de Venta al Público (PVP) *</label>
                 <input
-                    type="number"
+                    type="text" inputMode="decimal"
+                    value={report.price}
+                    onChange={e => setReport(prev => ({ ...prev, price: e.target.value.replace(/[^\d.,]/g, '') }))}
+                    placeholder="Ej: 10,25"
+                    disabled={isReadOnly}
+                    className="w-full p-3 border border-slate-300 rounded-md focus:ring-brand-yellow focus:border-brand-yellow disabled:bg-slate-100 disabled:text-slate-500"
+                />
+                {precioMal && !isReadOnly && <p className="text-xs text-red-600 mt-1">Escribe el precio con coma o punto, por ejemplo 10,25.</p>}
+            </div>
+            <div>
+                {/* Desde la versión 2 del formulario esta cifra es lo que ENTRÓ
+                    HOY al anaquel, no lo que "se va a despachar". */}
+                <label className="block text-sm font-medium text-slate-700">¿Cuántas unidades entraron hoy a este anaquel? *</label>
+                <p className="text-xs text-slate-500 mb-1">Las que pusiste o recibió hoy el punto, aunque la factura sea de otro día. Si no entró nada, escribe 0.</p>
+                <input
+                    type="text" inputMode="numeric"
                     value={report.orderQuantity}
-                    onChange={e => setReport(prev => ({...prev, orderQuantity: e.target.value}))}
+                    onChange={e => setReport(prev => ({ ...prev, orderQuantity: e.target.value.replace(/[^\d]/g, '') }))}
                     placeholder="Ej: 12"
                     disabled={isReadOnly}
                     className="w-full p-3 border border-slate-300 rounded-md focus:ring-brand-yellow focus:border-brand-yellow disabled:bg-slate-100 disabled:text-slate-500"
@@ -383,7 +480,8 @@ const Step2_Sales = ({ report, setReport, isReadOnly }) => (
             {!isReadOnly && <p className="text-xs text-slate-400">* Ambos campos son obligatorios para continuar.</p>}
         </div>
     </FormSection>
-);
+    );
+};
 
 const Step3_Execution = ({ report, setReport, isReadOnly }) => {
     const [isNumpadOpen, setNumpadOpen] = useState(false);
@@ -432,8 +530,9 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince 
 
     const handleAddCompetitor = () => {
         if (isReadOnly) return;
-        if (comp.product && comp.price) {
-            setReport(prev => ({ ...prev, competition: [...prev.competition, comp] }));
+        const precio = leerPrecio(comp.price);
+        if (comp.product && precio !== null) {
+            setReport(prev => ({ ...prev, competition: [...prev.competition, { ...comp, price: precio }] }));
             setComp({ product: '', brand: '', productName: '', price: '', hasPop: null, hasTasting: null, weight_g: null });
         } else {
             alert("Por favor, selecciona un producto y añade su precio.");
@@ -481,7 +580,7 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince 
                                     {competitorProducts.map(p => <option key={p.id} value={p.text}>{p.text}</option>)}
                                 </select>
                             </div>
-                            <FormInput label="Precio" type="number" value={comp.price} onChange={e => setComp({...comp, price: e.target.value})} placeholder="Ingresa el PVP" disabled={isReadOnly}/>
+                            <FormInput label="Precio" type="text" inputMode="decimal" value={comp.price} onChange={e => setComp({...comp, price: e.target.value.replace(/[^\d.,]/g, '')})} placeholder="Ej: 9,80" disabled={isReadOnly}/>
                             <div>
                                 <label className="text-sm font-medium text-slate-700">¿Tiene Material POP?</label>
                                 <div className="grid grid-cols-2 gap-2 mt-1">
@@ -617,7 +716,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         let isValid = false;
         switch (currentStep) {
             case 1: isValid = report.batches.length > 0 || report.stockout; break;
-            case 2: isValid = report.price !== '' && report.orderQuantity !== ''; break;
+            case 2: isValid = leerPrecio(report.price) !== null && report.orderQuantity !== ''; break;
             case 3: isValid = report.shelfLocation !== '' && report.adjacentCategory !== '' && report.popStatus !== '' && report.facing !== ''; break;
             case 4:
                 isValid = competitorMode === 'preloaded' || report.competition.length > 0;
@@ -627,7 +726,112 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         setIsStepValid(isValid);
     }, [currentStep, report, isReadOnly, competitorMode]);
 
-    const handleNext = () => setCurrentStep(prev => Math.min(prev + 1, TOTAL_STEPS));
+    // ── OLA 1 (formVersion 2): preguntas que aparecen SOLO si algo no cuadra ──
+    // Ninguna impide enviar el reporte; cada respuesta se guarda en él.
+
+    // Reportes previos de este PDV (los de este usuario — así lo permiten las
+    // reglas — más los que siguen en este teléfono sin enviar), del más
+    // reciente al más viejo. Alimentan V3 (duplicado) y V4 (conteo idéntico).
+    const [reportesPdv, setReportesPdv] = useState([]);
+    const [preguntaDuplicado, setPreguntaDuplicado] = useState(null);   // el reporte de hoy que ya existe
+    const [avisoDuplicado, setAvisoDuplicado] = useState(null);
+    const [preguntaConteo, setPreguntaConteo] = useState(false);
+    const [avisoConteo, setAvisoConteo] = useState(null);               // { respuesta, firma }
+    const [conteoOriginal, setConteoOriginal] = useState(null);         // V2: el conteo al pasar a reponer
+    const [correccionConteo, setCorreccionConteo] = useState(null);     // { motivo, at }
+    const conteoBloqueado = !!conteoOriginal && !correccionConteo;
+    const gpsRef = useRef({ error: 'pendiente' });
+
+    useEffect(() => {
+        if (isReadOnly || !pos?.id || !user?.uid) return;
+        let vivo = true;
+        (async () => {
+            let lista = [];
+            try {
+                const snap = await getDocs(query(collection(db, 'visit_reports'), where('posId', '==', pos.id), where('userId', '==', user.uid)));
+                lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            } catch { /* sin red: se revisan solo los pendientes del teléfono */ }
+            try {
+                const pend = await localDB.pending_reports.where('posId').equals(pos.id).toArray();
+                lista = lista.concat(pend.map(r => ({ ...r, pendiente: true })));
+            } catch { /* almacenamiento local no disponible */ }
+            if (!vivo) return;
+            lista.sort((a, b) => horaVisitaMs(b) - horaVisitaMs(a));
+            setReportesPdv(lista);
+            const hoy = diaLocalMs(Date.now());
+            const deHoy = lista.find(r => { const ms = horaVisitaMs(r); return ms > 0 && diaLocalMs(ms) === hoy; });
+            if (deHoy) setPreguntaDuplicado(deHoy);
+        })();
+        return () => { vivo = false; };
+    }, [isReadOnly, pos?.id, user?.uid]);
+
+    // V8 — GPS SOLO REGISTRO: se lee en segundo plano si el teléfono ya dio
+    // permiso. Nunca pide permiso, nunca bloquea; si falla se guarda el motivo.
+    useEffect(() => {
+        if (isReadOnly) return;
+        const fijar = (v) => { gpsRef.current = v; };
+        try {
+            const geo = typeof navigator !== 'undefined' ? navigator.geolocation : null;
+            const perms = typeof navigator !== 'undefined' ? navigator.permissions : null;
+            if (!geo || !perms || typeof perms.query !== 'function') { fijar({ error: 'no_soportado' }); return; }
+            perms.query({ name: 'geolocation' }).then(st => {
+                if (st.state === 'denied') { fijar({ error: 'sin_permiso' }); return; }
+                if (st.state !== 'granted') { fijar({ error: 'permiso_no_concedido' }); return; }
+                geo.getCurrentPosition(
+                    p => fijar({
+                        lat: p.coords.latitude, lng: p.coords.longitude,
+                        precisionM: Math.round(p.coords.accuracy || 0),
+                        at: new Date(p.timestamp || Date.now()).toISOString(),
+                    }),
+                    err => fijar({ error: err?.code === 1 ? 'sin_permiso' : err?.code === 3 ? 'tiempo_agotado' : 'no_disponible' }),
+                    { enableHighAccuracy: false, timeout: GPS_TIEMPO_MAX_MS, maximumAge: 120000 },
+                );
+            }).catch(() => fijar({ error: 'no_soportado' }));
+        } catch { fijar({ error: 'no_soportado' }); }
+    }, [isReadOnly]);
+
+    const responderDuplicado = (respuesta) => {
+        const r = preguntaDuplicado;
+        setPreguntaDuplicado(null);
+        if (respuesta === 'salir') { backToList?.(); return; }
+        const ms = horaVisitaMs(r);
+        setAvisoDuplicado({
+            respuesta,
+            reporteExistente: r?.reportId || r?.id || null,
+            horaExistente: ms ? new Date(ms).toISOString() : null,
+            pendienteDeEnvio: !!r?.pendiente,
+        });
+    };
+
+    const avanzar = () => {
+        if (currentStep === 1 && !conteoOriginal) {
+            setConteoOriginal({
+                batches: JSON.parse(JSON.stringify(report.batches || [])),
+                stockout: !!report.stockout,
+                firma: firmaLotes(report.batches, report.stockout),
+                inventoryLevel: resumenLotes(report.batches).inventoryLevel,
+            });
+        }
+        setCurrentStep(prev => Math.min(prev + 1, TOTAL_STEPS));
+    };
+
+    const handleNext = () => {
+        // V4: mismo conteo exacto que la visita anterior, sin entrega en medio.
+        if (currentStep === 1 && !isReadOnly) {
+            const anterior = reportesPdv[0];
+            const firma = firmaLotes(report.batches, report.stockout);
+            if (conteoIdentico(report, anterior) && !(avisoConteo?.respuesta === 'sin_venta' && avisoConteo.firma === firma)) {
+                setPreguntaConteo(true);
+                return;
+            }
+        }
+        avanzar();
+    };
+    const responderConteo = (respuesta) => {
+        setPreguntaConteo(false);
+        setAvisoConteo({ respuesta, firma: firmaLotes(report.batches, report.stockout) });
+        if (respuesta === 'sin_venta') avanzar();
+    };
     const handleBack = () => setCurrentStep(prev => Math.max(prev - 1, 1));
 
     const handlers = useSwipeable({
@@ -637,6 +841,38 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         trackMouse: true,
     });
     
+    // Lo que la Ola 1 deja en el reporte. Todo lo ausente va en null (Firestore
+    // no acepta undefined).
+    const registroOla1 = () => {
+        const firmaFinal = firmaLotes(report.batches, report.stockout);
+        const anterior = reportesPdv[0] || null;
+        const gps = gpsRef.current || { error: 'sin_dato' };
+        const gpsVisita = gps.lat != null
+            ? { ...gps, distanciaPdvM: distanciaM(gps, pos?.coordinates) }
+            : { error: gps.error || 'sin_dato' };
+        return {
+            correccionConteo: correccionConteo && conteoOriginal ? {
+                motivo: correccionConteo.motivo,
+                at: correccionConteo.at,
+                cambio: firmaFinal !== conteoOriginal.firma,
+                original: {
+                    batches: conteoOriginal.batches,
+                    stockout: conteoOriginal.stockout,
+                    inventoryLevel: conteoOriginal.inventoryLevel,
+                },
+                nuevoInventoryLevel: resumenLotes(report.batches).inventoryLevel,
+            } : null,
+            avisoDuplicado: avisoDuplicado || null,
+            avisoConteoIdentico: avisoConteo ? {
+                respuesta: avisoConteo.respuesta,
+                anteriorReporte: anterior?.reportId || anterior?.id || null,
+                anteriorHora: anterior && horaVisitaMs(anterior) ? new Date(horaVisitaMs(anterior)).toISOString() : null,
+                sigueIgual: conteoIdentico(report, anterior),
+            } : null,
+            gpsVisita,
+        };
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (isReadOnly) return;
@@ -653,7 +889,8 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         const finalReportData = {
             envasesDanados,
             lotesPorEstado: porEstado,
-            price: Number(report.price) || 0,
+            formVersion: FORM_VERSION,
+            price: leerPrecio(report.price) ?? 0,
             orderQuantity: Number(report.orderQuantity) || 0,
             stockout: report.stockout || false,
             batches: report.batches || [],
@@ -674,6 +911,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
             inventoryLevel: inventoryLevel,
             startTime: formOpenTime.current,
             endTime: new Date().toISOString(),
+            ...registroOla1(),
         };
         
         if (navigator.onLine) {
@@ -740,7 +978,9 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
     const renderStepContent = () => {
         const stepProps = { report, setReport, isReadOnly };
         switch (currentStep) {
-            case 1: return <Step1_Inventory {...stepProps} />;
+            case 1: return <Step1_Inventory {...stepProps}
+                conteoBloqueado={!isReadOnly && conteoBloqueado}
+                onCorregirConteo={(motivo) => setCorreccionConteo({ motivo, at: new Date().toISOString() })} />;
             case 2: return <Step2_Sales {...stepProps} />;
             case 3: return <Step3_Execution {...stepProps} />;
             case 4: return <Step4_Intel
@@ -801,6 +1041,27 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
                         )}
                     </div>
                 </footer>
+            )}
+
+            {!isReadOnly && preguntaDuplicado && (
+                <PreguntaModal
+                    titulo="Ya hay un reporte de hoy en este punto"
+                    texto={<>
+                        {(() => { const ms = horaVisitaMs(preguntaDuplicado); return ms ? `A las ${new Date(ms).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })}` : 'Hoy'; })()}
+                        {preguntaDuplicado.userName ? ` · ${preguntaDuplicado.userName}` : ''}
+                        {preguntaDuplicado.pendiente ? ' · todavía sin enviar, guardado en este teléfono' : ''}.
+                    </>}
+                    opciones={RESPUESTAS_DUPLICADO}
+                    onElegir={responderDuplicado}
+                />
+            )}
+            {!isReadOnly && preguntaConteo && (
+                <PreguntaModal
+                    titulo="El conteo es idéntico al de la visita anterior"
+                    texto="Mismas fechas y mismas cantidades, y en la visita anterior no entró producto. ¿Es correcto?"
+                    opciones={RESPUESTAS_CONTEO_IDENTICO}
+                    onElegir={responderConteo}
+                />
             )}
 
             {!isReadOnly && guideEnabled && !guideDismissedSteps[currentStep] && (

@@ -75,6 +75,14 @@ export const PCT_VECINO_COMPENSA = 0.5;
 export const FRACCION_DESFASE_CUBRE = 1;
 // Dos PDV duplicados a menos de esta distancia son, casi seguro, el mismo punto.
 export const DISTANCIA_MISMO_PDV_M = 150;
+// Factura "dudosa": a ±1 día de una visita (suele haber 24 h entre facturar y
+// despachar, así que pudo entrar en el intervalo vecino).
+export const DIAS_FACTURA_DUDOSA = 1;
+// La hora real de la visita es `startTime` (reloj del teléfono). Se descarta si
+// es posterior a la fecha guardada en más de esto (reloj adelantado) o anterior
+// en más de MAX_DIAS_SUBIDA_TARDE (reloj muy atrasado).
+export const TOLERANCIA_RELOJ_S = 3600;
+export const MAX_DIAS_SUBIDA_TARDE = 30;
 // Posibles PDV duplicados: nombres a esta distancia de edición o menos (tras
 // quitar acentos, signos y la forma jurídica) y de al menos este largo.
 export const MAX_DISTANCIA_DUPLICADO = 2;

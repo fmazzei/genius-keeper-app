@@ -23,6 +23,7 @@ import {
     MIN_PDV_CELDA, MIN_CELDAS_CAPA_B, DISTANCIA_MISMO_PDV_M,
 } from '@/utils/anaquelConstantes.js';
 import { etiquetaAltura, etiquetaCategoria } from '@/utils/anaquelCatalogo.js';
+import { ETIQUETAS } from '@/utils/visitaOla1.js';
 
 const pct = (v) => (v == null || !Number.isFinite(v) ? '—' : `${fmtNum(v * 100, 1)} %`);
 const signo = (v) => (v == null || !Number.isFinite(v) ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtNum(Math.abs(v), 2)}`);
@@ -99,7 +100,56 @@ function Cifra({ k, v, fuerte }) {
     );
 }
 
-export default function ComparadorMetodosAnaquel({ reports, devoluciones, posList, onClose }) {
+function TarjetaNegativo({ n }) {
+    const l = LECTURA[n.lectura];
+    return (
+        <div className="py-3">
+            <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800">{n.nombre}</p>
+                    <p className="text-[11px] text-slate-500">Visitas del {fecha(n.desde)} ({n.reporterInicio || '—'}) y del {fecha(n.hasta)} ({n.reporterFin || '—'}) · {fmtNum(n.dias, 1)} días
+                        {n.subidoTarde && <span className="ml-1 font-bold text-amber-700">· subido más tarde</span>}</p>
+                </div>
+                <span className="shrink-0 text-sm font-black text-red-700">{signoUds(n.resultado)} uds</span>
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                <Cifra k="Inv. anterior" v={n.invAnterior} />
+                <Cifra k="Anotado en visita" v={n.facturadas} />
+                <Cifra k="Repuestas" v={n.repuestas} />
+                <Cifra k="Retiradas" v={n.retiradas} />
+                <Cifra k="Inv. actual" v={n.invActual} />
+                <Cifra k="Resultado" v={n.resultado} fuerte />
+            </div>
+            {n.facturasEntre?.length > 0 && (
+                <div className="mt-1.5 rounded-lg bg-emerald-50 border border-emerald-100 px-2 py-1.5 text-[11px] text-emerald-900">
+                    Facturas entre las visitas: {n.facturasEntre.map(f => `${f.numero || 's/n'} del ${f.dia.split('-').reverse().join('/')} por ${fmtNum(f.unidades, 0)} uds${f.dudosa ? ' (dudosa)' : ''}`).join(' · ')}.
+                    {' '}Sumándolas: <b>{signoUds(n.ventaSumandoFacturas)} uds</b>{n.resultadoConFacturas != null && n.resultadoConFacturas !== n.ventaSumandoFacturas && <> · con facturas en lugar de lo anotado: <b>{signoUds(n.resultadoConFacturas)}</b></>}.
+                </div>
+            )}
+            {n.grupo !== 'con_factura' && (
+                <>
+                    <p className="text-[11px] text-slate-600 mt-1">
+                        Rotación del intervalo anterior: <b>{n.rotAnterior == null ? 'no hay' : `${fmtNum(n.rotAnterior, 2)} uds/día`}</b>
+                        {' · '}del siguiente: <b>{n.rotSiguiente == null ? 'no hay' : `${fmtNum(n.rotSiguiente, 2)} uds/día`}</b>
+                        {n.medianaPdv != null && <> · mediana del PDV {fmtNum(n.medianaPdv, 2)}</>}
+                    </p>
+                    {(n.vecinoAlto === 'anterior' || n.vecinoAlto === 'ambos') && n.juntosAnterior != null && (
+                        <p className="text-[11px] text-slate-600">Juntos con el anterior: {fmtNum(n.juntosAnterior, 2)} uds/día.</p>
+                    )}
+                    {(n.vecinoAlto === 'siguiente' || n.vecinoAlto === 'ambos') && n.juntosSiguiente != null && (
+                        <p className="text-[11px] text-slate-600">Juntos con el siguiente: {fmtNum(n.juntosSiguiente, 2)} uds/día.</p>
+                    )}
+                    <span className={`inline-block mt-1.5 text-[11px] font-bold px-2 py-0.5 rounded border ${l.cls}`}>{l.txt}</span>
+                </>
+            )}
+            {n.resultadoSinDevoluciones !== n.resultado && (
+                <p className="text-[11px] text-slate-500 mt-1">Sin contar devoluciones daría {signoUds(n.resultadoSinDevoluciones)} uds.</p>
+            )}
+        </div>
+    );
+}
+
+export default function ComparadorMetodosAnaquel({ reports, devoluciones, facturas = null, posList, onClose }) {
     useAtrasCierra(onClose);
     const [dias, setDias] = useState(30);
     const [verTodos, setVerTodos] = useState(false);
@@ -114,14 +164,15 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, posLis
         return () => { vivo = false; };
     }, []);
     const lista = useMemo(() => (posTodos && posTodos.length ? posTodos : (posList || [])), [posTodos, posList]);
-    const c = useMemo(() => compararMetodos({ reports: reports || [], devoluciones: devoluciones || [], posList: lista, dias }),
-        [reports, devoluciones, lista, dias]);
+    const c = useMemo(() => compararMetodos({ reports: reports || [], devoluciones: devoluciones || [], facturas, posList: lista, dias }),
+        [reports, devoluciones, facturas, lista, dias]);
 
     const maxHist = Math.max(1, ...c.histDias.map(h => h.tramos));
     const pdvs = verTodos ? c.porPdv : c.porPdv.slice(0, 25);
-    const nDesfase = c.negativos.filter(n => n.lectura === 'desfase').length;
-    const nConteo = c.negativos.filter(n => n.lectura === 'conteo').length;
-    const nAislado = c.negativos.filter(n => n.lectura === 'aislado').length;
+    const sinFact = c.negativos.filter(n => n.grupo !== 'con_factura');
+    const nDesfase = sinFact.filter(n => n.lectura === 'desfase').length;
+    const nConteo = sinFact.filter(n => n.lectura === 'conteo').length;
+    const nAislado = sinFact.filter(n => n.lectura === 'aislado').length;
 
     return createPortal(
         <div className="fixed inset-0 z-[110] bg-slate-50 flex flex-col">
@@ -192,62 +243,149 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, posLis
                         </div>
                     </Seccion>
 
+                    {/* Cruce con las facturas de Zoho */}
+                    <Seccion titulo="Cruce con las facturas de Zoho"
+                        nota="Entregas = facturas de Zoho con fecha dentro del intervalo de visitas (desde el día siguiente a la visita inicial hasta el día de la visita final), con las unidades guardadas de sus líneas. Dudosa = a ±1 día de una visita: pudo entrar en el intervalo vecino. Se compara sobre los mismos PDV con las dos fuentes.">
+                        {!c.facturasLeidas && <p className="text-sm text-amber-700">No se pudieron leer las facturas: este cruce no está disponible.</p>}
+                        {c.facturasLeidas && (
+                            <>
+                                {/* Una tarjeta por período: en el teléfono una tabla de 5 columnas no cabe. */}
+                                <div className="grid gap-2 sm:grid-cols-3">
+                                    {c.cruceFacturas.map(p => (
+                                        <div key={p.dias} className={`rounded-xl border p-3 text-xs ${p.dias === dias ? 'border-brand-blue/40 bg-blue-50/60' : 'border-slate-200'}`}>
+                                            <p className="font-bold text-slate-800 mb-1.5">Últimos {p.dias} días <span className="font-normal text-slate-400">· {plural(p.intervalos, 'intervalo', 'intervalos')}</span></p>
+                                            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1 items-baseline">
+                                                <span className="text-[10px] uppercase tracking-wider text-slate-400"></span>
+                                                <span className="text-[10px] uppercase tracking-wider text-slate-400 text-right">Visita</span>
+                                                <span className="text-[10px] uppercase tracking-wider text-slate-400 text-right">Facturas</span>
+                                                <span className="text-slate-600">Negativos</span>
+                                                <b className="text-right">{p.negativosOq}</b><b className="text-right">{p.negativosFa}</b>
+                                                <span className="text-slate-600">Red (uds/día)</span>
+                                                <b className="text-right">{fmtNum(p.redOq, 2)}</b><b className="text-right">{fmtNum(p.redFa, 2)}</b>
+                                                <span className="text-slate-600">Más de {MAX_DIAS_TRAMO} días <span className="text-slate-400">({p.largosOq.tramos})</span></span>
+                                                <span className="text-right">{fmtNum(p.largosOq.porDia, 2)}</span><span className="text-right">{fmtNum(p.largosFa.porDia, 2)}</span>
+                                            </div>
+                                            <p className="text-slate-500 mt-1.5">Facturas usadas <b>{p.facturasAsignadas}</b> · dudosas <b>{p.facturasDudosas}</b></p>
+                                        </div>
+                                    ))}
+                                </div>
+                                {(() => {
+                                    const p = c.cruceFacturas.find(x => x.dias === dias);
+                                    return (
+                                        <>
+                                            <p className="text-[11px] text-slate-500 mt-2">
+                                                Facturas de los últimos {dias} días sin asignar a un anaquel: <b>{p.noAsignadas.compartida}</b> de un carnet que comparten varios PDV (factura central o PDV duplicado) · <b>{p.noAsignadas.sinPdv}</b> de clientes sin PDV vinculado.
+                                                {c.pdvSinFuente.length > 0 && ` ${plural(c.pdvSinFuente.length, 'PDV visitado queda', 'PDV visitados quedan')} fuera del cruce por no tener un carnet propio: ${c.pdvSinFuente.map(x => `${x.nombre} (${x.estado === 'compartido' ? 'carnet compartido' : 'sin vínculo'})`).join(', ')}.`}
+                                            </p>
+                                            <p className="text-xs font-bold text-slate-600 mt-3 mb-1">Por PDV, últimos {dias} días: anotado en las visitas frente a facturado</p>
+                                            <div className="divide-y divide-slate-100">
+                                                {p.porPdv.map(x => (
+                                                    <div key={x.posId} className="py-1.5 flex items-center justify-between gap-2 text-xs">
+                                                        <span className="min-w-0 text-slate-700 font-semibold">{x.nombre}</span>
+                                                        <span className="shrink-0 text-slate-600">visitas <b>{fmtNum(x.orderQuantity, 0)}</b> · facturas <b className={x.facturado !== x.orderQuantity ? 'text-amber-700' : ''}>{fmtNum(x.facturado, 0)}</b> <span className="text-slate-400">({x.facturas})</span></span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    );
+                                })()}
+                            </>
+                        )}
+                    </Seccion>
+
                     {/* 3. Diagnóstico a: negativos */}
                     <Seccion titulo={`Intervalos de visitas con resultado negativo (${c.negativos.length})`}
-                        nota={`Venta = inventario anterior + facturadas + repuestas − retiradas − inventario actual. "Vecino alto" = un intervalo del mismo PDV que rota al menos ${FACTOR_VECINO_ALTO} veces la mediana del PDV y compensa al menos el ${fmtNum(PCT_VECINO_COMPENSA * 100, 0)} % del negativo. Desfase: el vecino alto es el anterior y lo facturado en su primera visita cubre el negativo. Error de conteo: hay vecino alto pero lo facturado no lo explica. Aislado: ningún vecino lo compensa. Son hipótesis: se confirman con las facturas.`}>
+                        nota={`Primero se separan los que tienen una factura de Zoho entre las dos visitas: ahí entró mercancía que ninguna visita anotó, no es error de quien reporta. Para los demás: "vecino alto" = un intervalo del mismo PDV que rota al menos ${FACTOR_VECINO_ALTO} veces la mediana del PDV y compensa al menos el ${fmtNum(PCT_VECINO_COMPENSA * 100, 0)} % del negativo.`}>
                         {c.negativos.length > 0 && (
                             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                                 <p className="text-xs text-slate-600">
-                                    <b>{nDesfase}</b> desfase facturación–despacho · <b>{nConteo}</b> error de conteo · <b>{nAislado}</b> {nAislado === 1 ? 'aislado' : 'aislados'}.
+                                    <b>{c.tipoVisita.negativos.conFactura}</b> con factura entre las visitas · <b>{c.tipoVisita.negativos.sinFactura}</b> sin factura
+                                    {c.tipoVisita.negativos.sinFuente > 0 && <> · <b>{c.tipoVisita.negativos.sinFuente}</b> sin carnet propio para cruzar</>}.
+                                    {' '}Entre los sin factura: <b>{nDesfase}</b> desfase · <b>{nConteo}</b> error de conteo · <b>{nAislado}</b> {nAislado === 1 ? 'aislado' : 'aislados'}.
                                 </p>
                                 <button onClick={() => exportarNegativosCsv(c.negativos)}
                                     className="text-xs font-bold text-brand-blue border border-brand-blue/40 rounded-lg px-2.5 py-1.5">
-                                    Exportar CSV para cruzar con Zoho
+                                    Exportar CSV
                                 </button>
                             </div>
                         )}
                         {c.negativos.length === 0 && <p className="text-sm text-slate-500">Ninguno en el período.</p>}
-                        <div className="divide-y divide-slate-100">
-                            {c.negativos.map((n, i) => {
-                                const l = LECTURA[n.lectura];
-                                return (
-                                    <div key={i} className="py-3">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div className="min-w-0">
-                                                <p className="text-sm font-semibold text-slate-800">{n.nombre}</p>
-                                                <p className="text-[11px] text-slate-500">Visitas del {fecha(n.desde)} y del {fecha(n.hasta)} · {fmtNum(n.dias, 1)} días</p>
-                                            </div>
-                                            <span className="shrink-0 text-sm font-black text-red-700">{signoUds(n.resultado)} uds</span>
-                                        </div>
-                                        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-                                            <Cifra k="Inv. anterior" v={n.invAnterior} />
-                                            <Cifra k="Facturadas" v={n.facturadas} />
-                                            <Cifra k="Repuestas" v={n.repuestas} />
-                                            <Cifra k="Retiradas" v={n.retiradas} />
-                                            <Cifra k="Inv. actual" v={n.invActual} />
-                                            <Cifra k="Resultado" v={n.resultado} fuerte />
-                                        </div>
-                                        {n.resultadoSinDevoluciones !== n.resultado && (
-                                            <p className="text-[11px] text-slate-500 mt-1">Sin contar devoluciones daría {signoUds(n.resultadoSinDevoluciones)} uds.</p>
-                                        )}
-                                        <p className="text-[11px] text-slate-600 mt-1">
-                                            Rotación del intervalo anterior: <b>{n.rotAnterior == null ? 'no hay' : `${fmtNum(n.rotAnterior, 2)} uds/día`}</b>
-                                            {' · '}del siguiente: <b>{n.rotSiguiente == null ? 'no hay' : `${fmtNum(n.rotSiguiente, 2)} uds/día`}</b>
-                                            {n.medianaPdv != null && <> · mediana del PDV {fmtNum(n.medianaPdv, 2)}</>}
-                                        </p>
-                                        {n.vecinoAlto && (
-                                            <p className="text-[11px] text-slate-600">Facturado en la primera visita del intervalo anterior: <b>{fmtNum(n.facturadoAntes, 0)}</b> uds{n.zohoCustomerId ? '' : ' · sin carnet de Zoho vinculado'}.</p>
-                                        )}
-                                        {(n.vecinoAlto === 'anterior' || n.vecinoAlto === 'ambos') && n.juntosAnterior != null && (
-                                            <p className="text-[11px] text-slate-600">Juntos con el anterior: {fmtNum(n.juntosAnterior, 2)} uds/día.</p>
-                                        )}
-                                        {(n.vecinoAlto === 'siguiente' || n.vecinoAlto === 'ambos') && n.juntosSiguiente != null && (
-                                            <p className="text-[11px] text-slate-600">Juntos con el siguiente: {fmtNum(n.juntosSiguiente, 2)} uds/día.</p>
-                                        )}
-                                        <span className={`inline-block mt-1.5 text-[11px] font-bold px-2 py-0.5 rounded border ${l.cls}`}>{l.txt}</span>
+                        {[['con_factura', 'Con factura de Zoho entre las dos visitas'], ['sin_factura', 'Sin factura entre las dos visitas'], ['sin_fuente', 'Sin carnet propio: no se puede cruzar']].map(([g, titulo]) => {
+                            const lista = c.negativos.filter(n => n.grupo === g);
+                            if (!lista.length) return null;
+                            return (
+                                <div key={g} className="mt-3">
+                                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{titulo} ({lista.length})</p>
+                                    <div className="divide-y divide-slate-100">
+                                        {lista.map((n, i) => <TarjetaNegativo key={i} n={n} />)}
                                     </div>
-                                );
-                            })}
+                                </div>
+                            );
+                        })}
+                    </Seccion>
+
+                    {/* Desglose: quién y dónde */}
+                    <Seccion titulo="Dónde se concentran los errores"
+                        nota={`Solo los negativos SIN factura y los conteos sospechosos de los últimos ${dias} días. Conteos absolutos y orden alfabético: la muestra es chica para porcentajes o rankings. Mercaderista = quien se eligió al reportar.`}>
+                        {/* Filas con sus cifras rotuladas (no tablas anchas: no caben en el teléfono). */}
+                        <p className="text-xs font-bold text-slate-600 mb-1">Por mercaderista</p>
+                        {c.desglose.porMercaderista.length === 0
+                            ? <p className="text-sm text-slate-500">Nada que atribuir en el período.</p>
+                            : <div className="divide-y divide-slate-100">
+                                {c.desglose.porMercaderista.map(x => (
+                                    <div key={x.nombre} className="py-1.5 text-xs">
+                                        <p className="font-semibold text-slate-800">{x.nombre}</p>
+                                        <p className="text-slate-600">Negativos: <b>{x.negFin}</b> en su visita final · <b>{x.negInicio}</b> en su visita inicial · Duplicados <b>{x.duplicados}</b> · Envío repetido <b>{x.idRepetido}</b> · Posible copia <b>{x.copiados}</b></p>
+                                    </div>
+                                ))}
+                            </div>}
+                        <p className="text-xs font-bold text-slate-600 mt-3 mb-1">Por cadena</p>
+                        {c.desglose.porCadena.length === 0
+                            ? <p className="text-sm text-slate-500">Nada que atribuir en el período.</p>
+                            : <div className="divide-y divide-slate-100">
+                                {c.desglose.porCadena.map(x => (
+                                    <div key={x.nombre} className="py-1.5 text-xs">
+                                        <p className="font-semibold text-slate-800">{x.nombre}</p>
+                                        <p className="text-slate-600">Negativos <b>{x.negativos}</b> · Duplicados <b>{x.duplicados}</b> · Envío repetido <b>{x.idRepetido}</b> · Posible copia <b>{x.copiados}</b></p>
+                                    </div>
+                                ))}
+                            </div>}
+                        <p className="text-[11px] text-slate-500 mt-2">
+                            Reportes subidos más tarde (guardados otro día que el de la visita): <b>{c.tipoVisita.subidosTarde}</b> de {c.tipoVisita.reportes}.
+                            {' '}Negativos sin factura con una visita subida más tarde: <b>{c.tipoVisita.negativos.sinFacturaSubidoTarde}</b>.
+                        </p>
+                    </Seccion>
+
+                    {/* Conteos sospechosos */}
+                    <Seccion titulo="Conteos sospechosos"
+                        nota="Posible conteo copiado: el mismo inventario en dos visitas seguidas, sin entrega (ni en la visita ni por factura), sin devolución y con venta cero. Reporte duplicado: el mismo PDV reportado dos veces el mismo día. Envío repetido: el mismo identificador de envío guardado dos veces.">
+                        <p className="text-xs font-bold text-slate-600 mb-1">Posible conteo copiado ({c.sospechosos.copiados.length})</p>
+                        {c.sospechosos.copiados.length === 0 && <p className="text-xs text-slate-400 mb-2">Ninguno.</p>}
+                        <div className="divide-y divide-slate-100 mb-3">
+                            {c.sospechosos.copiados.map((x, i) => (
+                                <div key={i} className="py-1.5 text-xs">
+                                    <p className="font-semibold text-slate-800">{x.nombre}</p>
+                                    <p className="text-slate-500">{fecha(x.desde)} y {fecha(x.hasta)}: {fmtNum(x.inventario, 0)} y {fmtNum(x.inventario, 0)} uds · {x.reporterInicio || '—'} → {x.reporterFin || '—'}
+                                        {x.lotesIdenticos ? ' · mismos lotes y cantidades' : ''}{x.sinFuente ? ' · sin carnet para ver facturas' : ''}</p>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-xs font-bold text-slate-600 mb-1">Reportes duplicados el mismo día ({c.sospechosos.duplicadosDia.length})</p>
+                        {c.sospechosos.duplicadosDia.length === 0 && <p className="text-xs text-slate-400 mb-2">Ninguno.</p>}
+                        <div className="divide-y divide-slate-100 mb-3">
+                            {c.sospechosos.duplicadosDia.map((g, i) => (
+                                <div key={i} className="py-1.5 text-xs">
+                                    <p className="font-semibold text-slate-800">{g.nombre} · {g.dia.split('-').reverse().join('/')}</p>
+                                    <p className="text-slate-500">{g.reportes.map(r => `${r.reporter || '—'} ${new Date(r.hora).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' })} (${fmtNum(r.inventario, 0)} uds)`).join(' · ')}</p>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-xs font-bold text-slate-600 mb-1">Envío repetido ({c.sospechosos.reportIdRepetido.length})</p>
+                        {c.sospechosos.reportIdRepetido.length === 0 && <p className="text-xs text-slate-400">Ninguno.</p>}
+                        <div className="divide-y divide-slate-100">
+                            {c.sospechosos.reportIdRepetido.map((g, i) => (
+                                <div key={i} className="py-1.5 text-xs text-slate-600"><b className="text-slate-800">{g.nombre}</b> · {g.dia.split('-').reverse().join('/')} · {g.veces} veces · {g.reporter || '—'}</div>
+                            ))}
                         </div>
                     </Seccion>
 
@@ -479,6 +617,31 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, posLis
                         {c.porVencer90.devoluciones > 0 && (
                             <p className="text-[11px] text-slate-500 mt-2">Retiros "Por vencer" en 90 días: {c.porVencer90.devoluciones} ({fmtNum(c.porVencer90.unidades, 0)} uds). No son merma: se reubican o se trasladan.</p>
                         )}
+                    </Seccion>
+                    {/* Formulario (Ola 1) */}
+                    <Seccion titulo="Formulario de visita (Ola 1)"
+                        nota={`Reportes de los últimos ${dias} días hechos con el formulario nuevo (versión 2) frente a los anteriores. Cada pregunta salta solo cuando algo no cuadra y nunca impide enviar.`}>
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                            <Dato k="Formulario nuevo" v={c.formulario.reportesV2} sub={`tiempo medio ${c.formulario.tiempoV2.minutos == null ? '—' : `${fmtNum(c.formulario.tiempoV2.minutos, 1)} min`}`} />
+                            <Dato k="Formulario anterior" v={c.formulario.reportesV1} sub={`tiempo medio ${c.formulario.tiempoV1.minutos == null ? '—' : `${fmtNum(c.formulario.tiempoV1.minutos, 1)} min`}`} />
+                        </div>
+                        <div className="divide-y divide-slate-100 text-xs">
+                            {[
+                                ['Reporte duplicado el mismo día', c.formulario.alertas.duplicado, c.formulario.respuestas.duplicado, ETIQUETAS.duplicado],
+                                ['Conteo idéntico a la visita anterior', c.formulario.alertas.conteoIdentico, c.formulario.respuestas.conteoIdentico, ETIQUETAS.conteoIdentico],
+                                ['Conteo corregido después de pasar a reponer', c.formulario.alertas.correccionConteo, c.formulario.respuestas.correccionConteo, ETIQUETAS.correccionConteo],
+                                ['Lote sin fecha legible', c.formulario.alertas.loteSinFecha, c.formulario.respuestas.loteSinFecha, ETIQUETAS.loteSinFecha],
+                            ].map(([titulo, veces, resp, etq]) => (
+                                <div key={titulo} className="py-1.5">
+                                    <p className="text-slate-700"><b>{titulo}</b>: {plural(veces, 'reporte', 'reportes')}</p>
+                                    {Object.keys(resp).length > 0 && <p className="text-slate-500">{Object.entries(resp).map(([k, v]) => `${etq[k] || k}: ${v}`).join(' · ')}</p>}
+                                </div>
+                            ))}
+                            <div className="py-1.5">
+                                <p className="text-slate-700"><b>Ubicación (GPS, solo registro)</b>: {c.formulario.gps.leidas} leídas · {Object.values(c.formulario.gps.fallas).reduce((a, b) => a + b, 0)} fallidas</p>
+                                {Object.keys(c.formulario.gps.fallas).length > 0 && <p className="text-slate-500">{Object.entries(c.formulario.gps.fallas).map(([k, v]) => `${ETIQUETAS.gps[k] || k}: ${v}`).join(' · ')}</p>}
+                            </div>
+                        </div>
                     </Seccion>
                     <p className="text-[11px] text-slate-400 text-center pb-6">Esta pantalla no guarda ni cambia nada.</p>
                 </div>

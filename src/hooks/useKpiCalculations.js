@@ -156,7 +156,9 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         // anaquel en esa visita no cuentan: ya no están en el punto de venta.
         const freshnessBatches = Object.values(latestByStore).flatMap(r => {
             const ref = r.createdAt?.seconds ? new Date(r.createdAt.seconds * 1000) : new Date();
-            return (r.batches || []).filter(b => b?.devuelto !== true && b?.retirado !== true).map(b => getFreshnessStatus(b.expiryDate, ref));
+            // Un lote SIN FECHA LEGIBLE (formulario v2) no tiene frescura que medir:
+            // contarlo en el divisor bajaría el índice sin motivo.
+            return (r.batches || []).filter(b => b?.devuelto !== true && b?.retirado !== true && b?.expiryDate).map(b => getFreshnessStatus(b.expiryDate, ref));
         });
         const optimalFresh   = freshnessBatches.filter(s => s === 'Fresco' || s === 'Óptimo').length;
         const freshnessIndex = safeAvg(optimalFresh, freshnessBatches.length) * 100;

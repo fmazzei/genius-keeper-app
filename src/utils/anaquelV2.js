@@ -44,6 +44,7 @@
 import { computeRotacion } from './rotacion.js';
 import { diasParaVencer } from './retiros.js';
 import * as C from './anaquelConstantes.js';
+import { facturasPorPdv, facturasDelIntervalo } from './anaquelFacturas.js';
 import { ALTURAS, CATEGORIAS_VECINAS, etiquetaAltura, etiquetaCategoria } from './anaquelCatalogo.js';
 
 const DIA = 86400;
@@ -137,6 +138,23 @@ export const fmtUds = (v) => (v == null || !Number.isFinite(v) ? '—' : `${fmtN
 
 const seg = (r) => aSeg(r?.createdAt);
 
+/**
+ * Hora REAL de la visita: `startTime` (cuando se abrió el formulario, reloj del
+ * teléfono). Un reporte guardado sin señal se sube después y `createdAt` toma la
+ * hora de la subida, no la de la visita. Se descarta `startTime` si el reloj del
+ * teléfono estaba claramente mal (más de 1 h por delante de la subida, o más de
+ * 30 días por detrás). Solo la usa el motor v2: el Dashboard sigue con createdAt.
+ */
+export function tVisita(r) {
+    const c = seg(r);
+    const s0 = typeof r?.startTime === 'string' ? Date.parse(r.startTime) / 1000 : 0;
+    if (!(s0 > 0)) return c;
+    if (!c) return s0;
+    if (s0 > c + C.TOLERANCIA_RELOJ_S) return c;
+    if (c - s0 > C.MAX_DIAS_SUBIDA_TARDE * DIA) return c;
+    return s0;
+}
+
 /** Visita normalizada. Lo que falta en datos viejos queda en null (no inventa). */
 export function normalizarVisita(r) {
     const inv = num(r.inventoryLevel);
@@ -145,7 +163,18 @@ export function normalizarVisita(r) {
         id: r.id || null,
         posId: r.posId,
         nombre: r.posName || null,
-        t: seg(r),
+        t: tVisita(r),
+        tGuardado: seg(r),
+        // Subido más tarde: se guardó otro día que el de la visita (sin señal).
+        subidoTarde: !!seg(r) && diaLocal(seg(r)) !== diaLocal(tVisita(r)),
+        reportId: r.reportId || null,
+        reporterId: r.reporterId || null,
+        reporter: r.userName || r.reporterName || null,
+        formVersion: Number(r.formVersion) || 1,
+        // Huella de los lotes contados (fechas y cantidades), para detectar copias.
+        lotesFirma: r.stockout === true ? '' : (r.batches || [])
+            .filter(b => b && !b.devuelto && (Number(b.quantity) || 0) > 0)
+            .map(b => `${b.expiryDate || 'sf'}:${Number(b.quantity) || 0}`).sort().join('|'),
         inv,
         rep: num(r.orderQuantity),
         // Quiebre al llegar: lo declara la primera pregunta del reporte. En
@@ -172,7 +201,7 @@ export function cambiosEntre(a, b) {
 function visitasPorPos(reports) {
     const m = {};
     (reports || []).forEach(r => {
-        if (!r?.posId || !seg(r)) return;
+        if (!r?.posId || !tVisita(r)) return;
         (m[r.posId] = m[r.posId] || []).push(normalizarVisita(r));
     });
     Object.values(m).forEach(l => l.sort((a, b) => a.t - b.t));
@@ -284,7 +313,8 @@ export const cuentaEnRotacion = (t) => CUENTAN.has(t.estado);
  * @param {object}   movs     porVisita de asignarMovimientos
  * @param {object}   metodo   opciones (ver METODO_NUEVO)
  */
-export function tramosDePos(visitas, movs = {}, metodo = METODO_NUEVO) {
+export function tramosDePos(visitas, movs = {}, metodo = METODO_NUEVO, facturasPos = null) {
+    const conFacturas = metodo.fuenteEntregas === 'facturas';
     const out = [];
     const mov = (v) => (metodo.usarMovimientos ? movs[v.id] : null) || { retiradas: 0, repuestas: 0, entradas: 0 };
     let i = 0;
@@ -312,6 +342,9 @@ export function tramosDePos(visitas, movs = {}, metodo = METODO_NUEVO) {
             const m = mov(v);
             rep += v.rep; retiradas += m.retiradas; repuestas += m.repuestas; entradas += m.entradas;
         });
+        // Entregas = facturas de Zoho del intervalo, en vez de lo anotado en la visita.
+        const facturas = facturasPos ? facturasDelIntervalo(facturasPos, diaLocal(a.t), diaLocal(visitas[j].t)) : null;
+        if (conFacturas) rep = (facturas || []).reduce((acc, f) => acc + f.unidades, 0);
         const disponible = a.inv + rep + repuestas + entradas - retiradas;
         const crudo = disponible - fin.inv;
         const ventas = metodo.recortarNegativos ? Math.max(0, crudo) : crudo;
@@ -328,6 +361,7 @@ export function tramosDePos(visitas, movs = {}, metodo = METODO_NUEVO) {
             posId: a.posId, inicio: a, fin, iIni: i, iFin: j, ini: a.t, finT: fin.t, dias,
             unidos: j - i, invInicial: a.inv, invFinal: fin.inv, rep, retiradas, repuestas, entradas,
             ventas, crudo, estado, razonCorte: estado === 'corto' ? razonCorte : null,
+            facturas, fuente: conFacturas ? 'facturas' : 'visita',
             conMovimientos: retiradas > 0 || repuestas > 0 || entradas > 0,
             rotacion: dias > 0 ? ventas / dias : null,
             altura: a.altura, categoria: a.categoria, frentes: a.frentes,
@@ -440,7 +474,7 @@ export function posiblesDuplicados(posList = [], reports = [], devoluciones = []
         if (!r?.posId) return;
         const v = visitas[r.posId] = visitas[r.posId] || { n: 0, ultima: 0, primera: Infinity, nombre: null };
         v.n++;
-        const t = seg(r);
+        const t = tVisita(r);
         if (t > v.ultima) { v.ultima = t; v.nombre = r.posName || v.nombre; }
         if (t && t < v.primera) v.primera = t;
     });
@@ -916,7 +950,9 @@ function diagnosticoNegativos(crudosPorPos, nombreDe, desde, hasta, posInfo = ()
                 rotAnterior: rot(prev), rotSiguiente: rot(sig), medianaPdv,
                 vecinoAlto: altoPrev && altoSig ? 'ambos' : altoPrev ? 'anterior' : altoSig ? 'siguiente' : null,
                 facturadoAntes, juntosAnterior: juntos(prev), juntosSiguiente: juntos(sig),
-                lectura,
+                lectura, ini: t.ini,
+                reporterInicio: t.inicio.reporter || null, reporterFin: t.fin.reporter || null,
+                subidoTarde: !!(t.inicio.subidoTarde || t.fin.subidoTarde),
                 // Visitas involucradas, para cruzar con las facturas de Zoho.
                 visitas: [
                     visita(prev?.inicio, 'inicio del intervalo anterior'),
@@ -948,7 +984,7 @@ export const ETIQUETA_MOTIVO = {
     vencido: 'Vencido', por_vencer: 'Por vencer', danado: 'Envase dañado', calidad: 'Calidad', sin_motivo: 'Sin motivo',
 };
 
-export function compararMetodos({ reports = [], devoluciones = [], traslados = [], posList = [], dias = 30, ahora = new Date() } = {}) {
+export function compararMetodos({ reports = [], devoluciones = [], traslados = [], posList = [], facturas = null, dias = 30, ahora = new Date() } = {}) {
     const hasta = ahora.getTime() / 1000, desde = hasta - dias * DIA;
     const desde90 = hasta - 90 * DIA;
     const porPos = visitasPorPos(reports);
@@ -961,7 +997,7 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
 
     const dashboard = computeRotacion(reports, r => seg(r) > desde && seg(r) <= hasta);
     const pasos = [
-        { clave: 'dashboard', nombre: 'Método del Dashboard (negativos en cero)', metodo: METODO_DASHBOARD },
+        { clave: 'dashboard', nombre: 'Método del Dashboard, con la hora real de la visita (negativos en cero)', metodo: METODO_DASHBOARD },
         { clave: 'negativos', nombre: '+ negativos sin recortar (se excluyen como error)', metodo: { ...METODO_DASHBOARD, recortarNegativos: false } },
         { clave: 'unidos', nombre: '+ intervalos de visitas cortos unidos y largos excluidos', metodo: { ...METODO_DASHBOARD, recortarNegativos: false, unirCortos: true, filtrarDuracion: true } },
         { clave: 'devoluciones', nombre: '+ devoluciones (regla A)', metodo: { ...METODO_DASHBOARD, recortarNegativos: false, unirCortos: true, filtrarDuracion: true, usarMovimientos: true } },
@@ -1117,7 +1153,163 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
         sinUbicacion: enV(nuevos, v90).filter(t => cuentaEnRotacion(t) && !(t.altura && t.categoria)).length,
     };
 
+    // ── Cruce con las facturas de Zoho (solo lectura) ──
+    const fx = facturasPorPdv(facturas || [], posList);
+    const conFuente = (id) => fx.estadoPdv[id] === 'ok';
+    const chainDe = Object.fromEntries((posList || []).map(p => [p.id, p.chain || 'Individual']));
+    const cadenaDe = (id) => chainDe[id] || 'Sin grupo';
+    const METODO_CRUDO_FACT = { ...METODO_CRUDO_MOV, fuenteEntregas: 'facturas' };
+    const METODO_NUEVO_FACT = { ...METODO_NUEVO, fuenteEntregas: 'facturas' };
+    const porFuente = (metodo) => Object.entries(porPos).filter(([id]) => conFuente(id))
+        .flatMap(([id, vs]) => tramosDePos(vs, porVisita, metodo, fx.porPos[id] || []));
+    const crudoOq = porFuente(METODO_CRUDO_MOV), crudoFa = porFuente(METODO_CRUDO_FACT);
+    const nuevoOq = porFuente(METODO_NUEVO), nuevoFa = porFuente(METODO_NUEVO_FACT);
+    const largoOq = porFuente({ ...METODO_NUEVO, admitirLargos: true });
+    const largoFa = porFuente({ ...METODO_NUEVO_FACT, admitirLargos: true });
+    const esLargo = (t) => t.dias > C.MAX_DIAS_TRAMO && cuentaEnRotacion(t);
+    const enRangoF = (f, [a, b]) => f.t > a && f.t <= b;
+    const cruceFacturas = C.PERIODOS_DIAS.map(d => {
+        const v = ventana(d);
+        const asignadas = enV(crudoFa, v).flatMap(t => t.facturas || []);
+        const porPdvF = Object.entries(porPos).filter(([id]) => conFuente(id)).map(([id, vs]) => {
+            const enVent = vs.filter(x => x.t > v[0] && x.t <= v[1]);
+            const fs = (fx.porPos[id] || []).filter(f => enRangoF(f, v));
+            return {
+                posId: id, nombre: nombreDe(id), visitas: enVent.length,
+                orderQuantity: enVent.reduce((a, x) => a + x.rep, 0),
+                facturado: fs.reduce((a, f) => a + f.unidades, 0), facturas: fs.length,
+            };
+        }).filter(p => p.visitas > 0 || p.facturas > 0).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+        return {
+            dias: d,
+            intervalos: enV(crudoOq, v).length,
+            negativosOq: enV(crudoOq, v).filter(t => t.crudo < 0).length,
+            negativosFa: enV(crudoFa, v).filter(t => t.crudo < 0).length,
+            redOq: rotacionDe(enV(nuevoOq, v)).porDia,
+            redFa: rotacionDe(enV(nuevoFa, v)).porDia,
+            largosOq: rotacionDe(enV(largoOq, v).filter(esLargo)),
+            largosFa: rotacionDe(enV(largoFa, v).filter(esLargo)),
+            facturasAsignadas: asignadas.length,
+            facturasDudosas: asignadas.filter(f => f.dudosa).length,
+            noAsignadas: {
+                compartida: fx.noAsignadas.filter(f => f.motivo === 'compartida' && enRangoF(f, v)).length,
+                sinPdv: fx.noAsignadas.filter(f => f.motivo === 'sin_pdv' && enRangoF(f, v)).length,
+            },
+            porPdv: porPdvF,
+        };
+    });
+    const pdvSinFuente = Object.entries(porPos)
+        .filter(([id, vs]) => !conFuente(id) && vs.some(x => x.t > desde && x.t <= hasta))
+        .map(([id]) => ({ posId: id, nombre: nombreDe(id), estado: fx.estadoPdv[id] || 'sin_vinculo' }))
+        .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+
+    // Negativos: con factura entre las dos visitas / sin factura / sin fuente.
+    const faPorClave = new Map(crudoFa.map(t => [`${t.posId}|${t.ini}`, t]));
+    negativos.forEach(n => {
+        n.cadena = cadenaDe(n.posId);
+        n.fuenteFacturas = fx.estadoPdv[n.posId] || 'sin_vinculo';
+        n.facturasEntre = conFuente(n.posId)
+            ? facturasDelIntervalo(fx.porPos[n.posId] || [], diaLocal(n.desde / 1000), diaLocal(n.hasta / 1000)) : [];
+        n.unidadesFacturadasEntre = n.facturasEntre.reduce((a, f) => a + f.unidades, 0);
+        n.ventaSumandoFacturas = n.resultado + n.unidadesFacturadasEntre;
+        n.resultadoConFacturas = faPorClave.get(`${n.posId}|${n.ini}`)?.crudo ?? null;
+        n.grupo = !conFuente(n.posId) ? 'sin_fuente' : n.facturasEntre.length ? 'con_factura' : 'sin_factura';
+    });
+
+    // Conteos sospechosos del período.
+    const vis = Object.entries(porPos).flatMap(([id, vs]) => vs.filter(v => v.t > desde && v.t <= hasta).map(v => ({ ...v, posId: id })));
+    const grupoDia = {};
+    vis.forEach(v => { const k = `${v.posId}|${diaLocal(v.t)}`; (grupoDia[k] = grupoDia[k] || []).push(v); });
+    const duplicadosDia = Object.values(grupoDia).filter(l => l.length > 1).map(l => ({
+        posId: l[0].posId, nombre: nombreDe(l[0].posId), cadena: cadenaDe(l[0].posId), dia: diaLocal(l[0].t),
+        reportes: l.map(v => ({ reporter: v.reporter, hora: v.t * 1000, inventario: v.inv, subidoTarde: v.subidoTarde })),
+    }));
+    const grupoRid = {};
+    vis.filter(v => v.reportId).forEach(v => { (grupoRid[v.reportId] = grupoRid[v.reportId] || []).push(v); });
+    const reportIdRepetido = Object.values(grupoRid).filter(l => l.length > 1).map(l => ({
+        posId: l[0].posId, nombre: nombreDe(l[0].posId), cadena: cadenaDe(l[0].posId), reportId: l[0].reportId,
+        veces: l.length, reporter: l[0].reporter, dia: diaLocal(l[0].t),
+    }));
+    // Posible conteo copiado: mismo inventario en dos visitas seguidas, sin
+    // entrega (ni en la visita ni por factura), sin devolución y venta cero.
+    const copiados = [];
+    Object.entries(crudosMov).forEach(([id, ts]) => ts.forEach(t => {
+        if (!(t.finT > desde && t.finT <= hasta)) return;
+        if (!(t.invInicial > 0 && t.invInicial === t.invFinal && t.rep === 0 && !t.retiradas && !t.repuestas && !t.entradas)) return;
+        const fEntre = conFuente(id) ? facturasDelIntervalo(fx.porPos[id] || [], diaLocal(t.ini), diaLocal(t.finT)) : null;
+        if (fEntre && fEntre.length) return;
+        copiados.push({
+            posId: id, nombre: nombreDe(id), cadena: cadenaDe(id), desde: t.ini * 1000, hasta: t.finT * 1000, dias: t.dias,
+            inventario: t.invFinal, reporterInicio: t.inicio.reporter, reporterFin: t.fin.reporter,
+            lotesIdenticos: !!t.inicio.lotesFirma && t.inicio.lotesFirma === t.fin.lotesFirma,
+            sinFuente: fEntre === null,
+        });
+    }));
+
+    // Desglose (conteos absolutos, orden alfabético: la muestra es chica).
+    const sinFactura = negativos.filter(n => n.grupo === 'sin_factura');
+    const tabla = (filas) => Object.values(filas).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'));
+    const porMerc = {}, porCad = {};
+    const m = (nombre) => (porMerc[nombre || 'Sin nombre'] = porMerc[nombre || 'Sin nombre']
+        || { nombre: nombre || 'Sin nombre', negFin: 0, negInicio: 0, duplicados: 0, idRepetido: 0, copiados: 0 });
+    const c = (nombre) => (porCad[nombre] = porCad[nombre] || { nombre, negativos: 0, duplicados: 0, idRepetido: 0, copiados: 0 });
+    sinFactura.forEach(n => { m(n.reporterFin).negFin++; m(n.reporterInicio).negInicio++; c(n.cadena).negativos++; });
+    duplicadosDia.forEach(g => { g.reportes.forEach(r => m(r.reporter).duplicados++); c(g.cadena).duplicados++; });
+    reportIdRepetido.forEach(g => { m(g.reporter).idRepetido++; c(g.cadena).idRepetido++; });
+    copiados.forEach(x => { m(x.reporterFin).copiados++; c(x.cadena).copiados++; });
+
+    // "Tipo de visita" del dueño: (a) con/sin factura entre visitas; (b) subido más tarde.
+    const reportesVentana = (reports || []).filter(r => { const t = tVisita(r); return t > desde && t <= hasta; });
+    const tipoVisita = {
+        reportes: reportesVentana.length,
+        subidosTarde: vis.filter(v => v.subidoTarde).length,
+        negativos: {
+            conFactura: negativos.filter(n => n.grupo === 'con_factura').length,
+            sinFactura: sinFactura.length,
+            sinFuente: negativos.filter(n => n.grupo === 'sin_fuente').length,
+            sinFacturaSubidoTarde: sinFactura.filter(n => n.subidoTarde).length,
+        },
+    };
+
+    // Formulario (Ola 1): tiempo por reporte y cuántas veces salta cada alerta.
+    const durMin = (r) => {
+        const x = (Date.parse(r.endTime) - Date.parse(r.startTime)) / 60000;
+        return Number.isFinite(x) && x > 0 && x < 180 ? x : null;
+    };
+    const promDur = (l) => { const v = l.map(durMin).filter(x => x != null); return { minutos: v.length ? v.reduce((a, b) => a + b, 0) / v.length : null, n: v.length }; };
+    const v2 = reportesVentana.filter(r => Number(r.formVersion) >= 2);
+    const v1 = reportesVentana.filter(r => !(Number(r.formVersion) >= 2));
+    const contar = (lista, f) => lista.reduce((acc, r) => { const k = f(r); if (k) acc[k] = (acc[k] || 0) + 1; return acc; }, {});
+    const formulario = {
+        reportesV2: v2.length, reportesV1: v1.length, tiempoV2: promDur(v2), tiempoV1: promDur(v1),
+        alertas: {
+            duplicado: v2.filter(r => r.avisoDuplicado).length,
+            conteoIdentico: v2.filter(r => r.avisoConteoIdentico).length,
+            correccionConteo: v2.filter(r => r.correccionConteo).length,
+            loteSinFecha: v2.filter(r => (r.batches || []).some(b => b?.sinFecha)).length,
+        },
+        respuestas: {
+            duplicado: contar(v2, r => r.avisoDuplicado?.respuesta),
+            conteoIdentico: contar(v2, r => r.avisoConteoIdentico?.respuesta),
+            correccionConteo: contar(v2, r => r.correccionConteo?.motivo),
+            loteSinFecha: contar(v2.flatMap(r => (r.batches || []).filter(b => b?.sinFecha)), b => b.motivoSinFecha),
+        },
+        gps: {
+            leidas: v2.filter(r => r.gpsVisita && r.gpsVisita.lat != null).length,
+            fallas: contar(v2.filter(r => !(r.gpsVisita && r.gpsVisita.lat != null)), r => r.gpsVisita?.error || 'sin_dato'),
+        },
+    };
+
+    const centralizados = (posList || []).filter(p => !p.eliminado && p.active !== false && p.tipoDespacho === 'centralizado');
+
     return {
+        facturasLeidas: facturas != null,
+        cruceFacturas, pdvSinFuente,
+        compartidos: fx.compartidos.map(x => ({ ...x, nombres: x.pdv.map(nombreDe) })),
+        sospechosos: { duplicadosDia, reportIdRepetido, copiados },
+        desglose: { porMercaderista: tabla(porMerc), porCadena: tabla(porCad) },
+        tipoVisita, formulario,
+        centralizados: { pdv: centralizados.length, cadenas: [...new Set(centralizados.map(p => p.chain || 'Individual'))].sort() },
         dias, dashboard: dashboard.porDia, pasos,
         negativos, largos, largosPorPeriodo, coberturaPorPeriodo, mapaPreview,
         duplicados: posiblesDuplicados(posList, reports, devoluciones),
