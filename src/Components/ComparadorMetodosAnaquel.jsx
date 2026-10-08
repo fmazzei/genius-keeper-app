@@ -18,7 +18,11 @@ import { db } from '@/Firebase/config.js';
 import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
 import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 import { compararMetodos, fmtNum, fmtUds } from '@/utils/anaquelV2.js';
-import { MIN_DIAS_TRAMO, MAX_DIAS_TRAMO, PERIODOS_DIAS, FACTOR_VECINO_ALTO, PCT_VECINO_COMPENSA } from '@/utils/anaquelConstantes.js';
+import {
+    MIN_DIAS_TRAMO, MAX_DIAS_TRAMO, PERIODOS_DIAS, FACTOR_VECINO_ALTO, PCT_VECINO_COMPENSA,
+    MIN_PDV_CELDA, MIN_CELDAS_CAPA_B, DISTANCIA_MISMO_PDV_M,
+} from '@/utils/anaquelConstantes.js';
+import { etiquetaAltura, etiquetaCategoria } from '@/utils/anaquelCatalogo.js';
 
 const pct = (v) => (v == null || !Number.isFinite(v) ? '—' : `${fmtNum(v * 100, 1)} %`);
 const signo = (v) => (v == null || !Number.isFinite(v) ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${fmtNum(Math.abs(v), 2)}`);
@@ -37,10 +41,34 @@ const etiquetaEstado = (e) => {
     return m ? `unido con el siguiente · ${ETIQUETA_ESTADO[m[1]] || m[1]}` : (ETIQUETA_ESTADO[e] || e);
 };
 const LECTURA = {
-    desfase: { txt: 'Vecino alto: posible desfase facturación–despacho', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
-    aislado: { txt: 'Aislado: posible producto que entró sin registrarse', cls: 'bg-red-50 text-red-700 border-red-200' },
+    desfase: { txt: 'Desfase: lo facturado antes llegó después', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+    conteo: { txt: 'Error de conteo: un vecino lo compensa sin facturado que lo explique', cls: 'bg-sky-50 text-sky-800 border-sky-200' },
+    aislado: { txt: 'Aislado: producto que entró sin registrarse', cls: 'bg-red-50 text-red-700 border-red-200' },
     sin_vecinos: { txt: 'Sin intervalos vecinos para comparar', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
 };
+
+// Exportación de los negativos para cruzar con las facturas de Zoho: una fila
+// por visita involucrada (separador ";" y BOM, para Excel en español).
+function exportarNegativosCsv(negativos) {
+    const num = (v) => (v == null || !Number.isFinite(v) ? '' : String(v).replace('.', ','));
+    const celda = (v) => { const t = String(v ?? ''); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const filas = [['PDV', 'posId', 'Carnet Zoho (zohoCustomerId)', 'Razón social', 'Intervalo desde', 'Intervalo hasta',
+        'Resultado del intervalo', 'Lectura', 'Visita', 'Fecha', 'Hora', 'Inventario', 'orderQuantity']];
+    negativos.forEach(n => (n.visitas || []).forEach(v => {
+        const d = new Date(v.fecha);
+        filas.push([n.nombre, n.posId, n.zohoCustomerId || '', n.razonSocialZoho || '', fecha(n.desde), fecha(n.hasta),
+            num(n.resultado), n.lectura, v.rol, v.dia, d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }),
+            num(v.inventario), num(v.orderQuantity)]);
+    }));
+    const csv = '\uFEFF' + filas.map(f => f.map(celda).join(';')).join('\r\n');
+    try {
+        const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = `intervalos-negativos-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch { /* navegador sin descargas: no hay nada que limpiar */ }
+}
 
 function Dato({ k, v, sub }) {
     return (
@@ -92,6 +120,7 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, posLis
     const maxHist = Math.max(1, ...c.histDias.map(h => h.tramos));
     const pdvs = verTodos ? c.porPdv : c.porPdv.slice(0, 25);
     const nDesfase = c.negativos.filter(n => n.lectura === 'desfase').length;
+    const nConteo = c.negativos.filter(n => n.lectura === 'conteo').length;
     const nAislado = c.negativos.filter(n => n.lectura === 'aislado').length;
 
     return createPortal(
@@ -165,11 +194,17 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, posLis
 
                     {/* 3. Diagnóstico a: negativos */}
                     <Seccion titulo={`Intervalos de visitas con resultado negativo (${c.negativos.length})`}
-                        nota={`Venta = inventario anterior + facturadas + repuestas − retiradas − inventario actual. Para cada uno, la rotación del intervalo anterior y del siguiente del mismo PDV. "Vecino alto" = rota al menos ${FACTOR_VECINO_ALTO} veces la mediana del PDV y compensa al menos el ${fmtNum(PCT_VECINO_COMPENSA * 100, 0)} % del negativo.`}>
+                        nota={`Venta = inventario anterior + facturadas + repuestas − retiradas − inventario actual. "Vecino alto" = un intervalo del mismo PDV que rota al menos ${FACTOR_VECINO_ALTO} veces la mediana del PDV y compensa al menos el ${fmtNum(PCT_VECINO_COMPENSA * 100, 0)} % del negativo. Desfase: el vecino alto es el anterior y lo facturado en su primera visita cubre el negativo. Error de conteo: hay vecino alto pero lo facturado no lo explica. Aislado: ningún vecino lo compensa. Son hipótesis: se confirman con las facturas.`}>
                         {c.negativos.length > 0 && (
-                            <p className="text-xs text-slate-600 mb-2">
-                                <b>{nDesfase}</b> con vecino alto (posible desfase entre facturación y despacho) · <b>{nAislado}</b> {nAislado === 1 ? 'aislado' : 'aislados'} (posible producto que entró sin registrarse).
-                            </p>
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                <p className="text-xs text-slate-600">
+                                    <b>{nDesfase}</b> desfase facturación–despacho · <b>{nConteo}</b> error de conteo · <b>{nAislado}</b> {nAislado === 1 ? 'aislado' : 'aislados'}.
+                                </p>
+                                <button onClick={() => exportarNegativosCsv(c.negativos)}
+                                    className="text-xs font-bold text-brand-blue border border-brand-blue/40 rounded-lg px-2.5 py-1.5">
+                                    Exportar CSV para cruzar con Zoho
+                                </button>
+                            </div>
                         )}
                         {c.negativos.length === 0 && <p className="text-sm text-slate-500">Ninguno en el período.</p>}
                         <div className="divide-y divide-slate-100">
@@ -200,6 +235,9 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, posLis
                                             {' · '}del siguiente: <b>{n.rotSiguiente == null ? 'no hay' : `${fmtNum(n.rotSiguiente, 2)} uds/día`}</b>
                                             {n.medianaPdv != null && <> · mediana del PDV {fmtNum(n.medianaPdv, 2)}</>}
                                         </p>
+                                        {n.vecinoAlto && (
+                                            <p className="text-[11px] text-slate-600">Facturado en la primera visita del intervalo anterior: <b>{fmtNum(n.facturadoAntes, 0)}</b> uds{n.zohoCustomerId ? '' : ' · sin carnet de Zoho vinculado'}.</p>
+                                        )}
                                         {(n.vecinoAlto === 'anterior' || n.vecinoAlto === 'ambos') && n.juntosAnterior != null && (
                                             <p className="text-[11px] text-slate-600">Juntos con el anterior: {fmtNum(n.juntosAnterior, 2)} uds/día.</p>
                                         )}
@@ -264,6 +302,68 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, posLis
                                 </tbody>
                             </table>
                         </div>
+                        <p className="text-xs font-bold text-slate-600 mt-4 mb-1">Cifra de la red frente a la mediana por PDV</p>
+                        <p className="text-[11px] text-slate-500 mb-2">La cifra de red pondera por días medidos: los PDV con más visitas pesan más. La mediana es por PDV: cada uno pesa igual. "Top 5" = qué parte de los días medidos aportan los 5 PDV con más días.</p>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs min-w-[340px]">
+                                <thead>
+                                    <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400">
+                                        <th className="py-1.5">Período</th><th className="py-1.5">Método</th>
+                                        <th className="py-1.5 text-right">Red</th><th className="py-1.5 text-right">Mediana</th>
+                                        <th className="py-1.5 text-right">PDV</th><th className="py-1.5 text-right">Top 5</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {c.coberturaPorPeriodo.flatMap(p => [['Nuevo', p.nuevo], ['Dashboard', p.anterior]].map(([m, r], k) => (
+                                        <tr key={`${p.dias}-${m}`} className={p.dias === dias ? 'bg-blue-50/60' : ''}>
+                                            <td className="py-1.5 text-slate-700">{k === 0 ? `${p.dias} días` : ''}</td>
+                                            <td className="py-1.5 text-slate-600">{m}</td>
+                                            <td className="py-1.5 text-right font-bold">{fmtNum(r.red, 2)}</td>
+                                            <td className="py-1.5 text-right font-bold">{fmtNum(r.mediana, 2)}</td>
+                                            <td className="py-1.5 text-right">{r.nPdv}</td>
+                                            <td className="py-1.5 text-right">{pct(r.pesoTop5)}</td>
+                                        </tr>
+                                    )))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Seccion>
+
+                    {/* Diagnóstico e: vista previa del mapa de calor */}
+                    <Seccion titulo="Vista previa del mapa de calor (90 días)"
+                        nota={`Solo conteos, no es la pantalla final. Cada celda: PDV · intervalos que cuentan (válidos). Gris = menos de ${MIN_PDV_CELDA} PDV: saldría sin cifra.`}>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                            <Dato k="Celdas con cifra" v={`${c.mapaPreview.conCifra} de ${c.mapaPreview.celdas}`} />
+                            <Dato k="Celdas grises" v={c.mapaPreview.grises} sub={`menos de ${MIN_PDV_CELDA} PDV`} />
+                            <Dato k="Celdas vacías" v={c.mapaPreview.vacias} sub="ningún PDV" />
+                            <Dato k="Elegibles capa B" v={c.mapaPreview.pdvCapaB} sub={`${c.mapaPreview.pdvVistosEn2} vistos en ≥${MIN_CELDAS_CAPA_B} celdas`} />
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs min-w-[460px] border-separate border-spacing-1">
+                                <thead>
+                                    <tr className="text-[10px] uppercase tracking-wider text-slate-400">
+                                        <th className="text-left">Altura</th>
+                                        {c.mapaPreview.columnas.map(col => <th key={col.id} className="text-center">{etiquetaCategoria(col.id)}</th>)}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {c.mapaPreview.filas.map(f => (
+                                        <tr key={f.id}>
+                                            <td className="text-slate-700 font-semibold pr-1">{etiquetaAltura(f.id)}</td>
+                                            {f.celdas.map(cel => (
+                                                <td key={cel.categoria} className={`text-center rounded-lg px-1 py-2 ${cel.vacia ? 'bg-slate-50 text-slate-300' : cel.gris ? 'bg-slate-200 text-slate-600' : 'bg-amber-100 text-amber-900'}`}>
+                                                    {cel.vacia ? '—' : <><b>{cel.nPdv}</b> PDV<br /><span className="text-[10px]">{cel.intervalos} ({cel.validos})</span></>}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-2">
+                            Capa B: PDV con índice propio (≥3 intervalos válidos en 90 días) vistos en al menos {MIN_CELDAS_CAPA_B} celdas.
+                            {c.mapaPreview.sinUbicacion > 0 && ` ${plural(c.mapaPreview.sinUbicacion, 'intervalo queda', 'intervalos quedan')} fuera por no tener altura o categoría anotada.`}
+                        </p>
                     </Seccion>
 
                     {/* 6. Diagnóstico d: duplicados */}
@@ -274,17 +374,34 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, posLis
                         <div className="space-y-2">
                             {c.duplicados.map((g, i) => (
                                 <div key={i} className="rounded-xl border border-slate-200 p-2.5">
-                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">{g.motivo === 'mismo' ? 'Mismo nombre' : 'Nombre casi igual'}</p>
+                                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                                        {g.motivo === 'mismo' ? 'Mismo nombre' : 'Nombre casi igual'}
+                                        {g.mismoCarnet && ' · mismo carnet de Zoho'}{g.carnetsDistintos && ' · carnets de Zoho distintos'}
+                                    </p>
                                     {g.miembros.map(m => (
-                                        <div key={m.posId} className="py-1">
+                                        <div key={m.posId} className="py-1.5">
                                             <p className="text-sm font-semibold text-slate-800">{m.nombre}
+                                                {m.sugerido && <span className="ml-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">sugerido conservar</span>}
                                                 {m.activo === false && <span className="ml-1.5 text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">inactivo</span>}
                                                 {m.fueraDeLista && <span className="ml-1.5 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">solo en reportes</span>}
                                             </p>
                                             <p className="text-[11px] text-slate-500">
-                                                {plural(m.visitas, 'visita', 'visitas')}{m.ultimaVisita ? ` · última ${fecha(m.ultimaVisita)}` : ''}
-                                                {m.chain ? ` · grupo ${m.chain}` : ''}{m.razonSocial ? ` · ${m.razonSocial}` : ''}
+                                                {plural(m.visitas, 'visita', 'visitas')}
+                                                {m.primeraVisita ? ` · del ${fecha(m.primeraVisita)} al ${fecha(m.ultimaVisita)}` : ''}
+                                                {m.devoluciones ? ` · ${plural(m.devoluciones, 'devolución', 'devoluciones')}` : ''}
+                                                {m.chain ? ` · grupo ${m.chain}` : ''}
                                             </p>
+                                            <p className="text-[11px] text-slate-500">
+                                                Carnet: {m.zohoCustomerId || 'sin vincular'}{m.razonSocial ? ` (${m.razonSocial})` : ''}
+                                            </p>
+                                            <p className="text-[11px] text-slate-500">
+                                                {m.direccion ? `Dirección: ${m.direccion}` : 'Sin dirección'}
+                                                {m.coords ? '' : ' · sin ubicación en el mapa'}
+                                                {m.distanciaM != null && (
+                                                    <b className={m.distanciaM <= DISTANCIA_MISMO_PDV_M ? 'text-emerald-700' : 'text-amber-700'}> · a {fmtNum(m.distanciaM, 0)} m del sugerido</b>
+                                                )}
+                                            </p>
+                                            <p className="text-[10px] text-slate-400">id {m.posId}</p>
                                         </div>
                                     ))}
                                 </div>

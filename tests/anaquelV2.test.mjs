@@ -220,10 +220,13 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
         V('M', 0, 20, 7), V('M', 7, 20, 7), V('M', 14, 20, 7), V('M', 21, 40, 0), V('M', 28, 33, 0), V('M', 35, 26, 0),
         // L: un intervalo de visitas de 26 días.
         V('L', 4, 30, 0), V('L', 30, 4, 20), V('L', 37, 17, 0),
+        // K: vende 1/día; en d14 contaron 5 cuando había 20 (error de conteo).
+        V('K', 0, 20, 7), V('K', 7, 20, 7), V('K', 14, 5, 7), V('K', 21, 20, 7), V('K', 28, 20, 7), V('K', 35, 20, 7),
     ];
     const posList = [
-        { id: 'N', name: 'Páramo (Libertador)', type: 'pos' }, { id: 'M', name: 'Paramo Libertador', type: 'pos' },
-        { id: 'L', name: 'Páramo Libertado', type: 'pos' },
+        { id: 'N', name: 'Páramo (Libertador)', type: 'pos', zohoCustomerId: 'zc1', razonSocialZoho: 'Inversiones Cold 2024, C.A', coordinates: { lat: 10.5, lng: -66.9 } },
+        { id: 'M', name: 'Paramo Libertador', type: 'pos', zohoCustomerId: 'zc1', coordinates: { lat: 10.50045, lng: -66.9 } },
+        { id: 'L', name: 'Páramo Libertado', type: 'pos' }, { id: 'K', name: 'Tienda K', type: 'pos' },
         { id: 'E1', name: 'Excelsior Gama 1', type: 'pos' }, { id: 'E2', name: 'Excelsior Gama 2', type: 'pos' },
     ];
     const ahora = new Date((T0 + 40 * D) * 1000);
@@ -240,11 +243,32 @@ const dev = (posId, dia, unidades, repuestas, motivo = 'vencido', horaExtra = 0)
     const p30 = c.largosPorPeriodo.find(x => x.dias === 30);
     ok(p30 && p30.largos === 1 && p30.con !== p30.sin, `cifra de red con y sin los largos (${fmtNum(p30?.con)} vs ${fmtNum(p30?.sin)})`);
     const cob30 = c.coberturaPorPeriodo.find(x => x.dias === 30);
-    ok(cob30 && cob30.pdvActivos === 5 && cob30.al1 >= cob30.al2 && cob30.al2 >= cob30.al3 && cob30.al1 === 3,
+    ok(cob30 && cob30.pdvActivos === 6 && cob30.al1 >= cob30.al2 && cob30.al2 >= cob30.al3 && cob30.al1 === 4,
         `cobertura por intervalos válidos (${JSON.stringify(cob30)})`);
     const g = c.duplicados.find(x => x.miembros.some(m => m.posId === 'N'));
     ok(g && g.miembros.length === 3, `posibles duplicados: Páramo (Libertador) / Paramo Libertador / Páramo Libertado (${g?.miembros.length})`);
     ok(!c.duplicados.some(x => x.miembros.some(m => m.posId === 'E1')), 'sucursales numeradas (Excelsior Gama 1 y 2) no se marcan como duplicadas');
+    const nK = c.negativos.find(x => x.posId === 'K');
+    ok(nK && nK.resultado === -8 && nK.lectura === 'conteo', `K: vecino alto sin facturado que lo explique ⇒ error de conteo (${nK?.lectura})`);
+    ok(nN && nN.zohoCustomerId === 'zc1' && nN.visitas.length === 4 && nN.visitas[0].orderQuantity === 30
+        && nN.visitas[0].rol === 'inicio del intervalo anterior' && /^\d{4}-\d{2}-\d{2}$/.test(nN.visitas[0].dia),
+        'exportación: visitas del negativo con orderQuantity, fecha y carnet de Zoho');
+    const mp = c.mapaPreview;
+    const celda = mp.filas.find(f => f.id === 'ojos').celdas.find(x => x.categoria === 'Quesos crema');
+    ok(mp.celdas === 16 && mp.vacias === 15 && mp.conCifra === 1 && mp.grises === 0 && celda.nPdv === 4 && celda.validos > 0 && mp.pdvVistosEn2 === 0,
+        `vista previa del mapa: 16 celdas, 1 con cifra, 15 vacías (${JSON.stringify({ c: mp.conCifra, g: mp.grises, v: mp.vacias, pdv: celda.nPdv })})`);
+    const sug = g.miembros.find(m => m.sugerido);
+    const otroCarnet = g.miembros.find(m => !m.sugerido && m.zohoCustomerId);
+    ok(sug && sug.zohoCustomerId === 'zc1' && otroCarnet && otroCarnet.distanciaM >= 45 && otroCarnet.distanciaM <= 55,
+        `duplicados: sugiere conservar uno con carnet y mide la distancia (${otroCarnet?.distanciaM} m)`);
+}
+// ── Red ponderada vs mediana por PDV ──
+{
+    const R = [V('A', 0, 20, 7), V('A', 7, 20, 7), V('A', 14, 20, 7), V('A', 21, 20, 7), V('A', 28, 20, 7), V('B', 21, 30, 0), V('B', 28, 9, 0)];
+    const c = compararMetodos({ reports: R, dias: 30, ahora: new Date((T0 + 30 * D) * 1000) });
+    const r = c.coberturaPorPeriodo.find(x => x.dias === 30).nuevo;
+    ok(Math.abs(r.red - 49 / 35) < 1e-9 && Math.abs(r.mediana - 2) < 1e-9 && r.nPdv === 2,
+        `red ponderada ${fmtNum(r.red)} (A pesa más por tener más días) vs mediana por PDV ${fmtNum(r.mediana)} con ${r.nPdv} PDV`);
 }
 
 console.log(fallas ? `\n${fallas} verificación(es) fallaron` : '\nTodas las verificaciones en verde');

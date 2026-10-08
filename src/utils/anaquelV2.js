@@ -401,6 +401,18 @@ export const claveNombre = (s) => String(s || '').toLowerCase()
 const RUIDO_NOMBRE = new Set(['c', 'a', 'ca', 's', 'sa', 'srl', 'de', 'del', 'la', 'el', 'los', 'las']);
 const claveDuplicado = (s) => claveNombre(s).split(' ').filter(w => w && !RUIDO_NOMBRE.has(w)).join(' ');
 
+const coordsDe = (p) => {
+    const c = p?.coordinates || p?.location;
+    const lat = Number(c?.lat ?? c?.latitude), lng = Number(c?.lng ?? c?.longitude);
+    return Number.isFinite(lat) && Number.isFinite(lng) && (lat || lng) ? { lat, lng } : null;
+};
+function distanciaMetros(a, b) {
+    const R = 6371000, rad = (x) => x * Math.PI / 180;
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 function distanciaEdicion(a, b) {
     if (a === b) return 0;
     let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
@@ -422,21 +434,26 @@ function distanciaEdicion(a, b) {
  * Incluye los posId que aparecen en los reportes aunque no estén en la lista.
  * @returns {{ motivo, miembros: {posId, nombre, chain, razonSocial, activo, visitas, ultimaVisita}[] }[]}
  */
-export function posiblesDuplicados(posList = [], reports = []) {
+export function posiblesDuplicados(posList = [], reports = [], devoluciones = []) {
     const visitas = {};
     (reports || []).forEach(r => {
         if (!r?.posId) return;
-        const v = visitas[r.posId] = visitas[r.posId] || { n: 0, ultima: 0, nombre: null };
+        const v = visitas[r.posId] = visitas[r.posId] || { n: 0, ultima: 0, primera: Infinity, nombre: null };
         v.n++;
         const t = seg(r);
         if (t > v.ultima) { v.ultima = t; v.nombre = r.posName || v.nombre; }
+        if (t && t < v.primera) v.primera = t;
     });
+    const devs = {};
+    (devoluciones || []).forEach(d => { if (d?.posId) devs[d.posId] = (devs[d.posId] || 0) + 1; });
     const lista = [];
     const vistos = new Set();
     (posList || []).filter(p => p && !p.eliminado).forEach(p => {
         vistos.add(p.id);
         lista.push({ posId: p.id, nombre: p.name || p.nombre || p.id, chain: p.chain || null,
-            razonSocial: p.razonSocialZoho || null, activo: p.active !== false });
+            razonSocial: p.razonSocialZoho || null, zohoCustomerId: p.zohoCustomerId || null,
+            direccion: p.address || null, coords: coordsDe(p), activo: p.active !== false,
+            frecuencia: Number(p.visitInterval) || 0 });
     });
     Object.entries(visitas).forEach(([id, v]) => {
         if (!vistos.has(id) && v.nombre) lista.push({ posId: id, nombre: v.nombre, chain: null, razonSocial: null, activo: null, fueraDeLista: true });
@@ -444,6 +461,8 @@ export function posiblesDuplicados(posList = [], reports = []) {
     lista.forEach(x => {
         x.visitas = visitas[x.posId]?.n || 0;
         x.ultimaVisita = visitas[x.posId]?.ultima ? visitas[x.posId].ultima * 1000 : null;
+        x.primeraVisita = Number.isFinite(visitas[x.posId]?.primera) ? visitas[x.posId].primera * 1000 : null;
+        x.devoluciones = devs[x.posId] || 0;
         x.clave = claveDuplicado(x.nombre);
     });
 
@@ -466,10 +485,24 @@ export function posiblesDuplicados(posList = [], reports = []) {
     }
     const grupos = {};
     lista.forEach((x, i) => { (grupos[raiz(i)] = grupos[raiz(i)] || []).push(x); });
-    return Object.values(grupos).filter(g => g.length > 1).map(g => ({
-        motivo: g.every(x => x.clave === g[0].clave) ? 'mismo' : 'parecido',
-        miembros: g.map(({ clave, ...x }) => x).sort((p, q) => q.visitas - p.visitas),
-    })).sort((p, q) => q.miembros.length - p.miembros.length);
+    return Object.values(grupos).filter(g => g.length > 1).map(g => {
+        const miembros = g.map(({ clave, ...x }) => x).sort((p, q) => q.visitas - p.visitas);
+        // Sugerencia de cuál conservar (solo visual): vinculado al carnet de Zoho,
+        // activo, con ubicación en el mapa y con más visitas.
+        const puntaje = (m) => (m.zohoCustomerId ? 1000 : 0) + (m.activo ? 100 : 0) + (m.coords ? 10 : 0) + m.visitas / 1000;
+        const sugerido = [...miembros].sort((p, q) => puntaje(q) - puntaje(p))[0];
+        miembros.forEach(m => {
+            m.sugerido = m.posId === sugerido.posId;
+            m.distanciaM = m.coords && sugerido.coords && !m.sugerido ? Math.round(distanciaMetros(m.coords, sugerido.coords)) : null;
+        });
+        const carnets = new Set(miembros.map(m => m.zohoCustomerId).filter(Boolean));
+        return {
+            motivo: g.every(x => x.clave === g[0].clave) ? 'mismo' : 'parecido',
+            mismoCarnet: carnets.size === 1 && miembros.every(m => m.zohoCustomerId),
+            carnetsDistintos: carnets.size > 1,
+            miembros,
+        };
+    }).sort((p, q) => q.miembros.length - p.miembros.length);
 }
 
 // ── Análisis completo ───────────────────────────────────────────────────────
@@ -846,8 +879,9 @@ const METODO_CRUDO_MOV = { recortarNegativos: false, unirCortos: false, usarMovi
  *    lo compensa (juntos dan una rotación normal);
  *  · producto que entró sin registrarse: el negativo está aislado.
  */
-function diagnosticoNegativos(crudosPorPos, nombreDe, desde, hasta) {
+function diagnosticoNegativos(crudosPorPos, nombreDe, desde, hasta, posInfo = () => ({})) {
     const rot = (t) => (t && t.dias > 0 ? t.crudo / t.dias : null);
+    const visita = (v, rol) => (v ? { rol, id: v.id, fecha: v.t * 1000, dia: diaLocal(v.t), inventario: v.inv, orderQuantity: v.rep } : null);
     const filas = [];
     Object.entries(crudosPorPos).forEach(([id, ts]) => {
         ts.forEach((t, k) => {
@@ -861,16 +895,35 @@ function diagnosticoNegativos(crudosPorPos, nombreDe, desde, hasta) {
                 && (medianaPdv != null ? rot(n) >= C.FACTOR_VECINO_ALTO * medianaPdv : n.crudo >= Math.abs(t.crudo));
             const juntos = (n) => (n ? (t.crudo + n.crudo) / (t.dias + n.dias) : null);
             const altoPrev = alto(prev), altoSig = alto(sig);
+            // Tres causas (hipótesis, se confirman cruzando con las facturas):
+            //  · desfase: el intervalo ANTERIOR sale alto y lo facturado en su
+            //    visita de inicio alcanza para cubrir el negativo (se contó una
+            //    entrega que llegó después);
+            //  · conteo: un vecino sale alto pero lo facturado no lo explica (un
+            //    inventario mal contado en la visita que comparten);
+            //  · aislado: ningún vecino lo compensa (entró producto sin registrarse).
+            const facturadoAntes = prev ? prev.rep : 0;
+            const desfase = altoPrev && facturadoAntes >= C.FRACCION_DESFASE_CUBRE * Math.abs(t.crudo);
+            const lectura = desfase ? 'desfase'
+                : (altoPrev || altoSig) ? 'conteo'
+                    : (!prev && !sig ? 'sin_vecinos' : 'aislado');
             filas.push({
-                posId: id, nombre: nombreDe(id),
+                posId: id, nombre: nombreDe(id), ...posInfo(id),
                 desde: t.ini * 1000, hasta: t.finT * 1000, dias: t.dias,
                 invAnterior: t.invInicial, facturadas: t.rep, repuestas: t.repuestas, retiradas: t.retiradas,
                 entradas: t.entradas, invActual: t.invFinal,
                 resultado: t.crudo, resultadoSinDevoluciones: sinDev,
                 rotAnterior: rot(prev), rotSiguiente: rot(sig), medianaPdv,
                 vecinoAlto: altoPrev && altoSig ? 'ambos' : altoPrev ? 'anterior' : altoSig ? 'siguiente' : null,
-                juntosAnterior: juntos(prev), juntosSiguiente: juntos(sig),
-                lectura: altoPrev || altoSig ? 'desfase' : (!prev && !sig ? 'sin_vecinos' : 'aislado'),
+                facturadoAntes, juntosAnterior: juntos(prev), juntosSiguiente: juntos(sig),
+                lectura,
+                // Visitas involucradas, para cruzar con las facturas de Zoho.
+                visitas: [
+                    visita(prev?.inicio, 'inicio del intervalo anterior'),
+                    visita(t.inicio, 'inicio del intervalo negativo'),
+                    visita(t.fin, 'fin del intervalo negativo'),
+                    visita(sig?.fin, 'fin del intervalo siguiente'),
+                ].filter(Boolean),
             });
         });
     });
@@ -884,7 +937,7 @@ function diagnosticoNegativos(crudosPorPos, nombreDe, desde, hasta) {
  * Rotación = Σventas / Σdías de los intervalos de visitas que terminan en el periodo (venta
  * por PDV por día, la misma definición que el Dashboard).
  */
-// Intervalos de visitas de días para ver dónde cae el mínimo de 5 días (calibración).
+// Cubetas de días por intervalo de visitas, para ver dónde cae el mínimo de 5 días (calibración).
 export const CUBETAS_DIAS = [
     { id: '0-2', label: '0 a 2 días', max: 3 }, { id: '3-4', label: '3 a 4 días', max: 5 },
     { id: '5-6', label: '5 a 6 días', max: 7 }, { id: '7-9', label: '7 a 9 días', max: 10 },
@@ -978,7 +1031,9 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
     // ── Diagnóstico (solo lectura) ──
     const crudosMov = {};
     Object.entries(porPos).forEach(([id, vs]) => { crudosMov[id] = tramosDePos(vs, porVisita, METODO_CRUDO_MOV); });
-    const negativos = diagnosticoNegativos(crudosMov, nombreDe, desde, hasta);
+    const posPorId = new Map((posList || []).map(p => [p.id, p]));
+    const posInfo = (id) => ({ zohoCustomerId: posPorId.get(id)?.zohoCustomerId || null, razonSocialZoho: posPorId.get(id)?.razonSocialZoho || null });
+    const negativos = diagnosticoNegativos(crudosMov, nombreDe, desde, hasta, posInfo);
 
     const ventana = (d) => [hasta - d * DIA, hasta];
     const enV = (ts, [a, b]) => ts.filter(t => t.finT > a && t.finT <= b);
@@ -997,6 +1052,23 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
         dias: t.dias, unidades: t.crudo, rotacion: t.dias > 0 ? t.crudo / t.dias : null,
     })).sort((a, b) => b.dias - a.dias);
 
+    // Cifra de red (ponderada por tiempo: los PDV con más días medidos pesan más)
+    // frente a la mediana por PDV (cada PDV pesa igual).
+    const dashTs = tramos(METODO_DASHBOARD);
+    const resumenRed = (ts, v) => {
+        const m = {};
+        enV(ts, v).filter(cuentaEnRotacion).forEach(t => { (m[t.posId] = m[t.posId] || []).push(t); });
+        const porPdv = Object.values(m).map(rotacionDe).filter(x => x.porDia != null);
+        const diasTot = porPdv.reduce((a, x) => a + x.dias, 0);
+        const top5 = [...porPdv].sort((a, b) => b.dias - a.dias).slice(0, 5).reduce((a, x) => a + x.dias, 0);
+        return {
+            red: rotacionDe(enV(ts, v)).porDia,
+            mediana: porPdv.length ? mediana(porPdv.map(x => x.porDia)) : null,
+            nPdv: porPdv.length,
+            pesoTop5: diasTot > 0 ? top5 / diasTot : null,
+        };
+    };
+
     // Cobertura: PDV con ≥1, ≥2 y ≥3 intervalos de visitas VÁLIDOS en cada periodo.
     const activos = (posList || []).filter(pdvActivo);
     const universo = activos.length ? new Set(activos.map(p => p.id)) : null;
@@ -1011,13 +1083,44 @@ export function compararMetodos({ reports = [], devoluciones = [], traslados = [
         return {
             dias: d, pdvActivos: universo ? universo.size : null,
             al1: cuentas.filter(x => x >= 1).length, al2: cuentas.filter(x => x >= 2).length, al3: cuentas.filter(x => x >= 3).length,
+            nuevo: resumenRed(nuevos, v), anterior: resumenRed(dashTs, v),
         };
     });
 
+    // ── Vista previa del mapa de calor (capa A y B), 90 días ──
+    const v90 = ventana(C.VENTANA_EFECTO_DIAS);
+    const a90 = analizarAnaquelV2({ reports, posList, devoluciones, traslados, periodoDias: C.VENTANA_EFECTO_DIAS, ahora });
+    const validos90 = enV(nuevos, v90).filter(t => t.estado === 'valido');
+    const validosPorCelda = {}, celdasPorPdv = {};
+    validos90.filter(t => t.altura && t.categoria).forEach(t => {
+        const k = `${t.altura}|${t.categoria}`;
+        validosPorCelda[k] = (validosPorCelda[k] || 0) + 1;
+        (celdasPorPdv[t.posId] = celdasPorPdv[t.posId] || new Set()).add(k);
+    });
+    const filasMapa = a90.mapa.filas.map(f => ({
+        id: f.id, label: f.label,
+        celdas: f.celdas.map(c => ({
+            categoria: c.categoria, nPdv: c.capaA.nPdv, intervalos: c.capaA.nTramos,
+            validos: validosPorCelda[`${f.id}|${c.categoria}`] || 0,
+            gris: c.capaA.pocosDatos, vacia: c.capaA.sinDatos,
+        })),
+    }));
+    const todasCeldas = filasMapa.flatMap(f => f.celdas);
+    const mapaPreview = {
+        filas: filasMapa, columnas: a90.mapa.columnas,
+        celdas: todasCeldas.length,
+        conCifra: todasCeldas.filter(c => !c.gris && !c.vacia).length,
+        grises: todasCeldas.filter(c => c.gris).length,
+        vacias: todasCeldas.filter(c => c.vacia).length,
+        pdvVistosEn2: Object.values(celdasPorPdv).filter(st => st.size >= C.MIN_CELDAS_CAPA_B).length,
+        pdvCapaB: a90.mapa.pdvCapaB,
+        sinUbicacion: enV(nuevos, v90).filter(t => cuentaEnRotacion(t) && !(t.altura && t.categoria)).length,
+    };
+
     return {
         dias, dashboard: dashboard.porDia, pasos,
-        negativos, largos, largosPorPeriodo, coberturaPorPeriodo,
-        duplicados: posiblesDuplicados(posList, reports),
+        negativos, largos, largosPorPeriodo, coberturaPorPeriodo, mapaPreview,
+        duplicados: posiblesDuplicados(posList, reports, devoluciones),
         histDias,
         pctTerminanVacio: crudos.length ? crudos.filter(t => t.fin.vacio).length / crudos.length : null,
         tramosCortosUnidos: { tramos: unidosT.length, absorbidos: unidosT.reduce((s, t) => s + t.unidos, 0) },

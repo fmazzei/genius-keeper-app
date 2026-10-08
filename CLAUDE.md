@@ -3072,7 +3072,7 @@ Rediseño pedido por el dueño: una sección corta (1 página carta), mediciones
   - `asignarMovimientos` (regla A), `cobertura` (M5), `veredictoEfecto` (bootstrap de la mediana con semilla fija);
   - `analizarAnaquelV2`: red, PDV, semáforo, mapa en capas A y B, tabla de efecto, pruebas en curso, datos por corregir y línea de conclusión por reglas;
   - `compararMetodos`: Dashboard → nuevo, paso a paso, con % de negativos, devoluciones, "por vencer" y intervalos de visitas que cambian de estado.
-- Prueba: `node --import ./tests/alias.mjs tests/anaquelV2.test.mjs`, 56 verificaciones en verde.
+- Prueba: `node --import ./tests/alias.mjs tests/anaquelV2.test.mjs`, 61 verificaciones en verde.
 - La tabla de efecto lista solo cambios de **ubicación** (altura o categoría). Un cambio de precio o de POP solo "ensucia" el cambio de ubicación.
 
 **"Comparar métodos" publicada (7-oct) ✅** — la pestaña para ver el método nuevo con datos REALES antes de la Fase 2.
@@ -3098,6 +3098,30 @@ Rediseño pedido por el dueño: una sección corta (1 página carta), mediciones
 - **c) Cobertura** (`coberturaPorPeriodo`): PDV activos con ≥1, ≥2 y ≥3 intervalos de visitas VÁLIDOS en 30/60/90 días.
 - **d) Posibles duplicados** (`posiblesDuplicados`, exportada; también la usa `datosPorCorregir`): mismo nombre sin acentos, signos, orden ni forma jurídica, o casi igual (distancia de edición ≤ `MAX_DISTANCIA_DUPLICADO`, largo ≥ `MIN_LARGO_DUPLICADO`). Nombres que solo difieren en un número son sucursales y no se marcan. La pantalla lee la colección `pos` COMPLETA (incluye inactivos) y suma los posId que solo aparecen en reportes. Nunca fusiona nada.
 - Prueba: 56 verificaciones en verde.
+
+**Datos reales a 90 días (8-oct):** Dashboard 0,60 vs. método nuevo 1,28 uds/día; 123 intervalos crudos, 21 negativos (17,1 %); el paso 3 pasa de 102 a 77 intervalos y de 1.319 a 698 días; 18 intervalos (14,6 %) terminan en anaquel vacío; 1 devolución en 90 días. **`UMBRAL_ALERTA_VENCIMIENTO_DIAS = 7` confirmado por el dueño.**
+
+**Segunda ronda del diagnóstico (8-oct) ✅** — solo lectura, en `compararMetodos`:
+- **a) Tres causas** para cada negativo (`lectura`, hipótesis a confirmar con facturas):
+  - `desfase`: el intervalo ANTERIOR sale alto y lo facturado en su primera visita (`facturadoAntes`) cubre el negativo (`FRACCION_DESFASE_CUBRE` = 1). Se contó una entrega que llegó después.
+  - `conteo`: hay vecino alto (anterior o siguiente) pero lo facturado no lo explica: un inventario mal contado en la visita compartida.
+  - `aislado`: ningún vecino lo compensa: entró producto sin registrarse.
+- **c) Red vs. mediana por PDV** (`coberturaPorPeriodo[].nuevo` / `.anterior` = `{red, mediana, nPdv, pesoTop5}`): la red pondera por días medidos; la mediana pesa cada PDV igual; `pesoTop5` = parte de los días que aportan los 5 PDV con más días.
+- **e) Vista previa del mapa** (`mapaPreview`, 90 días, usa el MISMO `analizarAnaquelV2().mapa`): por celda PDV, intervalos que cuentan y válidos; celdas con cifra / grises (< `MIN_PDV_CELDA`) / vacías; PDV vistos en ≥2 celdas y elegibles de capa B (además con índice propio); intervalos sin altura o categoría.
+- **f) Exportación CSV** de los negativos para cruzar con Zoho: una fila por visita involucrada (inicio del anterior, inicio y fin del negativo, fin del siguiente) con fecha, hora, inventario, `orderQuantity`, posId, `zohoCustomerId` y razón social.
+- **d) Duplicados más completos:** carnet, razón social, dirección, ubicación y distancia al "sugerido conservar" (con carnet > activo > con ubicación > más visitas; `DISTANCIA_MISMO_PDV_M` = 150), primera y última visita, devoluciones, aviso de "mismo carnet" o "carnets distintos" e id.
+- Prueba: 61 verificaciones en verde.
+
+**Plan de fusión de PDV duplicados (PROPUESTO, sin ejecutar; espera el OK del dueño):** primer caso "Páramo Libertador" + "Páramo (Libertador)" (Inversiones Cold 2024, C.A); después revisar "Maxi Quesos" (aparece dos veces).
+1. **Cuál queda:** el que la tarjeta marca "sugerido conservar" (vinculado al carnet; si empatan, activo, con ubicación y más visitas). El dueño lo confirma por id.
+2. **Qué se reasigna** (`posId` viejo → nuevo, y `posName`): `visit_reports`, `devoluciones`, `pedidos_mercaderista`, `pickings` (si traen punto de venta), `vendor_clients` (si el viejo está en una cartera: se reemplaza, o se quita si el nuevo ya está), paradas de rutas/agendas y `vendedor_alertas`. Las facturas no se tocan (van por carnet).
+3. **El otro:** `eliminado:true, active:false, visitInterval:0, fusionadoEn:<id que queda>, fusionadoAt` (soft-delete; nunca se borra).
+4. **Respaldo previo:** copia completa de cada documento afectado en `fusiones_pdv/{fecha}_{idViejo}` antes de escribir, para poder deshacer.
+5. **Cómo:** callable solo máster `fusionarPdv({idQueda, idSale, simular})`: primero simula (lista por colección qué cambia, incluidas visitas del mismo día en los dos PDV, que al unirse darían un intervalo de 0 días) y luego ejecuta en lotes. Sirve también para Maxi Quesos.
+
+**Para la Fase 2 (sin autorizar todavía):**
+- El campo de reposición pasa a ser **"unidades que se entregaron HOY en el anaquel (aunque la factura sea de otro día)"**: se mide lo que físicamente entró, porque a veces se factura un día y se despacha 24 h después. Los reportes viejos conservan el significado anterior.
+- **Bloque de retiro mínimo** (las devoluciones son muy pocas): "¿Retiraste producto hoy?" Sí/No sin valor por defecto; si Sí: unidades retiradas, UN motivo (Vencido / Por vencer / Envase dañado / Calidad) y unidades repuestas en el acto. Escribe `devoluciones/visita_<id>` con un solo lote (vencimiento precargado del lote más viejo, editable). **Se pospone:** varios lotes con motivo por lote, traslados de "por vencer", campos de nota de crédito, avisos de duplicado en los dos sentidos. Lo complejo sigue en el módulo Devoluciones.
 
 **Terminología (7-oct, decisión del dueño):** en todo lo que ve el usuario, "tramo" pasó a **"intervalo de visitas"** ("intervalo" solo donde falta espacio): pantallas del mapa, antes/después, rotación, mapa del vendedor, "Comparar métodos", PDF, comentarios y mensajes de las pruebas. Las cobranzas siguen diciendo "tramos de antigüedad" (otro concepto). **Los identificadores internos NO se renombraron** (`MIN_DIAS_TRAMO`, `tramosDePos`, `tramos`, `pares`…): alimentan pantallas en uso (Dashboard, rotación, antes/después, mapa del vendedor) y en `anaquelV2.js` el nombre `intervalo` ya es el intervalo de confianza del bootstrap, así que un renombre mecánico chocaría con él.
 

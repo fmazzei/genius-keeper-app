@@ -70,6 +70,11 @@ export const MIN_ROT_ATIPICO = 0.05;    // por debajo, la razón entre intervalo
 // registrarse.
 export const FACTOR_VECINO_ALTO = 2;
 export const PCT_VECINO_COMPENSA = 0.5;
+// "Desfase" (y no error de conteo) solo si lo facturado en la visita de inicio
+// del intervalo anterior cubre al menos esta fracción del negativo.
+export const FRACCION_DESFASE_CUBRE = 1;
+// Dos PDV duplicados a menos de esta distancia son, casi seguro, el mismo punto.
+export const DISTANCIA_MISMO_PDV_M = 150;
 // Posibles PDV duplicados: nombres a esta distancia de edición o menos (tras
 // quitar acentos, signos y la forma jurídica) y de al menos este largo.
 export const MAX_DISTANCIA_DUPLICADO = 2;
