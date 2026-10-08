@@ -277,6 +277,13 @@ export default function ComparadorMetodosAnaquel({ reports, devoluciones, factur
                                                 Facturas de los últimos {dias} días sin asignar a un anaquel: <b>{p.noAsignadas.compartida}</b> de un carnet que comparten varios PDV (factura central o PDV duplicado) · <b>{p.noAsignadas.sinPdv}</b> de clientes sin PDV vinculado.
                                                 {c.pdvSinFuente.length > 0 && ` ${plural(c.pdvSinFuente.length, 'PDV visitado queda', 'PDV visitados quedan')} fuera del cruce por no tener un carnet propio: ${c.pdvSinFuente.map(x => `${x.nombre} (${x.estado === 'compartido' ? 'carnet compartido' : 'sin vínculo'})`).join(', ')}.`}
                                             </p>
+                                            <p className="text-[11px] text-slate-500 mt-1">
+                                                PDV activos con despacho <b>centralizado</b>: <b>{c.centralizados.pdv}</b>
+                                                {c.centralizados.cadenas.length > 0 && ` (${c.centralizados.cadenas.join(', ')})`}.
+                                                {' '}Carnets que comparten varios PDV: <b>{c.compartidos.length}</b>
+                                                {c.compartidos.length > 0 && ` (${c.compartidos.map(x => x.nombres.join(' + ')).join(' · ')})`}.
+                                                {' '}Sus facturas no se pueden repartir entre sucursales con lo que GK guarda hoy.
+                                            </p>
                                             <p className="text-xs font-bold text-slate-600 mt-3 mb-1">Por PDV, últimos {dias} días: anotado en las visitas frente a facturado</p>
                                             <div className="divide-y divide-slate-100">
                                                 {p.porPdv.map(x => (
