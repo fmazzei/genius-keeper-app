@@ -26,6 +26,7 @@ import Modal from '@/Components/Modal.jsx';
 import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx';
 import ProvisionalGpsModal from '@/Components/ProvisionalGpsModal.jsx';
 import { leerRuta, guardarRuta } from '@/utils/rutaOffline.js';
+import { enviarLatido } from '@/utils/latidoDispositivo.js';
 // Lazy: el mercaderista abre la app casi siempre en 'hub', no en 'planner' —
 // cargar leaflet/react-beautiful-dnd solo cuando navega a esa vista.
 const Planner = lazy(() => import('./Planner/Planner.jsx'));
@@ -105,6 +106,17 @@ const AppShell = ({ user, role, onLogout }) => {
     const modules = getModulesForRole('merchandiser');
 
     const { pendientes } = useOfflineSync();
+
+    // Latido del teléfono para el vigilante: cuándo se conectó y cuántos reportes
+    // tiene sin enviar (así no confunde falta de señal con falta de visita).
+    useEffect(() => {
+        if (!selectedReporter) return undefined;
+        const latir = () => enviarLatido({ uid: user?.uid, reporter: selectedReporter });
+        latir();
+        const reloj = setInterval(latir, 15 * 60000);
+        window.addEventListener('online', latir);
+        return () => { clearInterval(reloj); window.removeEventListener('online', latir); };
+    }, [selectedReporter, user?.uid, pendientes]);
 
     // Con señal, el teléfono guarda lo que necesita para la ruta sin red: último
     // conteo de cada PDV y facturas por entregar (sin montos). Como mucho cada

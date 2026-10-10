@@ -14,6 +14,13 @@ exports.kromaHoldNotifier = onSchedule({
     const db  = admin.firestore();
     const now = Date.now();
 
+    // Vigilar al vigilante: este programador es INDEPENDIENTE del barrido
+    // horario donde corre el vigilante. Cada 30 min revisa su latido (una sola
+    // lectura); si lleva más de 5 h sin correr, avisa al máster.
+    if (new Date(now).getMinutes() % 30 < 2) {
+        try { await require('./vigilante').revisarLatidoVigilante({ ahoraMs: now }); } catch (e) { logger.error('Latido del vigilante:', e); }
+    }
+
     // Traer todos los documentos activos y filtrar en memoria (evita índice compuesto)
     const snap = await db.collection("kroma_scheduled_notifs")
         .where("active", "==", true)

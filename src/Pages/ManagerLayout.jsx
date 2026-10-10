@@ -4,10 +4,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useGeniusEngine } from '@/hooks/useGeniusEngine';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useAvisosAnaquel } from '@/hooks/useAvisosAnaquel.js';
+import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
+import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import NotificationsBell from '@/Components/NotificationsBell.jsx';
 import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/Firebase/config.js';
 import { LogOut, BarChart2, TrendingUp, Settings, Map as MapIcon, Menu, ChevronsRight, Briefcase, CalendarCheck, ClipboardList, Download, Warehouse, UserCheck } from 'lucide-react';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
@@ -39,6 +41,36 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     // Avisos del anaquel: solo al máster, solo decisiones (sin salida, vencimiento,
     // surtir más, caída en el registro de entregas). Van a la misma campanita.
     const avisos = useAvisosAnaquel({ reports, posList, activo: role === 'master' });
+    // Vigilante: los avisos abiertos que le tocan a esta persona.
+    const { avisos: avisosVig, marcarVisto: marcarVistoVig } = useAvisosVigilante(user?.uid);
+    // Vigilar al vigilante desde la app: si su latido tiene más de 5 h, se dice
+    // aquí, sin depender del servidor (si el servidor se detuvo, no avisaría).
+    const [latidoVig, setLatidoVig] = useState(null);
+    useEffect(() => {
+        if (role !== 'master') return undefined;
+        try {
+            return onSnapshot(doc(db, 'settings', 'vigilancia'), (s) => {
+                const l = s.data()?.latido;
+                setLatidoVig(l?.toMillis ? l.toMillis() : null);
+            }, () => {});
+        } catch { return undefined; }
+    }, [role]);
+    const notifVig = useMemo(() => {
+        const lista = avisosVig.map(a => ({
+            id: `vig:${a.id}`, title: a.titulo, body: textoAviso(a), read: !!a.vistoPor?.[user?.uid],
+            createdAt: a.abiertoAt, sintetica: true,
+        }));
+        const yaAvisado = avisosVig.some(a => a.tipo === 'vigilante_detenido');
+        if (role === 'master' && latidoVig && Date.now() - latidoVig > 5 * 3600000 && !yaAvisado) {
+            lista.unshift({
+                id: 'vig:latido_local', title: 'El vigilante dejó de correr',
+                body: `No revisa la app desde hace ${Math.round((Date.now() - latidoVig) / 3600000)} h. Acción: revisar las funciones programadas.`,
+                read: false, createdAt: { toDate: () => new Date(latidoVig) }, sintetica: true,
+            });
+        }
+        return lista;
+    }, [avisosVig, latidoVig, role, user?.uid]);
+    const esVig = (id) => typeof id === 'string' && id.startsWith('vig:');
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole(role);
     
@@ -293,11 +325,12 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                     {/* Campanita: las notificaciones se consultan desde aquí, no
                         desde una pestaña del menú lateral. */}
                     <NotificationsBell
-                        notifications={[...avisos.notificaciones, ...notifications]}
-                        unreadCount={unreadCount + avisos.noLeidas}
-                        onMarkRead={(id) => (avisos.esAviso(id) ? avisos.marcarLeido(id) : markAsRead(id))}
-                        onMarkAllRead={() => { avisos.marcarTodos(); markAllAsRead(); }}
-                        onDelete={(id) => (avisos.esAviso(id) ? avisos.eliminar(id) : deleteNotification(id))}
+                        notifications={[...notifVig, ...avisos.notificaciones, ...notifications]}
+                        unreadCount={unreadCount + avisos.noLeidas + notifVig.filter(n => !n.read).length}
+                        onMarkRead={(id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : avisos.esAviso(id) ? avisos.marcarLeido(id) : markAsRead(id))}
+                        onMarkAllRead={() => { notifVig.filter(n => !n.read).forEach(n => marcarVistoVig(n.id.slice(4))); avisos.marcarTodos(); markAllAsRead(); }}
+                        onDelete={(id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : avisos.esAviso(id) ? avisos.eliminar(id) : deleteNotification(id))}
+                        pie={<ActivarAvisos uid={user?.uid} />}
                         onOpenLink={() => setCurrentView('alerts')}
                     />
                 </header>

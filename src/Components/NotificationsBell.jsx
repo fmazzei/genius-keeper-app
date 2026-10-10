@@ -24,7 +24,7 @@ const fmtRel = (d) => {
 };
 
 export default function NotificationsBell({
-    notifications = [], unreadCount = 0, onMarkRead, onMarkAllRead, onDelete, onOpenLink,
+    notifications = [], unreadCount = 0, onMarkRead, onMarkAllRead, onDelete, onOpenLink, pie = null,
 }) {
     const [abierto, setAbierto] = useState(false);
     const [expandida, setExpandida] = useState(null);
@@ -123,6 +123,7 @@ export default function NotificationsBell({
                         })}
                     </div>
 
+                    {pie && <div className="px-3 pt-3 border-t border-slate-100 shrink-0">{pie}</div>}
                     <p className="text-[11px] text-slate-400 px-4 py-2.5 border-t border-slate-100 shrink-0">
                         Las leídas se atenúan y se guardan 24 h. Las no leídas permanecen hasta que las veas.
                     </p>

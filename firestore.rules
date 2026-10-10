@@ -377,6 +377,45 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── VIGILANTE (8-oct) ────────────────────────────────────────────────
+    // Avisos: los escribe SOLO el servidor. Cada persona lee únicamente los
+    // avisos donde es destinataria (Carolina nunca ve los de Francisco, que
+    // pueden tener datos del sistema); el máster los ve todos. Lo único que el
+    // destinatario puede tocar es su marca de "visto" (queda registrado quién vio).
+    match /vigilancia_avisos/{avisoId} {
+      // La campanita consulta por `destinatariosAbiertos` (array-contains): la regla
+      // nombra ese mismo campo para que Firestore pueda aprobar la consulta.
+      allow read: if isMaster() || (isAuthenticated() && (request.auth.uid in resource.data.get('destinatariosAbiertos', [])
+        || request.auth.uid in resource.data.get('destinatarios', [])));
+      allow update: if isAuthenticated() && request.auth.uid in resource.data.get('destinatarios', [])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['vistoPor'])
+        && request.resource.data.get('vistoPor', {}).diff(resource.data.get('vistoPor', {})).affectedKeys().hasOnly([request.auth.uid]);
+      allow create, delete: if false;
+    }
+    // Bitácora del vigilante: solo lectura del máster; la escribe el servidor.
+    match /vigilancia_bitacora/{id} {
+      allow read: if isMaster();
+      allow write: if false;
+    }
+    // Preferencias: cada quien enciende o apaga SUS notificaciones.
+    match /vigilancia_preferencias/{uid} {
+      allow read, write: if isAuthenticated() && request.auth.uid == uid;
+    }
+    // Latido de cada teléfono (última señal y reportes sin enviar). Lo escribe el
+    // teléfono con su propia cuenta; lo leen el máster y el servidor.
+    match /dispositivos/{deviceId} {
+      allow read: if isMaster() || isAdmin();
+      allow create, update: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow delete: if isMaster();
+    }
+    // Errores de la app (para detectar "errores tras una actualización").
+    match /errores_app/{id} {
+      allow read: if isMaster();
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['t', 'mensaje', 'origen', 'stack', 'appBuild', 'deviceId', 'uid', 'ruta']);
+      allow update, delete: if false;
+    }
+
     match /notifications/{notificationId} {
       allow read, update: if isAuthenticated() && resource.data.userId == request.auth.uid;
       // Mercaderistas notifican a gerencia/admin sobre nuevos entrantes detectados

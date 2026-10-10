@@ -745,6 +745,8 @@ exports.inventarioCierreDiario = onSchedule({
     await recalcularPendientes();
     // Asiento del día a Zoho (o su simulación). Un fallo queda registrado por día.
     try { await require("./inventarioZoho").sincronizarPendientes(); } catch (e) { console.error("inventarioZoho", e); }
+    // Segundo testigo del latido del vigilante (otro programador independiente).
+    try { await require("./vigilante").revisarLatidoVigilante(); } catch (e) { console.error("latido vigilante", e); }
 });
 
 // ── Acciones de la pantalla ────────────────────────────────────────────────

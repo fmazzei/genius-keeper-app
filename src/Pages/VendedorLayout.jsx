@@ -43,6 +43,8 @@ import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { fmtVence } from '@/utils/fechaCorta.js';
+import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
+import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 
 // ─── Caché del Home (stale-while-revalidate) ─────────────────────────────────
 // Firestore `getDocs` es "servidor primero" estando online (la caché de
@@ -921,7 +923,7 @@ function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClos
     );
 }
 
-function AlertasView({ alertas, loadingAlertas, onDelete }) {
+function AlertasView({ alertas, loadingAlertas, onDelete, uid }) {
     if (loadingAlertas) {
         return (
             <div className="flex-1 flex items-center justify-center">
@@ -933,6 +935,7 @@ function AlertasView({ alertas, loadingAlertas, onDelete }) {
     if (alertas.length === 0) {
         return (
             <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+                {uid && <div className="w-full max-w-md"><ActivarAvisos uid={uid} oscuro /></div>}
                 <CheckCircle size={56} className="text-emerald-400" />
                 <p className="text-white font-bold text-lg">Sin alertas activas</p>
                 <p className="text-slate-400 text-sm text-center">Todos tus indicadores están en orden.</p>
@@ -942,11 +945,13 @@ function AlertasView({ alertas, loadingAlertas, onDelete }) {
 
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-3">
+            {uid && <ActivarAvisos uid={uid} oscuro />}
             <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest pt-2">Alertas Activas</p>
             {alertas.map((alert) => {
-                const isDanger = alert.alertType === 'facturas_venciendo';
+                const isDanger = alert.alertType === 'facturas_venciendo' || alert.alertType === 'vig_critico';
                 const isInfo = alert.alertType === 'despacho_en_transito';
                 const isPicking = alert.alertType === 'picking';
+                const isVig = String(alert.alertType || '').startsWith('vig');
                 const cardClass = isDanger
                     ? 'bg-red-500/10 border-red-500/30'
                     : isInfo
@@ -968,6 +973,7 @@ function AlertasView({ alertas, loadingAlertas, onDelete }) {
                     >
                         <div className="flex-1 min-w-0">
                             <p className={`font-bold text-sm ${titleClass}`}>{alert.title}</p>
+                            {isVig && <p className="text-[11px] text-slate-500 mt-0.5">Vigilante · {alert.alertType === 'vig_critico' ? 'urgente' : alert.alertType === 'vig_info' ? 'informativo' : 'importante'}</p>}
                             <p className="text-slate-400 text-sm mt-1">{alert.body}</p>
                         </div>
                         <button
@@ -1021,6 +1027,16 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [posList, setPosList]                       = useState([]);
     const [clientesPosList, setClientesPosList]       = useState([]);
     const [alertas, setAlertas]                       = useState([]);
+    // Avisos del vigilante (mercaderista, PDV y metas: nunca datos financieros).
+    const { avisos: avisosVig, marcarVisto: marcarVistoVig } = useAvisosVigilante(user?.uid);
+    const alertasTodas = useMemo(() => [
+        ...avisosVig.filter(a => !a.vistoPor?.[user?.uid]).map(a => ({
+            id: `vig:${a.id}`, synthetic: true,
+            alertType: a.severidad === 'critico' ? 'vig_critico' : a.severidad === 'informativo' ? 'vig_info' : 'vig',
+            title: a.titulo, body: textoAviso(a), createdAt: a.abiertoAt,
+        })),
+        ...alertas,
+    ], [avisosVig, alertas, user?.uid]);
     const [loadingAlertas, setLoadingAlertas]         = useState(false);
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
     const [showNuevaFactura, setShowNuevaFactura]     = useState(false);
@@ -1145,6 +1161,12 @@ const VendedorLayout = ({ user, onLogout }) => {
     };
 
     const deleteAlerta = async (alertId) => {
+        // Avisos del vigilante: "Eliminar" = marcarlo visto (queda constancia y
+        // deja de aparecer; si el problema se cierra y vuelve, vuelve a avisar).
+        if (String(alertId).startsWith('vig:')) {
+            marcarVistoVig(String(alertId).slice(4));
+            return;
+        }
         // Alertas sintéticas de picking no viven en vendedor_alertas: solo se
         // descartan localmente (el picking queda en su colección para auditoría).
         if (String(alertId).startsWith('picking:')) {
@@ -1741,9 +1763,10 @@ const VendedorLayout = ({ user, onLogout }) => {
         if (currentView === 'alertas') {
             return (
                 <AlertasView
-                    alertas={alertas}
+                    alertas={alertasTodas}
                     loadingAlertas={loadingAlertas}
                     onDelete={deleteAlerta}
+                    uid={user?.uid}
                 />
             );
         }
@@ -1864,7 +1887,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         );
     };
 
-    const alertCount = alertas.length;
+    const alertCount = alertasTodas.length;
 
     // Refresh global del perfil del vendedor: re-dispara la carga principal
     // (metas, comisión, cartera, facturas, estado de cuenta, radar…) y las

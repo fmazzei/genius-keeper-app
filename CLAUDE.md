@@ -941,6 +941,38 @@ Servidor MCP remoto para que Claude (claude.ai, "conector personalizado") consul
   - **Ojo:** el conector escribe con Admin SDK, así que NO pasa por `firestore.rules` ni por la lógica de la app (no descuenta inventario, no recalcula comisiones, no escribe el libro de movimientos). Es una herramienta de corrección de datos; los procesos de negocio se siguen haciendo en la app. El borrado real existe, pero la regla del proyecto sigue siendo soft-delete (`active:false`) y la descripción de la herramienta lo dice.
   - Prueba: `tests/mcp.e2e.test.mjs`, 51 verificaciones en verde (incluye: sin clave conecta y lista herramientas pero no lee ni escribe) (crear/editar/reemplazar con marcadores, rechazos sin efecto, lote atómico, borrar y deshacer, deshacer que se detiene si otro tocó el documento).
 
+## Vigilante automático de GK (2026-10) ✅
+
+Pedido de Francisco (8-oct): que el sistema vigile solo y avise por notificación al teléfono, **gratis**. Lo de la app y Zoho le llega a Francisco; lo del mercaderista, los PDV y las metas, a Carolina (vendedora responsable), sin datos de dinero.
+
+- **Costo cero: no hay programador nuevo.** Corre al inicio de `conciliarZohoAutomatico` (cada hora de 7 a 20 y cada 4 h de noche), en su propio try/catch. Un job nuevo de Cloud Scheduler costaría unos $0,10/mes (ya hay 8), así que no se creó. Push = FCM (gratis), con los tokens de siempre (`users_metadata/{uid}/tokens`).
+- **Código**: `functions/handlers/vigilanteReglas.js` (reglas puras: `evaluar`, `DEFAULTS`, frecuencia aprendida, días laborables, silencio, avance de meta) y `functions/handlers/vigilante.js` (lee, abre/actualiza/cierra avisos, notifica, bitácora, latido; callable `vigilanteAcciones` solo máster: `correr` o `config`, que solo acepta claves de `DEFAULTS`).
+- **Grupos, para gastar pocas lecturas**: `ligero` en cada corrida (Zoho, web, teléfonos, errores); `hoy` de 14:00 a 20:00 (sin reportes, mercaderista sin señal); `pesado` una vez al día, en la primera corrida desde las 7 (PDV sin visita, metas, entregas, negativos). Un aviso solo se cierra si su grupo se evaluó en esa corrida.
+- **Qué vigila** (tipo → a quién):
+  - `sin_reportes:{reporterId}` → Carolina, a las 2 p. m. de un día laborable. Si el teléfono tiene reportes sin enviar, es solo informativo en la campanita: **sin señal no es sin visita**.
+  - `mercaderista_sin_senal` → crítico, con copia a Francisco: ni reportes ni señal del teléfono en más de un día laborable.
+  - `pdv_sin_visita:{posId}:{uid}` → Carolina, en el resumen de la mañana. Frecuencia normal = mediana de los intervalos válidos (≥3, de 180 días); se avisa a `ceil(normal × 1,5)` días. Sin historia, a los **14 días** (sin el 1,5). Texto: "lleva X días; normalmente cada Y". No avisa si el PDV está en un reporte pendiente del teléfono.
+  - `meta_ritmo:{uid}` → Carolina, por semana: unidades del período de empleo (`commissionConfig.metaMensual`, mismo cálculo que el Home del vendedor) contra el ritmo esperado (tolerancia 95 %).
+  - Para Francisco: `zoho_barrido` (error, o más de 5 h sin barrido entre 8 y 21 h; se omite si `zohoConciliacionAuto === false`), `app_caida` (la web no responde en 2 corridas seguidas), `cola_atascada:{deviceId}` (reportes trabados más de 6 h con señal), `entregas_bajo` (entregas declaradas menos del 90 % de lo facturado, desde el primer reporte v3), `negativos_altos` (más del 5 % de intervalos negativos, con al menos 20), `errores_version:{build}` (5 errores o más, en 2 teléfonos o más, de la última versión en 24 h).
+- **Reglas de entrega**:
+  - Crítico: al instante. Importante: en el resumen de la mañana (o al instante a Francisco, de día). Informativo: solo la campanita.
+  - Un aviso por problema por día. Se cierra solo cuando se resuelve; si se cerró en menos de 2 h queda `ruido:true`.
+  - Silencio de 20 a 7 h y los domingos, salvo fallas del sistema.
+  - Cada aviso dice qué pasa, desde cuándo, la causa probable y UNA acción.
+- **Vigilar al vigilante**: escribe `settings/vigilancia.latido` en cada corrida. Lo revisan otros dos programadores ya existentes: `kromaHoldNotifier` (cada 30 min) y `inventarioCierreDiario`. Además la app del máster lo mira y, si tiene más de 5 h, lo muestra en la campanita. Si falta el latido se abre `vigilante_detenido` y se avisa a Francisco.
+- **Colecciones**:
+  - `vigilancia_avisos/{clave}`: uno por problema, con `destinatarios`, `destinatariosAbiertos` (para la campanita), `vistoPor`, `recibidoPor` (canal push/campana), `notificadoDia`.
+  - `vigilancia_bitacora`: abierto, notificado a quién, cerrado.
+  - `vigilancia_preferencias/{uid}.push`: la persona apaga sus notificaciones.
+  - `dispositivos/{deviceId}`: latido del teléfono (`src/utils/latidoDispositivo.js`, cada 15 min, con `pendientes`/`pendientesPos`).
+  - `errores_app`: `src/utils/registroErrores.js`, máx. 5 por sesión.
+  - `settings/vigilancia`: latido, estado y config.
+- **Reglas Firestore**: avisos (lee el máster o un destinatario; el usuario solo actualiza SU clave de `vistoPor`; nadie crea ni borra), bitácora (lee el máster), preferencias (solo las propias), dispositivos y errores (los escribe la cuenta propia, los lee el máster).
+- **Pantallas**: la campanita del vendedor (`VendedorLayout`, pestaña Alertas) y la del máster (`NotificationsBell` en `ManagerLayout`) muestran los avisos. `ActivarAvisos.jsx` explica el único paso que falta: Android "Activar"; iPhone, agregar a inicio primero.
+- **Pruebas**: `node tests/vigilante.test.mjs` (reglas puras) y `npx firebase emulators:exec --only firestore --project demo-vig "node tests/vigilante.e2e.test.mjs"`. Cubren día sin reportes, PDV pasado de su frecuencia, PDV sin historia, teléfono sin señal con un reporte pendiente (no alarma), falla de Zoho, vigilante detenido, aviso que se cierra solo, notificaciones apagadas y las reglas. **No probado**: la entrega real del push a un teléfono (FCM), iPhone y los datos reales.
+- **Umbrales por confirmar con Francisco** (en `DEFAULTS`, se cambian con `vigilanteAcciones({accion:'config'})`): 1,5×, 14 días sin historia, 2 p. m., días laborables aprendidos (Lun–Vie por defecto), 95 % de ritmo de meta. El vigilante NO cambia umbrales solo.
+- **Hallazgo de seguridad pendiente de OK**: las reglas de `users_metadata` dejan que un usuario escriba cualquier campo de su propio documento, incluido `role`.
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

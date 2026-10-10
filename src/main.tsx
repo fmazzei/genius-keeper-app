@@ -4,6 +4,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { registrarError } from './utils/registroErrores.js';
 import { AuthProvider } from './context/AuthContext.tsx';
 import { AppConfigProvider } from './context/AppConfigContext.tsx';
 import { SimulationProvider } from './context/SimulationContext.jsx';
@@ -36,6 +37,9 @@ if ('serviceWorker' in navigator) {
   });
 }
 // --- FIN DEL CÓDIGO ---
+
+// Errores que rompen la app quedan registrados para el vigilante (con la versión).
+try { window.addEventListener('error', (e) => registrarError(e.error || e.message, 'ventana')); } catch { /* nunca bloquear */ }
 
 
 // --- Filtro de warnings ---

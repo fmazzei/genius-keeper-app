@@ -1,6 +1,7 @@
 // RUTA: src/Components/ErrorBoundary.jsx
 
 import React from 'react';
+import { registrarError } from '@/utils/registroErrores.js';
 import { AlertTriangle, RefreshCw, LogOut } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/Firebase/config.js';
@@ -23,6 +24,7 @@ class ErrorBoundary extends React.Component {
 
     componentDidCatch(error, info) {
         console.error('ErrorBoundary capturó un error:', error, info);
+        registrarError(error, 'pantalla');
     }
 
     render() {
