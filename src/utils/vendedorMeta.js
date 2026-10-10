@@ -1,6 +1,6 @@
 // RUTA: src/utils/vendedorMeta.js
 
-import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
+import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 
 const MS_DIA = 86400000;
@@ -150,6 +150,35 @@ function dedupFacturas(facturas) {
 }
 
 /**
+ * Fecha de CALENDARIO de un campo de factura (fecha, vencimiento, fechaPago).
+ * Zoho manda solo el día ('2026-09-19') y el servidor lo guarda como Timestamp a
+ * las 00:00 UTC. Leído tal cual en Venezuela (UTC−4) es el 18-sep a las 20:00:
+ * una factura del primer día de un período caía en el período ANTERIOR (y una
+ * del día de ingreso, antes del ingreso). Si el instante es exactamente la
+ * medianoche UTC, se toma ese DÍA en hora local. Un instante con hora real (un
+ * pago registrado por el webhook en el momento) se respeta tal cual.
+ */
+export function fechaCalendario(v) {
+    if (!v) return null;
+    if (typeof v === 'string') {
+        const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    }
+    const d = v?.toDate ? v.toDate() : new Date(v);
+    if (!d || isNaN(d.getTime())) return null;
+    if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0) {
+        return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    }
+    return d;
+}
+
+const toInstante = (v) => {
+    if (!v) return null;
+    const d = v?.toDate ? v.toDate() : new Date(v);
+    return isNaN(d?.getTime?.()) ? null : d;
+};
+
+/**
  * Bono Activación (semanal, proporcional). Divide el período en ventanas de 7
  * días desde su inicio. Una SEMANA está "lograda" si al menos `threshold`% de la
  * cartera fue FACTURADA ≥ `minUnits` unidades en esa semana. El factor del
@@ -171,7 +200,7 @@ export function computeActivacionPeriodo(facturas, start, end, ahora, carteraSiz
         const porCliente = {};
         facturas.forEach(f => {
             if (!cuentaEnCartera(f) || f.recuperada || f.categoria === 'foodservice') return;
-            const t = toDate(f.fecha);
+            const t = fechaCalendario(f.fecha);
             if (!t) return;
             const tm = t.getTime();
             if (tm < ws || tm >= we) return;
@@ -188,195 +217,296 @@ export function computeActivacionPeriodo(facturas, start, end, ahora, carteraSiz
     return { semanasTotales, semanasLogradas, factor, semActivados, semObjetivo: objetivo, semLograda };
 }
 
+/** Tamaño de la cartera para el Bono Activación — la MISMA regla en todas las
+ *  pantallas (antes el vendedor contaba solo `estado === 'activo'` y el
+ *  administrador también los que no traen estado: daban bonos distintos). */
+export function tamanoCartera(docs = []) {
+    return (docs || []).filter(c => ((c && c.estado) || 'activo') === 'activo').length;
+}
+
 /**
- * Fase 3.7 — Estado de Cuenta por PERÍODO de empleo. Función pura: dado el
- * `users_metadata` del vendedor y sus facturas, devuelve un arreglo (más
- * reciente primero) con el resultado de cada período de empleo desde su ingreso.
+ * MOTOR ÚNICO de comisiones por período de empleo. Lo usan el Estado de Cuenta
+ * (computeEstadosDeCuenta) y el comprobante con evidencia (computeDesglosePeriodo),
+ * así que los dos dan siempre la misma cifra.
  *
- * Modelo: la comisión se calcula con el NIVEL FINAL del período (facturación
- * total → tier) sobre lo COBRADO, + Bono Cobranza PROPORCIONAL (sobre lo cobrado
- * a tiempo) + Bono Activación (bonusActivacion% × semanas logradas/totales, o
- * Bono Anaquel en cuentas de ese régimen) + Cuentas Recuperadas (5% flat).
- * `pagado` sale de las liquidaciones. Un período CERRADO puede CONGELARse
- * (opts.cerrados[periodKey]) → su devengado queda fijo aunque cambien las
- * facturas después; el pagado/saldo sigue en vivo.
- *
- * @param {object} opts - { carteraSize, cerrados: {periodKey→snapshot},
- *   anaquel: {hasAnaquel, factor} }
+ * Regla de atribución (corregida 2026-10, reclamo del dueño: "cerramos el mes de
+ * Carolina el 19/09 y siguió acumulando"):
+ * - La FACTURACIÓN (unidades → nivel/tasa, Activación, "X de Y a tiempo") se
+ *   cuenta en el período de la FECHA DE LA FACTURA.
+ * - El COBRO se acredita en el período en que entró el DINERO (`fechaPago`), con
+ *   la tasa del nivel que logró el período en que se FACTURÓ. Antes se acreditaba
+ *   al período de la factura: como el crédito es de 30–45 días, cada pago tardío
+ *   hacía crecer un mes ya cerrado (y, si estaba congelado, ese dinero no se
+ *   pagaba nunca). Ahora un mes cerrado no se mueve y lo cobrado después entra
+ *   al mes en curso.
+ * - Sin `fechaPago` (dato viejo) se cae al período de la factura, como antes.
+ * - Cierres congelados con el modelo ANTERIOR (sin `modelo:'cobro'`): sus
+ *   facturas pagadas antes del momento del cierre ya entraron en ese cierre; no
+ *   se vuelven a pagar en el período siguiente (`yaEnCierreMes`).
  */
-export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], opts = {}) {
+function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     const cfg = meta.commissionConfig
         ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
         : DEFAULT_COMMISSION_CONFIG;
     const ingreso = toDate(meta.fechaIngreso);
-    if (!ingreso) return [];
+    if (!ingreso) return null;
+    const facturas = dedupFacturas(facturasIn);
 
-    facturas = dedupFacturas(facturas);   // blindaje contra docs duplicados
+    const metaPlena    = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+    const arranque     = Array.isArray(cfg.arranque) ? cfg.arranque : [];
+    const tiersDesc    = [...(cfg.tiers || [])].sort((a, b) => b.minPct - a.minPct);
+    const bajaRate     = cfg.bajaRate ?? 0;
+    const bajaLabel    = cfg.bajaLabel || 'Baja';
+    const actMinUnits  = cfg.activacionMinUnits ?? 24;
+    const actThreshold = cfg.activacionThreshold ?? 80;
+    const carteraSize  = Number(opts.carteraSize) || 0;
+    const cerrados     = opts.cerrados || {};
+    const tierFor = (pct) => {
+        for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
+        return { label: bajaLabel, rate: bajaRate };
+    };
+    const pad = (n) => String(n).padStart(2, '0');
+    const ahora = opts.ahora instanceof Date ? opts.ahora : new Date();
+    const n = mesesCompletos(ingreso, ahora) + 1;
 
-    // Pagado por período (liquidaciones ya filtradas por vendedor).
+    const periodos = [];
+    for (let i = 0; i < n; i++) {
+        const start = addMonths(ingreso, i);
+        const end = addMonths(ingreso, i + 1);
+        periodos.push({
+            i, mes: i + 1, start, end,
+            periodKey: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
+            metaMensual: i < arranque.length ? (arranque[i].meta || metaPlena) : metaPlena,
+            cerrado: end <= ahora,
+            facturadas: [],   // facturas cuya FECHA cae en el período (nivel)
+            cobros: [],       // cobros cuyo PAGO cae en el período (comisión)
+            recuperadas: [],  // cuentas recuperadas cobradas en el período
+        });
+    }
+    const idxDe = (d) => {
+        if (!d) return -1;
+        for (const p of periodos) if (d >= p.start && d < p.end) return p.i;
+        return -1;
+    };
+    // Un período congelado con el modelo nuevo guarda qué cobros incluyó. Un cobro
+    // que cae en él pero NO está en esa lista (Zoho lo registró después del cierre
+    // con la fecha real del pago) no se pierde: pasa al siguiente período abierto.
+    const congeladoNuevo = (j) => {
+        const fr = cerrados[periodos[j].periodKey];
+        return !!(fr && periodos[j].cerrado && fr.modelo === 'cobro' && Array.isArray(fr.cobrosIncluidos)) ? fr : null;
+    };
+    const destino = (j, numero, item) => {
+        const fr = congeladoNuevo(j);
+        if (!fr || fr.cobrosIncluidos.includes(numero)) return j;
+        let k = j + 1;
+        while (k < periodos.length - 1 && cerrados[periodos[k].periodKey] && periodos[k].cerrado) k++;
+        if (k >= periodos.length) return j;
+        item.tardioDeMes = periodos[j].mes;
+        return k;
+    };
+
+    // 1) Clasificar facturas.
+    const normales = [];
+    facturas.forEach(f => {
+        if (!cuentaEnCartera(f)) return;
+        const pagada = f.estado === 'pagada';
+        const fecha = fechaCalendario(f.fecha);
+        const fechaPago = fechaCalendario(f.fechaPago);
+        const item = {
+            numero: f.numero || '—',
+            cliente: f.clienteName || f.customerName || '—',
+            key: f.zohoCustomerId || f.clienteName || f.customerName || '?',
+            fecha, fechaPago,
+            unidades: Number(f.unidades) || 0,
+            monto: Number(f.monto) || 0,
+            estado: f.estado || '—',
+            pagada,
+            comisionAnulada: f.comisionAnulada === true,
+            esFood: f.categoria === 'foodservice',
+            aTiempo: f.pagadaDentroDePlazo === true,
+            cobradaVigente: f.cobradaVigente === true,
+            vencimiento: fechaCalendario(f.vencimiento),
+        };
+        if (f.recuperada === true) {
+            // Recuperada: paga SOLO si el vendedor la cobró en su gestión. Va al
+            // período del cobro; sin fecha de cobro pero pagada → Mes 1.
+            if (!(pagada && item.cobradaVigente && !item.comisionAnulada)) return;
+            const j = idxDe(fechaPago || ingreso);
+            if (j >= 0) periodos[destino(j, item.numero, item)].recuperadas.push(item);
+            return;
+        }
+        item.origen = idxDe(fecha);
+        if (item.origen < 0) return;                 // fuera de todo período
+        periodos[item.origen].facturadas.push(item);
+        normales.push(item);
+    });
+
+    // 2) Nivel y Activación de cada período (por facturación).
+    periodos.forEach(p => {
+        p.unidades = p.facturadas.reduce((s, f) => s + f.unidades, 0);
+        p.pct = p.metaMensual > 0 ? p.unidades / p.metaMensual : 0;
+        p.tier = tierFor(p.pct);
+        p.act = computeActivacionPeriodo(facturas, p.start, p.end, ahora, carteraSize, actMinUnits, actThreshold);
+        let den = 0, aTiempo = 0;
+        p.facturadas.forEach(f => {
+            if (f.esFood) return;
+            const vencida = f.vencimiento && f.vencimiento <= ahora;
+            if (vencida || f.pagada) { den++; if (f.pagada && f.aTiempo) aTiempo++; }
+        });
+        p.cobrDen = den; p.cobrATiempo = aTiempo;
+        const fr = cerrados[p.periodKey];
+        p.cierreLegado = !!(fr && p.cerrado && fr.modelo !== 'cobro');
+        p.congeladoEnMs = p.cierreLegado ? (toInstante(fr.congeladoEn)?.getTime() ?? Infinity) : null;
+    });
+
+    // 3) Cobros: al período del pago, con la tasa del período de la factura.
+    normales.forEach(f => {
+        if (!f.pagada || f.comisionAnulada) return;
+        let j = f.fechaPago ? idxDe(f.fechaPago) : f.origen;
+        if (j < 0) j = f.origen;                    // pago con fecha rara → período de la factura
+        const o = periodos[f.origen];
+        const c = { ...f, origenMes: o.mes, origenNivel: o.tier.label, origenTasa: o.tier.rate, origenFactor: o.act.factor };
+        // Cierre del modelo anterior: si ya se pagó dentro de ese cierre, no se repite.
+        if (j !== f.origen && o.cierreLegado && f.fechaPago && f.fechaPago.getTime() < o.congeladoEnMs) {
+            c.yaEnCierreMes = o.mes;
+        }
+        periodos[destino(j, f.numero, c)].cobros.push(c);
+    });
+
+    return { cfg, ingreso, ahora, periodos, carteraSize, actMinUnits, actThreshold };
+}
+
+/** Montos de un período a partir del motor. */
+function montosPeriodo(p, cfg, opts = {}) {
+    const bonoCobranza = cfg.bonusPuntualidad ?? 0;
+    const bonoAct      = cfg.bonusActivacion ?? 0;
+    const tasaRecup    = cfg.comisionRecuperadas ?? 5;
+    const tasaFood     = cfg.comisionFoodservice ?? 5;
+    const bonoAnaquel  = cfg.bonusAnaquel ?? 0;
+    const hasAnaquel   = !!(opts.anaquel && opts.anaquel.hasAnaquel);
+    const anaquelFactor = Number(opts.anaquel && opts.anaquel.factor) || 0;
+
+    const validos = p.cobros.filter(c => !c.yaEnCierreMes);
+    const regulares = validos.filter(c => !c.esFood);
+    const food = validos.filter(c => c.esFood);
+    const cobradoRegular = regulares.reduce((s, c) => s + c.monto, 0);
+    const aTiempo = regulares.filter(c => c.aTiempo);
+    const cobradoRegularATiempo = aTiempo.reduce((s, c) => s + c.monto, 0);
+    const cobradoFood = food.reduce((s, c) => s + c.monto, 0);
+    const cobradoRecup = p.recuperadas.reduce((s, c) => s + c.monto, 0);
+
+    // Comisión de nivel agrupada por el período de origen de la factura.
+    const porOrigen = {};
+    regulares.forEach(c => {
+        const g = porOrigen[c.origenMes] || (porOrigen[c.origenMes] = { mes: c.origenMes, nivel: c.origenNivel, tasa: c.origenTasa, factor: c.origenFactor, cobrado: 0 });
+        g.cobrado += c.monto;
+    });
+    const cobrosPorOrigen = Object.values(porOrigen).sort((a, b) => a.mes - b.mes)
+        .map(g => ({ ...g, comision: g.cobrado * g.tasa / 100 }));
+    const comisionNivelMonto = cobrosPorOrigen.reduce((s, g) => s + g.comision, 0);
+    const bonoCobranzaMonto = cobradoRegularATiempo * bonoCobranza / 100;
+    const bonoActivacionMonto = hasAnaquel ? 0
+        : regulares.reduce((s, c) => s + c.monto * (bonoAct / 100) * (c.origenFactor || 0), 0);
+    const enCurso = !p.cerrado;
+    const bonoAnaquelMonto = (hasAnaquel && enCurso) ? cobradoRegular * (bonoAnaquel / 100) * anaquelFactor : 0;
+    const bonoRecupMonto = cobradoRecup * tasaRecup / 100;
+    const comisionFoodMonto = cobradoFood * tasaFood / 100;
+    const devengadoComision = comisionNivelMonto + bonoCobranzaMonto + bonoActivacionMonto + bonoAnaquelMonto + bonoRecupMonto + comisionFoodMonto;
+    return {
+        cobradoRegular, cobradoRegularATiempo, cobradoFood, cobradoRecup,
+        cobrosPorOrigen, comisionNivelMonto,
+        bonoCobranzaRate: bonoCobranza, bonoCobranzaMonto,
+        bonoActivacionRate: bonoAct, bonoActivacionMonto,
+        bonoAnaquelRate: bonoAnaquel, bonoAnaquelMonto, hasAnaquel,
+        tasaRecup, bonoRecupMonto, tasaFood, comisionFoodMonto,
+        devengadoComision,
+        cobrosYaLiquidados: p.cobros.filter(c => c.yaEnCierreMes),
+        regulares, aTiempo, food,
+    };
+}
+
+// Campos de dinero que un cierre congelado fija (el pagado/saldo siguen en vivo).
+const CAMPOS_CONGELADOS = [
+    'unidades', 'nivel', 'tasa', 'cobranzaTasa', 'cobrATiempo', 'cobrDen',
+    'cobrado', 'cobradoRegular', 'cobradoRegularATiempo', 'cobradoRecup',
+    'cobradoFood', 'comisionFoodMonto', 'comisionNivelMonto', 'cobrosPorOrigen',
+    'bonoCobranzaMonto', 'bonoActivacionMonto', 'bonoAnaquelMonto',
+    'actFactor', 'actSemanasLogradas', 'actSemanasTotales',
+    'devengadoComision', 'base', 'devengadoTotal', 'modelo',
+];
+
+/**
+ * Fase 3.7 — Estado de Cuenta por PERÍODO de empleo (más reciente primero).
+ * Ver `motorComisiones` para la regla de atribución. `pagado` sale de las
+ * liquidaciones. Un período CERRADO puede CONGELARse (opts.cerrados[periodKey])
+ * → su devengado queda fijo; el pagado/saldo sigue en vivo.
+ *
+ * @param {object} opts - { carteraSize, cerrados: {periodKey→snapshot},
+ *   anaquel: {hasAnaquel, factor}, ahora? }
+ */
+export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], opts = {}) {
+    const m = motorComisiones(meta, facturas, opts);
+    if (!m) return [];
+    const { cfg, periodos, carteraSize } = m;
+    const baseMes = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
+    const cerrados = opts.cerrados || {};
+
     const pagadoPorPeriodo = {};
     (liquidaciones || []).forEach(l => {
         if (!l.periodKey) return;
         pagadoPorPeriodo[l.periodKey] = (pagadoPorPeriodo[l.periodKey] || 0) + (Number(l.monto) || 0);
     });
 
-    const metaPlena     = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-    const arranque      = Array.isArray(cfg.arranque) ? cfg.arranque : [];
-    const tiersDesc     = [...(cfg.tiers || [])].sort((a, b) => b.minPct - a.minPct);
-    const bajaRate      = cfg.bajaRate ?? 0;
-    const bajaLabel     = cfg.bajaLabel || 'Baja';
-    const bonoCobranza  = cfg.bonusPuntualidad ?? 0;
-    const tasaRecup     = cfg.comisionRecuperadas ?? 5;
-    const tasaFood      = cfg.comisionFoodservice ?? 5;
-    const baseMes       = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
-
-    // Bono Activación (semanal, proporcional): base para saber cuántos clientes
-    // son el objetivo. `carteraSize` = nº de clientes activos del vendedor.
-    const bonoActivacion = cfg.bonusActivacion ?? 0;
-    const actMinUnits    = cfg.activacionMinUnits ?? 24;
-    const actThreshold   = cfg.activacionThreshold ?? 80;
-    const carteraSize    = Number(opts.carteraSize) || 0;
-
-    // Bono Anaquel (sustituye a Activación en cuentas con régimen 'anaquel').
-    // Como depende de visit_reports (no de facturas), su factor del período en
-    // curso llega precomputado desde el frontend en `opts.anaquel`.
-    const bonoAnaquel   = cfg.bonusAnaquel ?? 0;
-    const hasAnaquel    = !!(opts.anaquel && opts.anaquel.hasAnaquel);
-    const anaquelFactor = Number(opts.anaquel && opts.anaquel.factor) || 0;
-
-    // Cierres congelados (Fase 3.10): mapa periodKey → snapshot del devengado.
-    // Un período cerrado y congelado NO se recalcula (queda fijo lo pagado).
-    const cerrados = opts.cerrados || {};
-
-    const tierFor = (pct) => {
-        for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
-        return { label: bajaLabel, rate: bajaRate };
-    };
-
-    const ahora = new Date();
-    const nPeriodos = mesesCompletos(ingreso, ahora) + 1;
     const out = [];
-
-    const pad = (n) => String(n).padStart(2, '0');
-
-    for (let i = nPeriodos - 1; i >= 0; i--) {
-        const start = addMonths(ingreso, i);
-        const end   = addMonths(ingreso, i + 1);
-        // Clave del período = fecha de inicio "YYYY-MM-DD" — misma convención que
-        // periodoCohorteFromDate (commissionEngine.js) y las liquidaciones.
-        const periodKey = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
-        const metaMensual = i < arranque.length ? (arranque[i].meta || metaPlena) : metaPlena;
-
-        // Modelo PROPORCIONAL de cobranza: el Bono Cobranza se paga sobre lo
-        // COBRADO A TIEMPO (factura por factura), no por un umbral todo-o-nada.
-        let unidades = 0, cobradoRegular = 0, cobradoRegularATiempo = 0, cobradoRecup = 0, cobradoFood = 0, cobrDen = 0, cobrATiempo = 0;
-        facturas.forEach(f => {
-            if (!cuentaEnCartera(f)) return;
-            const pagada = f.estado === 'pagada';
-            const esRecup = f.recuperada === true;
-            const esFood  = f.categoria === 'foodservice';
-            // Atribución al período de empleo: las facturas NORMALES por su fecha
-            // de factura; las RECUPERADAS por su fecha de COBRO (su fecha de factura
-            // es previa al ingreso → caería fuera de todo período y se perdería).
-            // Se acredita la cuenta recuperada en el período donde el vendedor la
-            // cobró. Si falta fechaPago (dato viejo) pero está pagada, cae al Mes 1.
-            const attr = esRecup ? (toDate(f.fechaPago) || (pagada ? ingreso : null)) : toDate(f.fecha);
-            if (!attr || attr < start || attr >= end) return;
-            const monto  = Number(f.monto) || 0;
-            if (esRecup) {
-                // Recuperada paga SOLO si el vendedor la cobró en su gestión
-                // (cobradaVigente). Si entró ya pagada (historial viejo de la
-                // cartera, cobrado por otro), no cuenta.
-                if (pagada && !f.comisionAnulada && f.cobradaVigente === true) cobradoRecup += monto;
-            } else {
-                // Foodservice cuenta a la meta (unidades) igual que retail, pero su
-                // cobrado paga FLAT (no nivel, no Bono Cobranza, no Activación).
-                unidades += Number(f.unidades) || 0;
-                if (esFood) {
-                    if (pagada && !f.comisionAnulada) cobradoFood += monto;
-                } else {
-                    if (pagada && !f.comisionAnulada) {
-                        cobradoRegular += monto;
-                        if (f.pagadaDentroDePlazo === true) cobradoRegularATiempo += monto;
-                    }
-                    const venc = toDate(f.vencimiento);
-                    const vencida = venc && venc <= ahora;
-                    if (vencida || pagada) { cobrDen++; if (pagada && f.pagadaDentroDePlazo === true) cobrATiempo++; }
-                }
-            }
-        });
-
-        const cerrado = end <= ahora;
-        const enCurso = !cerrado;
-        const pct = metaMensual > 0 ? unidades / metaMensual : 0;
-        const tier = tierFor(pct);
-        const cobranzaTasa = cobrDen > 0 ? (cobrATiempo / cobrDen) * 100 : null;
-        // Bono Cobranza proporcional: bonoCobranza% sobre lo cobrado a tiempo.
-        const bonoCobranzaMonto = cobradoRegularATiempo * bonoCobranza / 100;
-        // Bono Activación proporcional: bonusActivacion% × (semanas logradas /
-        // semanas del período) sobre lo cobrado. En cuentas de régimen anaquel,
-        // el Bono Anaquel lo sustituye (su factor llega precomputado y solo se
-        // aplica al período en curso, que es el que tiene datos de visitas).
-        const act = computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, actMinUnits, actThreshold);
-        const bonoActivacionMonto = hasAnaquel ? 0 : cobradoRegular * (bonoActivacion / 100) * act.factor;
-        const bonoAnaquelMonto    = (hasAnaquel && enCurso) ? cobradoRegular * (bonoAnaquel / 100) * anaquelFactor : 0;
-        const comisionFoodMonto   = cobradoFood * tasaFood / 100;
-        let devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + bonoAnaquelMonto + cobradoRecup * tasaRecup / 100 + comisionFoodMonto;
-        let devengadoTotal = devengadoComision + baseMes;
-
+    for (let k = periodos.length - 1; k >= 0; k--) {
+        const p = periodos[k];
+        const mt = montosPeriodo(p, cfg, opts);
         const row = {
-            mes: i + 1,
-            periodKey,
-            rango: rangoLabel(start, end),
-            cerrado,
-            unidades, metaMensual,
-            nivel: tier.label, tasa: tier.rate,
-            cobranzaTasa,
-            cobrATiempo, cobrDen,                 // "X de Y facturas a tiempo"
-            cobrado: cobradoRegular + cobradoRecup + cobradoFood,
-            cobradoRegular, cobradoRegularATiempo, cobradoRecup,  // desglose
-            cobradoFood, tasaFood, comisionFoodMonto,             // foodservice (flat)
-            bonoCobranzaRate: bonoCobranza,       // % del Bono Cobranza (config)
-            bonoCobranzaMonto,                    // $ ganado por cobrar a tiempo
-            // Activación / Anaquel
-            bonoActivacionRate: bonoActivacion,
-            bonoActivacionMonto,
-            bonoAnaquelRate: bonoAnaquel,
-            bonoAnaquelMonto,
-            hasAnaquel,
-            actFactor: act.factor,
-            actSemanasLogradas: act.semanasLogradas,
-            actSemanasTotales: act.semanasTotales,
-            actSemActivados: act.semActivados,     // clientes activados en la semana en curso
-            actSemObjetivo: act.semObjetivo,       // clientes necesarios (objetivo)
-            actSemLograda: act.semLograda,
+            mes: p.mes,
+            periodKey: p.periodKey,
+            rango: rangoLabel(p.start, p.end),
+            cerrado: p.cerrado,
+            modelo: 'cobro',
+            unidades: p.unidades, metaMensual: p.metaMensual,
+            nivel: p.tier.label, tasa: p.tier.rate,
+            cobranzaTasa: p.cobrDen > 0 ? (p.cobrATiempo / p.cobrDen) * 100 : null,
+            cobrATiempo: p.cobrATiempo, cobrDen: p.cobrDen,
+            cobrado: mt.cobradoRegular + mt.cobradoRecup + mt.cobradoFood,
+            cobradoRegular: mt.cobradoRegular, cobradoRegularATiempo: mt.cobradoRegularATiempo, cobradoRecup: mt.cobradoRecup,
+            cobradoFood: mt.cobradoFood, tasaFood: mt.tasaFood, comisionFoodMonto: mt.comisionFoodMonto,
+            cobrosPorOrigen: mt.cobrosPorOrigen, comisionNivelMonto: mt.comisionNivelMonto,
+            cobrosYaLiquidados: mt.cobrosYaLiquidados.length,
+            // Qué cobros entran en este período: si se congela, lo que llegue
+            // después con fecha de este mes pasa al siguiente (no se pierde).
+            cobrosIncluidos: [...mt.regulares, ...mt.food, ...p.recuperadas].map(c => c.numero),
+            bonoCobranzaRate: mt.bonoCobranzaRate, bonoCobranzaMonto: mt.bonoCobranzaMonto,
+            bonoActivacionRate: mt.bonoActivacionRate, bonoActivacionMonto: mt.bonoActivacionMonto,
+            bonoAnaquelRate: mt.bonoAnaquelRate, bonoAnaquelMonto: mt.bonoAnaquelMonto, hasAnaquel: mt.hasAnaquel,
+            actFactor: p.act.factor,
+            actSemanasLogradas: p.act.semanasLogradas,
+            actSemanasTotales: p.act.semanasTotales,
+            actSemActivados: p.act.semActivados,
+            actSemObjetivo: p.act.semObjetivo,
+            actSemLograda: p.act.semLograda,
             carteraSize,
-            tasaRecup,
-            devengadoComision,
+            tasaRecup: mt.tasaRecup,
+            devengadoComision: mt.devengadoComision,
             base: baseMes,
-            devengadoTotal,
+            devengadoTotal: mt.devengadoComision + baseMes,
             congelado: false,
         };
-
-        // Si el período está CERRADO y CONGELADO, sus números de dinero quedan
-        // fijos (snapshot al cierre): así un cobro tardío / nota de crédito
-        // posterior no altera lo ya liquidado. `pagado` sigue en vivo.
-        const frozen = cerrados[periodKey];
-        if (frozen && cerrado) {
+        const frozen = cerrados[p.periodKey];
+        if (frozen && p.cerrado) {
             row.congelado = true;
             row.congeladoEn = frozen.congeladoEn || null;
-            [
-                'unidades', 'nivel', 'tasa', 'cobranzaTasa', 'cobrATiempo', 'cobrDen',
-                'cobrado', 'cobradoRegular', 'cobradoRegularATiempo', 'cobradoRecup',
-                'bonoCobranzaMonto', 'bonoActivacionMonto', 'bonoAnaquelMonto',
-                'actFactor', 'actSemanasLogradas', 'actSemanasTotales',
-                'devengadoComision', 'base', 'devengadoTotal',
-            ].forEach(k => { if (frozen[k] !== undefined && frozen[k] !== null) row[k] = frozen[k]; });
+            row.modelo = frozen.modelo || 'factura';
+            CAMPOS_CONGELADOS.forEach(key => { if (frozen[key] !== undefined && frozen[key] !== null) row[key] = frozen[key]; });
+            // Un cierre del modelo anterior no trae el desglose por origen.
+            if (frozen.comisionNivelMonto == null) { row.comisionNivelMonto = null; row.cobrosPorOrigen = null; }
         }
-
-        const pagado = pagadoPorPeriodo[periodKey] || 0;
+        const pagado = pagadoPorPeriodo[p.periodKey] || 0;
         row.pagado = pagado;
-        row.saldo  = row.devengadoTotal - pagado;
+        row.saldo = row.devengadoTotal - pagado;
         out.push(row);
     }
     return out;
@@ -384,133 +514,40 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
 
 /**
  * Desglose DETALLADO de un período de empleo, con EVIDENCIA de facturas por cada
- * concepto — insumo del comprobante de liquidación. Devuelve, para el período
- * `periodKey`: la lista de facturas de facturación (y cómo definen el nivel), las
- * facturas cobradas a tiempo (Bono Cobranza), el detalle SEMANAL de activación
- * (clientes activados con ≥N uds y qué facturas lo prueban), las cuentas
- * recuperadas, y todos los montos (que cuadran con computeEstadosDeCuenta).
+ * concepto — insumo del comprobante de liquidación. Usa el MISMO motor que el
+ * Estado de Cuenta, así que sus montos cuadran siempre.
  *
  * @param {object} opts - { carteraSize, cerrados, liquidaciones }
  * @returns {object|null}
  */
 export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) {
-    const cfg = meta.commissionConfig
-        ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
-        : DEFAULT_COMMISSION_CONFIG;
-    const ingreso = toDate(meta.fechaIngreso);
-    if (!ingreso || !periodKey) return null;
+    if (!periodKey) return null;
+    const m = motorComisiones(meta, facturas, opts);
+    if (!m) return null;
+    const { cfg, periodos, carteraSize, actMinUnits, actThreshold, ahora } = m;
+    const p = periodos.find(x => x.periodKey === periodKey);
+    if (!p) return null;
+    const mt = montosPeriodo(p, cfg, opts);
+    const baseMes = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
 
-    facturas = dedupFacturas(facturas);   // blindaje contra docs duplicados
+    const facturadas = [...p.facturadas].sort((a, b) => a.fecha - b.fecha);
+    const facturadoMonto = facturadas.reduce((s, f) => s + f.monto, 0);
+    const cobradoDeLoFacturado = facturadas.filter(f => f.pagada).reduce((s, f) => s + f.monto, 0);
+    const conPago = (lista) => lista.map(c => ({ ...c, fecha: c.fechaPago || c.fecha }))
+        .sort((a, b) => a.fecha - b.fecha);
 
-    const metaPlena    = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-    const arranque     = Array.isArray(cfg.arranque) ? cfg.arranque : [];
-    const tiersDesc    = [...(cfg.tiers || [])].sort((a, b) => b.minPct - a.minPct);
-    const bajaRate     = cfg.bajaRate ?? 0;
-    const bajaLabel    = cfg.bajaLabel || 'Baja';
-    const bonoCobRate  = cfg.bonusPuntualidad ?? 0;
-    const graciaDias   = cfg.cobranzaGraciaDias ?? 5;
-    const tasaRecup    = cfg.comisionRecuperadas ?? 5;
-    const tasaFood     = cfg.comisionFoodservice ?? 5;
-    const baseMes      = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
-    const bonoActRate  = cfg.bonusActivacion ?? 0;
-    const actMinUnits  = cfg.activacionMinUnits ?? 24;
-    const actThreshold = cfg.activacionThreshold ?? 80;
-    const carteraSize  = Number(opts.carteraSize) || 0;
-    const cerrados     = opts.cerrados || {};
-
-    const tierFor = (pct) => {
-        for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
-        return { label: bajaLabel, rate: bajaRate };
-    };
-    const clientKey = (f) => f.zohoCustomerId || f.clienteName || f.customerName || '?';
-    const clientName = (f) => f.clienteName || f.customerName || '—';
-    const pad = (n) => String(n).padStart(2, '0');
-
-    // Localizar el período (start/end/mes/metaMensual) por su clave.
-    const ahora = new Date();
-    const nPeriodos = mesesCompletos(ingreso, ahora) + 1;
-    let start = null, end = null, mes = 0, metaMensual = metaPlena;
-    for (let i = 0; i < nPeriodos; i++) {
-        const s = addMonths(ingreso, i);
-        const key = `${s.getFullYear()}-${pad(s.getMonth() + 1)}-${pad(s.getDate())}`;
-        if (key === periodKey) {
-            start = s; end = addMonths(ingreso, i + 1); mes = i + 1;
-            metaMensual = i < arranque.length ? (arranque[i].meta || metaPlena) : metaPlena;
-            break;
-        }
-    }
-    if (!start) return null;
-
-    // Clasificar las facturas del período.
-    const regulares = [];   // no recuperadas, no anuladas
-    const recuperadas = [];
-    facturas.forEach(f => {
-        if (!cuentaEnCartera(f)) return;
-        const t = toDate(f.fecha);
-        const pagada = f.estado === 'pagada';
-        const esRecup = f.recuperada === true;
-        // Atribución al período: normal por fecha de factura; recuperada por fecha
-        // de COBRO (su fecha de factura es previa al ingreso → fuera de todo
-        // período). Si falta fechaPago pero está pagada, cae al Mes 1 (ingreso).
-        const attr = esRecup ? (toDate(f.fechaPago) || (pagada ? ingreso : null)) : t;
-        if (!attr || attr < start || attr >= end) return;
-        const comisionAnulada = f.comisionAnulada === true;
-        const esFood = f.categoria === 'foodservice';
-        const item = {
-            numero: f.numero || '—',
-            cliente: clientName(f),
-            fecha: t || attr,
-            unidades: Number(f.unidades) || 0,
-            monto: Number(f.monto) || 0,
-            estado: f.estado || '—',
-            pagada,
-            comisionAnulada,
-            esFood,
-            cobradaVigente: f.cobradaVigente === true,
-            cobradaATiempo: pagada && f.pagadaDentroDePlazo === true && !comisionAnulada && !esFood,
-            key: clientKey(f),
-        };
-        // Recuperadas: SOLO las que el vendedor efectivamente COBRÓ (cobradaVigente)
-        // aparecen — de esas se paga el 5%. El historial viejo ya pagado por otros
-        // no se muestra (pagaría $0 y solo confunde).
-        if (esRecup) { if (pagada && item.cobradaVigente && !comisionAnulada) recuperadas.push(item); }
-        else regulares.push(item);
-    });
-    regulares.sort((a, b) => a.fecha - b.fecha);
-
-    // Unidades (meta): retail + foodservice. Cobrado: retail paga nivel + bonos;
-    // foodservice paga FLAT (cobradoFood).
-    const unidades = regulares.reduce((s, f) => s + f.unidades, 0);
-    const cobradoRegular = regulares.filter(f => f.pagada && !f.comisionAnulada && !f.esFood).reduce((s, f) => s + f.monto, 0);
-    const cobradoFood = regulares.filter(f => f.pagada && !f.comisionAnulada && f.esFood).reduce((s, f) => s + f.monto, 0);
-    const facturasATiempo = regulares.filter(f => f.cobradaATiempo);
-    const cobradoRegularATiempo = facturasATiempo.reduce((s, f) => s + f.monto, 0);
-    const cobradoRecup = recuperadas.filter(f => f.pagada && !f.comisionAnulada && f.cobradaVigente).reduce((s, f) => s + f.monto, 0);
-
-    // Transparencia de cobranza: cuántas de las facturas del período están
-    // cobradas (pagadas) y cuánto $ se ha cobrado de lo facturado. Alimenta la
-    // línea de auditoría del comprobante — hace explícito que la comisión se
-    // paga SOLO sobre lo cobrado, y expone de un vistazo si falta marcar pagos.
-    const facturadoMonto = regulares.reduce((s, f) => s + f.monto, 0);
-    const nFacturas = regulares.length;
-    const nPagadas = regulares.filter(f => f.pagada).length;
-
-    const pct = metaMensual > 0 ? unidades / metaMensual : 0;
-    const tier = tierFor(pct);
-    const bonoCobranzaMonto = cobradoRegularATiempo * bonoCobRate / 100;
-
-    // Activación semanal, con evidencia por semana.
+    // Activación semanal del período (por su facturación), con evidencia.
     const objetivo = carteraSize > 0 ? Math.max(1, Math.ceil(carteraSize * actThreshold / 100)) : 0;
-    const limite = Math.min(end.getTime(), ahora.getTime());
+    const limite = Math.min(p.end.getTime(), ahora.getTime());
     const semanas = [];
-    let wn = 0;
     if (carteraSize > 0) {
-        for (let ws = start.getTime(); ws < limite; ws += MS_SEMANA) {
+        let wn = 0;
+        for (let ws = p.start.getTime(); ws < limite; ws += MS_SEMANA) {
             wn++;
             const we = ws + MS_SEMANA;
             const porCliente = {};
-            regulares.forEach(f => {
-                if (f.esFood) return; // foodservice no cuenta a la activación (canal aparte)
+            facturadas.forEach(f => {
+                if (f.esFood) return;
                 const tm = f.fecha.getTime();
                 if (tm < ws || tm >= we) return;
                 if (!porCliente[f.key]) porCliente[f.key] = { cliente: f.cliente, unidades: 0, facturas: [] };
@@ -519,71 +556,58 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
             });
             const activados = Object.values(porCliente).filter(c => c.unidades >= actMinUnits);
             semanas.push({
-                n: wn,
-                desde: new Date(ws),
-                hasta: new Date(Math.min(we, end.getTime())),
-                objetivo,
-                activados: activados.length,
-                lograda: activados.length >= objetivo,
+                n: wn, desde: new Date(ws), hasta: new Date(Math.min(we, p.end.getTime())),
+                objetivo, activados: activados.length, lograda: activados.length >= objetivo,
                 clientes: activados.sort((a, b) => b.unidades - a.unidades),
             });
         }
     }
-    const semanasLogradas = semanas.filter(w => w.lograda).length;
-    const semanasTotales = semanas.length;
-    const factor = semanasTotales > 0 ? semanasLogradas / semanasTotales : 0;
-    const bonoActivacionMonto = cobradoRegular * (bonoActRate / 100) * factor;
-    const bonoRecupMonto = cobradoRecup * tasaRecup / 100;
-    const comisionFoodMonto = cobradoFood * tasaFood / 100;
 
-    let devengadoComision = cobradoRegular * tier.rate / 100 + bonoCobranzaMonto + bonoActivacionMonto + bonoRecupMonto + comisionFoodMonto;
+    let devengadoComision = mt.devengadoComision;
     let devengadoTotal = devengadoComision + baseMes;
     let congelado = false;
-
-    const frozen = cerrados[periodKey];
-    const cerrado = end <= ahora;
-    if (frozen && cerrado) {
+    const frozen = (opts.cerrados || {})[periodKey];
+    if (frozen && p.cerrado) {
         congelado = true;
         if (frozen.devengadoTotal != null) devengadoTotal = Number(frozen.devengadoTotal);
         if (frozen.devengadoComision != null) devengadoComision = Number(frozen.devengadoComision);
     }
-
-    const pagadoPorPeriodo = (opts.liquidaciones || [])
+    const pagado = (opts.liquidaciones || [])
         .filter(l => l.periodKey === periodKey)
         .reduce((s, l) => s + (Number(l.monto) || 0), 0);
-
-    // Período PARCIAL: si está en curso (no cerrado), el corte va hasta HOY, no
-    // hasta el fin del mes de empleo. `rangoCorte` refleja el tramo transcurrido
-    // (15-jun → hoy) para que el comprobante no aparente cubrir días futuros.
-    const enCurso = !cerrado;
-    const rangoCorte = rangoLabel(start, enCurso ? new Date(ahora.getTime() + MS_DIA) : end);
+    const enCurso = !p.cerrado;
 
     return {
-        periodKey, mes,
-        rango: rangoLabel(start, end),
-        rangoCorte, enCurso,
-        anio: String(start.getFullYear()),
-        cerrado, congelado,
-        // Facturación
-        metaMensual, unidades, pct: Math.round(pct * 100),
-        nivel: tier.label, tasa: tier.rate,
-        facturas: regulares,
-        // Transparencia de cobranza (auditoría)
-        facturadoMonto, nFacturas, nPagadas,
-        // Cobranza
-        cobradoRegular, cobradoRegularATiempo,
-        facturasATiempo,
-        bonoCobRate, bonoCobranzaMonto,
+        periodKey, mes: p.mes,
+        rango: rangoLabel(p.start, p.end),
+        rangoCorte: rangoLabel(p.start, enCurso ? new Date(ahora.getTime() + MS_DIA) : p.end),
+        enCurso,
+        anio: String(p.start.getFullYear()),
+        cerrado: p.cerrado, congelado,
+        modelo: congelado ? (frozen.modelo || 'factura') : 'cobro',
+        // Facturación → nivel
+        metaMensual: p.metaMensual, unidades: p.unidades, pct: Math.round(p.pct * 100),
+        nivel: p.tier.label, tasa: p.tier.rate,
+        facturas: facturadas,
+        facturadoMonto, cobradoDeLoFacturado,
+        nFacturas: facturadas.length, nPagadas: facturadas.filter(f => f.pagada).length,
+        // Cobrado en el período (de aquí sale la comisión)
+        cobradas: conPago([...mt.regulares, ...mt.food]),
+        cobrosYaLiquidados: conPago(mt.cobrosYaLiquidados),
+        cobrosPorOrigen: mt.cobrosPorOrigen, comisionNivelMonto: mt.comisionNivelMonto,
+        cobradoRegular: mt.cobradoRegular, cobradoRegularATiempo: mt.cobradoRegularATiempo,
+        facturasATiempo: conPago(mt.aTiempo),
+        bonoCobRate: mt.bonoCobranzaRate, bonoCobranzaMonto: mt.bonoCobranzaMonto,
         // Activación
         actMinUnits, actThreshold, carteraSize, objetivo,
-        semanas, semanasLogradas, semanasTotales, factor,
-        bonoActRate, bonoActivacionMonto,
+        semanas, semanasLogradas: p.act.semanasLogradas, semanasTotales: p.act.semanasTotales, factor: p.act.factor,
+        bonoActRate: mt.bonoActivacionRate, bonoActivacionMonto: mt.bonoActivacionMonto,
         // Recuperadas
-        recuperadas, cobradoRecup, tasaRecup, bonoRecupMonto,
+        recuperadas: conPago(p.recuperadas), cobradoRecup: mt.cobradoRecup, tasaRecup: mt.tasaRecup, bonoRecupMonto: mt.bonoRecupMonto,
         // Foodservice (comisión flat)
-        cobradoFood, tasaFood, comisionFoodMonto,
+        cobradoFood: mt.cobradoFood, tasaFood: mt.tasaFood, comisionFoodMonto: mt.comisionFoodMonto,
         // Totales
         base: baseMes, devengadoComision, devengadoTotal,
-        pagado: pagadoPorPeriodo, saldo: devengadoTotal - pagadoPorPeriodo,
+        pagado, saldo: devengadoTotal - pagado,
     };
 }

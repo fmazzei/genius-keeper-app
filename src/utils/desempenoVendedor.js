@@ -18,16 +18,13 @@
 // Un pilar sin datos (p. ej. vendedor sin PDV con mercaderista) NO cuenta: se
 // declara y su peso se reparte entre los demás. No se inventa un cero.
 
-import { computeMetaMensual, computeActivacionPeriodo, tierParaPct } from '@/utils/vendedorMeta.js';
+import { computeMetaMensual, computeActivacionPeriodo, tierParaPct, fechaCalendario } from '@/utils/vendedorMeta.js';
 import { cuentaEnCartera, esPorCobrar, saldoAbierto } from '@/utils/facturaEstado.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 
 const DIA = 86400000;
-const toDate = (v) => {
-    if (!v) return null;
-    const d = v?.toDate ? v.toDate() : new Date(v);
-    return isNaN(d?.getTime?.()) ? null : d;
-};
+// Fechas de factura de Zoho (00:00 UTC) leídas como su día, igual que la comisión.
+const toDate = fechaCalendario;
 const clamp = (n) => Math.max(0, Math.min(100, Math.round(n)));
 // % sobre la meta, sin techo: pasar la meta (120%) también se dice.
 const pctTxt = (x) => (x == null || !isFinite(x)) ? '—' : `${Math.round(x * 100)}%`;

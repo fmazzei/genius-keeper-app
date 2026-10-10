@@ -136,7 +136,8 @@ export default function LiquidacionDetalladaDoc({ desgloses, desglose, vendedorN
 }
 
 function PeriodoDetalle({ d, multi }) {
-    const comisionNivel = d.cobradoRegular * d.tasa / 100;
+    const porOrigen = Array.isArray(d.cobrosPorOrigen) ? d.cobrosPorOrigen : null;
+    const comisionNivel = porOrigen ? (d.comisionNivelMonto || 0) : d.cobradoRegular * d.tasa / 100;
     return (
         <>
             {multi && (
@@ -151,9 +152,14 @@ function PeriodoDetalle({ d, multi }) {
                 <table className="w-full text-[12px]" style={{ tableLayout: 'fixed' }}>
                     <colgroup><col style={{ width: '68%' }} /><col style={{ width: '32%' }} /></colgroup>
                     <tbody>
-                    <tr><td className="py-0.5 pr-2">Comisión nivel {d.nivel} ({d.tasa}% sobre lo cobrado)</td><td className="text-right align-top"><Num>{money(comisionNivel)}</Num></td></tr>
+                    {porOrigen && porOrigen.length > 0 ? porOrigen.map(g => (
+                        <tr key={g.mes}><td className="py-0.5 pr-2">Cobrado de facturas {g.mes === d.mes ? 'de este mes' : `del Mes ${g.mes}`} ({money(g.cobrado)}) × nivel {g.nivel} {g.tasa}%</td><td className="text-right align-top"><Num>{money(g.comision)}</Num></td></tr>
+                    )) : (
+                        <tr><td className="py-0.5 pr-2">Comisión nivel {d.nivel} ({d.tasa}% sobre lo cobrado)</td><td className="text-right align-top"><Num>{money(comisionNivel)}</Num></td></tr>
+                    )}
                     {d.bonoCobranzaMonto > 0 && <tr><td className="py-0.5">Bono Cobranza ({d.bonoCobRate}% de lo cobrado a tiempo)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoCobranzaMonto)}</Num></td></tr>}
-                    {d.bonoActivacionMonto > 0 && <tr><td className="py-0.5">Bono Activación ({d.bonoActRate}% × {d.semanasLogradas}/{d.semanasTotales} sem.)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoActivacionMonto)}</Num></td></tr>}
+                    {d.bonoActivacionMonto > 0 && <tr><td className="py-0.5">Bono Activación ({d.bonoActRate}% × semanas logradas del mes de cada factura)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoActivacionMonto)}</Num></td></tr>}
+                    {d.comisionFoodMonto > 0 && <tr><td className="py-0.5">Foodservice ({d.tasaFood}% de {money(d.cobradoFood)})</td><td className="text-right"><Num>{money(d.comisionFoodMonto)}</Num></td></tr>}
                     {d.bonoRecupMonto > 0 && <tr><td className="py-0.5">Cuentas recuperadas ({d.tasaRecup}%)</td><td className="text-right"><Num>{money(d.bonoRecupMonto)}</Num></td></tr>}
                     <tr className="border-t border-slate-300"><td className="py-1 font-bold">Comisión devengada</td><td className="text-right"><Num bold>{money(d.devengadoComision)}</Num></td></tr>
                     <tr><td className="py-0.5">Base del paquete (fijo + viáticos)</td><td className="text-right"><Num>{money(d.base)}</Num></td></tr>
@@ -161,15 +167,30 @@ function PeriodoDetalle({ d, multi }) {
                     <tr><td className="py-0.5">Pagado (liquidaciones)</td><td className="text-right"><Num color="#127c3e">{money(d.pagado)}</Num></td></tr>
                     <tr><td className="py-0.5 font-bold">Saldo por pagar</td><td className="text-right"><Num bold color={d.saldo > 0.5 ? '#b45309' : '#127c3e'}>{money(d.saldo)}</Num></td></tr>
                 </tbody></table>
+                {d.congelado && d.modelo !== 'cobro' && (
+                    <p className="text-[10px] text-slate-500 mt-1">Período congelado con la regla anterior (cobro por mes de factura): su total quedó fijo al cierre.</p>
+                )}
             </div>
 
             {/* Facturación → nivel */}
             <div className="px-8 gk-sec">
                 <SecTitle>FACTURACIÓN — DEFINE EL NIVEL</SecTitle>
-                <p className="text-[11px] text-slate-600 mb-1">Colocó <b>{uds(d.unidades)}</b> de <b>{uds(d.metaMensual)}</b> uds ({d.pct}% de la meta) → <b>Nivel {d.nivel}</b> (tasa {d.tasa}%).</p>
-                <p className="text-[11px] mb-1" style={{ color: '#334155' }}>Cobrado: <b style={{ color: '#127c3e' }}>{money(d.cobradoRegular)}</b> de <b>{money(d.facturadoMonto)}</b> facturado · <b>{d.nPagadas}</b> de <b>{d.nFacturas}</b> facturas pagadas. <span className="text-slate-500">La comisión se paga solo sobre lo cobrado.</span></p>
-                <FacturasTable rows={d.facturas} rateFn={f => f.esFood ? d.tasaFood : d.tasa} empty="Sin facturación en el período." />
+                <p className="text-[11px] text-slate-600 mb-1">Colocó <b>{uds(d.unidades)}</b> de <b>{uds(d.metaMensual)}</b> uds ({d.pct}% de la meta) → <b>Nivel {d.nivel}</b> (tasa {d.tasa}%). Esa tasa se aplica a estas facturas en el mes en que se cobren.</p>
+                <p className="text-[11px] mb-1" style={{ color: '#334155' }}>De lo facturado este mes ya se cobró <b style={{ color: '#127c3e' }}>{money(d.cobradoDeLoFacturado ?? 0)}</b> de <b>{money(d.facturadoMonto)}</b> · <b>{d.nPagadas}</b> de <b>{d.nFacturas}</b> facturas pagadas.</p>
+                <FacturasTable rows={d.facturas} empty="Sin facturación en el período." />
             </div>
+
+            {/* Cobrado en el período → comisión */}
+            {Array.isArray(d.cobradas) && (
+                <div className="px-8 gk-sec">
+                    <SecTitle>COBRADO EN EL PERÍODO — DE AQUÍ SALE LA COMISIÓN</SecTitle>
+                    <p className="text-[11px] text-slate-600 mb-1">Cada cobro paga la tasa del nivel del mes en que se facturó. Fecha = día del pago.</p>
+                    <FacturasTable rows={d.cobradas} rateFn={f => f.esFood ? d.tasaFood : f.origenTasa} origenFn={f => (f.origenMes === d.mes ? 'este mes' : `Mes ${f.origenMes}`)} empty="Sin cobros en el período." />
+                    {Array.isArray(d.cobrosYaLiquidados) && d.cobrosYaLiquidados.length > 0 && (
+                        <p className="text-[10px] text-slate-500 mt-1">{d.cobrosYaLiquidados.length} cobro(s) de este período ya se pagaron dentro del cierre del Mes {d.cobrosYaLiquidados[0].yaEnCierreMes} y no se cuentan otra vez: {d.cobrosYaLiquidados.map(c => c.numero).join(', ')}.</p>
+                    )}
+                </div>
+            )}
 
             {/* Bono Cobranza */}
             <div className="px-8 gk-sec">
@@ -219,7 +240,7 @@ function PeriodoDetalle({ d, multi }) {
                             </div>
                         ))}
                         <p className="text-[11px] text-slate-600 mt-1 text-right">
-                            {d.semanasLogradas}/{d.semanasTotales} semanas logradas → factor {(d.factor * 100).toFixed(0)}% · {d.bonoActRate}% × factor sobre lo cobrado = <b style={{ color: '#127c3e' }}>+{money(d.bonoActivacionMonto)}</b>
+                            {d.semanasLogradas}/{d.semanasTotales} semanas logradas → factor {(d.factor * 100).toFixed(0)}% para las facturas de este mes · bono del período ({d.bonoActRate}% × factor del mes de cada factura, sobre lo cobrado) = <b style={{ color: '#127c3e' }}>+{money(d.bonoActivacionMonto)}</b>
                         </p>
                     </>
                 )}
@@ -245,9 +266,10 @@ const numCell = { fontVariantNumeric: 'tabular-nums', ...clip };
 // `rateFn(row)` → tasa % aplicable a esa factura. Si se pasa, se muestran las
 // columnas TASA y COMISIÓN (la comisión se paga SOLO sobre lo cobrado, así que
 // una factura no pagada aporta 0). Es el "de dónde sale cada número".
-function FacturasTable({ rows, empty, rateFn }) {
+function FacturasTable({ rows, empty, rateFn, origenFn }) {
     if (!rows || rows.length === 0) return <p className="text-[11px] text-slate-500">{empty || '—'}</p>;
     const conCom = typeof rateFn === 'function';
+    const conOrigen = typeof origenFn === 'function';
     const comOf = (f) => {
         if (!conCom) return 0;
         const rate = rateFn(f) || 0;
@@ -259,7 +281,18 @@ function FacturasTable({ rows, empty, rateFn }) {
             style={{ borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: SANS, fontSize: '9px' }}
         >
             <colgroup>
-                {conCom ? (
+                {conCom && conOrigen ? (
+                    <>
+                        <col style={{ width: '14%' }} />
+                        <col style={{ width: '19%' }} />
+                        <col style={{ width: '10%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '7%' }} />
+                        <col style={{ width: '13%' }} />
+                        <col style={{ width: '9%' }} />
+                        <col style={{ width: '19%' }} />
+                    </>
+                ) : conCom ? (
                     <>
                         <col style={{ width: '15%' }} />
                         <col style={{ width: '23%' }} />
@@ -285,6 +318,7 @@ function FacturasTable({ rows, empty, rateFn }) {
                     <th className="py-1 px-1 text-left">FACTURA</th>
                     <th className="py-1 px-1 text-left">CLIENTE</th>
                     <th className="py-1 px-1 text-center">FECHA</th>
+                    {conOrigen && <th className="py-1 px-1 text-center">FACTURA DE</th>}
                     <th className="py-1 px-1 text-right">UDS</th>
                     <th className="py-1 px-1 text-right">{conCom ? 'COBRADO' : 'MONTO'}</th>
                     {conCom
@@ -299,6 +333,7 @@ function FacturasTable({ rows, empty, rateFn }) {
                         <td className="py-1 px-1" style={{ ...clip, fontFamily: MONO }} title={f.numero}>{f.numero}</td>
                         <td className="py-1 px-1" style={clip} title={f.cliente}>{f.cliente}</td>
                         <td className="py-1 px-1 text-center" style={numCell}>{fdateShort(f.fecha)}</td>
+                        {conOrigen && <td className="py-1 px-1 text-center" style={clip}>{origenFn(f)}</td>}
                         <td className="py-1 px-1 text-right" style={numCell}>{uds(f.unidades)}</td>
                         <td className="py-1 px-1 text-right" style={numCell}>{money(f.monto)}</td>
                         {conCom ? (

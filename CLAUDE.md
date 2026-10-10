@@ -1058,6 +1058,26 @@ items.
   - **Pills de estatus** en `ConciliacionFacturas`: Todas / Pagadas / Por vencer / Pendientes / Vencidas / Anuladas / Ausentes (con contador; se ocultan las de 0). "Por vencer" = pendiente con vencimiento ≤3 días. La vista de despliegue incluye anuladas/ausentes (las métricas de unidades siguen sobre las activas).
   - **Diagnóstico transparente** (`res.diag`): tras conciliar, devuelve lo que dice Zoho — cuántas facturas pagadas/vencidas/pendientes/anuladas, y de las PAGADAS a quién se atribuyen (al vendedor / a otro / SIN vendedor por cliente sin vincular, con ejemplos). La UI alerta en rojo si hay pagadas sin vendedor (causa raíz de "solo 1 pagada": clientes sin vincular). Contadores de alcance: `vendedorIdRecibido`, `revisadas` (del vendedor) vs `otrosVendedores` (saltadas).
 
+### 3.12 — El cobro va al mes en que entra el dinero; un mes cerrado no se mueve (2026-10) ✅
+
+Reclamo del dueño (captura del Estado de Cuenta de Carolina): María José cerró su Mes 1 el 19-sep y el mes cerrado **siguió acumulando** ("Se te adeuda de períodos anteriores $37"). Hubo dos causas reales en `src/utils/vendedorMeta.js`:
+
+- **El cobro se acreditaba al mes de la FACTURA, no al del PAGO.** El crédito es de 30 a 45 días, así que cada pago tardío de una factura del Mes 1 hacía crecer el Mes 1 ya cerrado. Si el mes estaba congelado, pasaba lo contrario: ese dinero no se pagaba nunca.
+- **Las fechas de Zoho se leían un día antes.** El servidor guarda el día de Zoho a las 00:00 UTC, que en Venezuela es el día anterior a las 20:00. Una factura del 19-sep (primer día del Mes 2) se contaba en el Mes 1, y una del día de ingreso quedaba fuera de todo período. El servidor (`periodoCohorteFromDate`) sí lo hacía bien, así que GK y el servidor no coincidían.
+
+**Regla nueva (motor único `motorComisiones`, lo usan `computeEstadosDeCuenta` y `computeDesglosePeriodo`, así que el estado de cuenta y el comprobante dan la misma cifra):**
+- La **facturación** (unidades → nivel, Activación, "X de Y a tiempo") cuenta en el mes de la fecha de la factura, igual que antes.
+- El **cobro** cuenta en el mes de `fechaPago`, con la **tasa del nivel del mes en que se facturó** (y su factor de Activación). Sin `fechaPago` cae al mes de la factura. El total de comisiones no cambia: solo cambia en qué mes se paga cada cobro.
+- `fechaCalendario` lee el día de Zoho como su día. La usan también el Home del vendedor (unidades del período) y `desempenoVendedor`.
+- **Cierres congelados:**
+  - Del modelo anterior (sin `modelo:'cobro'`): sus facturas pagadas antes del momento del cierre (`congeladoEn`) ya entraron en ese cierre y no se pagan otra vez (`yaEnCierreMes`).
+  - Del modelo nuevo: guardan `cobrosIncluidos`. Un pago con fecha de ese mes que Zoho registró después del cierre pasa al siguiente mes abierto (`tardioDeMes`); no se pierde.
+- **Pantallas:** "Cómo se calcula" del vendedor muestra una línea por mes de origen ("De facturas del Mes 1 · nivel X %"), y también foodservice. La línea de recuperadas ahora muestra la comisión (antes mostraba lo cobrado). El comprobante (`LiquidacionDetalladaDoc`) separa "Facturación — define el nivel" de "Cobrado en el período — de aquí sale la comisión", con la columna "Factura de".
+- **Cartera para la Activación:** una sola regla, `tamanoCartera`. Antes el vendedor contaba solo `estado === 'activo'` y administración contaba también los documentos sin estado, así que veían bonos distintos.
+- **Efecto en meses cerrados sin congelar:** se recalculan con la regla nueva. Lo cobrado después del fin del mes pasa al mes siguiente. Si un mes ya se liquidó con la cifra vieja, puede quedar con saldo negativo, que se compensa con el mes en curso.
+- **Prueba:** `TZ=America/Caracas node --import ./tests/alias.mjs tests/comisionesCobro.test.mjs`, 25 verificaciones en verde. `vendedorMeta.js` ahora importa `commissionDefaults.js` directo (no el `.jsx`), para poder probarlo en Node.
+- **Decisión a confirmar con el dueño:** un cobro tardío paga la tasa del mes en que se FACTURÓ, no la del mes en que se cobra.
+
 ### Validación esperada — auditoría manual de Wilmer Casares (dueño, 2026-07-09)
 Referencia para verificar que la sincronización cuadre. El dueño asignó **19 facturas** que eran de Wilmer y estaban sin asignar (por eso "faltaban"). Cifras de su auditoría en Zoho:
 - **42 facturas** asignadas a Wilmer en total (incluye heredadas/recuperadas).

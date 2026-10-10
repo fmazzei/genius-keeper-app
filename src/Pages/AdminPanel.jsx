@@ -7,7 +7,7 @@ import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setD
 import { httpsCallable } from 'firebase/functions';
 import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
-import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos } from '../utils/vendedorMeta.js';
+import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, tamanoCartera } from '../utils/vendedorMeta.js';
 import { cuentaEnCartera, motivoFuera } from '../utils/facturaEstado.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
@@ -2796,7 +2796,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
             const meta = metaSnap.exists() ? metaSnap.data() : {};
             const facturas = facturasSnap.docs.map(d => d.data());
             const liqs = liquidSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const carteraSize = carteraSnap ? carteraSnap.docs.filter(d => (d.data().estado || 'activo') === 'activo').length : 0;
+            const carteraSize = carteraSnap ? tamanoCartera(carteraSnap.docs.map(d => d.data())) : 0;
             const cerrados = {};
             if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerrados[c.periodKey] = c; });
             setEstados(computeEstadosDeCuenta(meta, facturas, liqs, { carteraSize, cerrados }));
@@ -3548,7 +3548,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
             // Insumos de comisión (para mostrar el devengado y el comprobante de
             // liquidación aquí mismo — la conciliación es para conocer la comisión).
             setLiqVend(liqSnap ? liqSnap.docs.map(d => ({ id: d.id, ...d.data() })) : []);
-            setCarteraSizeVend(cartSnap ? cartSnap.docs.filter(d => (d.data().estado || 'activo') === 'activo').length : 0);
+            setCarteraSizeVend(cartSnap ? tamanoCartera(cartSnap.docs.map(d => d.data())) : 0);
             const cer = {};
             if (cerrSnap) cerrSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cer[c.periodKey] = c; });
             setCerradosVend(cer);
@@ -3887,7 +3887,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                                 <StatCard label="Saldo por pagar" value={money(desgloseActual.saldo)} color={desgloseActual.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-700'} bg="bg-white" border="border-slate-200" />
                             </div>
                             <p className="text-slate-400 text-[10px] mt-1.5">
-                                Comisión nivel {desgloseActual.nivel} ({desgloseActual.tasa}%) sobre lo cobrado + bonos. El comprobante detalla el número factura por factura.
+                                Comisión = lo cobrado EN este período × la tasa del nivel del mes en que se facturó + bonos (este mes: nivel {desgloseActual.nivel}, {desgloseActual.tasa}%). Lo que se cobre después de cerrar entra al mes siguiente. El comprobante detalla el número factura por factura.
                             </p>
                             {onLiquidar && (
                                 <button onClick={onLiquidar} className="w-full mt-3 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-3 rounded-lg">
@@ -4087,7 +4087,7 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                     const liqs     = liquidSnap ? liquidSnap.docs.map(d => d.data()) : [];
                     const cerrados = {};
                     if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerrados[c.periodKey] = c; });
-                    const carteraSize = carteraSnap ? carteraSnap.docs.filter(d => (d.data().estado || 'activo') === 'activo').length : 0;
+                    const carteraSize = carteraSnap ? tamanoCartera(carteraSnap.docs.map(d => d.data())) : 0;
                     const periodos = computeEstadosDeCuenta(v, facturas, liqs, { carteraSize, cerrados });
                     const totDev = periodos.reduce((s, p) => s + p.devengadoTotal, 0);
                     const totPag = periodos.reduce((s, p) => s + p.pagado, 0);

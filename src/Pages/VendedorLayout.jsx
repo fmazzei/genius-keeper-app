@@ -27,7 +27,7 @@ import ReportesAnaquelView from '@/Pages/ReportesAnaquelView.jsx';
 import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
-import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
+import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo, fechaCalendario, tamanoCartera } from '@/utils/vendedorMeta.js';
 import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
@@ -291,20 +291,37 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                         <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">Cómo se calcula</p>
                         <div className="space-y-1 text-xs">
                             <div className="flex justify-between"><span className="text-slate-400">Cobrado en el período</span><span className="text-white font-mono">{money(p.cobradoRegular)}</span></div>
-                            <div className="flex justify-between"><span className="text-slate-400">Comisión nivel {p.nivel} ({p.tasa}%)</span><span className="text-white font-mono">{money(p.cobradoRegular * p.tasa / 100)}</span></div>
+                            {Array.isArray(p.cobrosPorOrigen) ? (
+                                p.cobrosPorOrigen.map(g => (
+                                    <div key={g.mes} className="flex justify-between gap-2">
+                                        <span className="text-slate-400">
+                                            {g.mes === p.mes ? 'De facturas de este mes' : `De facturas del Mes ${g.mes}`} ({money(g.cobrado)}) · nivel {g.nivel} {g.tasa}%
+                                        </span>
+                                        <span className="text-white font-mono">{money(g.comision)}</span>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="flex justify-between"><span className="text-slate-400">Comisión nivel {p.nivel} ({p.tasa}%)</span><span className="text-white font-mono">{money(p.cobradoRegular * p.tasa / 100)}</span></div>
+                            )}
                             {p.bonoCobranzaMonto > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Bono Cobranza ({p.bonoCobranzaRate}% de lo cobrado a tiempo)</span><span className="text-emerald-400 font-mono">+{money(p.bonoCobranzaMonto)}</span></div>
                             )}
                             {p.bonoActivacionMonto > 0 && (
-                                <div className="flex justify-between"><span className="text-slate-400">Bono Activación ({p.bonoActivacionRate}% × {p.actSemanasLogradas}/{p.actSemanasTotales} sem.)</span><span className="text-emerald-400 font-mono">+{money(p.bonoActivacionMonto)}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-400">Bono Activación ({p.bonoActivacionRate}% × semanas logradas)</span><span className="text-emerald-400 font-mono">+{money(p.bonoActivacionMonto)}</span></div>
                             )}
                             {p.bonoAnaquelMonto > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Bono Anaquel ({p.bonoAnaquelRate}%)</span><span className="text-emerald-400 font-mono">+{money(p.bonoAnaquelMonto)}</span></div>
                             )}
+                            {p.comisionFoodMonto > 0 && (
+                                <div className="flex justify-between"><span className="text-slate-400">Foodservice ({p.tasaFood}% de {money(p.cobradoFood)})</span><span className="text-white font-mono">+{money(p.comisionFoodMonto)}</span></div>
+                            )}
                             {p.cobradoRecup > 0 && (
-                                <div className="flex justify-between"><span className="text-slate-400">Cuentas recuperadas ({p.tasaRecup}%)</span><span className="text-white font-mono">{money(p.cobradoRecup)}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-400">Cuentas recuperadas ({p.tasaRecup}% de {money(p.cobradoRecup)})</span><span className="text-white font-mono">+{money(p.cobradoRecup * p.tasaRecup / 100)}</span></div>
                             )}
                         </div>
+                        {p.cerrado && !p.congelado && (
+                            <p className="text-slate-500 text-[10px] mt-2">Mes cerrado: lo que cobres desde ahora de sus facturas se te suma al mes en curso, con la tasa que ganaste aquí.</p>
+                        )}
                     </div>
 
                     {/* Resultado */}
@@ -333,7 +350,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                 )}
 
                 <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-1.5">
-                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Comisión</b> = lo que <b>cobras</b> × la tasa de tu <b>nivel final</b> del período (a más colocación, mejor tasa).</p>
+                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Comisión</b> = lo que <b>cobras</b> en el período × la tasa del <b>nivel</b> que lograste el mes en que <b>facturaste</b> (a más colocación, mejor tasa). Un mes cerrado no cambia: lo que cobres después entra al mes en curso.</p>
                     <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Bono Cobranza</b> = <b>+{bonoRate}%</b> sobre <b>cada factura</b> que cobras a tiempo (dentro de vencimiento + {gracia} días de gracia).</p>
                     <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Pagado</b> son las liquidaciones que te registra administración; el <b>saldo</b> se salda semanalmente sobre el mes vencido.</p>
                 </div>
@@ -1316,8 +1333,10 @@ const VendedorLayout = ({ user, onLogout }) => {
                     fecha: f.fecha, vencimiento: f.vencimiento, fechaPago: f.fechaPago,
                     recuperada: f.recuperada, zohoCustomerId: f.zohoCustomerId,
                 })));
+                // fechaCalendario: el día de Zoho (00:00 UTC) leído como su día; si no,
+                // una factura del primer día del período caía en el anterior.
                 const enPeriodo = (f) => {
-                    const t = f.fecha?.toDate?.() || (f.fecha ? new Date(f.fecha) : null);
+                    const t = fechaCalendario(f.fecha);
                     return t && t >= periodStart && t < periodEnd;
                 };
                 const unidadesDelMes = facturasVend
@@ -1350,10 +1369,9 @@ const VendedorLayout = ({ user, onLogout }) => {
 
                 // 4. Cartera propia del vendedor (para activación y lista de despacho)
                 //    Filtrado de "estado" en cliente (evita índice compuesto).
-                const cartera = carteraSnap.docs
-                    .map(d => ({ id: d.id, ...d.data() }))
-                    .filter(c => c.estado === 'activo');
-                const puntosTotal = cartera.length;
+                const carteraDocs = carteraSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const cartera = carteraDocs.filter(c => (c.estado || 'activo') === 'activo');
+                const puntosTotal = tamanoCartera(carteraDocs);   // misma regla que administración
 
                 // Despachos de esta semana con mínimo de unidades, cruzados contra cartera
                 const carteraPosIds = new Set(cartera.map(c => c.posId).filter(Boolean));
