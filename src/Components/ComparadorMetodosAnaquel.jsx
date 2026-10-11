@@ -84,14 +84,17 @@ function Dato({ k, v, sub }) {
 }
 
 
-// Fusiones confirmadas por Francisco (8-oct). Aquí SOLO se simula: dice qué
-// cambiaría, sin tocar nada. La ejecución se construye con su OK.
+// Fusiones confirmadas por Francisco (8-oct; OK para ejecutar el 11-oct). El
+// PDV que queda se amarra al CARNET de Zoho de su razón social: Páramo
+// Libertador = Inversiones Cold 2024, C.A (Libertador); Maxi Quesos = Inversiones
+// MAXI QUESO, C.A. (nombre para mostrar en Zoho: "Maxi Quesos").
 const FUSIONES_CONFIRMADAS = [
-    { nombre: 'Páramo Libertador', idQueda: 'CpIsxX46MnspK2HBRlTa', idSale: 'XmxkwkuCUp9om2coYjtU' },
-    { nombre: 'Maxi Quesos', idQueda: 'uBiiLfMmhWKvqwCXlPxl', idSale: 'jnL8ifNAGjDK3A6t3o6C' },
+    { nombre: 'Páramo Libertador', idQueda: 'CpIsxX46MnspK2HBRlTa', idSale: 'XmxkwkuCUp9om2coYjtU', carnet: '3576378000004601055' },
+    { nombre: 'Maxi Quesos', idQueda: 'uBiiLfMmhWKvqwCXlPxl', idSale: 'jnL8ifNAGjDK3A6t3o6C', carnet: '3576378000001015017' },
 ];
 const ETIQ_CARNET = {
-    queda_con_su_carnet: 'El que queda conserva su carnet de Zoho.',
+    queda_con_su_carnet: 'El que queda ya está amarrado a ese carnet de Zoho.',
+    se_amarra_al_carnet: 'El que queda se amarra al carnet de Zoho de su razón social.',
     heredaria_el_carnet: 'El que queda no tiene carnet: heredaría el del que sale.',
     carnets_distintos: 'OJO: los dos tienen carnets de Zoho DISTINTOS. Revisar antes de fusionar.',
     ninguno_tiene_carnet: 'Ninguno de los dos está vinculado a un carnet de Zoho.',
@@ -99,42 +102,66 @@ const ETIQ_CARNET = {
 const ETIQ_COL = {
     visit_reports: 'Visitas', devoluciones: 'Devoluciones', pedidos_mercaderista: 'Pedidos', vendedor_alertas: 'Alertas del vendedor',
     vendor_clients: 'Carteras', despachos: 'Despachos', pickings: 'Pickings', traslados: 'Traslados', agendas: 'Agendas del planificador',
+    pedidos: 'Pedidos (viejos)', delegated_tasks: 'Tareas', transfers: 'Transferencias', ventas_pendientes: 'Ventas pendientes',
 };
 function SimulacionFusiones() {
     const [res, setRes] = useState({});
-    const simular = async (f) => {
-        setRes(p => ({ ...p, [f.nombre]: { cargando: true } }));
+    const llamar = async (f, accion) => {
+        if (accion === 'ejecutar' && !window.confirm(`¿Unir los dos PDV de ${f.nombre}? Antes se guarda una copia de todo lo que se toca, y se puede deshacer.`)) return;
+        if (accion === 'deshacer' && !window.confirm(`¿Deshacer la unión de ${f.nombre}? Todo vuelve a como estaba antes de unir.`)) return;
+        setRes(p => ({ ...p, [f.nombre]: { ...p[f.nombre], cargando: accion, error: null } }));
         try {
-            const r = await httpsCallable(functions, 'simularFusionPdv', { timeout: 120000 })({ idQueda: f.idQueda, idSale: f.idSale });
-            setRes(p => ({ ...p, [f.nombre]: { datos: r.data } }));
+            const r = await httpsCallable(functions, 'fusionarPdv', { timeout: 300000 })({ idQueda: f.idQueda, idSale: f.idSale, carnet: f.carnet, accion });
+            setRes(p => ({ ...p, [f.nombre]: accion === 'deshacer'
+                ? { deshecha: r.data.restaurados }
+                : { datos: r.data, hecha: accion === 'ejecutar' } }));
         } catch (e) {
-            setRes(p => ({ ...p, [f.nombre]: { error: e?.message || 'No se pudo simular.' } }));
+            setRes(p => ({ ...p, [f.nombre]: { ...p[f.nombre], cargando: null, error: e?.message || 'No se pudo completar.' } }));
         }
     };
     return (
         <div className="space-y-2 mb-4">
-            <p className="text-xs font-bold text-slate-600">Fusiones confirmadas: simulación (no cambia nada)</p>
+            <p className="text-xs font-bold text-slate-600">PDV duplicados: unir en uno solo</p>
             {FUSIONES_CONFIRMADAS.map(f => {
                 const r = res[f.nombre] || {};
                 const d = r.datos;
+                const yaUnido = r.hecha || d?.yaFusionado;
                 return (
                     <div key={f.nombre} className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-3 text-xs">
-                        <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
                             <p className="font-bold text-slate-800">{f.nombre}</p>
-                            <button onClick={() => simular(f)} disabled={r.cargando}
-                                className="shrink-0 font-bold text-indigo-700 border border-indigo-300 rounded-lg px-2.5 py-1.5 disabled:opacity-50">
-                                {r.cargando ? 'Simulando…' : 'Simular fusión'}
-                            </button>
+                            <div className="flex gap-1.5">
+                                <button onClick={() => llamar(f, 'simular')} disabled={!!r.cargando}
+                                    className="shrink-0 font-bold text-indigo-700 border border-indigo-300 rounded-lg px-2.5 py-1.5 disabled:opacity-50">
+                                    {r.cargando === 'simular' ? 'Revisando…' : 'Ver qué cambia'}
+                                </button>
+                                {d && !yaUnido && (
+                                    <button onClick={() => llamar(f, 'ejecutar')} disabled={!!r.cargando || d.carnet === 'carnets_distintos' && !d.cliente}
+                                        className="shrink-0 font-bold text-white bg-indigo-600 rounded-lg px-2.5 py-1.5 disabled:opacity-50">
+                                        {r.cargando === 'ejecutar' ? 'Uniendo…' : 'Unir'}
+                                    </button>
+                                )}
+                                {yaUnido && (
+                                    <button onClick={() => llamar(f, 'deshacer')} disabled={!!r.cargando}
+                                        className="shrink-0 font-bold text-slate-600 border border-slate-300 rounded-lg px-2.5 py-1.5 disabled:opacity-50">
+                                        {r.cargando === 'deshacer' ? 'Deshaciendo…' : 'Deshacer'}
+                                    </button>
+                                )}
+                            </div>
                         </div>
                         {r.error && <p className="text-red-600 mt-1">{r.error}</p>}
+                        {r.deshecha != null && <p className="text-emerald-700 font-bold mt-1">Deshecha: {r.deshecha} documentos volvieron a como estaban.</p>}
                         {d && (
                             <div className="mt-2 space-y-1 text-slate-700">
-                                <p><b>Queda:</b> {d.queda.nombre} · {d.queda.visitas} visitas ({d.queda.primera ? `${fmtVence(d.queda.primera)} – ${fmtVence(d.queda.ultima)}` : 'sin visitas'}) · {d.queda.zohoCustomerId ? `carnet ${d.queda.zohoCustomerId}` : 'sin carnet'}{d.queda.razonSocialZoho ? ` · ${d.queda.razonSocialZoho}` : ''}</p>
-                                <p><b>Se absorbe:</b> {d.sale.nombre} · {d.sale.visitas} visitas ({d.sale.primera ? `${fmtVence(d.sale.primera)} – ${fmtVence(d.sale.ultima)}` : 'sin visitas'}) · {d.sale.zohoCustomerId ? `carnet ${d.sale.zohoCustomerId}` : 'sin carnet'}{d.sale.razonSocialZoho ? ` · ${d.sale.razonSocialZoho}` : ''}</p>
-                                <p><b>Pasarían al que queda:</b> {Object.entries(d.porColeccion).filter(([, n]) => n > 0).map(([k, n]) => `${ETIQ_COL[k] || k} ${n}`).join(' · ') || 'nada'} ({d.totalDocumentos} documentos)</p>
-                                <p><b>Visitas en total tras fusionar:</b> {d.visitasResultantes}{d.visitasMismoDia.length ? ` · ${d.visitasMismoDia.length} día(s) con visita en los dos (${d.visitasMismoDia.map(fmtVence).join(', ')}): quedarían dos visitas el mismo día` : ''}</p>
-                                <p className={d.carnet === 'carnets_distintos' ? 'text-red-700 font-bold' : ''}><b>Zoho:</b> {ETIQ_CARNET[d.carnet]}</p>
-                                <p className="text-slate-500">Para ejecutarla: tu OK; antes se respalda cada documento que se toque.</p>
+                                {yaUnido && <p className="text-emerald-700 font-bold">{r.hecha ? `Unidos. ${d.documentosCambiados} documentos actualizados; la copia de respaldo quedó guardada.` : 'Ya están unidos.'}</p>}
+                                <p><b>Queda:</b> {d.queda.nombre} · {d.queda.visitas} visitas ({d.queda.primera ? `${fmtVence(d.queda.primera)} – ${fmtVence(d.queda.ultima)}` : 'sin visitas'})</p>
+                                <p><b>Razón social:</b> {d.cliente ? `${d.cliente.customerName}${d.cliente.companyName && d.cliente.companyName !== d.cliente.customerName ? ` (${d.cliente.companyName})` : ''} · carnet ${d.cliente.customerId}` : (d.queda.razonSocialZoho || 'sin razón social')}</p>
+                                <p><b>{yaUnido ? 'Se absorbió' : 'Se absorbe'}:</b> {d.sale.nombre} · {d.sale.visitas} visitas ({d.sale.primera ? `${fmtVence(d.sale.primera)} – ${fmtVence(d.sale.ultima)}` : 'sin visitas'}){d.sale.razonSocialZoho ? ` · ${d.sale.razonSocialZoho}` : ''}</p>
+                                {!yaUnido && <p><b>Pasan al que queda:</b> {Object.entries(d.porColeccion).filter(([, n]) => n > 0).map(([k, n]) => `${ETIQ_COL[k] || k} ${n}`).join(' · ') || 'nada'} ({d.totalDocumentos} documentos)</p>}
+                                <p><b>Visitas en total:</b> {d.visitasResultantes}{d.visitasMismoDia.length ? ` · ${d.visitasMismoDia.length} día(s) con visita en los dos (${d.visitasMismoDia.map(fmtVence).join(', ')}): quedan dos visitas el mismo día` : ''}</p>
+                                <p className={d.carnet === 'carnets_distintos' ? 'text-red-700 font-bold' : ''}><b>Zoho:</b> {ETIQ_CARNET[d.carnet]} Las facturas no se mueven: van por carnet.</p>
+                                {(d.avisos || []).map((a, i) => <p key={i} className="text-amber-700">{a}</p>)}
+                                {!yaUnido && <p className="text-slate-500">El que sale no se borra: queda dado de baja y marcado como unido al otro.</p>}
                             </div>
                         )}
                     </div>

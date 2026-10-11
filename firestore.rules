@@ -97,7 +97,23 @@ service cloud.firestore {
     match /users_metadata/{userId} {
       allow get: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || isMaster());
       allow list: if isAdmin() || isMaster();
-      allow write: if request.auth.uid == userId || isMaster();
+      // El ROL, los módulos, la empresa, las metas y la comisión los escribe
+      // SOLO el máster (o el servidor con Admin SDK). Antes el usuario podía
+      // escribir cualquier campo de su propio documento —incluido `role`— y
+      // darse acceso de máster desde la consola del navegador.
+      // Lo único que el usuario escribe de sí mismo:
+      //   · `name` (relleno del nombre de las cuentas compartidas);
+      //   · recrear su perfil si se borró, SOLO para las tres cuentas
+      //     compartidas y con su rol fijo (AuthContext lo hace al entrar).
+      allow create: if isMaster() || (request.auth != null && request.auth.uid == userId && (
+        !('role' in request.resource.data)
+        || (request.auth.token.email == 'lacteoca@lacteoca.com'   && request.resource.data.role == 'master')
+        || (request.auth.token.email == 'anaquel@lacteoca.com'    && request.resource.data.role == 'merchandiser')
+        || (request.auth.token.email == 'produccion@lacteoca.com' && request.resource.data.role == 'produccion')
+      ) && request.resource.data.keys().hasOnly(['role', 'email', 'name']));
+      allow update: if isMaster() || (request.auth != null && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name']));
+      allow delete: if isMaster();
       match /authenticators/{authenticatorId} {
         allow read, write: if request.auth.uid == userId;
       }
@@ -296,6 +312,17 @@ service cloud.firestore {
       allow create: if isProduccion() || isAdmin();
       allow update: if isMerchandiser() || isAdmin();
       allow delete: if isMaster();
+    }
+
+    // Fusiones de PDV duplicados: registro + copia exacta de cada documento
+    // tocado (para deshacer). Solo las escribe el servidor (fusionarPdv).
+    match /fusiones_pdv/{id} {
+      allow read: if isMaster();
+      allow write: if false;
+      match /docs/{docId} {
+        allow read: if isMaster();
+        allow write: if false;
+      }
     }
 
     match /agendas/{reporterId} {

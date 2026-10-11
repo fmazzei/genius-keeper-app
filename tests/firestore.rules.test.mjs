@@ -24,7 +24,7 @@ import { readFileSync } from 'fs';
 import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, addDoc, updateDoc } from 'firebase/firestore';
 
 const env = await initializeTestEnvironment({ projectId: 'demo-gk4',
-  firestore: { rules: readFileSync('firestore.rules','utf8'), host:'127.0.0.1', port:8092 } });
+  firestore: { rules: readFileSync('firestore.rules','utf8'), host:'127.0.0.1', port: Number((process.env.FIRESTORE_EMULATOR_HOST || '').split(':')[1]) || 8092 } });
 
 await env.withSecurityRulesDisabled(async (c) => {
   const db = c.firestore();
@@ -78,6 +78,31 @@ await check('permite','ACME crea el suyo',                () => addDoc(collectio
 await check('permite','GERENCIA lee kroma_suppliers',     () => getDoc(doc(G,'kroma_suppliers','p1')));
 await check('permite','GERENCIA lee kroma_compras',       () => getDoc(doc(G,'kroma_compras','c1')));
 await check('niega','GERENCIA escribe kroma_suppliers',   () => updateDoc(doc(G,'kroma_suppliers','p1'), { nombre:'x' }));
+
+// ── users_metadata: nadie se cambia su propio rol (hueco cerrado el 11-oct)
+await env.withSecurityRulesDisabled(async (c) => {
+  const db = c.firestore();
+  await setDoc(doc(db,'users_metadata','vend'), { role:'vendedor', email:'v@lacteoca.com', name:'Vend' });
+  await setDoc(doc(db,'users_metadata','mast'), { role:'master', email:'m@lacteoca.com' });
+});
+const V  = env.authenticatedContext('vend', { email:'v@lacteoca.com' }).firestore();
+const M  = env.authenticatedContext('mast', { email:'m@lacteoca.com' }).firestore();
+const N  = env.authenticatedContext('nuevo', { email:'x@otro.com' }).firestore();
+const AQ = env.authenticatedContext('anaq', { email:'anaquel@lacteoca.com' }).firestore();
+await check('niega','VENDEDOR se pone role master',            () => updateDoc(doc(V,'users_metadata','vend'), { role:'master' }));
+await check('niega','VENDEDOR se cambia módulos',              () => updateDoc(doc(V,'users_metadata','vend'), { 'modulos.dashboard': true }));
+await check('niega','VENDEDOR se cambia empresaId',            () => updateDoc(doc(V,'users_metadata','vend'), { empresaId:'acme' }));
+await check('niega','VENDEDOR se cambia la comisión',          () => updateDoc(doc(V,'users_metadata','vend'), { commissionConfig:{ x:1 } }));
+await check('niega','VENDEDOR se reemplaza con setDoc',        () => setDoc(doc(V,'users_metadata','vend'), { role:'master', email:'v@lacteoca.com', name:'Vend' }));
+await check('niega','VENDEDOR borra su perfil',                () => deleteDoc(doc(V,'users_metadata','vend')));
+await check('permite','VENDEDOR cambia su nombre (merge)',     () => setDoc(doc(V,'users_metadata','vend'), { name:'Otro' }, { merge:true }));
+await check('niega','USUARIO NUEVO se crea como master',       () => setDoc(doc(N,'users_metadata','nuevo'), { role:'master', email:'x@otro.com' }));
+await check('niega','USUARIO NUEVO se crea con módulos',       () => setDoc(doc(N,'users_metadata','nuevo'), { name:'x', modulos:{} }));
+await check('permite','ANAQUEL recrea su perfil merchandiser', () => setDoc(doc(AQ,'users_metadata','anaq'), { role:'merchandiser', email:'anaquel@lacteoca.com', name:'Equipo de Campo' }));
+await check('niega','ANAQUEL se recrea como master',           () => setDoc(doc(AQ,'users_metadata','anaq'), { role:'master', email:'anaquel@lacteoca.com' }));
+await check('permite','MÁSTER cambia el rol de otro',          () => updateDoc(doc(M,'users_metadata','vend'), { role:'gerencia' }));
+await check('permite','MÁSTER crea un usuario',                () => setDoc(doc(M,'users_metadata','u2'), { role:'vendedor', email:'u2@x.com', name:'U2', active:true, salesGoal:0, username:'u2' }));
+await check('permite','MÁSTER borra un usuario',               () => deleteDoc(doc(M,'users_metadata','u2')));
 
 console.log(ok.join('\n'));
 if (bad.length) { console.log('\n--- FALLOS ---\n' + bad.join('\n')); process.exitCode = 1; }
