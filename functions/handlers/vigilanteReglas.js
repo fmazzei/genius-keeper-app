@@ -9,6 +9,8 @@
 // Ningún texto lleva montos, precios ni datos financieros: solo unidades, días y
 // nombres. El supervisor (vendedor) nunca recibe avisos de dinero.
 
+const { fila, seccion, diaTxt } = require('./avisoDetalle');
+
 const DIA = 86400000;
 const TZ = 4 * 3600000;   // Venezuela, UTC−4 todo el año
 
@@ -58,6 +60,8 @@ const diaSemana = (ms) => new Date(ms - TZ).getUTCDay();               // 0 domi
 const inicioDiaCaracas = (ms) => Date.parse(`${diaCaracas(ms)}T00:00:00Z`) + TZ;
 const diasEntre = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DIA);
 const fmtDia = (ms) => { const d = new Date(ms - TZ); return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`; };
+const NOMBRE_DIA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const fechaHora = (ms) => (ms ? `${diaTxt(diaCaracas(ms))} ${String(horaCaracas(ms)).padStart(2, '0')}:${String(new Date(ms - TZ).getUTCMinutes()).padStart(2, '0')}` : '—');
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
 const toMs = (v) => {
@@ -259,9 +263,22 @@ function evaluar(d) {
         const ayerSinNada = ant && !suyos.some(r => diaCaracas(r.t) === ant);
         const sinSenalDesdeAyer = !ultimaSenal || (ant && ultimaSenal < Date.parse(`${ant}T00:00:00Z`) + TZ);
         const nombre = rep.name || 'El mercaderista';
+        const detalleRep = [
+            seccion('Hoy', [
+                fila('Reportes recibidos hoy', null, '0', 'rojo'),
+                fila('Reportes guardados en su teléfono sin enviar', null, String(pend), pend ? 'ambar' : null),
+                fila('Última señal del teléfono', null, fechaHora(ultimaSenal)),
+                fila('Último reporte recibido', null, fechaHora(ultimoRep)),
+                ant ? fila('Día laborable anterior', ayerSinNada ? 'sin reportes' : 'con reportes', diaTxt(ant), ayerSinNada ? 'ambar' : null) : null,
+            ]),
+            seccion('Sus días de trabajo', [fila(lab.dias.map(x => NOMBRE_DIA[x]).join(', '), lab.aprendidos === false ? 'por defecto o fijados por configuración' : 'aprendidos de sus últimas 8 semanas')]),
+            seccion('Sus teléfonos', susDisp.map(dv => fila(dv.reporterName || dv.id, `última señal ${fechaHora(toMs(dv.ultimaSenal))}`, `${num(dv.pendientes)} sin enviar`))),
+            seccion('Últimos reportes recibidos', suyos.slice().sort((a, b) => b.t - a.t).slice(0, 8)
+                .map(r => fila((posById[r.posId] || {}).name || r.posName || r.posId || 'PDV', fechaHora(r.t)))),
+        ];
         if (pend > 0) {
             problemas.push({
-                clave: `sin_reportes:${rep.id}`, tipo: 'sin_reportes', severidad: 'informativo', para: 'supervisor', uids: sup,
+                detalle: detalleRep, clave: `sin_reportes:${rep.id}`, tipo: 'sin_reportes', severidad: 'informativo', para: 'supervisor', uids: sup,
                 titulo: `${nombre}: ${pend} reporte${pend !== 1 ? 's' : ''} en su teléfono sin enviar`,
                 cuerpo: `Hoy no se ha recibido ningún reporte, pero su teléfono tiene ${pend} guardado${pend !== 1 ? 's' : ''} pendiente${pend !== 1 ? 's' : ''} de envío (falta de señal).`,
                 causa: 'Sin señal en la ruta.', accion: 'Nada por ahora: se envían solos al volver la señal.',
@@ -271,7 +288,7 @@ function evaluar(d) {
         }
         if (ayerSinNada && sinSenalDesdeAyer) {
             problemas.push({
-                clave: `mercaderista_sin_senal:${rep.id}`, tipo: 'mercaderista_sin_senal', severidad: 'critico', para: 'supervisor', uids: sup, copiaMaster: true,
+                detalle: detalleRep, clave: `mercaderista_sin_senal:${rep.id}`, tipo: 'mercaderista_sin_senal', severidad: 'critico', para: 'supervisor', uids: sup, copiaMaster: true,
                 titulo: `${nombre}: sin reportes recibidos desde el ${ultimoRep ? fmtDia(ultimoRep) : 'inicio'}`,
                 cuerpo: `Ni ayer (día laborable) ni hoy se recibió ningún reporte, y su teléfono no se ha conectado${ultimaSenal ? ` desde el ${fmtDia(ultimaSenal)}` : ''}.`,
                 causa: 'Teléfono apagado, sin datos, o no salió a ruta.', accion: 'Llamarlo hoy para saber qué pasó.',
@@ -280,7 +297,7 @@ function evaluar(d) {
             return;
         }
         problemas.push({
-            clave: `sin_reportes:${rep.id}`, tipo: 'sin_reportes', severidad: 'importante', para: 'supervisor', uids: sup,
+            detalle: detalleRep, clave: `sin_reportes:${rep.id}`, tipo: 'sin_reportes', severidad: 'importante', para: 'supervisor', uids: sup,
             titulo: `${nombre}: sin reportes recibidos hoy`,
             cuerpo: `Son las ${hora}:00 y no ha llegado ningún reporte de hoy${ultimaSenal && diaCaracas(ultimaSenal) === hoy ? ' (su teléfono sí se conectó hoy)' : ''}.`,
             causa: ultimaSenal && diaCaracas(ultimaSenal) === hoy ? 'Tiene señal pero no ha reportado.' : 'Sin señal o sin salir a ruta.',
@@ -311,6 +328,17 @@ function evaluar(d) {
                 causa: 'Se quedó fuera de la ruta.', accion: 'Programar visita esta semana.',
                 desde: base + umbral * DIA, entrega: 'resumen',
                 datos: { posId: p.id, diasSin, normal: Math.round(f.normal * 10) / 10, aprendida: f.aprendida },
+                detalle: [
+                    seccion('El punto de venta', [
+                        fila(p.name, [p.chain, p.zone || p.zona, p.city || p.ciudad].filter(Boolean).join(' · ') || null),
+                        fila('Última visita', null, ult ? fechaHora(ult) : 'nunca', 'rojo'),
+                        fila('Días sin visita', null, String(diasSin), 'rojo'),
+                        fila('Frecuencia normal', f.aprendida ? `mediana de ${f.intervalos} intervalos entre visitas (180 días)` : 'sin historial suficiente', f.aprendida ? `cada ${Math.round(f.normal)} días` : '—'),
+                        fila('Se avisa a partir de', f.aprendida ? `${cfg.factorFrecuencia} × su frecuencia normal` : 'valor general', `${umbral} días`),
+                        num(p.visitInterval) ? fila('Frecuencia configurada', null, `cada ${num(p.visitInterval)} días`) : null,
+                    ]),
+                    seccion('Visitas recientes', [...new Set(dias)].sort().reverse().slice(0, 10).map(x => fila(diaTxt(x)))),
+                ],
             });
         });
     });
@@ -328,6 +356,13 @@ function evaluar(d) {
             cuerpo: `Llevas ${a.unidades.toLocaleString('es-VE')} de ${a.meta.toLocaleString('es-VE')} uds y deberías ir por ${a.esperado.toLocaleString('es-VE')}. Al ritmo actual cerrarías en ${a.proyeccion.toLocaleString('es-VE')} el ${fmtDia(Date.parse(`${a.finDia}T12:00:00Z`) + TZ)}.`,
             causa: 'Ritmo de facturación por debajo de lo necesario.', accion: 'Priorizar los PDV que no compran hace más días.',
             desde: inicioDiaCaracas(ahora), entrega: 'resumen', renotificarDias: 7, datos: { ...a },
+            detalle: [seccion('Meta del período de empleo', [
+                fila('Meta', null, `${a.meta.toLocaleString('es-VE')} uds`),
+                fila('Llevas', `${Math.round(a.pct)} % de la meta`, `${a.unidades.toLocaleString('es-VE')} uds`, 'ambar'),
+                fila('Deberías llevar hoy', `${Math.round(a.transcurridos)} de ${Math.round(a.total)} días`, `${a.esperado.toLocaleString('es-VE')} uds`),
+                fila('Faltan', null, `${Math.max(0, a.meta - a.unidades).toLocaleString('es-VE')} uds`),
+                fila('Al ritmo actual cerrarías en', `cierre ${diaTxt(a.finDia)}`, `${a.proyeccion.toLocaleString('es-VE')} uds`, 'rojo'),
+            ], 'Unidades facturadas a tu nombre en el período, sin cuentas recuperadas.')],
         });
     });
 
@@ -343,6 +378,10 @@ function evaluar(d) {
                 cuerpo: `El último barrido falló${ac.zohoAutoError ? `: ${String(ac.zohoAutoError).slice(0, 140)}` : ''}.`,
                 causa: 'Error al leer Zoho (permiso o conexión).', accion: 'Revisar Integraciones → Zoho.',
                 desde: ult || ahora, entrega: 'inmediato', sistema: true, datos: {},
+                detalle: [seccion('Barrido de Zoho', [
+                    fila('Estado', null, 'error', 'rojo'), fila('Último barrido', null, fechaHora(ult)),
+                    fila('Mensaje de Zoho', String(ac.zohoAutoError || 'sin mensaje').slice(0, 400)),
+                ])],
             });
         } else if (horas > cfg.zohoMaxHorasSinBarrido && hora >= 8 && hora <= 21) {
             problemas.push({
@@ -351,6 +390,11 @@ function evaluar(d) {
                 cuerpo: ult ? `El último barrido fue hace ${Math.round(horas)} h (${fmtDia(ult)}).` : 'No hay registro de ningún barrido.',
                 causa: 'El barrido automático dejó de correr.', accion: 'Revisar Integraciones → Zoho.',
                 desde: ult || ahora, entrega: 'inmediato', sistema: true, datos: {},
+                detalle: [seccion('Barrido de Zoho', [
+                    fila('Último barrido', null, fechaHora(ult), 'rojo'),
+                    fila('Horas sin barrido', `se avisa pasadas ${cfg.zohoMaxHorasSinBarrido} h`, Number.isFinite(horas) ? `${Math.round(horas)} h` : '—'),
+                    fila('Corre', 'cada hora de 7 a 20 y cada 4 h de noche'),
+                ])],
             });
         }
     }
@@ -360,6 +404,10 @@ function evaluar(d) {
             titulo: 'La app no está abriendo', cuerpo: `La página de GK no responde bien desde hace ${d.web.fallasSeguidas} revisiones seguidas.`,
             causa: d.web.motivo || 'Fallo de la publicación o del servidor.', accion: 'Abrir la app para confirmar y revisar la última publicación.',
             desde: toMs(d.web.desde) || ahora, entrega: 'inmediato', sistema: true, datos: {},
+            detalle: [seccion('La página de GK', [
+                fila('Revisiones seguidas con falla', null, String(d.web.fallasSeguidas), 'rojo'),
+                fila('Qué respondió', d.web.motivo || '—'), fila('Falla desde', null, fechaHora(toMs(d.web.desde))),
+            ])],
         });
     }
     if (g.ligero) dispositivos.forEach(dv => {
@@ -372,6 +420,14 @@ function evaluar(d) {
                 cuerpo: `El teléfono tiene señal pero no logra enviarlos desde el ${fmtDia(viejo)}${dv.ultimoError ? ` (${String(dv.ultimoError).slice(0, 80)})` : ''}.`,
                 causa: 'Error al guardar en el servidor.', accion: 'Revisar el teléfono o el permiso de la cuenta.',
                 desde: viejo, entrega: 'inmediato', datos: { deviceId: dv.id, pendientes: dv.pendientes },
+                detalle: [seccion('El teléfono', [
+                    fila(dv.reporterName || 'Teléfono', `id ${dv.id}`),
+                    fila('Reportes sin enviar', null, String(num(dv.pendientes)), 'rojo'),
+                    fila('El más viejo es del', null, fechaHora(viejo)),
+                    fila('Última señal', null, fechaHora(senal)),
+                    dv.ultimoError ? fila('Último error', String(dv.ultimoError).slice(0, 300)) : null,
+                    (dv.pendientesPos || []).length ? fila('PDV de esos reportes', dv.pendientesPos.map(x => (posById[x] || {}).name || x).join(', ')) : null,
+                ])],
             });
         }
     });
@@ -391,8 +447,10 @@ function evaluar(d) {
         });
         const facturado = facts.reduce((s, f) => s + num(f.unidades), 0);
         const nums = new Set(facts.map(f => f.numero));
-        const confirmado = v3.reduce((s, r) => s + (r.entregas || []).filter(e => nums.has(e.numero) && e.opcion !== 'no')
-            .reduce((a, e) => a + num(e.unidadesEntregadas), 0), 0);
+        const confirmadoPor = {};
+        v3.forEach(r => (r.entregas || []).filter(e => nums.has(e.numero) && e.opcion !== 'no')
+            .forEach(e => { confirmadoPor[e.numero] = (confirmadoPor[e.numero] || 0) + num(e.unidadesEntregadas); }));
+        const confirmado = Object.values(confirmadoPor).reduce((a, x) => a + x, 0);
         if (facturado >= cfg.minUdsEntregas && confirmado / facturado < cfg.umbralEntregas) {
             problemas.push({
                 clave: 'entregas_bajo', tipo: 'entregas_bajo', severidad: 'importante', para: 'master', uids: masters,
@@ -400,12 +458,20 @@ function evaluar(d) {
                 cuerpo: `Del ${fmtDia(Date.parse(`${desde}T12:00:00Z`) + TZ)} al ${fmtDia(Date.parse(`${hasta}T12:00:00Z`) + TZ)} se facturaron ${facturado} uds a PDV de ruta y se confirmaron ${confirmado} en las visitas.`,
                 causa: 'Entregas hechas fuera de visita o no confirmadas en el reporte.', accion: 'Pedir que confirmen cada factura en la visita.',
                 desde: Date.parse(`${desde}T12:00:00Z`) + TZ, entrega: 'inmediato', datos: { facturado, confirmado },
+                detalle: [seccion('Facturas a PDV de ruta', facts.slice().sort((a, b) => num(confirmadoPor[a.numero]) / num(a.unidades) - num(confirmadoPor[b.numero]) / num(b.unidades))
+                    .map(f => {
+                        const c = num(confirmadoPor[f.numero]);
+                        return fila(`${f.numero} · ${(posById[rutaCarnets[f.zohoCustomerId]] || {}).name || f.clienteName || ''}`,
+                            `factura ${diaTxt(diaFactura(f.fecha))} · confirmadas en visita ${c} de ${num(f.unidades)}`,
+                            `${num(f.unidades) ? Math.round(c / num(f.unidades) * 100) : 0} %`, c >= num(f.unidades) ? 'verde' : c ? 'ambar' : 'rojo');
+                    }), 'Solo facturas de PDV con carnet propio, entre 2 y 10 días atrás.')],
             });
         }
         // Intervalos negativos con el formulario nuevo.
         const porPos = {};
         reportes.forEach(r => { if (r.posId) (porPos[r.posId] = porPos[r.posId] || []).push(r); });
         let total = 0, negativos = 0;
+        const listaNeg = [];
         Object.values(porPos).forEach(l => {
             l.sort((a, b) => a.t - b.t);
             for (let i = 1; i < l.length; i++) {
@@ -414,7 +480,12 @@ function evaluar(d) {
                 const ret = a.retiroVisita ? num(a.retiroVisita.unidades) - num(a.retiroVisita.repuestas) : 0;
                 const venta = num(a.inventoryLevel) + num(a.orderQuantity) - ret - num(b.inventoryLevel);
                 total++;
-                if (venta < 0) negativos++;
+                if (venta < 0) {
+                    negativos++;
+                    listaNeg.push(fila((posById[b.posId] || {}).name || b.posName || b.posId,
+                        `${diaTxt(diaCaracas(a.t))} → ${diaTxt(diaCaracas(b.t))} · había ${num(a.inventoryLevel)} + entró ${num(a.orderQuantity)}${ret ? ` − retiró ${ret}` : ''} → contó ${num(b.inventoryLevel)}`,
+                        `${venta} uds`, 'rojo'));
+                }
             }
         });
         if (total >= cfg.minIntervalosNegativos && negativos / total > cfg.umbralNegativos) {
@@ -424,6 +495,8 @@ function evaluar(d) {
                 cuerpo: `${negativos} de ${total} intervalos de visitas de los últimos 30 días dan venta negativa con el formulario nuevo.`,
                 causa: 'Entregas no anotadas o conteos hechos después de reponer.', accion: 'Revisar con el mercaderista cómo cuenta y anota las entregas.',
                 desde: ahora - 30 * DIA, entrega: 'inmediato', datos: { negativos, total },
+                detalle: [seccion('Intervalos con venta negativa', listaNeg,
+                    'Venta = lo que había + lo que entró − lo retirado − lo que se contó en la visita siguiente.')],
             });
         }
     }
@@ -443,6 +516,11 @@ function evaluar(d) {
                 titulo: `Errores después de la actualización (${deEsa.length} en ${disp} teléfonos)`,
                 cuerpo: `El más común: "${comun}".`, causa: 'Fallo introducido en la última versión.', accion: 'Avisar para corregir la versión.',
                 desde: Math.min(...deEsa.map(e => toMs(e.t))), entrega: 'inmediato', datos: { version: ultimaVersion },
+                detalle: [
+                    seccion('Errores más comunes', Object.entries(cuenta).sort((a, b) => b[1] - a[1]).map(([m, n]) => fila(m || 'sin mensaje', null, `${n} vez${n !== 1 ? 'es' : ''}`))),
+                    seccion('Teléfonos afectados', [...new Set(deEsa.map(e => e.deviceId || e.uid))].map(x => fila(x, `${deEsa.filter(e => (e.deviceId || e.uid) === x).length} errores`))),
+                    seccion('Versión', [fila(ultimaVersion, `${deEsa.length} errores en 24 h`)]),
+                ],
             });
         }
     }
@@ -450,7 +528,7 @@ function evaluar(d) {
     // ── D. Comisiones: que lo que se le paga al vendedor se esté calculando bien ──
     if (g.pesado && d.comisiones) {
         const { evaluarComisiones } = require('./vigilanteComisiones');
-        problemas.push(...evaluarComisiones({ ...d.comisiones, vendedores: supervisores, masters, ahoraMs: ahora, appConfig: d.appConfig || {} }, cfg));
+        problemas.push(...evaluarComisiones({ ...d.comisiones, vendedores: supervisores, masters, administradores: d.administradores || [], ahoraMs: ahora, appConfig: d.appConfig || {} }, cfg));
     }
 
     // Cada problema declara su grupo: solo se cierra un aviso si su grupo se evaluó.

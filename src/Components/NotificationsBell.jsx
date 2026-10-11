@@ -10,7 +10,8 @@
 // El contador rojo solo cuenta las NO leídas.
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell, Check, Trash2, ChevronDown } from 'lucide-react';
+import { Bell, Check, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import AvisoDetalleSheet from '@/Components/AvisoDetalleSheet.jsx';
 
 const fmtRel = (d) => {
     if (!d) return '';
@@ -25,9 +26,12 @@ const fmtRel = (d) => {
 
 export default function NotificationsBell({
     notifications = [], unreadCount = 0, onMarkRead, onMarkAllRead, onDelete, onOpenLink, pie = null,
+    uid = null, oscuro = false,
 }) {
     const [abierto, setAbierto] = useState(false);
     const [expandida, setExpandida] = useState(null);
+    // Aviso del vigilante abierto en su hoja completa (n.aviso trae el documento).
+    const [avisoAbierto, setAvisoAbierto] = useState(null);
     const ref = useRef(null);
 
     // Cerrar al tocar fuera.
@@ -43,6 +47,12 @@ export default function NotificationsBell({
     }, [abierto]);
 
     const abrirNotif = (n) => {
+        if (n.aviso) {                             // aviso del vigilante → toda su información
+            setAvisoAbierto(n.aviso);
+            setAbierto(false);
+            if (!n.read) onMarkRead?.(n.id);
+            return;
+        }
         setExpandida(prev => (prev === n.id ? null : n.id));
         if (!n.read) onMarkRead?.(n.id);          // verla = marcarla leída
     };
@@ -52,7 +62,7 @@ export default function NotificationsBell({
             <button
                 onClick={() => setAbierto(a => !a)}
                 aria-label="Notificaciones"
-                className="relative w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100 transition-colors"
+                className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${oscuro ? 'text-white/90 bg-white/10 hover:bg-white/15' : 'text-slate-500 hover:bg-slate-100'}`}
             >
                 <Bell size={20} />
                 {unreadCount > 0 && (
@@ -62,6 +72,9 @@ export default function NotificationsBell({
                 )}
             </button>
 
+            {avisoAbierto && (
+                <AvisoDetalleSheet aviso={avisoAbierto} uid={uid} onClose={() => setAvisoAbierto(null)} />
+            )}
             {abierto && (
                 <div className="absolute right-0 mt-2 w-[min(92vw,380px)] max-h-[70vh] flex flex-col bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
@@ -94,14 +107,17 @@ export default function NotificationsBell({
                                             <p className={`text-sm leading-snug ${n.read ? 'font-semibold text-slate-600' : 'font-bold text-slate-800'}`}>
                                                 {n.title}
                                             </p>
-                                            {/* Vista previa: 2 líneas si está cerrada, completa al abrirla */}
+                                            {/* Vista previa: 2 líneas si está cerrada, completa al abrirla.
+                                                Un aviso del vigilante abre su hoja con toda la información. */}
                                             <p className={`text-xs text-slate-500 leading-snug mt-0.5 ${abiertaEsta ? '' : 'line-clamp-2'}`}>
                                                 {n.body}
                                             </p>
                                             <p className="text-[11px] text-slate-400 mt-1">{fmtRel(fecha)}</p>
                                         </div>
-                                        <ChevronDown size={15}
-                                            className={`shrink-0 text-slate-300 transition-transform ${abiertaEsta ? 'rotate-180' : ''}`} />
+                                        {n.aviso
+                                            ? <ChevronRight size={15} className="shrink-0 text-slate-300" />
+                                            : <ChevronDown size={15}
+                                                className={`shrink-0 text-slate-300 transition-transform ${abiertaEsta ? 'rotate-180' : ''}`} />}
                                     </button>
 
                                     {abiertaEsta && (

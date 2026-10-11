@@ -68,7 +68,7 @@ async function leerDatos(g, ahoraMs, estado) {
     const f = db();
     const lecturas = {
         appConfig: f.doc('settings/appConfig').get().then(s => s.data() || {}),
-        usuarios: f.collection('users_metadata').where('role', 'in', ['master', 'vendedor']).get().then(docs),
+        usuarios: f.collection('users_metadata').where('role', 'in', ['master', 'vendedor', 'administrador']).get().then(docs),
         dispositivos: f.collection('dispositivos').get().then(docs).catch(() => []),
         errores: f.collection('errores_app').where('t', '>=', ts(ahoraMs - DIA)).get().then(docs).catch(() => []),
     };
@@ -100,6 +100,10 @@ async function leerDatos(g, ahoraMs, estado) {
         ...d,
         comisiones,
         masters: activos.filter(u => u.role === 'master').map(u => u.id),
+        // Administración recibe los avisos de comisiones si tiene alguno de sus
+        // módulos de pago encendido (los mismos interruptores de su pantalla).
+        administradores: activos.filter(u => u.role === 'administrador' && ['dashboard', 'conciliacion', 'liquidaciones']
+            .some(m => (u.modulos || {})[m] !== false)).map(u => u.id),
         supervisores: activos.filter(u => u.role === 'vendedor').map(u => ({ ...u, uid: u.id, nombre: u.name || u.email })),
         laborables: estado.laborables || {},
     };
@@ -185,7 +189,7 @@ async function ejecutarVigilante({ ahoraMs = Date.now(), enviarPush = enviarPush
             clave: p.clave, tipo: p.tipo, severidad: p.severidad, grupo: p.grupo, dia: p.dia || null,
             para: p.para, titulo: p.titulo, cuerpo: p.cuerpo, causa: p.causa || null, accion: p.accion || null,
             entrega: p.entrega, sistema: !!p.sistema, renotificarDias: p.renotificarDias || 1,
-            destinatarios, destinatariosAbiertos: destinatarios, datos: p.datos || {},
+            destinatarios, destinatariosAbiertos: destinatarios, datos: p.datos || {}, detalle: p.detalle || [],
             ultimaVez: ts(ahoraMs),
         };
         if (abiertos[id]) {
@@ -278,7 +282,7 @@ async function resumenSemanal(d, ctx, abiertos, ahoraMs, hoy, enviarPush) {
     const ruidoPorTipo = {};
     bit.filter(b => b.evento === 'cerrado' && b.ruido).forEach(b => { ruidoPorTipo[b.tipo] = (ruidoPorTipo[b.tipo] || 0) + 1; });
     const ruido = Object.entries(ruidoPorTipo).map(([tipo, n]) => ({ tipo, ruido: n })).sort((a, b) => b.ruido - a.ruido);
-    d.abiertosSistema = Object.values(abiertos).filter(a => a.para === 'master').length;
+    d.abiertosSistema = Object.values(abiertos).filter(a => a.para === 'master' && !String(a.tipo || '').startsWith('comision_')).length;
     const lineas = R.resumenSemanalMaster(d, ctx, ruido);
     const out = { master: lineas, supervisores: {} };
 
@@ -346,6 +350,11 @@ async function revisarLatidoVigilante({ ahoraMs = Date.now(), enviarPush = envia
         titulo: 'El vigilante dejó de correr', cuerpo: `No revisa la app desde hace ${Math.round(horas)} h (último latido ${R.fmtDia(lat)}).`,
         causa: 'El barrido programado se detuvo.', accion: 'Revisar las funciones programadas.', entrega: 'inmediato', sistema: true,
         destinatarios: masters, destinatariosAbiertos: masters, abierto: true,
+        detalle: [{ titulo: 'El vigilante', nota: 'Lo revisa otro programador independiente cada 30 minutos.', total: 3, filas: [
+            { t: 'Último latido', s: null, v: R.fmtDia(lat), tono: 'rojo' },
+            { t: 'Horas sin correr', s: `se avisa pasadas ${HORAS_LATIDO_MUERTO} h`, v: `${Math.round(horas)} h`, tono: 'rojo' },
+            { t: 'Dónde corre', s: 'al inicio del barrido de Zoho (conciliarZohoAutomatico)', v: null, tono: null },
+        ] }],
         abiertoAt: prev?.abierto ? prev.abiertoAt : ts(ahoraMs), desde: ts(lat), ultimaVez: ts(ahoraMs),
     };
     await ref.set(prev?.abierto ? aviso : { ...aviso, vistoPor: {}, recibidoPor: {} }, { merge: true });

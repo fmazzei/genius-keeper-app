@@ -17,6 +17,7 @@
 // dinero (nunca al vendedor).
 
 const M = require('./generado/vendedorMeta.cjs');
+const { fila, seccion, diaTxt } = require('./avisoDetalle');
 
 const DIA = 86400000;
 const TZ = 4 * 3600000;   // Venezuela, UTC−4
@@ -58,6 +59,33 @@ const relojCierre = (c) => {
 
 const cuentaEnCartera = (f) => !!f && f.estado !== 'anulada' && f.ausenteEnZoho !== true && f.estado !== 'borrador' && f.esReposicion !== true;
 
+// Una factura como fila del detalle: quién, número y fechas, y su monto.
+const cliente = (f) => f.clienteName || f.customerName || f.zohoCustomerId || 'Cliente sin nombre';
+const filaFactura = (f, extra, tono) => fila(`${f.numero || 's/n'} · ${cliente(f)}`,
+    [`factura ${diaTxt(diaCal(f.fecha))}`, f.estado === 'pagada' ? `cobrada ${diaTxt(diaCal(f.fechaPago))}` : f.estado, extra].filter(Boolean).join(' · '),
+    usd(f.monto), tono);
+const MOTIVO_CONFLICTO = {
+    asignado_a_otro: 'asignado a mano a otro vendedor',
+    marcado_oficina: 'marcado Oficina',
+    varias_carteras: 'está en la cartera de dos vendedores',
+};
+
+// Resumen de un mes de empleo, con las MISMAS cifras del estado de cuenta.
+const filasMes = (e) => [
+    fila('Período', null, `Mes ${e.mes} · ${e.rango}`),
+    fila('Facturado (define el nivel)', `meta ${num(e.metaMensual).toLocaleString('es-VE')} uds`, `${num(e.unidades).toLocaleString('es-VE')} uds · ${e.nivel} ${num(e.tasa)} %`),
+    fila('Cobrado en el mes', null, usd(e.cobrado)),
+    e.comisionNivelMonto != null ? fila('Comisión por nivel', null, usd(e.comisionNivelMonto)) : null,
+    num(e.bonoCobranzaMonto) ? fila('Bono cobranza', null, usd(e.bonoCobranzaMonto)) : null,
+    num(e.bonoActivacionMonto) ? fila('Bono activación', `${num(e.actSemanasLogradas)} de ${num(e.actSemanasTotales)} semanas`, usd(e.bonoActivacionMonto)) : null,
+    num(e.cobradoRecup) ? fila('Cuentas recuperadas', `cobrado ${usd(e.cobradoRecup)} al ${num(e.tasaRecup)} %`, usd(num(e.cobradoRecup) * num(e.tasaRecup) / 100)) : null,
+    num(e.comisionFoodMonto) ? fila('Foodservice', `cobrado ${usd(e.cobradoFood)}`, usd(e.comisionFoodMonto)) : null,
+    num(e.base) ? fila('Base (sueldo + viáticos)', null, usd(e.base)) : null,
+    fila('Devengado', e.congelado ? 'congelado' : 'calculado hoy', usd(e.devengadoTotal)),
+    fila('Pagado', null, usd(e.pagado)),
+    fila('Saldo', num(e.saldo) < 0 ? 'pagado de más' : null, usd(e.saldo), num(e.saldo) < -0.5 ? 'rojo' : null),
+];
+
 const lista = (xs, n = 4) => xs.slice(0, n).join(', ') + (xs.length > n ? ` y ${xs.length - n} más` : '');
 
 /**
@@ -68,13 +96,14 @@ const lista = (xs, n = 4) => xs.slice(0, n).join(', ') + (xs.length > n ? ` y ${
  *   carteras    vendor_clients
  *   liquidaciones, cerradas (comisiones_cerradas)
  *   appConfig   settings/appConfig (zohoCarteraCarnets)
- *   masters     uids
+ *   masters, administradores   uids (los dos reciben; el vendedor nunca)
  *   ahoraMs, config
  */
 function evaluarComisiones(d, cfg) {
     const ahora = d.ahoraMs;
     const hoy = diaCaracas(ahora);
-    const masters = d.masters || [];
+    // Máster + administración (quien concilia y paga las comisiones). Nunca el vendedor.
+    const masters = [...new Set([...(d.masters || []), ...(d.administradores || [])])];
     const problemas = [];
     const tol = num(cfg.toleranciaComisionUsd) || 1;
     const facturas = d.facturas || [];
@@ -100,6 +129,8 @@ function evaluarComisiones(d, cfg) {
         causa: 'Entró por dos vías (webhook y barrido) con documentos distintos.',
         accion: 'Abrir Gestión de facturas Zoho y eliminar la copia.',
         datos: { numeros: dup.slice(0, 30).map(([n, l]) => ({ numero: n, ids: l.map(x => x.id) })) },
+        detalle: [seccion('Facturas repetidas', dup.flatMap(([n, l]) => l.map((f, i) => fila(`${n} · ${cliente(f)}`,
+            `documento ${f.id}${i === 0 ? '' : ' (copia)'} · ${f.estado || '—'} · ${nombreV[f.vendedorId] || 'sin vendedor'}`, usd(f.monto), i ? 'ambar' : null))))],
     });
 
     // 1b. Cobrada sin vendedor: nadie cobra esa comisión. Solo las cobradas desde que
@@ -119,6 +150,14 @@ function evaluarComisiones(d, cfg) {
             causa: 'Cliente de Zoho sin asignar y sin PDV en ninguna cartera.',
             accion: 'En Clientes y PDV, asignar el cliente a su vendedor o marcarlo Oficina.',
             datos: { facturas: sinVend.length, monto: Math.round(monto * 100) / 100, clientes: clientesSin.slice(0, 20) },
+            detalle: [
+                seccion('Por cliente', clientesSin.map(c => {
+                    const l = sinVend.filter(f => cliente(f) === c);
+                    return fila(c, `${l.length} factura${l.length !== 1 ? 's' : ''} cobrada${l.length !== 1 ? 's' : ''}${l[0]?.zohoCustomerId ? ` · carnet ${l[0].zohoCustomerId}` : ''}`, usd(l.reduce((x, f) => x + num(f.monto), 0)));
+                })),
+                seccion('Facturas', [...sinVend].sort((a, b) => cliente(a).localeCompare(cliente(b))).map(f => filaFactura(f)),
+                    `Cuentan las cobradas desde el ${diaTxt(desdeSinVend)}, ingreso del primer vendedor.`),
+            ],
         });
     }
 
@@ -137,6 +176,10 @@ function evaluarComisiones(d, cfg) {
         causa: 'Se cambió el dueño del cliente y sus facturas no se movieron.',
         accion: 'En Clientes y PDV, volver a guardar el vendedor de ese cliente (mueve sus facturas).',
         datos: { numeros: desalineadas.slice(0, 30).map(f => f.numero) },
+        detalle: [seccion('Facturas', desalineadas.map(f => {
+            const c = clientes[String(f.zohoCustomerId)];
+            return filaFactura(f, `hoy: ${nombreV[f.vendedorId] || 'sin vendedor'} → dueño: ${c.esOficina ? 'Oficina' : (nombreV[c.vendedorId] || c.vendedorName || 'otro vendedor')}`, 'ambar');
+        }))],
     });
 
     // 1d. Conflictos que el barrido NO resolvió solo (la cartera dice una cosa y el carnet otra).
@@ -152,6 +195,17 @@ function evaluarComisiones(d, cfg) {
             causa: 'La cartera del vendedor y la asignación del cliente en Zoho no coinciden.',
             accion: 'Revisar el desplegable ámbar de Clientes y PDV.',
             datos: { conflictos: conflictos.length, sueltos: sueltos.length },
+            detalle: [
+                seccion('En desacuerdo', conflictos.map(c => fila(c.nombre || c.customerId,
+                    [MOTIVO_CONFLICTO[c.motivo] || c.motivo,
+                        c.vendedorCartera ? `su cartera es de ${nombreV[c.vendedorCartera] || c.vendedorCartera}` : null,
+                        c.vendedorCarnet ? `el carnet dice ${nombreV[c.vendedorCarnet] || c.vendedorCarnet}` : null,
+                        Array.isArray(c.vendedores) ? `carteras: ${c.vendedores.map(x => nombreV[x] || x).join(' y ')}` : null,
+                        Array.isArray(c.pdvs) && c.pdvs.length ? `PDV: ${c.pdvs.slice(0, 3).join(', ')}` : null].filter(Boolean).join(' · '),
+                    null, 'ambar'))),
+                ...(sueltos.length ? [seccion('Heredados por cartera que ya no están en ninguna', sueltos.map(x => fila(x.nombre || x.customerId,
+                    `sigue a nombre de ${nombreV[x.vendedorId] || x.vendedorId}`)), 'No se sueltan solos: soltarlos le quitaría comisiones ya ganadas.')] : []),
+            ],
         });
     }
 
@@ -178,6 +232,7 @@ function evaluarComisiones(d, cfg) {
                 cuerpo: `Tiene ${suyasActivas.length} facturas, pero sin fecha de ingreso no se puede calcular su mes de empleo ni su estado de cuenta.`,
                 causa: 'Falta el dato en su ficha.', accion: 'Editar el vendedor y poner su fecha de ingreso.',
                 datos: { vendedorId: v.uid },
+                detalle: [seccion('Sus facturas', suyasActivas.map(f => filaFactura(f)))],
             });
             return;
         }
@@ -195,6 +250,10 @@ function evaluarComisiones(d, cfg) {
             causa: 'Zoho no entregó la fecha del pago o se cargó mal.',
             accion: 'Conciliar con Zoho; si sigue, corregir la fecha en Gestión de facturas.',
             datos: { vendedorId: v.uid, sinFechaPago: sinFechaPago.map(f => f.numero).slice(0, 20), pagoAntes: pagoAntes.map(f => f.numero).slice(0, 20) },
+            detalle: [
+                ...(sinFechaPago.length ? [seccion('Pagadas sin fecha de pago', sinFechaPago.map(f => filaFactura(f, null, 'ambar')))] : []),
+                ...(pagoAntes.length ? [seccion('Pago anterior a la factura', pagoAntes.map(f => filaFactura(f, null, 'rojo')))] : []),
+            ],
         });
 
         // 2c. Cuenta recuperada mal marcada (p. ej. se corrigió la fecha de ingreso):
@@ -211,6 +270,9 @@ function evaluarComisiones(d, cfg) {
             causa: 'Se cambió la fecha de ingreso después de que llegaron las facturas.',
             accion: 'En Clientes y PDV, volver a guardar el vendedor de esos clientes (recalcula sus facturas).',
             datos: { vendedorId: v.uid, numeros: malRecup.map(f => f.numero).slice(0, 30) },
+            detalle: [seccion('Facturas', malRecup.map(f => filaFactura(f,
+                f.recuperada ? 'marcada recuperada, es posterior al ingreso' : 'marcada normal, es previa al ingreso', 'ambar')),
+                `Ingreso del vendedor: ${diaTxt(ingreso)}. Recuperada = factura anterior a esa fecha (5 % flat, no cuenta a la meta).`)],
         });
 
         // 2d. Kilos contados como unidades: el importe por unidad no puede ser el de un kilo.
@@ -224,6 +286,9 @@ function evaluarComisiones(d, cfg) {
             causa: 'Factura en kg que no se convirtió a unidades de venta.',
             accion: 'Gestión de facturas Zoho → "Recalcular unidades".',
             datos: { vendedorId: v.uid, numeros: kg.map(f => f.numero).slice(0, 30) },
+            detalle: [seccion('Facturas', kg.map(f => filaFactura(f,
+                `${num(f.unidades)} uds → ${usd(num(f.monto) / num(f.unidades))} por unidad`, 'ambar')),
+                `Precio de lista más alto: ${usd(precioMax(v))}; se sospecha por encima de ${usd(tope)} por unidad.`)],
         });
 
         // 2e. Meses: lo mismo que ve administración, con el motor de la app.
@@ -247,6 +312,10 @@ function evaluarComisiones(d, cfg) {
             causa: 'Se cambió la fecha de ingreso después de registrar el pago.',
             accion: 'En Liquidaciones, borrar ese pago y registrarlo contra el mes correcto.',
             datos: { vendedorId: v.uid, ids: huerfanas.map(l => l.id).slice(0, 20) },
+            detalle: [
+                seccion('Pagos', huerfanas.map(l => fila(usd(l.monto), [`registrado el ${l.fecha || '—'}`, `contra el mes que empieza ${l.periodKey ? diaTxt(l.periodKey) : '(sin mes)'}`, l.nota].filter(Boolean).join(' · '), null, 'rojo'))),
+                seccion('Meses que sí existen', estados.slice().reverse().map(e => fila(`Mes ${e.mes}`, e.rango, `empieza ${diaTxt(e.periodKey)}`))),
+            ],
         });
 
         const cerradosRows = estados.filter(e => e.cerrado);
@@ -259,6 +328,11 @@ function evaluarComisiones(d, cfg) {
             causa: 'Un cobro que pertenece a un mes posterior se pagó con un mes anterior.',
             accion: 'Al pagar el mes en curso, usar "Pagar descontando lo adelantado".',
             datos: { vendedorId: v.uid, neto: Math.round(neto * 100) / 100 },
+            detalle: [
+                seccion('Meses cerrados', cerradosRows.slice().reverse().map(e => fila(`Mes ${e.mes} · ${e.rango}`,
+                    `devengado ${usd(e.devengadoTotal)} · pagado ${usd(e.pagado)}${e.congelado ? ' · congelado' : ''}`, usd(e.saldo), num(e.saldo) < -tol ? 'rojo' : num(e.saldo) > tol ? 'ambar' : null))),
+                seccion('Neto', [fila('Lo pagado de más', 'se descuenta al pagar el mes en curso', usd(-neto), 'rojo')]),
+            ],
         });
 
         // Mes cerrado hace días y sin congelar: su cifra todavía se puede mover.
@@ -273,6 +347,7 @@ function evaluarComisiones(d, cfg) {
                 cuerpo: `Devengado hoy ${usd(e.devengadoTotal)}, pagado ${usd(e.pagado)}. Mientras no se congele, una corrección de facturas de ese mes cambia la cifra.`,
                 causa: 'Falta el paso "Cerrar y congelar".', accion: 'Liquidaciones → revisar el comprobante → "Cerrar y congelar".',
                 datos: { vendedorId: v.uid, periodKey: e.periodKey, dias },
+                detalle: [seccion(`Mes ${e.mes} hoy`, filasMes(e), `Cerró el ${diaTxt(fin)}.`)],
             });
         });
 
@@ -281,18 +356,38 @@ function evaluarComisiones(d, cfg) {
         cerradosRows.filter(e => e.congelado && cerrados[e.periodKey]?.modelo === 'cobro').forEach(e => {
             const fr = cerrados[e.periodKey];
             const vivo = { ...cerrados, [e.periodKey]: { modelo: 'cobro', cobrosIncluidos: fr.cobrosIncluidos || [], congeladoEn: fr.congeladoEn, periodKey: e.periodKey } };
-            let fila;
-            try { fila = M.computeEstadosDeCuenta(meta, insumo, liqs, { ...opts, cerrados: vivo }).find(x => x.periodKey === e.periodKey); } catch { fila = null; }
-            if (!fila) return;
-            const delta = num(fila.devengadoComision) - num(fr.devengadoComision);
+            let hoyMes;
+            try { hoyMes = M.computeEstadosDeCuenta(meta, insumo, liqs, { ...opts, cerrados: vivo }).find(x => x.periodKey === e.periodKey); } catch { hoyMes = null; }
+            if (!hoyMes) return;
+            const delta = num(hoyMes.devengadoComision) - num(fr.devengadoComision);
+            // Las facturas que entraron en el cierre y hoy ya no están igual.
+            const porNum = {};
+            suyas.concat(facturas.filter(f => f.vendedorId !== v.uid)).forEach(f => { if (f.numero && !porNum[f.numero]) porNum[f.numero] = f; });
+            const cambiadas = (fr.cobrosIncluidos || []).map(n => {
+                const f = porNum[n];
+                if (!f) return fila(n, 'ya no existe en GK', null, 'rojo');
+                if (!cuentaEnCartera(f)) return filaFactura(f, 'hoy fuera de la cartera (anulada, borrador o ausente en Zoho)', 'rojo');
+                if (f.estado !== 'pagada') return filaFactura(f, 'ya no figura como cobrada', 'rojo');
+                if (f.vendedorId !== v.uid) return filaFactura(f, `hoy es de ${nombreV[f.vendedorId] || 'otro vendedor o de nadie'}`, 'rojo');
+                return null;
+            }).filter(Boolean);
             if (Math.abs(delta) <= tol) return;
             add({
                 clave: `comision_congelado_difiere:${v.uid}:${e.periodKey}`, tipo: 'comision_congelado_difiere',
                 titulo: `${nombre}: el Mes ${e.mes} congelado ya no cuadra (${delta > 0 ? '+' : ''}${usd(delta)})`,
-                cuerpo: `Se congeló en ${usd(fr.devengadoComision)} de comisión y con las facturas de hoy daría ${usd(fila.devengadoComision)}.`,
+                cuerpo: `Se congeló en ${usd(fr.devengadoComision)} de comisión y con las facturas de hoy daría ${usd(hoyMes.devengadoComision)}.`,
                 causa: 'Después del cierre se anuló, editó o reasignó una factura de ese mes.',
                 accion: 'Revisar el comprobante; si la corrección es buena, reabrir y volver a congelar.',
-                datos: { vendedorId: v.uid, periodKey: e.periodKey, congelado: num(fr.devengadoComision), hoy: num(fila.devengadoComision) },
+                datos: { vendedorId: v.uid, periodKey: e.periodKey, congelado: num(fr.devengadoComision), hoy: num(hoyMes.devengadoComision) },
+                detalle: [
+                    seccion('Comisión del mes', [
+                        fila('Congelada', `el ${fr.congeladoEn instanceof Date ? fr.congeladoEn.toISOString().slice(0, 10).split('-').reverse().join('/') : '—'}`, usd(fr.devengadoComision)),
+                        fila('Con las facturas de hoy', null, usd(hoyMes.devengadoComision)),
+                        fila('Diferencia', null, `${delta > 0 ? '+' : ''}${usd(delta)}`, 'rojo'),
+                    ]),
+                    seccion('Facturas del cierre que cambiaron', cambiadas,
+                        cambiadas.length ? null : 'Ninguna factura cobrada del cierre cambió: la diferencia viene de la facturación del mes (una factura del mes anulada o editada cambió el nivel).'),
+                ],
             });
         });
     });

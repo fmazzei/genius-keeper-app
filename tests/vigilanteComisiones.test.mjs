@@ -87,12 +87,21 @@ ok(!!t('comision_pagado_de_mas', 'CARO'), 'detecta el pago de más sin compensar
 ok(!!t('comision_sin_congelar', 'CARO:2026-08-19'), 'avisa el Mes 1 cerrado hace más de 10 días sin congelar');
 ok(!!t('comision_sin_ingreso', 'SINF') === false, 'un vendedor sin fecha y sin facturas no genera aviso');
 ok(p.every(x => x.para === 'master' && x.uids.join() === 'FRAN'), 'todos los avisos de comisiones van solo al máster');
+ok(p.every(x => Array.isArray(x.detalle) && x.detalle.length && x.detalle.every(sec => sec.titulo && Array.isArray(sec.filas))),
+    'cada aviso trae su detalle completo (secciones con filas) para desplegarlo al tocarlo');
+const pDup = t('comision_duplicadas');
+ok(pDup.detalle[0].filas.length === 2 && /copia/.test(pDup.detalle[0].filas[1].s), 'el detalle de las repetidas lista los dos documentos y marca la copia');
+const pMes = t('comision_sin_congelar', 'CARO:2026-08-19');
+ok(pMes.detalle[0].filas.some(f => f.t === 'Devengado') && pMes.detalle[0].filas.some(f => f.t === 'Saldo'), 'el mes sin congelar muestra devengado, pagado y saldo, como el estado de cuenta');
+const pAdm = evaluarComisiones({ ...datos, administradores: ['MJ'] }, cfg);
+ok(pAdm.every(x => x.uids.includes('FRAN') && x.uids.includes('MJ') && !x.uids.includes('CARO')), 'también le llegan a administración (María José); nunca al vendedor');
 ok(p.every(x => R.GRUPO_DE_TIPO[x.tipo] === 'pesado'), 'todos son del grupo diario (se cierran solos cuando se corrigen)');
 
 // ── Mes congelado que después deja de cuadrar: se anuló una factura incluida ──
 const factCambiadas = factLimpias.map(f => (f.numero === 'L1' ? { ...f, estado: 'anulada' } : f));
 const p2 = evaluarComisiones({ ...datos, vendedores: [LIMPIO], facturas: factCambiadas, liquidaciones: [liqLimpia], appConfig: {} }, cfg);
 const dif = p2.find(x => x.tipo === 'comision_congelado_difiere');
+ok(dif?.detalle[1].filas.some(f => /^L1/.test(f.t) && /fuera de la cartera/.test(f.s)), 'el detalle del congelado nombra la factura del cierre que se anuló');
 ok(dif && dif.datos.hoy < dif.datos.congelado, `el Mes 1 congelado que ya no cuadra se avisa (congelado $${dif?.datos.congelado.toFixed(2)} → hoy $${dif?.datos.hoy.toFixed(2)})`);
 
 // ── Un cobro que Zoho registró DESPUÉS del cierre no rompe el congelado (pasa al mes siguiente) ──

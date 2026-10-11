@@ -13,8 +13,9 @@ import {
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
     ClipboardList, Receipt, Store, Warehouse, X, RefreshCw, FilePlus,
-    Zap, ChevronLeft, Wallet, Download, Award,
+    Zap, ChevronLeft, ChevronRight, Wallet, Download, Award,
 } from 'lucide-react';
+import AvisoDetalleSheet from '@/Components/AvisoDetalleSheet.jsx';
 import EstadoCuentaDoc from '@/Components/EstadoCuentaDoc.jsx';
 import PosList from '@/Pages/PosList.jsx';
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
@@ -946,7 +947,21 @@ function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClos
     );
 }
 
-function AlertasView({ alertas, loadingAlertas, onDelete, uid }) {
+function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], onMarcarVisto }) {
+    // Tocar una alerta abre TODA su información. Los avisos del vigilante traen su
+    // detalle completo; las demás alertas muestran su texto entero.
+    const [abierta, setAbierta] = useState(null);
+    const abrir = (alert) => {
+        const vig = String(alert.id).startsWith('vig:') ? avisosVig.find(a => `vig:${a.id}` === alert.id) : null;
+        setAbierta(vig || {
+            simple: true, titulo: alert.title, cuerpo: alert.body, abiertoAt: alert.createdAt,
+            severidad: alert.alertType === 'facturas_venciendo' ? 'critico' : alert.alertType === 'despacho_en_transito' || alert.alertType === 'picking' ? 'informativo' : 'importante',
+        });
+    };
+    const hoja = abierta && (
+        <AvisoDetalleSheet aviso={abierta} uid={uid} oscuro onClose={() => setAbierta(null)}
+            onMarcarVisto={abierta.simple ? null : onMarcarVisto} />
+    );
     if (loadingAlertas) {
         return (
             <div className="flex-1 flex items-center justify-center">
@@ -969,6 +984,7 @@ function AlertasView({ alertas, loadingAlertas, onDelete, uid }) {
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-3">
             {uid && <ActivarAvisos uid={uid} oscuro />}
+            {hoja}
             <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest pt-2">Alertas Activas</p>
             {alertas.map((alert) => {
                 const isDanger = alert.alertType === 'facturas_venciendo' || alert.alertType === 'vig_critico';
@@ -994,11 +1010,12 @@ function AlertasView({ alertas, loadingAlertas, onDelete, uid }) {
                         key={alert.id}
                         className={`rounded-xl p-4 border flex items-start gap-3 ${cardClass}`}
                     >
-                        <div className="flex-1 min-w-0">
+                        <button type="button" onClick={() => abrir(alert)} className="flex-1 min-w-0 text-left">
                             <p className={`font-bold text-sm ${titleClass}`}>{alert.title}</p>
                             {isVig && <p className="text-[11px] text-slate-500 mt-0.5">Vigilante · {alert.alertType === 'vig_critico' ? 'urgente' : alert.alertType === 'vig_info' ? 'informativo' : 'importante'}</p>}
-                            <p className="text-slate-400 text-sm mt-1">{alert.body}</p>
-                        </div>
+                            <p className="text-slate-400 text-sm mt-1 line-clamp-3">{alert.body}</p>
+                            <p className="text-[11px] font-bold text-slate-300 mt-1.5 flex items-center gap-1">Ver todo <ChevronRight size={12} /></p>
+                        </button>
                         <button
                             onClick={() => onDelete(alert.id)}
                             className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-red-400 active:scale-90 transition-all"
@@ -1791,6 +1808,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                     loadingAlertas={loadingAlertas}
                     onDelete={deleteAlerta}
                     uid={user?.uid}
+                    avisosVig={avisosVig}
+                    onMarcarVisto={marcarVistoVig}
                 />
             );
         }

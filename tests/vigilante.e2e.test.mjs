@@ -38,6 +38,7 @@ const reporte = (id, posId, ms, extra = {}) => fs.doc(`visit_reports/${id}`).set
 });
 await Promise.all([
     fs.doc('users_metadata/FRAN').set({ role: 'master', name: 'Francisco' }),
+    fs.doc('users_metadata/MJ').set({ role: 'administrador', name: 'María José', modulos: { liquidaciones: true } }),
     fs.doc('users_metadata/CARO').set({ role: 'vendedor', name: 'Carolina Ramírez', reporterId: 'REP1', fechaIngreso: '2026-09-15', commissionConfig: { metaMensual: 2400 } }),
     fs.doc('reporters/REP1').set({ name: 'Eduardo Carrillo', active: true }),
     fs.doc('pos/P1').set({ name: 'Los Pomelos', visitInterval: 7, active: true }),
@@ -144,8 +145,9 @@ await fs.doc('facturas_vendedor/INV-9').set({
 n0 = pushes.length;
 await correr(caracas('2026-10-13', 7, 5));
 const com = await aviso('comision_fechas:CARO');
-ok(com?.abierto && com.destinatarios.join() === 'FRAN' && /sin fecha de pago/.test(com.cuerpo), `comisiones: aviso abierto solo a Francisco ("${com?.titulo}")`);
-ok(de('FRAN', n0).some(p => /Resumen del día/.test(p.titulo) && /Carolina/.test(p.cuerpo)), 'le llega en su resumen de la mañana');
+ok(com?.abierto && com.destinatarios.slice().sort().join() === 'FRAN,MJ' && /sin fecha de pago/.test(com.cuerpo), `comisiones: aviso abierto a Francisco y a administración ("${com?.titulo}")`);
+ok(de('FRAN', n0).some(p => /Resumen del día/.test(p.titulo) && /Carolina/.test(p.cuerpo)) && de('MJ', n0).some(p => /Resumen del día/.test(p.titulo)), 'les llega en su resumen de la mañana');
+ok(com.detalle?.[0]?.filas?.some(f => /INV-9/.test(f.t)), 'el aviso guarda su detalle completo: la factura con su fecha y su monto');
 ok(!de('CARO', n0).length && !(com.destinatariosAbiertos || []).includes('CARO'), 'Carolina no ve avisos de dinero');
 await fs.doc('facturas_vendedor/INV-9').set({ fechaPago: ts(Date.parse('2026-10-01T00:00:00Z')) }, { merge: true });
 await correr(caracas('2026-10-14', 7, 5));

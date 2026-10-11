@@ -58,7 +58,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     const notifVig = useMemo(() => {
         const lista = avisosVig.map(a => ({
             id: `vig:${a.id}`, title: a.titulo, body: textoAviso(a), read: !!a.vistoPor?.[user?.uid],
-            createdAt: a.abiertoAt, sintetica: true,
+            createdAt: a.abiertoAt, sintetica: true, aviso: a,
         }));
         const yaAvisado = avisosVig.some(a => a.tipo === 'vigilante_detenido');
         if (role === 'master' && latidoVig && Date.now() - latidoVig > 5 * 3600000 && !yaAvisado) {
@@ -331,6 +331,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                         onMarkAllRead={() => { notifVig.filter(n => !n.read).forEach(n => marcarVistoVig(n.id.slice(4))); avisos.marcarTodos(); markAllAsRead(); }}
                         onDelete={(id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : avisos.esAviso(id) ? avisos.eliminar(id) : deleteNotification(id))}
                         pie={<ActivarAvisos uid={user?.uid} />}
+                        uid={user?.uid}
                         onOpenLink={() => setCurrentView('alerts')}
                     />
                 </header>

@@ -24,6 +24,9 @@ import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import CarteraManager from '@/Components/CarteraManager.jsx';
 import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas } from '@/Pages/AdminPanel.jsx';
 import ListaMaestraPdv from '@/Pages/ListaMaestraPdv.jsx';
+import NotificationsBell from '@/Components/NotificationsBell.jsx';
+import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
+import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
 
 const saludoDelDia = () => {
     const h = new Date().getHours();
@@ -59,6 +62,8 @@ export default function AdministracionLayout({ user, onLogout }) {
     const { getModulesForRole } = useAppConfig();
     const uid = user?.uid || authUser?.uid;
     const [perfil, setPerfil] = useState(null); // null = cargando; {name, modulos}
+    // Avisos del vigilante sobre comisiones (administración concilia y paga).
+    const { avisos: avisosVig, marcarVisto } = useAvisosVigilante(uid);
     const [vendedores, setVendedores] = useState([]); // cargados UNA vez, compartidos
     const [active, setActive] = useState('pagar'); // pagar | clientes | cartera
     // Flujo guiado de pago: vendedor elegido + paso (conciliar → liquidar).
@@ -121,6 +126,18 @@ export default function AdministracionLayout({ user, onLogout }) {
                         <p className="text-[#FFD600] text-[11px] font-bold uppercase tracking-widest leading-tight">Administración</p>
                         <p className="text-white/50 text-[11px] leading-tight">Lacteoca · Comisiones</p>
                     </div>
+                    <NotificationsBell
+                        oscuro uid={uid}
+                        notifications={avisosVig.map(a => ({
+                            id: `vig:${a.id}`, title: a.titulo, body: textoAviso(a), read: !!a.vistoPor?.[uid],
+                            createdAt: a.abiertoAt, aviso: a,
+                        }))}
+                        unreadCount={avisosVig.filter(a => !a.vistoPor?.[uid]).length}
+                        onMarkRead={(id) => marcarVisto(id.slice(4))}
+                        onMarkAllRead={() => avisosVig.filter(a => !a.vistoPor?.[uid]).forEach(a => marcarVisto(a.id))}
+                        onDelete={(id) => marcarVisto(id.slice(4))}
+                        pie={<ActivarAvisos uid={uid} />}
+                    />
                     <BiometricEnrollButton variant="dark" labelClass="hidden lg:inline" className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white/90 text-sm font-semibold px-3 py-2 rounded-lg transition-colors" />
                     <ChangePasswordButton variant="dark" labelClass="hidden sm:inline" className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white/90 text-sm font-semibold px-3 py-2 rounded-lg transition-colors" />
                     <button onClick={onLogout} className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white/90 text-sm font-semibold px-3 py-2 rounded-lg transition-colors">
