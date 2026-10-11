@@ -1076,7 +1076,7 @@ Reclamo del dueño (captura del Estado de Cuenta de Carolina): María José cerr
 - **Cartera para la Activación:** una sola regla, `tamanoCartera`. Antes el vendedor contaba solo `estado === 'activo'` y administración contaba también los documentos sin estado, así que veían bonos distintos.
 - **Efecto en meses cerrados sin congelar:** se recalculan con la regla nueva. Lo cobrado después del fin del mes pasa al mes siguiente. Si un mes ya se liquidó con la cifra vieja, puede quedar con saldo negativo, que se compensa con el mes en curso.
 - **Prueba:** `TZ=America/Caracas node --import ./tests/alias.mjs tests/comisionesCobro.test.mjs`, 25 verificaciones en verde. `vendedorMeta.js` ahora importa `commissionDefaults.js` directo (no el `.jsx`), para poder probarlo en Node.
-- **Decisión a confirmar con el dueño:** un cobro tardío paga la tasa del mes en que se FACTURÓ, no la del mes en que se cobra.
+- **Decisión del dueño (11-oct, confirmada):** un cobro tardío paga la tasa del nivel del mes en que se FACTURÓ, no la del mes en que se cobra.
 
 ### Validación esperada — auditoría manual de Wilmer Casares (dueño, 2026-07-09)
 Referencia para verificar que la sincronización cuadre. El dueño asignó **19 facturas** que eran de Wilmer y estaban sin asignar (por eso "faltaban"). Cifras de su auditoría en Zoho:
