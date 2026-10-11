@@ -47,7 +47,7 @@ const DEFAULTS = {
     horasRuido: 2,
     diasSinSalida: 30,
     diasVencimiento: 7,
-    // D. Comisiones (solo al máster; POR VALIDAR con Francisco)
+    // D. Comisiones (máster y administración). Confirmados por Francisco el 11-oct.
     diasCongelarPeriodo: 10,          // mes cerrado sin congelar: avisar a los 10 días
     toleranciaComisionUsd: 1,         // diferencias de hasta $1 no se avisan (redondeo)
     factorUnidadesSospechosas: 1.5,   // importe por unidad > 1,5 × precio de lista ⇒ kilos sin convertir
