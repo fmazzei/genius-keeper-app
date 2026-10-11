@@ -4,7 +4,7 @@
 // estética de su app. Heatmap de rotación por posición en el estante × categoría
 // adyacente (la "ubicación dorada"), acotado a los visit_reports de su cartera.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Crown, Info, MapPin } from 'lucide-react';
 import { analizarAnaquel, fmtRot } from '@/utils/anaquelAnalisis.js';
@@ -25,11 +25,29 @@ const heatColor = (t) => {
     return `rgb(${r},${g},${b})`;
 };
 
-export default function VendedorAnaquelMap({ reports = [], onClose }) {
-    // Mismo cálculo que el mapa del Dashboard Gerencial (`anaquelAnalisis.js`):
-    // venta estimada entre visitas por PDV, no la reposición de cada visita.
+// Las mismas ventanas que el Dashboard del máster (15 / 30 / 90 días / todo),
+// filtradas igual que `useKpiCalculations` (por `createdAt`).
+const RANGOS = [['15d', '15 días'], ['30d', '30 días'], ['90d', '90 días'], ['all', 'Todo']];
+const enRango = (r, rango) => {
+    if (rango === 'all') return true;
+    if (!r.createdAt?.seconds) return false;
+    const desde = new Date();
+    desde.setDate(desde.getDate() - parseInt(rango.replace('d', ''), 10));
+    return new Date(r.createdAt.seconds * 1000) >= desde;
+};
+
+export default function VendedorAnaquelMap({ reports = [], posList = [], onClose }) {
+    // Mismo cálculo Y mismos datos que el mapa del Dashboard Gerencial
+    // (`anaquelAnalisis.js`): la VENTANA (30 días por defecto) decide qué
+    // intervalos de visitas cuentan, y el historial completo da la visita
+    // anterior de cada uno. Antes el vendedor pasaba todo su histórico como
+    // ventana y sin la lista de PDV, así que su mapa salía distinto al del
+    // máster con los mismos reportes.
+    const [rango, setRango] = useState('30d');
     const a = useMemo(() => {
-        const an = analizarAnaquel({ reports: reports || [], allReports: reports || [] });
+        const todos = reports || [];
+        const ventana = todos.filter(r => enRango(r, rango));
+        const an = analizarAnaquel({ reports: ventana, allReports: todos, posList: posList || [] });
         const locKeys = Object.keys(LOCS);
         const catKeys = Object.keys(CATS);
         const grid = {};
@@ -37,7 +55,7 @@ export default function VendedorAnaquelMap({ reports = [], onClose }) {
         const golden = an.dorada ? { loc: an.dorada.ubicacion, cat: an.dorada.categoria } : null;
         return { hasData: an.hayDatos, hasMatrix: an.muestra.conCategoria > 0, grid, max: an.maxCelda, golden, locKeys, catKeys,
             nPdv: an.muestra.pdvConVenta, nTramos: an.muestra.tramos, nValid: an.muestra.conUbicacion };
-    }, [reports]);
+    }, [reports, posList, rango]);
 
     return createPortal((
         <div className="fixed inset-0 z-[95] bg-slate-950 flex flex-col">
@@ -61,11 +79,21 @@ export default function VendedorAnaquelMap({ reports = [], onClose }) {
                     </p>
                 </div>
 
+                {/* Ventana: la misma que elige gerencia en su Dashboard */}
+                <div className="flex gap-1.5">
+                    {RANGOS.map(([v, l]) => (
+                        <button key={v} onClick={() => setRango(v)}
+                            className={`flex-1 rounded-xl py-2 text-xs font-bold border ${rango === v ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' : 'bg-slate-900 border-slate-800 text-slate-400'}`}>
+                            {l}
+                        </button>
+                    ))}
+                </div>
+
                 {!a.hasData ? (
                     <div className="rounded-2xl bg-slate-900 border border-slate-800 p-10 text-center">
                         <MapPin size={36} className="mx-auto text-slate-700 mb-3" />
-                        <p className="text-white font-bold">Aún sin datos de anaquel</p>
-                        <p className="text-slate-400 text-sm mt-1">Cuando tus PDV tengan reportes con ubicación en el estante, verás aquí tu ubicación dorada.</p>
+                        <p className="text-white font-bold">{rango === 'all' ? 'Aún sin datos de anaquel' : 'Sin datos de anaquel en este período'}</p>
+                        <p className="text-slate-400 text-sm mt-1">{rango === 'all' ? 'Cuando tus PDV tengan reportes con ubicación en el estante, verás aquí tu ubicación dorada.' : 'Prueba con un período más largo.'}</p>
                     </div>
                 ) : (
                     <>
@@ -131,7 +159,7 @@ export default function VendedorAnaquelMap({ reports = [], onClose }) {
                             </div>
                         )}
 
-                        <p className="text-center text-[11px] text-slate-600">Uds vendidas por día y por PDV, estimadas entre visitas · {a.nPdv} PDV y {a.nTramos} intervalos de visitas de tu cartera ({a.nValid} reportes con ubicación). En gris, celdas con menos de 3 PDV.</p>
+                        <p className="text-center text-[11px] text-slate-600">Uds vendidas por día y por PDV, estimadas entre visitas · {rango === 'all' ? 'todo el histórico' : `últimos ${Object.fromEntries(RANGOS)[rango]}`} · {a.nPdv} PDV y {a.nTramos} intervalos de visitas de tu cartera ({a.nValid} reportes con ubicación). En gris, celdas con menos de 3 PDV. Es el mismo cálculo que ve gerencia.</p>
                     </>
                 )}
             </div>

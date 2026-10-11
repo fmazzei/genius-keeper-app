@@ -1997,7 +1997,7 @@ const VendedorLayout = ({ user, onLogout }) => {
 
             {/* ── Mapa de Calor del Anaquel (oscuro, coherente con la app) ── */}
             {showAnaquelMap && (
-                <VendedorAnaquelMap reports={carteraVisitas} onClose={() => setShowAnaquelMap(false)} />
+                <VendedorAnaquelMap reports={carteraVisitas} posList={carteraPosList} onClose={() => setShowAnaquelMap(false)} />
             )}
 
             {/* ── Ventas por cliente/PDV de tu cartera (real, Zoho) ── */}

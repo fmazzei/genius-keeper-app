@@ -26,6 +26,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const crypto = require("crypto");
+const pinIntentos = require("./pinIntentos");
 
 const MASTER_EMAIL = "lacteoca@lacteoca.com";
 // Cuenta compartida legacy de Kroma (Lacteoca) — es como se llega al perfil
@@ -173,7 +174,21 @@ exports.loginConPinEmpresa = onCall({ region: "us-central1", serviceAccount: CUS
     if (!/^\d{4}$/.test(pin)) throw new HttpsError("invalid-argument", "El PIN debe tener 4 dígitos.");
 
     const db = admin.firestore();
+    // Freno a la adivinanza (ver pinIntentos.js). Si la lectura del contador
+    // falla por otra razón, no se le cierra la puerta a nadie.
+    let refs = null;
+    try {
+        refs = await pinIntentos.antes(db, request.rawRequest);
+    } catch (e) {
+        if (e.minutos) {
+            throw new HttpsError("resource-exhausted", e.global
+                ? `Demasiados intentos en la plataforma. Espera ${e.minutos} min.`
+                : `Demasiados PIN equivocados. Espera ${e.minutos} min y vuelve a intentar.`, { minutos: e.minutos });
+        }
+        console.error("loginConPinEmpresa: contador de intentos no disponible:", e?.message || e);
+    }
     const snap = await db.doc(`kroma_empresa_pins/${pin}`).get();
+    if (refs) await pinIntentos.despues(db, refs, snap.exists).catch(err => console.error("loginConPinEmpresa: no se pudo contar el intento:", err?.message || err));
     if (!snap.exists) throw new HttpsError("not-found", "PIN incorrecto.");
 
     const { uid } = snap.data();

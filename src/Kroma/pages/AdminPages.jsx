@@ -5,6 +5,7 @@ import { Warehouse, Truck, Package, Archive, ClipboardList, Users, Construction,
 import { useKroma } from '../KromaContext';
 import { necesitaReposicion, tieneMinimo, inventarioVigente, esInsumoDeAlmacen } from '@/Kroma/stockInsumos.js';
 import { conExistencia, esHuerfana } from '@/Kroma/inventarioPT.js';
+import AvisosKroma from '../Components/AvisosKroma.jsx';
 import SuppliersPageImpl from './admin/SuppliersPage';
 import MaterialsMasterPageImpl from './admin/MaterialsMasterPage';
 import ProductCatalogPageImpl from './admin/ProductCatalogPage';
@@ -153,9 +154,7 @@ export function AdminHome({ onNavigate }) {
                 empaqueSuelto: empaqueSuelto.length,
                 sinInventario: sinInventario.length,
                 sinPresentacion: sinPresentacion.length,
-                alertas: vivos(alertSnap)
-                    .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-                    .slice(0, 4),
+                alertas: vivos(alertSnap),
                 porReponer: porReponer.length,
                 sinMinimo: sinMinimo.length,
                 nMateriales: materiales.length,
@@ -224,18 +223,7 @@ export function AdminHome({ onNavigate }) {
             </section>
 
             {/* ── Avisos del inventario ── */}
-            {(d?.alertas || []).length > 0 && (
-                <section className="mb-7">
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Avisos</p>
-                    <div className="space-y-2">
-                        {d.alertas.map(a => (
-                            <div key={a.id} className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-                                <p className="text-amber-200 text-xs leading-snug">{a.mensaje}</p>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-            )}
+            <AvisosKroma alertas={d?.alertas || []} userId={kromaUser?.id} className="mb-7" />
 
             {/* ── Accesos directos ── */}
             {shortcuts.length > 0 && (

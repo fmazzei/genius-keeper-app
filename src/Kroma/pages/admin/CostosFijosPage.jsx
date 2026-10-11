@@ -8,7 +8,8 @@
 //   • Break-even mensual (kg mínimos para cubrir los fijos)
 //   • Composición del gasto por categoría
 //
-// Datos guardados en `kroma_fixed_costs/{YYYY-MM}`.
+// Datos guardados en `kroma_fixed_costs/{YYYY-MM}` (Lacteoca) o
+// `kroma_fixed_costs/{empresaId}__{YYYY-MM}` (otras empresas; ver idPorEmpresa).
 // kg producidos por mes se leen de `kroma_production_logs` (totalKgProducido,
 // estado == 'completada') y pueden sobreescribirse manualmente.
 
@@ -20,6 +21,7 @@ import {
 import { db } from '@/Firebase/config.js';
 import { fechaProduccion, kgProducidos as kgDeLog } from '@/Kroma/estadoPlanta.js';
 import { useKroma } from '@/Kroma/KromaContext.jsx';
+import { idPorEmpresa } from '@/Kroma/idPorEmpresa.js';
 import {
     DollarSign, Plus, Trash2, Save, ChevronLeft, ChevronRight,
     Loader, Copy, RefreshCw, Edit2, CheckCircle, BarChart2,
@@ -248,6 +250,7 @@ export default function CostosFijosPage() {
     const [tab,           setTab]           = useState('planilla'); // 'planilla' | 'resumen'
 
     const userLabel = { id: kromaUser?.id || '', nombre: kromaUser?.name || '' };
+    const empresaId = kromaUser?.empresaId || 'lacteoca';
 
     // ── Carga del mes ──────────────────────────────────────────────────────────
 
@@ -257,7 +260,7 @@ export default function CostosFijosPage() {
             const id = mesId(year, month);
 
             // Cargar planilla guardada
-            const cfgSnap = await getDoc(doc(db, 'kroma_fixed_costs', id));
+            const cfgSnap = await getDoc(doc(db, 'kroma_fixed_costs', idPorEmpresa(id, empresaId)));
             if (cfgSnap.exists()) {
                 const data = cfgSnap.data();
                 setPartidas((data.partidas || []).map(p => ({ ...p })));
@@ -274,7 +277,7 @@ export default function CostosFijosPage() {
             const logsSnap = await getDocs(query(
                 collection(db, 'kroma_production_logs'),
                 where('estado', '==', 'completada'),
-                where('empresaId', '==', kromaUser?.empresaId || 'lacteoca'),
+                where('empresaId', '==', empresaId),
             ));
             const totalKg = logsSnap.docs.reduce((s, d) => {
                 const data  = d.data();
@@ -294,7 +297,7 @@ export default function CostosFijosPage() {
         } finally {
             setLoading(false);
         }
-    }, [year, month]);
+    }, [year, month, empresaId]);
 
     useEffect(() => { loadMes(); }, [loadMes]);
 
@@ -312,8 +315,9 @@ export default function CostosFijosPage() {
             const costeFijoXKg    = kgEfectivos > 0 ? totalUSD / kgEfectivos : null;
             const kgManualVal     = kgManual !== '' && Number(kgManual) > 0 ? Number(kgManual) : null;
 
-            await setDoc(doc(db, 'kroma_fixed_costs', mesId(year, month)), {
+            await setDoc(doc(db, 'kroma_fixed_costs', idPorEmpresa(mesId(year, month), empresaId)), {
                 mes:              mesId(year, month),
+                empresaId,
                 partidas:         partidas.map(({ _nuevo, ...p }) => p),
                 totalUSD,
                 kgDesdeLogs,
@@ -339,7 +343,7 @@ export default function CostosFijosPage() {
 
     const handleCopiarAnterior = async () => {
         const [py, pm] = prevMes(year, month);
-        const prevSnap = await getDoc(doc(db, 'kroma_fixed_costs', mesId(py, pm)));
+        const prevSnap = await getDoc(doc(db, 'kroma_fixed_costs', idPorEmpresa(mesId(py, pm), empresaId)));
         if (!prevSnap.exists() || !(prevSnap.data().partidas?.length)) {
             alert('El mes anterior no tiene partidas guardadas.');
             return;

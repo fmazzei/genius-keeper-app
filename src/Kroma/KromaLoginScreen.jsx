@@ -46,6 +46,9 @@ export default function KromaLoginScreen({ onBack }) {
             const code = e?.code || '';
             if (code.endsWith('not-found') || code.endsWith('invalid-argument')) {
                 fail('PIN incorrecto');
+            } else if (code.endsWith('resource-exhausted')) {
+                // Freno a la adivinanza: el servidor dice cuántos minutos esperar.
+                fail(e?.message || 'Demasiados intentos. Espera unos minutos.');
             } else if (code.endsWith('unavailable') || code.endsWith('deadline-exceeded')) {
                 fail('Sin conexión. Revisa tu señal e intenta de nuevo.');
             } else {

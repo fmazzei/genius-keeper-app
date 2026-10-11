@@ -1885,13 +1885,9 @@ doc fijo (`rotacion`) a **uno por empresa** — `rotacionDocId(empresaId)` en
 `CavaRotacionPage.jsx` devuelve el doc histórico `'rotacion'` para Lacteoca
 (sin migrar, conserva su configuración ya guardada tal cual) y `empresaId`
 para cualquier empresa nueva; el doc lleva el campo `empresaId` para que
-`kromaSameEmpresa` lo acote igual que al resto de `kroma_*`. **Pendiente/
-limitación conocida**: `kroma_config` (config de leche, `MilkInventoryPage`)
-y `kroma_fixed_costs` (Costos Fijos, doc por mes `YYYY-MM`) siguen siendo
-singletons sin `empresaId` — quedaron con el mismo candado `kromaSameEmpresa`,
-así que una empresa nueva simplemente no puede usarlos todavía (falla
-cerrado, nunca filtra Lacteoca) hasta re-clavijarlos por empresa con el mismo
-patrón que Rotación de Cava.
+`kromaSameEmpresa` lo acote igual que al resto de `kroma_*`. **Resuelto el 11-oct**:
+`kroma_config` (config de leche) y `kroma_fixed_costs` (Costos Fijos) ya son
+uno por empresa — ver "Kroma: correcciones del 11-oct" más abajo.
 
 **Cloud Functions** (`functions/handlers/kromaEmpresas.js`, NUEVO):
 - `crearEmpresaConUsuario` (callable, solo máster): crea la empresa
@@ -1991,9 +1987,7 @@ listas sin tocar las consultas") era falsa — hubo que:
    Agregado. En la práctica, con el filtro de empresa puesto, un `kroma_owner`
    de otra empresa ya ni siquiera debería aparecer en el picker de Lacteoca.
 
-**Pendiente/futuro:** re-clavijar `kroma_config`/`kroma_fixed_costs` por
-empresa (hoy solo Lacteoca puede usarlos; Rotación de Cava ya se adaptó);
-blindar la atribución de `kroma_owner` con claims personalizados si se
+**Pendiente/futuro:** blindar la atribución de `kroma_owner` con claims personalizados si se
 necesita en el futuro; permitir que el `kroma_owner` edite los datos de
 contacto de su propia empresa (hoy solo el máster escribe `kroma_empresas`).
 
@@ -2058,14 +2052,16 @@ sigue exactamente igual — nunca cambió.
   `kromaDirectLogin` se dejan intactos en el código por compatibilidad con
   cualquier cuenta que ya se haya creado con el diseño anterior — simplemente
   no se vuelve a usar en ningún alta nueva.
-- **Advertencia de seguridad conocida y aceptada**: un PIN de empresa de 4
-  dígitos (10.000 combinaciones) es fuerza bruta-mente débil si alguien
-  llamara a `loginConPinEmpresa` miles de veces seguidas — no hay throttling
-  del lado del servidor todavía. Es el mismo nivel de "seguridad por PIN
-  corto" que Lacteoca ya acepta hace tiempo para el selector interno; el
-  dueño priorizó explícitamente la simplicidad de acceso sobre esto. Si en el
-  futuro hace falta blindarlo, la opción más simple es un contador de
-  intentos fallidos en Firestore con backoff.
+- **Freno a la adivinanza del PIN (11-oct)**: antes nada impedía probar los
+  10.000 PIN seguidos. Ahora (`functions/handlers/pinIntentos.js`): 5 PIN
+  equivocados en 15 min desde una misma conexión ⇒ esa conexión espera 15 min
+  (ni el correcto entra); 100 equivocados en 1 hora en toda la plataforma
+  (alguien rotando conexiones) ⇒ pausa de 30 min para todos (quien ya entró
+  sigue adentro). Un PIN correcto borra la cuenta de su conexión. La IP se
+  guarda solo como huella SHA-256 en `kroma_pin_intentos` (reglas: nadie la
+  lee desde la app). Si el contador falla, NO se cierra la puerta. La
+  pantalla muestra "Espera N min". Prueba: `tests/pinIntentos.e2e.test.mjs`
+  (10 en verde).
 
 **⚠️ PENDIENTE DEL DUEÑO (BLOQUEANTE, 2026-09) — permiso de IAM para firmar
 custom tokens.** El PIN 2025 quedó bien guardado en Firestore (`kroma_empresa_pins`
@@ -2222,6 +2218,26 @@ NO se ofrece si la carga falló.
 credencial, nunca por un dato auxiliar que se puede reconstruir, y (2) nombrar
 la causa real. Si una pantalla de acceso puede mostrar el mismo mensaje para dos
 causas distintas, una de las dos deja a alguien afuera sin saber por qué.
+
+### Kroma: correcciones del 11-oct ✅
+
+- **PIN de empresa con freno** (ver "Freno a la adivinanza del PIN" arriba).
+- **Avisos con "Listo"** (`src/Kroma/Components/AvisosKroma.jsx`, en los inicios
+  del operario y del administrador): cada aviso de `kroma_alerts` tiene un botón
+  "Listo" que lo oculta SOLO para esa persona (`leidaPor: arrayUnion(kromaUser.id)`):
+  que el operario vio un "stock bajo" no significa que lo vio quien compra. No se
+  borra. Muestra 4 y dice cuántos más hay.
+- **Config de leche y Costos Fijos por empresa** (`src/Kroma/idPorEmpresa.js`):
+  Lacteoca conserva sus ids (`kroma_config/milk_params`,
+  `kroma_fixed_costs/{YYYY-MM}`, sin migrar); otra empresa usa
+  `{empresaId}__{id}`. Los documentos llevan `empresaId`. Antes el id era el mismo
+  para todas y una empresa nueva chocaba con el de Lacteoca.
+  - **Bug de paso**: la regla de `kroma_config` exigía el máster de GK para
+    escribir, así que el perfil "Master" del selector de Kroma (cuenta compartida
+    de producción) no podía guardar la config de leche. Ahora escribe cualquier
+    cuenta de Kroma de esa empresa; quién la edita lo decide la pantalla (solo el
+    perfil máster ve el engranaje).
+  - Prueba: `tests/firestore.rules.test.mjs` (43 en verde).
 
 ### Fase 0 — que el panel de permisos MANDE (2026-09) ✅
 
@@ -2382,9 +2398,8 @@ importa al entrar: **¿qué tengo abierto y qué sigue?**
 - **Los contadores no se borraron**: bajaron a una tira "De un vistazo" al pie,
   que es el lugar que les corresponde.
 
-**Pendiente/futuro**: las alertas de `kroma_alerts` no se descartan nunca desde
-esta pantalla (`leidaPor` existe pero no se usa acá), así que con el tiempo la
-lista se llena; conviene un "listo" por aviso. Y los inicios del administrador
+**Resuelto (11-oct)**: los avisos ya se marcan "Listo" uno por uno (ver
+"Kroma: correcciones del 11-oct"). Los inicios del administrador
 y de gerencia (fases 5 y 6) siguen siendo contadores.
 
 ### Fase 3 — un nombre por cosa (2026-09) ✅
@@ -3108,7 +3123,7 @@ Pedido del dueño: verificar que el cálculo sea correcto y agregar tres cosas: 
 
 **Tamaño de muestra a la vista** (pedido del dueño): la hoja y el PDF explican cuándo una cifra es confiable (≥8 PDV y ≥12 intervalos de visitas), orientativa (3–7 PDV) o insuficiente, y cada grupo dice cuánto le falta (`falta` en el resumen + `textoFalta`). También aclara que un grupo chico no está mal medido (son todos los PDV que hay en esa posición), pero es menos seguro para predecir otros puntos.
 
-**Mapa del vendedor** (`VendedorAnaquelMap.jsx`) usa el mismo motor (antes tenía el mismo error de `orderQuantity`).
+**Mapa del vendedor** (`VendedorAnaquelMap.jsx`) usa el mismo motor (antes tenía el mismo error de `orderQuantity`). Desde el 11-oct también los mismos DATOS: ventana 15/30/90 días/todo (30 por defecto, filtrada igual que `useKpiCalculations`), historial completo para la visita anterior de cada intervalo y la lista de PDV de su cartera. Antes pasaba todo su histórico como ventana y salía distinto al del máster con los mismos reportes. Sigue siendo SU cartera: el del máster es de toda la empresa, así que las cifras por celda no tienen por qué ser iguales.
 
 Prueba: `tests/anaquelAnalisis.test.mjs`, 12 verificaciones en verde: reposición ≠ venta, PDV muy visitado pesa uno, celda vacía ≠ 0, ubicación dorada, proyección y escalado, niveles de confianza.
 
@@ -3184,7 +3199,7 @@ Rediseño pedido por el dueño: una sección corta (1 página carta), mediciones
 - **Intervalos de visitas cortos (<5 d).** Se unen con los siguientes solo si altura, categoría, precio y POP no cambiaron y no hubo quiebre en medio.
 - **Otras.** Tamaño carta. El formulario a cambiar es el del mercaderista (`VisitReportForm` + `EditReportForm`). Corregir un retiro guardado es solo del máster.
 - **Pendientes anotados:**
-  - el mapa del vendedor (`VendedorAnaquelMap`) sigue con el motor viejo y puede contradecir la sección nueva;
+  - el mapa del vendedor (`VendedorAnaquelMap`): ya usa el MISMO cálculo y la misma ventana que el mapa del máster (11-oct); cuando se encienda la sección v2 habrá que pasarlo también;
   - cruzar `orderQuantity` contra las facturas de Zoho del PDV (`zohoCustomerId`);
   - una segunda tabla de efecto, para los cambios de **precio** (hoy solo hay la de ubicación).
 - Supuestos de la Fase 1 aprobados por el dueño (7-oct).

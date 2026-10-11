@@ -550,6 +550,10 @@ service cloud.firestore {
     match /kroma_empresa_pins/{pin} {
       allow read, write: if false;
     }
+    // Contador de PIN equivocados (freno a la adivinanza): solo el servidor.
+    match /kroma_pin_intentos/{id} {
+      allow read, write: if false;
+    }
 
     match /kroma_settings/{docId} {
       // `write` incluiría create, y para un create `resource` es null: con
@@ -700,9 +704,14 @@ service cloud.firestore {
       allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
       allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
+    // Config de leche (parámetros de recepción), un doc por empresa (ver
+    // src/Kroma/idPorEmpresa.js). Antes la escritura exigía el máster de GK, así
+    // que el perfil "Master" del selector de Kroma —que entra con la cuenta
+    // compartida de producción— no podía guardarla. Quién la edita lo decide la
+    // pantalla (solo el perfil máster ve el engranaje); acá se cuida la empresa.
     match /kroma_config/{id} {
-      allow read:  if isKromaAccess() && kromaSameEmpresaDoc();
-      allow write: if isKromaMaster();
+      allow read, update, delete: if isKromaAccess() && kromaSameEmpresaDoc();
+      allow create:                if isKromaAccess() && kromaSameEmpresa(request.resource.data);
     }
   }
 }

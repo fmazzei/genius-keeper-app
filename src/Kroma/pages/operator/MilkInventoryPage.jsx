@@ -4,6 +4,7 @@ import { precioLecheDeProveedor } from '@/Kroma/costeoLote.js';
 import { db } from '@/Firebase/config.js';
 import { useKroma } from '../../KromaContext';
 import { esLecheEnTanque } from '@/Kroma/estadoPlanta.js';
+import { idPorEmpresa } from '@/Kroma/idPorEmpresa.js';
 import {
     Droplets, Plus, ChevronLeft, ChevronRight, Check,
     Snowflake, Zap, Pencil, Trash2, Lock, Settings, X,
@@ -597,7 +598,7 @@ export default function MilkInventoryPage({ onNavigate }) {
                 getDocs(query(collection(db, 'kroma_milk_reception'), where('empresaId', '==', empresaId))),
                 getDocs(query(collection(db, 'kroma_suppliers'), where('empresaId', '==', empresaId))),
                 getDocs(query(collection(db, 'kroma_materials'), where('empresaId', '==', empresaId))),
-                getDoc(doc(db, 'kroma_config', CONFIG_DOC_ID)),
+                getDoc(doc(db, 'kroma_config', idPorEmpresa(CONFIG_DOC_ID, empresaId))),
                 // Para saber qué recepciones reclama de verdad una producción
                 // viva. Si falla, se asume que todas están en uso: es preferible
                 // no ofrecer borrar nada a ofrecer borrar algo que sí se usa.
@@ -746,7 +747,8 @@ export default function MilkInventoryPage({ onNavigate }) {
     }
 
     async function handleSaveConfig(newParams) {
-        await setDoc(doc(db, 'kroma_config', CONFIG_DOC_ID), {
+        await setDoc(doc(db, 'kroma_config', idPorEmpresa(CONFIG_DOC_ID, empresaId)), {
+            empresaId,
             params: newParams, updatedAt: serverTimestamp(), updatedBy: kromaUser?.id || '',
         });
         setParamConfig(newParams); setView('list');

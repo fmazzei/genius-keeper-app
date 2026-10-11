@@ -79,6 +79,21 @@ await check('permite','GERENCIA lee kroma_suppliers',     () => getDoc(doc(G,'kr
 await check('permite','GERENCIA lee kroma_compras',       () => getDoc(doc(G,'kroma_compras','c1')));
 await check('niega','GERENCIA escribe kroma_suppliers',   () => updateDoc(doc(G,'kroma_suppliers','p1'), { nombre:'x' }));
 
+// ── Config de leche y Costos Fijos: un documento por empresa (11-oct)
+await env.withSecurityRulesDisabled(async (c) => {
+  const db = c.firestore();
+  await setDoc(doc(db,'kroma_config','milk_params'), { params:{ t:4 } });
+  await setDoc(doc(db,'kroma_fixed_costs','2026-08'), { totalUSD: 100 });
+});
+await check('permite','LACT guarda su config de leche (sin ser máster de GK)', () => setDoc(doc(L,'kroma_config','milk_params'), { params:{ t:5 }, empresaId:'lacteoca' }));
+await check('niega','ACME pisa la config de leche de Lacteoca',          () => setDoc(doc(A,'kroma_config','milk_params'), { params:{}, empresaId:'acme' }));
+await check('niega','ACME lee la config de leche de Lacteoca',           () => getDoc(doc(A,'kroma_config','milk_params')));
+await check('permite','ACME crea SU config de leche',                    () => setDoc(doc(A,'kroma_config','acme__milk_params'), { params:{}, empresaId:'acme' }));
+await check('permite','ACME lee SU config de leche',                     () => getDoc(doc(A,'kroma_config','acme__milk_params')));
+await check('niega','ACME lee el mes de costos fijos de Lacteoca',       () => getDoc(doc(A,'kroma_fixed_costs','2026-08')));
+await check('permite','ACME guarda SU mes de costos fijos',              () => setDoc(doc(A,'kroma_fixed_costs','acme__2026-08'), { totalUSD: 5, empresaId:'acme' }));
+await check('permite','LACT guarda su mes de costos fijos',              () => setDoc(doc(L,'kroma_fixed_costs','2026-08'), { totalUSD: 120, empresaId:'lacteoca' }, { merge:true }));
+
 // ── users_metadata: nadie se cambia su propio rol (hueco cerrado el 11-oct)
 await env.withSecurityRulesDisabled(async (c) => {
   const db = c.firestore();

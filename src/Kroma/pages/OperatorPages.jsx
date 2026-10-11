@@ -8,6 +8,7 @@ import { db } from '@/Firebase/config.js';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { useKroma } from '../KromaContext';
 import { litrosEnTanque, esProduccionAbierta, faltaEmpacar } from '../estadoPlanta.js';
+import AvisosKroma from '../Components/AvisosKroma.jsx';
 import FichaBuilderPageImpl from './operator/FichaBuilderPage';
 import MaterialsInventoryPageImpl from './operator/MaterialsInventoryPage';
 import MilkInventoryPageImpl from './operator/MilkInventoryPage';
@@ -108,9 +109,9 @@ export function OperatorHome({ onNavigate }) {
                     // al de hoy. Se ordena en cliente a propósito — sumar
                     // orderBy al where exigiría un índice compuesto, y este
                     // proyecto no despliega índices en CI.
-                    alertas: vivos(alertSnap)
-                        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-                        .slice(0, 4),
+                    // Se ordenan y recortan en <AvisosKroma>, después de quitar
+                    // los que esta persona ya marcó como listos.
+                    alertas: vivos(alertSnap),
                 });
             } catch { if (vivo) setData({ litrosTanque: 0, insumos: 0, fichas: 0, abiertas: [], sinEmpacar: [], alertas: [] }); }
         };
@@ -254,18 +255,7 @@ export function OperatorHome({ onNavigate }) {
             )}
 
             {/* ── Avisos del inventario ── */}
-            {(data?.alertas || []).length > 0 && (
-                <section className="mb-6">
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-3">Avisos</p>
-                    <div className="space-y-2">
-                        {data.alertas.map(a => (
-                            <div key={a.id} className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-                                <p className="text-amber-200 text-xs leading-snug">{a.mensaje}</p>
-                            </div>
-                        ))}
-                    </div>
-                </section>
-            )}
+            <AvisosKroma alertas={data?.alertas || []} userId={kromaUser?.id} />
 
             {/* ── Accesos directos (si el máster se los configuró) ── */}
             {shortcuts.length > 0 && (
