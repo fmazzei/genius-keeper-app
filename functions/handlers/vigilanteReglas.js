@@ -14,10 +14,11 @@ const { fila, seccion, diaTxt } = require('./avisoDetalle');
 const DIA = 86400000;
 const TZ = 4 * 3600000;   // Venezuela, UTC−4 todo el año
 
+// Todos los umbrales de abajo los confirmó Francisco el 11-oct.
 const DEFAULTS = {
     // 1. Frecuencia normal aprendida por PDV
-    factorFrecuencia: 1.5,       // avisar cuando pase 1,5 × su frecuencia normal (POR VALIDAR con Francisco)
-    diasDefecto: 14,             // PDV sin historial suficiente (POR VALIDAR)
+    factorFrecuencia: 1.5,       // avisar cuando pase 1,5 × su frecuencia normal
+    diasDefecto: 14,             // PDV sin historial suficiente
     minIntervalos: 3,            // intervalos para "aprender" la frecuencia de un PDV
     diasHistorial: 180,
     intervaloMaxValido: 60,      // un hueco de más de 60 días no es "frecuencia", es una pausa
