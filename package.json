@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node tools/generarMotorFunciones.mjs && tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings-0",
     "preview": "vite preview",
     "check:undef": "ESLINT_USE_FLAT_CONFIG=false eslint --no-eslintrc --no-inline-config -c tools/eslintrc-undef.json --ext .js,.jsx src"

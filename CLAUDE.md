@@ -973,6 +973,24 @@ Pedido de Francisco (8-oct): que el sistema vigile solo y avise por notificació
 - **Umbrales por confirmar con Francisco** (en `DEFAULTS`, se cambian con `vigilanteAcciones({accion:'config'})`): 1,5×, 14 días sin historia, 2 p. m., días laborables aprendidos (Lun–Vie por defecto), 95 % de ritmo de meta. El vigilante NO cambia umbrales solo.
 - **Hallazgo de seguridad pendiente de OK**: las reglas de `users_metadata` dejan que un usuario escriba cualquier campo de su propio documento, incluido `role`.
 
+### El vigilante revisa las comisiones (2026-10) ✅
+
+Pedido del dueño (11-oct): *"que el agente revise constantemente toda esta parte de las comisiones y que todo se esté calculando adecuadamente"*.
+
+- **Corre una vez al día**, en la vuelta `pesado` del vigilante (sin costo nuevo). Los avisos van **solo al máster** (son datos de dinero), en su resumen de la mañana, y se cierran solos cuando el dato se corrige. Si falla la lectura de clientes, pagos o cierres, la revisión no corre y sus avisos NO se cierran (no se cierra lo que no se volvió a mirar).
+- **Usa el MISMO motor que paga al vendedor.** `tools/generarMotorFunciones.mjs` empaqueta `src/utils/vendedorMeta.js` a `functions/handlers/generado/vendedorMeta.cjs` (lo corre `npm run build`; `--check` falla si la copia no coincide). **No editar el `.cjs` a mano.** El servidor corre en UTC: `vigilanteComisiones.js` le entrega al motor los días como texto y el "ahora" y los cierres en hora de reloj de Caracas, para que los límites de cada mes caigan donde caen en la pantalla.
+- **Qué revisa** (`functions/handlers/vigilanteComisiones.js`, tipos `comision_*`):
+  - `duplicadas`: el mismo número de factura en dos documentos.
+  - `sin_vendedor`: cobradas sin vendedor (no Oficina), desde el ingreso del vendedor más antiguo.
+  - `atribucion`: factura a nombre de alguien que ya no es el dueño de su carnet (la reasignación no se completó).
+  - `cartera_conflicto`: repite los conflictos de `zohoCarteraCarnets` que el barrido no resuelve solo.
+  - Por vendedor: `sin_ingreso` (con facturas y sin fecha de ingreso), `fechas` (pagada sin fecha de pago, o pagada antes de facturarse: el cobro cae en otro mes), `recuperada` (marca de cuenta recuperada que no coincide con su ingreso), `unidades` (importe por unidad > 1,5 × precio de lista sin `unidadesNormalizadas`: kilos contados como unidades).
+  - Meses, con el motor: `liquidacion_huerfana` (pago contra un mes que no existe), `pagado_de_mas` (neto de los meses cerrados negativo), `sin_congelar` (mes cerrado hace 10+ días sin congelar), `congelado_difiere` (mes congelado con el modelo actual cuya comisión, recalculada solo con sus `cobrosIncluidos`, ya no coincide: se anuló o cambió una factura de ese mes).
+- **Lo que NO revisa**: la comisión provisional del servidor (`comisionGenerada`, que no es lo que se paga), cierres del modelo anterior (se calcularon con otra regla), el canal retail/foodservice de facturas viejas y el Bono Anaquel.
+- **Umbrales nuevos, POR VALIDAR con Francisco** (en `DEFAULTS`): `diasCongelarPeriodo` 10, `toleranciaComisionUsd` 1, `factorUnidadesSospechosas` 1,5.
+- Lecturas: la vuelta diaria lee ahora TODA `facturas_vendedor` (antes 70 días) más `clientes_zoho`, `liquidaciones` y `comisiones_cerradas`: unas 2.000 lecturas al día, dentro de lo gratis.
+- Pruebas: `TZ=UTC node tests/vigilanteComisiones.test.mjs` (21 en verde: incluye un vendedor con datos limpios y su mes congelado y pagado que NO genera avisos, y un cobro registrado tarde que no se marca como descuadre) y el caso 9 de `tests/vigilante.e2e.test.mjs` (aviso solo a Francisco, en su resumen, que se cierra al corregir la fecha).
+
 ## Notificaciones y versiones (2026-08) ✅
 
 - **Duplicados resueltos**: los triggers de Cloud Functions son de entrega **"al

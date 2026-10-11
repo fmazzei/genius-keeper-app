@@ -45,6 +45,10 @@ const DEFAULTS = {
     horasRuido: 2,
     diasSinSalida: 30,
     diasVencimiento: 7,
+    // D. Comisiones (solo al máster; POR VALIDAR con Francisco)
+    diasCongelarPeriodo: 10,          // mes cerrado sin congelar: avisar a los 10 días
+    toleranciaComisionUsd: 1,         // diferencias de hasta $1 no se avisan (redondeo)
+    factorUnidadesSospechosas: 1.5,   // importe por unidad > 1,5 × precio de lista ⇒ kilos sin convertir
 };
 
 // ── Fechas en hora de Caracas ──────────────────────────────────────────────
@@ -443,6 +447,12 @@ function evaluar(d) {
         }
     }
 
+    // ── D. Comisiones: que lo que se le paga al vendedor se esté calculando bien ──
+    if (g.pesado && d.comisiones) {
+        const { evaluarComisiones } = require('./vigilanteComisiones');
+        problemas.push(...evaluarComisiones({ ...d.comisiones, vendedores: supervisores, masters, ahoraMs: ahora, appConfig: d.appConfig || {} }, cfg));
+    }
+
     // Cada problema declara su grupo: solo se cierra un aviso si su grupo se evaluó.
     problemas.forEach(p => { p.grupo = GRUPO_DE_TIPO[p.tipo] || 'ligero'; if (p.grupo === 'hoy') p.dia = hoy; });
     return { problemas, contexto: { avances, rutaDe, diasPorPos, ultimaPorPos, cfg, laborables: laborablesAprendidos } };
@@ -512,6 +522,7 @@ const GRUPO_DE_TIPO = {
     zoho_barrido: 'ligero', app_caida: 'ligero', cola_atascada: 'ligero', errores_version: 'ligero',
     sin_reportes: 'hoy', mercaderista_sin_senal: 'hoy',
     pdv_sin_visita: 'pesado', meta_ritmo: 'pesado', entregas_bajo: 'pesado', negativos_altos: 'pesado',
+    ...Object.fromEntries(require('./vigilanteComisiones').TIPOS_COMISION.map(t => [t, 'pesado'])),
 };
 
 module.exports = {

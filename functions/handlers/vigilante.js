@@ -80,14 +80,25 @@ async function leerDatos(g, ahoraMs, estado) {
     if (g.pesado) {
         lecturas.pos = f.collection('pos').get().then(docs);
         lecturas.carteras = f.collection('vendor_clients').get().then(docs);
-        lecturas.facturas = f.collection('facturas_vendedor').where('fecha', '>=', ts(ahoraMs - 70 * DIA)).get().then(docs);
+        // Todas las facturas (no solo 70 días): la revisión de comisiones mira
+        // meses cerrados y cobros de facturas viejas. ~2.000 lecturas, una vez al día.
+        lecturas.facturas = f.collection('facturas_vendedor').get().then(docs);
+        lecturas.clientes = f.collection('clientes_zoho').get().then(docs).catch(() => null);
+        lecturas.liquidaciones = f.collection('liquidaciones').get().then(docs).catch(() => null);
+        lecturas.cerradas = f.collection('comisiones_cerradas').get().then(docs).catch(() => null);
     }
     const claves = Object.keys(lecturas);
     const vals = await Promise.all(claves.map(k => lecturas[k]));
     const d = Object.fromEntries(claves.map((k, i) => [k, vals[i]]));
     const activos = (d.usuarios || []).filter(u => u.active !== false);
+    // Sin clientes, pagos o cierres no se puede revisar la comisión sin inventar:
+    // si alguna lectura falla, esa revisión no corre (y no cierra sus avisos).
+    const comisiones = g.pesado && d.clientes && d.liquidaciones && d.cerradas
+        ? { facturas: d.facturas, clientes: d.clientes, carteras: d.carteras, liquidaciones: d.liquidaciones, cerradas: d.cerradas }
+        : null;
     return {
         ...d,
+        comisiones,
         masters: activos.filter(u => u.role === 'master').map(u => u.id),
         supervisores: activos.filter(u => u.role === 'vendedor').map(u => ({ ...u, uid: u.id, nombre: u.name || u.email })),
         laborables: estado.laborables || {},
@@ -194,6 +205,9 @@ async function ejecutarVigilante({ ahoraMs = Date.now(), enviarPush = enviarPush
         if (vigentes.has(id) || NO_AUTOCIERRE.has(a.tipo)) continue;
         const delDiaAnterior = a.grupo === 'hoy' && a.dia && a.dia !== hoy;
         if (!delDiaAnterior && !g[a.grupo || 'ligero']) continue;
+        // Si la revisión de comisiones no pudo correr (falló una lectura), sus
+        // avisos siguen abiertos: no se cierra lo que no se volvió a mirar.
+        if (String(a.tipo || '').startsWith('comision_') && !d.comisiones) continue;
         const abiertoMs = R.toMs(a.abiertoAt);
         const ruido = abiertoMs && (ahoraMs - abiertoMs) < cfg.horasRuido * 3600000;
         await a.ref.set({ abierto: false, cerradoAt: ts(ahoraMs), destinatariosAbiertos: [], ruido: !!ruido }, { merge: true });

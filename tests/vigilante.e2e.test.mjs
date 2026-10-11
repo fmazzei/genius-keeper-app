@@ -136,6 +136,21 @@ await correr(caracas('2026-10-12', 14, 30));   // lunes sin reportes
 const apagado = await aviso('sin_reportes:REP1');
 ok(apagado?.abierto && de('CARO', n0).length === 0 && apagado.recibidoPor?.CARO?.canal === 'campana', 'con las notificaciones apagadas: sin push, queda en la campanita (y registrado)');
 
+// 9. Comisiones: una factura cobrada sin fecha de pago → a Francisco, nunca a Carolina; se cierra al corregirla.
+await fs.doc('facturas_vendedor/INV-9').set({
+    numero: 'INV-9', vendedorId: 'CARO', zohoCustomerId: 'C1', estado: 'pagada', monto: 560, unidades: 100,
+    fecha: ts(Date.parse('2026-09-20T00:00:00Z')), recuperada: false,
+});
+n0 = pushes.length;
+await correr(caracas('2026-10-13', 7, 5));
+const com = await aviso('comision_fechas:CARO');
+ok(com?.abierto && com.destinatarios.join() === 'FRAN' && /sin fecha de pago/.test(com.cuerpo), `comisiones: aviso abierto solo a Francisco ("${com?.titulo}")`);
+ok(de('FRAN', n0).some(p => /Resumen del día/.test(p.titulo) && /Carolina/.test(p.cuerpo)), 'le llega en su resumen de la mañana');
+ok(!de('CARO', n0).length && !(com.destinatariosAbiertos || []).includes('CARO'), 'Carolina no ve avisos de dinero');
+await fs.doc('facturas_vendedor/INV-9').set({ fechaPago: ts(Date.parse('2026-10-01T00:00:00Z')) }, { merge: true });
+await correr(caracas('2026-10-14', 7, 5));
+ok(!(await aviso('comision_fechas:CARO'))?.abierto, 'al corregir la fecha de pago, el aviso se cierra solo');
+
 // ── Reglas de acceso de las colecciones nuevas ──
 const env = await initializeTestEnvironment({ projectId: 'demo-vig-reglas', firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: HOST, port: Number(PORT) } });
 await env.withSecurityRulesDisabled(async (c) => {
