@@ -1077,6 +1077,13 @@ Reclamo del dueño (captura del Estado de Cuenta de Carolina): María José cerr
 - **Efecto en meses cerrados sin congelar:** se recalculan con la regla nueva. Lo cobrado después del fin del mes pasa al mes siguiente. Si un mes ya se liquidó con la cifra vieja, puede quedar con saldo negativo, que se compensa con el mes en curso.
 - **Prueba:** `TZ=America/Caracas node --import ./tests/alias.mjs tests/comisionesCobro.test.mjs`, 25 verificaciones en verde. `vendedorMeta.js` ahora importa `commissionDefaults.js` directo (no el `.jsx`), para poder probarlo en Node.
 - **Decisión del dueño (11-oct, confirmada):** un cobro tardío paga la tasa del nivel del mes en que se FACTURÓ, no la del mes en que se cobra.
+- **Caso real tras publicar (Mes 1 de Carolina, 11-oct):** devengado $586,51, pagado $593,23, saldo **−$6,72**. El mes no estaba congelado y se recalculó: lo que había crecido después del cierre (los $37) se fue al Mes 2. Los −$6,72 son un cobro que entró desde el 19-sep, cuando ya había empezado el Mes 2. Antes se contaba en el Mes 1, por la fecha corrida o por ser una factura del Mes 1, y se pagó con la liquidación del Mes 1. No es dinero perdido ni duplicado: hay que descontarlo al pagar el Mes 2.
+  - **Liquidaciones** (`aFavorAntes`): si un mes anterior quedó con saldo negativo, el paso 2 del pago lo dice y ofrece "Pagar descontando lo adelantado". El monto pasó a `type="text"` con coma decimal.
+  - **Vendedor:** un saldo negativo se lee "Pagado de más (se descuenta en el mes siguiente)". El aviso "Se te adeuda" es NETO (suma los saldos de todos los meses cerrados).
+  - **Conciliación:**
+    - `facturasDelPeriodo` usa `fechaCalendario` (tenía el mismo corrimiento de fecha).
+    - La tarjeta "Cobrado" pasó a llamarse **"Cobrado de estas facturas"**: incluye lo cobrado después del cierre.
+    - El cuadro de comisión muestra la **base de la comisión** (lo cobrado dentro del período) y avisa si el mes quedó pagado de más.
 
 ### Validación esperada — auditoría manual de Wilmer Casares (dueño, 2026-07-09)
 Referencia para verificar que la sincronización cuadre. El dueño asignó **19 facturas** que eran de Wilmer y estaban sin asignar (por eso "faltaban"). Cifras de su auditoría en Zoho:

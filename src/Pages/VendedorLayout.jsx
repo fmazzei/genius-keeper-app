@@ -168,8 +168,10 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
 
     // Dinero adeudado de períodos CERRADOS (no el provisional en curso): se
     // muestra arriba en un banner para que nunca quede enterrado.
+    // Neto: lo pagado de más en un mes (saldo negativo, cobros que se mudaron al
+    // mes siguiente) se descuenta de lo que se adeuda de otros meses.
     const anteriores = estados.filter(e => e.cerrado && e.saldo > 0.5);
-    const adeudado = anteriores.reduce((s, e) => s + e.saldo, 0);
+    const adeudado = estados.filter(e => e.cerrado).reduce((s, e) => s + e.saldo, 0);
     const primerAdeudadoIdx = adeudado > 0 ? estados.indexOf(anteriores[anteriores.length - 1]) : -1;
 
     const anio = (e) => (e?.periodKey ? e.periodKey.slice(0, 4) : '');
@@ -209,7 +211,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
             ) : (
               <>
                 {/* Banner: dinero adeudado de períodos anteriores */}
-                {adeudado > 0 && (
+                {adeudado > 0.5 && anteriores.length > 0 && (
                     <button
                         onClick={irAAdeudado}
                         className="w-full flex items-center gap-3 bg-amber-500/10 border border-amber-500/40 rounded-xl p-3 text-left active:scale-[0.99] transition-transform"
@@ -330,7 +332,11 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                         <div className="flex justify-between"><span className="text-slate-400">Base (fijo + viáticos)</span><span className="text-slate-300 font-mono">{money(p.base)}</span></div>
                         <div className="flex justify-between border-t border-slate-800 pt-1"><span className="text-slate-300 font-semibold">Devengado total</span><span className="text-emerald-400 font-black font-mono">{money(p.devengadoTotal)}</span></div>
                         <div className="flex justify-between"><span className="text-slate-400">Pagado (liquidado)</span><span className="text-slate-300 font-mono">{money(p.pagado)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo por cobrar</span><span className={`font-black font-mono ${p.saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(p.saldo)}</span></div>
+                        {p.saldo < -0.5 ? (
+                            <div className="flex justify-between gap-2"><span className="text-slate-300 font-semibold">Pagado de más <span className="text-slate-500 font-normal text-[11px]">(cobros que ahora cuentan en el mes siguiente; se descuenta allí)</span></span><span className="font-black font-mono text-slate-300">{money(-p.saldo)}</span></div>
+                        ) : (
+                            <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo por cobrar</span><span className={`font-black font-mono ${p.saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(p.saldo)}</span></div>
+                        )}
                     </div>
 
                     {desgloseInputs && (

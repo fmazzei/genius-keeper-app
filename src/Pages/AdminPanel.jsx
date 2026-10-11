@@ -7,7 +7,7 @@ import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setD
 import { httpsCallable } from 'firebase/functions';
 import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
-import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, tamanoCartera } from '../utils/vendedorMeta.js';
+import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, tamanoCartera, fechaCalendario } from '../utils/vendedorMeta.js';
 import { cuentaEnCartera, motivoFuera } from '../utils/facturaEstado.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
@@ -2998,6 +2998,13 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
         return est ? `Mes ${est.mes} · ${est.rango}` : pk;
     };
 
+    // Lo pagado de MÁS en meses cerrados anteriores a `est` (saldo negativo): con
+    // la regla de cobro por mes de pago, esos cobros se mudaron a un mes posterior.
+    // Se descuenta al pagar para no liquidarlos dos veces.
+    const aFavorAntes = (est) => !est ? 0 : estados
+        .filter(e => e.cerrado && e.mes < est.mes && e.saldo < -0.5)
+        .reduce((s, e) => s - e.saldo, 0);
+
     const totales = estados.reduce((acc, e) => {
         acc.devengado += e.devengadoTotal;
         acc.pagado    += e.pagado;
@@ -3257,8 +3264,16 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
 
                                 {pago.paso === 2 ? (
                                     <>
+                                        {aFavorAntes(est) > 0.5 && (
+                                            <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800">
+                                                En meses anteriores se pagaron <b>{money(aFavorAntes(est))}</b> de más (cobros que ahora cuentan en este mes). Para no pagarlos dos veces, descuéntalos de este pago.
+                                                <button onClick={() => setMonto(String(Math.max(0, est.saldo - aFavorAntes(est)).toFixed(2)))} className="block mt-1.5 font-bold text-brand-blue">
+                                                    Pagar descontando lo adelantado ({money(Math.max(0, est.saldo - aFavorAntes(est)))})
+                                                </button>
+                                            </div>
+                                        )}
                                         <label className="text-xs font-semibold text-slate-600 block mb-1">Monto del pago (USD)</label>
-                                        <input type="number" min="0" step="0.01" value={monto} onChange={e => setMonto(e.target.value)} placeholder="0.00" className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
+                                        <input type="text" inputMode="decimal" value={monto} onChange={e => setMonto(e.target.value.replace(',', '.'))} placeholder="0.00" className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
                                         <button onClick={() => est && setMonto(String(Math.max(0, est.saldo).toFixed(2)))} className="mt-1.5 text-xs font-bold text-brand-blue">Pagar saldo completo ({money(est?.saldo || 0)})</button>
                                         {est && Number(monto) > est.saldo + 0.01 && <p className="text-amber-600 text-xs mt-1">El monto excede el saldo ({money(est.saldo)}). Puedes continuar, pero revísalo.</p>}
 
@@ -3410,7 +3425,9 @@ function buildInformeVendedor(facturas, metaVend, catMap) {
 // (fechaPago; si falta pero está pagada, caen al Mes 1 = ingreso).
 function facturasDelPeriodo(facturas, per, ingreso) {
     if (!per) return facturas;
-    const parse = (v) => (v?.toDate ? v.toDate() : (v ? new Date(v) : null));
+    // El día de Zoho (00:00 UTC) leído como su día: si no, una factura del primer
+    // día del período caía en el anterior (mismo criterio que la comisión).
+    const parse = fechaCalendario;
     const ahora = new Date();
     const esPeriodoEnCurso = per.start <= ahora && ahora < per.end;  // el que contiene hoy
     return facturas.filter(f => {
@@ -3862,7 +3879,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                                     { v: Number(infoPeriodo.udsFacturacion).toLocaleString('es-VE'), l: 'Uds facturadas (meta)' },
                                     { v: Number(infoPeriodo.retail.uds).toLocaleString('es-VE'), l: 'Uds retail' },
                                     { v: Number(infoPeriodo.foodservice.uds).toLocaleString('es-VE'), l: 'Uds foodservice' },
-                                    { v: money(infoPeriodo.cobrado), l: 'Cobrado' },
+                                    { v: money(infoPeriodo.cobrado), l: 'Cobrado de estas facturas' },
                                 ].map((c, i) => (
                                     <StatCard key={i} label={c.l} value={c.v} color={c.hi ? 'text-emerald-700' : 'text-slate-800'} bg={c.hi ? 'bg-emerald-50' : 'bg-slate-50'} border={c.hi ? 'border-emerald-200' : 'border-slate-200'} />
                                 ))}
@@ -3886,6 +3903,15 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                                 <StatCard label="Pagado" value={money(desgloseActual.pagado)} color="text-emerald-700" bg="bg-white" border="border-slate-200" />
                                 <StatCard label="Saldo por pagar" value={money(desgloseActual.saldo)} color={desgloseActual.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-700'} bg="bg-white" border="border-slate-200" />
                             </div>
+                            <p className="text-slate-600 text-xs mt-2">
+                                Base de la comisión: <b>{money((desgloseActual.cobradoRegular || 0) + (desgloseActual.cobradoFood || 0) + (desgloseActual.cobradoRecup || 0))}</b> cobrados <b>dentro</b> de este período.
+                                {' '}"Cobrado de estas facturas" cuenta también lo que se cobró después: eso paga en el mes en que entró el dinero.
+                            </p>
+                            {desgloseActual.saldo < -0.5 && (
+                                <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-xs mt-2">
+                                    En este mes se pagaron <b>{money(-desgloseActual.saldo)}</b> de más: son cobros que ahora cuentan en el mes siguiente (no es dinero perdido ni duplicado). Descuéntalo al liquidar el mes siguiente.
+                                </p>
+                            )}
                             <p className="text-slate-400 text-[10px] mt-1.5">
                                 Comisión = lo cobrado EN este período × la tasa del nivel del mes en que se facturó + bonos (este mes: nivel {desgloseActual.nivel}, {desgloseActual.tasa}%). Lo que se cobre después de cerrar entra al mes siguiente. El comprobante detalla el número factura por factura.
                             </p>
