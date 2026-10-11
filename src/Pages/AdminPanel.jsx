@@ -3486,6 +3486,7 @@ function InformeVendedor({ titulo, parcial, info, zohoTotal }) {
 export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedorId, onLiquidar } = {}) => {
     const [vendedoresLocal, setVendedores] = useState([]);
     const vendedores = (vendedoresProp && vendedoresProp.length) ? vendedoresProp : vendedoresLocal;
+    const vendedorNombre = (id) => (vendedores.find(v => v.id === id)?.name) || (id ? 'otro vendedor' : '—');
     const [vendedorId, setVendedorId] = useState('');
     const [facturas, setFacturas]     = useState([]);
     const [periodos, setPeriodos]     = useState([]);
@@ -3830,7 +3831,25 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                                 </div>
                             )}
                             {syncResult && syncResult.diag && syncResult.diag.pagadasSinVendedor > 0 && (
-                                <p className="text-red-600 text-[11px] mt-1.5">⚠️ {syncResult.diag.pagadasSinVendedor} pagadas en Zoho <b>pendientes de asignar</b> (clientes sin dueño) — asígnalas en <b>"Clientes de Zoho → Vendedor"</b> (§4).</p>
+                                <p className="text-red-600 text-[11px] mt-1.5">⚠️ {syncResult.diag.pagadasSinVendedor} pagadas en Zoho de clientes <b>sin vendedor</b>: ni su carnet está asignado ni ninguno de sus puntos de venta está en una cartera. Si son de alguien, agrégalos a su cartera o asígnalos en <b>"Clientes y PDV"</b>.</p>
+                            )}
+                            {syncResult && syncResult.cartera && syncResult.cartera.asignados > 0 && (
+                                <p className="text-emerald-700 text-[11px] mt-1">✓ {syncResult.cartera.asignados} cliente(s) tomaron el vendedor de su cartera ({syncResult.cartera.facturas} facturas re-atribuidas con su comisión).</p>
+                            )}
+                            {syncResult && syncResult.cartera && (syncResult.cartera.conflictos || []).length > 0 && (
+                                <details className="mt-1 text-[11px] text-amber-700">
+                                    <summary className="cursor-pointer font-semibold">{syncResult.cartera.conflictos.length} cliente(s) con cartera y carnet que no coinciden — revisar</summary>
+                                    <ul className="mt-1 space-y-0.5 pl-3">
+                                        {syncResult.cartera.conflictos.slice(0, 30).map(c => (
+                                            <li key={c.customerId}>
+                                                <b>{c.nombre}</b>: {c.motivo === 'marcado_oficina' ? 'está marcado Oficina pero su PDV está en una cartera'
+                                                    : c.motivo === 'asignado_a_otro' ? 'su carnet está asignado a otro vendedor que el de su cartera'
+                                                    : 'sus PDV están en las carteras de varios vendedores'}
+                                                {' '}({vendedorNombre(c.vendedorCartera || (c.vendedores || [])[0])}{c.vendedorCarnet ? ` vs ${vendedorNombre(c.vendedorCarnet)}` : ''}).
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </details>
                             )}
                             {syncResult && syncResult.diag && syncResult.diag.pagadasOficina > 0 && (
                                 <p className="text-slate-400 text-[11px] mt-1">{syncResult.diag.pagadasOficina} pagadas de clientes de <b>Oficina</b> (sin comisión, a propósito).</p>

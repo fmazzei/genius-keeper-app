@@ -1085,6 +1085,45 @@ Reclamo del dueño (captura del Estado de Cuenta de Carolina): María José cerr
     - La tarjeta "Cobrado" pasó a llamarse **"Cobrado de estas facturas"**: incluye lo cobrado después del cierre.
     - El cuadro de comisión muestra la **base de la comisión** (lo cobrado dentro del período) y avisa si el mes quedó pagado de más.
 
+### 3.13 — La CARTERA del vendedor manda sobre el carnet sin asignar (2026-10) ✅
+
+Pedido del dueño: *"así no se le asigne nombre de vendedor a la factura, si este cliente está asignado a su cartera debería entrar dentro de sus comisiones"*.
+
+**Había dos sistemas que no se hablaban:**
+- la cartera: `vendor_clients`, por PDV directo o cadena completa;
+- la atribución de facturas: el carnet de Zoho (`clientes_zoho.vendedorId`), con respaldo en el nombre (`zoho_customer_map`) y en el salesperson.
+
+La cartera NUNCA se usaba para atribuir. Un cliente cuyo PDV estaba en la cartera de Carolina pero cuyo carnet nadie había asignado generaba facturas "sin vendedor": sin comisión y en el aviso de "pagadas pendientes de asignar".
+
+**`functions/handlers/carteraCarnet.js`:**
+- Núcleo puro `derivarCarnetsDeCartera`.
+- `alinearCarnetsConCartera` corre en CADA conciliación, antes de cargar el mapa de carnets. Por eso aplica también al barrido automático de cada hora.
+
+**Reglas:**
+- El carnet de un PDV de la cartera hereda el vendedor de esa cartera.
+  - El carnet del PDV es su `zohoCustomerId`. Si el PDV está vinculado solo por nombre, se usa el carnet de ese nombre cuando hay uno solo.
+  - Se escribe `clientes_zoho.vendedorId` + `vendedorPorCartera:true` + `carteraPdvs`.
+  - Sus facturas se re-atribuyen con `backfillFacturasPorCustomerId`, la MISMA vía de una asignación manual: revierte lo del anterior, congela la tasa y calcula la comisión de las ya cobradas. Las pantallas no cambian: todas leen `vendedorId`.
+- **Una decisión explícita manda.** No se tocan, y se reportan como conflicto:
+  - un carnet asignado a mano a otro vendedor (`asignado_a_otro`);
+  - un carnet marcado Oficina (`marcado_oficina`).
+  - `asignarClienteVendedor` guarda ahora `vendedorPorCartera:false`, así que toda asignación manual queda como explícita.
+- **Dos carteras con el mismo carnet** (`varias_carteras`): no se adivina, se reporta.
+- **No cuentan:** PDV eliminados, depósitos, carteras inactivas ni la cadena genérica "Automercados Individuales".
+- **Si la cartera pasa a otro vendedor**, el carnet heredado se mueve con ella. Ojo: igual que una reasignación manual, el historial también se mueve.
+- **Si el PDV sale de toda cartera, NO se suelta solo** (soltarlo le quitaría comisiones ya ganadas): se reporta en `sueltos`.
+
+**Dónde se ve:**
+- Resultado de la conciliación: `res.cartera`.
+- `settings/appConfig.zohoCarteraCarnets`, expuesto como `zohoCarteraCarnets` en `AppConfigContext`.
+- La Conciliación muestra cuántos clientes heredaron vendedor y la lista de conflictos.
+- **Clientes y PDV** (`ListaMaestraPdv`) muestra un desplegable ámbar con los conflictos.
+- El aviso rojo de pagadas "sin vendedor" ahora dice que ni el carnet ni la cartera las cubren, y remite a Clientes y PDV (antes remitía a una pantalla que ya no existe).
+
+**Pruebas:**
+- `node tests/carteraCarnet.test.mjs`: 11 verificaciones en verde.
+- `npx firebase emulators:exec --only firestore --project demo-cartera "node tests/carteraCarnet.e2e.test.mjs"`: 7 verificaciones en verde. Cubre la factura cobrada con comisión y bono, la abierta que cuenta a la meta, Oficina intacta y que es idempotente.
+
 ### Validación esperada — auditoría manual de Wilmer Casares (dueño, 2026-07-09)
 Referencia para verificar que la sincronización cuadre. El dueño asignó **19 facturas** que eran de Wilmer y estaban sin asignar (por eso "faltaban"). Cifras de su auditoría en Zoho:
 - **42 facturas** asignadas a Wilmer en total (incluye heredadas/recuperadas).

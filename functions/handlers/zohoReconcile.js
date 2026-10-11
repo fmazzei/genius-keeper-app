@@ -331,6 +331,15 @@ exports.conciliarZohoAutomatico = onSchedule({
                 creadas: res.creadas, anuladas: res.anuladas, borradores: res.borradores,
                 ausentes: res.ausentes, errores: res.errores,
             },
+            // Carnets que heredaron vendedor por su cartera y los que no se pudieron
+            // resolver solos (los muestra Clientes y PDV).
+            zohoCarteraCarnets: res.cartera ? {
+                asignados: res.cartera.asignados || 0, facturas: res.cartera.facturas || 0,
+                conflictos: (res.cartera.conflictos || []).slice(0, 40),
+                sueltos: (res.cartera.sueltos || []).slice(0, 40),
+                error: res.cartera.error || null,
+                at: admin.firestore.FieldValue.serverTimestamp(),
+            } : null,
         });
         logger.log(`Conciliación automática lista en ${Math.round((Date.now() - t0) / 1000)}s`, res.cuadre || {});
     } catch (e) {
@@ -374,6 +383,17 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
     // (nombre/canónica/conteo), preservando lo que puso el admin (vendedor/oficina).
     let clientesActualizados = 0;
     try { clientesActualizados = await upsertClientesRegistry(invoices, admin.firestore()); } catch (e) { /* no bloquear la conciliación */ }
+
+    // La CARTERA manda: el carnet de un PDV que está en la cartera de un vendedor
+    // hereda ese vendedor (si nadie decidió otra cosa a mano). Va ANTES de cargar
+    // el mapa de carnets, para que el resto del barrido ya atribuya con él.
+    let alineacionCartera = null;
+    try {
+        alineacionCartera = await require('./carteraCarnet').alinearCarnetsConCartera(admin.firestore());
+    } catch (e) {
+        logger.error('Alinear carnets con cartera:', e);
+        alineacionCartera = { error: e.message };
+    }
 
     // PRE-CARGA (una sola vez) para resolver el vendedor en memoria por cada
     // factura, sin consultar la BD en cada iteración (evita el timeout).
@@ -906,6 +926,7 @@ async function ejecutarConciliacion({ vendedorId = null, origen = 'manual' } = {
 
     res.diag = diag;
     res.clientesActualizados = clientesActualizados; // registro clientes_zoho por carnet
+    res.cartera = alineacionCartera;                  // carnets asignados por cartera + conflictos
     res.unidades = zstats; // detalleConsultados / detalleRellenadas / detalleErrores / detalleTope / ultimoErrorDetalle
     res.rif = rstats;      // Fase 1: cobertura de RIF (conRif/sinRif/fuente/errores)
 

@@ -575,6 +575,8 @@ exports.asignarClienteVendedor = onCall({ region: "us-central1", timeoutSeconds:
             vendedorId:   esOficina ? null : (vendedorId || null),
             vendedorName: vendedor?.data?.name || null,
             esOficina:    esOficina === true,
+            // Una asignación a mano es una decisión explícita: manda sobre la cartera.
+            vendedorPorCartera: false,
             updatedAt:    admin.firestore.FieldValue.serverTimestamp(),
             asignadoPor:  request.auth.uid,
         };

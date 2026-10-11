@@ -30,6 +30,7 @@ import {
 import FichaPdv from '@/Components/FichaPdv.jsx';
 import PuntosDeVentaDoc, { ciudadesDe } from '@/Components/PuntosDeVentaDoc.jsx';
 import { canonRazon } from '@/utils/razonesZoho.js';
+import { useAppConfig } from '@/context/AppConfigContext';
 
 export const INDIVIDUAL = 'Automercados Individuales';
 
@@ -113,6 +114,7 @@ const Chip = ({ tone = 'slate', children, title }) => {
 // ── Componente principal ─────────────────────────────────────────────────────
 
 export default function ListaMaestraPdv() {
+    const { zohoCarteraCarnets } = useAppConfig();
     const [pos, setPos]               = useState(null);   // null = cargando
     const [clientes, setClientes]     = useState([]);
     const [vendedores, setVendedores] = useState([]);
@@ -435,6 +437,26 @@ export default function ListaMaestraPdv() {
             <div className="px-4 sm:px-0">
                 {msg && <p className="mb-3 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-start gap-2"><Check size={16} className="mt-0.5 flex-shrink-0" />{msg}</p>}
                 {error && <p className="mb-3 text-sm font-semibold text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2"><AlertTriangle size={16} className="mt-0.5 flex-shrink-0" />{error}</p>}
+                {(zohoCarteraCarnets?.conflictos || []).length > 0 && (
+                    <details className="mb-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        <summary className="cursor-pointer font-semibold">
+                            {zohoCarteraCarnets.conflictos.length} cliente(s) donde la cartera y el vendedor del carnet no coinciden
+                        </summary>
+                        <p className="mt-1 text-amber-700">Las facturas siguen la decisión hecha a mano (el carnet o la marca de Oficina). Si el dueño correcto es el de la cartera, cámbialo en la razón social.</p>
+                        <ul className="mt-1 space-y-0.5 pl-3 list-disc">
+                            {zohoCarteraCarnets.conflictos.slice(0, 30).map(c => {
+                                const n = (id) => vendedores.find(v => v.id === id)?.name || 'otro vendedor';
+                                return (
+                                    <li key={c.customerId}>
+                                        <b>{c.nombre}</b> — {c.motivo === 'marcado_oficina' ? `marcado Oficina, pero está en la cartera de ${n(c.vendedorCartera)}`
+                                            : c.motivo === 'asignado_a_otro' ? `asignado a ${n(c.vendedorCarnet)}, pero está en la cartera de ${n(c.vendedorCartera)}`
+                                            : `en las carteras de ${(c.vendedores || []).map(n).join(' y ')}`}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    </details>
+                )}
                 {exportCfg && <ExportarPdf cfg={exportCfg} setCfg={setExportCfg} posList={lista} onGenerar={() => setShowDoc(exportCfg)} />}
             </div>
             {showDoc && <PuntosDeVentaDoc posList={lista} estado={showDoc.estado} ciudades={showDoc.ciudades} canal={showDoc.canal} onClose={() => setShowDoc(null)} />}
