@@ -69,7 +69,7 @@ igual([ene.collected, feb.collected], [40, 100], 'cobrado en el mes en que se pa
 igual([ene.milk.liters, ene.milk.cost], [150, 115], 'leche de enero: litros y costo (la recepción dada de baja no cuenta; manda `fecha` sobre createdAt)');
 igual(ene.milk.bySupplier, [{ id: 'p1', name: 'Finca Masparrito', liters: 100, cost: 80 }, { id: 'p2', name: 'Los Gilgares', liters: 50, cost: 35 }], 'leche de enero por proveedor');
 igual([feb.milk.liters, feb.milk.cost], [30, 0], 'una recepción sin precio cuenta los litros, no el costo');
-ok(/1 recepciones de leche sin precio/.test(r.sources.kroma.note || ''), 'y lo dice en el estado de Kroma');
+ok(/1 recepción de leche sin precio/.test(r.sources.kroma.note || ''), 'y lo dice en el estado de Kroma');
 igual([ene.production.kg, ene.production.liters, ene.production.lots], [20, 130, 1], 'producción de enero: solo planillas cerradas, con la leche que entró');
 igual([feb.production.kg, feb.production.liters], [4, 26], 'sin litros ingresados se usan los netos');
 igual([ene.materialsPurchased, feb.materialsPurchased], [285, 15], 'compras de insumos por mes');

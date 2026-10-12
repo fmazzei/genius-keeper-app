@@ -219,7 +219,7 @@ function armarDatosReales(fuentes, op) {
   }
   const estados = { ...fuentes.estados || {} };
   if (sinPrecio > 0) {
-    estados.kroma = { ok: true, ...estados.kroma || {}, note: `${sinPrecio} recepciones de leche sin precio: cuentan los litros, pero no su costo.` };
+    estados.kroma = { ok: true, ...estados.kroma || {}, note: `${sinPrecio} ${sinPrecio === 1 ? "recepci\xF3n" : "recepciones"} de leche sin precio: cuentan los litros, pero no su costo.` };
   }
   return {
     version: VERSION_DATOS_REALES,
