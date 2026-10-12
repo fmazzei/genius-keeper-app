@@ -27,6 +27,7 @@ const { onRequest } = require("firebase-functions/v2/https");
 const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
 const { StreamableHTTPServerTransport } = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 const { z } = require("zod");
+const simulador = require("./simulador");
 
 // La clave llega como variable de entorno: GitHub Actions la escribe en el
 // `.env` del deploy desde el secreto MCP_API_KEY, igual que ZOHO_SECRET. NO se
@@ -622,6 +623,52 @@ function crearServidor(contexto = {}) {
         const r = await deshacer(cambioId, forzar);
         return { salida: r, documentos: 1 };
     }));
+
+    // ── Simulador de negocio (repo Masparrito/simulador) ──────────────────
+    // Herramientas propias para que la página del simulador no necesite las
+    // genéricas: lee un paquete armado (no colecciones sueltas) y solo escribe
+    // en `simulador_escenarios`.
+    lectura("simulador_datos_reales", {
+        description: "Datos reales para el Simulador de Negocio Lacteoca (contrato v1): ventas, cobros, leche por proveedor, producción y compras por mes; cuentas por cobrar y por pagar abiertas y saldo de bancos de Zoho. Solo lectura. Por defecto, los últimos 12 meses.",
+        inputSchema: {
+            desde: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("Primer mes, AAAA-MM"),
+            hasta: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("Último mes, AAAA-MM (por defecto el actual)"),
+            caja: z.boolean().optional().describe("false = no consultar el saldo de bancos en Zoho"),
+        },
+    }, h("simulador_datos_reales", async (args) => {
+        const { datos, documentos } = await simulador.datosReales(args);
+        return { salida: datos, documentos };
+    }));
+
+    lectura("simulador_escenarios", {
+        description: "Lista el plan base y los escenarios guardados del Simulador de Negocio (sin el plan; para leerlo, simulador_escenario_leer).",
+        inputSchema: { incluirArchivados: z.boolean().optional().default(false) },
+    }, h("simulador_escenarios", (args) => simulador.listarEscenarios(args)));
+
+    lectura("simulador_escenario_leer", {
+        description: "Lee un escenario del Simulador de Negocio con su plan (texto JSON en `datos`).",
+        inputSchema: { id: z.string() },
+    }, h("simulador_escenario_leer", (args) => simulador.leerEscenario(args)));
+
+    escritura("simulador_escenario_guardar", {
+        description: "Guarda (crea o reemplaza) el plan base o un escenario del Simulador de Negocio en simulador_escenarios. `datos` es texto JSON (el plan completo si tipo='base'; los cambios respecto de la base si tipo='escenario'). Queda la copia previa en mcp_cambios.",
+        inputSchema: {
+            id: z.string().describe("minúsculas, números, - y _"),
+            nombre: z.string(),
+            tipo: z.enum(["base", "escenario"]).optional().default("escenario"),
+            baseId: z.string().optional(),
+            datos: z.string(),
+            realAsOf: z.string().optional().describe("Fecha de los datos reales que usaba el plan (ISO)"),
+            nota: z.string().optional(),
+        },
+    }, h("simulador_escenario_guardar", async (args) =>
+        resultado(await aplicarOperaciones([await simulador.operacionGuardar(args)], { motivo: `Simulador: guardar ${args.tipo || "escenario"} ${args.id}` }))));
+
+    escritura("simulador_escenario_archivar", {
+        description: "Da de baja un escenario del Simulador de Negocio (active:false; no se borra y se puede deshacer).",
+        inputSchema: { id: z.string() },
+    }, h("simulador_escenario_archivar", async (args) =>
+        resultado(await aplicarOperaciones([simulador.operacionArchivar(args)], { motivo: `Simulador: archivar ${args.id}` }))));
 
     return server;
 }
