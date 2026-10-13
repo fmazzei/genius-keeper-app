@@ -21,13 +21,18 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/utils/vendedorMeta.js
 var vendedorMeta_exports = {};
 __export(vendedorMeta_exports, {
+  carteraActivacion: () => carteraActivacion,
+  clavesCartera: () => clavesCartera,
   computeActivacionPeriodo: () => computeActivacionPeriodo,
   computeDesglosePeriodo: () => computeDesglosePeriodo,
   computeEstadosDeCuenta: () => computeEstadosDeCuenta,
   computeMetaMensual: () => computeMetaMensual,
   cuentaParaActivacion: () => cuentaParaActivacion,
+  facturaDeLaCartera: () => facturaDeLaCartera,
   fechaCalendario: () => fechaCalendario,
   listPeriodos: () => listPeriodos,
+  llaveNombre: () => llaveNombre,
+  pdvVigente: () => pdvVigente,
   tamanoCartera: () => tamanoCartera,
   tierParaPct: () => tierParaPct
 });
@@ -198,7 +203,7 @@ var toInstante = (v) => {
   return isNaN(d?.getTime?.()) ? null : d;
 };
 var MS_SEMANA = 7 * MS_DIA;
-function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minUnits, threshold) {
+function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minUnits, threshold, claves = null) {
   const vacio = { semanasTotales: 0, semanasLogradas: 0, factor: 0, semActivados: 0, semObjetivo: 0, semLograda: false };
   if (!carteraSize || carteraSize <= 0) return vacio;
   const objetivo = Math.max(1, Math.ceil(carteraSize * threshold / 100));
@@ -209,6 +214,7 @@ function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minU
     const porCliente = {};
     facturas.forEach((f) => {
       if (!cuentaEnCartera(f) || f.recuperada || f.categoria === "foodservice") return;
+      if (!facturaDeLaCartera(f, claves)) return;
       const t = fechaCalendario(f.fecha);
       if (!t) return;
       const tm = t.getTime();
@@ -227,8 +233,32 @@ function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minU
   return { semanasTotales, semanasLogradas, factor, semActivados, semObjetivo: objetivo, semLograda };
 }
 var cuentaParaActivacion = (c) => !!c && c.activoEnZoho !== false && c.esOficina !== true && c.categoria !== "foodservice";
-function tamanoCartera(clientes = []) {
-  return (clientes || []).filter(cuentaParaActivacion).length;
+function tamanoCartera(clientes = [], posList = null) {
+  return carteraActivacion(clientes, posList).length;
+}
+var pdvVigente = (p) => !!p && p.type !== "depot" && p.active !== false && p.eliminado !== true && Number(p.visitInterval) > 0;
+var llaveNombre = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+function carteraActivacion(clientes = [], posList = null) {
+  const base = (clientes || []).filter(cuentaParaActivacion);
+  if (!Array.isArray(posList) || !posList.length) return base;
+  const carnets = /* @__PURE__ */ new Set(), nombres = /* @__PURE__ */ new Set();
+  posList.forEach((p) => {
+    if (!pdvVigente(p)) return;
+    if (p.zohoCustomerId) carnets.add(String(p.zohoCustomerId));
+    else if (p.razonSocialZoho) nombres.add(llaveNombre(p.razonSocialZoho));
+  });
+  return base.filter((c) => carnets.has(String(c.customerId || c.id)) || nombres.has(llaveNombre(c.customerName)));
+}
+function clavesCartera(cartera = []) {
+  return {
+    ids: new Set(cartera.map((c) => String(c.customerId || c.id))),
+    nombres: new Set(cartera.map((c) => llaveNombre(c.customerName)).filter(Boolean))
+  };
+}
+function facturaDeLaCartera(f, claves) {
+  if (!claves) return true;
+  if (f.zohoCustomerId) return claves.ids.has(String(f.zohoCustomerId));
+  return claves.nombres.has(llaveNombre(f.clienteName || f.customerName));
 }
 function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
   const cfg = meta.commissionConfig ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig } : DEFAULT_COMMISSION_CONFIG;
@@ -242,7 +272,8 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
   const bajaLabel = cfg.bajaLabel || "Baja";
   const actMinUnits = cfg.activacionMinUnits ?? 24;
   const actThreshold = cfg.activacionThreshold ?? 80;
-  const carteraSize = Number(opts.carteraSize) || 0;
+  const carteraSize = Array.isArray(opts.cartera) ? opts.cartera.length : Number(opts.carteraSize) || 0;
+  const claves = Array.isArray(opts.cartera) ? clavesCartera(opts.cartera) : null;
   const cerrados = opts.cerrados || {};
   const tierFor = (pct) => {
     for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
@@ -299,6 +330,7 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
       numero: f.numero || "\u2014",
       cliente: f.clienteName || f.customerName || "\u2014",
       key: f.zohoCustomerId || f.clienteName || f.customerName || "?",
+      zohoCustomerId: f.zohoCustomerId || null,
       fecha,
       fechaPago,
       unidades: Number(f.unidades) || 0,
@@ -326,7 +358,7 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     p.unidades = p.facturadas.reduce((s, f) => s + f.unidades, 0);
     p.pct = p.metaMensual > 0 ? p.unidades / p.metaMensual : 0;
     p.tier = tierFor(p.pct);
-    p.act = computeActivacionPeriodo(facturas, p.start, p.end, ahora, carteraSize, actMinUnits, actThreshold);
+    p.act = computeActivacionPeriodo(facturas, p.start, p.end, ahora, carteraSize, actMinUnits, actThreshold, claves);
     let den = 0, aTiempo = 0;
     p.facturadas.forEach((f) => {
       if (f.esFood) return;
@@ -353,7 +385,7 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     }
     periodos[destino(j, f.numero, c)].cobros.push(c);
   });
-  return { cfg, ingreso, ahora, periodos, carteraSize, actMinUnits, actThreshold };
+  return { cfg, ingreso, ahora, periodos, carteraSize, claves, actMinUnits, actThreshold };
 }
 function montosPeriodo(p, cfg, opts = {}) {
   const bonoCobranza = cfg.bonusPuntualidad ?? 0;
@@ -521,7 +553,7 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
   if (!periodKey) return null;
   const m = motorComisiones(meta, facturas, opts);
   if (!m) return null;
-  const { cfg, periodos, carteraSize, actMinUnits, actThreshold, ahora } = m;
+  const { cfg, periodos, carteraSize, claves, actMinUnits, actThreshold, ahora } = m;
   const p = periodos.find((x) => x.periodKey === periodKey);
   if (!p) return null;
   const mt = montosPeriodo(p, cfg, opts);
@@ -540,7 +572,7 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
       const we = ws + MS_SEMANA;
       const porCliente = {};
       facturadas.forEach((f) => {
-        if (f.esFood) return;
+        if (f.esFood || !facturaDeLaCartera({ zohoCustomerId: f.zohoCustomerId, clienteName: f.cliente }, claves)) return;
         const tm = f.fecha.getTime();
         if (tm < ws || tm >= we) return;
         if (!porCliente[f.key]) porCliente[f.key] = { cliente: f.cliente, unidades: 0, facturas: [] };
@@ -631,13 +663,18 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  carteraActivacion,
+  clavesCartera,
   computeActivacionPeriodo,
   computeDesglosePeriodo,
   computeEstadosDeCuenta,
   computeMetaMensual,
   cuentaParaActivacion,
+  facturaDeLaCartera,
   fechaCalendario,
   listPeriodos,
+  llaveNombre,
+  pdvVigente,
   tamanoCartera,
   tierParaPct
 });

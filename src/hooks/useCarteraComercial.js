@@ -113,6 +113,8 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
         gestiones: gestiones ? gestiones.filter(g => g.vendedorId === v.id) : null,
         planes: planes ? planes.filter(p => p.vendedorId === v.id) : null,
         clientes: clientesZoho.filter(c => c.vendedorId === v.id),
+        // Solo cuentan para la Activación las sucursales con un PDV activo.
+        posList,
     });
 
     // Desempeño de cada vendedor en su MES DE EMPLEO en curso (la vista por defecto).

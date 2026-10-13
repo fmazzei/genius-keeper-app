@@ -28,7 +28,7 @@ import ReportesAnaquelView from '@/Pages/ReportesAnaquelView.jsx';
 import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
-import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo, fechaCalendario, tamanoCartera } from '@/utils/vendedorMeta.js';
+import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo, fechaCalendario, carteraActivacion } from '@/utils/vendedorMeta.js';
 import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
@@ -158,7 +158,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
     const verDesglose = (periodKey) => {
         if (!desgloseInputs) return;
         setDesglose(computeDesglosePeriodo(desgloseInputs.meta, desgloseInputs.facturas, periodKey, {
-            carteraSize: desgloseInputs.carteraSize, cerrados: desgloseInputs.cerrados, liquidaciones: desgloseInputs.liquidaciones,
+            carteraSize: desgloseInputs.carteraSize, cartera: desgloseInputs.cartera, cerrados: desgloseInputs.cerrados, liquidaciones: desgloseInputs.liquidaciones,
         }));
     };
 
@@ -1292,7 +1292,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 // tras otro — en conexión móvil eso se nota como demora visible
                 // aunque nunca llegue a colgarse. Ninguna depende del resultado
                 // de otra, así que corren todas a la vez.
-                const [despachosSnap, comisionMesSnap, pagosSnap, carteraSnap, facturasSnap, liquidacionesSnap, cerradosSnap, clientesZohoSnap] = await Promise.all([
+                const [despachosSnap, comisionMesSnap, pagosSnap, carteraSnap, facturasSnap, liquidacionesSnap, cerradosSnap, clientesZohoSnap, posSnapIni] = await Promise.all([
                     reporterId
                         ? getDocs(query(collection(db, 'despachos'), where('reporterId', '==', reporterId)))
                         : Promise.resolve(null),
@@ -1316,6 +1316,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                     // Sus sucursales (carnets de Zoho): la cartera de la Activación.
                     getDocs(query(collection(db, 'clientes_zoho'), where('vendedorId', '==', user.uid)))
                         .catch(e => { console.warn('clientes_zoho load error:', e); return null; }),
+                    // Los PDV: solo cuentan para la Activación las sucursales con un PDV activo.
+                    getDocs(collection(db, 'pos'))
+                        .catch(e => { console.warn('pos load error:', e); return null; }),
                 ]);
 
                 // 2. Despachos del mes (requiere reporterId — vínculo con el
@@ -1400,7 +1403,10 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const cartera = carteraDocs.filter(c => (c.estado || 'activo') === 'activo');
                 // Activación: la cartera son sus SUCURSALES (carnets de Zoho), la
                 // misma regla que administración y el servidor (tamanoCartera).
-                const puntosTotal = clientesZohoSnap ? tamanoCartera(clientesZohoSnap.docs.map(d => ({ customerId: d.id, ...d.data() }))) : 0;
+                // Solo sus sucursales con un PDV ACTIVO en la lista maestra.
+                const posTodos = posSnapIni ? posSnapIni.docs.map(d => ({ id: d.id, ...d.data() })) : null;
+                const carteraAct = clientesZohoSnap ? carteraActivacion(clientesZohoSnap.docs.map(d => ({ customerId: d.id, ...d.data() })), posTodos) : null;
+                const puntosTotal = carteraAct ? carteraAct.length : 0;
 
                 // Despachos de esta semana con mínimo de unidades, cruzados contra cartera
                 const carteraPosIds = new Set(cartera.map(c => c.posId).filter(Boolean));
@@ -1489,9 +1495,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const facturasArr = facturasSnap ? facturasSnap.docs.map(d => d.data()) : [];
                 setEstados(computeEstadosDeCuenta(
                     meta, facturasArr, liquidaciones,
-                    { carteraSize: puntosTotal, cerrados: cerradosMap, anaquel: { hasAnaquel: false, factor: 0 } },
+                    { carteraSize: puntosTotal, cartera: carteraAct || undefined, cerrados: cerradosMap, anaquel: { hasAnaquel: false, factor: 0 } },
                 ));
-                setDesgloseInputs({ meta, facturas: facturasArr, carteraSize: puntosTotal, cerrados: cerradosMap, liquidaciones });
+                setDesgloseInputs({ meta, facturas: facturasArr, carteraSize: puntosTotal, cartera: carteraAct || undefined, cerrados: cerradosMap, liquidaciones });
 
                 // Lista para "Tomar Pedido": clientes activos de la cartera (no
                 // requiere lecturas extra de `pos`).
@@ -1525,7 +1531,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     // por CADENA (hay que mirar el `chain` de cada PDV, no solo los
                     // posId que trae `vendor_clients`). Es la MISMA resolución que usa
                     // el máster, para que los dos tableros salgan iguales.
-                    const posSnap = await getDocs(collection(db, 'pos'));
+                    const posSnap = posSnapIni || await getDocs(collection(db, 'pos'));
                     const carteraPos = posSnap.docs
                         .map(d => ({ id: d.id, ...d.data() }))
                         // Los DEPÓSITOS no son puntos de venta: el máster ya los
@@ -1658,7 +1664,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     if (hasAnaquel) {
                         setEstados(computeEstadosDeCuenta(
                             meta, facturasArr, liquidaciones,
-                            { carteraSize: puntosTotal, cerrados: cerradosMap, anaquel: { hasAnaquel: true, factor: anaquelOk ? 1 : 0 } },
+                            { carteraSize: puntosTotal, cartera: carteraAct || undefined, cerrados: cerradosMap, anaquel: { hasAnaquel: true, factor: anaquelOk ? 1 : 0 } },
                         ));
                     }
 

@@ -94,7 +94,7 @@ async function leerDatos(g, ahoraMs, estado) {
     // Sin clientes, pagos o cierres no se puede revisar la comisión sin inventar:
     // si alguna lectura falla, esa revisión no corre (y no cierra sus avisos).
     const comisiones = g.pesado && d.clientes && d.liquidaciones && d.cerradas
-        ? { facturas: d.facturas, clientes: d.clientes, carteras: d.carteras, liquidaciones: d.liquidaciones, cerradas: d.cerradas }
+        ? { facturas: d.facturas, clientes: d.clientes, carteras: d.carteras, liquidaciones: d.liquidaciones, cerradas: d.cerradas, pos: d.pos }
         : null;
     return {
         ...d,

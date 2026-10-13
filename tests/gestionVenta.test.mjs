@@ -5,7 +5,7 @@
 import { clasificarVentas, evaluarPlan, sugerirPlan, claveSemana } from '../src/utils/gestionVenta.js';
 import { evaluarDesempeno, ventanasVendedor, evaluarAnio, PESOS } from '../src/utils/desempenoVendedor.js';
 import { detalleActivacion } from '../src/utils/activacion.js';
-import { computeActivacionPeriodo, tamanoCartera } from '../src/utils/vendedorMeta.js';
+import { computeActivacionPeriodo, tamanoCartera, carteraActivacion, clavesCartera, computeEstadosDeCuenta } from '../src/utils/vendedorMeta.js';
 
 let fallas = 0;
 const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas++; };
@@ -125,6 +125,45 @@ const cobr = [
 ];
 const evC = evaluarDesempeno({ vendedor, facturas: cobr, gestiones: [], planes: [], carteraSize: 0, ahora });
 ok(Math.round(evC.pilares.cobranza.pctMeta * 100) === 50, 'Cobranza: una a tiempo y una tarde = 50 %');
+
+// ── Solo cuentan las sucursales con un PDV ACTIVO (13-oct, caso Mi Negocio) ──
+{
+    const cli = [
+        { customerId: 'MN-FLO', customerName: 'Mi Negocio Supermercados C.A' },
+        { customerId: 'MN-SL', customerName: 'Mi Negocio Supermercados C.A San Luis' },
+        { customerId: 'GAMA', customerName: 'Excelsior Gama Supermercados, C.A.' },
+        { customerId: 'CAVA', customerName: 'LA CAVA S A' },
+        { customerId: 'RIO', customerName: 'Inside Market, Supermercado Rio (Lomas)' },
+    ];
+    const pos = [
+        { id: 'p1', zohoCustomerId: 'MN-FLO', active: true, visitInterval: 7 },
+        { id: 'p2', zohoCustomerId: 'MN-SL', active: false, visitInterval: 0 },
+        { id: 'p3', zohoCustomerId: 'GAMA', active: false, visitInterval: 0 },
+        { id: 'p4', zohoCustomerId: 'GAMA', active: true, visitInterval: 7, eliminado: true },
+        { id: 'p5', razonSocialZoho: 'Inside Market, Supermercado Río (Lomas)', active: true, visitInterval: 14 },
+        { id: 'd1', zohoCustomerId: 'CAVA', active: true, visitInterval: 7, type: 'depot' },
+    ];
+    const cart = carteraActivacion(cli, pos);
+    ok(cart.map(c => c.customerId).join() === 'MN-FLO,RIO', `cartera = sucursales con PDV activo (por carnet o por razón social) → ${cart.map(c => c.customerId).join()}`);
+    ok(tamanoCartera(cli, pos) === 2 && tamanoCartera(cli) === 5 && tamanoCartera(cli, []) === 5, 'sin lista de PDV no se filtra (regla anterior), con lista sí');
+    // Facturas: Mi Negocio La Florida y LA CAVA (sin PDV) facturan 12+ la misma semana.
+    const fs = [f('X1', 'MN-FLO', '2026-09-20', 24), f('X2', 'CAVA', '2026-09-21', 24), f('X3', 'MN-SL', '2026-09-22', 24)];
+    const ini = d('2026-09-19'), fin = d('2026-10-19'), hoy = d('2026-10-13');
+    const a1 = computeActivacionPeriodo(fs, ini, fin, hoy, cart.length, 12, 80, clavesCartera(cart));
+    ok(a1.semanasLogradas === 0 && computeActivacionPeriodo(fs, ini, fin, hoy, cart.length, 12, 50, clavesCartera(cart)).semanasLogradas === 1,
+        'solo cuenta como activada la sucursal de la cartera (1 de 2), no LA CAVA ni San Luis');
+    const det = detalleActivacion({ facturas: fs, clientes: cli, inicio: ini, fin, ahora: hoy, minUnits: 12, threshold: 80, posList: pos });
+    ok(det.cartera === 2 && det.activados.length === 1 && det.activados[0].clave === 'MN-FLO', 'el detalle activa solo a Mi Negocio La Florida');
+    ok(det.sinActivar.map(c => c.clave).join() === 'RIO', 'falta por activar solo Río Lomas');
+    const motivos = Object.fromEntries(det.fuera.map(c => [c.clave, c.motivo]));
+    ok(motivos['MN-SL'] === 'PDV inactivo' && motivos.GAMA === 'PDV inactivo' && motivos.CAVA === 'Sin PDV en la lista maestra', 'las que no cuentan dicen por qué');
+    // El bono (motor de comisiones) usa la misma cartera.
+    const meta = { fechaIngreso: '2026-08-19', commissionConfig: { metaMensual: 1700, bonusActivacion: 1, activacionThreshold: 50, activacionMinUnits: 12 } };
+    const soloRio = computeEstadosDeCuenta(meta, fs, [], { cartera: [cart[1]], ahora: hoy })[0];
+    const sinFiltro = computeEstadosDeCuenta(meta, fs, [], { carteraSize: 1, ahora: hoy })[0];
+    ok(computeEstadosDeCuenta(meta, fs, [], { cartera: cart, ahora: hoy })[0].actSemanasLogradas === 1 && soloRio.actSemanasLogradas === 0 && sinFiltro.actSemanasLogradas === 1,
+        'el Bono Activación cuenta solo facturas de la cartera (con Río solo: 0 semanas; sin filtro: 1)');
+}
 
 console.log(fallas ? `\n${fallas} FALLAS` : '\nTodo correcto');
 process.exit(fallas ? 1 : 0);

@@ -189,7 +189,7 @@ const toInstante = (v) => {
  * para el tracking en vivo del vendedor.
  */
 const MS_SEMANA = 7 * MS_DIA;
-export function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minUnits, threshold) {
+export function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minUnits, threshold, claves = null) {
     const vacio = { semanasTotales: 0, semanasLogradas: 0, factor: 0, semActivados: 0, semObjetivo: 0, semLograda: false };
     if (!carteraSize || carteraSize <= 0) return vacio;
     const objetivo = Math.max(1, Math.ceil(carteraSize * threshold / 100));
@@ -200,6 +200,7 @@ export function computeActivacionPeriodo(facturas, start, end, ahora, carteraSiz
         const porCliente = {};
         facturas.forEach(f => {
             if (!cuentaEnCartera(f) || f.recuperada || f.categoria === 'foodservice') return;
+            if (!facturaDeLaCartera(f, claves)) return;
             const t = fechaCalendario(f.fecha);
             if (!t) return;
             const tm = t.getTime();
@@ -233,8 +234,57 @@ export const cuentaParaActivacion = (c) => !!c && c.activoEnZoho !== false && c.
  * activación tampoco cuenta sus facturas).
  * @param {Array} clientes — documentos de `clientes_zoho` DEL vendedor.
  */
-export function tamanoCartera(clientes = []) {
-    return (clientes || []).filter(cuentaParaActivacion).length;
+export function tamanoCartera(clientes = [], posList = null) {
+    return carteraActivacion(clientes, posList).length;
+}
+
+/**
+ * ¿Este PDV está ACTIVO en la lista maestra? La misma noción que la pantalla de
+ * Clientes y PDV y el Seguidor: activo, no eliminado y con frecuencia de visita
+ * (inactivo = frecuencia 0). Los depósitos no son puntos de venta.
+ */
+export const pdvVigente = (p) => !!p && p.type !== 'depot' && p.active !== false && p.eliminado !== true && Number(p.visitInterval) > 0;
+
+export const llaveNombre = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/**
+ * Sucursales que cuentan para la Activación (decisión del dueño, 13-oct): las
+ * del vendedor que además tienen un PUNTO DE VENTA ACTIVO en la lista maestra.
+ * Un carnet que sigue asignado y activo en Zoho pero cuyo PDV está inactivo
+ * (p. ej. Mi Negocio San Luis, los Gama, Páramo Guatire) no es cartera a
+ * activar. Tampoco cuenta un carnet sin ningún PDV vinculado.
+ * El PDV se cruza por su carnet (`zohoCustomerId`) y, si no lo tiene, por su
+ * razón social. Sin lista de PDV (todavía cargando o sin permiso) no se filtra:
+ * es mejor la regla anterior que una cartera vacía.
+ * @param {Array} clientes — `clientes_zoho` del vendedor.
+ * @param {Array} [posList] — la colección `pos`.
+ */
+export function carteraActivacion(clientes = [], posList = null) {
+    const base = (clientes || []).filter(cuentaParaActivacion);
+    if (!Array.isArray(posList) || !posList.length) return base;
+    const carnets = new Set(), nombres = new Set();
+    posList.forEach(p => {
+        if (!pdvVigente(p)) return;
+        if (p.zohoCustomerId) carnets.add(String(p.zohoCustomerId));
+        else if (p.razonSocialZoho) nombres.add(llaveNombre(p.razonSocialZoho));
+    });
+    return base.filter(c => carnets.has(String(c.customerId || c.id)) || nombres.has(llaveNombre(c.customerName)));
+}
+
+/** Llaves de una cartera ya filtrada, para contar SOLO sus facturas como activación. */
+export function clavesCartera(cartera = []) {
+    return {
+        ids: new Set(cartera.map(c => String(c.customerId || c.id))),
+        nombres: new Set(cartera.map(c => llaveNombre(c.customerName)).filter(Boolean)),
+    };
+}
+
+/** ¿La factura es de una sucursal de la cartera? Sin llaves, todas cuentan (regla anterior). */
+export function facturaDeLaCartera(f, claves) {
+    if (!claves) return true;
+    if (f.zohoCustomerId) return claves.ids.has(String(f.zohoCustomerId));
+    return claves.nombres.has(llaveNombre(f.clienteName || f.customerName));
 }
 
 /**
@@ -272,7 +322,11 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     const bajaLabel    = cfg.bajaLabel || 'Baja';
     const actMinUnits  = cfg.activacionMinUnits ?? 24;
     const actThreshold = cfg.activacionThreshold ?? 80;
-    const carteraSize  = Number(opts.carteraSize) || 0;
+    // La cartera de la Activación: si llega la lista (`opts.cartera`, ya filtrada
+    // con `carteraActivacion`), manda ella y solo cuentan las facturas de esas
+    // sucursales; si no, el tamaño suelto de siempre.
+    const carteraSize  = Array.isArray(opts.cartera) ? opts.cartera.length : (Number(opts.carteraSize) || 0);
+    const claves       = Array.isArray(opts.cartera) ? clavesCartera(opts.cartera) : null;
     const cerrados     = opts.cerrados || {};
     const tierFor = (pct) => {
         for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
@@ -329,6 +383,7 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
             numero: f.numero || '—',
             cliente: f.clienteName || f.customerName || '—',
             key: f.zohoCustomerId || f.clienteName || f.customerName || '?',
+            zohoCustomerId: f.zohoCustomerId || null,
             fecha, fechaPago,
             unidades: Number(f.unidades) || 0,
             monto: Number(f.monto) || 0,
@@ -359,7 +414,7 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         p.unidades = p.facturadas.reduce((s, f) => s + f.unidades, 0);
         p.pct = p.metaMensual > 0 ? p.unidades / p.metaMensual : 0;
         p.tier = tierFor(p.pct);
-        p.act = computeActivacionPeriodo(facturas, p.start, p.end, ahora, carteraSize, actMinUnits, actThreshold);
+        p.act = computeActivacionPeriodo(facturas, p.start, p.end, ahora, carteraSize, actMinUnits, actThreshold, claves);
         let den = 0, aTiempo = 0;
         p.facturadas.forEach(f => {
             if (f.esFood) return;
@@ -386,7 +441,7 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         periodos[destino(j, f.numero, c)].cobros.push(c);
     });
 
-    return { cfg, ingreso, ahora, periodos, carteraSize, actMinUnits, actThreshold };
+    return { cfg, ingreso, ahora, periodos, carteraSize, claves, actMinUnits, actThreshold };
 }
 
 /** Montos de un período a partir del motor. */
@@ -454,7 +509,7 @@ const CAMPOS_CONGELADOS = [
  * liquidaciones. Un período CERRADO puede CONGELARse (opts.cerrados[periodKey])
  * → su devengado queda fijo; el pagado/saldo sigue en vivo.
  *
- * @param {object} opts - { carteraSize, cerrados: {periodKey→snapshot},
+ * @param {object} opts - { cartera (sucursales activas, ver carteraActivacion) o carteraSize, cerrados: {periodKey→snapshot},
  *   anaquel: {hasAnaquel, factor}, ahora? }
  */
 export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], opts = {}) {
@@ -530,14 +585,14 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
  * concepto — insumo del comprobante de liquidación. Usa el MISMO motor que el
  * Estado de Cuenta, así que sus montos cuadran siempre.
  *
- * @param {object} opts - { carteraSize, cerrados, liquidaciones }
+ * @param {object} opts - { cartera o carteraSize, cerrados, liquidaciones }
  * @returns {object|null}
  */
 export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) {
     if (!periodKey) return null;
     const m = motorComisiones(meta, facturas, opts);
     if (!m) return null;
-    const { cfg, periodos, carteraSize, actMinUnits, actThreshold, ahora } = m;
+    const { cfg, periodos, carteraSize, claves, actMinUnits, actThreshold, ahora } = m;
     const p = periodos.find(x => x.periodKey === periodKey);
     if (!p) return null;
     const mt = montosPeriodo(p, cfg, opts);
@@ -560,7 +615,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
             const we = ws + MS_SEMANA;
             const porCliente = {};
             facturadas.forEach(f => {
-                if (f.esFood) return;
+                if (f.esFood || !facturaDeLaCartera({ zohoCustomerId: f.zohoCustomerId, clienteName: f.cliente }, claves)) return;
                 const tm = f.fecha.getTime();
                 if (tm < ws || tm >= we) return;
                 if (!porCliente[f.key]) porCliente[f.key] = { cliente: f.cliente, unidades: 0, facturas: [] };

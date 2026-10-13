@@ -211,6 +211,19 @@ function ActivacionDetalle({ det }) {
                     </div>
                 </details>
             )}
+            {det.fuera?.length > 0 && (
+                <details className="mt-3">
+                    <summary className="text-[11px] font-bold uppercase tracking-wider text-slate-400 cursor-pointer">No cuentan: PDV inactivo o sin PDV ({det.fuera.length})</summary>
+                    <div className="mt-1 divide-y divide-slate-100">
+                        {det.fuera.map(c => (
+                            <div key={c.clave} className="py-1.5 flex items-baseline justify-between gap-2 text-xs">
+                                <span className="text-slate-500">{c.nombre}</span>
+                                <span className="shrink-0 text-slate-400">{c.motivo}</span>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+            )}
         </section>
     );
 }

@@ -7,7 +7,7 @@ import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setD
 import { httpsCallable } from 'firebase/functions';
 import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
-import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, tamanoCartera, fechaCalendario } from '../utils/vendedorMeta.js';
+import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, carteraActivacion, fechaCalendario } from '../utils/vendedorMeta.js';
 import { cuentaEnCartera, motivoFuera } from '../utils/facturaEstado.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
@@ -2784,7 +2784,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
         setLoading(true);
         setError('');
         try {
-            const [metaSnap, facturasSnap, liquidSnap, carteraSnap, cerradosSnap] = await Promise.all([
+            const [metaSnap, facturasSnap, liquidSnap, carteraSnap, cerradosSnap, posSnap] = await Promise.all([
                 getDoc(doc(db, 'users_metadata', uid)),
                 getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', uid))),
                 getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', uid))),
@@ -2793,16 +2793,19 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                     .catch(() => null),
                 getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', uid)))
                     .catch(() => null),
+                // Solo cuentan para la Activación las sucursales con un PDV activo.
+                getDocs(collection(db, 'pos')).catch(() => null),
             ]);
             const meta = metaSnap.exists() ? metaSnap.data() : {};
             const facturas = facturasSnap.docs.map(d => d.data());
             const liqs = liquidSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-            const carteraSize = carteraSnap ? tamanoCartera(carteraSnap.docs.map(d => d.data())) : 0;
+            const cartera = carteraSnap ? carteraActivacion(carteraSnap.docs.map(d => ({ customerId: d.id, ...d.data() })), posSnap ? posSnap.docs.map(d => ({ id: d.id, ...d.data() })) : null) : undefined;
+            const carteraSize = cartera ? cartera.length : 0;
             const cerrados = {};
             if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerrados[c.periodKey] = c; });
-            setEstados(computeEstadosDeCuenta(meta, facturas, liqs, { carteraSize, cerrados }));
+            setEstados(computeEstadosDeCuenta(meta, facturas, liqs, { carteraSize, cartera, cerrados }));
             setLiquid(liqs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')));
-            setRaw({ meta, facturas, carteraSize, cerrados, liqs });
+            setRaw({ meta, facturas, carteraSize, cartera, cerrados, liqs });
         } catch (e) {
             console.error(e);
             setError('No se pudo cargar el estado de cuenta del vendedor.');
@@ -3092,7 +3095,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                             <div className="flex items-center justify-end gap-2 mt-1">
                                                 {raw && (
                                                     <button
-                                                        onClick={() => setDocDesgloses([computeDesglosePeriodo(raw.meta, raw.facturas, e.periodKey, { carteraSize: raw.carteraSize, cerrados: raw.cerrados, liquidaciones: raw.liqs })].filter(Boolean))}
+                                                        onClick={() => setDocDesgloses([computeDesglosePeriodo(raw.meta, raw.facturas, e.periodKey, { carteraSize: raw.carteraSize, cartera: raw.cartera, cerrados: raw.cerrados, liquidaciones: raw.liqs })].filter(Boolean))}
                                                         className="text-[11px] font-semibold text-brand-blue"
                                                     >
                                                         Comprobante detallado
@@ -3144,7 +3147,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                     const lo = Math.min(a.mes, b.mes), hi = Math.max(a.mes, b.mes);
                                     const keys = estados.filter(e => e.mes >= lo && e.mes <= hi).map(e => e.periodKey);
                                     const arr = keys
-                                        .map(k => computeDesglosePeriodo(raw.meta, raw.facturas, k, { carteraSize: raw.carteraSize, cerrados: raw.cerrados, liquidaciones: raw.liqs }))
+                                        .map(k => computeDesglosePeriodo(raw.meta, raw.facturas, k, { carteraSize: raw.carteraSize, cartera: raw.cartera, cerrados: raw.cerrados, liquidaciones: raw.liqs }))
                                         .filter(Boolean);
                                     if (arr.length) setDocDesgloses(arr);
                                 }}
@@ -3511,6 +3514,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
     const [allPos, setAllPos]         = useState([]);   // maestro de PDV activos (conteo real de tiendas)
     const [liqVend, setLiqVend]       = useState([]);   // liquidaciones del vendedor (para el devengado)
     const [carteraSizeVend, setCarteraSizeVend] = useState(0);
+    const [carteraVend, setCarteraVend] = useState(null);
     const [cerradosVend, setCerradosVend]       = useState({});
     const [showComprobante, setShowComprobante] = useState(false);
 
@@ -3539,7 +3543,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
         setError('');
         try {
             const isNone = uid === '__none__';
-            const [facSnap, metaSnap, mapSnap, liqSnap, cartSnap, cerrSnap] = await Promise.all([
+            const [facSnap, metaSnap, mapSnap, liqSnap, cartSnap, cerrSnap, posSnapC] = await Promise.all([
                 getDocs(query(collection(db, 'facturas_vendedor'), isNone ? where('vendedorId', '==', null) : where('vendedorId', '==', uid))),
                 isNone ? Promise.resolve(null) : getDoc(doc(db, 'users_metadata', uid)),
                 isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'zoho_customer_map'), where('vendedorId', '==', uid))).catch(() => null),
@@ -3547,6 +3551,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                 // Activación: la cartera son sus sucursales (carnets de Zoho).
                 isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'clientes_zoho'), where('vendedorId', '==', uid))).catch(() => null),
                 isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', uid))).catch(() => null),
+                isNone ? Promise.resolve(null) : getDocs(collection(db, 'pos')).catch(() => null),
             ]);
             const rows = facSnap.docs.map(d => ({ id: d.id, ...d.data() }));
             rows.sort((a, b) => {
@@ -3568,7 +3573,10 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
             // Insumos de comisión (para mostrar el devengado y el comprobante de
             // liquidación aquí mismo — la conciliación es para conocer la comisión).
             setLiqVend(liqSnap ? liqSnap.docs.map(d => ({ id: d.id, ...d.data() })) : []);
-            setCarteraSizeVend(cartSnap ? tamanoCartera(cartSnap.docs.map(d => d.data())) : 0);
+            // Solo sus sucursales con un PDV activo cuentan para la Activación.
+            const carteraC = cartSnap ? carteraActivacion(cartSnap.docs.map(d => ({ customerId: d.id, ...d.data() })), posSnapC ? posSnapC.docs.map(d => ({ id: d.id, ...d.data() })) : null) : null;
+            setCarteraVend(carteraC);
+            setCarteraSizeVend(carteraC ? carteraC.length : 0);
             const cer = {};
             if (cerrSnap) cerrSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cer[c.periodKey] = c; });
             setCerradosVend(cer);
@@ -3727,7 +3735,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
     // Comisión del período (devengado/pagado/saldo) + comprobante factura por
     // factura — la conciliación es para CONOCER la comisión y poder liquidar.
     const desgloseActual = (vendedorId !== '__none__' && metaVend && periodoActual)
-        ? computeDesglosePeriodo(metaVend, facturas, periodoActual.periodKey, { carteraSize: carteraSizeVend, cerrados: cerradosVend, liquidaciones: liqVend })
+        ? computeDesglosePeriodo(metaVend, facturas, periodoActual.periodKey, { carteraSize: carteraSizeVend, cartera: carteraVend || undefined, cerrados: cerradosVend, liquidaciones: liqVend })
         : null;
 
     // Perfil del vendedor (encabezado del informe de verificación): identidad,
@@ -4123,6 +4131,8 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                     const vendSnap = await getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor')));
                     vendedores = vendSnap.docs.map(d => ({ id: d.id, ...d.data() }));
                 }
+                // Una sola lectura de los PDV: solo cuentan para la Activación las sucursales con un PDV activo.
+                const posTodos = await getDocs(collection(db, 'pos')).then(sn => sn.docs.map(d => ({ id: d.id, ...d.data() }))).catch(() => null);
                 const out = await Promise.all(vendedores.map(async (v) => {
                     const [facturasSnap, liquidSnap, cerradosSnap, carteraSnap] = await Promise.all([
                         getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', v.id))).catch(() => null),
@@ -4134,8 +4144,8 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                     const liqs     = liquidSnap ? liquidSnap.docs.map(d => d.data()) : [];
                     const cerrados = {};
                     if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerrados[c.periodKey] = c; });
-                    const carteraSize = carteraSnap ? tamanoCartera(carteraSnap.docs.map(d => d.data())) : 0;
-                    const periodos = computeEstadosDeCuenta(v, facturas, liqs, { carteraSize, cerrados });
+                    const cartera = carteraSnap ? carteraActivacion(carteraSnap.docs.map(d => ({ customerId: d.id, ...d.data() })), posTodos) : undefined;
+                    const periodos = computeEstadosDeCuenta(v, facturas, liqs, { carteraSize: cartera ? cartera.length : 0, cartera, cerrados });
                     const totDev = periodos.reduce((s, p) => s + p.devengadoTotal, 0);
                     const totPag = periodos.reduce((s, p) => s + p.pagado, 0);
                     const totSaldo = periodos.reduce((s, p) => s + p.saldo, 0);

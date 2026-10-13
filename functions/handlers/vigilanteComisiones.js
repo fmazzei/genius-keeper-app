@@ -215,8 +215,8 @@ function evaluarComisiones(d, cfg) {
         return Math.max(num(c.precioUnidad) || 5.6, num(c.precioUnidadFoodservice) || 4.8);
     };
     const factorKg = num(cfg.factorUnidadesSospechosas) || 1.5;
-    // Activación: la cartera son las SUCURSALES (carnets de Zoho) del vendedor,
-    // la misma regla de la app (tamanoCartera sobre clientes_zoho).
+    // Activación: la cartera son las SUCURSALES (carnets de Zoho) del vendedor con
+    // un PDV activo, la misma regla de la app (carteraActivacion).
     const carteraDe = {};
     (d.clientes || []).filter(c => c.vendedorId).forEach(c => { (carteraDe[c.vendedorId] = carteraDe[c.vendedorId] || []).push(c); });
 
@@ -297,7 +297,8 @@ function evaluarComisiones(d, cfg) {
         const cerrados = {};
         (d.cerradas || []).filter(c => c.vendedorId === v.uid && c.periodKey).forEach(c => { cerrados[c.periodKey] = relojCierre(c); });
         const liqs = (d.liquidaciones || []).filter(l => l.vendedorId === v.uid);
-        const opts = { carteraSize: M.tamanoCartera(carteraDe[v.uid] || []), cerrados, ahora: new Date(ahora - TZ) };
+        const carteraV = M.carteraActivacion(carteraDe[v.uid] || [], d.pos || null);
+        const opts = { carteraSize: carteraV.length, cartera: carteraV, cerrados, ahora: new Date(ahora - TZ) };
         const meta = { ...v, fechaIngreso: ingreso };
         const insumo = suyas.map(relojFactura);
         let estados;

@@ -193,6 +193,7 @@ function RegistrarSheet({ uid, nombreVendedor, clientes, plan, onClose, onGuarda
 
 export default function GestionVentaView({ uid, nombreVendedor, facturas = [], commConfig = {}, periodStart = null }) {
     const [clientes, setClientes] = useState([]);
+    const [posList, setPosList] = useState(null);
     const [gestiones, setGestiones] = useState([]);
     const [plan, setPlan] = useState(null);
     const [cargando, setCargando] = useState(true);
@@ -210,14 +211,17 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
         (async () => {
             setCargando(true); setError('');
             try {
-                const [cSnap, gSnap, pSnap] = await Promise.all([
+                const [cSnap, gSnap, pSnap, posSnap] = await Promise.all([
                     getDocs(query(collection(db, 'clientes_zoho'), where('vendedorId', '==', uid))),
                     getDocs(query(collection(db, 'gestiones_venta'), where('vendedorId', '==', uid))),
                     getDoc(doc(db, 'planes_venta', planId)),
+                    // Para la Activación solo cuentan las sucursales con un PDV activo.
+                    getDocs(collection(db, 'pos')).catch(() => null),
                 ]);
                 if (!vivo) return;
                 setClientes(cSnap.docs.map(d => ({ customerId: d.id, ...d.data() })).filter(c => !c.esOficina && c.activoEnZoho !== false));
                 setGestiones(gSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+                setPosList(posSnap ? posSnap.docs.map(d => ({ id: d.id, ...d.data() })) : null);
                 setPlan(pSnap.exists() ? pSnap.data() : { vendedorId: uid, semana, items: [] });
             } catch (e) {
                 if (vivo) setError('No se pudo cargar tu gestión. Revisa tu conexión.');
@@ -264,7 +268,7 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
     })();
     const act = detalleActivacion({
         facturas, clientes, inicio: semIni, fin: new Date(semIni.getTime() + 7 * 86400000),
-        minUnits: Number(commConfig.activacionMinUnits) || 12, threshold: Number(commConfig.activacionThreshold) || 80, gestiones,
+        minUnits: Number(commConfig.activacionMinUnits) || 12, threshold: Number(commConfig.activacionThreshold) || 80, gestiones, posList,
     });
     const actSem = act.semanas[act.semanas.length - 1];
     const activadosSem = actSem?.activados || 0;

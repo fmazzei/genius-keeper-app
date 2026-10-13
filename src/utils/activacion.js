@@ -12,14 +12,18 @@
 //   · Semanas de 7 días desde el inicio del período. Meta: `threshold`% (80) de
 //     la cartera cada semana.
 //   · No cuentan anuladas, reposiciones, recuperadas ni foodservice.
+//   · La cartera son las sucursales con un PDV ACTIVO en la lista maestra
+//     (`carteraActivacion`). Una sucursal con su PDV inactivo, o sin PDV, sale
+//     de la meta y sus facturas no cuentan como activación (decisión del dueño,
+//     13-oct). Se listan aparte (`fuera`) para que se vea por qué la cartera
+//     es la que es.
 // El puntaje del índice es PROPORCIONAL (cuánto se acercó cada semana a la meta,
 // promediado); el bono paga las semanas LOGRADAS. Misma definición, dos usos.
 
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
-import { fechaCalendario, tamanoCartera, cuentaParaActivacion } from '@/utils/vendedorMeta.js';
+import { fechaCalendario, cuentaParaActivacion, carteraActivacion, clavesCartera, facturaDeLaCartera, llaveNombre } from '@/utils/vendedorMeta.js';
 
 const DIA = 86400000, SEMANA = 7 * DIA;
-const clave = (f) => f.zohoCustomerId ? String(f.zohoCustomerId) : `n:${String(f.clienteName || f.customerName || '?').toLowerCase().trim()}`;
 
 /**
  * @param {object} p
@@ -28,14 +32,27 @@ const clave = (f) => f.zohoCustomerId ? String(f.zohoCustomerId) : `n:${String(f
  * @param {Date}   p.inicio, p.fin, p.ahora
  * @param {number} p.minUnits, p.threshold
  * @param {Array}  [p.gestiones] — su registro de visitas, para marcar qué activación salió de una visita.
+ * @param {Array}  [p.posList]  — la colección `pos`: solo cuentan las sucursales con un PDV activo.
  */
-export function detalleActivacion({ facturas = [], clientes = [], inicio, fin, ahora = new Date(), minUnits = 12, threshold = 80, gestiones = [] }) {
-    const cartera = (clientes || []).filter(cuentaParaActivacion);
-    const total = tamanoCartera(clientes);
+export function detalleActivacion({ facturas = [], clientes = [], inicio, fin, ahora = new Date(), minUnits = 12, threshold = 80, gestiones = [], posList = null }) {
+    const cartera = carteraActivacion(clientes, posList);
+    const total = cartera.length;
+    const claves = clavesCartera(cartera);
+    // Una factura sin carnet (webhook todavía sin conciliar) se lleva a su sucursal por el nombre.
+    const idPorNombre = new Map(cartera.map(c => [llaveNombre(c.customerName), String(c.customerId || c.id)]));
+    const clave = (f) => f.zohoCustomerId ? String(f.zohoCustomerId)
+        : (idPorNombre.get(llaveNombre(f.clienteName || f.customerName)) || `n:${String(f.clienteName || f.customerName || '?').toLowerCase().trim()}`);
+    const enCartera = new Set(claves.ids);
+    // Sus sucursales que NO entran a la meta, con el motivo.
+    const fuera = (clientes || []).filter(c => cuentaParaActivacion(c) && !enCartera.has(String(c.customerId || c.id))).map(c => {
+        const id = String(c.customerId || c.id);
+        const tienePdv = (posList || []).some(p => p.type !== 'depot' && String(p.zohoCustomerId || '') === id);
+        return { clave: id, nombre: c.customerName || id, motivo: tienePdv ? 'PDV inactivo' : 'Sin PDV en la lista maestra' };
+    }).sort((a, b) => a.nombre.localeCompare(b.nombre));
     const objetivo = total > 0 ? Math.max(1, Math.ceil(total * threshold / 100)) : 0;
     const nombreDe = new Map(cartera.map(c => [String(c.customerId || c.id), c.customerName || c.customerId || c.id]));
     const limite = Math.min(fin.getTime(), ahora.getTime());
-    const validas = (facturas || []).filter(f => cuentaEnCartera(f) && !f.recuperada && f.categoria !== 'foodservice')
+    const validas = (facturas || []).filter(f => cuentaEnCartera(f) && !f.recuperada && f.categoria !== 'foodservice' && facturaDeLaCartera(f, claves))
         .map(f => ({ ...f, _t: fechaCalendario(f.fecha)?.getTime() || 0 })).filter(f => f._t);
 
     const porCliente = new Map();   // clave → {nombre, facturas, unidades, monto, semanas:Set}
@@ -97,7 +114,7 @@ export function detalleActivacion({ facturas = [], clientes = [], inicio, fin, a
         activadosPeriodo: activados.length,
         coberturaPeriodo: total > 0 ? activados.length / total : null,
         interacciones: activados.reduce((s, c) => s + c.facturas, 0),
-        activados, sinActivar,
+        activados, sinActivar, fuera,
         conVisita: activados.filter(c => c.conVisita).length,
     };
 }

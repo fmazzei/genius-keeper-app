@@ -128,6 +128,12 @@ export default function ReporteGestionVendedorDoc({ nombre, ev, anio, onClose })
                                 {det.sinActivar.map(c => `${c.nombre} (${c.diasSinComprar == null ? 'nunca' : `${c.diasSinComprar} d`})`).join(' · ')}
                             </p>
                         )}
+                        {det.fuera?.length > 0 && (
+                            <p style={{ fontSize: 10, margin: '6px 0 0', color: '#64748b', lineHeight: 1.5 }}>
+                                <b>No cuentan para la meta ({det.fuera.length}):</b>{' '}
+                                {det.fuera.map(c => `${c.nombre} (${c.motivo})`).join(' · ')}
+                            </p>
+                        )}
                     </div>
                 )}
 

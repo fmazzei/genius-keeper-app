@@ -18,7 +18,7 @@
 // Las visitas del MERCADERISTA no cuentan (no son trabajo del vendedor): quedan
 // como contexto. Un pilar sin datos NO cuenta: se declara y su peso se reparte.
 
-import { computeActivacionPeriodo, tierParaPct, fechaCalendario, computeMetaMensual, tamanoCartera } from '@/utils/vendedorMeta.js';
+import { computeActivacionPeriodo, tierParaPct, fechaCalendario, computeMetaMensual, carteraActivacion, clavesCartera } from '@/utils/vendedorMeta.js';
 import { cuentaEnCartera, esPorCobrar, saldoAbierto } from '@/utils/facturaEstado.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { clasificarVentas, evaluarPlan } from '@/utils/gestionVenta.js';
@@ -115,10 +115,12 @@ export function ventanasVendedor(vendedor = {}, ahora = new Date()) {
  * @param {object} [p.seguidor]  — computeSeguidor del mes en curso (solo contexto).
  * @param {Array}  [p.clientes]  — sus `clientes_zoho` (sucursales): la cartera de la Activación.
  * @param {number} [p.carteraSize] — respaldo si no llegan los clientes.
+ * @param {Array}  [p.posList]   — la colección `pos`: la cartera son solo las sucursales con PDV activo.
  */
-export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null, gestiones = null, planes = null, seguidor = null, clientes = null, carteraSize = 0, ahora = new Date() } = {}) {
+export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null, gestiones = null, planes = null, seguidor = null, clientes = null, carteraSize = 0, posList = null, ahora = new Date() } = {}) {
     const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.commissionConfig || {}) };
-    if (clientes) carteraSize = tamanoCartera(clientes);
+    const cartera = clientes ? carteraActivacion(clientes, posList) : null;
+    if (cartera) carteraSize = cartera.length;
     const per = computeMetaMensual(vendedor);
     const v = ventana || ventanasVendedor(vendedor, ahora).mes
         || { tipo: 'mes', inicio: per.periodStart, fin: per.periodEnd, meta: per.metaMensual, titulo: 'Mes en curso', rango: per.periodoLabel };
@@ -192,8 +194,8 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
 
     // ── 3. Activación: la visita que factura ─────────────────────────────────
     const minU = cfg.activacionMinUnits ?? 12, umbral = cfg.activacionThreshold ?? 80;
-    const act = computeActivacionPeriodo(suyas, inicio, fin, corte, carteraSize, minU, umbral);
-    const det = carteraSize > 0 ? detalleActivacion({ facturas: suyas, clientes: clientes || [], inicio, fin, ahora: corte, minUnits: minU, threshold: umbral, gestiones: gestiones || [] }) : null;
+    const act = computeActivacionPeriodo(suyas, inicio, fin, corte, carteraSize, minU, umbral, cartera ? clavesCartera(cartera) : null);
+    const det = carteraSize > 0 ? detalleActivacion({ facturas: suyas, clientes: clientes || [], inicio, fin, ahora: corte, minUnits: minU, threshold: umbral, gestiones: gestiones || [], posList }) : null;
     if (det && !clientes) det.cartera = carteraSize;
     // Registro de visitas de venta en la ventana (no puntúa aparte: la visita
     // cuenta cuando factura, dentro de la Activación).
@@ -284,12 +286,12 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
 }
 
 /** El año mes a mes: un índice por mes de empleo (para el gráfico). */
-export function evaluarAnio({ vendedor, facturas, gestiones, planes, clientes, carteraSize, ahora = new Date() }) {
+export function evaluarAnio({ vendedor, facturas, gestiones, planes, clientes, carteraSize, posList, ahora = new Date() }) {
     const vs = ventanasVendedor(vendedor, ahora);
     return (vs.anio?.meses || []).map(p => ({
         ...p,
         ev: evaluarDesempeno({
-            vendedor, facturas, gestiones, planes, clientes, carteraSize, ahora,
+            vendedor, facturas, gestiones, planes, clientes, carteraSize, posList, ahora,
             ventana: { tipo: 'mes', inicio: p.start, fin: p.end, meta: p.meta, titulo: p.label, rango: p.rango },
         }),
     }));
