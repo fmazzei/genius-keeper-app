@@ -77,7 +77,7 @@ const conectar = async (u, headers) => {
 };
 // Un cliente sin clave se conecta y lista herramientas (no queda "por reconectar").
 const sinClave = await conectar(url, {});
-ok((await sinClave.listTools()).tools.length === 11, 'cliente sin clave: conecta y lista herramientas');
+ok((await sinClave.listTools()).tools.length === 16, 'cliente sin clave: conecta y lista herramientas');
 await sinClave.close();
 const client = await conectar(url, { 'X-API-Key': process.env.MCP_API_KEY });
 const llamar = async (name, args = {}) => {
@@ -87,7 +87,7 @@ const llamar = async (name, args = {}) => {
 };
 
 const tools = await client.listTools();
-ok(tools.tools.length === 11, `herramientas: ${tools.tools.map(t => t.name).join(', ')}`);
+ok(tools.tools.length === 16, `herramientas: ${tools.tools.map(t => t.name).join(', ')}`);
 ok(tools.tools.find(t => t.name === 'leer_documento')?.annotations?.readOnlyHint === true
     && tools.tools.find(t => t.name === 'borrar_documento')?.annotations?.destructiveHint === true, 'anotaciones de lectura / destructiva');
 
@@ -194,6 +194,46 @@ ok((await db.doc('kroma_suppliers/s2').get()).data().nombre === 'B', 'deshacer c
 // Deshacer una creación borra el documento.
 await llamar('deshacer_cambio', { cambioId: cr.cambios[0].cambioId, forzar: true });
 ok(!(await db.doc('kroma_suppliers/s1').get()).exists, 'deshacer una creación la elimina');
+
+// ── Simulador de negocio: datos reales y escenarios ─────────────────────
+const T = (iso) => admin.firestore.Timestamp.fromDate(new Date(iso));
+await db.doc('facturas_vendedor/S-1').set({ numero: 'S-1', clienteName: 'Gama', monto: 100, balance: 0, unidades: 20, estado: 'pagada', fecha: T('2026-01-10T16:00:00Z'), fechaPago: T('2026-02-05T16:00:00Z') });
+await db.doc('facturas_vendedor/S-2').set({ numero: 'S-2', clienteName: 'Hotel', monto: 60, balance: 60, unidades: 10, estado: 'pendiente', categoria: 'foodservice', fecha: T('2026-01-20T16:00:00Z'), vencimiento: T('2026-02-20T16:00:00Z') });
+await db.doc('kroma_milk_reception/r1').set({ empresaId: 'lacteoca', proveedorId: 'p1', proveedorNombre: 'Finca Masparrito', litros: 100, costoUsdLitro: 0.8, createdAt: T('2026-01-05T16:00:00Z') });
+await db.doc('kroma_milk_reception/r2').set({ empresaId: 'otra', proveedorId: 'p9', proveedorNombre: 'Ajena', litros: 500, costoUsdLitro: 1, createdAt: T('2026-01-05T16:00:00Z') });
+await db.doc('kroma_production_logs/l1').set({ empresaId: 'lacteoca', estado: 'completada', productoNombre: 'Chèvre', totalKgProducido: 15, litrosIngresados: 100, fechaInicio: T('2026-01-06T16:00:00Z') });
+const simDr = await llamar('simulador_datos_reales', { desde: '2026-01', hasta: '2026-02', caja: false });
+const simEne = simDr.months?.[0];
+ok(simDr.version === 1 && simDr.months?.length === 2, `simulador_datos_reales: versión ${simDr.version}, ${simDr.months?.length} meses`);
+ok(simEne?.sales.revenue === 160 && simEne?.sales.units === 30 && simDr.months[1].collected === 100, `ventas de enero ${simEne?.sales.revenue} y cobro de febrero ${simDr.months?.[1]?.collected} (INV-1 de la prueba no tiene fecha: no cuenta)`);
+ok(simEne?.milk.liters === 100 && simEne?.milk.cost === 80, `leche de enero solo de Lacteoca: ${simEne?.milk.liters} L, $${simEne?.milk.cost}`);
+ok(simEne?.production.kg === 15 && simDr.receivables?.some(x => x.id === 'S-2' && x.amount === 60), 'producción y cuenta por cobrar abierta');
+ok(simDr.sources?.zoho?.note && !simDr._error, 'sin pedir el saldo de bancos no llama a Zoho');
+const simDrMalo = await llamar('simulador_datos_reales', { desde: '2026-05', hasta: '2026-01', caja: false });
+ok(simDrMalo._error === true, 'un período al revés da error, no datos');
+
+const simPlan = JSON.stringify({ general: { horizonMonths: 24 }, products: [{ id: 'chevre' }] });
+const simG1 = await llamar('simulador_escenario_guardar', { id: 'base', nombre: 'Plan base', tipo: 'base', datos: simPlan, realAsOf: '2026-10-12T16:00:00Z' });
+ok(simG1.aplicado === true && simG1.cambios?.length === 1, 'guardar el plan base (con copia en mcp_cambios)');
+const simG2 = await llamar('simulador_escenario_guardar', { id: 'con-cabrimel', nombre: 'Con Cabrimel', baseId: 'base', datos: JSON.stringify({ 'product.cabrimel.launch': { values: [7] } }) });
+ok(simG2.aplicado === true, 'guardar un escenario');
+const simG3 = await llamar('simulador_escenario_guardar', { id: 'con-cabrimel', nombre: 'Con Cabrimel y Feta', baseId: 'base', datos: '{}' });
+ok(simG3.aplicado === true, 'volver a guardar reemplaza el escenario');
+const escMalo = await llamar('simulador_escenario_guardar', { id: 'Mal Id', nombre: 'x', datos: '{}' });
+const simNoJson = await llamar('simulador_escenario_guardar', { id: 'x', nombre: 'x', datos: 'no es json' });
+ok(escMalo._error === true && simNoJson._error === true && !(await db.doc('simulador_escenarios/x').get()).exists, 'id inválido o datos que no son JSON: no escribe');
+const simLista = await llamar('simulador_escenarios');
+ok(simLista.escenarios?.map(e => e.id).join(',') === 'base,con-cabrimel' && simLista.escenarios[0].tipo === 'base' && !('datos' in simLista.escenarios[0]), `lista sin el plan, la base primero: ${simLista.escenarios?.map(e => e.id).join(',')}`);
+ok(/^\d{4}-\d{2}-\d{2}T/.test(simLista.escenarios?.[1]?.guardadoEn || ''), `fecha de guardado en ISO: ${simLista.escenarios?.[1]?.guardadoEn}`);
+const simLeido = await llamar('simulador_escenario_leer', { id: 'base' });
+ok(simLeido.datos === simPlan && simLeido.realAsOf === '2026-10-12T16:00:00Z', 'leer devuelve el plan tal cual se guardó');
+const simArch = await llamar('simulador_escenario_archivar', { id: 'con-cabrimel' });
+const simLista2 = await llamar('simulador_escenarios');
+const simLista3 = await llamar('simulador_escenarios', { incluirArchivados: true });
+ok(simArch.aplicado === true && simLista2.escenarios.length === 1 && simLista3.escenarios.length === 2 && (await db.doc('simulador_escenarios/con-cabrimel').get()).exists,
+    'archivar lo saca de la lista sin borrarlo');
+const simDesh = await llamar('deshacer_cambio', { cambioId: simArch.cambios[0].cambioId });
+ok(!simDesh._error && (await db.doc('simulador_escenarios/con-cabrimel').get()).data().active === true, 'archivar se puede deshacer');
 
 await new Promise(res => setTimeout(res, 500));
 const aud = await llamar('contar', { coleccion: 'mcp_auditoria' });

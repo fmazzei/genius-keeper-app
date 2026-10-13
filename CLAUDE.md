@@ -941,6 +941,34 @@ Servidor MCP remoto para que Claude (claude.ai, "conector personalizado") consul
   - **Ojo:** el conector escribe con Admin SDK, así que NO pasa por `firestore.rules` ni por la lógica de la app (no descuenta inventario, no recalcula comisiones, no escribe el libro de movimientos). Es una herramienta de corrección de datos; los procesos de negocio se siguen haciendo en la app. El borrado real existe, pero la regla del proyecto sigue siendo soft-delete (`active:false`) y la descripción de la herramienta lo dice.
   - Prueba: `tests/mcp.e2e.test.mjs`, 51 verificaciones en verde (incluye: sin clave conecta y lista herramientas pero no lee ni escribe) (crear/editar/reemplazar con marcadores, rechazos sin efecto, lote atómico, borrar y deshacer, deshacer que se detiene si otro tocó el documento).
 
+## Simulador de Negocio: datos reales y escenarios por el conector (2026-10) ✅
+
+El **Simulador de Negocio Lacteoca** (repo `Masparrito/simulador`, Fase 6) es una página publicada en claude.ai. No tiene credenciales ni lee Firestore: llama al conector **"GK y Kroma"** (capacidad `mcp` de la página, con la cuenta de Francisco) y usa SOLO estas cinco herramientas, registradas al final de `crearServidor` en `mcpServer.js`:
+
+- `simulador_datos_reales({desde?, hasta?, caja?})` (lectura): el paquete de datos reales, **contrato v1** con `src/engine/real.ts` del simulador. Cambiar su forma obliga a cambiar los dos repos.
+- `simulador_escenarios({incluirArchivados?})`, `simulador_escenario_leer({id})` (lectura).
+- `simulador_escenario_guardar({id, nombre, tipo, baseId?, datos, realAsOf?, nota?})` y `simulador_escenario_archivar({id})` (escritura, solo en `simulador_escenarios`).
+
+**Datos reales** (`functions/handlers/simulador.js` → `datosReales`): lee `facturas_vendedor`, `cuentas_por_pagar`, `settings/appConfig` y, con `empresaId == 'lacteoca'`, `kroma_milk_reception`, `kroma_production_logs` y `kroma_compras`; el saldo de bancos y caja lo pide a Zoho en el momento (cuentas `bank`/`cash` activas del plan de cuentas, `closing_balance`). Cada fuente se lee por su cuenta: si una falla, queda `sources.{gk|kroma|zoho}.ok=false` con el error y las demás siguen. Por defecto, los últimos 12 meses; máximo 36.
+- El cálculo es **`src/utils/simuladorDatos.js`** (`armarDatosReales`, puro), empaquetado a `functions/handlers/generado/simuladorDatos.cjs` por `tools/generarMotorFunciones.mjs` (igual que el motor de comisiones; `--check` revisa las dos copias). **No editar el `.cjs` a mano.**
+- Usa las definiciones de la app: `cuentaEnCartera`/`esPorCobrar`/`saldoAbierto` (facturas), `esProduccionAbierta`/`fechaProduccion`/`kgProducidos` y `getLitrosNetos` (planta). Los meses se cuentan en hora de Caracas.
+- Por mes: ventas (monto, unidades, facturas, por canal = `categoria`), cobrado (facturas pagadas por su `fechaPago`; un abono parcial entra cuando se completa el pago), leche (litros y litros × `costoUsdLitro`, por proveedor; una recepción sin precio suma litros y no costo, y se avisa en `sources.kroma.note`), producción (solo planillas cerradas; litros = `litrosIngresados`, o los netos) y compras de insumos (`costoTotal`). Además: cuentas por cobrar y por pagar abiertas hoy, y `openingReceivables` (facturas emitidas antes de `desde` y cobradas desde `desde`, con su fecha de cobro) para el contraste.
+
+**Escenarios** (`simulador_escenarios/{id}`): `{nombre, tipo:'base'|'escenario', baseId, datos (texto JSON), realAsOf, nota, guardadoEn, active, empresaId}`. El plan va como texto para no chocar con las listas anidadas que Firestore no acepta; máximo 400 KB, porque la copia previa también entra a `mcp_cambios`. Se escribe por `aplicarOperaciones` (copia previa y `deshacer_cambio`); archivar = `active:false`. Las reglas de Firestore no tienen bloque para esta colección, así que **la app no la lee ni la escribe**: solo el Admin SDK del conector.
+
+**Pruebas**: `node --import ./tests/alias.mjs tests/simuladorDatos.test.mjs` (22 verificaciones: meses en Caracas, qué factura cuenta, cobros, leche por proveedor, producción cerrada, cuentas abiertas, CxC al inicio, y que la copia empaquetada da lo mismo) y los casos del simulador en `tests/mcp.e2e.test.mjs` (66 verificaciones en total). El emulador de Auth necesita una sección `emulators` en la configuración: `firebase.json` no la tiene, así que para correr la e2e se usa una configuración temporal con `--config` (firestore + auth en 127.0.0.1).
+
+**Para que funcione en producción**: desplegar las funciones (push a `main`) y que el conector "GK y Kroma" esté conectado en claude.ai (hoy pide reconectar). La página del simulador declara solo estas cinco herramientas: no puede usar las genéricas de lectura o escritura.
+
+### El simulador como app web propia (2026-10) ✅
+
+Pedido de Francisco (13-oct): el simulador es una **app web aparte**, con su ícono en el iPhone, publicada desde su repositorio (`Masparrito/simulador`) en un **sitio propio de Firebase Hosting** del mismo proyecto (`simulador-lacteoca.web.app`). No vive dentro de GK ni depende de claude.ai.
+- La app entra con el usuario de GK (usuario o correo + contraseña; el usuario se resuelve con `resolverUsuarioParaLogin`) y llama a la callable **`simulador({accion, args})`** (`functions/handlers/simuladorApp.js`).
+- **Solo el máster** (`users_metadata.role == 'master'`); cualquier otro rol recibe `permission-denied`.
+- Acciones: `perfil` (nombre, para saludar), `datos_reales`, `escenarios`, `escenario_leer`, `escenario_guardar`, `escenario_archivar`. Mismo código (`simulador.js`) y misma respuesta que las herramientas `simulador_*` del conector; las escrituras van por `aplicarOperaciones` (copia en `mcp_cambios`).
+- Prueba: `cd functions && node ../tests/simuladorApp.test.mjs`.
+- El conector sigue funcionando igual para la copia del simulador en claude.ai.
+
 ## Vigilante automático de GK (2026-10) ✅
 
 Pedido de Francisco (8-oct): que el sistema vigile solo y avise por notificación al teléfono, **gratis**. Lo de la app y Zoho le llega a Francisco; lo del mercaderista, los PDV y las metas, a Carolina (vendedora responsable), sin datos de dinero.
