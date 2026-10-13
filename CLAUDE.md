@@ -3826,3 +3826,7 @@ El dueño corrigió los conceptos (13-oct):
   - `tests/gestionVenta.test.mjs`: 25 en verde.
   - `tests/comisionesCobro.test.mjs`: en verde, con la cartera por sucursal.
   - `tests/vigilanteComisiones.test.mjs`: en verde.
+- **Tarjetas que se despliegan (pedido del dueño, 13-oct):** *"si hay mucho que explicar, visualmente no logramos el objetivo"*.
+  - Cada pilar es una fila compacta: ícono, nombre, % grande, cifra corta y barra. Al tocarla se abre solo esa (acordeón).
+  - Adentro: una línea de qué mide y 2–4 cifras en cuadrícula (`pilar.cifras: [{k,v}]` en `desempenoVendedor.js`). Activación agrega semana a semana, las listas (cerradas por defecto) y las visitas registradas; Captación, las sucursales captadas y el origen de las unidades.
+  - El texto largo pasó a un "¿Cómo se lee?" plegado al pie.

@@ -148,6 +148,13 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
         detalle: enCurso
             ? `A hoy tocaba llevar ${num(esperado)} uds (${pctTxt(avance)} del período corrido) · faltan ${num(Math.max(0, meta - unidades))} uds para la meta`
             : `Período cerrado · ${unidades >= meta ? 'alcanzó' : `le faltaron ${num(meta - unidades)} uds para`} la meta`,
+        // Cifras para la tarjeta desplegada: pocas palabras, números grandes.
+        cifras: [
+            { k: 'Facturó', v: `${num(unidades)} uds` },
+            { k: enCurso ? 'Tocaba a hoy' : 'Meta', v: `${num(enCurso ? esperado : meta)} uds` },
+            { k: 'Faltan para la meta', v: `${num(Math.max(0, meta - unidades))} uds` },
+            { k: 'Monto facturado', v: money0(suyas.filter(f => !f.recuperada).filter(enVentana).reduce((x, f) => x + (Number(f.monto ?? f.total) || 0), 0)) },
+        ],
     } : { score: null, valor: '—', detalle: 'El vendedor no tiene meta mensual configurada.' };
 
     // ── 2. Cobranza a tiempo ─────────────────────────────────────────────────
@@ -175,6 +182,12 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
         valor: `${money0(aTiempo)} de ${money0(debido)}`,
         pctMeta: aTiempo / debido, sobreMeta: `${pctTxt(aTiempo / debido)} cobrado a tiempo (meta 100%)`,
         detalle: `De ${nJuzgadas} factura${nJuzgadas === 1 ? '' : 's'} que vencían en el período, ${nTarde} se cobr${nTarde === 1 ? 'ó' : 'aron'} tarde o siguen sin cobrar${enCurso && porCobrar > 0 ? ` · hoy: ${money0(vencidoHoy)} vencido de ${money0(porCobrar)} por cobrar` : ''}`,
+        cifras: [
+            { k: 'Cobrado a tiempo', v: money0(aTiempo) },
+            { k: 'Vencía en el período', v: money0(debido) },
+            { k: 'Facturas tarde o sin cobrar', v: `${nTarde} de ${nJuzgadas}` },
+            ...(enCurso && porCobrar > 0 ? [{ k: 'Vencido hoy', v: `${money0(vencidoHoy)} de ${money0(porCobrar)}` }] : []),
+        ],
     } : { score: null, valor: '—', detalle: 'Ninguna factura suya vencía en este período.' };
 
     // ── 3. Activación: la visita que factura ─────────────────────────────────
@@ -197,6 +210,12 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
             sobreMeta: `${pctTxt(prom * umbral / 100)} de la cartera por semana en promedio (meta ${umbral}%)`,
             detalle: `${act.semanasLogradas} de ${act.semanasTotales} semana${act.semanasTotales === 1 ? '' : 's'} logradas (${det.objetivo} de ${det.cartera} sucursales con ≥${minU} uds)${ultima?.enCurso ? ` · esta semana van ${ultima.activados}/${det.objetivo}` : ''} · ${det.interacciones} facturas a ${det.activadosPeriodo} sucursales en el período`,
             semanasLogradas: act.semanasLogradas, semanasTotales: act.semanasTotales,
+            cifras: [
+                { k: 'Semanas logradas', v: `${act.semanasLogradas} de ${act.semanasTotales}` },
+                ...(ultima?.enCurso ? [{ k: 'Esta semana', v: `${ultima.activados} de ${det.objetivo}` }] : []),
+                { k: 'Sucursales activadas', v: `${det.activadosPeriodo} de ${det.cartera}` },
+                { k: 'Facturas que activaron', v: num(det.interacciones) },
+            ],
             detalleActivacion: det, plan: registro,
         };
     } else {
@@ -217,6 +236,11 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
         detalle: captadas.length
             ? `${ven.clientes.filter(c => c.nuevo > 0).length} nuevas (${num(ven.nuevo)} uds) · ${ven.clientes.filter(c => c.reactivado > 0).length} que volvieron (${num(ven.reactivado)} uds)${ven.historiaCorta ? ' · poca historia previa: un "nuevo" puede ser un cliente viejo' : ''}`
             : 'Ninguna sucursal nueva ni reactivada en el período.',
+        cifras: [
+            { k: 'Nuevas', v: num(ven.clientes.filter(c => c.nuevo > 0).length) },
+            { k: 'Volvieron', v: num(ven.clientes.filter(c => c.reactivado > 0).length) },
+            { k: 'Meta del período', v: (Math.round(metaCap * 10) / 10).toLocaleString('es-VE') },
+        ],
         captadas, ventas: ven,
     };
 

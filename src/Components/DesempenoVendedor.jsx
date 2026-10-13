@@ -14,8 +14,8 @@
 // (Facturación, Activación, Cobranza, Captación); la Activación se muestra con
 // quiénes se activaron, cuánto facturaron y quiénes faltan.
 
-import React from 'react';
-import { Receipt, Wallet, Zap, UserPlus, AlertTriangle, MapPin, Store, FileText, Check } from 'lucide-react';
+import React, { useState } from 'react';
+import { Receipt, Wallet, Zap, UserPlus, AlertTriangle, MapPin, Store, FileText, Check, ChevronDown } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ReferenceLine } from 'recharts';
 import { ORDEN_PILARES } from '@/utils/desempenoVendedor.js';
 import { OBJETIVOS_GESTION, RESULTADOS_GESTION, TIPOS_GESTION, etiqueta, esProactiva } from '@/utils/gestionVenta.js';
@@ -74,7 +74,40 @@ export function SelectorVentana({ valor, onChange }) {
     );
 }
 
+/** Cifras clave de una parte del índice: número grande, rótulo corto. */
+function Cifras({ cifras }) {
+    if (!cifras?.length) return null;
+    return (
+        <div className="grid grid-cols-2 gap-2">
+            {cifras.map(c => (
+                <div key={c.k} className="bg-slate-50 rounded-xl px-3 py-2.5">
+                    <p className="text-lg font-black text-slate-800 leading-tight">{c.v}</p>
+                    <p className="text-[11px] text-slate-500">{c.k}</p>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+/** Lo que se despliega al tocar cada parte. */
+function Ampliado({ k, pil }) {
+    return (
+        <div className="space-y-3 pt-3">
+            <p className="text-xs text-slate-500">{PILAR_META[k].que}.</p>
+            <Cifras cifras={pil.cifras} />
+            {k === 'activacion' && <ActivacionDetalle det={pil.detalleActivacion} />}
+            {k === 'activacion' && <RegistroGestiones plan={pil.plan} />}
+            {k === 'captacion' && <Captadas captadas={pil.captadas} />}
+            {k === 'captacion' && <VentaDeGestion ventas={pil.ventas} />}
+            {pil.score == null && <p className="text-xs text-slate-500">{pil.detalle}</p>}
+            {pil.score != null && <p className="text-[11px] text-slate-400">Puntaje {pil.score}/100 (contra lo que tocaba llevar al corte) · pesa {peso(pil.peso)} %</p>}
+        </div>
+    );
+}
+
+/** Las cuatro partes: tarjetas compactas que se abren al tocarlas. */
 function Pilares({ ev }) {
+    const [abierto, setAbierto] = useState(null);
     return (
         <div className="divide-y divide-slate-100">
             {ORDEN_PILARES.map(k => {
@@ -82,34 +115,45 @@ function Pilares({ ev }) {
                 const meta = PILAR_META[k];
                 const tp = TONO[pil.estado.tono];
                 const Icon = meta.Icon;
+                const open = abierto === k;
                 return (
-                    <div key={k} className="px-4 sm:px-6 py-4">
-                        <div className="flex items-start gap-3">
+                    <div key={k} className={open ? 'bg-slate-50/40' : ''}>
+                        <button type="button" onClick={() => setAbierto(open ? null : k)} aria-expanded={open}
+                            className="w-full text-left px-4 sm:px-6 py-4 flex items-center gap-3">
                             <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center border ${tp.soft}`}>
                                 <Icon size={18} className={tp.txt} />
                             </div>
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-baseline justify-between gap-2">
-                                    <p className="text-sm font-bold text-slate-800">{meta.nombre}</p>
+                                    <p className="text-base font-bold text-slate-800">{meta.nombre}</p>
                                     <p className={`text-2xl font-black leading-none ${tp.txt}`}>{pct(pil.pctMeta)}</p>
                                 </div>
-                                <div className="flex items-baseline justify-between gap-2">
-                                    <p className="text-[11px] text-slate-400">{meta.que} · pesa {peso(pil.peso)}%</p>
-                                    <p className="text-[11px] text-slate-500 whitespace-nowrap">{pil.valor}</p>
-                                </div>
+                                <p className="text-xs text-slate-500 mt-0.5">{pil.valor}</p>
                                 <div className="h-2 rounded-full bg-slate-100 overflow-hidden mt-2">
                                     <div className={`h-full rounded-full ${tp.bar}`} style={{ width: `${pil.score ?? 0}%` }} />
                                 </div>
-                                <p className="text-xs text-slate-500 mt-1.5">
-                                    {pil.sobreMeta && <b className="text-slate-600">{pil.sobreMeta} · </b>}
-                                    {pil.detalle}
-                                    {pil.score != null && <span className="text-slate-400"> · puntaje {pil.score}/100</span>}
-                                </p>
                             </div>
-                        </div>
+                            <ChevronDown size={18} className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+                        </button>
+                        {open && <div className="px-4 sm:px-6 pb-4"><Ampliado k={k} pil={pil} /></div>}
                     </div>
                 );
             })}
+        </div>
+    );
+}
+
+/** Sucursales captadas en el período. */
+function Captadas({ captadas }) {
+    if (!captadas?.length) return null;
+    return (
+        <div className="divide-y divide-slate-100">
+            {captadas.map(c => (
+                <div key={c.key} className="py-1.5 flex items-baseline justify-between gap-2 text-xs">
+                    <span className="text-slate-700">{c.nombre}</span>
+                    <span className="shrink-0 text-emerald-700 font-bold">{c.nuevo > 0 ? 'nueva' : 'volvió'} · {num(c.nuevo + c.reactivado)} uds</span>
+                </div>
+            ))}
         </div>
     );
 }
@@ -121,9 +165,8 @@ const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFract
 function ActivacionDetalle({ det }) {
     if (!det || !det.semanas.length) return null;
     return (
-        <section className="px-4 sm:px-6 py-4 border-t border-slate-100">
-            <p className="text-sm font-bold text-slate-800">Activación semana a semana</p>
-            <p className="text-[11px] text-slate-400">Meta: {det.objetivo} de {det.cartera} sucursales ({det.threshold}%) con ≥{det.minUnits} uds facturadas en la semana.</p>
+        <section>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Semana a semana · meta {det.objetivo} de {det.cartera}</p>
             <div className="space-y-1.5 mt-2">
                 {det.semanas.map(w => {
                     const p = det.objetivo ? Math.min(100, w.activados / det.objetivo * 100) : 0;
@@ -139,13 +182,8 @@ function ActivacionDetalle({ det }) {
                     );
                 })}
             </div>
-            <div className="grid grid-cols-3 gap-2 mt-3">
-                <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{det.activadosPeriodo}/{det.cartera}</p><p className="text-[10px] text-slate-500">sucursales activadas en el período</p></div>
-                <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{det.interacciones}</p><p className="text-[10px] text-slate-500">facturas que activaron</p></div>
-                <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{det.conVisita}/{det.activadosPeriodo}</p><p className="text-[10px] text-slate-500">con visita suya registrada</p></div>
-            </div>
             {det.activados.length > 0 && (
-                <details className="mt-3" open>
+                <details className="mt-3">
                     <summary className="text-[11px] font-bold uppercase tracking-wider text-slate-400 cursor-pointer">Activadas ({det.activados.length})</summary>
                     <div className="mt-1 divide-y divide-slate-100">
                         {det.activados.map(c => (
@@ -184,8 +222,8 @@ function VentaDeGestion({ ventas }) {
     const gestionados = ventas.clientes.filter(c => c.gestion > 0);
     const inercia = ventas.clientes.filter(c => c.inercia > 0 && c.gestion === 0).sort((a, b) => b.inercia - a.inercia);
     return (
-        <section className="px-4 sm:px-6 py-4 border-t border-slate-100">
-            <p className="text-sm font-bold text-slate-800">¿De dónde salen sus unidades?</p>
+        <section className="pt-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">¿De dónde salen sus unidades?</p>
             <div className="flex h-4 rounded-full overflow-hidden mt-2 bg-slate-100">
                 <div className="bg-emerald-500" style={{ width: `${p(ventas.nuevo)}%` }} title="Clientes nuevos" />
                 <div className="bg-sky-500" style={{ width: `${p(ventas.reactivado)}%` }} title="Reactivados" />
@@ -239,17 +277,20 @@ function RegistroGestiones({ plan }) {
     if (!plan) return null;
     const conteo = (obj, lista) => Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${etiqueta(lista, k)} ${n}`).join(' · ') || '—';
     return (
-        <section className="px-4 sm:px-6 py-4 border-t border-slate-100">
-            <p className="text-sm font-bold text-slate-800">Visitas de venta registradas</p>
-            <p className="text-[11px] text-slate-400">Una visita cuenta cuando factura: eso se ve en la Activación. Aquí está su registro.</p>
+        <section className="pt-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Visitas de venta que registró</p>
             <div className="grid grid-cols-3 gap-2 mt-2">
                 <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{plan.proactivas}</p><p className="text-[10px] text-slate-500">para vender</p></div>
                 <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{plan.reactivas}</p><p className="text-[10px] text-slate-500">pedido o cobro</p></div>
                 <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{plan.planCumplidas}/{plan.planificadas}</p><p className="text-[10px] text-slate-500">del plan</p></div>
             </div>
-            <p className="text-xs text-slate-500 mt-2"><b>Para qué:</b> {conteo(plan.porObjetivo, OBJETIVOS_GESTION)}</p>
-            <p className="text-xs text-slate-500"><b>Cómo:</b> {conteo(plan.porTipo, TIPOS_GESTION)}{plan.visitas > 0 && ` · ${plan.conGps} de ${plan.visitas} visitas con ubicación`}</p>
-            <p className="text-xs text-slate-500"><b>Resultado:</b> {conteo(plan.porResultado, RESULTADOS_GESTION)}</p>
+            {plan.lista.length === 0 ? (
+                <p className="text-xs text-slate-400 mt-2">Sin visitas registradas en el período.</p>
+            ) : (<>
+                <p className="text-xs text-slate-500 mt-2"><b>Para qué:</b> {conteo(plan.porObjetivo, OBJETIVOS_GESTION)}</p>
+                <p className="text-xs text-slate-500"><b>Cómo:</b> {conteo(plan.porTipo, TIPOS_GESTION)}{plan.visitas > 0 && ` · ${plan.conGps} de ${plan.visitas} visitas con ubicación`}</p>
+                <p className="text-xs text-slate-500"><b>Resultado:</b> {conteo(plan.porResultado, RESULTADOS_GESTION)}</p>
+            </>)}
             {plan.lista.length > 0 && (
                 <details className="mt-2">
                     <summary className="text-[11px] font-bold uppercase tracking-wider text-slate-400 cursor-pointer">Ver cada gestión ({plan.lista.length})</summary>
@@ -362,7 +403,7 @@ export default function DesempenoVendedor({ ev, anio, nombre, ventana = 'mes', o
                                 {ev.peor && ev.estado.key !== 'cumple' && (
                                     <p className="text-sm text-slate-700 mt-2 flex items-start gap-1.5 justify-center sm:justify-start">
                                         <AlertTriangle size={15} className={`${t.txt} shrink-0 mt-0.5`} />
-                                        <span>Lo que más le resta: <b>{PILAR_META[ev.peor].nombre}</b> — {ev.pilares[ev.peor].detalle}</span>
+                                        <span>Lo que más le resta: <b>{PILAR_META[ev.peor].nombre}</b> ({pct(ev.pilares[ev.peor].pctMeta)})</span>
                                     </p>
                                 )}
                                 {ev.comision && (
@@ -374,15 +415,13 @@ export default function DesempenoVendedor({ ev, anio, nombre, ventana = 'mes', o
                                 {p.sinIngreso && <p className="text-xs text-amber-700 mt-2">Sin fecha de ingreso: se evalúa el mes de calendario con la meta plena.</p>}
                             </div>
                         </div>
+                        <p className="px-4 sm:px-6 pt-3 text-[11px] text-slate-400">Toca cada parte para ver el detalle.</p>
                         <Pilares ev={ev} />
-                        <ActivacionDetalle det={ev.pilares.activacion?.detalleActivacion} />
-                        <VentaDeGestion ventas={ev.pilares.captacion?.ventas} />
-                        <RegistroGestiones plan={ev.pilares.activacion?.plan} />
                         <Contexto contexto={ev.contexto} />
-                        <p className="px-4 sm:px-6 py-3 text-[11px] text-slate-400 bg-slate-50 border-t border-slate-100">
-                            El porcentaje grande es el avance sobre la meta. La barra y el puntaje comparan contra lo que tocaba llevar al corte.
-                            Global: 85 o más cumpliendo · 65 a 84 en riesgo · menos de 65 no está cumpliendo. Los pilares sin datos no cuentan y su peso se reparte.
-                        </p>
+                        <details className="px-4 sm:px-6 py-3 text-[11px] text-slate-500 bg-slate-50 border-t border-slate-100">
+                            <summary className="font-bold cursor-pointer">¿Cómo se lee?</summary>
+                            <p className="mt-1">% grande = avance sobre la meta. Barra = contra lo que tocaba llevar a hoy. Índice: 85+ cumpliendo · 65–84 en riesgo · menos de 65 no cumple.</p>
+                        </details>
                     </>
                 )}
             </section>
