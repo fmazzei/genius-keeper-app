@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, query, where, Timestamp } from 'firebase/firestore';
 import { computeSeguidor } from '@/utils/seguidorSemanal.js';
-import { evaluarDesempeno } from '@/utils/desempenoVendedor.js';
+import { evaluarDesempeno, evaluarAnio, ventanasVendedor } from '@/utils/desempenoVendedor.js';
 import { computeMetaMensual } from '@/utils/vendedorMeta.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 
@@ -20,6 +20,10 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
     const [vendedores, setVendedores] = useState([]);
     const [facturas, setFacturas] = useState([]);
     const [cartera, setCartera]   = useState({});   // vendedorId → { pos:Set, chains:Set }
+    // Registro de gestiones de venta y planes semanales (13-oct). `null` = no se
+    // pudieron leer: el pilar lo dice en vez de marcar un cero.
+    const [gestiones, setGestiones] = useState(null);
+    const [planes, setPlanes]       = useState(null);
     const [loading, setLoading]   = useState(true);
     const [error, setError]       = useState('');
 
@@ -35,13 +39,15 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
                 const hace12Meses = new Date();
                 hace12Meses.setMonth(hace12Meses.getMonth() - 12);
 
-                const [uSnap, fRecientes, fAbiertas, cSnap] = await Promise.all([
+                const [uSnap, fRecientes, fAbiertas, cSnap, gSnap, pSnap] = await Promise.all([
                     getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
                     getDocs(query(collection(db, 'facturas_vendedor'), where('fecha', '>=', Timestamp.fromDate(hace12Meses))))
                         .catch(() => ({ docs: [] })),
                     getDocs(query(collection(db, 'facturas_vendedor'), where('estado', 'in', ['pendiente', 'vencida'])))
                         .catch(() => ({ docs: [] })),
                     getDocs(collection(db, 'vendor_clients')).catch(() => ({ docs: [] })),
+                    getDocs(query(collection(db, 'gestiones_venta'), where('fecha', '>=', Timestamp.fromDate(hace12Meses)))).catch(() => null),
+                    getDocs(collection(db, 'planes_venta')).catch(() => null),
                 ]);
                 if (!alive) return;
                 setVendedores(uSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(v => v.active !== false));
@@ -59,6 +65,8 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
                     if (c.chain && c.chain !== 'Automercados Individuales') mapa[c.vendedorId].chains.add(c.chain);
                 });
                 setCartera(mapa);
+                setGestiones(gSnap ? gSnap.docs.map(d => ({ id: d.id, ...d.data() })) : null);
+                setPlanes(pSnap ? pSnap.docs.map(d => ({ id: d.id, ...d.data() })) : null);
             } catch (e) {
                 if (alive) setError('No se pudo cargar la información comercial. ' + (e?.message || ''));
             } finally {
@@ -96,21 +104,36 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
         });
     };
 
-    // Desempeño de cada vendedor en su PERÍODO DE EMPLEO en curso.
+    const datosDe = (v) => {
+        const c = cartera[v.id];
+        return {
+            vendedor: v, facturas,
+            gestiones: gestiones ? gestiones.filter(g => g.vendedorId === v.id) : null,
+            planes: planes ? planes.filter(p => p.vendedorId === v.id) : null,
+            carteraSize: c ? c.pos.size + c.chains.size : 0,
+        };
+    };
+
+    // Desempeño de cada vendedor en su MES DE EMPLEO en curso (la vista por defecto).
     const desempeno = useMemo(() => {
         const out = {};
         vendedores.forEach(v => {
             const per = computeMetaMensual(v);
-            const c = cartera[v.id];
-            out[v.id] = evaluarDesempeno({
-                vendedor: v, facturas,
-                seguidor: seguidorDe(v.id, per.periodStart, per.periodEnd),
-                carteraSize: c ? c.pos.size + c.chains.size : 0,
-            });
+            out[v.id] = evaluarDesempeno({ ...datosDe(v), seguidor: seguidorDe(v.id, per.periodStart, per.periodEnd) });
         });
         return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [vendedores, facturas, cartera, posList, reports]);
+    }, [vendedores, facturas, cartera, posList, reports, gestiones, planes]);
 
-    return { vendedores, facturas, cartera, loading, error, pdvDe, pisoDe, seguidorDe, desempeno };
+    /** Otra ventana para un vendedor: 'semana' | 'trimestre' | 'anio' (mes a mes). */
+    const evaluarVentana = (vid, tipo) => {
+        const v = vendedores.find(x => x.id === vid);
+        if (!v) return null;
+        if (tipo === 'mes') return desempeno[vid];
+        if (tipo === 'anio') return evaluarAnio(datosDe(v));
+        const w = ventanasVendedor(v)[tipo];
+        return w ? evaluarDesempeno({ ...datosDe(v), ventana: w }) : null;
+    };
+
+    return { vendedores, facturas, cartera, gestiones, planes, loading, error, pdvDe, pisoDe, seguidorDe, desempeno, evaluarVentana, datosDe };
 }

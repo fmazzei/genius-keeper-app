@@ -1,15 +1,23 @@
 // RUTA: src/Components/DesempenoVendedor.jsx
 //
-// Tablero de DESEMPEÑO del vendedor para el máster (Seguimiento). Un vistazo:
-// un medidor con el puntaje global y el veredicto, y debajo cada pilar con su
-// barra, su cifra y una sola línea que explica de dónde sale. El motor vive en
-// `src/utils/desempenoVendedor.js`.
+// Tablero de DESEMPEÑO del vendedor para el máster (Comercial → Vendedores).
+// El motor vive en `src/utils/desempenoVendedor.js` y la gestión de venta en
+// `src/utils/gestionVenta.js`.
 //
-//   <DesempenoVendedor ev={evaluacion} nombre="Carolina" />   — vista completa
-//   <DesempenoMini ev={…} nombre="…" onClick={…} />            — tarjeta del equipo
+//   <DesempenoVendedor ev={…} anio={…} ventana="mes" onVentana={…} nombre="…" onInforme={…} />
+//   <DesempenoMini ev={…} nombre="…" onClick={…} />   — tarjeta del equipo
+//
+// 13-oct (pedido del dueño): la tarjeta del equipo es grande y se lee de un
+// vistazo (nombre + índice); el detalle se ve por Mes (por defecto), Última
+// semana cerrada, Trimestre y Año (gráfico mes a mes); las visitas del
+// mercaderista salen del índice y entran la venta de gestión y el plan de
+// visitas de venta.
 
 import React from 'react';
-import { Receipt, Wallet, Zap, MapPin, Store, AlertTriangle } from 'lucide-react';
+import { Receipt, Wallet, Zap, TrendingUp, Handshake, AlertTriangle, MapPin, Store, FileText } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ReferenceLine } from 'recharts';
+import { ORDEN_PILARES } from '@/utils/desempenoVendedor.js';
+import { OBJETIVOS_GESTION, RESULTADOS_GESTION, TIPOS_GESTION, etiqueta, esProactiva } from '@/utils/gestionVenta.js';
 
 const TONO = {
     verde: { txt: 'text-emerald-600', bar: 'bg-emerald-500', soft: 'bg-emerald-50 border-emerald-200', ring: '#10b981' },
@@ -17,17 +25,26 @@ const TONO = {
     rojo:  { txt: 'text-red-600',     bar: 'bg-red-500',     soft: 'bg-red-50 border-red-200',         ring: '#ef4444' },
     slate: { txt: 'text-slate-400',   bar: 'bg-slate-300',   soft: 'bg-slate-50 border-slate-200',     ring: '#cbd5e1' },
 };
+const colorScore = (s) => s == null ? '#cbd5e1' : s >= 85 ? '#10b981' : s >= 65 ? '#f59e0b' : '#ef4444';
 
 export const PILAR_META = {
-    facturacion: { nombre: 'Facturación', que: 'Volumen: unidades vs. lo que tocaba llevar a hoy', Icon: Receipt },
-    cobranza:    { nombre: 'Cobranza',    que: 'Parte de su cuenta por cobrar que está al día', Icon: Wallet },
-    activacion:  { nombre: 'Activación',  que: 'Amplitud: semanas en que compró la mayoría de su cartera', Icon: Zap },
-    visitas:     { nombre: 'Visitas',     que: 'Cobertura del mercaderista en su cartera', Icon: MapPin },
-    cartera:     { nombre: 'Cartera comprando', que: 'PDV de su cartera que están comprando', Icon: Store },
+    facturacion: { nombre: 'Facturación', que: 'Unidades vs. lo que tocaba llevar al corte', Icon: Receipt },
+    cobranza:    { nombre: 'Cobranza', que: 'Lo que vencía en el período, cobrado a tiempo', Icon: Wallet },
+    activacion:  { nombre: 'Activación', que: 'Semanas en que compró la mayoría de su cartera', Icon: Zap },
+    gestion:     { nombre: 'Venta de gestión', que: 'Unidades que vienen de su trabajo, no de la inercia', Icon: TrendingUp },
+    plan:        { nombre: 'Plan de visitas de venta', que: 'Gestiones para vender que registró', Icon: Handshake },
 };
-const ORDEN = ['facturacion', 'cobranza', 'activacion', 'visitas', 'cartera'];
+export const VENTANAS = [
+    { id: 'mes', label: 'Mes' },
+    { id: 'semana', label: 'Última semana' },
+    { id: 'trimestre', label: 'Trimestre' },
+    { id: 'anio', label: 'Año' },
+];
 const pct = (x) => (x == null || !isFinite(x)) ? '—' : `${Math.round(x * 100)}%`;
+const CORTO = { facturacion: 'Fact.', cobranza: 'Cobr.', activacion: 'Activ.', gestion: 'Gest.', plan: 'Plan' };
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
+const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
+const peso = (w) => (Math.round(w * 10) / 10).toLocaleString('es-VE');
 
 /** Medidor semicircular con el puntaje global. */
 function Medidor({ score, tono, size = 180 }) {
@@ -37,124 +54,307 @@ function Medidor({ score, tono, size = 180 }) {
     return (
         <svg viewBox="0 0 180 104" width={size} height={size * 104 / 180} role="img" aria-label={`Puntaje ${score ?? 'sin datos'} de 100`}>
             <path d="M20 94 A70 70 0 0 1 160 94" fill="none" stroke="#e2e8f0" strokeWidth="16" strokeLinecap="round" />
-            <path d="M20 94 A70 70 0 0 1 160 94" fill="none" stroke={t.ring} strokeWidth="16" strokeLinecap="round"
-                strokeDasharray={`${c * frac} ${c}`} />
+            <path d="M20 94 A70 70 0 0 1 160 94" fill="none" stroke={t.ring} strokeWidth="16" strokeLinecap="round" strokeDasharray={`${c * frac} ${c}`} />
             <text x="90" y="84" textAnchor="middle" fontSize="40" fontWeight="900" fill="#0f172a">{score ?? '—'}</text>
             <text x="90" y="100" textAnchor="middle" fontSize="10" fill="#94a3b8">de 100</text>
         </svg>
     );
 }
 
-export default function DesempenoVendedor({ ev, nombre }) {
-    if (!ev) return null;
-    const t = TONO[ev.estado.tono];
-    const p = ev.periodo;
+export function SelectorVentana({ valor, onChange }) {
     return (
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-            {/* Veredicto */}
-            <div className={`p-5 sm:p-6 border-b ${t.soft} flex flex-col sm:flex-row items-center gap-4 sm:gap-6`}>
-                <Medidor score={ev.global} tono={ev.estado.tono} />
-                <div className="text-center sm:text-left min-w-0">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Desempeño de {nombre}</p>
-                    <p className={`text-3xl font-black mt-1 ${t.txt}`}>{ev.estado.label}</p>
-                    <p className="text-sm text-slate-600 mt-1.5">
-                        {p.sinIngreso ? 'Mes en curso' : `Mes ${p.mes} de su empleo`} · {p.label} · día {p.diasCorridos} de {p.diasTotales}
-                    </p>
-                    {ev.peor && ev.estado.key !== 'cumple' && (
-                        <p className="text-sm text-slate-700 mt-2 flex items-start gap-1.5 justify-center sm:justify-start">
-                            <AlertTriangle size={15} className={`${t.txt} shrink-0 mt-0.5`} />
-                            <span>Lo que más le resta: <b>{PILAR_META[ev.peor].nombre}</b> — {ev.pilares[ev.peor].detalle}</span>
-                        </p>
-                    )}
-                    {ev.comision && (
-                        <p className="text-xs text-slate-500 mt-1.5">
-                            Nivel de comisión <b className="text-slate-700">{ev.comision.nivel} ({(ev.comision.tasa * 100).toLocaleString('es-VE', { maximumFractionDigits: 1 })}%)</b>
-                            {' · '}comisión generada por lo cobrado: <b className="text-slate-700">{money0(ev.comision.generada)}</b>
-                        </p>
-                    )}
-                    {p.sinIngreso && (
-                        <p className="text-xs text-amber-700 mt-2">Sin fecha de ingreso: se evalúa el mes de calendario con la meta plena.</p>
-                    )}
-                </div>
-            </div>
+        <div className="grid grid-cols-4 gap-1 bg-white border border-slate-200 rounded-xl p-1">
+            {VENTANAS.map(v => (
+                <button key={v.id} onClick={() => onChange(v.id)}
+                    className={`py-2 rounded-lg text-xs sm:text-sm font-bold ${valor === v.id ? 'bg-brand-blue text-white' : 'text-slate-500'}`}>
+                    {v.label}
+                </button>
+            ))}
+        </div>
+    );
+}
 
-            {/* Pilares */}
-            <div className="divide-y divide-slate-100">
-                {ORDEN.map(k => {
-                    const pil = ev.pilares[k];
-                    const meta = PILAR_META[k];
-                    const tp = TONO[pil.estado.tono];
-                    const Icon = meta.Icon;
-                    return (
-                        <div key={k} className="px-5 sm:px-6 py-4 grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-1.5">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${tp.soft}`}>
+function Pilares({ ev }) {
+    return (
+        <div className="divide-y divide-slate-100">
+            {ORDEN_PILARES.map(k => {
+                const pil = ev.pilares[k];
+                const meta = PILAR_META[k];
+                const tp = TONO[pil.estado.tono];
+                const Icon = meta.Icon;
+                return (
+                    <div key={k} className="px-4 sm:px-6 py-4">
+                        <div className="flex items-start gap-3">
+                            <div className={`w-10 h-10 shrink-0 rounded-xl flex items-center justify-center border ${tp.soft}`}>
                                 <Icon size={18} className={tp.txt} />
                             </div>
-                            <div className="min-w-0">
-                                <p className="text-sm font-bold text-slate-800 flex items-baseline gap-2 flex-wrap">
-                                    {meta.nombre}
-                                    <span className="text-[11px] font-normal text-slate-400">{meta.que} · pesa {String(pil.peso).replace('.', ',')}%</span>
-                                </p>
-                                <div className="h-2.5 rounded-full bg-slate-100 overflow-hidden mt-1.5">
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-baseline justify-between gap-2">
+                                    <p className="text-sm font-bold text-slate-800">{meta.nombre}</p>
+                                    <p className={`text-2xl font-black leading-none ${tp.txt}`}>{pct(pil.pctMeta)}</p>
+                                </div>
+                                <div className="flex items-baseline justify-between gap-2">
+                                    <p className="text-[11px] text-slate-400">{meta.que} · pesa {peso(pil.peso)}%</p>
+                                    <p className="text-[11px] text-slate-500 whitespace-nowrap">{pil.valor}</p>
+                                </div>
+                                <div className="h-2 rounded-full bg-slate-100 overflow-hidden mt-2">
                                     <div className={`h-full rounded-full ${tp.bar}`} style={{ width: `${pil.score ?? 0}%` }} />
                                 </div>
+                                <p className="text-xs text-slate-500 mt-1.5">
+                                    {pil.sobreMeta && <b className="text-slate-600">{pil.sobreMeta} · </b>}
+                                    {pil.detalle}
+                                    {pil.score != null && <span className="text-slate-400"> · puntaje {pil.score}/100</span>}
+                                </p>
                             </div>
-                            {/* A la derecha, lo que pidió el dueño: % sobre la meta y
-                                las unidades sobre la meta. La barra es el puntaje
-                                (contra lo que tocaba llevar a hoy). */}
-                            <div className="text-right">
-                                <p className={`text-2xl font-black leading-none ${tp.txt}`}>{pct(pil.pctMeta)}</p>
-                                <p className="text-[11px] text-slate-500 mt-0.5 whitespace-nowrap">{pil.valor}</p>
-                            </div>
-                            <p className="col-start-2 col-span-2 text-xs text-slate-500">
-                                {pil.sobreMeta && <b className="text-slate-600">{pil.sobreMeta} · </b>}
-                                {pil.detalle}
-                                {pil.score != null && <span className="text-slate-400"> · puntaje {pil.score}/100</span>}
-                            </p>
                         </div>
-                    );
-                })}
-            </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
 
-            <p className="px-5 sm:px-6 py-3 text-[11px] text-slate-400 bg-slate-50 border-t border-slate-100">
-                El porcentaje grande es el avance sobre la meta del período. La barra y el puntaje comparan contra lo que
-                tocaba llevar a hoy, no contra la meta del mes entero. Global: 85 o más cumpliendo · 65 a 84 en riesgo ·
-                menos de 65 no está cumpliendo. Los pilares sin datos no cuentan y su peso se reparte entre los demás.
+/** Inercia contra gestión, con los clientes que la explican. */
+function VentaDeGestion({ ventas }) {
+    if (!ventas || !ventas.unidades) return null;
+    const p = (x) => ventas.unidades ? x / ventas.unidades * 100 : 0;
+    const gestionados = ventas.clientes.filter(c => c.gestion > 0);
+    const inercia = ventas.clientes.filter(c => c.inercia > 0 && c.gestion === 0).sort((a, b) => b.inercia - a.inercia);
+    return (
+        <section className="px-4 sm:px-6 py-4 border-t border-slate-100">
+            <p className="text-sm font-bold text-slate-800">¿De dónde salen sus unidades?</p>
+            <div className="flex h-4 rounded-full overflow-hidden mt-2 bg-slate-100">
+                <div className="bg-emerald-500" style={{ width: `${p(ventas.nuevo)}%` }} title="Clientes nuevos" />
+                <div className="bg-sky-500" style={{ width: `${p(ventas.reactivado)}%` }} title="Reactivados" />
+                <div className="bg-indigo-500" style={{ width: `${p(ventas.crecimiento)}%` }} title="Crecimiento" />
+                <div className="bg-slate-300" style={{ width: `${p(ventas.inercia)}%` }} title="Inercia" />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-xs">
+                <span><b className="text-emerald-600">● Nuevos</b> {num(ventas.nuevo)} uds</span>
+                <span><b className="text-sky-600">● Reactivados</b> {num(ventas.reactivado)} uds</span>
+                <span><b className="text-indigo-600">● Crecimiento</b> {num(ventas.crecimiento)} uds</span>
+                <span><b className="text-slate-500">● Inercia</b> {num(ventas.inercia)} uds</span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">
+                Inercia = clientes que ya compraban y siguen pidiendo lo mismo que su promedio de los 90 días anteriores. Gestión = cliente nuevo,
+                cliente que vuelve tras un silencio mayor que su ritmo (al menos 45 días, o 1,5 veces su intervalo habitual), o lo que un cliente compró más allá de un 25 % sobre su promedio.
+                {ventas.historiaCorta && ' Hay poca historia antes de este período: los "nuevos" y el promedio pueden salir altos.'}
             </p>
+            {gestionados.length > 0 && (
+                <div className="mt-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Ventas de gestión ({gestionados.length} clientes)</p>
+                    <div className="space-y-1">
+                        {gestionados.slice(0, 12).map(c => (
+                            <div key={c.key} className="flex items-baseline justify-between gap-2 text-xs">
+                                <span className="text-slate-700 truncate">{c.nombre} <span className="text-slate-400">· {c.motivo.join(' · ')}</span></span>
+                                <b className="text-emerald-700 whitespace-nowrap">+{num(c.gestion)} uds</b>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+            {inercia.length > 0 && (
+                <details className="mt-3">
+                    <summary className="text-[11px] font-bold uppercase tracking-wider text-slate-400 cursor-pointer">Compraron por inercia ({inercia.length} clientes)</summary>
+                    <div className="space-y-1 mt-1">
+                        {inercia.slice(0, 30).map(c => (
+                            <div key={c.key} className="flex items-baseline justify-between gap-2 text-xs">
+                                <span className="text-slate-600 truncate">{c.nombre} <span className="text-slate-400">· su promedio ≈ {num(c.esperado)} uds</span></span>
+                                <span className="text-slate-500 whitespace-nowrap">{num(c.inercia)} uds</span>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+            )}
         </section>
     );
 }
 
-/** Tarjeta compacta para comparar al equipo de un vistazo. */
+/** Su registro de gestiones en el período. */
+function RegistroGestiones({ plan }) {
+    if (!plan) return null;
+    const conteo = (obj, lista) => Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${etiqueta(lista, k)} ${n}`).join(' · ') || '—';
+    return (
+        <section className="px-4 sm:px-6 py-4 border-t border-slate-100">
+            <p className="text-sm font-bold text-slate-800">Lo que registró</p>
+            <div className="grid grid-cols-3 gap-2 mt-2">
+                <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{plan.proactivas}</p><p className="text-[10px] text-slate-500">para vender</p></div>
+                <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{plan.reactivas}</p><p className="text-[10px] text-slate-500">pedido o cobro</p></div>
+                <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{plan.planCumplidas}/{plan.planificadas}</p><p className="text-[10px] text-slate-500">del plan</p></div>
+            </div>
+            <p className="text-xs text-slate-500 mt-2"><b>Para qué:</b> {conteo(plan.porObjetivo, OBJETIVOS_GESTION)}</p>
+            <p className="text-xs text-slate-500"><b>Cómo:</b> {conteo(plan.porTipo, TIPOS_GESTION)}{plan.visitas > 0 && ` · ${plan.conGps} de ${plan.visitas} visitas con ubicación`}</p>
+            <p className="text-xs text-slate-500"><b>Resultado:</b> {conteo(plan.porResultado, RESULTADOS_GESTION)}</p>
+            {plan.lista.length > 0 && (
+                <details className="mt-2">
+                    <summary className="text-[11px] font-bold uppercase tracking-wider text-slate-400 cursor-pointer">Ver cada gestión ({plan.lista.length})</summary>
+                    <div className="space-y-1 mt-1">
+                        {plan.lista.slice(0, 60).map(g => (
+                            <p key={g.id} className="text-xs text-slate-600">
+                                <span className={esProactiva(g) ? 'text-emerald-600' : 'text-slate-400'}>●</span>{' '}
+                                {new Date(g._t).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })} · <b>{g.nombre}</b>{g.esProspecto ? ' (prospecto)' : ''} · {etiqueta(TIPOS_GESTION, g.tipo)} · {etiqueta(OBJETIVOS_GESTION, g.objetivo)} → {etiqueta(RESULTADOS_GESTION, g.resultado)}{g.nota ? ` · "${g.nota}"` : ''}
+                            </p>
+                        ))}
+                    </div>
+                </details>
+            )}
+        </section>
+    );
+}
+
+function Contexto({ contexto }) {
+    const items = [
+        contexto?.visitasMercaderista && { Icon: MapPin, t: 'Visitas del mercaderista', ...contexto.visitasMercaderista },
+        contexto?.carteraComprando && { Icon: Store, t: 'Cartera comprando', ...contexto.carteraComprando },
+    ].filter(Boolean);
+    if (!items.length) return null;
+    return (
+        <section className="px-4 sm:px-6 py-4 border-t border-slate-100 bg-slate-50/60">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Contexto · no cuenta en su índice</p>
+            {items.map(x => (
+                <div key={x.t} className="flex items-start gap-2 mb-1.5">
+                    <x.Icon size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                    <p className="text-xs text-slate-600"><b>{x.t}:</b> {x.valor} · {x.detalle}</p>
+                </div>
+            ))}
+        </section>
+    );
+}
+
+/** El año: un índice por mes de empleo y la tabla de pilares mes a mes. */
+function VistaAnio({ anio }) {
+    if (!anio?.length) return <p className="p-6 text-sm text-slate-500">Sin meses que mostrar.</p>;
+    const datos = anio.map(m => ({ mes: m.label, score: m.ev.global, rango: m.rango }));
+    const conDato = anio.filter(m => m.ev.global != null);
+    const promedio = conDato.length ? Math.round(conDato.reduce((s, m) => s + m.ev.global, 0) / conDato.length) : null;
+    return (
+        <div className="p-4 sm:p-6">
+            <div className="flex items-baseline justify-between">
+                <p className="text-sm font-bold text-slate-800">Índice mes a mes</p>
+                <p className="text-xs text-slate-500">Promedio: <b style={{ color: colorScore(promedio) }}>{promedio ?? '—'}</b></p>
+            </div>
+            <div className="h-56 mt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={datos} margin={{ top: 8, right: 4, left: -24, bottom: 0 }}>
+                        <XAxis dataKey="mes" tick={{ fontSize: 11 }} interval={0} />
+                        <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                        <ReferenceLine y={85} stroke="#10b981" strokeDasharray="4 4" />
+                        <ReferenceLine y={65} stroke="#f59e0b" strokeDasharray="4 4" />
+                        <Tooltip formatter={(v) => [v ?? 'sin datos', 'Índice']} labelFormatter={(l, p) => `${l} · ${p?.[0]?.payload?.rango || ''}`} />
+                        <Bar dataKey="score" radius={[6, 6, 0, 0]}>
+                            {datos.map((d, i) => <Cell key={i} fill={colorScore(d.score)} />)}
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+            <p className="text-[11px] text-slate-400">Líneas: 85 cumpliendo · 65 en riesgo.</p>
+            <div className="overflow-x-auto mt-4">
+                <table className="w-full text-xs">
+                    <thead>
+                        <tr className="text-slate-400 text-left">
+                            <th className="py-1.5 pr-2 font-semibold">Mes</th>
+                            <th className="py-1.5 px-1 font-semibold text-right">Índice</th>
+                            {ORDEN_PILARES.map(k => <th key={k} className="py-1.5 px-1 font-semibold text-right whitespace-nowrap" title={PILAR_META[k].nombre}>{CORTO[k]}</th>)}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {[...anio].reverse().map(m => (
+                            <tr key={m.rango} className="border-t border-slate-100">
+                                <td className="py-1.5 pr-2"><b className="text-slate-700 whitespace-nowrap">{m.label}</b>{m.enCurso && <span className="text-sky-600"> ·</span>}<span className="block text-[10px] text-slate-400 whitespace-nowrap">{m.rango}</span></td>
+                                <td className="py-1.5 px-1 text-right font-black" style={{ color: colorScore(m.ev.global) }}>{m.ev.global ?? '—'}</td>
+                                {ORDEN_PILARES.map(k => (
+                                    <td key={k} className="py-1.5 px-1 text-right" style={{ color: colorScore(m.ev.pilares[k].score) }}>{pct(m.ev.pilares[k].pctMeta)}</td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-2">Cada mes es su mes de empleo, contra su meta de ese mes. Las cifras de la tabla son el % sobre la meta de cada pilar (Fact. facturación, Cobr. cobranza, Activ. activación, Gest. venta de gestión). Punto azul = mes en curso.</p>
+        </div>
+    );
+}
+
+export default function DesempenoVendedor({ ev, anio, nombre, ventana = 'mes', onVentana, onInforme }) {
+    const esAnio = ventana === 'anio';
+    if (!ev && !esAnio) return null;
+    const t = TONO[ev?.estado.tono || 'slate'];
+    const p = ev?.periodo;
+    return (
+        <div className="space-y-3">
+            {onVentana && <SelectorVentana valor={ventana} onChange={onVentana} />}
+            <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+                {esAnio ? <VistaAnio anio={anio} /> : (
+                    <>
+                        <div className={`p-5 sm:p-6 border-b ${t.soft} flex flex-col sm:flex-row items-center gap-4 sm:gap-6`}>
+                            <Medidor score={ev.global} tono={ev.estado.tono} />
+                            <div className="text-center sm:text-left min-w-0">
+                                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Desempeño de {nombre}</p>
+                                <p className={`text-3xl font-black mt-1 ${t.txt}`}>{ev.estado.label}</p>
+                                <p className="text-sm text-slate-600 mt-1.5">
+                                    {p.titulo} · {p.label}{p.enCurso ? ` · día ${p.diasCorridos} de ${p.diasTotales}` : ' · cerrado'}
+                                </p>
+                                {ev.peor && ev.estado.key !== 'cumple' && (
+                                    <p className="text-sm text-slate-700 mt-2 flex items-start gap-1.5 justify-center sm:justify-start">
+                                        <AlertTriangle size={15} className={`${t.txt} shrink-0 mt-0.5`} />
+                                        <span>Lo que más le resta: <b>{PILAR_META[ev.peor].nombre}</b> — {ev.pilares[ev.peor].detalle}</span>
+                                    </p>
+                                )}
+                                {ev.comision && (
+                                    <p className="text-xs text-slate-500 mt-1.5">
+                                        Nivel de comisión <b className="text-slate-700">{ev.comision.nivel} ({(ev.comision.tasa * 100).toLocaleString('es-VE', { maximumFractionDigits: 1 })}%)</b>
+                                        {' · '}comisión generada por lo cobrado: <b className="text-slate-700">{money0(ev.comision.generada)}</b>
+                                    </p>
+                                )}
+                                {p.sinIngreso && <p className="text-xs text-amber-700 mt-2">Sin fecha de ingreso: se evalúa el mes de calendario con la meta plena.</p>}
+                            </div>
+                        </div>
+                        <Pilares ev={ev} />
+                        <VentaDeGestion ventas={ev.pilares.gestion?.ventas} />
+                        <RegistroGestiones plan={ev.pilares.plan?.plan} />
+                        <Contexto contexto={ev.contexto} />
+                        <p className="px-4 sm:px-6 py-3 text-[11px] text-slate-400 bg-slate-50 border-t border-slate-100">
+                            El porcentaje grande es el avance sobre la meta. La barra y el puntaje comparan contra lo que tocaba llevar al corte.
+                            Global: 85 o más cumpliendo · 65 a 84 en riesgo · menos de 65 no está cumpliendo. Los pilares sin datos no cuentan y su peso se reparte.
+                        </p>
+                    </>
+                )}
+            </section>
+            {onInforme && (
+                <button onClick={onInforme} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-white border border-slate-300 text-sm font-bold text-slate-700">
+                    <FileText size={16} /> Informe de gestión del mes (PDF)
+                </button>
+            )}
+        </div>
+    );
+}
+
+/** Tarjeta del equipo: nombre e índice de un vistazo, y lo que más le resta. */
 export function DesempenoMini({ ev, nombre, onClick }) {
     if (!ev) return null;
     const t = TONO[ev.estado.tono];
     return (
         <button type="button" onClick={onClick}
-            className={`text-left bg-white border rounded-2xl p-4 hover:shadow-md transition-shadow ${t.soft}`}>
-            <div className="flex items-center gap-3">
-                <div className="shrink-0"><Medidor score={ev.global} tono={ev.estado.tono} size={96} /></div>
+            className={`w-full text-left bg-white border rounded-2xl p-5 hover:shadow-md transition-shadow ${t.soft}`}>
+            <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                    <p className="font-bold text-slate-800 truncate">{nombre}</p>
-                    <p className={`text-sm font-black ${t.txt}`}>{ev.estado.label}</p>
-                    <p className="text-[11px] text-slate-500">Día {ev.periodo.diasCorridos} de {ev.periodo.diasTotales}</p>
+                    <p className="text-xl font-black text-slate-900 leading-tight">{nombre}</p>
+                    <p className={`text-base font-black mt-1 ${t.txt}`}>{ev.estado.label}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{ev.periodo.titulo} · día {ev.periodo.diasCorridos} de {ev.periodo.diasTotales}</p>
+                </div>
+                <div className="shrink-0 w-24 h-24 rounded-full grid place-items-center border-[6px]" style={{ borderColor: t.ring }}>
+                    <div className="text-center leading-none">
+                        <p className="text-4xl font-black text-slate-900">{ev.global ?? '—'}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">de 100</p>
+                    </div>
                 </div>
             </div>
-            <div className="mt-3 space-y-1.5">
-                {ORDEN.map(k => {
-                    const pil = ev.pilares[k];
-                    const tp = TONO[pil.estado.tono];
-                    return (
-                        <div key={k} className="flex items-center gap-2">
-                            <span className="text-[11px] text-slate-500 w-28 shrink-0 truncate">{PILAR_META[k].nombre}</span>
-                            <div className="flex-1 h-1.5 rounded-full bg-white/80 overflow-hidden">
-                                <div className={`h-full rounded-full ${tp.bar}`} style={{ width: `${pil.score ?? 0}%` }} />
-                            </div>
-                            <span className={`text-[11px] font-bold w-10 text-right ${tp.txt}`}>{pct(pil.pctMeta)}</span>
-                        </div>
-                    );
-                })}
-            </div>
+            {ev.peor && ev.estado.key !== 'cumple' && (
+                <p className="text-sm text-slate-700 mt-3 flex items-start gap-1.5">
+                    <AlertTriangle size={15} className={`${t.txt} shrink-0 mt-0.5`} />
+                    <span>Lo que más le resta: <b>{PILAR_META[ev.peor].nombre}</b> ({pct(ev.pilares[ev.peor].pctMeta)})</span>
+                </p>
+            )}
         </button>
     );
 }

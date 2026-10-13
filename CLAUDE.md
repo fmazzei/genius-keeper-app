@@ -3697,3 +3697,63 @@ Pedido del dueño: en Seguimiento, *"un vistazo y sabemos si el vendedor está c
 **En `SeguimientoComercial`:**
 - En *Toda la empresa*, una tarjeta por vendedor (`DesempenoMini`), ordenadas de peor a mejor; tocar una abre su detalle.
 - Por vendedor, el tablero completo arriba de los indicadores Semana/Mes de siempre. Estos siguen para revisar el histórico.
+
+### Vendedor: índice por períodos, venta de gestión y registro de visitas de venta (2026-10-13) ✅
+
+Pedido del dueño con capturas de Comercial → Vendedores:
+- la tarjeta del vendedor era chica;
+- la vista se leía semanal y debía ser mensual, con última semana, trimestre y año;
+- las visitas del índice eran del MERCADERISTA, no del vendedor;
+- *"Carolina se está dedicando a tomar pedidos por inercia y no a vender: ¿cómo tener un reporte de su gestión?"*
+
+**Decisiones del dueño:**
+- La vista "Mes" es su **mes de empleo**.
+- Se usan las **dos capas** (automática + registro).
+- Pesos con **más peso a la gestión**: Venta de gestión 30 %, Plan de visitas 20 %, y Facturación, Cobranza y Activación 50 % entre las tres (16,7 % c/u).
+
+**Motor del índice (`src/utils/desempenoVendedor.js`):**
+- `evaluarDesempeno({vendedor, facturas, ventana, gestiones, planes, seguidor, carteraSize, ahora})` mide cualquier ventana.
+- `ventanasVendedor` arma las ventanas: mes de empleo en curso, última semana cerrada (lunes a domingo), trimestre (3 meses de empleo) y año.
+- `evaluarAnio` evalúa el año mes de empleo por mes de empleo.
+- `periodosVendedor` calcula el mes de empleo a la fecha `ahora`, no a la del reloj.
+- **Cobranza ahora es "a tiempo"**: del dinero que vencía en la ventana (ya juzgable: vencimiento + `cobranzaGraciaDias`), cuánto se cobró dentro del plazo. Es la regla del Bono Cobranza y sirve igual para un mes pasado. El saldo vencido de hoy va en el detalle.
+- **Las visitas del mercaderista y "cartera comprando" salieron del índice.** Quedan como `contexto` ("no cuenta en su índice").
+
+**Capa A, automática (`src/utils/gestionVenta.js` → `clasificarVentas`).** Separa sus unidades en inercia y gestión. Usa la historia de la EMPRESA: las facturas del cliente de cualquier vendedor.
+- **Nuevo:** sin compras previas en la historia disponible.
+- **Reactivado:** silencio mayor que su ritmo, `umbralReactivacion` = máx(45 días, 1,5 × mediana de sus intervalos). Con datos reales, 30 días marcaba como reactivados a clientes mensuales.
+- **Crecimiento:** lo comprado más allá de un 25 % sobre su promedio (`MARGEN_CRECIMIENTO`).
+  - El promedio es el de los 90 días previos, contados desde su primera compra.
+  - Se mide en no menos tiempo que su propio ritmo; si no, una semana inflaba el crecimiento.
+- **Inercia:** el resto.
+- La meta es `metaGestionPct` (por defecto 30 %, configurable en `commissionConfig`).
+- **Primera lectura real (Carolina, Mes 2):** 174 de 582 uds de gestión (30 %); 408 por inercia.
+
+**Capa B, registro (`gestiones_venta`) y plan semanal (`planes_venta/{uid}_{lunes}`):**
+- **Registrar:** pestaña **Gestión** del vendedor (`GestionVentaView.jsx`, segunda en la barra), en 10 segundos:
+  - cómo: visita, llamada o WhatsApp;
+  - para qué: prospectar, reactivar, ampliar o seguimiento (cuentan); pedido o cobro (se registran, no suman);
+  - con quién: cliente de su cartera o prospecto con nombre y teléfono;
+  - resultado y nota.
+  - Una visita de hoy guarda el GPS si el teléfono lo da; nunca bloquea.
+- **Plan de la semana:** el sistema sugiere (`sugerirPlan`) clientes que se acercan a su umbral de reactivación (80 %) o nunca compraron, y prospectos "interesado" o "volver". Ella arma el plan y ve ✓ en lo que ya trabajó.
+- **Pilar Plan (`evaluarPlan`):** por semana, meta = máx(ítems del plan, `gestionesMinSemana`, por defecto 10), prorrateada en la semana en curso. Hechas = clientes o prospectos DISTINTOS con gestión proactiva.
+  - Se exige desde el **lunes 20-oct** (`INICIO_REGISTRO_GESTIONES`); la semana del 13 es de práctica. Antes de esa fecha el pilar no cuenta y lo dice.
+- **Reglas:**
+  - `gestiones_venta`: crea el vendedor a su nombre, con fecha no futura; lee él y la gerencia; editar o borrar solo el máster.
+  - `planes_venta`: el vendedor escribe el suyo (id con su uid); leer uno inexistente no da "sin permiso"; la gerencia lee.
+
+**Pantalla del máster (Comercial → Vendedores, `DesempenoVendedor.jsx`):**
+- Tarjeta del equipo grande (`DesempenoMini`): nombre, estado, índice en círculo y lo que más le resta.
+- Detalle con selector **Mes | Última semana | Trimestre | Año**.
+- Año: gráfico de barras del índice mes a mes (líneas 85 y 65) y tabla de pilares por mes.
+- "¿De dónde salen sus unidades?": barra nuevos / reactivados / crecimiento / inercia, con los clientes que la explican.
+- "Lo que registró": cada gestión.
+- **Informe PDF del mes** (`ReporteGestionVendedorDoc.jsx`).
+- `useCarteraComercial` carga además `gestiones_venta` (12 meses) y `planes_venta`, y expone `evaluarVentana(vid, tipo)`.
+
+**Pruebas:**
+- `TZ=America/Caracas node --import ./tests/alias.mjs tests/gestionVenta.test.mjs`: 24 en verde.
+- `tests/firestore.rules.test.mjs`: 54 en verde.
+
+**Pendiente/observación:** la Activación de Carolina da 0 de 4 semanas porque la regla pide 23 de 28 clientes con ≥12 uds en una semana, y su mejor semana tiene 4. Revisar el umbral (`activacionThreshold` 80 %) es decisión del dueño.

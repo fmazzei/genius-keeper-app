@@ -21,6 +21,7 @@ import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { useCarteraComercial } from '@/hooks/useCarteraComercial.js';
 import { computeMetaMensual } from '@/utils/vendedorMeta.js';
 import DesempenoVendedor, { DesempenoMini } from '@/Components/DesempenoVendedor.jsx';
+import ReporteGestionVendedorDoc from '@/Components/ReporteGestionVendedorDoc.jsx';
 import FacturacionClientes from '@/Pages/FacturacionClientes.jsx';
 
 const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
@@ -240,12 +241,21 @@ const Dato = ({ label, valor, sub, tono = 'text-slate-800' }) => (
 // ─── 2. Vendedores ───────────────────────────────────────────────────────────
 function VendedoresTab({ cc }) {
     const [sel, setSel] = useState(null);
+    // Vista por defecto: su MES de empleo (decisión del dueño, 13-oct).
+    const [ventana, setVentana] = useState('mes');
+    const [informe, setInforme] = useState(false);
+    const ev = useMemo(() => (sel && ventana !== 'anio' ? cc.evaluarVentana(sel, ventana) : null),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [sel, ventana, cc.desempeno]);
+    const anio = useMemo(() => (sel && (ventana === 'anio' || informe) ? cc.evaluarVentana(sel, 'anio') : null),
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [sel, ventana, informe, cc.desempeno]);
 
     if (cc.loading) {
         return (
             <div className="bg-white border border-slate-200 rounded-2xl py-16 flex flex-col items-center gap-3">
                 <Loader size={26} className="animate-spin text-brand-blue" />
-                <p className="text-sm text-slate-400">Cargando facturación y visitas…</p>
+                <p className="text-sm text-slate-400">Cargando facturación y gestiones…</p>
             </div>
         );
     }
@@ -258,15 +268,22 @@ function VendedoresTab({ cc }) {
                 <button onClick={() => setSel(null)} className="flex items-center gap-1 text-sm font-bold text-brand-blue">
                     <ChevronLeft size={16} /> Todo el equipo
                 </button>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                    {cc.vendedores.map(x => (
-                        <button key={x.id} onClick={() => setSel(x.id)}
-                            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold border ${x.id === sel ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'}`}>
-                            {x.name || x.email}
-                        </button>
-                    ))}
-                </div>
-                <DesempenoVendedor ev={cc.desempeno[v.id]} nombre={v.name || v.email} />
+                {cc.vendedores.length > 1 && (
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                        {cc.vendedores.map(x => (
+                            <button key={x.id} onClick={() => setSel(x.id)}
+                                className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold border ${x.id === sel ? 'bg-brand-blue text-white border-brand-blue' : 'bg-white text-slate-600 border-slate-300'}`}>
+                                {x.name || x.email}
+                            </button>
+                        ))}
+                    </div>
+                )}
+                {cc.gestiones == null && (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">No se pudo leer el registro de gestiones: el pilar "Plan de visitas" no cuenta por ahora.</p>
+                )}
+                <DesempenoVendedor ev={ev} anio={anio} nombre={v.name || v.email} ventana={ventana} onVentana={setVentana}
+                    onInforme={() => setInforme(true)} />
+                {informe && <ReporteGestionVendedorDoc nombre={v.name || v.email} ev={cc.desempeno[v.id]} anio={anio} onClose={() => setInforme(false)} />}
             </div>
         );
     }
@@ -274,14 +291,14 @@ function VendedoresTab({ cc }) {
     return (
         <section className="space-y-3">
             <p className="text-sm text-slate-600">
-                Cada vendedor contra <b>su</b> meta, en su período de empleo en curso (el mismo con el que se le paga).
-                El % es el avance sobre la meta; el orden va de quien más necesita atención a quien menos. Toca uno para el detalle.
+                Cada vendedor contra <b>su</b> meta en su mes de empleo. De quien más necesita atención a quien menos. Toca uno para el detalle,
+                la última semana, el trimestre y el año.
             </p>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
                 {[...cc.vendedores]
                     .sort((a, b) => (cc.desempeno[a.id]?.global ?? -1) - (cc.desempeno[b.id]?.global ?? -1))
                     .map(x => (
-                        <DesempenoMini key={x.id} ev={cc.desempeno[x.id]} nombre={x.name || x.email} onClick={() => setSel(x.id)} />
+                        <DesempenoMini key={x.id} ev={cc.desempeno[x.id]} nombre={x.name || x.email} onClick={() => { setSel(x.id); setVentana('mes'); }} />
                     ))}
             </div>
         </section>

@@ -314,6 +314,31 @@ service cloud.firestore {
       allow delete: if isMaster();
     }
 
+    // Gestiones de venta del vendedor (13-oct): visitas, llamadas y WhatsApp
+    // para vender. Las crea el propio vendedor a su nombre; las lee él y la
+    // gerencia. No se editan (es un registro): corregir es del máster.
+    match /gestiones_venta/{id} {
+      allow get, list: if isAuthenticated() && (isAdmin() || resource.data.vendedorId == request.auth.uid);
+      allow create: if isAuthenticated() && isVendedor()
+        && request.resource.data.vendedorId == request.auth.uid
+        && request.resource.data.fecha is timestamp
+        && request.resource.data.fecha <= request.time + duration.value(1, 'h');
+      allow update, delete: if isMaster();
+    }
+    // Plan semanal de visitas de venta: un documento por vendedor y semana,
+    // id `{uid}_{lunes YYYY-MM-DD}`. Leer uno que todavía no existe no debe
+    // devolver "sin permiso" (resource es null).
+    match /planes_venta/{id} {
+      allow get: if isAuthenticated() && (resource == null
+        ? id.matches(request.auth.uid + '_.*')
+        : (isAdmin() || resource.data.vendedorId == request.auth.uid));
+      allow list: if isAuthenticated() && (isAdmin() || resource.data.vendedorId == request.auth.uid);
+      allow create, update: if isAuthenticated() && isVendedor()
+        && id.matches(request.auth.uid + '_.*')
+        && request.resource.data.vendedorId == request.auth.uid;
+      allow delete: if isMaster();
+    }
+
     // Fusiones de PDV duplicados: registro + copia exacta de cada documento
     // tocado (para deshacer). Solo las escribe el servidor (fusionarPdv).
     match /fusiones_pdv/{id} {

@@ -21,7 +21,7 @@
 //     anterior.
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { readFileSync } from 'fs';
-import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, addDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, where, addDoc, updateDoc, Timestamp } from 'firebase/firestore';
 
 const env = await initializeTestEnvironment({ projectId: 'demo-gk4',
   firestore: { rules: readFileSync('firestore.rules','utf8'), host:'127.0.0.1', port: Number((process.env.FIRESTORE_EMULATOR_HOST || '').split(':')[1]) || 8092 } });
@@ -118,6 +118,27 @@ await check('niega','ANAQUEL se recrea como master',           () => setDoc(doc(
 await check('permite','MÁSTER cambia el rol de otro',          () => updateDoc(doc(M,'users_metadata','vend'), { role:'gerencia' }));
 await check('permite','MÁSTER crea un usuario',                () => setDoc(doc(M,'users_metadata','u2'), { role:'vendedor', email:'u2@x.com', name:'U2', active:true, salesGoal:0, username:'u2' }));
 await check('permite','MÁSTER borra un usuario',               () => deleteDoc(doc(M,'users_metadata','u2')));
+
+// ── Gestiones de venta y plan semanal (13-oct)
+await env.withSecurityRulesDisabled(async (c) => {
+  const db = c.firestore();
+  await setDoc(doc(db,'users_metadata','vend'), { role:'vendedor', email:'v@lacteoca.com', name:'Vend' });
+  await setDoc(doc(db,'users_metadata','vend2'), { role:'vendedor', email:'v2@lacteoca.com' });
+  await setDoc(doc(db,'gestiones_venta','gotro'), { vendedorId:'vend2', fecha: Timestamp.now() });
+});
+const V2 = V;   // mismo usuario (rol vuelto a vendedor arriba)
+const ahoraTs = Timestamp.now();
+await check('permite','VENDEDOR registra su gestión',            () => setDoc(doc(V2,'gestiones_venta','g1'), { vendedorId:'vend', fecha: ahoraTs, objetivo:'prospectar' }));
+await check('niega','VENDEDOR registra a nombre de otro',        () => setDoc(doc(V2,'gestiones_venta','g2'), { vendedorId:'vend2', fecha: ahoraTs }));
+await check('niega','VENDEDOR registra con fecha futura',        () => setDoc(doc(V2,'gestiones_venta','g3'), { vendedorId:'vend', fecha: Timestamp.fromMillis(Date.now() + 3*86400000) }));
+await check('niega','VENDEDOR edita su gestión',                 () => updateDoc(doc(V2,'gestiones_venta','g1'), { objetivo:'pedido' }));
+await check('permite','VENDEDOR lista las suyas',                () => getDocs(query(collection(V2,'gestiones_venta'), where('vendedorId','==','vend'))));
+await check('niega','VENDEDOR lee la de otro',                   () => getDoc(doc(V2,'gestiones_venta','gotro')));
+await check('permite','GERENCIA lee gestiones',                  () => getDocs(collection(G,'gestiones_venta')));
+await check('permite','VENDEDOR lee su plan que aún no existe',  () => getDoc(doc(V2,'planes_venta','vend_2026-10-12')));
+await check('permite','VENDEDOR guarda su plan',                 () => setDoc(doc(V2,'planes_venta','vend_2026-10-12'), { vendedorId:'vend', semana:'2026-10-12', items:[] }));
+await check('niega','VENDEDOR guarda el plan de otro',           () => setDoc(doc(V2,'planes_venta','vend2_2026-10-12'), { vendedorId:'vend', items:[] }));
+await check('permite','GERENCIA lee planes',                     () => getDocs(collection(G,'planes_venta')));
 
 console.log(ok.join('\n'));
 if (bad.length) { console.log('\n--- FALLOS ---\n' + bad.join('\n')); process.exitCode = 1; }

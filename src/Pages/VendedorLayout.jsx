@@ -13,7 +13,7 @@ import {
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
     ClipboardList, Receipt, Store, Warehouse, X, RefreshCw, FilePlus,
-    Zap, ChevronLeft, ChevronRight, Wallet, Download, Award,
+    Zap, ChevronLeft, ChevronRight, Wallet, Download, Award, Handshake,
 } from 'lucide-react';
 import AvisoDetalleSheet from '@/Components/AvisoDetalleSheet.jsx';
 import EstadoCuentaDoc from '@/Components/EstadoCuentaDoc.jsx';
@@ -46,6 +46,7 @@ import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
+import GestionVentaView from '@/Components/GestionVentaView.jsx';
 
 // ─── Caché del Home (stale-while-revalidate) ─────────────────────────────────
 // Firestore `getDocs` es "servidor primero" estando online (la caché de
@@ -1732,6 +1733,9 @@ const VendedorLayout = ({ user, onLogout }) => {
 
     const tabs = [
         { id: 'home',    label: 'Inicio',   Icon: Home      },
+        // Gestión de venta (13-oct): registrar visitas/llamadas para vender y el
+        // plan de la semana. Va segunda: es su trabajo principal.
+        { id: 'gestion', label: 'Gestión',  Icon: Handshake },
         { id: 'cartera', label: 'Cartera',  Icon: Briefcase },
         ...(modules.pedidosVendedor  !== false ? [{ id: 'pedidos',  label: 'Pedidos',  Icon: ClipboardList, badgeCount: pedidosPendientesCount }] : []),
         ...(modules.facturasVendedor !== false ? [{ id: 'facturas', label: 'Facturas', Icon: Receipt       }] : []),
@@ -1773,6 +1777,10 @@ const VendedorLayout = ({ user, onLogout }) => {
                     />
                 );
             }
+        }
+
+        if (currentView === 'gestion') {
+            return <GestionVentaView uid={user.uid} nombreVendedor={vendedor.nombre} facturas={carteraFacturas} commConfig={commConfig} />;
         }
 
         if (currentView === 'cartera') {
