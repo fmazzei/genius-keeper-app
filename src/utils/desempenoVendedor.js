@@ -207,15 +207,16 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
         const ultima = det.semanas[det.semanas.length - 1];
         pilares.activacion = {
             score: clamp(prom * 100),
-            valor: `${det.activadosPeriodo} de ${det.cartera} sucursales`,
+            // Lo que tiene que hacer, no lo que ya hizo (pedido del dueño): la meta semanal en PDV activos.
+            valor: `Meta: visitar ${det.objetivo} de ${det.cartera} PDV activos por semana`,
             pctMeta: prom * umbral / 100,
-            sobreMeta: `${pctTxt(prom * umbral / 100)} de la cartera por semana en promedio (meta ${umbral}%)`,
-            detalle: `${act.semanasLogradas} de ${act.semanasTotales} semana${act.semanasTotales === 1 ? '' : 's'} logradas (${det.objetivo} de ${det.cartera} sucursales con ≥${minU} uds)${ultima?.enCurso ? ` · esta semana van ${ultima.activados}/${det.objetivo}` : ''} · ${det.interacciones} facturas a ${det.activadosPeriodo} sucursales en el período`,
+            sobreMeta: `${pctTxt(prom * umbral / 100)} de sus PDV activos por semana en promedio (meta ${umbral}%)`,
+            detalle: `${act.semanasLogradas} de ${act.semanasTotales} semana${act.semanasTotales === 1 ? '' : 's'} logradas (${det.objetivo} de ${det.cartera} PDV activos con ≥${minU} uds)${ultima?.enCurso ? ` · esta semana van ${ultima.activados}/${det.objetivo}` : ''} · ${det.interacciones} facturas a ${det.activadosPeriodo} PDV en el período`,
             semanasLogradas: act.semanasLogradas, semanasTotales: act.semanasTotales,
             cifras: [
                 { k: 'Semanas logradas', v: `${act.semanasLogradas} de ${act.semanasTotales}` },
                 ...(ultima?.enCurso ? [{ k: 'Esta semana', v: `${ultima.activados} de ${det.objetivo}` }] : []),
-                { k: 'Sucursales activadas', v: `${det.activadosPeriodo} de ${det.cartera}` },
+                { k: 'PDV activados en el período', v: `${det.activadosPeriodo} de ${det.cartera}` },
                 { k: 'Facturas que activaron', v: num(det.interacciones) },
             ],
             detalleActivacion: det, plan: registro,

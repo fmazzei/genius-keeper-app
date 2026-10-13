@@ -31,7 +31,7 @@ const colorScore = (s) => s == null ? '#cbd5e1' : s >= 85 ? '#10b981' : s >= 65 
 export const PILAR_META = {
     facturacion: { nombre: 'Facturación', que: 'Unidades vs. lo que tocaba llevar al corte', Icon: Receipt },
     cobranza:    { nombre: 'Cobranza', que: 'Lo que vencía en el período, cobrado a tiempo', Icon: Wallet },
-    activacion:  { nombre: 'Activación', que: 'Visitas que facturan: sucursales con ≥12 uds cada semana', Icon: Zap },
+    activacion:  { nombre: 'Activación', que: 'El % es cuántos de sus PDV activos visitó y facturó (≥12 uds) por semana, en promedio', Icon: Zap },
     captacion:   { nombre: 'Captación', que: 'Sucursales nuevas o que volvió a traer', Icon: UserPlus },
 };
 export const VENTANAS = [

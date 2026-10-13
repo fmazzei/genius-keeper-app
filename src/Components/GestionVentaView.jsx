@@ -279,12 +279,12 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
             <section className="rounded-2xl bg-gradient-to-br from-[#FFD600]/15 to-slate-900 border border-[#FFD600]/30 p-4">
                 <p className="text-[11px] font-black uppercase tracking-wider text-[#FFD600]/80 flex items-center gap-1"><Zap size={12} /> Tu activación de esta semana</p>
                 {act.cartera > 0 ? (<>
-                    <p className="text-white font-black text-3xl mt-1">{activadosSem} <span className="text-base text-slate-400 font-bold">de {act.objetivo} sucursales</span></p>
+                    <p className="text-white font-black text-3xl mt-1">{activadosSem} <span className="text-base text-slate-400 font-bold">de {act.objetivo} PDV</span></p>
                     <div className="h-2 rounded-full bg-slate-800 overflow-hidden mt-2">
                         <div className={`h-full rounded-full ${actSem?.lograda ? 'bg-emerald-400' : 'bg-[#FFD600]'}`} style={{ width: `${Math.min(100, act.objetivo ? activadosSem / act.objetivo * 100 : 0)}%` }} />
                     </div>
                     <p className="text-xs text-slate-400 mt-2">
-                        Una sucursal se activa cuando la visitas y le facturas al menos {act.minUnits} unidades en la semana. Meta: {act.threshold} % de tus {act.cartera} sucursales.
+                        Un PDV se activa cuando lo visitas y le facturas al menos {act.minUnits} unidades en la semana. Meta: visitar {act.objetivo} de tus {act.cartera} PDV activos cada semana.
                         {actSem?.lograda ? ' ¡Semana lograda!' : ` Te faltan ${Math.max(0, act.objetivo - activadosSem)}.`}
                         {' '}Semana del {semIni.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}.
                     </p>
