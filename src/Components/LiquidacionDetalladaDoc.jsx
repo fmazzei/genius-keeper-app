@@ -212,7 +212,7 @@ function PeriodoDetalle({ d, multi }) {
                     <p className="text-[11px] text-slate-500">Sin cartera asignada — no aplica activación.</p>
                 ) : (
                     <>
-                        <p className="text-[11px] text-slate-600 mb-2">Objetivo: activar ≥{d.actThreshold}% de la cartera ({d.objetivo} de {d.carteraSize} clientes) con ≥{d.actMinUnits} uds cada semana.</p>
+                        <p className="text-[11px] text-slate-600 mb-2">Objetivo: activar ≥{d.actThreshold}% de la cartera ({d.objetivo} de {d.carteraSize} sucursales) con ≥{d.actMinUnits} uds cada semana.</p>
                         {d.semanas.map(w => (
                             <div key={w.n} className="mb-2 border border-slate-200 rounded overflow-hidden">
                                 <div className="flex items-center justify-between gap-2 px-2 py-1" style={{ background: w.lograda ? '#e8f5ee' : '#f6f7f9', fontFamily: SANS, fontSize: '10px' }}>

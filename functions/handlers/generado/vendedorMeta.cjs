@@ -25,6 +25,7 @@ __export(vendedorMeta_exports, {
   computeDesglosePeriodo: () => computeDesglosePeriodo,
   computeEstadosDeCuenta: () => computeEstadosDeCuenta,
   computeMetaMensual: () => computeMetaMensual,
+  cuentaParaActivacion: () => cuentaParaActivacion,
   fechaCalendario: () => fechaCalendario,
   listPeriodos: () => listPeriodos,
   tamanoCartera: () => tamanoCartera,
@@ -225,8 +226,9 @@ function computeActivacionPeriodo(facturas, start, end, ahora, carteraSize, minU
   const factor = semanasTotales > 0 ? semanasLogradas / semanasTotales : 0;
   return { semanasTotales, semanasLogradas, factor, semActivados, semObjetivo: objetivo, semLograda };
 }
-function tamanoCartera(docs = []) {
-  return (docs || []).filter((c) => (c && c.estado || "activo") === "activo").length;
+var cuentaParaActivacion = (c) => !!c && c.activoEnZoho !== false && c.esOficina !== true && c.categoria !== "foodservice";
+function tamanoCartera(clientes = []) {
+  return (clientes || []).filter(cuentaParaActivacion).length;
 }
 function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
   const cfg = meta.commissionConfig ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig } : DEFAULT_COMMISSION_CONFIG;
@@ -633,6 +635,7 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
   computeDesglosePeriodo,
   computeEstadosDeCuenta,
   computeMetaMensual,
+  cuentaParaActivacion,
   fechaCalendario,
   listPeriodos,
   tamanoCartera,

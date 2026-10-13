@@ -24,6 +24,8 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
     // pudieron leer: el pilar lo dice en vez de marcar un cero.
     const [gestiones, setGestiones] = useState(null);
     const [planes, setPlanes]       = useState(null);
+    // Sucursales (carnets de Zoho) por vendedor: la cartera de la Activación.
+    const [clientesZoho, setClientesZoho] = useState([]);
     const [loading, setLoading]   = useState(true);
     const [error, setError]       = useState('');
 
@@ -39,7 +41,7 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
                 const hace12Meses = new Date();
                 hace12Meses.setMonth(hace12Meses.getMonth() - 12);
 
-                const [uSnap, fRecientes, fAbiertas, cSnap, gSnap, pSnap] = await Promise.all([
+                const [uSnap, fRecientes, fAbiertas, cSnap, gSnap, pSnap, czSnap] = await Promise.all([
                     getDocs(query(collection(db, 'users_metadata'), where('role', '==', 'vendedor'))),
                     getDocs(query(collection(db, 'facturas_vendedor'), where('fecha', '>=', Timestamp.fromDate(hace12Meses))))
                         .catch(() => ({ docs: [] })),
@@ -48,6 +50,7 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
                     getDocs(collection(db, 'vendor_clients')).catch(() => ({ docs: [] })),
                     getDocs(query(collection(db, 'gestiones_venta'), where('fecha', '>=', Timestamp.fromDate(hace12Meses)))).catch(() => null),
                     getDocs(collection(db, 'planes_venta')).catch(() => null),
+                    getDocs(collection(db, 'clientes_zoho')).catch(() => null),
                 ]);
                 if (!alive) return;
                 setVendedores(uSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(v => v.active !== false));
@@ -67,6 +70,7 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
                 setCartera(mapa);
                 setGestiones(gSnap ? gSnap.docs.map(d => ({ id: d.id, ...d.data() })) : null);
                 setPlanes(pSnap ? pSnap.docs.map(d => ({ id: d.id, ...d.data() })) : null);
+                setClientesZoho(czSnap ? czSnap.docs.map(d => ({ customerId: d.id, ...d.data() })) : []);
             } catch (e) {
                 if (alive) setError('No se pudo cargar la información comercial. ' + (e?.message || ''));
             } finally {
@@ -104,15 +108,12 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
         });
     };
 
-    const datosDe = (v) => {
-        const c = cartera[v.id];
-        return {
-            vendedor: v, facturas,
-            gestiones: gestiones ? gestiones.filter(g => g.vendedorId === v.id) : null,
-            planes: planes ? planes.filter(p => p.vendedorId === v.id) : null,
-            carteraSize: c ? c.pos.size + c.chains.size : 0,
-        };
-    };
+    const datosDe = (v) => ({
+        vendedor: v, facturas,
+        gestiones: gestiones ? gestiones.filter(g => g.vendedorId === v.id) : null,
+        planes: planes ? planes.filter(p => p.vendedorId === v.id) : null,
+        clientes: clientesZoho.filter(c => c.vendedorId === v.id),
+    });
 
     // Desempeño de cada vendedor en su MES DE EMPLEO en curso (la vista por defecto).
     const desempeno = useMemo(() => {
@@ -123,7 +124,7 @@ export function useCarteraComercial({ posList = [], reports = [] } = {}) {
         });
         return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [vendedores, facturas, cartera, posList, reports, gestiones, planes]);
+    }, [vendedores, facturas, cartera, posList, reports, gestiones, planes, clientesZoho]);
 
     /** Otra ventana para un vendedor: 'semana' | 'trimestre' | 'anio' (mes a mes). */
     const evaluarVentana = (vid, tipo) => {

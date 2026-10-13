@@ -1,7 +1,8 @@
 // RUTA: src/Components/DesempenoVendedor.jsx
 //
-// Tablero de DESEMPEÑO del vendedor para el máster (Comercial → Vendedores).
-// El motor vive en `src/utils/desempenoVendedor.js` y la gestión de venta en
+// Tablero de GESTIÓN DE VENTA del vendedor para el máster (Comercial →
+// Vendedores). El motor vive en `src/utils/desempenoVendedor.js`; la Activación
+// semana a semana en `src/utils/activacion.js`; inercia y captación en
 // `src/utils/gestionVenta.js`.
 //
 //   <DesempenoVendedor ev={…} anio={…} ventana="mes" onVentana={…} nombre="…" onInforme={…} />
@@ -9,12 +10,12 @@
 //
 // 13-oct (pedido del dueño): la tarjeta del equipo es grande y se lee de un
 // vistazo (nombre + índice); el detalle se ve por Mes (por defecto), Última
-// semana cerrada, Trimestre y Año (gráfico mes a mes); las visitas del
-// mercaderista salen del índice y entran la venta de gestión y el plan de
-// visitas de venta.
+// semana cerrada, Trimestre y Año (gráfico mes a mes). Índice en cuatro partes
+// (Facturación, Activación, Cobranza, Captación); la Activación se muestra con
+// quiénes se activaron, cuánto facturaron y quiénes faltan.
 
 import React from 'react';
-import { Receipt, Wallet, Zap, TrendingUp, Handshake, AlertTriangle, MapPin, Store, FileText } from 'lucide-react';
+import { Receipt, Wallet, Zap, UserPlus, AlertTriangle, MapPin, Store, FileText, Check } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ReferenceLine } from 'recharts';
 import { ORDEN_PILARES } from '@/utils/desempenoVendedor.js';
 import { OBJETIVOS_GESTION, RESULTADOS_GESTION, TIPOS_GESTION, etiqueta, esProactiva } from '@/utils/gestionVenta.js';
@@ -30,9 +31,8 @@ const colorScore = (s) => s == null ? '#cbd5e1' : s >= 85 ? '#10b981' : s >= 65 
 export const PILAR_META = {
     facturacion: { nombre: 'Facturación', que: 'Unidades vs. lo que tocaba llevar al corte', Icon: Receipt },
     cobranza:    { nombre: 'Cobranza', que: 'Lo que vencía en el período, cobrado a tiempo', Icon: Wallet },
-    activacion:  { nombre: 'Activación', que: 'Semanas en que compró la mayoría de su cartera', Icon: Zap },
-    gestion:     { nombre: 'Venta de gestión', que: 'Unidades que vienen de su trabajo, no de la inercia', Icon: TrendingUp },
-    plan:        { nombre: 'Plan de visitas de venta', que: 'Gestiones para vender que registró', Icon: Handshake },
+    activacion:  { nombre: 'Activación', que: 'Visitas que facturan: sucursales con ≥12 uds cada semana', Icon: Zap },
+    captacion:   { nombre: 'Captación', que: 'Sucursales nuevas o que volvió a traer', Icon: UserPlus },
 };
 export const VENTANAS = [
     { id: 'mes', label: 'Mes' },
@@ -41,7 +41,7 @@ export const VENTANAS = [
     { id: 'anio', label: 'Año' },
 ];
 const pct = (x) => (x == null || !isFinite(x)) ? '—' : `${Math.round(x * 100)}%`;
-const CORTO = { facturacion: 'Fact.', cobranza: 'Cobr.', activacion: 'Activ.', gestion: 'Gest.', plan: 'Plan' };
+const CORTO = { facturacion: 'Fact.', activacion: 'Activ.', cobranza: 'Cobr.', captacion: 'Capt.' };
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
 const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
 const peso = (w) => (Math.round(w * 10) / 10).toLocaleString('es-VE');
@@ -114,7 +114,70 @@ function Pilares({ ev }) {
     );
 }
 
-/** Inercia contra gestión, con los clientes que la explican. */
+const fmtSem = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
+const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
+
+/** Activación semana a semana: quiénes se activaron, con cuánto, y quiénes faltan. */
+function ActivacionDetalle({ det }) {
+    if (!det || !det.semanas.length) return null;
+    return (
+        <section className="px-4 sm:px-6 py-4 border-t border-slate-100">
+            <p className="text-sm font-bold text-slate-800">Activación semana a semana</p>
+            <p className="text-[11px] text-slate-400">Meta: {det.objetivo} de {det.cartera} sucursales ({det.threshold}%) con ≥{det.minUnits} uds facturadas en la semana.</p>
+            <div className="space-y-1.5 mt-2">
+                {det.semanas.map(w => {
+                    const p = det.objetivo ? Math.min(100, w.activados / det.objetivo * 100) : 0;
+                    return (
+                        <div key={w.n} className="flex items-center gap-2 text-xs">
+                            <span className="w-28 shrink-0 text-slate-500 whitespace-nowrap">Sem {w.n} · {fmtSem(w.inicio)}</span>
+                            <div className="flex-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                                <div className={`h-full rounded-full ${w.lograda ? 'bg-emerald-500' : p >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${p}%` }} />
+                            </div>
+                            <span className="w-20 shrink-0 text-right font-bold text-slate-700">{w.activados}/{det.objetivo}{w.lograda && <Check size={12} className="inline ml-0.5 text-emerald-600" />}</span>
+                            {w.enCurso && <span className="text-[10px] text-sky-600 shrink-0">en curso</span>}
+                        </div>
+                    );
+                })}
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-3">
+                <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{det.activadosPeriodo}/{det.cartera}</p><p className="text-[10px] text-slate-500">sucursales activadas en el período</p></div>
+                <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{det.interacciones}</p><p className="text-[10px] text-slate-500">facturas que activaron</p></div>
+                <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{det.conVisita}/{det.activadosPeriodo}</p><p className="text-[10px] text-slate-500">con visita suya registrada</p></div>
+            </div>
+            {det.activados.length > 0 && (
+                <details className="mt-3" open>
+                    <summary className="text-[11px] font-bold uppercase tracking-wider text-slate-400 cursor-pointer">Activadas ({det.activados.length})</summary>
+                    <div className="mt-1 divide-y divide-slate-100">
+                        {det.activados.map(c => (
+                            <div key={c.clave} className="py-1.5 flex items-baseline justify-between gap-2 text-xs">
+                                <span className="min-w-0 text-slate-700">
+                                    <span className="font-semibold">{c.nombre}</span>
+                                    <span className="text-slate-400"> · {c.semanas} sem · {c.facturas} factura{c.facturas === 1 ? '' : 's'}{c.conVisita ? ' · con visita' : ''}</span>
+                                </span>
+                                <span className="shrink-0 text-right text-slate-700 whitespace-nowrap"><b>{num(c.unidades)} uds</b> · {money(c.monto)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+            )}
+            {det.sinActivar.length > 0 && (
+                <details className="mt-3">
+                    <summary className="text-[11px] font-bold uppercase tracking-wider text-red-400 cursor-pointer">Sin activar en el período ({det.sinActivar.length})</summary>
+                    <div className="mt-1 divide-y divide-slate-100">
+                        {det.sinActivar.map(c => (
+                            <div key={c.clave} className="py-1.5 flex items-baseline justify-between gap-2 text-xs">
+                                <span className="text-slate-700">{c.nombre}</span>
+                                <span className="shrink-0 text-slate-500">{c.diasSinComprar == null ? 'nunca ha comprado' : `${c.diasSinComprar} días sin comprar`}</span>
+                            </div>
+                        ))}
+                    </div>
+                </details>
+            )}
+        </section>
+    );
+}
+
+/** Inercia contra crecimiento y captación, con los clientes que la explican. */
 function VentaDeGestion({ ventas }) {
     if (!ventas || !ventas.unidades) return null;
     const p = (x) => ventas.unidades ? x / ventas.unidades * 100 : 0;
@@ -136,13 +199,14 @@ function VentaDeGestion({ ventas }) {
                 <span><b className="text-slate-500">● Inercia</b> {num(ventas.inercia)} uds</span>
             </div>
             <p className="text-[11px] text-slate-400 mt-2">
-                Inercia = clientes que ya compraban y siguen pidiendo lo mismo que su promedio de los 90 días anteriores. Gestión = cliente nuevo,
-                cliente que vuelve tras un silencio mayor que su ritmo (al menos 45 días, o 1,5 veces su intervalo habitual), o lo que un cliente compró más allá de un 25 % sobre su promedio.
+                Inercia = sucursales que ya compraban y siguen pidiendo lo mismo que su promedio de los 90 días anteriores. Crecimiento = lo que una
+                sucursal compró más allá de un 25 % sobre su promedio. Nuevas y las que vuelven tras un silencio mayor que su ritmo (al menos 45 días,
+                o 1,5 veces su intervalo habitual) son la Captación.
                 {ventas.historiaCorta && ' Hay poca historia antes de este período: los "nuevos" y el promedio pueden salir altos.'}
             </p>
             {gestionados.length > 0 && (
                 <div className="mt-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Ventas de gestión ({gestionados.length} clientes)</p>
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Fuera de la inercia ({gestionados.length} sucursales)</p>
                     <div className="space-y-1">
                         {gestionados.slice(0, 12).map(c => (
                             <div key={c.key} className="flex items-baseline justify-between gap-2 text-xs">
@@ -176,7 +240,8 @@ function RegistroGestiones({ plan }) {
     const conteo = (obj, lista) => Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${etiqueta(lista, k)} ${n}`).join(' · ') || '—';
     return (
         <section className="px-4 sm:px-6 py-4 border-t border-slate-100">
-            <p className="text-sm font-bold text-slate-800">Lo que registró</p>
+            <p className="text-sm font-bold text-slate-800">Visitas de venta registradas</p>
+            <p className="text-[11px] text-slate-400">Una visita cuenta cuando factura: eso se ve en la Activación. Aquí está su registro.</p>
             <div className="grid grid-cols-3 gap-2 mt-2">
                 <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{plan.proactivas}</p><p className="text-[10px] text-slate-500">para vender</p></div>
                 <div className="bg-slate-50 rounded-xl p-2.5 text-center"><p className="text-xl font-black text-slate-800">{plan.reactivas}</p><p className="text-[10px] text-slate-500">pedido o cobro</p></div>
@@ -270,7 +335,7 @@ function VistaAnio({ anio }) {
                     </tbody>
                 </table>
             </div>
-            <p className="text-[11px] text-slate-400 mt-2">Cada mes es su mes de empleo, contra su meta de ese mes. Las cifras de la tabla son el % sobre la meta de cada pilar (Fact. facturación, Cobr. cobranza, Activ. activación, Gest. venta de gestión). Punto azul = mes en curso.</p>
+            <p className="text-[11px] text-slate-400 mt-2">Cada mes es su mes de empleo, contra su meta de ese mes. Las cifras de la tabla son el % sobre la meta de cada pilar (Fact. facturación, Activ. activación, Cobr. cobranza, Capt. captación). Punto azul = mes en curso.</p>
         </div>
     );
 }
@@ -310,8 +375,9 @@ export default function DesempenoVendedor({ ev, anio, nombre, ventana = 'mes', o
                             </div>
                         </div>
                         <Pilares ev={ev} />
-                        <VentaDeGestion ventas={ev.pilares.gestion?.ventas} />
-                        <RegistroGestiones plan={ev.pilares.plan?.plan} />
+                        <ActivacionDetalle det={ev.pilares.activacion?.detalleActivacion} />
+                        <VentaDeGestion ventas={ev.pilares.captacion?.ventas} />
+                        <RegistroGestiones plan={ev.pilares.activacion?.plan} />
                         <Contexto contexto={ev.contexto} />
                         <p className="px-4 sm:px-6 py-3 text-[11px] text-slate-400 bg-slate-50 border-t border-slate-100">
                             El porcentaje grande es el avance sobre la meta. La barra y el puntaje comparan contra lo que tocaba llevar al corte.

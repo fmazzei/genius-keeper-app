@@ -3785,3 +3785,44 @@ Pedido del dueño con capturas de Comercial → Vendedores:
 - `tests/firestore.rules.test.mjs`: 54 en verde.
 
 **Pendiente/observación:** la Activación de Carolina da 0 de 4 semanas porque la regla pide 23 de 28 clientes con ≥12 uds en una semana, y su mejor semana tiene 4. Revisar el umbral (`activacionThreshold` 80 %) es decisión del dueño.
+
+#### Revisión del mismo día: gestión de venta = el índice; la Activación es la visita que factura ✅
+
+El dueño corrigió los conceptos (13-oct):
+- **"Gestión de venta" es TODO lo que involucra vender** (relacionamiento, facturación, cobranza y captación). Es el índice entero, no una de sus partes.
+- **La Activación es fundamental:** las interacciones de facturación del vendedor con toda su cartera. Es producto de la visita, y la visita solo es activación si factura.
+
+**Decisiones del dueño:**
+- **Meta semanal:** 80 % de la cartera activada cada semana (y por lo tanto en el mes), con mínimo 12 uds por sucursal en la semana. Es la regla que ya tenía el bono.
+- **"Un cliente" = cada SUCURSAL** (carnet de Zoho asignado al vendedor).
+- **La factura prueba la activación:** cuenta aunque la visita no se haya registrado.
+- **El Bono Activación usa la misma definición.**
+- **Pesos:** Facturación 30, Activación 30, Cobranza 25, Captación 15. Las visitas de venta viven dentro de la Activación.
+
+**Qué cambió:**
+- **`tamanoCartera(clientes)`** (`vendedorMeta.js`) ahora cuenta las sucursales del vendedor en `clientes_zoho`: activas en Zoho, sin Oficina ni foodservice (`cuentaParaActivacion`).
+  - Antes contaba las entradas de `vendor_clients`, donde una cadena valía 1, mientras los activados se contaban por carnet.
+  - Carolina pasa de 28 a 38; la meta del 80 % pasa de 23 a 31 por semana.
+  - Lo usan el Home del vendedor, administración (Liquidaciones, Comisiones a pagar, Conciliación) y el vigilante. El `.cjs` del servidor se regenera en el build.
+  - En la práctica no cambia lo ya pagado: con cualquiera de las dos carteras Carolina no logró ninguna semana.
+- **`src/utils/activacion.js` → `detalleActivacion`:** la misma regla del bono, con detalle:
+  - por semana: activadas / meta, lograda;
+  - activadas: semanas, facturas, uds, monto y si hubo visita suya registrada;
+  - sin activar: días sin comprar;
+  - interacciones del período.
+  - La prueba verifica que da las mismas semanas logradas que `computeActivacionPeriodo`.
+- **Índice** (`desempenoVendedor.js`):
+  - `PESOS = {facturacion:30, activacion:30, cobranza:25, captacion:15}`.
+  - Puntaje de Activación = promedio de (activadas ÷ meta) en las semanas cerradas. El bono sigue pagando las semanas LOGRADAS: misma definición, dos usos.
+  - **Captación** = sucursales nuevas o que vuelven tras un silencio mayor que su ritmo, contra `metaCaptacionMes` (por defecto 2 al mes, configurable; supuesto pendiente de confirmar por el dueño).
+  - Inercia y crecimiento quedan como análisis ("¿De dónde salen sus unidades?"), sin puntaje.
+  - Se retiraron los pilares "Venta de gestión" y "Plan de visitas". El registro de visitas se muestra dentro de la Activación.
+- **Pantallas:**
+  - Comercial → Vendedores muestra "Activación semana a semana" con las dos listas.
+  - El PDF suma la tabla por semana y la de sucursales activadas.
+  - En la pestaña Gestión del vendedor, la tarjeta de arriba es **"Tu activación de esta semana"**: X de 31, cuántas faltan y la lista de las que no ha activado. Usa las mismas semanas del bono, contadas desde el inicio de su mes de empleo.
+- **Lectura real de Carolina (Mes 2):** semanas 6, 9, 7 y 4 de 31; 20 de 38 sucursales activadas en el mes, con 26 facturas. Índice 45.
+- **Pruebas:**
+  - `tests/gestionVenta.test.mjs`: 25 en verde.
+  - `tests/comisionesCobro.test.mjs`: en verde, con la cartera por sucursal.
+  - `tests/vigilanteComisiones.test.mjs`: en verde.

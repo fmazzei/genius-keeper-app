@@ -2788,7 +2788,8 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                 getDoc(doc(db, 'users_metadata', uid)),
                 getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', uid))),
                 getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', uid))),
-                getDocs(query(collection(db, 'vendor_clients'), where('vendedorId', '==', uid), where('active', '==', true)))
+                // Activación: la cartera son sus sucursales (carnets de Zoho).
+                getDocs(query(collection(db, 'clientes_zoho'), where('vendedorId', '==', uid)))
                     .catch(() => null),
                 getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', uid)))
                     .catch(() => null),
@@ -3543,7 +3544,8 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                 isNone ? Promise.resolve(null) : getDoc(doc(db, 'users_metadata', uid)),
                 isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'zoho_customer_map'), where('vendedorId', '==', uid))).catch(() => null),
                 isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', uid))).catch(() => null),
-                isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'vendor_clients'), where('vendedorId', '==', uid), where('active', '==', true))).catch(() => null),
+                // Activación: la cartera son sus sucursales (carnets de Zoho).
+                isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'clientes_zoho'), where('vendedorId', '==', uid))).catch(() => null),
                 isNone ? Promise.resolve(null) : getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', uid))).catch(() => null),
             ]);
             const rows = facSnap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -4126,7 +4128,7 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                         getDocs(query(collection(db, 'facturas_vendedor'), where('vendedorId', '==', v.id))).catch(() => null),
                         getDocs(query(collection(db, 'liquidaciones'), where('vendedorId', '==', v.id))).catch(() => null),
                         getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', v.id))).catch(() => null),
-                        getDocs(query(collection(db, 'vendor_clients'), where('vendedorId', '==', v.id), where('active', '==', true))).catch(() => null),
+                        getDocs(query(collection(db, 'clientes_zoho'), where('vendedorId', '==', v.id))).catch(() => null),
                     ]);
                     const facturas = facturasSnap ? facturasSnap.docs.map(d => d.data()) : [];
                     const liqs     = liquidSnap ? liquidSnap.docs.map(d => d.data()) : [];

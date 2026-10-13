@@ -693,7 +693,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                                     <p className="text-white text-sm font-semibold">Bono Activación (+{commConfig.bonusActivacion}%)</p>
                                     {estadoActual.carteraSize > 0 ? (
                                         <p className="text-slate-400 text-xs">
-                                            Esta semana: <b className={estadoActual.actSemLograda ? 'text-emerald-400' : 'text-white'}>{estadoActual.actSemActivados}/{estadoActual.carteraSize}</b> clientes con ≥{commConfig.activacionMinUnits} uds · objetivo {estadoActual.actSemObjetivo}
+                                            Esta semana: <b className={estadoActual.actSemLograda ? 'text-emerald-400' : 'text-white'}>{estadoActual.actSemActivados}/{estadoActual.carteraSize}</b> sucursales con ≥{commConfig.activacionMinUnits} uds · objetivo {estadoActual.actSemObjetivo}
                                             {estadoActual.actSemLograda ? ' — ¡lograda!' : ` · faltan ${faltanAct}`}
                                         </p>
                                     ) : (
@@ -1292,7 +1292,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 // tras otro — en conexión móvil eso se nota como demora visible
                 // aunque nunca llegue a colgarse. Ninguna depende del resultado
                 // de otra, así que corren todas a la vez.
-                const [despachosSnap, comisionMesSnap, pagosSnap, carteraSnap, facturasSnap, liquidacionesSnap, cerradosSnap] = await Promise.all([
+                const [despachosSnap, comisionMesSnap, pagosSnap, carteraSnap, facturasSnap, liquidacionesSnap, cerradosSnap, clientesZohoSnap] = await Promise.all([
                     reporterId
                         ? getDocs(query(collection(db, 'despachos'), where('reporterId', '==', reporterId)))
                         : Promise.resolve(null),
@@ -1313,6 +1313,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                         .catch(e => { console.warn('liquidaciones load error:', e); return null; }),
                     getDocs(query(collection(db, 'comisiones_cerradas'), where('vendedorId', '==', user.uid)))
                         .catch(e => { console.warn('comisiones_cerradas load error:', e); return null; }),
+                    // Sus sucursales (carnets de Zoho): la cartera de la Activación.
+                    getDocs(query(collection(db, 'clientes_zoho'), where('vendedorId', '==', user.uid)))
+                        .catch(e => { console.warn('clientes_zoho load error:', e); return null; }),
                 ]);
 
                 // 2. Despachos del mes (requiere reporterId — vínculo con el
@@ -1395,7 +1398,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //    Filtrado de "estado" en cliente (evita índice compuesto).
                 const carteraDocs = carteraSnap.docs.map(d => ({ id: d.id, ...d.data() }));
                 const cartera = carteraDocs.filter(c => (c.estado || 'activo') === 'activo');
-                const puntosTotal = tamanoCartera(carteraDocs);   // misma regla que administración
+                // Activación: la cartera son sus SUCURSALES (carnets de Zoho), la
+                // misma regla que administración y el servidor (tamanoCartera).
+                const puntosTotal = clientesZohoSnap ? tamanoCartera(clientesZohoSnap.docs.map(d => ({ customerId: d.id, ...d.data() }))) : 0;
 
                 // Despachos de esta semana con mínimo de unidades, cruzados contra cartera
                 const carteraPosIds = new Set(cartera.map(c => c.posId).filter(Boolean));
@@ -1780,7 +1785,8 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         if (currentView === 'gestion') {
-            return <GestionVentaView uid={user.uid} nombreVendedor={vendedor.nombre} facturas={carteraFacturas} commConfig={commConfig} />;
+            return <GestionVentaView uid={user.uid} nombreVendedor={vendedor.nombre} facturas={carteraFacturas} commConfig={commConfig}
+                periodStart={computeMetaMensual({ fechaIngreso: vendedor.ingreso, commissionConfig: commConfig }).periodStart} />;
         }
 
         if (currentView === 'cartera') {

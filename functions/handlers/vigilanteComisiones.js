@@ -215,8 +215,10 @@ function evaluarComisiones(d, cfg) {
         return Math.max(num(c.precioUnidad) || 5.6, num(c.precioUnidadFoodservice) || 4.8);
     };
     const factorKg = num(cfg.factorUnidadesSospechosas) || 1.5;
+    // Activación: la cartera son las SUCURSALES (carnets de Zoho) del vendedor,
+    // la misma regla de la app (tamanoCartera sobre clientes_zoho).
     const carteraDe = {};
-    (d.carteras || []).filter(c => c.active === true).forEach(c => { (carteraDe[c.vendedorId] = carteraDe[c.vendedorId] || []).push(c); });
+    (d.clientes || []).filter(c => c.vendedorId).forEach(c => { (carteraDe[c.vendedorId] = carteraDe[c.vendedorId] || []).push(c); });
 
     vendedores.forEach(v => {
         const nombre = nombreV[v.uid];

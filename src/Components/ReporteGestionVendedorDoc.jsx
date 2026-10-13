@@ -34,8 +34,10 @@ const h2 = { margin: '18px 0 6px', fontSize: 11, fontWeight: 800, color: NAVY, t
 
 export default function ReporteGestionVendedorDoc({ nombre, ev, anio, onClose }) {
     if (!ev) return null;
-    const ventas = ev.pilares.gestion?.ventas;
-    const plan = ev.pilares.plan?.plan;
+    const ventas = ev.pilares.captacion?.ventas;
+    const plan = ev.pilares.activacion?.plan;
+    const det = ev.pilares.activacion?.detalleActivacion;
+    const fmtSem = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
     const conteo = (obj, lista) => Object.entries(obj || {}).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${etiqueta(lista, k)} ${n}`).join(' · ') || '—';
     return createPortal((
         <div id="gk-rgv-portal" style={{ position: 'fixed', inset: 0, zIndex: 120, background: '#e9edf3', overflowY: 'auto', fontFamily: SANS }}>
@@ -86,14 +88,57 @@ export default function ReporteGestionVendedorDoc({ nombre, ev, anio, onClose })
                     </table>
                 </div>
 
+                {det?.semanas?.length > 0 && (
+                    <div className="gk-rgv-blk">
+                        <p style={h2}>Activación: la visita que factura</p>
+                        <p style={{ fontSize: 11, margin: '0 0 6px', color: '#334155' }}>
+                            Meta: {det.objetivo} de {det.cartera} sucursales ({det.threshold}%) con ≥{det.minUnits} uds cada semana ·
+                            <b> {det.activadosPeriodo} sucursales activadas</b> en el período con {det.interacciones} facturas · {det.conVisita} con visita suya registrada.
+                        </p>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 8 }}>
+                            <thead><tr><th style={th}>Semana</th><th style={{ ...th, textAlign: 'right' }}>Activadas</th><th style={{ ...th, textAlign: 'right' }}>Meta</th><th style={th}>Resultado</th></tr></thead>
+                            <tbody>
+                                {det.semanas.map(w => (
+                                    <tr key={w.n}>
+                                        <td style={td}>Sem {w.n} · desde {fmtSem(w.inicio)}{w.enCurso ? ' (en curso)' : ''}</td>
+                                        <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{w.activados}</td>
+                                        <td style={{ ...td, textAlign: 'right' }}>{det.objetivo}</td>
+                                        <td style={{ ...td, color: w.lograda ? '#059669' : '#dc2626' }}>{w.lograda ? 'Lograda' : `${Math.round((w.pct || 0) * 100)}% de la meta`}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead><tr><th style={th}>Sucursal activada</th><th style={{ ...th, textAlign: 'right' }}>Semanas</th><th style={{ ...th, textAlign: 'right' }}>Facturas</th><th style={{ ...th, textAlign: 'right' }}>Uds</th><th style={{ ...th, textAlign: 'right' }}>Monto</th></tr></thead>
+                            <tbody>
+                                {det.activados.map(c => (
+                                    <tr key={c.clave}>
+                                        <td style={td}>{c.nombre}{c.conVisita ? ' · con visita' : ''}</td>
+                                        <td style={{ ...td, textAlign: 'right' }}>{c.semanas}</td>
+                                        <td style={{ ...td, textAlign: 'right' }}>{c.facturas}</td>
+                                        <td style={{ ...td, textAlign: 'right' }}>{num(c.unidades)}</td>
+                                        <td style={{ ...td, textAlign: 'right' }}>${num(c.monto)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {det.sinActivar.length > 0 && (
+                            <p style={{ fontSize: 10, margin: '8px 0 0', color: '#475569', lineHeight: 1.5 }}>
+                                <b style={{ color: '#b91c1c' }}>Sin activar en el período ({det.sinActivar.length}):</b>{' '}
+                                {det.sinActivar.map(c => `${c.nombre} (${c.diasSinComprar == null ? 'nunca' : `${c.diasSinComprar} d`})`).join(' · ')}
+                            </p>
+                        )}
+                    </div>
+                )}
+
                 {ventas?.unidades > 0 && (
                     <div className="gk-rgv-blk">
                         <p style={h2}>¿De dónde salen sus unidades?</p>
                         <p style={{ fontSize: 11, margin: '0 0 6px', color: '#334155' }}>
-                            <b>{pct(ventas.pctGestion)}</b> de sus {num(ventas.unidades)} uds vienen de su gestión: nuevos {num(ventas.nuevo)} · reactivados {num(ventas.reactivado)} · crecimiento {num(ventas.crecimiento)}. Por inercia: {num(ventas.inercia)} uds.
+                            De sus {num(ventas.unidades)} uds: sucursales nuevas {num(ventas.nuevo)} · que volvieron {num(ventas.reactivado)} · crecimiento sobre su promedio {num(ventas.crecimiento)} · por inercia {num(ventas.inercia)}.
                         </p>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                            <thead><tr><th style={th}>Cliente</th><th style={{ ...th, textAlign: 'right' }}>Gestión</th><th style={{ ...th, textAlign: 'right' }}>Inercia</th><th style={th}>Por qué</th></tr></thead>
+                            <thead><tr><th style={th}>Cliente</th><th style={{ ...th, textAlign: 'right' }}>Fuera de inercia</th><th style={{ ...th, textAlign: 'right' }}>Inercia</th><th style={th}>Por qué</th></tr></thead>
                             <tbody>
                                 {ventas.clientes.slice(0, 40).map(c => (
                                     <tr key={c.key}>
@@ -110,7 +155,7 @@ export default function ReporteGestionVendedorDoc({ nombre, ev, anio, onClose })
 
                 {plan && (
                     <div className="gk-rgv-blk">
-                        <p style={h2}>Lo que registró para vender</p>
+                        <p style={h2}>Visitas de venta registradas</p>
                         <p style={{ fontSize: 11, margin: '0 0 4px', color: '#334155' }}>
                             {plan.proactivas} gestiones para vender · {plan.reactivas} de pedido o cobro · plan cumplido {plan.planCumplidas} de {plan.planificadas}
                             {plan.visitas > 0 && ` · ${plan.conGps} de ${plan.visitas} visitas con ubicación`}
@@ -139,7 +184,7 @@ export default function ReporteGestionVendedorDoc({ nombre, ev, anio, onClose })
                     <div className="gk-rgv-blk">
                         <p style={h2}>Mes a mes</p>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                            <thead><tr><th style={th}>Mes</th><th style={{ ...th, textAlign: 'right' }}>Índice</th>{ORDEN_PILARES.map(k => <th key={k} style={{ ...th, textAlign: 'right' }}>{PILAR_META[k].nombre.split(' ')[0]}</th>)}</tr></thead>
+                            <thead><tr><th style={th}>Mes</th><th style={{ ...th, textAlign: 'right' }}>Índice</th>{ORDEN_PILARES.map(k => <th key={k} style={{ ...th, textAlign: 'right' }}>{PILAR_META[k].nombre}</th>)}</tr></thead>
                             <tbody>
                                 {[...anio].reverse().map(m => (
                                     <tr key={m.rango}>
@@ -154,9 +199,11 @@ export default function ReporteGestionVendedorDoc({ nombre, ev, anio, onClose })
                 )}
 
                 <p style={{ fontSize: 9, color: '#94a3b8', marginTop: 12, lineHeight: 1.5 }}>
-                    Índice de 0 a 100: 85 o más cumpliendo, 65 a 84 en riesgo, menos de 65 no está cumpliendo. Pesos: Venta de gestión 30 %, Plan de visitas 20 %,
-                    Facturación, Cobranza y Activación 16,7 % cada una. Inercia = clientes que ya compraban y siguen pidiendo su promedio de los 90 días anteriores.
-                    Gestión = cliente nuevo, cliente que vuelve tras un silencio mayor que su ritmo (al menos 45 días, o 1,5 veces su intervalo habitual), o lo comprado más allá de un 25 % sobre su promedio. Las visitas del mercaderista no cuentan en su índice.
+                    Índice de gestión de venta de 0 a 100: 85 o más cumpliendo, 65 a 84 en riesgo, menos de 65 no está cumpliendo. Pesos: Facturación 30 %,
+                    Activación 30 %, Cobranza 25 %, Captación 15 %. Activación = la visita que factura: una sucursal se activa en la semana con ≥12 uds
+                    facturadas; meta 80 % de la cartera cada semana; la factura es la prueba, la visita registrada se muestra al lado. Captación = sucursales
+                    nuevas o que vuelven tras un silencio mayor que su ritmo (al menos 45 días). Inercia = sucursales que siguen pidiendo su promedio de los
+                    90 días anteriores. Las visitas del mercaderista no cuentan en su índice.
                 </p>
             </div>
         </div>

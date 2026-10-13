@@ -1,28 +1,28 @@
 // RUTA: src/utils/desempenoVendedor.js
 //
-// Evaluación del DESEMPEÑO de un vendedor contra sus metas, en un solo número.
-// Pedido del dueño (2026-09): "un vistazo y sabemos si el vendedor está
-// cumpliendo o no".
+// GESTIÓN DE VENTA del vendedor en un solo número (el índice). Pedido del dueño
+// (2026-09): "un vistazo y sabemos si el vendedor está cumpliendo o no".
 //
-// 13-oct, rediseño pedido por el dueño:
-//   · El índice se mide en cualquier VENTANA: su mes de empleo (por defecto, el
-//     mismo con el que se le paga), la última semana cerrada, el trimestre y el
-//     año (mes a mes). Se compara con lo que tocaba llevar al CORTE (hoy, o el
-//     fin de la ventana si ya cerró): el día 10 de 30 nadie puede tener el 100%.
-//   · Las visitas del MERCADERISTA salen del índice: no son trabajo del
-//     vendedor. Quedan como contexto, igual que "cartera comprando".
-//   · Entran la VENTA DE GESTIÓN (inercia vs. gestión, de las facturas) y el
-//     PLAN DE VISITAS DE VENTA (su registro de gestiones). Ver gestionVenta.js.
-//
-// Pesos (decisión del dueño, "más peso a la gestión"): Venta de gestión 30 %,
-// Plan de visitas 20 %, y Facturación, Cobranza y Activación reparten el 50 %.
-// Un pilar sin datos NO cuenta: se declara y su peso se reparte. Nunca un cero
-// inventado.
+// Definición del dueño (13-oct): la gestión de venta es TODO lo que involucra
+// vender —relacionarse con el cliente, facturarle, cobrarle y captar clientes
+// nuevos—. El índice tiene cuatro partes:
+//   · Facturación (30 %) — volumen: unidades vs. lo que tocaba llevar al corte.
+//   · Activación  (30 %) — la visita que FACTURA: sucursales de su cartera con
+//                          ≥12 uds facturadas en la semana; meta 80 % cada
+//                          semana. Las visitas de venta viven aquí: una visita
+//                          que no factura no es activación. Ver activacion.js.
+//   · Cobranza    (25 %) — lo que vencía en el período, cobrado a tiempo.
+//   · Captación   (15 %) — sucursales nuevas o que volvió a traer.
+// Se mide en cualquier VENTANA (mes de empleo por defecto, última semana
+// cerrada, trimestre, año mes a mes) contra lo que tocaba llevar al CORTE.
+// Las visitas del MERCADERISTA no cuentan (no son trabajo del vendedor): quedan
+// como contexto. Un pilar sin datos NO cuenta: se declara y su peso se reparte.
 
-import { computeActivacionPeriodo, tierParaPct, fechaCalendario, computeMetaMensual } from '@/utils/vendedorMeta.js';
+import { computeActivacionPeriodo, tierParaPct, fechaCalendario, computeMetaMensual, tamanoCartera } from '@/utils/vendedorMeta.js';
 import { cuentaEnCartera, esPorCobrar, saldoAbierto } from '@/utils/facturaEstado.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
-import { clasificarVentas, evaluarPlan, configGestion } from '@/utils/gestionVenta.js';
+import { clasificarVentas, evaluarPlan } from '@/utils/gestionVenta.js';
+import { detalleActivacion } from '@/utils/activacion.js';
 
 const DIA = 86400000;
 const toDate = fechaCalendario;
@@ -31,12 +31,10 @@ const pctTxt = (x) => (x == null || !isFinite(x)) ? '—' : `${Math.round(x * 10
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
 const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
 
-export const PESOS = { facturacion: 50 / 3, cobranza: 50 / 3, activacion: 50 / 3, gestion: 30, plan: 20 };
-export const ORDEN_PILARES = ['facturacion', 'cobranza', 'activacion', 'gestion', 'plan'];
-
-/** El registro de gestiones se publicó el 13-oct; esa semana es de práctica y se
- *  exige desde el lunes 20-oct. Antes no hay nada que medir. */
-export const INICIO_REGISTRO_GESTIONES = new Date(2026, 9, 20);
+export const PESOS = { facturacion: 30, activacion: 30, cobranza: 25, captacion: 15 };
+export const ORDEN_PILARES = ['facturacion', 'activacion', 'cobranza', 'captacion'];
+/** Sucursales captadas (nuevas o reactivadas) por mes si su configuración no trae otra. */
+export const META_CAPTACION_MES = 2;
 
 /** Estado a partir de un puntaje 0–100. */
 export function estadoDe(score) {
@@ -114,11 +112,12 @@ export function ventanasVendedor(vendedor = {}, ahora = new Date()) {
  * @param {Array}  [p.gestiones] — `gestiones_venta` del vendedor.
  * @param {Array}  [p.planes]    — `planes_venta` del vendedor.
  * @param {object} [p.seguidor]  — computeSeguidor del mes en curso (solo contexto).
- * @param {number} p.carteraSize — clientes/cadenas asignados (regla del bono de activación).
+ * @param {Array}  [p.clientes]  — sus `clientes_zoho` (sucursales): la cartera de la Activación.
+ * @param {number} [p.carteraSize] — respaldo si no llegan los clientes.
  */
-export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null, gestiones = null, planes = null, seguidor = null, carteraSize = 0, ahora = new Date() } = {}) {
+export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null, gestiones = null, planes = null, seguidor = null, clientes = null, carteraSize = 0, ahora = new Date() } = {}) {
     const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.commissionConfig || {}) };
-    const cg = configGestion(cfg);
+    if (clientes) carteraSize = tamanoCartera(clientes);
     const per = computeMetaMensual(vendedor);
     const v = ventana || ventanasVendedor(vendedor, ahora).mes
         || { tipo: 'mes', inicio: per.periodStart, fin: per.periodEnd, meta: per.metaMensual, titulo: 'Mes en curso', rango: per.periodoLabel };
@@ -177,41 +176,47 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
         detalle: `De ${nJuzgadas} factura${nJuzgadas === 1 ? '' : 's'} que vencían en el período, ${nTarde} se cobr${nTarde === 1 ? 'ó' : 'aron'} tarde o siguen sin cobrar${enCurso && porCobrar > 0 ? ` · hoy: ${money0(vencidoHoy)} vencido de ${money0(porCobrar)} por cobrar` : ''}`,
     } : { score: null, valor: '—', detalle: 'Ninguna factura suya vencía en este período.' };
 
-    // ── 3. Activación de la cartera (regla del bono) ─────────────────────────
-    const act = computeActivacionPeriodo(suyas, inicio, fin, corte, carteraSize, cfg.activacionMinUnits ?? 24, cfg.activacionThreshold ?? 80);
-    pilares.activacion = carteraSize > 0 && act.semanasTotales > 0 ? {
-        score: clamp(act.factor * 100),
-        valor: `${act.semanasLogradas} de ${act.semanasTotales} semana${act.semanasTotales === 1 ? '' : 's'}`,
-        pctMeta: act.semanasLogradas / act.semanasTotales,
-        sobreMeta: `${pctTxt(act.semanasLogradas / act.semanasTotales)} de las semanas`,
-        detalle: `Una semana se logra con ${act.semObjetivo} de ${carteraSize} clientes con ≥${cfg.activacionMinUnits ?? 24} uds${enCurso ? ` · semana en curso: ${act.semActivados}/${act.semObjetivo}${act.semLograda ? ' ✓' : ''}` : ''}`,
-    } : { score: null, valor: '—', detalle: 'Sin cartera asignada para medir activación.' };
+    // ── 3. Activación: la visita que factura ─────────────────────────────────
+    const minU = cfg.activacionMinUnits ?? 12, umbral = cfg.activacionThreshold ?? 80;
+    const act = computeActivacionPeriodo(suyas, inicio, fin, corte, carteraSize, minU, umbral);
+    const det = carteraSize > 0 ? detalleActivacion({ facturas: suyas, clientes: clientes || [], inicio, fin, ahora: corte, minUnits: minU, threshold: umbral, gestiones: gestiones || [] }) : null;
+    if (det && !clientes) det.cartera = carteraSize;
+    // Registro de visitas de venta en la ventana (no puntúa aparte: la visita
+    // cuenta cuando factura, dentro de la Activación).
+    const registro = gestiones ? evaluarPlan({ gestiones, planes: planes || [], desde: inicio, hasta: fin, corte: ahora }) : null;
+    if (det && act.semanasTotales > 0) {
+        const cerradas = det.semanas.filter(w => !w.enCurso && w.pct != null);
+        const base = cerradas.length ? cerradas : det.semanas.filter(w => w.pct != null);
+        const prom = base.length ? base.reduce((x, w) => x + w.pct, 0) / base.length : 0;
+        const ultima = det.semanas[det.semanas.length - 1];
+        pilares.activacion = {
+            score: clamp(prom * 100),
+            valor: `${det.activadosPeriodo} de ${det.cartera} sucursales`,
+            pctMeta: prom * umbral / 100,
+            sobreMeta: `${pctTxt(prom * umbral / 100)} de la cartera por semana en promedio (meta ${umbral}%)`,
+            detalle: `${act.semanasLogradas} de ${act.semanasTotales} semana${act.semanasTotales === 1 ? '' : 's'} logradas (${det.objetivo} de ${det.cartera} sucursales con ≥${minU} uds)${ultima?.enCurso ? ` · esta semana van ${ultima.activados}/${det.objetivo}` : ''} · ${det.interacciones} facturas a ${det.activadosPeriodo} sucursales en el período`,
+            semanasLogradas: act.semanasLogradas, semanasTotales: act.semanasTotales,
+            detalleActivacion: det, plan: registro,
+        };
+    } else {
+        pilares.activacion = { score: null, valor: '—', plan: registro, detalle: carteraSize > 0 ? 'Todavía no hay semanas que medir.' : 'Sin sucursales asignadas en Clientes y PDV para medir activación.' };
+    }
 
-    // ── 4. Venta de gestión (automática, de las facturas) ────────────────────
+    // ── 4. Captación: sucursales nuevas o que volvió a traer ────────────────
     const ven = clasificarVentas({ facturas, vendedorId: vendedor.id, desde: inicio, hasta: fin, corte: ahora });
-    const metaG = cg.metaGestionPct / 100;
-    pilares.gestion = ven.unidades > 0 ? {
-        score: clamp(ven.pctGestion / metaG * 100),
-        valor: `${num(ven.gestion)} de ${num(ven.unidades)} uds`,
-        pctMeta: ven.pctGestion, sobreMeta: `${pctTxt(ven.pctGestion)} de sus unidades (meta ${cg.metaGestionPct}%)`,
-        detalle: `Nuevos ${num(ven.nuevo)} · reactivados ${num(ven.reactivado)} · crecimiento ${num(ven.crecimiento)} · por inercia ${num(ven.inercia)} uds${ven.historiaCorta ? ' · con poca historia previa: puede salir alto' : ''}`,
-        ventas: ven,
-    } : { score: null, valor: '—', detalle: 'Sin unidades facturadas en el período.', ventas: ven };
-
-    // ── 5. Plan de visitas de venta (su registro) ────────────────────────────
-    const desdePlan = new Date(Math.max(inicio.getTime(), INICIO_REGISTRO_GESTIONES.getTime()));
-    const plan = gestiones && desdePlan < corte
-        ? evaluarPlan({ gestiones, planes: planes || [], desde: desdePlan, hasta: fin, corte: ahora, minSemana: cg.gestionesMinSemana })
-        : null;
-    pilares.plan = plan && plan.meta > 0 ? {
-        score: clamp(plan.pct * 100),
-        valor: `${plan.hechas} de ${plan.meta}`,
-        pctMeta: plan.pct, sobreMeta: `${pctTxt(plan.pct)} de las gestiones de venta`,
-        detalle: `${plan.proactivas} gestiones para vender · ${plan.reactivas} de pedido o cobro (no suman) · plan: ${plan.planCumplidas} de ${plan.planificadas} cumplidos · mínimo ${cg.gestionesMinSemana} por semana`,
-        plan,
-    } : {
-        score: null, valor: '—', plan,
-        detalle: !gestiones ? 'No se pudieron leer sus gestiones.' : desdePlan >= corte ? 'El plan de visitas se mide desde el lunes 20-oct (la semana del 13 es de práctica).' : 'Todavía no hay semanas que medir.',
+    const captadas = ven.clientes.filter(c => c.nuevo > 0 || c.reactivado > 0);
+    const metaCapMes = Number(cfg.metaCaptacionMes) > 0 ? Number(cfg.metaCaptacionMes) : META_CAPTACION_MES;
+    const metaCap = metaCapMes * diasTotales / 30;
+    const esperadoCap = metaCap * avance;
+    pilares.captacion = {
+        score: esperadoCap > 0 ? clamp(captadas.length / esperadoCap * 100) : null,
+        valor: `${captadas.length} sucursal${captadas.length === 1 ? '' : 'es'}`,
+        pctMeta: metaCap > 0 ? captadas.length / metaCap : null,
+        sobreMeta: `${captadas.length} de ${Math.round(metaCap * 10) / 10} (meta ${metaCapMes} al mes)`,
+        detalle: captadas.length
+            ? `${ven.clientes.filter(c => c.nuevo > 0).length} nuevas (${num(ven.nuevo)} uds) · ${ven.clientes.filter(c => c.reactivado > 0).length} que volvieron (${num(ven.reactivado)} uds)${ven.historiaCorta ? ' · poca historia previa: un "nuevo" puede ser un cliente viejo' : ''}`
+            : 'Ninguna sucursal nueva ni reactivada en el período.',
+        captadas, ventas: ven,
     };
 
     // ── Global ponderado (los pilares sin datos no cuentan) ──────────────────
@@ -254,12 +259,12 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
 }
 
 /** El año mes a mes: un índice por mes de empleo (para el gráfico). */
-export function evaluarAnio({ vendedor, facturas, gestiones, planes, carteraSize, ahora = new Date() }) {
+export function evaluarAnio({ vendedor, facturas, gestiones, planes, clientes, carteraSize, ahora = new Date() }) {
     const vs = ventanasVendedor(vendedor, ahora);
     return (vs.anio?.meses || []).map(p => ({
         ...p,
         ev: evaluarDesempeno({
-            vendedor, facturas, gestiones, planes, carteraSize, ahora,
+            vendedor, facturas, gestiones, planes, clientes, carteraSize, ahora,
             ventana: { tipo: 'mes', inicio: p.start, fin: p.end, meta: p.meta, titulo: p.label, rango: p.rango },
         }),
     }));

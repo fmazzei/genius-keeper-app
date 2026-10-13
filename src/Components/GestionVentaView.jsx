@@ -15,7 +15,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { db } from '@/Firebase/config.js';
 import { collection, getDocs, getDoc, setDoc, addDoc, doc, query, where, Timestamp, serverTimestamp } from 'firebase/firestore';
-import { Plus, Check, MapPin, Phone, MessageCircle, Search, X, Loader, Target, AlertTriangle, CalendarDays } from 'lucide-react';
+import { Plus, Check, MapPin, Phone, MessageCircle, Search, X, Loader, Target, AlertTriangle, CalendarDays, Zap } from 'lucide-react';
+import { detalleActivacion } from '@/utils/activacion.js';
 import {
     TIPOS_GESTION, OBJETIVOS_GESTION, RESULTADOS_GESTION, etiqueta, esProactiva,
     claveSemana, claveObjetivo, sugerirPlan, evaluarPlan, configGestion, lunesDe,
@@ -190,7 +191,7 @@ function RegistrarSheet({ uid, nombreVendedor, clientes, plan, onClose, onGuarda
     ), document.body);
 }
 
-export default function GestionVentaView({ uid, nombreVendedor, facturas = [], commConfig = {} }) {
+export default function GestionVentaView({ uid, nombreVendedor, facturas = [], commConfig = {}, periodStart = null }) {
     const [clientes, setClientes] = useState([]);
     const [gestiones, setGestiones] = useState([]);
     const [plan, setPlan] = useState(null);
@@ -253,22 +254,52 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
 
     if (cargando) return <div className="flex-1 flex items-center justify-center"><Loader className="animate-spin text-[#FFD600]" /></div>;
 
-    const meta = Math.max((plan?.items || []).length, cg.gestionesMinSemana);
-    const hechas = hechosSemana.size;
+    // Activación de la semana en curso: las MISMAS semanas del bono (de 7 días
+    // desde el inicio de su mes de empleo), las mismas sucursales y el mismo
+    // mínimo de unidades.
+    const semIni = (() => {
+        const base = periodStart ? new Date(periodStart) : lunes;
+        const k = Math.max(0, Math.floor((Date.now() - base.getTime()) / (7 * 86400000)));
+        return new Date(base.getTime() + k * 7 * 86400000);
+    })();
+    const act = detalleActivacion({
+        facturas, clientes, inicio: semIni, fin: new Date(semIni.getTime() + 7 * 86400000),
+        minUnits: Number(commConfig.activacionMinUnits) || 12, threshold: Number(commConfig.activacionThreshold) || 80, gestiones,
+    });
+    const actSem = act.semanas[act.semanas.length - 1];
+    const activadosSem = actSem?.activados || 0;
     return (
         <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
             {error && <p className="flex items-start gap-2 text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2"><AlertTriangle size={15} className="shrink-0 mt-0.5" /> {error}</p>}
 
             <section className="rounded-2xl bg-gradient-to-br from-[#FFD600]/15 to-slate-900 border border-[#FFD600]/30 p-4">
-                <p className="text-[11px] font-black uppercase tracking-wider text-[#FFD600]/80">Tu semana de venta</p>
-                <p className="text-white font-black text-3xl mt-1">{hechas} <span className="text-base text-slate-400 font-bold">de {meta} gestiones</span></p>
-                <div className="h-2 rounded-full bg-slate-800 overflow-hidden mt-2">
-                    <div className="h-full bg-[#FFD600] rounded-full" style={{ width: `${Math.min(100, hechas / meta * 100)}%` }} />
-                </div>
-                <p className="text-xs text-slate-400 mt-2">
-                    Cuentan los clientes o prospectos que trabajaste para VENDER (prospectar, reactivar, ampliar, seguimiento). Tomar pedidos y cobrar se registran aparte.
-                    {ev.reactivas > 0 && ` Esta semana: ${ev.reactivas} de pedido o cobro.`}
-                </p>
+                <p className="text-[11px] font-black uppercase tracking-wider text-[#FFD600]/80 flex items-center gap-1"><Zap size={12} /> Tu activación de esta semana</p>
+                {act.cartera > 0 ? (<>
+                    <p className="text-white font-black text-3xl mt-1">{activadosSem} <span className="text-base text-slate-400 font-bold">de {act.objetivo} sucursales</span></p>
+                    <div className="h-2 rounded-full bg-slate-800 overflow-hidden mt-2">
+                        <div className={`h-full rounded-full ${actSem?.lograda ? 'bg-emerald-400' : 'bg-[#FFD600]'}`} style={{ width: `${Math.min(100, act.objetivo ? activadosSem / act.objetivo * 100 : 0)}%` }} />
+                    </div>
+                    <p className="text-xs text-slate-400 mt-2">
+                        Una sucursal se activa cuando la visitas y le facturas al menos {act.minUnits} unidades en la semana. Meta: {act.threshold} % de tus {act.cartera} sucursales.
+                        {actSem?.lograda ? ' ¡Semana lograda!' : ` Te faltan ${Math.max(0, act.objetivo - activadosSem)}.`}
+                        {' '}Semana del {semIni.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}.
+                    </p>
+                    {act.sinActivar.length > 0 && (
+                        <details className="mt-2">
+                            <summary className="text-xs font-bold text-[#FFD600] cursor-pointer">Sin activar esta semana ({act.sinActivar.length})</summary>
+                            <div className="mt-1 space-y-1 max-h-56 overflow-y-auto">
+                                {act.sinActivar.map(c => (
+                                    <p key={c.clave} className="text-xs text-slate-300 flex justify-between gap-2">
+                                        <span className="truncate">{c.nombre}</span>
+                                        <span className="text-slate-500 shrink-0">{c.diasSinComprar == null ? 'nunca' : `${c.diasSinComprar} d sin comprar`}</span>
+                                    </p>
+                                ))}
+                            </div>
+                        </details>
+                    )}
+                </>) : (
+                    <p className="text-sm text-slate-400 mt-1">Todavía no tienes sucursales asignadas en Clientes y PDV. Pídele a administración que te las asigne.</p>
+                )}
                 <button onClick={() => setRegistrar(true)}
                     className="mt-3 w-full py-3 rounded-xl bg-[#FFD600] text-slate-900 font-black flex items-center justify-center gap-2">
                     <Plus size={18} /> Registrar gestión
@@ -280,7 +311,7 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
                     <Target size={16} className="text-[#FFD600]" />
                     <p className="text-white font-bold">Plan de la semana</p>
                 </div>
-                <p className="text-xs text-slate-400 mb-3">A quién vas a trabajar esta semana. Mínimo {cg.gestionesMinSemana}.</p>
+                <p className="text-xs text-slate-400 mb-3">A quién vas a visitar o llamar esta semana para activarlo. Registra cada visita: así se ve qué activaciones salieron de tu trabajo.</p>
                 {(plan?.items || []).length === 0 && <p className="text-sm text-slate-500 mb-2">Todavía no armaste tu plan. Elige de las sugerencias de abajo.</p>}
                 <div className="space-y-1.5">
                     {(plan?.items || []).map(it => {

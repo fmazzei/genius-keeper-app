@@ -4,6 +4,8 @@
 //   TZ=America/Caracas node --import ./tests/alias.mjs tests/gestionVenta.test.mjs
 import { clasificarVentas, evaluarPlan, sugerirPlan, claveSemana } from '../src/utils/gestionVenta.js';
 import { evaluarDesempeno, ventanasVendedor, evaluarAnio, PESOS } from '../src/utils/desempenoVendedor.js';
+import { detalleActivacion } from '../src/utils/activacion.js';
+import { computeActivacionPeriodo, tamanoCartera } from '../src/utils/vendedorMeta.js';
 
 let fallas = 0;
 const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas++; };
@@ -64,20 +66,57 @@ ok(sug.some(s => s.clienteZohoId === 'Z' && s.motivo === 'nunca_compro') && !sug
 ok(sug.some(s => s.motivo === 'prospecto' && s.nombre === 'Bodega Nueva'), 'Sugerencias: prospecto interesado sin factura');
 
 // ── Índice por ventanas ────────────────────────────────────────────────────
-ok(Math.abs(Object.values(PESOS).reduce((a, b) => a + b, 0) - 100) < 1e-9 && PESOS.gestion === 30 && PESOS.plan === 20, 'Pesos: gestión 30, plan 20, el resto 50 repartido');
-const vendedor = { id: 'CARO', fechaIngreso: '2026-08-19', metaMensual: 1700, commissionConfig: { metaMensual: 1700, arranque: [] } };
+ok(PESOS.facturacion === 30 && PESOS.activacion === 30 && PESOS.cobranza === 25 && PESOS.captacion === 15 && Object.keys(PESOS).length === 4,
+    'Pesos del dueño: Facturación 30, Activación 30, Cobranza 25, Captación 15 (las visitas viven en la Activación)');
+const vendedor = { id: 'CARO', fechaIngreso: '2026-08-19', metaMensual: 1700, commissionConfig: { metaMensual: 1700, arranque: [], activacionMinUnits: 12, activacionThreshold: 80 } };
 const ahora = d('2026-10-13');
 const vs = ventanasVendedor(vendedor, ahora);
 ok(vs.mes.inicio.getDate() === 19 && vs.mes.inicio.getMonth() === 8, 'Vista Mes = su mes de empleo en curso (19-sep)');
 ok(vs.semana.inicio.getDay() === 1 && vs.semana.fin.getDate() === 12 && vs.semana.inicio.getDate() === 5, 'Última semana cerrada = lunes 5 a domingo 11-oct');
 ok(vs.trimestre && vs.anio.meses.length === 2, 'Desde su ingreso: trimestre de 2 meses y año con 2 meses');
-const ev = evaluarDesempeno({ vendedor, facturas: [...facturas, f('A8', 'A', '2026-10-21', 30)], gestiones: [...gestiones, g('g9', 'Cliente C', '2026-10-21', 'reactivar', { clienteZohoId: 'C' })], planes, carteraSize: 4, ahora: d('2026-10-22') });
-ok(ev.pilares.gestion.score != null && ev.pilares.plan.score != null, 'Mes en curso (desde el 20-oct): cuentan venta de gestión y plan');
-const ev13 = evaluarDesempeno({ vendedor, facturas, gestiones, planes, carteraSize: 4, ahora });
-ok(ev13.pilares.plan.score == null, 'Semana del 13-oct es de práctica: el plan todavía no cuenta');
-ok(!('visitas' in ev.pilares), 'Las visitas del mercaderista ya no son un pilar');
-const anio = evaluarAnio({ vendedor, facturas, gestiones, planes, carteraSize: 4, ahora });
-ok(anio[0].ev.pilares.plan.score == null && /20-oct/.test(anio[0].ev.pilares.plan.detalle), 'Mes anterior al registro: el plan no cuenta y lo dice');
+
+// ── Cartera de la Activación = SUCURSALES (carnets de Zoho) ────────────────
+const clientes = [
+    { customerId: 'A', customerName: 'Cliente A' }, { customerId: 'B', customerName: 'Cliente B' },
+    { customerId: 'C', customerName: 'Cliente C' }, { customerId: 'D', customerName: 'Cliente D' },
+    { customerId: 'E', customerName: 'Cliente E' },
+    { customerId: 'OF', customerName: 'Oficina', esOficina: true },
+    { customerId: 'IN', customerName: 'Inactivo', activoEnZoho: false },
+    { customerId: 'FS', customerName: 'Foodservice', categoria: 'foodservice' },
+];
+ok(tamanoCartera(clientes) === 5, 'La cartera cuenta sucursales activas; no Oficina, ni inactivas en Zoho, ni foodservice');
+
+// ── Activación semana a semana ─────────────────────────────────────────────
+const ini = new Date(2026, 8, 19), fin = new Date(2026, 9, 19);
+const facAct = [
+    f('W1A', 'A', '2026-09-20', 12), f('W1B', 'B', '2026-09-21', 24), f('W1C', 'C', '2026-09-22', 6),   // C: solo 6 uds
+    f('W1C2', 'C', '2026-09-24', 6),                                                                     // C llega a 12 en la semana
+    f('W1D', 'D', '2026-09-23', 12),
+    f('W2A', 'A', '2026-09-27', 12),
+    f('W2X', 'A', '2026-09-28', 30, { estado: 'anulada' }),
+];
+const det = detalleActivacion({ facturas: facAct, clientes, inicio: ini, fin, ahora: d('2026-10-13'), minUnits: 12, threshold: 80,
+    gestiones: [{ clienteZohoId: 'B', fecha: d('2026-09-20') }] });
+const ref = computeActivacionPeriodo(facAct, ini, fin, d('2026-10-13'), tamanoCartera(clientes), 12, 80);
+ok(det.objetivo === 4 && det.semanas[0].activados === 4 && det.semanas[0].lograda, 'Semana 1: A, B, C (6+6) y D = 4 de 5; meta 80 % = 4 → lograda');
+ok(det.semanas[1].activados === 1 && !det.semanas[1].lograda, 'Semana 2: solo A (la anulada no cuenta)');
+ok(det.semanasLogradas === ref.semanasLogradas && det.semanas.length === ref.semanasTotales, 'Mismo resultado que la regla del bono (semanas logradas y totales)');
+const a1 = det.activados.find(c => c.clave === 'A');
+ok(a1.semanas === 2 && a1.facturas === 2 && a1.unidades === 24, 'Lista de activadas: A en 2 semanas, 2 facturas, 24 uds');
+ok(det.activados.find(c => c.clave === 'B').conVisita && !a1.conVisita, 'Marca la activación que salió de una visita registrada');
+ok(det.sinActivar.length === 1 && det.sinActivar[0].clave === 'E' && det.sinActivar[0].diasSinComprar == null, 'Sin activar: E, que nunca ha comprado');
+ok(det.interacciones === 6 && det.activadosPeriodo === 4, 'Interacciones del período: 6 facturas en 4 sucursales');
+
+// ── Índice con las cuatro partes ───────────────────────────────────────────
+const ev = evaluarDesempeno({ vendedor, facturas: [...facturas, ...facAct], gestiones, planes, clientes, ahora });
+ok(ev.pilares.activacion.score != null && ev.pilares.activacion.detalleActivacion.cartera === 5, 'Mes en curso: la Activación se mide contra sus 5 sucursales');
+ok(!('plan' in ev.pilares) && !('gestion' in ev.pilares) && !('visitas' in ev.pilares), 'Ya no hay pilares sueltos de visitas, plan ni "venta de gestión"');
+ok(ev.pilares.activacion.plan && ev.pilares.activacion.plan.total >= 0, 'El registro de visitas se muestra dentro de la Activación');
+ok(ev.pilares.captacion.captadas.some(c => c.key === 'c:B'), 'Captación: la sucursal nueva B cuenta');
+const sinCartera = evaluarDesempeno({ vendedor, facturas, gestiones: [], planes: [], clientes: [], ahora });
+ok(sinCartera.pilares.activacion.score == null && /Clientes y PDV/.test(sinCartera.pilares.activacion.detalle), 'Sin sucursales asignadas: la Activación no cuenta y lo dice');
+const anio = evaluarAnio({ vendedor, facturas, gestiones, planes, clientes, ahora });
+ok(anio.length === 2 && anio.every(m => m.ev.pilares.activacion), 'El año mes a mes trae la Activación de cada mes');
 
 // Cobranza: a tiempo vs tarde.
 const cobr = [

@@ -103,7 +103,8 @@ const recup = [F('INV-R', '2026-07-01', 0, 1000, { ...pagada('2026-09-28'), recu
 const est5 = computeEstadosDeCuenta(meta, recup, [], { ahora });
 ok(cerca(est5[0].cobradoRecup, 1000) && cerca(est5[1].cobradoRecup, 0), 'una cuenta recuperada se paga en el mes en que se cobró');
 
-ok(tamanoCartera([{ estado: 'activo' }, {}, { estado: 'inactivo' }]) === 2, 'la cartera cuenta igual en todas las pantallas');
+ok(tamanoCartera([{ customerId: 'A' }, { customerId: 'B' }, { customerId: 'O', esOficina: true }, { customerId: 'I', activoEnZoho: false }, { customerId: 'F', categoria: 'foodservice' }]) === 2,
+    'la cartera de la Activación son sus sucursales activas (no Oficina, ni inactivas, ni foodservice), igual en todas las pantallas');
 
 console.log(fallas ? `\n${fallas} verificación(es) en rojo` : '\nTodas las verificaciones en verde');
 process.exit(fallas ? 1 : 0);

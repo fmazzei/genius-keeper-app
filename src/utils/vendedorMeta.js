@@ -217,11 +217,24 @@ export function computeActivacionPeriodo(facturas, start, end, ahora, carteraSiz
     return { semanasTotales, semanasLogradas, factor, semActivados, semObjetivo: objetivo, semLograda };
 }
 
-/** Tamaño de la cartera para el Bono Activación — la MISMA regla en todas las
- *  pantallas (antes el vendedor contaba solo `estado === 'activo'` y el
- *  administrador también los que no traen estado: daban bonos distintos). */
-export function tamanoCartera(docs = []) {
-    return (docs || []).filter(c => ((c && c.estado) || 'activo') === 'activo').length;
+/** ¿Esta sucursal (carnet de Zoho) cuenta en la cartera para la Activación? */
+export const cuentaParaActivacion = (c) => !!c && c.activoEnZoho !== false && c.esOficina !== true && c.categoria !== 'foodservice';
+
+/**
+ * Tamaño de la cartera para la Activación (índice y Bono Activación) — UNA sola
+ * regla en todas las pantallas y en el servidor.
+ *
+ * Decisión del dueño (13-oct): "un cliente" es cada SUCURSAL, o sea cada carnet
+ * de Zoho asignado al vendedor (`clientes_zoho` con su `vendedorId`): es donde se
+ * visita y se factura. Antes se contaban las entradas de `vendor_clients`, donde
+ * una cadena entera valía uno, mientras los activados se contaban por carnet:
+ * se comparaban sucursales contra una cartera que contaba cadenas. No cuentan
+ * los carnets inactivos en Zoho, los de Oficina ni los de foodservice (la
+ * activación tampoco cuenta sus facturas).
+ * @param {Array} clientes — documentos de `clientes_zoho` DEL vendedor.
+ */
+export function tamanoCartera(clientes = []) {
+    return (clientes || []).filter(cuentaParaActivacion).length;
 }
 
 /**
