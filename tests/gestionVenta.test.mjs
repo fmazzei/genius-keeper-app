@@ -125,6 +125,12 @@ const cobr = [
 ];
 const evC = evaluarDesempeno({ vendedor, facturas: cobr, gestiones: [], planes: [], carteraSize: 0, ahora });
 ok(Math.round(evC.pilares.cobranza.pctMeta * 100) === 50, 'Cobranza: una a tiempo y una tarde = 50 %');
+ok(/Meta: cobrar a tiempo los \$\d+ que vencían/.test(evC.pilares.cobranza.valor), `la tarjeta dice la meta → "${evC.pilares.cobranza.valor}"`);
+const fl = evC.pilares.cobranza.fallas;
+ok(fl.length === 1 && fl[0].numero === 'P2' && fl[0].pagada && fl[0].dias === 9, 'lista lo cobrado tarde con los días de atraso (P2, 9 días después del plazo)');
+const evC2 = evaluarDesempeno({ vendedor, facturas: [cobr[0], f('P3', 'B', '2026-09-22', 10, { vencimiento: d('2026-09-27'), estado: 'vencida', balance: 56 })], gestiones: [], planes: [], carteraSize: 0, ahora });
+const p3 = evC2.pilares.cobranza.fallas[0];
+ok(p3 && !p3.pagada && p3.saldo === 56 && p3.dias === 16, 'y lo que sigue sin cobrar con su saldo y días vencida');
 
 // ── Solo cuentan las sucursales con un PDV ACTIVO (13-oct, caso Mi Negocio) ──
 {

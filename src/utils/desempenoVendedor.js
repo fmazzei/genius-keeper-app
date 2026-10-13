@@ -165,6 +165,7 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
     // sirve igual para un mes pasado que para el actual.
     const gracia = Number(cfg.cobranzaGraciaDias ?? 5) || 0;
     let debido = 0, aTiempo = 0, nJuzgadas = 0, nTarde = 0;
+    const fallas = [];   // las que no se cobraron a tiempo: qué cliente, cuánto y cómo va
     suyas.forEach(f => {
         const ven = toDate(f.vencimiento);
         if (!ven || ven < inicio || ven >= corte) return;
@@ -173,23 +174,35 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
         const monto = Number(f.monto ?? f.total) || 0;
         debido += monto; nJuzgadas++;
         const pago = toDate(f.fechaPago);
-        if (f.estado === 'pagada' && pago && pago <= limite) aTiempo += monto; else nTarde++;
+        if (f.estado === 'pagada' && pago && pago <= limite) { aTiempo += monto; return; }
+        nTarde++;
+        const pagada = f.estado === 'pagada';
+        fallas.push({
+            numero: f.numero || '—', cliente: f.clienteName || f.customerName || '—', monto,
+            saldo: pagada ? 0 : saldoAbierto(f), pagada,
+            // Pagada tarde: cuántos días después del plazo. Sin cobrar: cuántos días lleva vencida.
+            dias: pagada ? (pago ? Math.max(0, Math.round((pago - limite) / DIA)) : null) : Math.max(0, Math.floor((ahora - ven) / DIA)),
+        });
     });
+    fallas.sort((a, b) => (a.pagada - b.pagada) || ((b.dias ?? 0) - (a.dias ?? 0)));
+    const sinCobrar = fallas.filter(x => !x.pagada);
     const abiertas = suyas.filter(f => esPorCobrar(f));
     const porCobrar = abiertas.reduce((s, f) => s + saldoAbierto(f), 0);
     const vencidoHoy = abiertas.filter(f => { const x = toDate(f.vencimiento); return f.estado === 'vencida' || (x && x < ahora); })
         .reduce((s, f) => s + saldoAbierto(f), 0);
     pilares.cobranza = debido > 0 ? {
         score: clamp(aTiempo / debido * 100),
-        valor: `${money0(aTiempo)} de ${money0(debido)}`,
+        // Lo que tiene que hacer (pedido del dueño), no una fracción sin contexto.
+        valor: `Meta: cobrar a tiempo los ${money0(debido)} que vencían`,
         pctMeta: aTiempo / debido, sobreMeta: `${pctTxt(aTiempo / debido)} cobrado a tiempo (meta 100%)`,
         detalle: `De ${nJuzgadas} factura${nJuzgadas === 1 ? '' : 's'} que vencían en el período, ${nTarde} se cobr${nTarde === 1 ? 'ó' : 'aron'} tarde o siguen sin cobrar${enCurso && porCobrar > 0 ? ` · hoy: ${money0(vencidoHoy)} vencido de ${money0(porCobrar)} por cobrar` : ''}`,
         cifras: [
             { k: 'Cobrado a tiempo', v: money0(aTiempo) },
             { k: 'Vencía en el período', v: money0(debido) },
-            { k: 'Facturas tarde o sin cobrar', v: `${nTarde} de ${nJuzgadas}` },
-            ...(enCurso && porCobrar > 0 ? [{ k: 'Vencido hoy', v: `${money0(vencidoHoy)} de ${money0(porCobrar)}` }] : []),
+            { k: 'Falta cobrar de lo que vencía', v: money0(sinCobrar.reduce((x, f) => x + f.saldo, 0)) },
+            ...(enCurso && porCobrar > 0 ? [{ k: 'Vencido hoy (toda su cartera)', v: money0(vencidoHoy) }] : []),
         ],
+        fallas, graciaDias: gracia,
     } : { score: null, valor: '—', detalle: 'Ninguna factura suya vencía en este período.' };
 
     // ── 3. Activación: la visita que factura ─────────────────────────────────

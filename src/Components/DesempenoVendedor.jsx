@@ -30,7 +30,7 @@ const colorScore = (s) => s == null ? '#cbd5e1' : s >= 85 ? '#10b981' : s >= 65 
 
 export const PILAR_META = {
     facturacion: { nombre: 'Facturación', que: 'Unidades vs. lo que tocaba llevar al corte', Icon: Receipt },
-    cobranza:    { nombre: 'Cobranza', que: 'Lo que vencía en el período, cobrado a tiempo', Icon: Wallet },
+    cobranza:    { nombre: 'Cobranza', que: (pil) => `El % es cuánto de lo que vencía en el período se cobró a tiempo (hasta ${pil.graciaDias ?? 5} días después del vencimiento)`, Icon: Wallet },
     activacion:  { nombre: 'Activación', que: 'El % es cuántos de sus PDV activos visitó y facturó (≥12 uds) por semana, en promedio', Icon: Zap },
     captacion:   { nombre: 'Captación', que: 'Sucursales nuevas o que volvió a traer', Icon: UserPlus },
 };
@@ -89,18 +89,47 @@ function Cifras({ cifras }) {
     );
 }
 
+/** Cobranza: las facturas que vencían y no se cobraron a tiempo, primero las que siguen sin cobrar. */
+function CobranzaDetalle({ fallas }) {
+    if (!fallas?.length) return null;
+    const sin = fallas.filter(f => !f.pagada), tarde = fallas.filter(f => f.pagada);
+    const Lista = ({ titulo, items, rojo }) => items.length > 0 && (
+        <details className="mt-1">
+            <summary className={`text-[11px] font-bold uppercase tracking-wider cursor-pointer ${rojo ? 'text-red-400' : 'text-slate-400'}`}>{titulo} ({items.length})</summary>
+            <div className="mt-1 divide-y divide-slate-100">
+                {items.map(f => (
+                    <div key={f.numero} className="py-1.5 flex items-baseline justify-between gap-2 text-xs">
+                        <span className="text-slate-700 min-w-0">{f.cliente} <span className="text-slate-400">· {f.numero}</span></span>
+                        <span className="shrink-0 text-right text-slate-500">
+                            <b className="text-slate-700">{money0(f.pagada ? f.monto : f.saldo)}</b>
+                            {f.dias != null && <><br />{f.pagada ? `${f.dias} d tarde` : `${f.dias} d vencida`}</>}
+                        </span>
+                    </div>
+                ))}
+            </div>
+        </details>
+    );
+    return (
+        <section className="space-y-1">
+            <Lista titulo="Sin cobrar" items={sin} rojo />
+            <Lista titulo="Cobradas tarde" items={tarde} />
+        </section>
+    );
+}
+
 /** Lo que se despliega al tocar cada parte. */
 function Ampliado({ k, pil }) {
     return (
         <div className="space-y-3 pt-3">
-            <p className="text-xs text-slate-500">{PILAR_META[k].que}.</p>
+            <p className="text-xs text-slate-500">{typeof PILAR_META[k].que === 'function' ? PILAR_META[k].que(pil) : PILAR_META[k].que}.</p>
             <Cifras cifras={pil.cifras} />
+            {k === 'cobranza' && <CobranzaDetalle fallas={pil.fallas} />}
             {k === 'activacion' && <ActivacionDetalle det={pil.detalleActivacion} />}
             {k === 'activacion' && <RegistroGestiones plan={pil.plan} />}
             {k === 'captacion' && <Captadas captadas={pil.captadas} />}
             {k === 'captacion' && <VentaDeGestion ventas={pil.ventas} />}
             {pil.score == null && <p className="text-xs text-slate-500">{pil.detalle}</p>}
-            {pil.score != null && <p className="text-[11px] text-slate-400">Puntaje {pil.score}/100 (contra lo que tocaba llevar al corte) · pesa {peso(pil.peso)} %</p>}
+            {pil.score != null && <p className="text-[11px] text-slate-400">Puntaje {pil.score}/100 · pesa {peso(pil.peso)} %</p>}
         </div>
     );
 }
