@@ -960,6 +960,15 @@ El **Simulador de Negocio Lacteoca** (repo `Masparrito/simulador`, Fase 6) es un
 
 **Para que funcione en producción**: desplegar las funciones (push a `main`) y que el conector "GK y Kroma" esté conectado en claude.ai (hoy pide reconectar). La página del simulador declara solo estas cinco herramientas: no puede usar las genéricas de lectura o escritura.
 
+### El simulador como app web propia (2026-10) ✅
+
+Pedido de Francisco (13-oct): el simulador es una **app web aparte**, con su ícono en el iPhone, publicada desde su repositorio (`Masparrito/simulador`) en un **sitio propio de Firebase Hosting** del mismo proyecto (`simulador-lacteoca.web.app`). No vive dentro de GK ni depende de claude.ai.
+- La app entra con el usuario de GK (usuario o correo + contraseña; el usuario se resuelve con `resolverUsuarioParaLogin`) y llama a la callable **`simulador({accion, args})`** (`functions/handlers/simuladorApp.js`).
+- **Solo el máster** (`users_metadata.role == 'master'`); cualquier otro rol recibe `permission-denied`.
+- Acciones: `perfil` (nombre, para saludar), `datos_reales`, `escenarios`, `escenario_leer`, `escenario_guardar`, `escenario_archivar`. Mismo código (`simulador.js`) y misma respuesta que las herramientas `simulador_*` del conector; las escrituras van por `aplicarOperaciones` (copia en `mcp_cambios`).
+- Prueba: `cd functions && node ../tests/simuladorApp.test.mjs`.
+- El conector sigue funcionando igual para la copia del simulador en claude.ai.
+
 ## Vigilante automático de GK (2026-10) ✅
 
 Pedido de Francisco (8-oct): que el sistema vigile solo y avise por notificación al teléfono, **gratis**. Lo de la app y Zoho le llega a Francisco; lo del mercaderista, los PDV y las metas, a Carolina (vendedora responsable), sin datos de dinero.

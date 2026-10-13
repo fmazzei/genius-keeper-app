@@ -29,4 +29,8 @@ const { vigilanteAcciones } = require('./handlers/vigilante');
 // módulo también expone utilidades internas para pruebas.
 exports.mcp = require('./handlers/mcpServer').mcp;
 
+// Simulador de negocio como app web propia (solo el máster). Mismo código que
+// las herramientas simulador_* del conector.
+exports.simulador = require('./handlers/simuladorApp').simulador;
+
 Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools, zohoReconcile, masterTools, zohoInvoicing, kromaEmpresas, ventasPlanta, inventarioPerpetuo, { inventarioZoho, datosRutaMercaderista, simularFusionPdv, fusionarPdv, vigilanteAcciones });
