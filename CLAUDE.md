@@ -3837,4 +3837,9 @@ El dueño corrigió los conceptos (13-oct):
   - `detalleActivacion` devuelve `fuera` (sucursal + motivo: "PDV inactivo" / "Sin PDV en la lista maestra"), plegado en la tarjeta y en el PDF.
   - Carolina: cartera 38 → **25**, meta 31 → **20** por semana; semanas 6, 9, 6 y 4. Quedan fuera 13: Gama, Río Palos Grandes, Páramo Palo Verde y Guatire, CM Plaza Las Américas, Chacaíto y San Antonio (PDV inactivo); CM La Lagunita, Grupo 212 Steak, Los Gorditos, Páramo (Manzanares), LA CAVA y Festejos Elite (sin PDV activo).
   - Dato corregido por el conector: PDV "Mi Negocio - San Luis" → inactivo (frecuencia 0); su carnet ya estaba inactivo en Zoho. Solo La Florida queda activa.
-  - Ojo: el PDV "Páramo - Manzanares" está vinculado al carnet "Hipermercado Paramo C.A" (junto con Piedra Azul), mientras el carnet "Hipermercado Paramo C.A (Manzanares)" no tiene PDV. Revisar el vínculo en Clientes y PDV.
+  - **Datos acomodados con el dueño (13-oct, por el conector, un solo lote reversible):**
+    - "Páramo - Manzanares" pasó a su carnet `3576378000006518002` ("Hipermercado Paramo C.A (Manzanares)"). El carnet genérico "Hipermercado Paramo C.A" es Piedra Azul.
+    - PDV nuevo `pos/cm-la-lagunita` (Central Madeirense - La Lagunita, cadena Central Madeirense, frecuencia 7, carnet `…075438`). Sin dirección ni ubicación: completarlas en la ficha.
+    - Foodservice: Grupo 212 Steak y LA CAVA marcados `categoria:'foodservice'` en `clientes_zoho` (Los Gorditos y Festejos Elite ya lo estaban). Sus facturas toman la categoría en el siguiente barrido: pagan la comisión flat de foodservice y no cuentan para la Activación.
+    - PDV foodservice nuevos (sin merchandising, frecuencia 0): `pos/fs-grupo-212-steak`, `pos/fs-los-gorditos`, `pos/fs-la-cava`.
+    - Cartera de Carolina: 27 sucursales, meta 22 por semana. Fuera por PDV inactivo: Gama, Río Palos Grandes, Páramo Palo Verde y Guatire, CM Plaza Las Américas, Chacaíto y San Antonio.
