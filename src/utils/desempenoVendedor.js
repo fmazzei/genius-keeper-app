@@ -33,7 +33,8 @@ const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDig
 
 export const PESOS = { facturacion: 30, activacion: 30, cobranza: 25, captacion: 15 };
 export const ORDEN_PILARES = ['facturacion', 'activacion', 'cobranza', 'captacion'];
-/** Sucursales captadas (nuevas o reactivadas) por mes si su configuración no trae otra. */
+/** Sucursales captadas (nuevas o reactivadas) por mes si su configuración no trae
+ *  otra. 2 al mes: confirmado por el dueño el 13-oct ("por ahora"). */
 export const META_CAPTACION_MES = 2;
 
 /** Estado a partir de un puntaje 0–100. */

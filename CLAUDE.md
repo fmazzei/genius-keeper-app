@@ -3814,7 +3814,7 @@ El dueño corrigió los conceptos (13-oct):
 - **Índice** (`desempenoVendedor.js`):
   - `PESOS = {facturacion:30, activacion:30, cobranza:25, captacion:15}`.
   - Puntaje de Activación = promedio de (activadas ÷ meta) en las semanas cerradas. El bono sigue pagando las semanas LOGRADAS: misma definición, dos usos.
-  - **Captación** = sucursales nuevas o que vuelven tras un silencio mayor que su ritmo, contra `metaCaptacionMes` (por defecto 2 al mes, configurable; supuesto pendiente de confirmar por el dueño).
+  - **Captación** = sucursales nuevas o que vuelven tras un silencio mayor que su ritmo, contra `metaCaptacionMes` (2 al mes, **confirmado por el dueño el 13-oct** "por ahora"; configurable).
   - Inercia y crecimiento quedan como análisis ("¿De dónde salen sus unidades?"), sin puntaje.
   - Se retiraron los pilares "Venta de gestión" y "Plan de visitas". El registro de visitas se muestra dentro de la Activación.
 - **Pantallas:**
