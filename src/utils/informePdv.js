@@ -9,7 +9,7 @@
 // unidades, las facturas de cada reposición y la rotación coinciden con lo que
 // se ve al abrir un reporte.
 
-import { historialAnaquel, diaLocalDe } from '@/utils/reporteVisita.js';
+import { historialAnaquel, diaLocalDe, TENDENCIA_UMBRAL, MIN_INTERVALOS_HISTORICO } from '@/utils/reporteVisita.js';
 import { estadoLote } from '@/utils/retiros.js';
 
 const DIA_MS = 86400000;
@@ -157,6 +157,22 @@ export function informePdv({ pos = {}, reportes = [], facturas = [], devolucione
         esReposicion: f.esReposicion === true,
     })).sort((a, b) => a.dia.localeCompare(b.dia));
 
+    // Histórico ANTERIOR al intervalo: contra él se lee si el intervalo va
+    // mejor o peor (Σ salieron ÷ Σ días, como el resto).
+    const antes = historial.filter(v => v.t < ini && v.medible);
+    const hS = antes.reduce((s, v) => s + v.salieron, 0);
+    const hD = antes.reduce((s, v) => s + v.dias, 0);
+    const rotHist = antes.length >= MIN_INTERVALOS_HISTORICO && hD > 0 ? red2(hS / hD) : null;
+    const rotInt = diasMedidos > 0 ? red2(salieron / diasMedidos) : null;
+    let tendencia = { dir: null, pct: null };
+    if (rotHist != null && rotInt != null) {
+        if (rotHist <= 0) tendencia = { dir: rotInt > 0 ? 'sube' : 'estable', pct: null };
+        else {
+            const pct = Math.round(((rotInt - rotHist) / rotHist) * 100);
+            tendencia = { dir: Math.abs(pct) < TENDENCIA_UMBRAL * 100 ? 'estable' : pct > 0 ? 'sube' : 'baja', pct };
+        }
+    }
+
     const repuestas = visitas.reduce((s, v) => s + (v.repuestas || 0), 0);
     const quiebres = visitas.filter(v => v.quiebre.esQuiebre);
 
@@ -176,7 +192,10 @@ export function informePdv({ pos = {}, reportes = [], facturas = [], devolucione
             repuestas,
             salieron,
             diasMedidos,
-            rotacion: diasMedidos > 0 ? red2(salieron / diasMedidos) : null,
+            rotacion: rotInt,
+            historico: rotHist != null ? { rot: rotHist, n: antes.length, dias: hD, salieron: hS } : null,
+            historicoFalta: rotHist == null ? `hacen falta ${MIN_INTERVALOS_HISTORICO} intervalos medibles antes del ${desde.slice(8, 10)}/${desde.slice(5, 7)} (hay ${antes.length})` : null,
+            tendencia,
             intervalosMedibles: medibles.length,
             noMedibles,
             quiebres: quiebres.length,

@@ -10,7 +10,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
-import { fmtDiaVE, fmtMomentoVE, DIAS_FACTURA_ANTES_DE_REPONER } from '@/utils/reporteVisita.js';
+import { fmtDiaVE, fmtMomentoVE, DIAS_FACTURA_ANTES_DE_REPONER, comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL } from '@/utils/reporteVisita.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { etiquetaAltura, etiquetaCategoria } from '@/utils/anaquelCatalogo.js';
 import { estadoLote, ESTADO_LABEL, labelMotivo } from '@/utils/retiros.js';
@@ -42,6 +42,9 @@ const Nota = ({ children, color }) => <p style={{ margin: '4px 0 0', fontSize: 9
 const fmtUdsDia = (v) => (v == null ? '—' : (v < 10 ? v.toFixed(2) : v.toFixed(1)).replace('.', ','));
 const fmtPrecio = (v) => (v == null || !(Number(v) > 0) ? '—' : `$${Number(v).toFixed(2).replace('.', ',')}`);
 const diasTxt = (n) => `${n} ${n === 1 ? 'día' : 'días'}`;
+const FLECHA = { sube: '▲', baja: '▼', estable: '►' };
+const COLOR_T = { sube: VERDE, baja: ROJO, estable: NAVY };
+const txtTendencia = (td) => !td?.dir ? '—' : `${FLECHA[td.dir]} ${td.pct != null ? `${td.pct > 0 ? '+' : ''}${td.pct}%` : ETIQUETA_TENDENCIA[td.dir]}`;
 
 function Kpi({ k, v, sub, color }) {
     return (
@@ -198,6 +201,7 @@ export function ReporteVisitaDoc({ report, pos, va, vp, ub, registro, historial,
     const durMin = (r.startTime && r.endTime) ? (Date.parse(r.endTime) - Date.parse(r.startTime)) / 60000 : null;
     const dur = durMin > 0 ? (durMin < 1 ? `${Math.round(durMin * 60)} s` : `${durMin.toFixed(durMin < 10 ? 1 : 0).replace('.', ',')} min`) : null;
     const intervalos = (historial || []).slice(1).slice(-16);
+    const comp = historial ? comparativoRotacion(historial, va?.id) : null;
     const lotes = (r.batches || []).filter(b => b);
     return (
         <Documento onClose={onClose} subtitulo="Reporte de visita al anaquel" titulo={r.posName || 'PDV'}
@@ -221,10 +225,22 @@ export function ReporteVisitaDoc({ report, pos, va, vp, ub, registro, historial,
             <Fila>
                 <Kpi k="Esta visita · repuestas" v={va?.repuestas ?? 0} sub={factTxt(va)} color={colorFact(va)} />
                 <Kpi k="Total en anaquel" v={va?.quedaron} sub="contadas + repuestas" color={NAVY} />
-                <Kpi k="Rotación" v={va?.medible ? `${fmtUdsDia(va.rotacion)} uds/día` : vp ? 'no medible' : '—'}
+            </Fila>
+            <H2>Rotación (unidades que salen por día)</H2>
+            <Fila>
+                <Kpi k="Esta visita" v={va?.medible ? `${fmtUdsDia(va.rotacion)} uds/día` : vp ? 'no medible' : '—'}
                     sub={va?.medible ? `salieron ${va.salieron} en ${diasTxt(va.dias)}` : va?.salieron != null && va.salieron < 0 ? `se contaron ${-va.salieron} más de las que quedaron` : null}
                     color={va?.medible ? VERDE : AMBAR} />
+                <Kpi k="Histórico del PDV" v={comp?.historico ? `${fmtUdsDia(comp.historico.rot)} uds/día` : '—'}
+                    sub={comp?.historico ? `${comp.historico.n} intervalos · ${comp.historico.salieron} uds en ${diasTxt(comp.historico.dias)}` : 'poca historia'} />
+                <Kpi k="Tendencia" v={txtTendencia(comp?.tendencia)}
+                    sub={comp?.tendencia?.dir ? `${ETIQUETA_TENDENCIA[comp.tendencia.dir]} · últimas ${comp.reciente.n} visitas: ${fmtUdsDia(comp.reciente.rot)} uds/día` : comp?.tendencia?.motivo || null}
+                    color={COLOR_T[comp?.tendencia?.dir] || GRIS} />
             </Fila>
+            <Nota>
+                {comp?.vsHistorico != null ? `Esta visita va ${comp.vsHistorico >= 0 ? `${comp.vsHistorico}% por encima` : `${-comp.vsHistorico}% por debajo`} de su histórico. ` : ''}
+                Histórico = todos los intervalos medibles anteriores a esta visita. Tendencia = las últimas visitas medibles contra ese histórico; menos de ±{Math.round(TENDENCIA_UMBRAL * 100)} % se lee estable.
+            </Nota>
             {[vp, va].some(v => v?.facturasRepo?.some(f => f.fuente === 'probable')) && (
                 <Nota>"Probable": factura de Zoho de este cliente fechada hasta {DIAS_FACTURA_ANTES_DE_REPONER} días antes de la visita; el reporte no la declaró.</Nota>
             )}
@@ -298,9 +314,13 @@ function SeccionPdv({ inf, salto }) {
                 <Fila>
                     <Kpi k="Visitas" v={s.visitas} sub={s.mercaderistas.map(m => m.valor).join(', ')} />
                     <Kpi k="Rotación del intervalo" v={s.rotacion != null ? `${fmtUdsDia(s.rotacion)} uds/día` : '—'} sub={s.diasMedidos ? `salieron ${s.salieron} uds en ${diasTxt(s.diasMedidos)}` : 'sin intervalos medibles'} color={s.rotacion != null ? VERDE : AMBAR} />
-                    <Kpi k="Total en anaquel" v={s.totalAnaquelHoy} sub={s.ultima ? `al ${fmtDiaVE(s.ultima)} (última visita)` : null} color={NAVY} />
+                    <Kpi k="Histórico anterior" v={s.historico ? `${fmtUdsDia(s.historico.rot)} uds/día` : '—'}
+                        sub={s.historico ? `${s.historico.n} intervalos antes del ${fmtDiaVE(inf.desde)}` : s.historicoFalta} />
+                    <Kpi k="Tendencia" v={txtTendencia(s.tendencia)} sub={s.tendencia?.dir ? `${ETIQUETA_TENDENCIA[s.tendencia.dir]} frente a su histórico` : 'sin histórico para comparar'}
+                        color={COLOR_T[s.tendencia?.dir] || GRIS} />
                 </Fila>
                 <Fila>
+                    <Kpi k="Total en anaquel" v={s.totalAnaquelHoy} sub={s.ultima ? `al ${fmtDiaVE(s.ultima)} (última visita)` : null} color={NAVY} />
                     <Kpi k="Unidades repuestas" v={s.repuestas} sub={`facturado al cliente: ${s.facturadoUds} uds`} color={NAVY} />
                     <Kpi k="Quiebres" v={s.quiebres} sub={s.quiebres ? `${s.quiebresRepuestos} repuestos en la visita (R)` : 'ninguno'} color={s.quiebres > s.quiebresRepuestos ? ROJO : VERDE} />
                     <Kpi k="PVP" v={s.precio ? fmtPrecio(s.precio.ultimo) : '—'} sub={s.precio ? `mín ${fmtPrecio(s.precio.min)} · máx ${fmtPrecio(s.precio.max)}` : null} />
@@ -388,8 +408,10 @@ export function InformePdvDoc({ titulo, informes = [], desde, hasta, onClose }) 
                     <Kpi k="Rotación promedio" v={dias > 0 ? `${fmtUdsDia(salieron / dias)} uds/día` : '—'} sub={dias ? `por PDV · ${salieron} uds en ${diasTxt(dias)} medidos` : null} color={VERDE} />
                 </Fila>
                 <H2>Resumen por punto de venta</H2>
-                <TablaSimple cols={['Punto de venta', 'Visitas', 'Uds/día', 'Total en anaquel', 'Repuestas', 'Quiebres', 'PVP']} filas={informes.map(i => [
+                <TablaSimple cols={['Punto de venta', 'Visitas', 'Uds/día', 'Histórico', 'Tendencia', 'Total en anaquel', 'Repuestas', 'Quiebres', 'PVP']} filas={informes.map(i => [
                     i.pos.nombre, i.resumen.visitas, i.resumen.rotacion != null ? fmtUdsDia(i.resumen.rotacion) : '—',
+                    i.resumen.historico ? fmtUdsDia(i.resumen.historico.rot) : '—',
+                    <span key="t" style={{ color: COLOR_T[i.resumen.tendencia?.dir] || GRIS, fontWeight: 800 }}>{txtTendencia(i.resumen.tendencia)}</span>,
                     i.resumen.totalAnaquelHoy ?? '—', i.resumen.repuestas, i.resumen.quiebres, i.resumen.precio ? fmtPrecio(i.resumen.precio.ultimo) : '—',
                 ])} />
             </>)}

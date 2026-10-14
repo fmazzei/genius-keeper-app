@@ -3,7 +3,7 @@
 // Lo que muestra un reporte de visita (14-oct): unidades de la visita anterior,
 // contadas y repuestas; y la coordenada del reporte contra la del PDV.
 //   node --import ./tests/alias.mjs tests/reporteVisita.test.mjs
-import { buscarAnterior, unidadesVisita, ubicacionReporte, enlaceMapa, historialAnaquel, cuadrosVisita, fmtDiaVE, datosDelRegistro } from '../src/utils/reporteVisita.js';
+import { buscarAnterior, unidadesVisita, ubicacionReporte, enlaceMapa, historialAnaquel, cuadrosVisita, fmtDiaVE, datosDelRegistro, comparativoRotacion } from '../src/utils/reporteVisita.js';
 
 let fallas = 0;
 const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas++; };
@@ -94,6 +94,20 @@ ok(porClave.formVersion.valor.startsWith('3') && porClave.facturasEnTelefono.val
 ok(/^\d\d\/\d\d\/\d\d · /.test(porClave.datosRutaAt.valor) && /^publicada el \d\d\/\d\d\/26/.test(porClave.appBuild.valor), `fechas en dd/mm/aa → ${porClave.datosRutaAt.valor} · ${porClave.appBuild.valor}`);
 ok(/al instante/.test(porClave._llego.valor), 'llegó al servidor al instante');
 ok(reg.tecnicos.length === 1 && reg.tecnicos[0].clave === 'campoRaro' && reg.filas.every(f => f.ayuda), 'lo desconocido queda como dato técnico; cada fila explica para qué sirve');
+
+// ── Rotación vs histórico y tendencia ──
+const iv = (id, dia, dias, salieron) => ({ id, dia, dias, salieron, medible: true, rotacion: Math.round(salieron / dias * 100) / 100 });
+const hist = [{ id: 'h0', dia: '2026-08-01', dias: null }, iv('h1', '2026-08-08', 7, 14), iv('h2', '2026-08-15', 7, 14), iv('h3', '2026-08-22', 7, 14),
+    iv('h4', '2026-08-29', 7, 7), iv('h5', '2026-09-05', 7, 7), { id: 'h6', dia: '2026-09-06', dias: 1, salieron: 0, medible: true, rotacion: 0 }];
+const cr = comparativoRotacion(hist, 'h6');
+// histórico = h1..h5 = 56/35 = 1,6 ; reciente = h4,h5,h6 = 14/15 = 0,93 → −42 %
+ok(cr.historico.rot === 1.6 && cr.historico.n === 5, `histórico ponderado por días 56/35 = 1,6 → ${cr.historico.rot}`);
+ok(cr.reciente.rot === 0.93 && cr.tendencia.dir === 'baja' && cr.tendencia.pct === -42, `tendencia bajando −42 % → ${cr.tendencia.dir} ${cr.tendencia.pct}`);
+ok(cr.vsHistorico === -100, 'esta visita (0) va 100 % por debajo');
+const crViejo = comparativoRotacion(hist, 'h3');
+ok(crViejo.historico === null && /hacen falta 3/.test(crViejo.tendencia.motivo), 'un reporte viejo no usa intervalos posteriores; sin historia suficiente lo dice');
+const crEst = comparativoRotacion([...hist.slice(0, 4)], 'h3');
+ok(crEst.historico === null, 'con 2 intervalos anteriores no hay histórico');
 
 console.log(fallas ? `\n${fallas} FALLAS` : '\nTodo correcto');
 process.exit(fallas ? 1 : 0);

@@ -424,3 +424,59 @@ export function datosDelRegistro(report, omitir = new Set()) {
         .map(([clave, v]) => ({ clave, valor: v }));
     return { filas, tecnicos };
 }
+
+// ── Rotación de esta visita vs la histórica del PDV, y su tendencia ─────────
+//
+// Pedido del dueño (14-oct): la rotación de un intervalo sola no dice si el
+// punto va mejor o peor. Se compara contra su HISTÓRICO (todos los intervalos
+// medibles anteriores, Σ salieron ÷ Σ días) y se lee la TENDENCIA con los
+// últimos intervalos (también ponderados por días: un intervalo de 1 día no
+// pesa como uno de 7).
+
+/** Intervalos recientes que forman la tendencia (incluido el de este reporte). */
+export const TENDENCIA_INTERVALOS = 3;
+/** Por debajo de esta diferencia contra el histórico, la tendencia es "estable". */
+export const TENDENCIA_UMBRAL = 0.15;
+/** Intervalos medibles anteriores necesarios para hablar de un histórico. */
+export const MIN_INTERVALOS_HISTORICO = 3;
+
+const ponderada = (lista) => {
+    const s = lista.reduce((a, v) => a + v.salieron, 0);
+    const d = lista.reduce((a, v) => a + v.dias, 0);
+    return d > 0 ? { rot: Math.round((s / d) * 100) / 100, salieron: s, dias: d, n: lista.length } : null;
+};
+
+/**
+ * @param historial  `historialAnaquel` del PDV
+ * @param hastaId    el reporte que se mira (los intervalos POSTERIORES no cuentan)
+ * @returns {{actual, historico, reciente, tendencia:{dir:'sube'|'baja'|'estable'|null, pct, motivo}}}
+ */
+export function comparativoRotacion(historial = [], hastaId = null) {
+    const lista = historial || [];
+    let i = hastaId ? lista.findIndex(v => v.id === hastaId) : lista.length - 1;
+    if (i < 0) i = lista.length - 1;
+    const hasta = lista.slice(0, i + 1);
+    const actual = hasta[hasta.length - 1] || null;
+    const medibles = hasta.filter(v => v.medible);
+    const anteriores = medibles.filter(v => v !== actual);
+    const historico = anteriores.length >= MIN_INTERVALOS_HISTORICO ? ponderada(anteriores) : null;
+    const reciente = medibles.length ? ponderada(medibles.slice(-TENDENCIA_INTERVALOS)) : null;
+
+    let tendencia = { dir: null, pct: null, motivo: null };
+    if (!historico) {
+        tendencia.motivo = `hacen falta ${MIN_INTERVALOS_HISTORICO} intervalos medibles anteriores (hay ${anteriores.length})`;
+    } else if (!reciente) {
+        tendencia.motivo = 'no hay intervalos recientes medibles';
+    } else if (historico.rot <= 0) {
+        tendencia = { dir: reciente.rot > 0 ? 'sube' : 'estable', pct: null, motivo: null };
+    } else {
+        const pct = Math.round(((reciente.rot - historico.rot) / historico.rot) * 100);
+        const dir = Math.abs(pct) < TENDENCIA_UMBRAL * 100 ? 'estable' : pct > 0 ? 'sube' : 'baja';
+        tendencia = { dir, pct, motivo: null };
+    }
+    const vsHistorico = actual?.medible && historico && historico.rot > 0
+        ? Math.round(((actual.rotacion - historico.rot) / historico.rot) * 100) : null;
+    return { actual, historico, reciente, tendencia, vsHistorico };
+}
+
+export const ETIQUETA_TENDENCIA = { sube: 'Subiendo', baja: 'Bajando', estable: 'Estable' };

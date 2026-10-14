@@ -35,6 +35,9 @@ ok(inf.facturas.length === 1 && s.facturadoUds === 12, 'solo las facturas del in
 ok(inf.competencia[0].veces === 2 && inf.competencia[0].ultimo === 8.95 && inf.competencia[0].min === 8.65, 'competencia: veces, último y mínimo');
 ok(inf.lotes[0].estado === 'por_vencer', 'lote del 15-oct visto el 12-oct: por vencer');
 ok(inf.devoluciones.unidades === 2 && inf.devoluciones.porMotivo.vencido === 2, 'devoluciones del intervalo por motivo');
+ok(s.historico === null && /hacen falta 3/.test(s.historicoFalta), 'sin 3 intervalos antes del intervalo no hay histórico, y lo dice');
+const inf2 = informePdv({ pos: { id: 'p' }, reportes, facturas, devoluciones, desde: '2026-10-13', hasta: '2026-10-14' });
+ok(inf2.resumen.historico === null || inf2.resumen.historico.n >= 3, 'histórico solo con intervalos anteriores');
 const r = rangoPreset('mes_ant', new Date(2026, 9, 14));
 ok(r.desde === '2026-09-01' && r.hasta === '2026-09-30', `mes anterior → ${r.desde}…${r.hasta}`);
 ok(msDia('2026-10-14', true) - msDia('2026-10-14') === 86399999, 'día completo');

@@ -11,11 +11,12 @@ import { horaVisitaMs } from '@/utils/visitaOla1.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { ReporteVisitaDoc } from '@/Components/ReportesPdvDoc.jsx';
 import InformePdvSheet from '@/Components/InformePdvSheet.jsx';
+import { comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL } from '@/utils/reporteVisita.js';
 import { historialAnaquel, datosDelRegistro, cuadrosVisita, fmtDiaVE, DIAS_FACTURA_ANTES_DE_REPONER, ubicacionReporte, enlaceMapa } from '@/utils/reporteVisita.js';
 import {
     ClipboardList, ChevronRight, Search, X,
     Calendar, User, AlertTriangle, Loader,
-    CheckCircle, Pencil, MapPin, FileText,
+    CheckCircle, Pencil, MapPin, FileText, TrendingUp, TrendingDown, ArrowRight,
 } from 'lucide-react';
 
 const PERIODS = [
@@ -319,9 +320,9 @@ function Section({ title, t, children }) {
 }
 
 /** Una cifra grande con su rótulo (bloque de unidades). */
-function Cifra({ label, value, sub, t, tone, subTone }) {
+function Cifra({ label, value, sub, t, tone, subTone, className = '' }) {
     return (
-        <div className={`rounded-xl px-3 py-2.5 ${t.batchRow}`}>
+        <div className={`rounded-xl px-3 py-2.5 ${t.batchRow} ${className}`}>
             <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>{label}</p>
             <p className={`text-2xl font-black leading-tight mt-0.5 ${tone || t.fieldValue}`}>{value ?? '—'}</p>
             {sub && <p className={`text-[11px] mt-0.5 font-semibold ${subTone || t.meta}`}>{sub}</p>}
@@ -416,6 +417,67 @@ function GraficoRotacion({ historial, actualId, t }) {
     );
 }
 
+/**
+ * Rotación de esta visita contra la histórica del PDV y su tendencia (pedido
+ * del dueño, 14-oct): un intervalo solo no dice si el punto va mejor o peor.
+ */
+function BloqueRotacion({ va, comp, cargando, sinAnterior, t }) {
+    const h = comp?.historico;
+    const td = comp?.tendencia;
+    const Flecha = td?.dir === 'sube' ? TrendingUp : td?.dir === 'baja' ? TrendingDown : ArrowRight;
+    const tonoT = td?.dir === 'sube' ? t.popOk : td?.dir === 'baja' ? t.popBad : t.fieldValue;
+    const vs = comp?.vsHistorico;
+    return (
+        <div className={`mt-2 rounded-xl px-3 py-2.5 ${t.batchRow}`}>
+            <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Rotación (unidades que salen por día)</p>
+            <div className="grid grid-cols-3 gap-2 mt-1.5">
+                <div className="min-w-0">
+                    <p className={`text-[10px] ${t.fieldLabel}`}>Esta visita</p>
+                    <p className={`text-xl font-black leading-tight ${va?.medible ? t.fieldValue : t.metricCompetidores}`}>
+                        {va?.medible ? fmtUdsDia(va.rotacion) : cargando ? '…' : sinAnterior ? '—' : 'no medible'}
+                    </p>
+                    <p className={`text-[11px] font-semibold leading-snug ${va?.medible ? t.metricPrimary : t.metricCompetidores}`}>
+                        {va?.medible ? `salieron ${va.salieron} en ${va.dias} ${va.dias === 1 ? 'día' : 'días'}`
+                            : sinAnterior ? 'sin visita anterior'
+                                : va?.dias === 0 ? 'dos visitas el mismo día'
+                                    : va?.salieron != null && va.salieron < 0 ? `se contaron ${-va.salieron} más` : ''}
+                    </p>
+                </div>
+                <div className="min-w-0">
+                    <p className={`text-[10px] ${t.fieldLabel}`}>Histórico del PDV</p>
+                    <p className={`text-xl font-black leading-tight ${t.metricPrimary}`}>{h ? fmtUdsDia(h.rot) : '—'}</p>
+                    <p className={`text-[11px] font-semibold leading-snug ${t.meta}`}>
+                        {h ? `${h.n} intervalos · ${h.dias} días` : comp ? 'poca historia' : cargando ? '…' : 'sin datos'}
+                    </p>
+                </div>
+                <div className="min-w-0">
+                    <p className={`text-[10px] ${t.fieldLabel}`}>Tendencia</p>
+                    {td?.dir ? (
+                        <>
+                            <p className={`text-xl font-black leading-tight flex items-center gap-1 ${tonoT}`}>
+                                <Flecha size={18} className="shrink-0" />
+                                {td.pct != null ? `${td.pct > 0 ? '+' : ''}${td.pct}%` : ''}
+                            </p>
+                            <p className={`text-[11px] font-semibold leading-snug ${tonoT}`}>{ETIQUETA_TENDENCIA[td.dir]}</p>
+                        </>
+                    ) : (
+                        <p className={`text-[11px] font-semibold leading-snug mt-1 ${t.meta}`}>{cargando ? '…' : 'sin historia suficiente'}</p>
+                    )}
+                </div>
+            </div>
+            {comp && (
+                <p className={`text-[11px] mt-2 leading-snug ${t.meta}`}>
+                    {vs != null && <>Esta visita va <b className={vs >= 0 ? t.popOk : t.popBad}>{vs >= 0 ? `${vs}% por encima` : `${-vs}% por debajo`}</b> de su histórico. </>}
+                    {td?.dir && comp.reciente
+                        ? <>Tendencia = las últimas {comp.reciente.n} visitas medibles ({fmtUdsDia(comp.reciente.rot)} uds/día, {comp.reciente.salieron} uds en {comp.reciente.dias} días) contra el histórico; menos de ±{Math.round(TENDENCIA_UMBRAL * 100)} % se lee estable.</>
+                        : td?.motivo ? <>Para la tendencia {td.motivo}.</> : null}
+                    {va?.medible && va.dias <= 2 ? ' Un intervalo de 1–2 días mueve poco y dice poco: mira la tendencia.' : ''}
+                </p>
+            )}
+        </div>
+    );
+}
+
 function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t }) {
     // El PDV, para su carnet de Zoho y su coordenada (si no vino de la lista).
     const [posLeido, setPosLeido] = useState(null);
@@ -467,6 +529,7 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
     if (!report) return null;
     const { actual: va, anterior: vp } = cuadrosVisita(report, historial, report.visitaAnterior);
     const cargando = historial === undefined && !report.visitaAnterior;
+    const comp = historial ? comparativoRotacion(historial, va?.id) : null;
     const sinAnterior = !cargando && !vp;
     const ub = ubicacionReporte(report, pdv);
     const tonoDist = ub.nivel === 'cerca' ? t.popOk : ub.nivel === 'lejos' ? t.metricCompetidores : t.popBad;
@@ -572,22 +635,16 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                             <Cifra label="Esta visita · repuestas" t={t} tone={va?.repuestas > 0 ? t.popOk : undefined} subTone={tonoRepo(va)}
                                 value={va?.repuestas ?? 0}
                                 sub={textoFacturas(va)} />
-                            <Cifra label="Total en anaquel" t={t} tone={t.metricPrimary} subTone={t.metricPrimary}
+                            <Cifra label="Total en anaquel" t={t} tone={t.metricPrimary} subTone={t.metricPrimary} className="col-span-2 sm:col-span-1"
                                 value={va?.quedaron}
                                 sub={va?.dia ? `al ${fmtDiaVE(va.dia)} · contadas + repuestas` : 'contadas + repuestas'} />
-                            <Cifra label="Rotación" t={t} subTone={va?.medible ? t.popOk : t.metricCompetidores}
-                                tone={va?.medible ? t.fieldValue : t.metricCompetidores}
-                                value={va?.medible ? `${fmtUdsDia(va.rotacion)}` : sinAnterior ? '—' : cargando ? '…' : 'no medible'}
-                                sub={va?.medible ? `uds/día · salieron ${va.salieron} en ${va.dias} ${va.dias === 1 ? 'día' : 'días'}`
-                                    : sinAnterior ? 'hace falta una visita anterior'
-                                        : va?.dias === 0 ? 'dos visitas el mismo día'
-                                            : va?.salieron != null && va.salieron < 0 ? `se contaron ${-va.salieron} más de las que quedaron` : null} />
                         </div>
                         {vp?.quedaron != null && va?.contadas != null && va?.medible && (
                             <p className={`text-xs mt-2.5 leading-snug ${t.meta}`}>
                                 En la visita anterior quedaron <b>{vp.quedaron}</b> ({vp.contadas ?? 0} contadas + {vp.repuestas} repuestas); hoy se contaron <b>{va.contadas}</b>: salieron <b>{va.salieron}</b> en {va.dias} {va.dias === 1 ? 'día' : 'días'}.
                             </p>
                         )}
+                        <BloqueRotacion va={va} comp={comp} cargando={cargando} sinAnterior={sinAnterior} t={t} />
                         {[vp, va].some(v => v?.facturasRepo?.some(f => f.fuente === 'probable')) && (
                             <p className={`text-[11px] mt-1.5 ${t.meta}`}>
                                 "Probable": factura de Zoho de este cliente fechada hasta {DIAS_FACTURA_ANTES_DE_REPONER} días antes de la visita; el reporte no la declaró.
