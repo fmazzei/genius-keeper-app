@@ -3,7 +3,7 @@
 // Lo que muestra un reporte de visita (14-oct): unidades de la visita anterior,
 // contadas y repuestas; y la coordenada del reporte contra la del PDV.
 //   node --import ./tests/alias.mjs tests/reporteVisita.test.mjs
-import { buscarAnterior, unidadesVisita, ubicacionReporte, enlaceMapa, historialAnaquel, cuadrosVisita, fmtDiaVE } from '../src/utils/reporteVisita.js';
+import { buscarAnterior, unidadesVisita, ubicacionReporte, enlaceMapa, historialAnaquel, cuadrosVisita, fmtDiaVE, datosDelRegistro } from '../src/utils/reporteVisita.js';
 
 let fallas = 0;
 const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas++; };
@@ -80,6 +80,20 @@ ok(!hNeg[1].medible && hNeg[1].salieron === -18 && hNeg[1].rotacion === null, 's
 const sinH = cuadrosVisita({ id: 'c', startTime: '2026-10-18T09:00:00-04:00', createdAt: ts('2026-10-18T09:15:00-04:00'), inventoryLevel: 10 }, null,
     { reportId: 'b', hora: '2026-10-12T14:00:00Z', inventoryLevel: 22, orderQuantity: 24, quedaron: 46 });
 ok(sinH.anterior.contadas === 22 && sinH.actual.dias === 6 && sinH.actual.rotacion === 6, 'sin historial: usa visitaAnterior del servidor');
+
+// ── Datos del registro (los del reporte de Santa Rosa de Lima, 14-oct) ──
+const reg = datosDelRegistro({
+    envasesDanados: 0, datosRutaAt: 1791991765048, entregaSinFactura: 0, formVersion: 3,
+    facturasEnTelefono: 0, lotesPorEstado: { sin_fecha: 0, vigente: 7, por_vencer: 0, vencido: 0 },
+    guardadoEnTelefono: '2026-10-14T15:30:26.588Z', appBuild: '2026-10-14T12:28:09.765Z',
+    createdAt: ts('2026-10-14T15:30:29Z'), entregas: [], campoRaro: 'x',
+}, new Set(['createdAt']));
+const porClave = Object.fromEntries(reg.filas.map(f => [f.clave, f]));
+ok(porClave.lotesPorEstado.valor === '7 vigentes', `estado de las unidades → "${porClave.lotesPorEstado.valor}"`);
+ok(porClave.formVersion.valor.startsWith('3') && porClave.facturasEnTelefono.valor === 'ninguna' && porClave.entregaSinFactura.valor === '0 unidades', 'versión, facturas y entrega legibles');
+ok(/^\d\d\/\d\d\/\d\d · /.test(porClave.datosRutaAt.valor) && /^publicada el \d\d\/\d\d\/26/.test(porClave.appBuild.valor), `fechas en dd/mm/aa → ${porClave.datosRutaAt.valor} · ${porClave.appBuild.valor}`);
+ok(/al instante/.test(porClave._llego.valor), 'llegó al servidor al instante');
+ok(reg.tecnicos.length === 1 && reg.tecnicos[0].clave === 'campoRaro' && reg.filas.every(f => f.ayuda), 'lo desconocido queda como dato técnico; cada fila explica para qué sirve');
 
 console.log(fallas ? `\n${fallas} FALLAS` : '\nTodo correcto');
 process.exit(fallas ? 1 : 0);

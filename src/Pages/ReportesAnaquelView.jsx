@@ -8,7 +8,8 @@ import EditReportForm from '@/Components/EditReportForm.jsx';
 import { estadoLote, ESTADO_LABEL } from '@/utils/retiros.js';
 import Modal from '@/Components/Modal.jsx';
 import { horaVisitaMs } from '@/utils/visitaOla1.js';
-import { historialAnaquel, cuadrosVisita, fmtDiaVE, DIAS_FACTURA_ANTES_DE_REPONER, ubicacionReporte, enlaceMapa } from '@/utils/reporteVisita.js';
+import { fmtVence } from '@/utils/fechaCorta.js';
+import { historialAnaquel, datosDelRegistro, cuadrosVisita, fmtDiaVE, DIAS_FACTURA_ANTES_DE_REPONER, ubicacionReporte, enlaceMapa } from '@/utils/reporteVisita.js';
 import {
     ClipboardList, ChevronRight, Search, X,
     Calendar, User, AlertTriangle, Loader,
@@ -493,9 +494,7 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
     const popColor = report.popStatus === 'Exhibido correctamente' ? t.popOk
         : (report.popStatus === 'Ausente' || report.popStatus === 'Dañado') ? t.popBad : t.popNeutral;
 
-    const extras = Object.entries(report).filter(([k, v]) =>
-        !OMIT_KEYS.has(k) && v !== null && v !== undefined && v !== '' && typeof v !== 'function'
-    );
+    const registro = datosDelRegistro(report, OMIT_KEYS);
 
     // Color de la nota de cada reposición: verde = factura declarada en el
     // reporte; ámbar = factura probable o sin factura; gris = no hubo.
@@ -669,7 +668,7 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                                                 )}
                                             </div>
                                             <div className={`flex items-center gap-2 text-xs mt-0.5 flex-wrap ${t.batchExpiry}`}>
-                                                {b.expiryDate ? <span>Vence {b.expiryDate}</span> : b.sinFecha ? <span className="font-semibold">Sin fecha legible</span> : null}
+                                                {b.expiryDate ? <span>Vence {fmtVence(b.expiryDate)}</span> : b.sinFecha ? <span className="font-semibold">Sin fecha legible</span> : null}
                                                 {f && <span className={`font-semibold ${toneOf(f)}`}>· {f.label}</span>}
                                                 {Number(b.danadas) > 0 && <span className="font-bold">· {b.danadas} con envase dañado</span>}
                                                 {b.devuelto && <span className="font-bold">· DEVUELTO</span>}
@@ -732,13 +731,34 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                         </Section>
                     )}
 
-                    {extras.length > 0 && (
-                        <Section title="Otros datos del reporte" t={t}>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                                {extras.map(([k, v]) => (
-                                    <Field key={k} label={k} value={formatExtra(v)} t={t} />
+                    {/* Datos de control del reporte, con su nombre en español y una
+                        línea que dice para qué sirve cada uno. Lo que no tiene
+                        traducción queda plegado como dato técnico. */}
+                    {(registro.filas.length > 0 || registro.tecnicos.length > 0) && (
+                        <Section title="Datos del registro" t={t}>
+                            <div className="space-y-2.5">
+                                {registro.filas.map(f => (
+                                    <div key={f.clave} className={`rounded-xl px-3 py-2 ${t.batchRow}`}>
+                                        <div className="flex items-baseline justify-between gap-3">
+                                            <p className={`text-[11px] uppercase tracking-wide font-bold ${t.fieldLabel}`}>{f.etiqueta}</p>
+                                            <p className={`text-sm font-bold text-right break-words ${f.tono === 'aviso' ? t.metricCompetidores : t.fieldValue}`}>{f.valor}</p>
+                                        </div>
+                                        <p className={`text-[11px] mt-0.5 leading-snug ${t.meta}`}>{f.ayuda}</p>
+                                    </div>
                                 ))}
                             </div>
+                            {registro.tecnicos.length > 0 && (
+                                <details className="mt-3">
+                                    <summary className={`text-xs font-semibold cursor-pointer ${t.meta}`}>
+                                        Datos técnicos ({registro.tecnicos.length}) · para revisar con soporte
+                                    </summary>
+                                    <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm mt-2">
+                                        {registro.tecnicos.map(({ clave, valor }) => (
+                                            <Field key={clave} label={clave} value={formatExtra(valor)} t={t} />
+                                        ))}
+                                    </div>
+                                </details>
+                            )}
                         </Section>
                     )}
                 </div>

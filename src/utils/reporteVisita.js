@@ -7,7 +7,7 @@
 //   · dónde se hizo el reporte, comparado con la coordenada guardada del PDV.
 // Funciones puras: las usa la hoja del reporte y se prueban sin Firebase.
 
-import { horaVisitaMs, distanciaM } from '@/utils/visitaOla1.js';
+import { horaVisitaMs, distanciaM, MOTIVOS_RETIRO, RESPUESTAS_ANTES_DESPUES, MOTIVOS_CORRECCION_CONTEO, RESPUESTAS_DUPLICADO, RESPUESTAS_CONTEO_IDENTICO } from '@/utils/visitaOla1.js';
 import { DISTANCIA_MISMO_PDV_M } from '@/utils/anaquelConstantes.js';
 
 /** Hasta esta distancia se lee "lejos"; más allá, "muy lejos". */
@@ -290,3 +290,137 @@ export function ubicacionReporte(report, pos) {
 
 /** Enlace de Google Maps a un punto. */
 export const enlaceMapa = (p) => (p ? `https://www.google.com/maps?q=${p.lat},${p.lng}` : null);
+
+// ── "Datos del registro": los campos internos del reporte, en español ──────
+//
+// El reporte guarda campos de control (cuándo se guardó en el teléfono, qué
+// versión del formulario se usó, cómo se dedujo el estado de los lotes…). La
+// hoja los mostraba con su nombre interno ("DATOSRUTAAT 1791991765048"). Aquí
+// cada uno tiene nombre, valor legible y una línea que dice para qué sirve. Lo
+// que no está en esta lista va aparte, como dato técnico.
+
+const etiquetaDe = (lista, id) => (lista.find(o => o.id === id) || {}).label || id;
+
+/** ms | ISO | Timestamp → 'dd/mm/aa · hh:mm a. m.' (hora local). */
+export function fmtMomentoVE(v) {
+    if (v === null || v === undefined || v === '') return null;
+    let ms = null;
+    if (typeof v === 'number') ms = v;
+    else if (typeof v === 'string') ms = Date.parse(v);
+    else if (v?.toDate) ms = v.toDate().getTime();
+    else if (v?.seconds != null) ms = v.seconds * 1000;
+    if (!Number.isFinite(ms)) return null;
+    const hora = new Date(ms).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
+    return `${fmtDiaVE(ms)} · ${hora}`;
+}
+
+const msDe = (v) => {
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') { const t = Date.parse(v); return Number.isFinite(t) ? t : null; }
+    if (v?.toDate) return v.toDate().getTime();
+    if (v?.seconds != null) return v.seconds * 1000;
+    return null;
+};
+
+const uds = (n) => `${n} ${n === 1 ? 'unidad' : 'unidades'}`;
+
+/**
+ * @returns {{ filas: {clave, etiqueta, valor, ayuda, tono?}[], tecnicos: {clave, valor}[] }}
+ * `tono`: 'aviso' cuando el dato pide atención (p. ej. llegó tarde al servidor).
+ */
+export function datosDelRegistro(report, omitir = new Set()) {
+    const r = report || {};
+    const filas = [];
+    const usadas = new Set();
+    const fila = (clave, etiqueta, valor, ayuda, tono) => {
+        usadas.add(clave);
+        if (valor === null || valor === undefined || valor === '') return;
+        filas.push({ clave, etiqueta, valor: String(valor), ayuda, tono });
+    };
+
+    // Cuándo se guardó y cuándo llegó: si el teléfono estaba sin señal, el
+    // reporte espera en el teléfono y sube después.
+    const guardado = msDe(r.guardadoEnTelefono);
+    const llego = msDe(r.createdAt);
+    fila('guardadoEnTelefono', 'Guardado en el teléfono', fmtMomentoVE(guardado),
+        'Cuándo el mercaderista terminó y guardó el reporte en su teléfono.');
+    if (guardado && llego) {
+        const min = Math.round((llego - guardado) / 60000);
+        fila('_llego', 'Llegó al servidor',
+            min >= 2 ? `${fmtMomentoVE(llego)} · ${min >= 120 ? `${Math.round(min / 60)} h` : `${min} min`} después` : `${fmtMomentoVE(llego)} · al instante`,
+            min >= 2 ? 'Esperó en el teléfono hasta tener señal; la hora de la visita es la real.' : 'Subió en cuanto se guardó.',
+            min >= 30 ? 'aviso' : undefined);
+    }
+
+    const lp = r.lotesPorEstado;
+    if (lp && typeof lp === 'object') {
+        const partes = [
+            ['vigente', 'vigentes'], ['por_vencer', 'por vencer'], ['vencido', 'vencidas'], ['sin_fecha', 'sin fecha legible'],
+        ].filter(([k]) => Number(lp[k]) > 0).map(([k, l]) => `${lp[k]} ${l}`);
+        fila('lotesPorEstado', 'Estado de las unidades', partes.length ? partes.join(' · ') : 'sin unidades',
+            'Lo calcula la app con la fecha de vencimiento de cada lote, a la fecha de la visita.',
+            Number(lp.vencido) > 0 || Number(lp.por_vencer) > 0 ? 'aviso' : undefined);
+    }
+    if (r.envasesDanados != null) {
+        fila('envasesDanados', 'Envases dañados', uds(Number(r.envasesDanados) || 0),
+            'Unidades con el envase roto o golpeado que vio el mercaderista.', Number(r.envasesDanados) > 0 ? 'aviso' : undefined);
+    }
+    if (Array.isArray(r.entregas)) {
+        const txt = r.entregas.filter(e => e?.numero).map(e =>
+            `${e.numero}: ${e.opcion === 'no' ? 'no entregada' : uds(Number(e.unidadesEntregadas) || 0)}`).join(' · ');
+        fila('entregas', 'Entregas por factura', txt || null, 'Lo que el mercaderista confirmó haber entregado de cada factura de Zoho.');
+        usadas.add('entregas');
+    }
+    if (r.entregaSinFactura != null) {
+        fila('entregaSinFactura', 'Entregado sin factura', uds(Number(r.entregaSinFactura) || 0),
+            'Unidades que entraron hoy al anaquel sin una factura vinculada en el teléfono.');
+    }
+    if (r.facturasEnTelefono != null) {
+        const n = Number(r.facturasEnTelefono) || 0;
+        fila('facturasEnTelefono', 'Facturas por entregar que tenía el teléfono', n === 0 ? 'ninguna' : `${n}`,
+            'Facturas de Zoho de este PDV que el teléfono le ofreció para confirmar la entrega.');
+    }
+    const ret = r.retiroVisita;
+    if (ret && typeof ret === 'object') {
+        fila('retiroVisita', 'Retiro en la visita',
+            `${uds(Number(ret.unidades) || 0)} retiradas${ret.motivo ? ` (${etiquetaDe(MOTIVOS_RETIRO, ret.motivo).toLowerCase()})` : ''}${Number(ret.repuestas) > 0 ? ` · ${ret.repuestas} repuestas en el acto` : ''}`,
+            'Producto que sacó del anaquel en esta visita; queda también en Devoluciones.', 'aviso');
+    }
+    const ad = r.conteoAntesDespues;
+    if (ad && typeof ad === 'object') {
+        fila('conteoAntesDespues', '¿Contó antes o después de reponer?',
+            `${etiquetaDe(RESPUESTAS_ANTES_DESPUES, ad.respuesta)}${ad.respuesta === 'despues' && ad.antesCorregido != null ? ` · se tomó como conteo ${ad.antesCorregido}` : ''}`,
+            'La app preguntó porque el conteo se parecía a lo entregado: si contó después, se descuenta lo repuesto.');
+        usadas.add('inventoryLevelContado');
+    }
+    if (r.inventoryLevelContado != null && !ad) usadas.add('inventoryLevelContado');
+    const cc = r.correccionConteo;
+    if (cc && typeof cc === 'object') {
+        fila('correccionConteo', 'Corrigió el conteo', etiquetaDe(MOTIVOS_CORRECCION_CONTEO, cc.motivo),
+            'Volvió a contar después de pasar a reponer; este fue el motivo que dio.', 'aviso');
+    }
+    if (r.avisoDuplicado && typeof r.avisoDuplicado === 'object') {
+        fila('avisoDuplicado', 'Segundo reporte del día', etiquetaDe(RESPUESTAS_DUPLICADO, r.avisoDuplicado.respuesta),
+            'Ya había un reporte de hoy en este PDV; esto respondió el mercaderista.', 'aviso');
+    }
+    if (r.avisoConteoIdentico && typeof r.avisoConteoIdentico === 'object') {
+        fila('avisoConteoIdentico', 'Conteo igual al de la visita anterior', etiquetaDe(RESPUESTAS_CONTEO_IDENTICO, r.avisoConteoIdentico.respuesta),
+            'Las mismas fechas y cantidades que la visita anterior; la app le pidió confirmar.', 'aviso');
+    }
+    fila('datosRutaAt', 'Ruta del teléfono actualizada', fmtMomentoVE(r.datosRutaAt),
+        'Última vez que el teléfono descargó los conteos y las facturas por entregar. Si es vieja, el teléfono trabajó con datos de ese momento.');
+    if (r.formVersion != null) {
+        const v = Number(r.formVersion);
+        fila('formVersion', 'Versión del formulario',
+            v >= 3 ? `${v} · con entregas por factura` : v === 2 ? '2 · "unidades que entraron hoy"' : `${v} · formulario anterior`,
+            'Qué formulario usó el mercaderista; cambia cómo se leen las unidades repuestas.');
+    }
+    fila('appBuild', 'Versión de la app', r.appBuild ? `publicada el ${fmtMomentoVE(r.appBuild) || r.appBuild}` : null,
+        'Con qué versión de Genius Keeper se hizo el reporte. Sirve para saber si el teléfono estaba actualizado.');
+
+    const tecnicos = Object.entries(r)
+        .filter(([k, v]) => !omitir.has(k) && !usadas.has(k) && v !== null && v !== undefined && v !== ''
+            && typeof v !== 'function' && !(Array.isArray(v) && v.length === 0))
+        .map(([clave, v]) => ({ clave, valor: v }));
+    return { filas, tecnicos };
+}
