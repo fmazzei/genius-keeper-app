@@ -13,7 +13,7 @@ import {
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
     ClipboardList, Receipt, Store, Warehouse, X, RefreshCw, FilePlus,
-    Zap, ChevronLeft, ChevronRight, Wallet, Download, Award, Handshake,
+    Zap, ChevronLeft, ChevronRight, Wallet, Download, Award, Handshake, Bot,
 } from 'lucide-react';
 import AvisoDetalleSheet from '@/Components/AvisoDetalleSheet.jsx';
 import EstadoCuentaDoc from '@/Components/EstadoCuentaDoc.jsx';
@@ -948,7 +948,14 @@ function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClos
     );
 }
 
-function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], onMarcarVisto }) {
+// Dos bandejas separadas (pedido del dueño, 14-oct), para que cada alerta se lea
+// con la importancia que tiene:
+//   · "agente": lo que el vigilante detecta solo (PDV sin visita, ritmo de la
+//     meta, mercaderista sin reportes…). Botón con el robot.
+//   · "operacion": lo del día a día (facturas por vencer, despachos, pickings).
+//     Botón de la campanita.
+function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], onMarcarVisto, modo = 'operacion' }) {
+    const agente = modo === 'agente';
     // Tocar una alerta abre TODA su información. Los avisos del vigilante traen su
     // detalle completo; las demás alertas muestran su texto entero.
     const [abierta, setAbierta] = useState(null);
@@ -971,22 +978,42 @@ function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], o
         );
     }
 
+    const encabezado = (
+        <div className="flex items-start gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${agente ? 'bg-violet-500/15 text-violet-300' : 'bg-slate-800 text-slate-300'}`}>
+                {agente ? <Bot size={20} /> : <Bell size={20} />}
+            </div>
+            <div className="min-w-0">
+                <p className="text-white font-black text-base leading-tight">{agente ? 'Alertas del agente' : 'Alertas de tu operación'}</p>
+                <p className="text-slate-400 text-xs mt-0.5">
+                    {agente
+                        ? 'Lo que el sistema detecta solo en tu cartera y tu ruta. Cada una dice qué hacer.'
+                        : 'Lo del día a día: facturas, despachos y retiros de Frimaca.'}
+                </p>
+            </div>
+        </div>
+    );
+
     if (alertas.length === 0) {
         return (
-            <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-                {uid && <div className="w-full max-w-md"><ActivarAvisos uid={uid} oscuro /></div>}
-                <CheckCircle size={56} className="text-emerald-400" />
-                <p className="text-white font-bold text-lg">Sin alertas activas</p>
-                <p className="text-slate-400 text-sm text-center">Todos tus indicadores están en orden.</p>
+            <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
+                {encabezado}
+                {agente && uid && <ActivarAvisos uid={uid} oscuro />}
+                <div className="flex flex-col items-center justify-center gap-3 pt-10">
+                    <CheckCircle size={56} className="text-emerald-400" />
+                    <p className="text-white font-bold text-lg">{agente ? 'El agente no ve nada pendiente' : 'Sin alertas activas'}</p>
+                    <p className="text-slate-400 text-sm text-center">{agente ? 'Tu ruta y tu meta están al día.' : 'Todos tus indicadores están en orden.'}</p>
+                </div>
             </div>
         );
     }
 
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-3">
-            {uid && <ActivarAvisos uid={uid} oscuro />}
+            {encabezado}
+            {agente && uid && <ActivarAvisos uid={uid} oscuro />}
             {hoja}
-            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest pt-2">Alertas Activas</p>
+            <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest pt-2">{alertas.length} activa{alertas.length !== 1 ? 's' : ''}</p>
             {alertas.map((alert) => {
                 const isDanger = alert.alertType === 'facturas_venciendo' || alert.alertType === 'vig_critico';
                 const isInfo = alert.alertType === 'despacho_en_transito';
@@ -1013,7 +1040,7 @@ function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], o
                     >
                         <button type="button" onClick={() => abrir(alert)} className="flex-1 min-w-0 text-left">
                             <p className={`font-bold text-sm ${titleClass}`}>{alert.title}</p>
-                            {isVig && <p className="text-[11px] text-slate-500 mt-0.5">Vigilante · {alert.alertType === 'vig_critico' ? 'urgente' : alert.alertType === 'vig_info' ? 'informativo' : 'importante'}</p>}
+                            {isVig && <p className="text-[11px] text-slate-500 mt-0.5">{alert.alertType === 'vig_critico' ? 'Urgente' : alert.alertType === 'vig_info' ? 'Informativo' : 'Importante'}</p>}
                             <p className="text-slate-400 text-sm mt-1 line-clamp-3">{alert.body}</p>
                             <p className="text-[11px] font-bold text-slate-300 mt-1.5 flex items-center gap-1">Ver todo <ChevronRight size={12} /></p>
                         </button>
@@ -1070,14 +1097,12 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [alertas, setAlertas]                       = useState([]);
     // Avisos del vigilante (mercaderista, PDV y metas: nunca datos financieros).
     const { avisos: avisosVig, marcarVisto: marcarVistoVig } = useAvisosVigilante(user?.uid);
-    const alertasTodas = useMemo(() => [
-        ...avisosVig.filter(a => !a.vistoPor?.[user?.uid]).map(a => ({
-            id: `vig:${a.id}`, synthetic: true,
-            alertType: a.severidad === 'critico' ? 'vig_critico' : a.severidad === 'informativo' ? 'vig_info' : 'vig',
-            title: a.titulo, body: textoAviso(a), createdAt: a.abiertoAt,
-        })),
-        ...alertas,
-    ], [avisosVig, alertas, user?.uid]);
+    // Las del agente van en su propia bandeja (robot); la campanita es la operación.
+    const alertasAgente = useMemo(() => avisosVig.filter(a => !a.vistoPor?.[user?.uid]).map(a => ({
+        id: `vig:${a.id}`, synthetic: true,
+        alertType: a.severidad === 'critico' ? 'vig_critico' : a.severidad === 'informativo' ? 'vig_info' : 'vig',
+        title: a.titulo, body: textoAviso(a), createdAt: a.abiertoAt,
+    })), [avisosVig, user?.uid]);
     const [loadingAlertas, setLoadingAlertas]         = useState(false);
     const [pedidosPendientesCount, setPedidosPendientesCount] = useState(0);
     const [showNuevaFactura, setShowNuevaFactura]     = useState(false);
@@ -1821,10 +1846,24 @@ const VendedorLayout = ({ user, onLogout }) => {
             return <EstadoCuentaView estados={estados} commConfig={commConfig} vendedorName={vendedor.nombre} desgloseInputs={desgloseInputs} onBack={() => setCurrentView('home')} />;
         }
 
+        if (currentView === 'agente') {
+            return (
+                <AlertasView
+                    modo="agente"
+                    alertas={alertasAgente}
+                    loadingAlertas={false}
+                    onDelete={deleteAlerta}
+                    uid={user?.uid}
+                    avisosVig={avisosVig}
+                    onMarcarVisto={marcarVistoVig}
+                />
+            );
+        }
+
         if (currentView === 'alertas') {
             return (
                 <AlertasView
-                    alertas={alertasTodas}
+                    alertas={alertas}
                     loadingAlertas={loadingAlertas}
                     onDelete={deleteAlerta}
                     uid={user?.uid}
@@ -1950,7 +1989,8 @@ const VendedorLayout = ({ user, onLogout }) => {
         );
     };
 
-    const alertCount = alertasTodas.length;
+    const alertCount = alertas.length;
+    const agenteCount = alertasAgente.length;
 
     // Refresh global del perfil del vendedor: re-dispara la carga principal
     // (metas, comisión, cartera, facturas, estado de cuenta, radar…) y las
@@ -1970,16 +2010,16 @@ const VendedorLayout = ({ user, onLogout }) => {
                     <div className="w-8 h-8 rounded-lg bg-[#0D2B4C] border border-blue-800/50 flex items-center justify-center">
                         <TrendingUp size={16} className="text-[#FFD600]" />
                     </div>
-                    <span className="text-white font-bold text-sm">GK Vendedor</span>
+                    <span className="hidden sm:inline text-white font-bold text-sm">GK Vendedor</span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 sm:gap-1.5">
                     {/* El botón de recarga se retiró para ganar espacio en la barra:
                         ahora se actualiza HALANDO hacia abajo en cualquiera de las
                         tres vistas del Home (ver PullToRefresh). */}
                     {/* Estado de Cuenta — píldora glanceable: tu comisión del período en curso */}
                     <button
                         onClick={() => navigate('estado_cuenta')}
-                        className="flex items-center gap-1.5 h-9 pl-2.5 pr-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 active:scale-95 transition-transform"
+                        className="flex items-center gap-1.5 h-8 sm:h-9 pl-2 pr-2.5 sm:pl-2.5 sm:pr-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 active:scale-95 transition-transform"
                         aria-label="Estado de cuenta"
                     >
                         <Wallet size={16} className="text-emerald-400 shrink-0" />
@@ -1988,8 +2028,21 @@ const VendedorLayout = ({ user, onLogout }) => {
                         </span>
                     </button>
                     <button
+                        onClick={() => navigate('agente')}
+                        className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 flex items-center justify-center"
+                        aria-label="Alertas del agente"
+                    >
+                        <Bot size={18} className="text-violet-300" />
+                        {agenteCount > 0 && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] flex items-center justify-center rounded-full font-bold">
+                                {agenteCount}
+                            </span>
+                        )}
+                    </button>
+                    <button
                         onClick={() => navigate('alertas')}
-                        className="relative w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center"
+                        className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 flex items-center justify-center"
+                        aria-label="Alertas de tu operación"
                     >
                         <Bell size={18} className="text-slate-300" />
                         {alertCount > 0 && (
@@ -1998,11 +2051,11 @@ const VendedorLayout = ({ user, onLogout }) => {
                             </span>
                         )}
                     </button>
-                    <BiometricEnrollButton variant="dark" labelClass="hidden" className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400" />
-                    <ChangePasswordButton variant="dark" labelClass="hidden" className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400" />
+                    <BiometricEnrollButton variant="dark" labelClass="hidden" className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400" />
+                    <ChangePasswordButton variant="dark" labelClass="hidden" className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400" />
                     <button
                         onClick={onLogout}
-                        className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center"
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-800 flex items-center justify-center"
                         aria-label="Cerrar sesión"
                     >
                         <LogOut size={16} className="text-slate-400" />

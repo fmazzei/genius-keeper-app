@@ -3861,3 +3861,19 @@ Pedido del dueño: las alertas de los reportes deben llegar al máster y a la ge
 - **Cada reporte lleva su coordenada** (`VisitReportForm`, V8): antes solo se leía si el teléfono YA había dado permiso; ahora se pide una vez. Nunca bloquea ni retrasa el envío; el GPS obligatorio sigue apagado. Primero GPS fino y, si no hay señal a tiempo, la ubicación aproximada (`GPS_TIEMPO_MAX_MS` 12 s por intento). Si se niega, queda el motivo.
 - **Alertas del agente → Configuraciones** (solo máster): los avisos del vigilante y los del anaquel salieron de la campanita del máster y viven en **Configuraciones → Alertas → Alertas del agente** (`AlertasAgentePanel.jsx`, con contador rojo). "Configuraciones" en el menú lateral y el botón de menú en el teléfono muestran un **punto rojo** mientras haya alguna sin leer; Configuraciones abre directo en esa sección. La gerencia sigue viendo en su campanita los avisos del vigilante que le toquen. Lo que el vigilante manda al teléfono no cambió.
 - Prueba: `node --import ./tests/alias.mjs tests/reporteVisita.test.mjs` (12 en verde).
+
+### Cada perfil con dos bandejas: agente y operación (2026-10-14) ✅
+
+Corrección del dueño: los avisos del agente que reciben Carolina y administración se quedan en sus perfiles, pero SEPARADOS de los de la operación, para que cada alerta se lea con su importancia. La gerencia también los recibe y no entra a Configuraciones.
+
+| Perfil | Agente (vigilante) | Operación |
+|---|---|---|
+| Máster | Configuraciones → Alertas del agente (punto rojo) | Campanita |
+| Gerencia | **Ajustes** → Alertas del agente (punto rojo) | Campanita (solo operación) |
+| Vendedor | Botón con el **robot** (contador) → "Alertas del agente" | Campanita → "Alertas de tu operación" (facturas, despachos, pickings) |
+| Administración | Pestaña y botón **"Alertas del agente"** (punto rojo); se retiró la campanita, que solo tenía avisos del agente | — |
+
+- **La gerencia recibe** (`TIPOS_GERENCIA` en `vigilante.js`): sin reportes, mercaderista sin señal, PDV sin visita, ritmo de la meta, entregas bajo lo facturado y negativos altos, más los avisos del anaquel (`useAvisosAnaquel` se activa también para `gerencia`/`sales_manager`). **No recibe** las fallas técnicas (Zoho, la web, teléfonos, errores: las resuelve el máster) ni la revisión de comisiones (la corrige administración). `leerDatos` lee ahora también los usuarios `gerencia` y `sales_manager` (`d.gerentes`).
+- **Ajustes de la gerencia** (`AjustesGerencia.jsx`, menú "Ajustes"): Alertas del agente, Avisos en este teléfono (encender/apagar) y Mi cuenta (contraseña y huella). Nada de usuarios, integraciones, comisiones ni módulos: eso sigue en Configuraciones, solo del máster.
+- `AlertasAgentePanel` acepta `nota` (qué trae la bandeja) y `pie` (p. ej. `ActivarAvisos`). En el vendedor, `AlertasView` tiene `modo` `agente`/`operacion`; el encabezado se compactó en el teléfono para que quepan los dos botones.
+- Prueba: `tests/vigilante.e2e.test.mjs` con un usuario de gerencia (41 en verde): le llegan PDV sin visita y sin reportes; no le llegan Zoho ni comisiones.

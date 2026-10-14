@@ -38,6 +38,7 @@ const reporte = (id, posId, ms, extra = {}) => fs.doc(`visit_reports/${id}`).set
 });
 await Promise.all([
     fs.doc('users_metadata/FRAN').set({ role: 'master', name: 'Francisco' }),
+    fs.doc('users_metadata/GER').set({ role: 'gerencia', name: 'Gerencia' }),
     fs.doc('users_metadata/MJ').set({ role: 'administrador', name: 'María José', modulos: { liquidaciones: true } }),
     fs.doc('users_metadata/CARO').set({ role: 'vendedor', name: 'Carolina Ramírez', reporterId: 'REP1', fechaIngreso: '2026-09-15', commissionConfig: { metaMensual: 2400 } }),
     fs.doc('reporters/REP1').set({ name: 'Eduardo Carrillo', active: true }),
@@ -66,7 +67,7 @@ const de = (uid, desde = 0) => pushes.slice(desde).filter(p => p.uid === uid);
 let n0 = pushes.length;
 await correr(caracas(MIE, 7, 5));
 const pdv = await aviso('pdv_sin_visita:P1:CARO');
-ok(pdv?.abierto && pdv.destinatarios.join() === 'CARO' && /15 días/.test(pdv.titulo), `PDV pasado de su frecuencia: aviso abierto a Carolina ("${pdv?.titulo}")`);
+ok(pdv?.abierto && pdv.destinatarios.slice().sort().join() === 'CARO,GER' && /15 días/.test(pdv.titulo), `PDV pasado de su frecuencia: aviso abierto a Carolina y a la gerencia ("${pdv?.titulo}")`);
 const resumen = de('CARO', n0);
 ok(resumen.length === 1 && /Resumen del día/.test(resumen[0].titulo), `UN solo mensaje a Carolina a primera hora: "${resumen[0]?.titulo} — ${resumen[0]?.cuerpo}"`);
 ok(de('FRAN', n0).length === 0, 'a Francisco no le llega nada de rutina');
@@ -80,7 +81,7 @@ ok(pushes.length === n0 && (await aviso('pdv_sin_visita:P1:CARO'))?.abierto, 'se
 n0 = pushes.length;
 await correr(caracas(MIE, 14, 30));
 const sr = await aviso('sin_reportes:REP1');
-ok(sr?.abierto && sr.severidad === 'importante' && sr.destinatarios.join() === 'CARO', `día sin reportes: aviso a Carolina ("${sr?.titulo}")`);
+ok(sr?.abierto && sr.severidad === 'importante' && sr.destinatarios.slice().sort().join() === 'CARO,GER', `día sin reportes: aviso a Carolina y a la gerencia ("${sr?.titulo}")`);
 ok(de('CARO', n0).length === 1 && de('FRAN', n0).length === 0, 'llega a Carolina una vez; Francisco no lo recibe');
 n0 = pushes.length;
 await correr(caracas(MIE, 15, 30));
@@ -110,6 +111,7 @@ n0 = pushes.length;
 await correr(caracas('2026-10-09', 2, 0));
 ok(de('FRAN', n0).length === 1 && /Zoho/.test(de('FRAN', n0)[0].titulo), `falla de Zoho: llega a Francisco de inmediato, aun de madrugada ("${de('FRAN', n0)[0]?.titulo}")`);
 ok(de('CARO', n0).length === 0, 'Carolina no recibe avisos del sistema');
+ok(de('GER', n0).length === 0 && !((await aviso('zoho_barrido'))?.destinatarios || []).includes('GER'), 'la gerencia tampoco: las fallas técnicas son del máster');
 n0 = pushes.length;
 await correr(caracas('2026-10-09', 3, 0));
 ok(de('FRAN', n0).length === 0, 'una hora después: no se repite');
@@ -149,6 +151,7 @@ ok(com?.abierto && com.destinatarios.slice().sort().join() === 'FRAN,MJ' && /sin
 ok(de('FRAN', n0).some(p => /Resumen del día/.test(p.titulo) && /Carolina/.test(p.cuerpo)) && de('MJ', n0).some(p => /Resumen del día/.test(p.titulo)), 'les llega en su resumen de la mañana');
 ok(com.detalle?.[0]?.filas?.some(f => /INV-9/.test(f.t)), 'el aviso guarda su detalle completo: la factura con su fecha y su monto');
 ok(!de('CARO', n0).length && !(com.destinatariosAbiertos || []).includes('CARO'), 'Carolina no ve avisos de dinero');
+ok(!(com.destinatarios || []).includes('GER'), 'la revisión de comisiones no va a la gerencia (la corrige administración)');
 await fs.doc('facturas_vendedor/INV-9').set({ fechaPago: ts(Date.parse('2026-10-01T00:00:00Z')) }, { merge: true });
 await correr(caracas('2026-10-14', 7, 5));
 ok(!(await aviso('comision_fechas:CARO'))?.abierto, 'al corregir la fecha de pago, el aviso se cierra solo');

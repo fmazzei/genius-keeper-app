@@ -28,6 +28,15 @@ const { logger } = require("firebase-functions");
 const R = require("./vigilanteReglas");
 
 const DIA = 86400000;
+
+// Avisos del agente que también recibe la GERENCIA (pedido del dueño, 14-oct):
+// los del negocio —la ruta del mercaderista, los PDV, la meta y el anaquel—.
+// No le llegan las fallas técnicas (Zoho, la web, teléfonos, errores: las
+// resuelve el máster) ni la revisión de comisiones (la corrige administración).
+const TIPOS_GERENCIA = new Set([
+    'sin_reportes', 'mercaderista_sin_senal', 'pdv_sin_visita', 'meta_ritmo',
+    'entregas_bajo', 'negativos_altos',
+]);
 const HORAS_LATIDO_MUERTO = 5;
 const NO_AUTOCIERRE = new Set(['resumen_semanal', 'vigilante_detenido']);
 const db = () => admin.firestore();
@@ -68,7 +77,7 @@ async function leerDatos(g, ahoraMs, estado) {
     const f = db();
     const lecturas = {
         appConfig: f.doc('settings/appConfig').get().then(s => s.data() || {}),
-        usuarios: f.collection('users_metadata').where('role', 'in', ['master', 'vendedor', 'administrador']).get().then(docs),
+        usuarios: f.collection('users_metadata').where('role', 'in', ['master', 'vendedor', 'administrador', 'gerencia', 'sales_manager']).get().then(docs),
         dispositivos: f.collection('dispositivos').get().then(docs).catch(() => []),
         errores: f.collection('errores_app').where('t', '>=', ts(ahoraMs - DIA)).get().then(docs).catch(() => []),
     };
@@ -104,6 +113,7 @@ async function leerDatos(g, ahoraMs, estado) {
         // módulos de pago encendido (los mismos interruptores de su pantalla).
         administradores: activos.filter(u => u.role === 'administrador' && ['dashboard', 'conciliacion', 'liquidaciones']
             .some(m => (u.modulos || {})[m] !== false)).map(u => u.id),
+        gerentes: activos.filter(u => u.role === 'gerencia' || u.role === 'sales_manager').map(u => u.id),
         supervisores: activos.filter(u => u.role === 'vendedor').map(u => ({ ...u, uid: u.id, nombre: u.name || u.email })),
         laborables: estado.laborables || {},
     };
@@ -184,7 +194,11 @@ async function ejecutarVigilante({ ahoraMs = Date.now(), enviarPush = enviarPush
     for (const p of problemas) {
         const id = claveDoc(p.clave);
         vigentes.add(id);
-        const destinatarios = [...new Set([...(p.uids || []), ...(p.copiaMaster ? d.masters : [])])];
+        const destinatarios = [...new Set([
+            ...(p.uids || []),
+            ...(p.copiaMaster ? d.masters : []),
+            ...(TIPOS_GERENCIA.has(p.tipo) ? (d.gerentes || []) : []),
+        ])];
         const base = {
             clave: p.clave, tipo: p.tipo, severidad: p.severidad, grupo: p.grupo, dia: p.dia || null,
             para: p.para, titulo: p.titulo, cuerpo: p.cuerpo, causa: p.causa || null, accion: p.accion || null,

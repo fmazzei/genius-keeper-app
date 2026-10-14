@@ -1,6 +1,7 @@
 // RUTA: src/Components/AlertasAgentePanel.jsx
 //
-// Configuraciones → Alertas del agente (solo máster, pedido del dueño 14-oct).
+// Bandeja "Alertas del agente" (pedido del dueño, 14-oct). Máster: en
+// Configuraciones; gerencia: en Ajustes; administración: su pestaña propia.
 // Son los avisos que genera el SISTEMA, no los de la operación: los del vigilante
 // (Zoho, la web, los teléfonos, las comisiones, PDV sin visita…) y los del
 // anaquel (sin salida, vencimiento, surtir más, registro de entregas). Antes
@@ -28,8 +29,10 @@ const fmtRel = (d) => {
  * @param {Array}  p.alertas      — [{id, title, body, read, createdAt, aviso?}]
  * @param {Function} p.onMarcarLeida(id), p.onMarcarTodas(), p.onEliminar(id)
  * @param {string} p.uid
+ * @param {string} [p.nota]  — una línea bajo el título (qué trae esta bandeja)
+ * @param {React.ReactNode} [p.pie] — p.ej. "Avisos en este teléfono"
  */
-export default function AlertasAgentePanel({ alertas = [], onMarcarLeida, onMarcarTodas, onEliminar, uid }) {
+export default function AlertasAgentePanel({ alertas = [], onMarcarLeida, onMarcarTodas, onEliminar, uid, nota, pie }) {
     const [abierta, setAbierta] = useState(null);
     const [aviso, setAviso] = useState(null);
     const noLeidas = alertas.filter(a => !a.read).length;
@@ -48,7 +51,7 @@ export default function AlertasAgentePanel({ alertas = [], onMarcarLeida, onMarc
                 <div className="w-10 h-10 rounded-xl bg-red-50 text-red-500 flex items-center justify-center shrink-0"><Bot size={20} /></div>
                 <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-slate-800">Alertas del agente</h3>
-                    <p className="text-xs text-slate-500">Lo que el sistema detecta solo. Los reportes de visita siguen en la campanita.</p>
+                    <p className="text-xs text-slate-500">{nota || 'Lo que el sistema detecta solo. Los reportes de visita siguen en la campanita.'}</p>
                 </div>
                 {noLeidas > 0 && (
                     <button onClick={onMarcarTodas} className="shrink-0 flex items-center gap-1 text-xs font-bold text-brand-blue hover:underline">
@@ -56,6 +59,8 @@ export default function AlertasAgentePanel({ alertas = [], onMarcarLeida, onMarc
                     </button>
                 )}
             </div>
+
+            {pie}
 
             {alertas.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-10 bg-white rounded-xl border border-slate-200">Sin alertas del agente.</p>

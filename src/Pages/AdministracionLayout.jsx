@@ -17,14 +17,14 @@ import { db } from '@/Firebase/config.js';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
-import { LogOut, LayoutGrid, Wallet, Store, Briefcase, BarChart2 } from 'lucide-react';
+import { LogOut, LayoutGrid, Wallet, Store, Briefcase, BarChart2, Bot } from 'lucide-react';
 import ChangePasswordButton from '@/Components/ChangePasswordButton.jsx';
 import BiometricEnrollButton from '@/Components/BiometricEnrollButton.jsx';
 import LoadingSpinner from '@/Components/LoadingSpinner.jsx';
 import CarteraManager from '@/Components/CarteraManager.jsx';
 import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas } from '@/Pages/AdminPanel.jsx';
 import ListaMaestraPdv from '@/Pages/ListaMaestraPdv.jsx';
-import NotificationsBell from '@/Components/NotificationsBell.jsx';
+import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
 
@@ -104,6 +104,14 @@ export default function AdministracionLayout({ user, onLogout }) {
         ...(modOn('clientes') ? [{ id: 'clientes', label: 'Clientes y PDV', Icon: Briefcase }] : []),
         ...(modOn('cartera') ? [{ id: 'cartera', label: 'Cartera', Icon: Store }] : []),
     ];
+    // Alertas del agente: su propia pestaña (con punto rojo), separada del
+    // trabajo de pagar. Administración solo recibe avisos del agente (comisiones).
+    const alertasAgente = avisosVig.map(a => ({
+        id: `vig:${a.id}`, title: a.titulo, body: textoAviso(a), read: !!a.vistoPor?.[uid],
+        createdAt: a.abiertoAt, aviso: a,
+    }));
+    const agenteNoLeidas = alertasAgente.filter(a => !a.read).length;
+    tabs.push({ id: 'agente', label: 'Alertas del agente', Icon: Bot, dot: agenteNoLeidas });
     const activeTab = tabs.find(t => t.id === active) || tabs[0];
     const payVendedorName = vendedores.find(v => v.id === payVendedorId)?.name || 'Vendedor';
     const salirDelPago = () => { setPayVendedorId(null); setPayStep('conciliar'); };
@@ -126,18 +134,16 @@ export default function AdministracionLayout({ user, onLogout }) {
                         <p className="text-[#FFD600] text-[11px] font-bold uppercase tracking-widest leading-tight">Administración</p>
                         <p className="text-white/50 text-[11px] leading-tight">Lacteoca · Comisiones</p>
                     </div>
-                    <NotificationsBell
-                        oscuro uid={uid}
-                        notifications={avisosVig.map(a => ({
-                            id: `vig:${a.id}`, title: a.titulo, body: textoAviso(a), read: !!a.vistoPor?.[uid],
-                            createdAt: a.abiertoAt, aviso: a,
-                        }))}
-                        unreadCount={avisosVig.filter(a => !a.vistoPor?.[uid]).length}
-                        onMarkRead={(id) => marcarVisto(id.slice(4))}
-                        onMarkAllRead={() => avisosVig.filter(a => !a.vistoPor?.[uid]).forEach(a => marcarVisto(a.id))}
-                        onDelete={(id) => marcarVisto(id.slice(4))}
-                        pie={<ActivarAvisos uid={uid} />}
-                    />
+                    <button
+                        onClick={() => { setActive('agente'); salirDelPago(); }}
+                        className="relative flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white/90 text-sm font-semibold px-3 py-2 rounded-lg transition-colors"
+                        aria-label="Alertas del agente"
+                    >
+                        <Bot size={15} /> <span className="hidden lg:inline">Agente</span>
+                        {agenteNoLeidas > 0 && (
+                            <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{agenteNoLeidas}</span>
+                        )}
+                    </button>
                     <BiometricEnrollButton variant="dark" labelClass="hidden lg:inline" className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white/90 text-sm font-semibold px-3 py-2 rounded-lg transition-colors" />
                     <ChangePasswordButton variant="dark" labelClass="hidden sm:inline" className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white/90 text-sm font-semibold px-3 py-2 rounded-lg transition-colors" />
                     <button onClick={onLogout} className="flex items-center gap-1.5 bg-white/10 hover:bg-white/15 text-white/90 text-sm font-semibold px-3 py-2 rounded-lg transition-colors">
@@ -148,7 +154,7 @@ export default function AdministracionLayout({ user, onLogout }) {
 
             {/* ── Tabs (scroll horizontal en móvil) ── */}
             <nav className="shrink-0 bg-white border-b border-slate-200 px-2 sm:px-4 flex gap-1 overflow-x-auto">
-                {tabs.map(({ id, label, Icon }) => {
+                {tabs.map(({ id, label, Icon, dot }) => {
                     const on = activeTab?.id === id;
                     return (
                         <button
@@ -159,6 +165,7 @@ export default function AdministracionLayout({ user, onLogout }) {
                             }`}
                         >
                             <Icon size={16} /> {label}
+                            {dot > 0 && <span className="w-2.5 h-2.5 bg-red-500 rounded-full" aria-label="Alerta nueva del agente" />}
                         </button>
                     );
                 })}
@@ -169,7 +176,15 @@ export default function AdministracionLayout({ user, onLogout }) {
                 desplazable también el eje X, y cualquier contenido ancho (un
                 <select> con nombres largos) hacía "bailar" la pantalla de lado. */}
             <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6">
-                {tabs.length === 0 ? (
+                {activeTab?.id === 'agente' ? (
+                    <AlertasAgentePanel
+                        alertas={alertasAgente} uid={uid}
+                        nota="Lo que el sistema detecta solo en las comisiones: facturas, cierres y pagos que no cuadran. Cada una dice qué corregir."
+                        onMarcarLeida={(id) => marcarVisto(id.slice(4))}
+                        onMarcarTodas={() => avisosVig.filter(a => !a.vistoPor?.[uid]).forEach(a => marcarVisto(a.id))}
+                        pie={<ActivarAvisos uid={uid} />}
+                    />
+                ) : tabs.length === 1 ? (
                     <p className="text-slate-400 text-sm">No tienes módulos asignados. Contacta al administrador del sistema.</p>
                 ) : activeTab?.id === 'clientes' ? (
                     /* Un solo sitio: quién es el cliente → de quién es → cómo se le

@@ -7,6 +7,7 @@ import { useAvisosAnaquel } from '@/hooks/useAvisosAnaquel.js';
 import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import NotificationsBell from '@/Components/NotificationsBell.jsx';
+import AjustesGerencia from '@/Components/AjustesGerencia.jsx';
 import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
@@ -38,9 +39,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     const [refreshKey, setRefreshKey] = useState(0);   // "tirar para actualizar" del tablero
     const [vistaDash, setVistaDash] = useState('tablero');   // 'tablero' (8 bloques) | 'kpis' (indicadores de campo)
     const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
-    // Avisos del anaquel: solo al máster, solo decisiones (sin salida, vencimiento,
-    // surtir más, caída en el registro de entregas). Van a la misma campanita.
-    const avisos = useAvisosAnaquel({ reports, posList, activo: role === 'master' });
+    // Avisos del anaquel: máster y gerencia, solo decisiones (sin salida,
+    // vencimiento, surtir más, caída en el registro de entregas).
+    const avisos = useAvisosAnaquel({ reports, posList, activo: ['master', 'gerencia', 'sales_manager'].includes(role) });
     // Vigilante: los avisos abiertos que le tocan a esta persona.
     const { avisos: avisosVig, marcarVisto: marcarVistoVig } = useAvisosVigilante(user?.uid);
     // Vigilar al vigilante desde la app: si su latido tiene más de 5 h, se dice
@@ -71,11 +72,11 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         return lista;
     }, [avisosVig, latidoVig, role, user?.uid]);
     const esVig = (id) => typeof id === 'string' && id.startsWith('vig:');
-    // Alertas del AGENTE (vigilante + anaquel): solo el máster, y NO en la
-    // campanita (que es de la operación: reportes, pedidos, despachos). Viven en
-    // Configuraciones → Alertas del agente, con un punto rojo en el menú.
+    // Alertas del AGENTE (vigilante + anaquel): NUNCA en la campanita (que es de
+    // la operación: reportes, pedidos, despachos). Máster: Configuraciones →
+    // Alertas del agente. Gerencia: Ajustes. Las dos con punto rojo en el menú.
     const esMaster = role === 'master';
-    const alertasAgente = esMaster ? [...notifVig, ...avisos.notificaciones] : [];
+    const alertasAgente = [...notifVig, ...avisos.notificaciones];
     const agenteNoLeidas = alertasAgente.filter(n => !n.read).length;
     const agenteLeida = (id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : avisos.marcarLeido(id));
     const agenteTodas = () => { notifVig.filter(n => !n.read).forEach(n => marcarVistoVig(n.id.slice(4))); avisos.marcarTodos(); };
@@ -144,6 +145,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             trends:           'Análisis de Tendencias',
             alerts:           'Centro de Notificaciones',
             settings:         'Configuraciones',
+            ajustes:          'Ajustes',
             comercial:        'Comercial',
             semana:           'Para esta semana',
             mercaderistas:    'Mercaderistas',
@@ -196,6 +198,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
+                {/* Ajustes BÁSICOS (no Configuraciones): sus alertas del agente,
+                    los avisos en el teléfono y su cuenta. */}
+                <NavItem icon={<Settings size={24} />} text="Ajustes" dot={agenteNoLeidas > 0} active={currentView === 'ajustes'} onClick={() => setCurrentView('ajustes')} />
             </ul>
         );
 
@@ -299,6 +304,13 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                     </div>
                 )}
 
+                {/* Ajustes de la gerencia: alertas del agente + avisos + cuenta */}
+                {!esMaster && currentView === 'ajustes' && (
+                    <AjustesGerencia uid={user?.uid} alertas={{
+                        lista: alertasAgente, onMarcarLeida: agenteLeida, onMarcarTodas: agenteTodas, onEliminar: agenteEliminar,
+                    }} />
+                )}
+
                 <div className={currentView === 'planner' ? 'block h-full' : 'hidden'}>
                     {selectedWeekId ? (
                         <Planner
@@ -347,15 +359,14 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                     )}
                     {/* Campanita: las notificaciones se consultan desde aquí, no
                         desde una pestaña del menú lateral. */}
-                    {/* Campanita = la OPERACIÓN (reportes de visita, pedidos, despachos).
-                        Para la gerencia también lleva los avisos del vigilante que le
-                        toquen; los del máster viven en Configuraciones. */}
+                    {/* Campanita = solo la OPERACIÓN (reportes de visita, pedidos,
+                        despachos). Las del agente tienen su bandeja aparte. */}
                     <NotificationsBell
-                        notifications={esMaster ? notifications : [...notifVig, ...notifications]}
-                        unreadCount={unreadCount + (esMaster ? 0 : notifVig.filter(n => !n.read).length)}
-                        onMarkRead={(id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : markAsRead(id))}
-                        onMarkAllRead={() => { if (!esMaster) notifVig.filter(n => !n.read).forEach(n => marcarVistoVig(n.id.slice(4))); markAllAsRead(); }}
-                        onDelete={(id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : deleteNotification(id))}
+                        notifications={notifications}
+                        unreadCount={unreadCount}
+                        onMarkRead={markAsRead}
+                        onMarkAllRead={markAllAsRead}
+                        onDelete={deleteNotification}
                         pie={<ActivarAvisos uid={user?.uid} />}
                         uid={user?.uid}
                         onOpenLink={abrirLink}
