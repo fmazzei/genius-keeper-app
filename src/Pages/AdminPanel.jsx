@@ -5,7 +5,7 @@ import { db, functions, auth } from '../Firebase/config.js';
 import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench, Bot } from 'lucide-react';
+import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench, Bot, Megaphone } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, carteraActivacion, fechaCalendario } from '../utils/vendedorMeta.js';
 import { cuentaEnCartera, motivoFuera } from '../utils/facturaEstado.js';
@@ -348,6 +348,7 @@ const GeneralSettings = () => {
         gpsRequired: true,
         competitorFrequencyDays: 15,
         ourProductWeight_g: 250,
+        campanaPopActiva: false,
     });
     const [loading, setLoading] = useState(true);
 
@@ -388,6 +389,15 @@ const GeneralSettings = () => {
              <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-6">
                 <h3 className="text-xl font-semibold text-slate-700">Parámetros de la Aplicación</h3>
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6"><div className="w-full text-center sm:text-left"><label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Lock/> Requerir GPS para enviar reporte</label><p className="text-sm text-slate-500 mt-1">Si está activo, el merchandiser no podrá enviar un reporte si está fuera del rango del PDV.</p></div><ToggleSwitch enabled={settings.gpsRequired} setEnabled={(value) => handleSettingChange('appConfig', 'gpsRequired', value)} /></div>
+                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
+                    <div className="w-full text-center sm:text-left">
+                        <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><Megaphone size={18}/> Campaña de material POP activa</label>
+                        <p className="text-sm text-slate-500 mt-1">{settings.campanaPopActiva
+                            ? 'Hay campaña en los PDV: en el reporte de visita el mercaderista elige si el material está exhibido, dañado o ausente.'
+                            : 'No hay campaña: en el reporte de visita solo queda habilitado "Sin campaña", y se marca solo. Así no se confunde con "Ausente".'}</p>
+                    </div>
+                    <ToggleSwitch enabled={settings.campanaPopActiva === true} setEnabled={(value) => handleSettingChange('appConfig', 'campanaPopActiva', value)} />
+                 </div>
                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 border-t pt-6">
                     <div className="w-full text-center sm:text-left">
                         <label className="font-semibold text-slate-800 flex items-center justify-center sm:justify-start gap-2"><BarChart2 size={18}/> Frecuencia de reporte de competencia</label>

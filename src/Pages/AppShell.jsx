@@ -162,7 +162,7 @@ const AppShell = ({ user, role, onLogout }) => {
                 if (configSnap.exists()) {
                     const d = configSnap.data();
                     setAppConfig(prev => ({ ...prev, ...d }));
-                    guardarRuta({ appConfig: { gpsRequired: d.gpsRequired === true, gpsRange: d.gpsRange || 500, competitorFrequencyDays: d.competitorFrequencyDays ?? null } });
+                    guardarRuta({ appConfig: { gpsRequired: d.gpsRequired === true, gpsRange: d.gpsRange || 500, competitorFrequencyDays: d.competitorFrequencyDays ?? null, campanaPopActiva: d.campanaPopActiva === true } });
                 }
             } catch (error) {
                 console.error("Error al cargar la configuración de la app:", error);

@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import EditReportForm from '@/Components/EditReportForm.jsx';
 import { estadoLote, ESTADO_LABEL } from '@/utils/retiros.js';
 import Modal from '@/Components/Modal.jsx';
+import { horaVisitaMs } from '@/utils/visitaOla1.js';
 import { historialAnaquel, cuadrosVisita, fmtDiaVE, DIAS_FACTURA_ANTES_DE_REPONER, ubicacionReporte, enlaceMapa } from '@/utils/reporteVisita.js';
 import {
     ClipboardList, ChevronRight, Search, X,
@@ -315,12 +316,12 @@ function Section({ title, t, children }) {
 }
 
 /** Una cifra grande con su rótulo (bloque de unidades). */
-function Cifra({ label, value, sub, t, tone }) {
+function Cifra({ label, value, sub, t, tone, subTone }) {
     return (
         <div className={`rounded-xl px-3 py-2.5 ${t.batchRow}`}>
             <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>{label}</p>
             <p className={`text-2xl font-black leading-tight mt-0.5 ${tone || t.fieldValue}`}>{value ?? '—'}</p>
-            {sub && <p className={`text-[11px] mt-0.5 ${t.meta}`}>{sub}</p>}
+            {sub && <p className={`text-[11px] mt-0.5 font-semibold ${subTone || t.meta}`}>{sub}</p>}
         </div>
     );
 }
@@ -467,13 +468,21 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
     const tonoDist = ub.nivel === 'cerca' ? t.popOk : ub.nivel === 'lejos' ? t.metricCompetidores : t.popBad;
 
     const q = quiebreInfo(report);
+    // Hora REAL de la visita (la del teléfono al hacerla, si es creíble); si
+    // no, la de llegada al servidor.
     const created = report.createdAt?.toDate ? report.createdAt.toDate() : (report.createdAt ? new Date(report.createdAt) : null);
-    const fechaHora = created
-        ? created.toLocaleString('es-VE', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-        : '—';
+    const horaMs = horaVisitaMs(report);
+    const fechaVisita = horaMs ? fmtDiaVE(horaMs) : '—';
+    const horaVisita = horaMs ? new Date(horaMs).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }) : '';
     const durMin = (report.startTime && report.endTime)
         ? (new Date(report.endTime).getTime() - new Date(report.startTime).getTime()) / 60000
         : null;
+    const durTxt = durMin !== null && Number.isFinite(durMin) && durMin > 0
+        ? (durMin < 1 ? `${Math.round(durMin * 60)} s` : `${durMin.toFixed(durMin < 10 ? 1 : 0).replace('.', ',')} min`)
+        : null;
+    const precio = Number(String(report.price ?? '').replace(',', '.'));
+    const precioTxt = report.price !== undefined && report.price !== '' && report.price !== null && Number.isFinite(precio) && precio > 0
+        ? `$${precio.toFixed(2).replace('.', ',')}` : null;
 
     const popLabel = {
         'Exhibido correctamente': 'Exhibido correctamente',
@@ -488,6 +497,9 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
         !OMIT_KEYS.has(k) && v !== null && v !== undefined && v !== '' && typeof v !== 'function'
     );
 
+    // Color de la nota de cada reposición: verde = factura declarada en el
+    // reporte; ámbar = factura probable o sin factura; gris = no hubo.
+    const tonoRepo = (v) => !v?.repuestas ? t.meta : (v.facturasRepo || []).some(f => f.fuente === 'confirmada') ? t.popOk : t.metricCompetidores;
     const toneOf = (f) => f?.tone === 'bad' ? t.popBad : f?.tone === 'warn' ? t.metricCompetidores : t.popOk;
 
     return (
@@ -504,7 +516,19 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                         <p className={`text-xs mt-0.5 break-words ${t.cardSub}`}>
                             {report.posZone && report.posZone !== 'N/A' ? report.posZone : 'Zona sin definir'}
                         </p>
-                        <div className="mt-2"><StockoutBadge report={report} t={t} size="md" /></div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <StockoutBadge report={report} t={t} size="md" />
+                            <span className={`inline-flex items-baseline gap-1 rounded-full border px-3 py-1 ${t.batchRow}`}>
+                                <span className={`text-[10px] uppercase tracking-wide font-bold ${t.fieldLabel}`}>PVP</span>
+                                <span className={`text-base font-black ${precioTxt ? t.metricPrimary : t.meta}`}>{precioTxt || 'sin dato'}</span>
+                            </span>
+                        </div>
+                    </div>
+                    {/* Cuándo, quién y cuánto duró: arriba a la derecha, en chico. */}
+                    <div className="shrink-0 text-right text-[11px] leading-snug max-w-[42%] pt-0.5">
+                        <p className={`font-bold ${t.fieldValue}`}>{fechaVisita}{horaVisita ? ` · ${horaVisita}` : ''}</p>
+                        <p className={`font-semibold break-words ${t.metricPrimary}`}>{report.userName || 'Mercaderista'}</p>
+                        {durTxt && <p className={t.meta}>Visita de {durTxt}</p>}
                     </div>
                     <button onClick={onClose} className={`shrink-0 p-1 ${t.sheetClose}`} aria-label="Cerrar">
                         <X size={22} />
@@ -532,24 +556,24 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                         repuesto hoy, el total en el anaquel y la rotación. */}
                     <Section title="Unidades" t={t}>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            <Cifra label="Visita anterior · contadas" t={t}
+                            <Cifra label="Visita anterior · contadas" t={t} subTone={t.metricPrimary}
                                 value={cargando ? '…' : vp ? vp.contadas : '—'}
                                 sub={cargando ? 'buscando…' : vp
                                     ? `${fmtDiaVE(vp.dia)}${va?.dias != null ? ` · ${va.dias} ${va.dias === 1 ? 'día' : 'días'} entre visitas` : ''}`
                                     : historial === null && !report.visitaAnterior ? 'no se pudieron leer las visitas' : 'primera visita registrada'} />
-                            <Cifra label="Visita anterior · repuestas" t={t}
+                            <Cifra label="Visita anterior · repuestas" t={t} subTone={tonoRepo(vp)}
                                 value={cargando ? '…' : vp ? vp.repuestas : '—'}
                                 sub={vp ? textoFacturas(vp) : null} />
-                            <Cifra label="Esta visita · contadas" t={t} tone={t.metricPrimary}
+                            <Cifra label="Esta visita · contadas" t={t} tone={t.metricPrimary} subTone={t.metricPrimary}
                                 value={va?.contadas}
                                 sub={va?.dia ? fmtDiaVE(va.dia) : null} />
-                            <Cifra label="Esta visita · repuestas" t={t} tone={va?.repuestas > 0 ? t.popOk : undefined}
+                            <Cifra label="Esta visita · repuestas" t={t} tone={va?.repuestas > 0 ? t.popOk : undefined} subTone={tonoRepo(va)}
                                 value={va?.repuestas ?? 0}
                                 sub={textoFacturas(va)} />
-                            <Cifra label="Total en anaquel" t={t} tone={t.metricPrimary}
+                            <Cifra label="Total en anaquel" t={t} tone={t.metricPrimary} subTone={t.metricPrimary}
                                 value={va?.quedaron}
                                 sub={va?.dia ? `al ${fmtDiaVE(va.dia)} · contadas + repuestas` : 'contadas + repuestas'} />
-                            <Cifra label="Rotación" t={t}
+                            <Cifra label="Rotación" t={t} subTone={va?.medible ? t.popOk : t.metricCompetidores}
                                 tone={va?.medible ? t.fieldValue : t.metricCompetidores}
                                 value={va?.medible ? `${fmtUdsDia(va.rotacion)}` : sinAnterior ? '—' : cargando ? '…' : 'no medible'}
                                 sub={va?.medible ? `uds/día · salieron ${va.salieron} en ${va.dias} ${va.dias === 1 ? 'día' : 'días'}`
@@ -615,19 +639,8 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                         )}
                     </Section>
 
-                    <Section title="Visita" t={t}>
+                    <Section title="Anaquel" t={t}>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                            <Field label="Reportado por" value={report.userName || '—'} t={t} />
-                            <Field label="Fecha y hora" value={fechaHora} t={t} />
-                            {durMin !== null && Number.isFinite(durMin) && durMin > 0 && (
-                                <Field label="Duración" value={`${durMin.toFixed(1)} min`} t={t} />
-                            )}
-                        </div>
-                    </Section>
-
-                    <Section title="Anaquel y reposición" t={t}>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                            <Field label="PVP observado" value={report.price !== undefined && report.price !== '' ? `$${report.price}` : undefined} t={t} />
                             <Field label="Caras visibles" value={report.facing} t={t} />
                         </div>
                     </Section>

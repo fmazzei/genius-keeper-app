@@ -64,6 +64,7 @@ const getUrgency = (days) => {
 };
 const SHELF_LOCATIONS = [ { id: 'ojos', label: 'Nivel Ojos (Zona Caliente)' }, { id: 'manos', label: 'Nivel Manos (Zona Tibia)' }, { id: 'superior', label: 'Nivel Superior (Zona Fría)' }, { id: 'inferior', label: 'Nivel Inferior (Zona Fría)' } ];
 const ADJACENT_CATEGORIES = [ { id: 'Quesos crema', label: 'Quesos crema' }, { id: 'Quesos de Cabra', label: 'Quesos de Cabra' }, { id: 'Delicatessen', label: 'Delicatessen' }, { id: 'Nevera Charcutería', label: 'Nevera Charcutería' } ];
+const SIN_CAMPANA_POP = 'Sin Campaña Activa';
 const POP_STATUS_OPTIONS = [ { id: 'Exhibido correctamente', label: 'Exhibido OK', icon: <ThumbsUp/> }, { id: 'Dañado', label: 'Dañado', icon: <AlertCircle/> }, { id: 'Ausente', label: 'Ausente', icon: <X/> }, { id: 'Sin Campaña Activa', label: 'Sin Campaña', icon: <Info/> } ];
 // Catálogo de competidores. Sin señal sale de la copia guardada en el teléfono.
 const useCompetitorProducts = () => {
@@ -597,8 +598,16 @@ const entregasDeFormulario = (facturas = [], resp = {}) => facturas.map(f => {
     };
 });
 
-const Step3_Execution = ({ report, setReport, isReadOnly }) => {
+const Step3_Execution = ({ report, setReport, isReadOnly, campanaPopActiva = true }) => {
     const [isNumpadOpen, setNumpadOpen] = useState(false);
+    // Sin campaña de POP (Configuración → Parámetros), el material no puede
+    // estar "ausente" ni "dañado": la única respuesta posible es "Sin campaña",
+    // y se marca sola. Así no se confunde con "Ausente".
+    useEffect(() => {
+        if (!isReadOnly && !campanaPopActiva && report.popStatus !== SIN_CAMPANA_POP) {
+            setReport(prev => ({ ...prev, popStatus: SIN_CAMPANA_POP }));
+        }
+    }, [campanaPopActiva, isReadOnly, report.popStatus, setReport]);
     const handleNumpadConfirm = (value) => { if(!isReadOnly) { setReport(prev => ({...prev, facing: value})); setNumpadOpen(false); }};
     return (
         <>
@@ -620,7 +629,10 @@ const Step3_Execution = ({ report, setReport, isReadOnly }) => {
                     </div>
                     <div>
                         <h4 className="font-semibold text-slate-700 mb-2">Estado del Material POP</h4>
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{POP_STATUS_OPTIONS.map(opt => <button type="button" key={opt.id} onClick={() => !isReadOnly && setReport(prev => ({...prev, popStatus: opt.id}))} disabled={isReadOnly} className={`p-3 text-sm font-semibold rounded-lg border-2 flex flex-col items-center gap-1 h-20 justify-center ${report.popStatus === opt.id ? 'bg-brand-blue text-white' : 'bg-slate-50'} disabled:opacity-70 disabled:cursor-not-allowed`}>{opt.icon}{opt.label}</button>)}</div>
+                        {!campanaPopActiva && !isReadOnly && (
+                            <p className="text-xs text-slate-500 mb-2">No hay campaña de material POP activa: queda marcado <b>Sin campaña</b>.</p>
+                        )}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{POP_STATUS_OPTIONS.map(opt => <button type="button" key={opt.id} onClick={() => !isReadOnly && setReport(prev => ({...prev, popStatus: opt.id}))} disabled={isReadOnly || (!campanaPopActiva && opt.id !== SIN_CAMPANA_POP)} className={`p-3 text-sm font-semibold rounded-lg border-2 flex flex-col items-center gap-1 h-20 justify-center ${report.popStatus === opt.id ? 'bg-brand-blue text-white' : 'bg-slate-50'} disabled:opacity-70 disabled:cursor-not-allowed`}>{opt.icon}{opt.label}</button>)}</div>
                     </div>
                 </div>
             </FormSection>
@@ -745,7 +757,9 @@ const Step4_Intel = ({ report, setReport, isReadOnly, competitorMode, daysSince,
 };
 
 const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly = false, initialData = null }) => {
-    const { competitorFrequencyDays } = useAppConfig();
+    const { competitorFrequencyDays, campanaPopActiva: campanaServidor } = useAppConfig();
+    // Sin señal el contexto no llega: se usa la copia de la ruta (sin dato = sin campaña).
+    const campanaPopActiva = campanaServidor ?? (leerRuta().appConfig?.campanaPopActiva === true);
     const formOpenTime = useRef(new Date().toISOString());
     // ID estable por intento de envío — se guarda como campo (no como ID de
     // documento) para poder detectar/depurar reportes duplicados.
@@ -1190,7 +1204,7 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
     };
     
     const renderStepContent = () => {
-        const stepProps = { report, setReport, isReadOnly };
+        const stepProps = { report, setReport, isReadOnly, campanaPopActiva };
         switch (currentStep) {
             case 1: return <Step1_Inventory {...stepProps}
                 conteoBloqueado={!isReadOnly && conteoBloqueado}

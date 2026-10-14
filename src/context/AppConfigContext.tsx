@@ -25,6 +25,8 @@ interface AppConfigContextType {
   roleModules: { [role: string]: Partial<ModulesConfig> };
   ourProductWeight_g: number;
   competitorFrequencyDays: number;
+  /** Campaña de material POP en los PDV. null = aún no se leyó del servidor. */
+  campanaPopActiva: boolean | null;
   metaVentasGeneral: number;
   /** Cuándo se sincronizó GK con Zoho por última vez. Permite que una pantalla
    *  de dinero declare que su número puede estar viejo en vez de mentir. */
@@ -70,6 +72,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [roleModules, setRoleModules] = useState<{ [role: string]: Partial<ModulesConfig> }>({});
   const [ourProductWeight_g, setOurProductWeight_g] = useState<number>(250);
   const [competitorFrequencyDays, setCompetitorFrequencyDays] = useState<number>(15);
+  const [campanaPopActiva, setCampanaPopActiva] = useState<boolean | null>(null);
   const [metaVentasGeneral, setMetaVentasGeneral] = useState<number>(0);
   const [zohoSyncAt, setZohoSyncAt] = useState<Date | null>(null);
   const [zohoCuadre, setZohoCuadre] = useState<any | null>(null);
@@ -98,6 +101,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
               if (typeof data.competitorFrequencyDays === 'number') {
                 setCompetitorFrequencyDays(data.competitorFrequencyDays);
               }
+              setCampanaPopActiva(data.campanaPopActiva === true);
               if (data.roleModules && typeof data.roleModules === 'object') {
                 setRoleModules(data.roleModules);
               }
@@ -157,7 +161,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
   };
 
   return (
-    <AppConfigContext.Provider value={{ modules, roleModules, ourProductWeight_g, competitorFrequencyDays, metaVentasGeneral, zohoSyncAt, zohoCuadre, zohoCarteraCarnets, configLoading, updateModule, updateRoleModule, updateMetaVentasGeneral, getModulesForRole }}>
+    <AppConfigContext.Provider value={{ modules, roleModules, ourProductWeight_g, competitorFrequencyDays, campanaPopActiva, metaVentasGeneral, zohoSyncAt, zohoCuadre, zohoCarteraCarnets, configLoading, updateModule, updateRoleModule, updateMetaVentasGeneral, getModulesForRole }}>
       {children}
     </AppConfigContext.Provider>
   );
