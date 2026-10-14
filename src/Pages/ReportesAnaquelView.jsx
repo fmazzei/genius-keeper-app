@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import EditReportForm from '@/Components/EditReportForm.jsx';
 import { estadoLote, ESTADO_LABEL } from '@/utils/retiros.js';
 import Modal from '@/Components/Modal.jsx';
-import { buscarAnterior, unidadesVisita, ubicacionReporte, enlaceMapa } from '@/utils/reporteVisita.js';
+import { historialAnaquel, cuadrosVisita, fmtDiaVE, DIAS_FACTURA_ANTES_DE_REPONER, ubicacionReporte, enlaceMapa } from '@/utils/reporteVisita.js';
 import {
     ClipboardList, ChevronRight, Search, X,
     Calendar, User, AlertTriangle, Loader,
@@ -325,26 +325,95 @@ function Cifra({ label, value, sub, t, tone }) {
     );
 }
 
-const fmtCorta = (iso) => {
-    if (!iso) return null;
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? null : d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-};
+const fmtUdsDia = (v) => (v == null ? '—' : (v < 10 ? v.toFixed(2) : v.toFixed(1)).replace('.', ','));
+
+/** Las facturas de una reposición, en una línea: "INV-001234 · INV-001240 (probable)". */
+function textoFacturas(v) {
+    if (!v) return null;
+    if (!v.repuestas) return 'sin reposición';
+    const fs = v.facturasRepo || [];
+    const partes = fs.map(f => `${f.numero}${f.fuente === 'probable' ? ' (probable)' : ''}`);
+    if (v.sinFactura > 0) partes.push(`${v.sinFactura} sin factura`);
+    return partes.length ? partes.join(' · ') : 'sin factura vinculada';
+}
+
+/**
+ * Rotación de cada intervalo entre visitas del PDV (uds/día), del más viejo al
+ * más nuevo. El intervalo de este reporte va resaltado; los que no se pueden
+ * medir (se contó más de lo que quedó, o dos visitas el mismo día) se marcan en
+ * gris al pie. Tocar una barra muestra su cuenta.
+ */
+function GraficoRotacion({ historial, actualId, t }) {
+    const intervalos = (historial || []).slice(1).slice(-16);
+    const [sel, setSel] = useState(null);
+    if (intervalos.length < 2) {
+        return <p className={`text-xs ${t.meta}`}>Hace falta al menos tres visitas del PDV para ver su comportamiento.</p>;
+    }
+    const medibles = intervalos.filter(v => v.medible);
+    const sumS = medibles.reduce((a, v) => a + v.salieron, 0);
+    const sumD = medibles.reduce((a, v) => a + v.dias, 0);
+    const promedio = sumD > 0 ? sumS / sumD : null;
+    const max = Math.max(0.5, ...medibles.map(v => v.rotacion), promedio || 0);
+    const W = 320, H = 150, top = 14, bottom = 24, left = 4, right = 4;
+    const ancho = (W - left - right) / intervalos.length;
+    const y = (val) => top + (H - top - bottom) * (1 - val / max);
+    const elegido = sel != null ? intervalos[sel] : intervalos.find(v => v.id === actualId) || intervalos[intervalos.length - 1];
+    const idxElegido = intervalos.indexOf(elegido);
+    const previo = idxElegido >= 0 ? (historial[historial.indexOf(elegido) - 1] || null) : null;
+    return (
+        <div>
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Rotación por intervalo entre visitas">
+                <line x1={left} x2={W - right} y1={y(0)} y2={y(0)} className={t.meta} stroke="currentColor" strokeWidth="1" opacity="0.4" />
+                {intervalos.map((v, i) => {
+                    const x = left + i * ancho + ancho * 0.18;
+                    const w = ancho * 0.64;
+                    const esActual = v.id === actualId;
+                    const marcado = i === idxElegido;
+                    const etiqueta = v.dia ? `${v.dia.slice(8, 10)}/${v.dia.slice(5, 7)}` : '';
+                    return (
+                        <g key={v.id || i} onClick={() => setSel(i)} style={{ cursor: 'pointer' }}>
+                            <rect x={left + i * ancho} y={top} width={ancho} height={H - top - bottom} fill="transparent" />
+                            {v.medible ? (
+                                <rect x={x} y={y(v.rotacion)} width={w} height={Math.max(1.5, y(0) - y(v.rotacion))} rx="2"
+                                    className={esActual ? t.popOk : t.metricPrimary} fill="currentColor" opacity={marcado ? 1 : 0.7} />
+                            ) : (
+                                <text x={x + w / 2} y={y(0) - 3} textAnchor="middle" fontSize="10" className={t.meta} fill="currentColor">×</text>
+                            )}
+                            {marcado && <rect x={x - 1.5} y={top - 2} width={w + 3} height={H - top - bottom + 2} rx="3" fill="none" className={t.meta} stroke="currentColor" strokeWidth="0.8" opacity="0.6" />}
+                            {(intervalos.length <= 8 || i % 2 === intervalos.length % 2 || marcado) && (
+                                <text x={x + w / 2} y={H - 8} textAnchor="middle" fontSize="8.5" className={marcado ? t.fieldValue : t.meta} fill="currentColor">{etiqueta}</text>
+                            )}
+                        </g>
+                    );
+                })}
+                {promedio != null && (
+                    <>
+                        <line x1={left} x2={W - right} y1={y(promedio)} y2={y(promedio)} className={t.metricCompetidores} stroke="currentColor" strokeWidth="1" strokeDasharray="4 3" />
+                        <text x={W - right} y={y(promedio) - 3} textAnchor="end" fontSize="8.5" className={t.metricCompetidores} fill="currentColor">promedio {fmtUdsDia(promedio)}</text>
+                    </>
+                )}
+            </svg>
+            {elegido && (
+                <p className={`text-xs mt-1 leading-snug ${t.meta}`}>
+                    <b className={t.fieldValue}>{previo ? fmtDiaVE(previo.dia) : '—'} → {fmtDiaVE(elegido.dia)}</b>{' · '}
+                    {elegido.medible
+                        ? <>{fmtUdsDia(elegido.rotacion)} uds/día: salieron {elegido.salieron} en {elegido.dias} {elegido.dias === 1 ? 'día' : 'días'} ({elegido.contadas != null && previo?.quedaron != null ? `${previo.quedaron} que quedaron − ${elegido.contadas} contadas` : ''}).</>
+                        : elegido.dias < 1 ? <>dos visitas el mismo día: no se mide.</>
+                            : elegido.salieron != null ? <>no medible: se contaron {-elegido.salieron} más de las que quedaron (entró producto sin registrar o error de conteo).</>
+                                : <>sin conteo para medir.</>}
+                </p>
+            )}
+            <p className={`text-[11px] mt-1 ${t.meta}`}>
+                Últimos {intervalos.length} intervalos entre visitas · {medibles.length} medibles
+                {promedio != null && <> · promedio {fmtUdsDia(promedio)} uds/día ({sumS} uds en {sumD} días)</>}.
+                {' '}Barra verde: este reporte; × no se puede medir. Toca una barra para ver su cuenta.
+            </p>
+        </div>
+    );
+}
 
 function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t }) {
-    // Visita anterior: la escribe el servidor al recibir el reporte
-    // (`visitaAnterior`); los reportes viejos no la traen y se busca aquí.
-    const [anteriorBuscada, setAnteriorBuscada] = useState(undefined);
-    const tieneEscrita = report && Object.prototype.hasOwnProperty.call(report, 'visitaAnterior');
-    useEffect(() => {
-        if (!report || tieneEscrita || !report.posId) return undefined;
-        let vivo = true;
-        getDocs(query(collection(db, 'visit_reports'), where('posId', '==', report.posId)))
-            .then(snap => { if (vivo) setAnteriorBuscada(buscarAnterior(report, snap.docs.map(d => ({ id: d.id, ...d.data() })))); })
-            .catch(() => { if (vivo) setAnteriorBuscada(null); });
-        return () => { vivo = false; };
-    }, [report, tieneEscrita]);
-    // El PDV, para comparar su coordenada guardada (si no vino de la lista).
+    // El PDV, para su carnet de Zoho y su coordenada (si no vino de la lista).
     const [posLeido, setPosLeido] = useState(null);
     useEffect(() => {
         if (!report?.posId || pos) return undefined;
@@ -352,11 +421,49 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
         getDoc(doc(db, 'pos', report.posId)).then(s => { if (vivo && s.exists()) setPosLeido({ id: s.id, ...s.data() }); }).catch(() => {});
         return () => { vivo = false; };
     }, [report?.posId, pos]);
+    const pdv = pos || posLeido;
+
+    // Todas las visitas del PDV: dan la visita anterior, las facturas de cada
+    // reposición y el gráfico de rotación. Si la lectura falla se usa la visita
+    // anterior que escribió el servidor (`visitaAnterior`).
+    const [historial, setHistorial] = useState(undefined);
+    const [facturasNota, setFacturasNota] = useState(null);
+    const carnet = pdv?.zohoCustomerId || null;
+    useEffect(() => {
+        if (!report?.posId) { setHistorial(null); return undefined; }
+        let vivo = true;
+        (async () => {
+            try {
+                const snap = await getDocs(query(collection(db, 'visit_reports'), where('posId', '==', report.posId)));
+                const reportes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                let facturas = [];
+                if (carnet) {
+                    try {
+                        // Si dos PDV comparten el carnet, la factura es de la cadena: no se le asigna a este.
+                        const [fs, ps] = await Promise.all([
+                            getDocs(query(collection(db, 'facturas_vendedor'), where('zohoCustomerId', '==', carnet))),
+                            getDocs(query(collection(db, 'pos'), where('zohoCustomerId', '==', carnet))),
+                        ]);
+                        const vivos = ps.docs.filter(d => !d.data().eliminado).length;
+                        if (vivos > 1) { if (vivo) setFacturasNota('Este carnet de Zoho lo comparten varios PDV: las facturas sin declarar en el reporte no se asignan.'); }
+                        else facturas = fs.docs.map(d => ({ id: d.id, ...d.data() }));
+                    } catch { if (vivo) setFacturasNota('No se pudieron leer las facturas de Zoho de este cliente.'); }
+                } else if (vivo) {
+                    setFacturasNota('El PDV no está vinculado a un carnet de Zoho: solo se ven las facturas declaradas en el reporte.');
+                }
+                if (vivo) setHistorial(historialAnaquel(reportes, facturas));
+            } catch {
+                if (vivo) setHistorial(null);
+            }
+        })();
+        return () => { vivo = false; };
+    }, [report?.posId, carnet]);
 
     if (!report) return null;
-    const anterior = tieneEscrita ? report.visitaAnterior : anteriorBuscada;
-    const u = unidadesVisita(report, anterior === undefined ? undefined : anterior);
-    const ub = ubicacionReporte(report, pos || posLeido);
+    const { actual: va, anterior: vp } = cuadrosVisita(report, historial, report.visitaAnterior);
+    const cargando = historial === undefined && !report.visitaAnterior;
+    const sinAnterior = !cargando && !vp;
+    const ub = ubicacionReporte(report, pdv);
     const tonoDist = ub.nivel === 'cerca' ? t.popOk : ub.nivel === 'lejos' ? t.metricCompetidores : t.popBad;
 
     const q = quiebreInfo(report);
@@ -419,34 +526,56 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                         </div>
                     )}
 
-                    {/* Unidades: la visita anterior y esta, cada una con lo que se
-                        contó, lo que se repuso y lo que QUEDÓ (contadas +
-                        repuestas). Entre lo que quedó en la anterior y lo que se
-                        contó hoy está lo que salió del anaquel. */}
+                    {/* Unidades en cuadros separados (pedido del dueño): la visita
+                        anterior con su fecha y los días entre visitas, lo que se
+                        repuso en ella (con su factura de Zoho), lo contado y lo
+                        repuesto hoy, el total en el anaquel y la rotación. */}
                     <Section title="Unidades" t={t}>
-                        <p className={`text-[11px] font-bold uppercase tracking-wide mb-1.5 ${t.fieldLabel}`}>
-                            Visita anterior{anterior === undefined ? ' · buscando…' : anterior === null ? ' · no hay (primera visita)' : u.anteriorHora ? ` · ${fmtCorta(u.anteriorHora)}` : ''}
-                        </p>
-                        {anterior ? (
-                            <div className="grid grid-cols-3 gap-2">
-                                <Cifra label="Contadas" t={t} value={u.anterior} />
-                                <Cifra label="Repuestas" t={t} value={u.anteriorRepuestas} />
-                                <Cifra label="Quedaron" t={t} value={u.anteriorQuedaron} tone={t.metricPrimary} sub="contadas + repuestas" />
-                            </div>
-                        ) : null}
-                        <p className={`text-[11px] font-bold uppercase tracking-wide mt-3 mb-1.5 ${t.fieldLabel}`}>Esta visita</p>
-                        <div className="grid grid-cols-3 gap-2">
-                            <Cifra label="Contadas" t={t} value={u.contadas} tone={t.metricPrimary} />
-                            <Cifra label="Repuestas" t={t} value={u.repuestas} tone={u.repuestas > 0 ? t.popOk : undefined} />
-                            <Cifra label="Quedan" t={t} value={u.quedan} sub="contadas + repuestas" />
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            <Cifra label="Visita anterior · contadas" t={t}
+                                value={cargando ? '…' : vp ? vp.contadas : '—'}
+                                sub={cargando ? 'buscando…' : vp
+                                    ? `${fmtDiaVE(vp.dia)}${va?.dias != null ? ` · ${va.dias} ${va.dias === 1 ? 'día' : 'días'} entre visitas` : ''}`
+                                    : historial === null && !report.visitaAnterior ? 'no se pudieron leer las visitas' : 'primera visita registrada'} />
+                            <Cifra label="Visita anterior · repuestas" t={t}
+                                value={cargando ? '…' : vp ? vp.repuestas : '—'}
+                                sub={vp ? textoFacturas(vp) : null} />
+                            <Cifra label="Esta visita · contadas" t={t} tone={t.metricPrimary}
+                                value={va?.contadas}
+                                sub={va?.dia ? fmtDiaVE(va.dia) : null} />
+                            <Cifra label="Esta visita · repuestas" t={t} tone={va?.repuestas > 0 ? t.popOk : undefined}
+                                value={va?.repuestas ?? 0}
+                                sub={textoFacturas(va)} />
+                            <Cifra label="Total en anaquel" t={t} tone={t.metricPrimary}
+                                value={va?.quedaron}
+                                sub={va?.dia ? `al ${fmtDiaVE(va.dia)} · contadas + repuestas` : 'contadas + repuestas'} />
+                            <Cifra label="Rotación" t={t}
+                                tone={va?.medible ? t.fieldValue : t.metricCompetidores}
+                                value={va?.medible ? `${fmtUdsDia(va.rotacion)}` : sinAnterior ? '—' : cargando ? '…' : 'no medible'}
+                                sub={va?.medible ? `uds/día · salieron ${va.salieron} en ${va.dias} ${va.dias === 1 ? 'día' : 'días'}`
+                                    : sinAnterior ? 'hace falta una visita anterior'
+                                        : va?.dias === 0 ? 'dos visitas el mismo día'
+                                            : va?.salieron != null && va.salieron < 0 ? `se contaron ${-va.salieron} más de las que quedaron` : null} />
                         </div>
-                        {u.salieron != null && (
-                            <p className={`text-xs mt-2.5 leading-snug ${u.salieron < 0 ? t.metricCompetidores : t.meta}`}>
-                                {u.salieron >= 0
-                                    ? <>Entre las dos visitas salieron <b>{u.salieron}</b> unidades del anaquel ({u.anteriorQuedaron} que quedaron − {u.contadas} contadas hoy).</>
-                                    : <>Hoy se contaron <b>{-u.salieron}</b> unidades más de las que quedaron en la visita anterior: entró producto sin registrar o hubo un error de conteo.</>}
+                        {vp?.quedaron != null && va?.contadas != null && va?.medible && (
+                            <p className={`text-xs mt-2.5 leading-snug ${t.meta}`}>
+                                En la visita anterior quedaron <b>{vp.quedaron}</b> ({vp.contadas ?? 0} contadas + {vp.repuestas} repuestas); hoy se contaron <b>{va.contadas}</b>: salieron <b>{va.salieron}</b> en {va.dias} {va.dias === 1 ? 'día' : 'días'}.
                             </p>
                         )}
+                        {[vp, va].some(v => v?.facturasRepo?.some(f => f.fuente === 'probable')) && (
+                            <p className={`text-[11px] mt-1.5 ${t.meta}`}>
+                                "Probable": factura de Zoho de este cliente fechada hasta {DIAS_FACTURA_ANTES_DE_REPONER} días antes de la visita; el reporte no la declaró.
+                            </p>
+                        )}
+                        {facturasNota && <p className={`text-[11px] mt-1.5 ${t.meta}`}>{facturasNota}</p>}
+                    </Section>
+
+                    <Section title="Rotación del anaquel en este PDV" t={t}>
+                        {historial === undefined
+                            ? <p className={`text-xs ${t.meta}`}>Cargando las visitas del PDV…</p>
+                            : historial === null
+                                ? <p className={`text-xs ${t.meta}`}>No se pudieron leer las visitas de este PDV.</p>
+                                : <GraficoRotacion historial={historial} actualId={va?.id} t={t} />}
                     </Section>
 
                     <Section title="Ubicación del reporte" t={t}>

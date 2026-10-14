@@ -3862,7 +3862,17 @@ Pedido del dueño: las alertas de los reportes deben llegar al máster y a la ge
 - **Cada reporte lleva su coordenada** (`VisitReportForm`, V8): antes solo se leía si el teléfono YA había dado permiso; ahora se pide una vez. Nunca bloquea ni retrasa el envío; el GPS obligatorio sigue apagado. Primero GPS fino y, si no hay señal a tiempo, la ubicación aproximada (`GPS_TIEMPO_MAX_MS` 12 s por intento). Si se niega, queda el motivo.
 - **Alertas del agente → Configuraciones** (solo máster): los avisos del vigilante y los del anaquel salieron de la campanita del máster y viven en **Configuraciones → Alertas → Alertas del agente** (`AlertasAgentePanel.jsx`, con contador rojo). "Configuraciones" en el menú lateral y el botón de menú en el teléfono muestran un **punto rojo** mientras haya alguna sin leer; Configuraciones abre directo en esa sección. La gerencia sigue viendo en su campanita los avisos del vigilante que le toquen. Lo que el vigilante manda al teléfono no cambió.
 - **"Visita anterior" = lo que QUEDÓ, no solo lo contado** (pregunta del dueño, 14-oct). Antes la cifra era `inventoryLevel` de la visita anterior (solo lo contado, sin la reposición). Ahora la hoja muestra dos filas —Visita anterior y Esta visita— con Contadas, Repuestas y **Quedaron/Quedan** (`quedaronTrasVisita`: contadas + `orderQuantity` + repuestas por retiro − retiradas, la regla A del anaquel), y debajo **"Entre las dos visitas salieron N"** (quedaron en la anterior − contadas hoy). Si sale negativo lo dice: entró producto sin registrar o hubo un error de conteo. El servidor guarda además `visitaAnterior.quedaron`, `retiradas` y `repuestasRetiro`; para los reportes viejos se reconstruye con lo contado + lo repuesto. La notificación dice "Quedaron N en la visita anterior · hoy contadas · repuestas".
-- Prueba: `node --import ./tests/alias.mjs tests/reporteVisita.test.mjs` (15 en verde).
+- **Seis cuadros y el gráfico de rotación** (pedido del dueño, 14-oct). El bloque "Unidades" de la hoja ahora son cuadros separados:
+  1. Visita anterior · contadas, con su fecha dd/mm/aa y los días entre visitas.
+  2. Visita anterior · repuestas, con sus facturas de Zoho.
+  3. Esta visita · contadas.
+  4. Esta visita · repuestas, con sus facturas.
+  5. Total en anaquel (contadas + repuestas, a la fecha).
+  6. Rotación: (lo que quedó en la anterior − lo contado hoy) ÷ días, en uds/día. Si sale negativa o las dos visitas son del mismo día, dice "no medible" y por qué.
+  - **Facturas de cada reposición**: las declaradas en el reporte (`entregas[]`, v3) son confirmadas. Si el reporte no declaró ninguna, se toma como **probable** la factura de Zoho del carnet del PDV fechada hasta `DIAS_FACTURA_ANTES_DE_REPONER` (2) días antes de la visita, que no haya usado otra visita. Sin carnet, o con un carnet compartido por varios PDV, no se asignan (y lo dice).
+  - La hoja lee SIEMPRE todas las visitas del PDV (`historialAnaquel` en `reporteVisita.js`; `cuadrosVisita` arma los cuadros). Si la lectura falla, usa la `visitaAnterior` del servidor.
+  - **"Rotación del anaquel en este PDV"**: barras por intervalo entre visitas (últimos 16), la de este reporte en verde, × para los no medibles y línea del promedio (Σ salieron ÷ Σ días). Tocar una barra da su cuenta.
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/reporteVisita.test.mjs` (24 en verde).
 
 ### Cada perfil con dos bandejas: agente y operación (2026-10-14) ✅
 
