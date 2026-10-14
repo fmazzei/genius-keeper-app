@@ -913,6 +913,7 @@ Reporte del dueño: al abrir la app el Tablero Gerencial se quedaba en los 8 rec
 - **`useAtrasCierra.js`**: el gesto/botón "atrás" del teléfono CIERRA la hoja abierta en vez de salir de la app. Pila de hojas (con dos abiertas cierra solo la de arriba); al cerrar por el botón retira su entrada del historial. Todo en try/catch.
 - Aplicado en: hojas del Tablero (`Hoja`), `CarteraVencidaModal`, `DossierComercialDoc`, `RotacionModal`, `DiasPagoModal` y **`Modal.jsx`** (lo usan los 15 KPIs de Indicadores de campo). En el teléfono ocupan la pantalla entera con un solo scroll; en tableta y escritorio, centradas con ancho máximo.
 - Tablero: tarjetas del mismo alto, cifra que cabe en dos columnas de teléfono, la flecha ya no tapa la nota; botones "Dossier" e "Indicadores de campo" en dos columnas a todo el ancho en el teléfono.
+- **La línea chica de cada tarjeta lleva color** (pedido del dueño, 14-oct; `Card notaTono`), con el mismo tamaño: rojo = vencido o deuda vencida, verde = nada vencido, ámbar = revisar (no cuadra con Zoho, queso sin envasar). Sin tono: gris más legible que antes (`slate-500`).
 
 ## Conector MCP para Claude (claude.ai): lectura y escritura (2026-10) ✅
 

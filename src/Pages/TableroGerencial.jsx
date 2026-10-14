@@ -38,7 +38,7 @@ const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 const fmt    = (d) => d ? d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
 
 // ── Tarjeta ──────────────────────────────────────────────────────────────────
-const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick, disabled, cargando = false }) => {
+const Card = ({ n, icon: Icon, titulo, valor, sub, nota, notaTono, tono = 'slate', onClick, disabled, cargando = false }) => {
     // Sin datos todavía: la tarjeta ya muestra QUÉ es (ícono y título) y deja
     // la cifra en gris parpadeando; las demás no esperan por ella.
     if (cargando) { disabled = true; tono = 'slate'; }
@@ -52,6 +52,12 @@ const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick
         slate: 'bg-slate-100 text-slate-500', emerald: 'bg-emerald-50 text-emerald-600',
         red: 'bg-red-50 text-red-600', amber: 'bg-amber-50 text-amber-600',
     }[tono];
+    // La nota (la línea chica de abajo) lleva color cuando dice algo bueno o
+    // malo: rojo = vencido o deuda, verde = al día, ámbar = revisar. Pedido del
+    // dueño: en gris tenue no se leía. Mismo tamaño; sin tono, gris legible.
+    const NOTA = {
+        red: 'text-red-600 font-bold', emerald: 'text-emerald-600 font-bold', amber: 'text-amber-600 font-bold',
+    }[notaTono] || 'text-slate-500 font-medium';
     const Tag = onClick && !disabled ? 'button' : 'div';
     return (
         <Tag
@@ -80,7 +86,7 @@ const Card = ({ n, icon: Icon, titulo, valor, sub, nota, tono = 'slate', onClick
                 <>
                     <p className="text-xl sm:text-2xl font-black text-slate-800 tabular-nums mt-1 truncate">{valor}</p>
                     {sub  && <p className="text-xs text-slate-500 mt-0.5 leading-snug">{sub}</p>}
-                    {nota && <p className="text-[11px] text-slate-400 mt-1 leading-snug pr-4">{nota}</p>}
+                    {nota && <p className={`text-[11px] mt-1 leading-snug pr-4 ${NOTA}`}>{nota}</p>}
                 </>
             )}
             {onClick && !disabled && (
@@ -338,6 +344,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                     valor={money0(k.porCobrar)}
                     sub={`${num(k.nPorCobrar)} factura${k.nPorCobrar === 1 ? '' : 's'} abiertas`}
                     nota={k.cobrarVencido > 0 ? `${money0(k.cobrarVencido)} ya vencido` : 'Nada vencido'}
+                    notaTono={k.cobrarVencido > 0 ? 'red' : 'emerald'}
                     onClick={() => setAbierto('cobrar')} />
 
                 <Card n="02" cargando={t.esperando('porPagar', 'appConfig')} icon={Receipt} titulo="Cuentas por pagar" tono={k.pagarVencido > 0 ? 'red' : ppFichas ? 'amber' : 'slate'}
@@ -351,6 +358,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                         : ppFichas ? 'Saldo de Zoho (= balanza) · aún sin facturas de proveedor'
                         : estadoPP?.autorizado ? 'Según la última lectura de Zoho'
                         : 'Zoho no autoriza leer facturas de proveedor'}
+                    notaTono={k.nPorPagar > 0 ? (ppCruce ? 'amber' : k.pagarVencido > 0 ? 'red' : 'emerald') : ppFichas ? 'amber' : undefined}
                     onClick={() => setAbierto('pagar')} />
 
                 {/* El número grande son los PUNTOS DE VENTA ACTIVOS: es lo que
@@ -369,6 +377,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                         : k.nPorPagar > 0 ? `Se le debe a ${num(k.provConDeuda)}: ${money0(k.porPagar)}`
                         : ppFichas ? `Se le debe a ${num(k.nPorPagarFichas)}: ${money0(k.porPagarFichas)}`
                         : 'Deuda: sin datos de Zoho'}
+                    notaTono={k.nPorPagar > 0 ? (k.pagarVencido > 0 ? 'red' : 'amber') : ppFichas ? 'amber' : undefined}
                     onClick={() => setAbierto('proveedores')} />
 
                 <Card n="05" cargando={t.esperando('facturas')} icon={TrendingUp} titulo="Ventas / histórico" tono="emerald"
@@ -400,6 +409,7 @@ export default function TableroGerencial({ onVerIndicadores = null, onIrComercia
                     nota={k.lotesSinEnvasar > 0
                         ? `${num(k.lotesSinEnvasar)} lote${k.lotesSinEnvasar === 1 ? '' : 's'} con queso sin envasar · costos por lote →`
                         : 'Rendimiento y costo por lote →'}
+                    notaTono={k.lotesSinEnvasar > 0 ? 'amber' : undefined}
                     onClick={() => setAbierto('produccion')} />
 
             </div>
