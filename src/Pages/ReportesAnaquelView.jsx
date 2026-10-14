@@ -9,11 +9,13 @@ import { estadoLote, ESTADO_LABEL } from '@/utils/retiros.js';
 import Modal from '@/Components/Modal.jsx';
 import { horaVisitaMs } from '@/utils/visitaOla1.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
+import { ReporteVisitaDoc } from '@/Components/ReportesPdvDoc.jsx';
+import InformePdvSheet from '@/Components/InformePdvSheet.jsx';
 import { historialAnaquel, datosDelRegistro, cuadrosVisita, fmtDiaVE, DIAS_FACTURA_ANTES_DE_REPONER, ubicacionReporte, enlaceMapa } from '@/utils/reporteVisita.js';
 import {
     ClipboardList, ChevronRight, Search, X,
     Calendar, User, AlertTriangle, Loader,
-    CheckCircle, Pencil, MapPin,
+    CheckCircle, Pencil, MapPin, FileText,
 } from 'lucide-react';
 
 const PERIODS = [
@@ -429,6 +431,7 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
     // reposición y el gráfico de rotación. Si la lectura falla se usa la visita
     // anterior que escribió el servidor (`visitaAnterior`).
     const [historial, setHistorial] = useState(undefined);
+    const [verPdf, setVerPdf] = useState(false);
     const [facturasNota, setFacturasNota] = useState(null);
     const carnet = pdv?.zohoCustomerId || null;
     useEffect(() => {
@@ -763,15 +766,25 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                     )}
                 </div>
 
-                {isMaster && (
-                    <div className={`shrink-0 px-4 py-3 ${t.sheetHeader}`}>
+                <div className={`shrink-0 px-4 py-3 flex gap-2 ${t.sheetHeader}`} style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+                    <button
+                        onClick={() => setVerPdf(true)}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border ${t.repoChip}`}
+                    >
+                        <FileText size={14} /> PDF del reporte
+                    </button>
+                    {isMaster && (
                         <button
                             onClick={() => { onClose(); onEdit(report); }}
-                            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border ${t.repoChip}`}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border ${t.repoChip}`}
                         >
-                            <Pencil size={14} /> Editar este reporte
+                            <Pencil size={14} /> Editar
                         </button>
-                    </div>
+                    )}
+                </div>
+                {verPdf && (
+                    <ReporteVisitaDoc report={report} pos={pdv} va={va} vp={vp} ub={ub} registro={registro}
+                        historial={historial || null} quiebre={q} onClose={() => setVerPdf(false)} />
                 )}
             </div>
         </div>
@@ -798,6 +811,7 @@ const ReportesAnaquelView = ({ theme = 'light', abrirReporte = null }) => {
     const [selectedChain, setSelectedChain] = useState('');
     const [selectedPdvId, setSelectedPdvId] = useState('');
     const [pdvSearch, setPdvSearch]         = useState('');
+    const [verInforme, setVerInforme]       = useState(false);
 
     // Abrir un reporte puntual (p. ej. desde la notificación de la campanita).
     useEffect(() => {
@@ -886,6 +900,13 @@ const ReportesAnaquelView = ({ theme = 'light', abrirReporte = null }) => {
 
     return (
         <div className="max-w-2xl mx-auto">
+            <button
+                onClick={() => setVerInforme(true)}
+                className={`w-full mb-3 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border ${t.repoChip}`}
+            >
+                <FileText size={15} /> Informe por punto de venta o cliente (PDF)
+            </button>
+            {verInforme && <InformePdvSheet posList={posList} t={t} onClose={() => setVerInforme(false)} />}
             {/* Tabs */}
             <div className={`flex rounded-xl p-1 mb-4 ${t.tabsWrap}`}>
                 <button

@@ -3877,6 +3877,20 @@ Pedido del dueño: las alertas de los reportes deben llegar al máster y a la ge
 - **"Datos del registro" en español** (pedido del dueño, 14-oct): la sección "Otros datos del reporte" mostraba los nombres internos ("DATOSRUTAAT 1791991765048", "LOTESPORESTADO {…}"). `datosDelRegistro(report, OMIT_KEYS)` (`reporteVisita.js`) da a cada campo nombre, valor legible (fechas dd/mm/aa · hora) y una línea de para qué sirve: guardado en el teléfono / llegó al servidor (con la espera si subió tarde), estado de las unidades, envases dañados, entregas por factura, entregado sin factura, facturas por entregar del teléfono, retiro, antes/después de reponer, corrección del conteo, segundo reporte del día, conteo idéntico, ruta del teléfono actualizada, versión del formulario y de la app. Lo que pide atención va en ámbar. Lo que no está en la lista queda plegado en "Datos técnicos". Los vencimientos de los lotes se muestran en dd/mm/aa.
 - Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/reporteVisita.test.mjs` (29 en verde).
 
+### PDF de cada reporte e informe por punto de venta o cliente (2026-10-14) ✅
+
+Pedido del dueño: cada reporte exportable en PDF, y un informe completo por cliente: se elige el cliente, el intervalo, y sale el informe general del punto de venta.
+
+- **PDF de un reporte**: botón "PDF del reporte" al pie de la hoja (`ReportDetailSheet`, para todos los roles; "Editar" sigue solo para el máster). `ReporteVisitaDoc` (`src/Components/ReportesPdvDoc.jsx`) lleva lo mismo que la hoja: encabezado (fecha y hora real, mercaderista, duración), estado del anaquel, PVP, caras, los seis cuadros de unidades con sus facturas, el gráfico de rotación del PDV, ejecución, ubicación del reporte, lotes (vencimiento dd/mm/aa y estado a la fecha de la visita), competencia, nuevos entrantes, observaciones y "Datos del registro".
+- **Informe por punto de venta o cliente**: botón "Informe por punto de venta o cliente (PDF)" arriba de Reportes de Anaquel → `InformePdvSheet.jsx`.
+  1. **¿De quién?** Un punto de venta (buscador) o un cliente = un grupo (`chain`) con todos sus PDV.
+  2. **Intervalo**: 7 días / 30 días / este mes / mes anterior / 90 días / otras fechas.
+  - Lee por PDV `visit_reports` y `devoluciones` (igualdad simple, sin índices) y las facturas del carnet. Si el carnet lo comparten varios PDV, sus facturas son de la cadena y no se listan; lo dice.
+  - **Motor puro `src/utils/informePdv.js` (`informePdv`)** sobre el MISMO `historialAnaquel` de la hoja: las cifras coinciden con las de cada reporte. La primera visita del intervalo usa la visita anterior aunque quede fuera del intervalo.
+  - **`InformePdvDoc`**: por PDV, visitas y mercaderistas, rotación del intervalo (Σ salieron ÷ Σ días de los intervalos medibles), total en anaquel a la última visita, unidades repuestas vs facturadas, quiebres (y cuántos repuestos, R), PVP último/mín/máx, ubicación, categoría vecina y POP más frecuentes, gráfico de rotación, tabla de cada visita (contadas, repuestas con su INV, total, días, salieron, uds/día, PVP, notas), lotes vistos, competencia (veces vista, último precio, mín–máx, $/100 g), nuevos entrantes, devoluciones por motivo y facturas del intervalo (número, fecha y unidades, **sin montos**). Con un cliente, primero una tabla resumen por PDV y después una sección por PDV, cada una en su página.
+  - El gráfico es una sola serie (azul marino, la barra del reporte en verde, × lo no medible, promedio punteado); en la pantalla del teléfono las tablas anchas se deslizan de lado y en el PDF caben en la hoja carta.
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/informePdv.test.mjs` (13 en verde).
+
 ### Cada perfil con dos bandejas: agente y operación (2026-10-14) ✅
 
 Corrección del dueño: los avisos del agente que reciben Carolina y administración se quedan en sus perfiles, pero SEPARADOS de los de la operación, para que cada alerta se lea con su importancia. La gerencia también los recibe y no entra a Configuraciones.
