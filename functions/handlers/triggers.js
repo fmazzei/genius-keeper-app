@@ -259,6 +259,14 @@ const horaVisitaMs = (r) => {
     return Number.isFinite(sub) ? sub : 0;
 };
 const numOrNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+// Lo que quedó en el anaquel al terminar la visita: contadas + repuestas +
+// repuestas por un retiro − retiradas (misma regla que src/utils/reporteVisita.js).
+const quedaronTrasVisita = (r) => {
+    const contadas = r.stockout && numOrNull(r.inventoryLevel) == null ? 0 : numOrNull(r.inventoryLevel);
+    if (contadas == null) return null;
+    const ret = r.retiroVisita || {};
+    return Math.max(0, contadas + (numOrNull(r.orderQuantity) || 0) + (numOrNull(ret.repuestas) || 0) - (numOrNull(ret.unidades) || 0));
+};
 
 // Nuevo reporte → máster y gerencia. La notificación dice las tres cifras que
 // importan (cuántas había en la visita anterior, cuántas se contaron y cuántas
@@ -298,6 +306,9 @@ exports.onReportCreated = functions.firestore
                         hora: new Date(anterior.t).toISOString(),
                         inventoryLevel: numOrNull(anterior.r.inventoryLevel),
                         orderQuantity: numOrNull(anterior.r.orderQuantity),
+                        retiradas: numOrNull(anterior.r.retiroVisita && anterior.r.retiroVisita.unidades),
+                        repuestasRetiro: numOrNull(anterior.r.retiroVisita && anterior.r.retiroVisita.repuestas),
+                        quedaron: quedaronTrasVisita(anterior.r),
                         userName: anterior.r.userName || null,
                     } : null,
                 }, { merge: true });
@@ -317,8 +328,10 @@ exports.onReportCreated = functions.firestore
             const destinations = [...new Set([...((eventConfig && eventConfig.destinations) || []), "master", "gerencia", "sales_manager"])];
             const contadas = numOrNull(reportData.inventoryLevel);
             const repuestas = numOrNull(reportData.orderQuantity) ?? 0;
-            const antes = anterior ? numOrNull(anterior.r.inventoryLevel) : null;
-            const cifras = `Visita anterior: ${antes ?? "—"} uds · contadas: ${contadas ?? "—"} · repuestas: ${repuestas}`;
+            const quedaron = anterior ? quedaronTrasVisita(anterior.r) : null;
+            const cifras = anterior
+                ? `Quedaron ${quedaron ?? "—"} en la visita anterior · hoy contadas: ${contadas ?? "—"} · repuestas: ${repuestas}`
+                : `Primera visita · contadas: ${contadas ?? "—"} · repuestas: ${repuestas}`;
             await notifyByDestinations(destinations, {
                 title: `Reporte: ${posName}`,
                 body: `${reporterName}. ${cifras}.`,

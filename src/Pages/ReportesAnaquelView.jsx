@@ -419,14 +419,34 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                         </div>
                     )}
 
+                    {/* Unidades: la visita anterior y esta, cada una con lo que se
+                        contó, lo que se repuso y lo que QUEDÓ (contadas +
+                        repuestas). Entre lo que quedó en la anterior y lo que se
+                        contó hoy está lo que salió del anaquel. */}
                     <Section title="Unidades" t={t}>
+                        <p className={`text-[11px] font-bold uppercase tracking-wide mb-1.5 ${t.fieldLabel}`}>
+                            Visita anterior{anterior === undefined ? ' · buscando…' : anterior === null ? ' · no hay (primera visita)' : u.anteriorHora ? ` · ${fmtCorta(u.anteriorHora)}` : ''}
+                        </p>
+                        {anterior ? (
+                            <div className="grid grid-cols-3 gap-2">
+                                <Cifra label="Contadas" t={t} value={u.anterior} />
+                                <Cifra label="Repuestas" t={t} value={u.anteriorRepuestas} />
+                                <Cifra label="Quedaron" t={t} value={u.anteriorQuedaron} tone={t.metricPrimary} sub="contadas + repuestas" />
+                            </div>
+                        ) : null}
+                        <p className={`text-[11px] font-bold uppercase tracking-wide mt-3 mb-1.5 ${t.fieldLabel}`}>Esta visita</p>
                         <div className="grid grid-cols-3 gap-2">
-                            <Cifra label="Visita anterior" t={t}
-                                value={anterior === undefined ? '…' : (u.anterior ?? '—')}
-                                sub={anterior === undefined ? 'buscando…' : anterior === null ? 'primera visita' : fmtCorta(u.anteriorHora)} />
-                            <Cifra label="Contadas" t={t} value={u.contadas} tone={t.metricPrimary} sub="en esta visita" />
-                            <Cifra label="Repuestas" t={t} value={u.repuestas} tone={u.repuestas > 0 ? t.popOk : undefined} sub="en esta visita" />
+                            <Cifra label="Contadas" t={t} value={u.contadas} tone={t.metricPrimary} />
+                            <Cifra label="Repuestas" t={t} value={u.repuestas} tone={u.repuestas > 0 ? t.popOk : undefined} />
+                            <Cifra label="Quedan" t={t} value={u.quedan} sub="contadas + repuestas" />
                         </div>
+                        {u.salieron != null && (
+                            <p className={`text-xs mt-2.5 leading-snug ${u.salieron < 0 ? t.metricCompetidores : t.meta}`}>
+                                {u.salieron >= 0
+                                    ? <>Entre las dos visitas salieron <b>{u.salieron}</b> unidades del anaquel ({u.anteriorQuedaron} que quedaron − {u.contadas} contadas hoy).</>
+                                    : <>Hoy se contaron <b>{-u.salieron}</b> unidades más de las que quedaron en la visita anterior: entró producto sin registrar o hubo un error de conteo.</>}
+                            </p>
+                        )}
                     </Section>
 
                     <Section title="Ubicación del reporte" t={t}>

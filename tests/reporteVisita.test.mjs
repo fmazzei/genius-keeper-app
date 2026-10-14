@@ -25,6 +25,12 @@ ok(buscarAnterior(delPdv[0], delPdv) === null, 'la primera visita del PDV no tie
 // ── Unidades ────────────────────────────────────────────────────────────────
 const u = unidadesVisita(hoy, ant);
 ok(u.anterior === 24 && u.contadas === 10 && u.repuestas === 12, `tres cifras: anterior 24 · contadas 10 · repuestas 12 → ${u.anterior}/${u.contadas}/${u.repuestas}`);
+ok(u.anteriorRepuestas === 6 && u.anteriorQuedaron === 30 && u.quedan === 22 && u.salieron === 20,
+    `anterior: contó 24 + repuso 6 = quedaron 30; hoy quedan 22; salieron 30 − 10 = 20 → quedaron ${u.anteriorQuedaron}, quedan ${u.quedan}, salieron ${u.salieron}`);
+const uRet = unidadesVisita(hoy, { inventoryLevel: 24, orderQuantity: 6, retiradas: 4, repuestasRetiro: 2, hora: '2026-10-10T15:00:00Z' });
+ok(uRet.anteriorQuedaron === 28 && uRet.salieron === 18, `con retiro: 24 + 6 + 2 − 4 = 28 quedaron; salieron 28 − 10 = 18 → ${uRet.anteriorQuedaron}, ${uRet.salieron}`);
+const uNeg = unidadesVisita({ inventoryLevel: 40, orderQuantity: 0 }, { inventoryLevel: 10, orderQuantity: 0 });
+ok(uNeg.salieron === -30, 'hoy se contó más de lo que quedó: salieron negativo (se avisa)');
 const uPrim = unidadesVisita(hoy, null);
 ok(uPrim.anterior === null && uPrim.primeraVisita, 'primera visita: sin cifra anterior y lo dice');
 const uQuiebre = unidadesVisita({ stockout: true, inventoryLevel: '', orderQuantity: '24' }, ant);

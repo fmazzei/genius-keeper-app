@@ -16,6 +16,19 @@ export const DISTANCIA_LEJOS_M = 500;
 const num = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
 
 /**
+ * Cuántas unidades QUEDARON en el anaquel al terminar una visita: las que se
+ * contaron + las que entraron (reposición) + las repuestas en el acto por un
+ * retiro − las retiradas. Es la regla A del anaquel. `null` si no se contó.
+ */
+export function quedaronTrasVisita(r) {
+    if (!r) return null;
+    const contadas = r.stockout && num(r.inventoryLevel) == null ? 0 : num(r.inventoryLevel);
+    if (contadas == null) return null;
+    const ret = r.retiroVisita || {};
+    return Math.max(0, contadas + (num(r.orderQuantity) ?? 0) + (num(ret.repuestas) ?? 0) - (num(ret.unidades) ?? 0));
+}
+
+/**
  * La visita anterior del mismo PDV: la última con hora anterior a la de este
  * reporte (cualquier mercaderista). Se usa cuando el reporte no la trae escrita
  * por el servidor (`visitaAnterior`, reportes anteriores al 14-oct).
@@ -35,6 +48,9 @@ export function buscarAnterior(report, reportesDelPdv = []) {
         hora: new Date(mejor.t).toISOString(),
         inventoryLevel: num(mejor.r.inventoryLevel),
         orderQuantity: num(mejor.r.orderQuantity),
+        retiradas: num(mejor.r.retiroVisita?.unidades),
+        repuestasRetiro: num(mejor.r.retiroVisita?.repuestas),
+        quedaron: quedaronTrasVisita(mejor.r),
         userName: mejor.r.userName || null,
     };
 }
@@ -44,13 +60,28 @@ export function buscarAnterior(report, reportesDelPdv = []) {
  * devuelva `buscarAnterior`; `null` si es la primera visita registrada.
  */
 export function unidadesVisita(report, anterior) {
+    const contadas = report?.stockout && !num(report?.inventoryLevel) ? 0 : num(report?.inventoryLevel);
+    // Lo que quedó en la visita anterior. Los reportes escritos antes del 14-oct
+    // no lo traen guardado: se reconstruye con lo contado + lo repuesto.
+    const anteriorQuedaron = !anterior ? null
+        : num(anterior.quedaron) ?? quedaronTrasVisita({
+            inventoryLevel: anterior.inventoryLevel, orderQuantity: anterior.orderQuantity,
+            retiroVisita: { unidades: anterior.retiradas, repuestas: anterior.repuestasRetiro },
+        });
     return {
-        anterior: anterior ? num(anterior.inventoryLevel) : null,
+        anterior: anterior ? num(anterior.inventoryLevel) : null,       // contadas en la anterior
+        anteriorRepuestas: anterior ? (num(anterior.orderQuantity) ?? 0) : null,
+        anteriorQuedaron,
         anteriorHora: anterior?.hora || null,
         anteriorPor: anterior?.userName || null,
         primeraVisita: anterior === null,
-        contadas: report?.stockout && !num(report?.inventoryLevel) ? 0 : num(report?.inventoryLevel),
+        contadas,
         repuestas: num(report?.orderQuantity) ?? 0,
+        quedan: quedaronTrasVisita(report),
+        // Lo que salió del anaquel entre las dos visitas (venta estimada). Si sale
+        // negativo es que hoy se contó más de lo que quedó: entró producto sin
+        // registrar o hubo un error de conteo.
+        salieron: anteriorQuedaron != null && contadas != null ? anteriorQuedaron - contadas : null,
     };
 }
 
