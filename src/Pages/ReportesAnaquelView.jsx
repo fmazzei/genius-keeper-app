@@ -1,16 +1,17 @@
 // RUTA: src/Pages/ReportesAnaquelView.jsx
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { useAuth } from '@/context/AuthContext';
 import EditReportForm from '@/Components/EditReportForm.jsx';
 import { estadoLote, ESTADO_LABEL } from '@/utils/retiros.js';
 import Modal from '@/Components/Modal.jsx';
+import { buscarAnterior, unidadesVisita, ubicacionReporte, enlaceMapa } from '@/utils/reporteVisita.js';
 import {
     ClipboardList, ChevronRight, Search, X,
     Calendar, User, AlertTriangle, Loader,
-    CheckCircle, Pencil,
+    CheckCircle, Pencil, MapPin,
 } from 'lucide-react';
 
 const PERIODS = [
@@ -281,7 +282,7 @@ const OMIT_KEYS = new Set([
     'id', 'reportId', 'posId', 'posName', 'posZone', 'userId', 'userName', 'reporterId',
     'createdAt', 'startTime', 'endTime', 'price', 'orderQuantity', 'stockout', 'batches',
     'shelfLocation', 'adjacentCategory', 'popStatus', 'facing', 'competition',
-    'newEntrants', 'notes', 'inventoryLevel', 'coordinates',
+    'newEntrants', 'notes', 'inventoryLevel', 'coordinates', 'gpsVisita', 'visitaAnterior',
 ]);
 
 // Cualquier campo suelto del documento, legible: Timestamps con fecha, booleanos
@@ -313,8 +314,50 @@ function Section({ title, t, children }) {
     );
 }
 
-function ReportDetailSheet({ report, isMaster, onEdit, onClose, t }) {
+/** Una cifra grande con su rótulo (bloque de unidades). */
+function Cifra({ label, value, sub, t, tone }) {
+    return (
+        <div className={`rounded-xl px-3 py-2.5 ${t.batchRow}`}>
+            <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>{label}</p>
+            <p className={`text-2xl font-black leading-tight mt-0.5 ${tone || t.fieldValue}`}>{value ?? '—'}</p>
+            {sub && <p className={`text-[11px] mt-0.5 ${t.meta}`}>{sub}</p>}
+        </div>
+    );
+}
+
+const fmtCorta = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? null : d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
+
+function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t }) {
+    // Visita anterior: la escribe el servidor al recibir el reporte
+    // (`visitaAnterior`); los reportes viejos no la traen y se busca aquí.
+    const [anteriorBuscada, setAnteriorBuscada] = useState(undefined);
+    const tieneEscrita = report && Object.prototype.hasOwnProperty.call(report, 'visitaAnterior');
+    useEffect(() => {
+        if (!report || tieneEscrita || !report.posId) return undefined;
+        let vivo = true;
+        getDocs(query(collection(db, 'visit_reports'), where('posId', '==', report.posId)))
+            .then(snap => { if (vivo) setAnteriorBuscada(buscarAnterior(report, snap.docs.map(d => ({ id: d.id, ...d.data() })))); })
+            .catch(() => { if (vivo) setAnteriorBuscada(null); });
+        return () => { vivo = false; };
+    }, [report, tieneEscrita]);
+    // El PDV, para comparar su coordenada guardada (si no vino de la lista).
+    const [posLeido, setPosLeido] = useState(null);
+    useEffect(() => {
+        if (!report?.posId || pos) return undefined;
+        let vivo = true;
+        getDoc(doc(db, 'pos', report.posId)).then(s => { if (vivo && s.exists()) setPosLeido({ id: s.id, ...s.data() }); }).catch(() => {});
+        return () => { vivo = false; };
+    }, [report?.posId, pos]);
+
     if (!report) return null;
+    const anterior = tieneEscrita ? report.visitaAnterior : anteriorBuscada;
+    const u = unidadesVisita(report, anterior === undefined ? undefined : anterior);
+    const ub = ubicacionReporte(report, pos || posLeido);
+    const tonoDist = ub.nivel === 'cerca' ? t.popOk : ub.nivel === 'lejos' ? t.metricCompetidores : t.popBad;
 
     const q = quiebreInfo(report);
     const created = report.createdAt?.toDate ? report.createdAt.toDate() : (report.createdAt ? new Date(report.createdAt) : null);
@@ -376,6 +419,53 @@ function ReportDetailSheet({ report, isMaster, onEdit, onClose, t }) {
                         </div>
                     )}
 
+                    <Section title="Unidades" t={t}>
+                        <div className="grid grid-cols-3 gap-2">
+                            <Cifra label="Visita anterior" t={t}
+                                value={anterior === undefined ? '…' : (u.anterior ?? '—')}
+                                sub={anterior === undefined ? 'buscando…' : anterior === null ? 'primera visita' : fmtCorta(u.anteriorHora)} />
+                            <Cifra label="Contadas" t={t} value={u.contadas} tone={t.metricPrimary} sub="en esta visita" />
+                            <Cifra label="Repuestas" t={t} value={u.repuestas} tone={u.repuestas > 0 ? t.popOk : undefined} sub="en esta visita" />
+                        </div>
+                    </Section>
+
+                    <Section title="Ubicación del reporte" t={t}>
+                        {ub.reporte ? (
+                            <div className="space-y-2 text-sm">
+                                {ub.distancia != null ? (
+                                    <p className={`font-black text-lg ${tonoDist}`}>
+                                        A {ub.distancia >= 1000 ? `${(ub.distancia / 1000).toFixed(1).replace('.', ',')} km` : `${ub.distancia} m`} del PDV
+                                    </p>
+                                ) : (
+                                    <p className={`text-xs ${t.meta}`}>El PDV no tiene coordenada guardada: no se puede comparar.</p>
+                                )}
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                    <div className="min-w-0">
+                                        <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>Reporte</p>
+                                        <a href={enlaceMapa(ub.reporte)} target="_blank" rel="noopener noreferrer"
+                                            className={`font-semibold text-xs underline break-all ${t.metricPrimary}`}>
+                                            {ub.reporte.lat.toFixed(5)}, {ub.reporte.lng.toFixed(5)}
+                                        </a>
+                                        {ub.reporte.precisionM != null && <p className={`text-[11px] ${t.meta}`}>precisión ±{ub.reporte.precisionM} m</p>}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className={`text-[10px] uppercase tracking-wide ${t.fieldLabel}`}>PDV guardado</p>
+                                        {ub.pdv ? (
+                                            <a href={enlaceMapa(ub.pdv)} target="_blank" rel="noopener noreferrer"
+                                                className={`font-semibold text-xs underline break-all ${t.metricPrimary}`}>
+                                                {ub.pdv.lat.toFixed(5)}, {ub.pdv.lng.toFixed(5)}
+                                            </a>
+                                        ) : <p className={`text-xs ${t.meta}`}>sin coordenada</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className={`text-sm flex items-start gap-2 ${t.meta}`}>
+                                <MapPin size={14} className="shrink-0 mt-0.5" /> Sin coordenada: {ub.sinGps}.
+                            </p>
+                        )}
+                    </Section>
+
                     <Section title="Visita" t={t}>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                             <Field label="Reportado por" value={report.userName || '—'} t={t} />
@@ -383,16 +473,11 @@ function ReportDetailSheet({ report, isMaster, onEdit, onClose, t }) {
                             {durMin !== null && Number.isFinite(durMin) && durMin > 0 && (
                                 <Field label="Duración" value={`${durMin.toFixed(1)} min`} t={t} />
                             )}
-                            {report.coordinates?.lat != null && (
-                                <Field label="Coordenadas" value={`${Number(report.coordinates.lat).toFixed(5)}, ${Number(report.coordinates.lng).toFixed(5)}`} t={t} />
-                            )}
                         </div>
                     </Section>
 
                     <Section title="Anaquel y reposición" t={t}>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                            <Field label="Unidades en anaquel" value={report.inventoryLevel} t={t} tone={t.metricPrimary} />
-                            <Field label="Reposición declarada" value={report.orderQuantity !== undefined ? `${report.orderQuantity} uds` : undefined} t={t} />
                             <Field label="PVP observado" value={report.price !== undefined && report.price !== '' ? `$${report.price}` : undefined} t={t} />
                             <Field label="Caras visibles" value={report.facing} t={t} />
                         </div>
@@ -514,7 +599,7 @@ function ReportDetailSheet({ report, isMaster, onEdit, onClose, t }) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-const ReportesAnaquelView = ({ theme = 'light' }) => {
+const ReportesAnaquelView = ({ theme = 'light', abrirReporte = null }) => {
     const t = THEME[theme] || THEME.light;
     const { role } = useAuth();
     const [activeTab, setActiveTab]         = useState('recientes');
@@ -531,6 +616,16 @@ const ReportesAnaquelView = ({ theme = 'light' }) => {
     const [selectedChain, setSelectedChain] = useState('');
     const [selectedPdvId, setSelectedPdvId] = useState('');
     const [pdvSearch, setPdvSearch]         = useState('');
+
+    // Abrir un reporte puntual (p. ej. desde la notificación de la campanita).
+    useEffect(() => {
+        if (!abrirReporte?.id) return undefined;
+        let vivo = true;
+        getDoc(doc(db, 'visit_reports', abrirReporte.id))
+            .then(s => { if (vivo && s.exists()) setDetailReport({ id: s.id, ...s.data() }); })
+            .catch(() => {});
+        return () => { vivo = false; };
+    }, [abrirReporte?.id, abrirReporte?.n]);
 
     // Fetch POS list once for filter data
     useEffect(() => {
@@ -764,6 +859,7 @@ const ReportesAnaquelView = ({ theme = 'light' }) => {
             {detailReport && (
                 <ReportDetailSheet
                     report={detailReport}
+                    pos={posList.find(p => p.id === detailReport.posId) || null}
                     isMaster={role === 'master'}
                     onEdit={setEditingReport}
                     onClose={() => setDetailReport(null)}

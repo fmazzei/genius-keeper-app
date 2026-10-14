@@ -71,6 +71,22 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
         return lista;
     }, [avisosVig, latidoVig, role, user?.uid]);
     const esVig = (id) => typeof id === 'string' && id.startsWith('vig:');
+    // Alertas del AGENTE (vigilante + anaquel): solo el máster, y NO en la
+    // campanita (que es de la operación: reportes, pedidos, despachos). Viven en
+    // Configuraciones → Alertas del agente, con un punto rojo en el menú.
+    const esMaster = role === 'master';
+    const alertasAgente = esMaster ? [...notifVig, ...avisos.notificaciones] : [];
+    const agenteNoLeidas = alertasAgente.filter(n => !n.read).length;
+    const agenteLeida = (id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : avisos.marcarLeido(id));
+    const agenteTodas = () => { notifVig.filter(n => !n.read).forEach(n => marcarVistoVig(n.id.slice(4))); avisos.marcarTodos(); };
+    const agenteEliminar = (id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : avisos.eliminar(id));
+    // La notificación de un reporte lo abre en Rep. Anaquel (`n` fuerza reabrir).
+    const [abrirReporte, setAbrirReporte] = useState(null);
+    const abrirLink = (link) => {
+        const m = typeof link === 'string' ? link.match(/^\/reports\/([^/?#]+)/) : null;
+        if (m) { setAbrirReporte(p => ({ id: m[1], n: (p?.n || 0) + 1 })); setCurrentView('reportesAnaquel'); return; }
+        setCurrentView('alerts');
+    };
     const { getModulesForRole } = useAppConfig();
     const modules = getModulesForRole(role);
     
@@ -140,10 +156,13 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     };
     
     const SidebarContent = () => {
-        const NavItem = ({ icon, text, active, badgeCount, onClick }) => (
+        const NavItem = ({ icon, text, active, badgeCount, dot, onClick }) => (
             <li onClick={() => { onClick(); setMobileMenuOpen(false); }} className={`flex items-center p-3 my-1 rounded-lg cursor-pointer transition-colors relative ${active ? 'bg-brand-blue text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}>
                 {icon}
                 <span className={`ml-4 font-medium ${!desktopSidebarOpen && 'md:hidden'}`}>{text}</span>
+                {dot && (
+                    <span className={`absolute top-2 ${desktopSidebarOpen ? 'right-3' : 'right-2'} w-3 h-3 bg-red-500 rounded-full ring-2 ring-white`} aria-label="Alerta nueva del agente" />
+                )}
                 {badgeCount > 0 && (
                     <span className={`absolute top-1.5 ${desktopSidebarOpen ? 'right-2' : 'left-1/2 -translate-x-1/2 md:translate-x-0'} w-5 h-5 bg-red-500 text-white text-xs flex items-center justify-center rounded-full`}>
                         {badgeCount}
@@ -163,7 +182,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 <NavItem icon={<Download size={24} />} text="Exportar" active={currentView === 'exportes'} onClick={() => setCurrentView('exportes')} />
                 {modules.plannerManager && <NavItem icon={<MapIcon size={24} />} text="Planificador" active={currentView === 'planner'} onClick={() => setCurrentView('planner')} />}
                 {modules.almacenComercial !== false && <NavItem icon={<Warehouse size={24} />} text="Almacén Comercial" active={currentView === 'almacenComercial'} onClick={() => setCurrentView('almacenComercial')} />}
-                <NavItem icon={<Settings size={24} />} text="Configuraciones" active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
+                <NavItem icon={<Settings size={24} />} text="Configuraciones" dot={agenteNoLeidas > 0} active={currentView === 'settings'} onClick={() => setCurrentView('settings')} />
             </ul>
         );
 
@@ -221,7 +240,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
 
                 {/* Reportes de Anaquel */}
                 <div className={currentView === 'reportesAnaquel' ? 'block h-full' : 'hidden'}>
-                    <ReportesAnaquelView />
+                    <ReportesAnaquelView abrirReporte={abrirReporte} />
                 </div>
 
                 {/* Exportes */}
@@ -273,7 +292,10 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 {/* Admin — solo master */}
                 {role === 'master' && (
                     <div className={currentView === 'settings' ? 'block h-full' : 'hidden'}>
-                        <AdminPanel user={user} {...commonProps} />
+                        <AdminPanel user={user} {...commonProps} alertasAgente={{
+                            lista: alertasAgente, noLeidas: agenteNoLeidas,
+                            onMarcarLeida: agenteLeida, onMarcarTodas: agenteTodas, onEliminar: agenteEliminar,
+                        }} />
                     </div>
                 )}
 
@@ -311,8 +333,9 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             
             <div className="flex-1 flex flex-col overflow-hidden">
                 <header className="h-16 bg-white border-b flex items-center px-4 shadow-sm shrink-0 gap-3">
-                    <button onClick={() => setMobileMenuOpen(true)} className="p-2 rounded-full hover:bg-slate-100 md:hidden shrink-0">
+                    <button onClick={() => setMobileMenuOpen(true)} className="relative p-2 rounded-full hover:bg-slate-100 md:hidden shrink-0" aria-label="Menú">
                         <Menu size={24} />
+                        {agenteNoLeidas > 0 && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white" />}
                     </button>
                     <h2 className="text-lg md:text-2xl font-semibold text-slate-800 truncate flex-1">{getGreeting()}</h2>
                     {/* Role chip — always visible, especially useful on mobile */}
@@ -324,15 +347,18 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                     )}
                     {/* Campanita: las notificaciones se consultan desde aquí, no
                         desde una pestaña del menú lateral. */}
+                    {/* Campanita = la OPERACIÓN (reportes de visita, pedidos, despachos).
+                        Para la gerencia también lleva los avisos del vigilante que le
+                        toquen; los del máster viven en Configuraciones. */}
                     <NotificationsBell
-                        notifications={[...notifVig, ...avisos.notificaciones, ...notifications]}
-                        unreadCount={unreadCount + avisos.noLeidas + notifVig.filter(n => !n.read).length}
-                        onMarkRead={(id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : avisos.esAviso(id) ? avisos.marcarLeido(id) : markAsRead(id))}
-                        onMarkAllRead={() => { notifVig.filter(n => !n.read).forEach(n => marcarVistoVig(n.id.slice(4))); avisos.marcarTodos(); markAllAsRead(); }}
-                        onDelete={(id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : avisos.esAviso(id) ? avisos.eliminar(id) : deleteNotification(id))}
+                        notifications={esMaster ? notifications : [...notifVig, ...notifications]}
+                        unreadCount={unreadCount + (esMaster ? 0 : notifVig.filter(n => !n.read).length)}
+                        onMarkRead={(id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : markAsRead(id))}
+                        onMarkAllRead={() => { if (!esMaster) notifVig.filter(n => !n.read).forEach(n => marcarVistoVig(n.id.slice(4))); markAllAsRead(); }}
+                        onDelete={(id) => (esVig(id) ? marcarVistoVig(id.slice(4)) : deleteNotification(id))}
                         pie={<ActivarAvisos uid={user?.uid} />}
                         uid={user?.uid}
-                        onOpenLink={() => setCurrentView('alerts')}
+                        onOpenLink={abrirLink}
                     />
                 </header>
                 <div className="flex-1 p-4 md:p-6 overflow-y-auto bg-slate-50">

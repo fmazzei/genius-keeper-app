@@ -5,7 +5,7 @@ import { db, functions, auth } from '../Firebase/config.js';
 import { signInWithCustomToken } from 'firebase/auth';
 import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setDoc, getDoc, getDocs, updateDoc, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench } from 'lucide-react';
+import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench, Bot } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, carteraActivacion, fechaCalendario } from '../utils/vendedorMeta.js';
 import { cuentaEnCartera, motivoFuera } from '../utils/facturaEstado.js';
@@ -21,6 +21,7 @@ import LoadingSpinner from '../Components/LoadingSpinner.jsx';
 import Modal from '../Components/Modal.jsx';
 import ListaMaestraPdv from './ListaMaestraPdv.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
+import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
 
@@ -1196,7 +1197,7 @@ const ALL_ROLES = [
 // triggers.js). Los que no tienen emisor (visita_vencida, produccion_completada,
 // solicitud_edicion) se retiraron para no ofrecer toggles sin efecto.
 const ALL_EVENTS = [
-    { id: 'nuevo_reporte',        label: 'Nuevo Reporte de Visita',            desc: 'Cuando un merchandiser envía un nuevo reporte desde un PDV',        Icon: FileText,      defaultDests: ['master'] },
+    { id: 'nuevo_reporte',        label: 'Nuevo Reporte de Visita',            desc: 'Cuando un merchandiser envía un nuevo reporte desde un PDV (máster y gerencia siempre lo reciben)', Icon: FileText, defaultDests: ['master', 'gerencia'] },
     { id: 'nuevo_pedido',         label: 'Nuevo Pedido (GK)',                  desc: 'Cuando se registra un pedido de un cliente (también dispara el correo de pedidos)', Icon: ShoppingCart, defaultDests: ['master', 'sales_manager', 'gerencia'] },
     { id: 'nuevo_despacho',       label: 'Despacho desde Barinas (Kroma)',     desc: 'Cuando Kroma declara mercancía en tránsito hacia Caracas',           Icon: Truck,         defaultDests: ['master', 'sales_manager', 'gerencia', 'kroma_gerencial', 'kroma_admin'] },
     { id: 'despacho_entregado',   label: 'Despacho Entregado en Destino',      desc: 'Cuando se confirma que el despacho de Kroma llegó a su destino',     Icon: CheckCircle,   defaultDests: ['master', 'sales_manager', 'gerencia', 'kroma_gerencial', 'kroma_admin'] },
@@ -5096,12 +5097,19 @@ const AdministradoresManagement = () => {
 
 // ─── Admin Panel Shell ─────────────────────────────────────────────────────────
 
-const AdminPanel = ({ user, posList, reports, loading }) => {
-    const [activeSection, setActiveSection]   = useState(null);    // null = mostrar lista en móvil
+const AdminPanel = ({ user, posList, reports, loading, alertasAgente = null }) => {
+    // Con alertas del agente sin leer, se abre directo en esa sección (escritorio).
+    const [activeSection, setActiveSection]   = useState(() => (alertasAgente?.noLeidas > 0 ? 'alertas_agente' : null));    // null = mostrar lista en móvil
     const [mobileView,    setMobileView]      = useState('list'); // 'list' | 'content'
 
     // ── Navigation groups ──────────────────────────────────────────────────────
     const GROUPS = [
+        ...(alertasAgente ? [{
+            id: 'alertas', label: 'Alertas', Icon: Bot,
+            items: [
+                { id: 'alertas_agente', label: 'Alertas del agente', Icon: Bot, contador: alertasAgente.noLeidas },
+            ],
+        }] : []),
         {
             id: 'personas', label: 'Usuarios', Icon: Users,
             items: [
@@ -5159,6 +5167,10 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
     // ── Content renderer ───────────────────────────────────────────────────────
     const renderContent = () => {
         switch (activeSection) {
+            case 'alertas_agente': return alertasAgente ? (
+                <AlertasAgentePanel alertas={alertasAgente.lista} uid={user?.uid}
+                    onMarcarLeida={alertasAgente.onMarcarLeida} onMarcarTodas={alertasAgente.onMarcarTodas} onEliminar={alertasAgente.onEliminar} />
+            ) : null;
             case 'master_mgmt':   return <MasterManagement />;
             case 'vendedores':    return <VendedoresManagement />;
             case 'gerencia_mgmt': return (
@@ -5206,7 +5218,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                 {GROUPS.map(({ id: gid, label: glabel, items }) => (
                     <div key={gid} className="mb-1">
                         <p className="px-4 pt-3 pb-1 text-[10px] font-black uppercase tracking-widest text-slate-400">{glabel}</p>
-                        {items.map(({ id, label, Icon, badge }) => (
+                        {items.map(({ id, label, Icon, badge, contador }) => (
                             <button
                                 key={id}
                                 onClick={() => navigate(id)}
@@ -5218,6 +5230,9 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                             >
                                 <Icon size={15} className="shrink-0" />
                                 <span className="flex-1 truncate">{label}</span>
+                                {contador > 0 && (
+                                    <span className="min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full shrink-0">{contador > 9 ? '9+' : contador}</span>
+                                )}
                                 {badge && (
                                     <span className="text-[9px] font-bold bg-brand-blue/10 text-brand-blue px-1.5 py-0.5 rounded-full shrink-0">
                                         {badge}
@@ -5238,7 +5253,7 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                 <div key={gid}>
                     <p className="px-4 pt-5 pb-2 text-[11px] font-black uppercase tracking-widest text-slate-400">{glabel}</p>
                     <div className="bg-white border-y border-slate-200 divide-y divide-slate-100">
-                        {items.map(({ id, label, Icon, badge }) => (
+                        {items.map(({ id, label, Icon, badge, contador }) => (
                             <button
                                 key={id}
                                 onClick={() => navigate(id)}
@@ -5248,6 +5263,9 @@ const AdminPanel = ({ user, posList, reports, loading }) => {
                                     <Icon size={18} className="text-brand-blue" />
                                 </div>
                                 <span className="flex-1 font-medium text-slate-800 text-[15px]">{label}</span>
+                                {contador > 0 && (
+                                    <span className="min-w-[20px] h-5 px-1.5 bg-red-500 text-white text-[11px] font-bold flex items-center justify-center rounded-full shrink-0">{contador > 9 ? '9+' : contador}</span>
+                                )}
                                 {badge && (
                                     <span className="text-[9px] font-bold bg-brand-blue text-white px-1.5 py-0.5 rounded-full shrink-0">
                                         {badge}

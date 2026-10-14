@@ -53,6 +53,13 @@ export default function NotificationsBell({
             if (!n.read) onMarkRead?.(n.id);
             return;
         }
+        // Reporte de visita → se abre el reporte, no una vista previa.
+        if (typeof n.link === 'string' && n.link.startsWith('/reports/') && onOpenLink) {
+            setAbierto(false);
+            if (!n.read) onMarkRead?.(n.id);
+            onOpenLink(n.link);
+            return;
+        }
         setExpandida(prev => (prev === n.id ? null : n.id));
         if (!n.read) onMarkRead?.(n.id);          // verla = marcarla leída
     };
@@ -114,7 +121,7 @@ export default function NotificationsBell({
                                             </p>
                                             <p className="text-[11px] text-slate-400 mt-1">{fmtRel(fecha)}</p>
                                         </div>
-                                        {n.aviso
+                                        {(n.aviso || (typeof n.link === 'string' && n.link.startsWith('/reports/')))
                                             ? <ChevronRight size={15} className="shrink-0 text-slate-300" />
                                             : <ChevronDown size={15}
                                                 className={`shrink-0 text-slate-300 transition-transform ${abiertaEsta ? 'rotate-180' : ''}`} />}

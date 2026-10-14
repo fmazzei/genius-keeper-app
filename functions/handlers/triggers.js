@@ -249,6 +249,22 @@ exports.onDeleteReporter = functions.firestore
 
 // --- Triggers de Notificaciones (EXISTENTES) ---
 
+// Hora real de una visita: `startTime` (cuando se hizo) si es creíble; si no,
+// `createdAt` (cuando subió). La cola sin señal sube tarde: ordenar por la
+// subida mezclaría las visitas.
+const horaVisitaMs = (r) => {
+    const sub = r?.createdAt?.toMillis ? r.createdAt.toMillis() : (r?.createdAt ? Date.parse(r.createdAt) : NaN);
+    const ini = r?.startTime ? Date.parse(r.startTime) : NaN;
+    if (Number.isFinite(ini) && (!Number.isFinite(sub) || (ini <= sub + 3600000 && ini >= sub - 30 * 86400000))) return ini;
+    return Number.isFinite(sub) ? sub : 0;
+};
+const numOrNull = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+
+// Nuevo reporte → máster y gerencia. La notificación dice las tres cifras que
+// importan (cuántas había en la visita anterior, cuántas se contaron y cuántas
+// se repusieron) y al tocarla abre el reporte (`link: /reports/{id}`). La visita
+// anterior queda además escrita en el reporte (`visitaAnterior`), para que la
+// hoja del reporte no tenga que buscarla.
 exports.onReportCreated = functions.firestore
     .document("visit_reports/{reportId}")
     .onCreate(async (snap, context) => {
@@ -263,16 +279,49 @@ exports.onReportCreated = functions.firestore
         const reporterName = reportData.userName || "un reporter";
         const posName = reportData.posName || "un PDV";
 
+        // Visita anterior del mismo PDV (cualquier mercaderista).
+        let anterior = null;
+        if (reportData.posId) {
+            try {
+                const hora = horaVisitaMs(reportData);
+                const qs = await admin.firestore().collection("visit_reports").where("posId", "==", reportData.posId).get();
+                qs.docs.forEach(d => {
+                    if (d.id === reportId) return;
+                    const r = d.data();
+                    const t = horaVisitaMs(r);
+                    if (!t || t >= hora) return;
+                    if (!anterior || t > anterior.t) anterior = { t, id: d.id, r };
+                });
+                await snap.ref.set({
+                    visitaAnterior: anterior ? {
+                        reportId: anterior.id,
+                        hora: new Date(anterior.t).toISOString(),
+                        inventoryLevel: numOrNull(anterior.r.inventoryLevel),
+                        orderQuantity: numOrNull(anterior.r.orderQuantity),
+                        userName: anterior.r.userName || null,
+                    } : null,
+                }, { merge: true });
+            } catch (e) {
+                functions.logger.warn("No se pudo leer la visita anterior:", e.message);
+            }
+        }
+
         try {
             // Respeta la configuración de Alertas (settings/notificationsConfig).
             const config = await getNotifConfig();
             const eventConfig = (config.events || {}).nuevo_reporte;
             if (eventConfig && eventConfig.enabled === false) return null;
 
-            const destinations = (eventConfig && eventConfig.destinations) || ["master"];
+            // Máster y gerencia siempre (decisión del dueño, 14-oct); la
+            // configuración puede sumar otros destinos, no quitar estos.
+            const destinations = [...new Set([...((eventConfig && eventConfig.destinations) || []), "master", "gerencia", "sales_manager"])];
+            const contadas = numOrNull(reportData.inventoryLevel);
+            const repuestas = numOrNull(reportData.orderQuantity) ?? 0;
+            const antes = anterior ? numOrNull(anterior.r.inventoryLevel) : null;
+            const cifras = `Visita anterior: ${antes ?? "—"} uds · contadas: ${contadas ?? "—"} · repuestas: ${repuestas}`;
             await notifyByDestinations(destinations, {
-                title: "Nuevo Reporte de Visita",
-                body: `${reporterName} ha enviado un nuevo reporte desde ${posName}.`,
+                title: `Reporte: ${posName}`,
+                body: `${reporterName}. ${cifras}.`,
             }, { link: `/reports/${reportId}`, tipo: "nuevo_reporte" });
             return null;
         } catch (error) {

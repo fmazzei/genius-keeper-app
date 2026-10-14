@@ -911,28 +911,35 @@ const VisitReportForm = ({ pos, backToList, user, selectedReporter, isReadOnly =
         return () => { vivo = false; };
     }, [isReadOnly, pos?.id, user?.uid]);
 
-    // V8 — GPS SOLO REGISTRO: se lee en segundo plano si el teléfono ya dio
-    // permiso. Nunca pide permiso, nunca bloquea; si falla se guarda el motivo.
+    // V8 — UBICACIÓN DEL REPORTE (pedido del dueño, 14-oct): cada reporte lleva
+    // la coordenada de donde se hizo, para compararla con la del PDV. El GPS
+    // OBLIGATORIO sigue apagado: esto nunca bloquea ni retrasa el envío. Si el
+    // teléfono aún no dio permiso, se pide UNA vez (el aviso del sistema); si lo
+    // niega o no hay señal, se guarda el motivo.
     useEffect(() => {
         if (isReadOnly) return;
         const fijar = (v) => { gpsRef.current = v; };
+        fijar({ error: 'pendiente' });
         try {
             const geo = typeof navigator !== 'undefined' ? navigator.geolocation : null;
+            if (!geo) { fijar({ error: 'no_soportado' }); return; }
+            const ok = p => fijar({
+                lat: p.coords.latitude, lng: p.coords.longitude,
+                precisionM: Math.round(p.coords.accuracy || 0),
+                at: new Date(p.timestamp || Date.now()).toISOString(),
+            });
+            const motivo = (err) => (err?.code === 1 ? 'sin_permiso' : err?.code === 3 ? 'tiempo_agotado' : 'no_disponible');
+            // Primero el GPS fino; si no encuentra señal a tiempo (adentro del
+            // local pasa), la ubicación aproximada de la red.
+            const leer = () => geo.getCurrentPosition(ok,
+                err => (err?.code === 1 ? fijar({ error: 'sin_permiso' })
+                    : geo.getCurrentPosition(ok, e2 => fijar({ error: motivo(e2) }), { enableHighAccuracy: false, timeout: GPS_TIEMPO_MAX_MS, maximumAge: 300000 })),
+                { enableHighAccuracy: true, timeout: GPS_TIEMPO_MAX_MS, maximumAge: 60000 });
             const perms = typeof navigator !== 'undefined' ? navigator.permissions : null;
-            if (!geo || !perms || typeof perms.query !== 'function') { fijar({ error: 'no_soportado' }); return; }
-            perms.query({ name: 'geolocation' }).then(st => {
-                if (st.state === 'denied') { fijar({ error: 'sin_permiso' }); return; }
-                if (st.state !== 'granted') { fijar({ error: 'permiso_no_concedido' }); return; }
-                geo.getCurrentPosition(
-                    p => fijar({
-                        lat: p.coords.latitude, lng: p.coords.longitude,
-                        precisionM: Math.round(p.coords.accuracy || 0),
-                        at: new Date(p.timestamp || Date.now()).toISOString(),
-                    }),
-                    err => fijar({ error: err?.code === 1 ? 'sin_permiso' : err?.code === 3 ? 'tiempo_agotado' : 'no_disponible' }),
-                    { enableHighAccuracy: false, timeout: GPS_TIEMPO_MAX_MS, maximumAge: 120000 },
-                );
-            }).catch(() => fijar({ error: 'no_soportado' }));
+            if (!perms || typeof perms.query !== 'function') { leer(); return; }   // iPhone viejo: se pide directo
+            perms.query({ name: 'geolocation' })
+                .then(st => { if (st.state === 'denied') fijar({ error: 'sin_permiso' }); else leer(); })
+                .catch(() => leer());
         } catch { fijar({ error: 'no_soportado' }); }
     }, [isReadOnly]);
 

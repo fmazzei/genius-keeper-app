@@ -73,7 +73,7 @@ export const GPS_ERRORES = {
     pendiente: 'No terminó antes de enviar',
     sin_dato: 'Sin dato',
 };
-export const GPS_TIEMPO_MAX_MS = 8000;
+export const GPS_TIEMPO_MAX_MS = 12000;   // por intento (fino y luego aproximado); el formulario dura minutos
 
 const mapa = (lista) => Object.fromEntries(lista.map(o => [o.id, o.label]));
 export const ETIQUETAS = {
