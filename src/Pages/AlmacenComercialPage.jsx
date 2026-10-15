@@ -28,6 +28,7 @@ import { lineasACaracas } from '@/utils/destinoDespacho.js';
 import PickingSheet from '@/Components/PickingSheet.jsx';
 import LoteTrazabilidadModal from '@/Components/LoteTrazabilidadModal.jsx';
 import { fmtVence } from '@/utils/fechaCorta.js';
+import { enDocenas, cuentaEnDocenas, estadoVence } from '@/utils/docenas.js';
 
 const destinoDisplay = (d) => {
     if (!d) return '';
@@ -39,6 +40,23 @@ const fmtDateTime = (ts) => {
     if (!ts) return '—';
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
     return d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
+
+// Color del vencimiento: rojo si venció o faltan ≤7 días, ámbar ≤30, verde el resto.
+const TONO_VENCE = {
+    light: { vencido: 'bg-red-100 text-red-700', critico: 'bg-red-100 text-red-700', pronto: 'bg-amber-100 text-amber-800', ok: 'bg-emerald-100 text-emerald-800' },
+    dark:  { vencido: 'bg-red-500/20 text-red-300', critico: 'bg-red-500/20 text-red-300', pronto: 'bg-amber-500/20 text-amber-300', ok: 'bg-emerald-500/15 text-emerald-300' },
+};
+
+// "250 g" / "1 kg" a partir de la presentación (para agrupar sin mezclar tamaños).
+const tamanoDe = (item) => {
+    const txt = `${item.presentacion || ''}`.toLowerCase();
+    const m = txt.match(/(\d+(?:[.,]\d+)?)\s*(kg|g)\b/);
+    if (m) return `${m[1].replace('.', ',')} ${m[2]}`;
+    const p = Number(item.pesoPorUnidad) || 0;
+    if (p >= 1) return `${String(+p.toFixed(3)).replace('.', ',')} kg`;
+    if (p > 0) return `${Math.round(p * 1000)} g`;
+    return item.unit === 'kg' ? 'Granel (kg)' : 'Otra';
 };
 
 // Variantes visuales: 'light' (Admin/Gerencia, sobre fondo blanco) y 'dark'
@@ -277,39 +295,58 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
     })();
 
     // Fila de lote reutilizable (inventario activo y histórico de cerrados).
-    const LoteFila = ({ item, cerrado }) => (
-        <div className={`rounded-xl px-3 py-2.5 ${t.itemRow} ${cerrado ? 'opacity-70' : ''}`}>
-            <button onClick={() => cerrado ? setTraceItem(item) : setAdjustItem(item)} className="w-full text-left">
-                <p className={`text-sm font-semibold leading-snug ${t.itemTitle}`}>{item.productoNombre}</p>
-                <p className={`text-xs leading-snug ${t.meta}`}>
-                    {item.presentacion}{item.lote && ` · Lote ${item.lote}`}
-                </p>
-                {item.fechaVencimiento && (
-                    <p className={`text-xs leading-snug ${t.meta}`}>Vence {fmtVence(item.fechaVencimiento)}</p>
-                )}
-                {cerrado && item.almacenNombre && (
-                    <p className={`text-xs leading-snug ${t.meta}`}>{item.almacenNombre}</p>
-                )}
-            </button>
-            <div className={`flex items-center justify-between gap-2 mt-2 pt-2 border-t ${t.divider}`}>
-                <span className={`font-black text-base ${t.itemTitle}`}>
-                    {item.unidades} <span className="text-xs font-bold opacity-60">{item.unit || 'ud'}</span>
-                </span>
-                <div className="flex items-center gap-1.5">
-                    <button onClick={() => setTraceItem(item)} title="Pista del lote"
-                        className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.chip}`}>
-                        <History size={13} /> Pista
-                    </button>
-                    {!cerrado && canPicking && (
-                        <button onClick={() => setPickItem(item)}
-                            className={`px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.primaryBtn}`}>
-                            <PackageMinus size={13} /> Picking
-                        </button>
+    // Unidades + docenas (las de 1 kg nunca van en docenas) y el vencimiento con color.
+    const tonoVence = TONO_VENCE[theme] || TONO_VENCE.light;
+    const LoteFila = ({ item, cerrado }) => {
+        const ud = Number(item.unidades) || 0;
+        const docenas = cuentaEnDocenas(item);
+        const ven = estadoVence(item.fechaVencimiento);
+        return (
+            <div className={`rounded-xl px-3 py-2.5 ${t.itemRow} ${cerrado ? 'opacity-70' : ''}`}>
+                <button onClick={() => cerrado ? setTraceItem(item) : setAdjustItem(item)} className="w-full text-left">
+                    <p className={`text-sm font-semibold leading-snug ${t.itemTitle}`}>
+                        {item.productoNombre}
+                        <span className={`ml-1.5 align-middle text-[11px] font-black px-1.5 py-0.5 rounded-md ${theme === 'dark' ? 'bg-sky-500/20 text-sky-300' : 'bg-sky-100 text-sky-800'}`}>{tamanoDe(item)}</span>
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        {item.lote && (
+                            <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${theme === 'dark' ? 'bg-slate-700 text-slate-100' : 'bg-slate-200 text-slate-800'}`}>Lote {item.lote}</span>
+                        )}
+                        {item.fechaVencimiento && (
+                            <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-md ${ven ? tonoVence[ven.nivel] : t.chip}`}>
+                                Vence {fmtVence(item.fechaVencimiento)}{ven ? ` · ${ven.texto}` : ''}
+                            </span>
+                        )}
+                    </div>
+                    {cerrado && item.almacenNombre && (
+                        <p className={`text-xs leading-snug mt-1 ${t.meta}`}>{item.almacenNombre}</p>
                     )}
+                </button>
+                <div className={`flex items-center justify-between gap-2 mt-2 pt-2 border-t ${t.divider}`}>
+                    <div className="min-w-0">
+                        <p className={`font-black text-base leading-tight ${t.itemTitle}`}>
+                            {item.unidades} <span className="text-xs font-bold opacity-60">{item.unit || 'ud'}</span>
+                        </p>
+                        {docenas && ud > 0 && (
+                            <p className={`text-xs font-bold leading-tight ${theme === 'dark' ? 'text-emerald-300' : 'text-emerald-700'}`}>{enDocenas(ud)}</p>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <button onClick={() => setTraceItem(item)} title="Pista del lote"
+                            className={`px-2.5 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.chip}`}>
+                            <History size={13} /> Pista
+                        </button>
+                        {!cerrado && canPicking && (
+                            <button onClick={() => setPickItem(item)}
+                                className={`px-3 py-1.5 rounded-lg flex items-center gap-1 text-xs font-bold ${t.primaryBtn}`}>
+                                <PackageMinus size={13} /> Picking
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     if (loading) {
         return (
@@ -494,7 +531,14 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                         const isOpen = expanded[almacen.id] !== false; // default open
                         // Solo lotes ACTIVOS: los cerrados viven en su propia pestaña.
                         const activos = items.filter(i => (Number(i.unidades) || 0) > 0);
-                        const totalUnidades = activos.reduce((s, i) => s + (Number(i.unidades) || 0), 0);
+                        // Nunca se suman presentaciones distintas: una línea por tamaño.
+                        const porTamano = {};
+                        activos.forEach(i => {
+                            const k = tamanoDe(i);
+                            if (!porTamano[k]) porTamano[k] = { tam: k, ud: 0, unit: i.unit || 'ud', docenas: cuentaEnDocenas(i) };
+                            porTamano[k].ud += Number(i.unidades) || 0;
+                        });
+                        const tamanos = Object.values(porTamano).sort((a, b) => a.tam.localeCompare(b.tam, 'es', { numeric: true }));
                         return (
                             <div key={almacen.id} className={`rounded-xl overflow-hidden ${t.card}`}>
                                 <button
@@ -504,8 +548,14 @@ const AlmacenComercialPage = ({ theme = 'light', actor: actorProp = null, canPic
                                     <div>
                                         <p className={`font-bold ${t.itemTitle}`}>{almacen.nombre}</p>
                                         <p className={`text-xs ${t.meta}`}>
-                                            {activos.length} lote{activos.length !== 1 ? 's' : ''} activo{activos.length !== 1 ? 's' : ''} · {totalUnidades} unid.
+                                            {activos.length} lote{activos.length !== 1 ? 's' : ''} activo{activos.length !== 1 ? 's' : ''}
                                         </p>
+                                        {tamanos.map(x => (
+                                            <p key={x.tam} className={`text-xs font-bold leading-snug ${t.itemSub}`}>
+                                                {x.tam}: {Math.round(x.ud * 100) / 100} {x.unit}
+                                                {x.docenas && x.ud > 0 && <span className={theme === 'dark' ? 'text-emerald-300' : 'text-emerald-700'}> · {enDocenas(x.ud)}</span>}
+                                            </p>
+                                        ))}
                                     </div>
                                     {isOpen ? <ChevronDown size={18} className={t.chevron} /> : <ChevronRight size={18} className={t.chevron} />}
                                 </button>

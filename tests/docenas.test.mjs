@@ -1,0 +1,20 @@
+// node --import ./tests/alias.mjs tests/docenas.test.mjs
+import { enDocenas, partirDocenas, desdeDocenas, cuentaEnDocenas, estadoVence } from '../src/utils/docenas.js';
+let fallas = 0;
+const ok = (c, m) => { console.log(`${c ? '✓' : '✗'} ${m}`); if (!c) fallas++; };
+ok(enDocenas(144) === '12 docenas', '144 = 12 docenas');
+ok(enDocenas(50) === '4 docenas y 2 sueltas', '50 = 4 docenas y 2 sueltas');
+ok(enDocenas(13) === '1 docena y 1 suelta', '13 = 1 docena y 1 suelta');
+ok(enDocenas(8) === '8 sueltas', '8 = 8 sueltas');
+ok(partirDocenas(50).docenas === 4 && partirDocenas(50).sueltas === 2, 'partir 50');
+ok(desdeDocenas(4, 2) === 50, '4 docenas + 2 = 50');
+ok(cuentaEnDocenas({ presentacion: 'Lacteoca Chèvre Original · 250 g' }), '250 g va en docenas');
+ok(!cuentaEnDocenas({ presentacion: 'Lacteoca Chèvre Original · 1 kg' }), '1 kg nunca en docenas');
+ok(!cuentaEnDocenas({ presentacion: 'Chèvre', pesoPorUnidad: 1 }), 'peso 1 kg nunca en docenas');
+ok(!cuentaEnDocenas({ unit: 'kg', presentacion: 'Sin envasar' }), 'granel en kg nunca en docenas');
+const hoy = new Date(2026, 9, 15);
+ok(estadoVence('2026-10-25', hoy).nivel === 'pronto', 'a 10 días: ámbar');
+ok(estadoVence('2026-10-20', hoy).nivel === 'critico', 'a 5 días: rojo');
+ok(estadoVence('2026-10-10', hoy).nivel === 'vencido', 'vencido');
+ok(estadoVence('2027-01-03', hoy).nivel === 'ok', 'lejos: verde');
+console.log(fallas ? `\n${fallas} FALLAS` : '\nTodo correcto'); process.exit(fallas ? 1 : 0);

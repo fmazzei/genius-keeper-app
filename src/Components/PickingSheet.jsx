@@ -21,6 +21,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { registrarPicking } from '@/utils/pickingOps.js';
 import { X, PackageMinus, Minus, Plus, CheckCircle, AlertTriangle } from 'lucide-react';
 import { fmtVence } from '@/utils/fechaCorta.js';
+import { enDocenas, cuentaEnDocenas, estadoVence } from '@/utils/docenas.js';
 
 const THEME = {
     light: {
@@ -51,7 +52,13 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
     const esKg  = unit === 'kg';
     // Se descuenta de 1 en 1: incluso en kg las presentaciones son bolsas de 1 kg
     // (foodservice). Los atajos grandes solo ayudan cuando hay mucho stock.
-    const PASOS = esKg ? [1, 2, 5] : [1, 5, 10];
+    // 250 g se retira por unidad o por docena; 1 kg y kg, nunca en docenas.
+    const enDoc = cuentaEnDocenas(item);
+    const PASOS = esKg ? [1, 2, 5] : enDoc ? [1, 12] : [1, 5, 10];
+    const ven = estadoVence(item?.fechaVencimiento);
+    const tonoVence = theme === 'dark'
+        ? { vencido: 'bg-red-500/20 text-red-300', critico: 'bg-red-500/20 text-red-300', pronto: 'bg-amber-500/20 text-amber-300', ok: 'bg-emerald-500/15 text-emerald-300' }
+        : { vencido: 'bg-red-100 text-red-700', critico: 'bg-red-100 text-red-700', pronto: 'bg-amber-100 text-amber-800', ok: 'bg-emerald-100 text-emerald-800' };
 
     const now = new Date();
     // Arranca en 0 retirado: el número de arriba muestra lo que HAY, y baja a
@@ -119,7 +126,9 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                                 {item?.lote && <> · Lote {item.lote}</>}
                             </p>
                             {item?.fechaVencimiento && (
-                                <p className={`text-xs leading-snug ${t.meta}`}>Vence {fmtVence(item.fechaVencimiento)}</p>
+                                <span className={`inline-block mt-1 text-[11px] font-bold px-1.5 py-0.5 rounded-md ${ven ? tonoVence[ven.nivel] : t.meta}`}>
+                                    Vence {fmtVence(item.fechaVencimiento)}{ven ? ` · ${ven.texto}` : ''}
+                                </span>
                             )}
                         </div>
                         <button onClick={onClose} className={`p-1 shrink-0 ${t.close}`}><X size={18} /></button>
@@ -146,6 +155,7 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                                 {fmtQty(restante, unit)}
                             </p>
                             <p className={`text-xs font-bold opacity-60 ${t.title}`}>{unit}</p>
+                            {enDoc && restante > 0 && <p className="text-[11px] font-bold text-emerald-500 leading-tight">{enDocenas(restante)}</p>}
                         </div>
                         <button onClick={() => setCantidad(c => clamp(c - paso))} disabled={cantidad <= 0}
                             title="Devolver"
@@ -157,6 +167,7 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                     {/* Lo retirado, siempre a la vista */}
                     <p className={`text-center text-sm mb-3 ${t.meta}`}>
                         Retiras <span className={`font-black text-base ${cantidad > 0 ? 'text-emerald-500' : t.title}`}>{fmtQty(cantidad, unit)} {unit}</span>
+                        {enDoc && cantidad > 0 && <span className="font-bold text-emerald-500"> ({enDocenas(cantidad)})</span>}
                         <span className="opacity-70"> de {fmtQty(stock, unit)} {unit}</span>
                     </p>
 
@@ -164,7 +175,7 @@ export default function PickingSheet({ item, actor, theme = 'light', onClose, on
                     <div className="flex gap-2 justify-center mb-4 flex-wrap">
                         {PASOS.map(p => (
                             <button key={p} onClick={() => setPaso(p)}
-                                className={`px-3 py-1 rounded-full text-xs font-bold ${paso === p ? t.chipOn : t.chipOff}`}>de {p} en {p}</button>
+                                className={`px-3 py-1 rounded-full text-xs font-bold ${paso === p ? t.chipOn : t.chipOff}`}>{enDoc && p === 12 ? 'por docena' : `de ${p} en ${p}`}</button>
                         ))}
                         <button onClick={() => setCantidad(clamp(stock))}
                             className={`px-3 py-1 rounded-full text-xs font-bold ${cantidad === stock ? t.chipOn : t.chipOff}`}>Todo</button>

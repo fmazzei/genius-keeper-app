@@ -15,6 +15,7 @@
 import React, { useState } from 'react';
 import { X, Plus, Minus, Loader, ShieldAlert, History, Send, Lock } from 'lucide-react';
 import { fmtVence } from '@/utils/fechaCorta.js';
+import { enDocenas, partirDocenas, desdeDocenas, cuentaEnDocenas, estadoVence } from '@/utils/docenas.js';
 
 const THEME = {
     light: {
@@ -47,6 +48,27 @@ const THEME = {
 
 const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
+const TONO_VENCE = {
+    light: { vencido: 'bg-red-100 text-red-700', critico: 'bg-red-100 text-red-700', pronto: 'bg-amber-100 text-amber-800', ok: 'bg-emerald-100 text-emerald-800' },
+    dark:  { vencido: 'bg-red-500/20 text-red-300', critico: 'bg-red-500/20 text-red-300', pronto: 'bg-amber-500/20 text-amber-300', ok: 'bg-emerald-500/15 text-emerald-300' },
+};
+
+// Contador de docenas o de sueltas (botones grandes; sueltas de 0 a 11).
+const Contador = ({ label, value, onChange, max, t }) => (
+    <div className="flex-1 min-w-0">
+        <p className={`text-[11px] font-bold uppercase tracking-wider text-center mb-1 ${t.meta}`}>{label}</p>
+        <div className="flex items-center justify-center gap-1.5">
+            <button type="button" onClick={() => onChange(Math.max(0, value - 1))}
+                className={`w-11 h-11 rounded-xl flex items-center justify-center active:scale-95 ${t.stepperBtn}`}><Minus size={18} /></button>
+            <input type="text" inputMode="numeric" value={value}
+                onChange={e => { const v = parseInt(e.target.value.replace(/\D/g, ''), 10); onChange(Number.isFinite(v) ? Math.min(max ?? Infinity, Math.max(0, v)) : 0); }}
+                className={`w-16 text-center text-2xl font-black rounded-xl py-1.5 focus:outline-none ${t.valueInput}`} />
+            <button type="button" onClick={() => onChange(Math.min(max ?? Infinity, value + 1))}
+                className={`w-11 h-11 rounded-xl flex items-center justify-center active:scale-95 ${t.stepperBtn}`}><Plus size={18} /></button>
+        </div>
+    </div>
+);
+
 const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdmin, onVerTrazabilidad, theme = 'light' }) => {
     const t = THEME[theme] || THEME.light;
     const current = Number(item?.unidades) || 0;
@@ -54,6 +76,10 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
     const esKg    = unit === 'kg';
     const cerrado = current <= 0;
     const STEPS   = esKg ? [0.25, 1, 5] : [1, 10, 100];
+    // 250 g y similares se ajustan en docenas + sueltas; 1 kg y kg, por unidad.
+    const enDoc   = cuentaEnDocenas(item);
+    const ven     = estadoVence(item?.fechaVencimiento);
+    const tonoVence = TONO_VENCE[theme] || TONO_VENCE.light;
 
     // Los AJUSTES de inventario son EXCLUSIVOS del máster. El vendedor y el
     // mercaderista solo hacen PICKINGS (salida declarada, con su propia hoja):
@@ -68,7 +94,12 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
     const [notifying, setNotifying] = useState(false);
     const [notified, setNotified]   = useState(false);
 
-    const switchMode = (m) => { setModo(m); setValue(m === 'correccion' ? current : 0); };
+    const [doc, setDoc]       = useState(0);
+    const [sue, setSue]       = useState(0);
+    const fijar = (v) => { setValue(v); const p = partirDocenas(v); setDoc(p.docenas); setSue(p.sueltas); };
+    const switchMode = (m) => { setModo(m); fijar(m === 'correccion' ? current : 0); };
+    const cambiarDoc = (d) => { setDoc(d); setValue(desdeDocenas(d, sue)); };
+    const cambiarSue = (x) => { setSue(x); setValue(desdeDocenas(doc, x)); };
 
     const newTotal = modo === 'correccion' ? r2(value)
         : modo === 'salida' ? r2(Math.max(0, current - value))
@@ -111,14 +142,21 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                             <p className={`text-xs mt-0.5 leading-snug ${t.meta}`}>
                                 {item?.presentacion || ''}{item?.lote && <> · Lote {item.lote}</>}
                             </p>
-                            {item?.fechaVencimiento && <p className={`text-xs leading-snug ${t.meta}`}>Vence {fmtVence(item.fechaVencimiento)}</p>}
+                            {item?.fechaVencimiento && (
+                                <span className={`inline-block mt-1 text-[11px] font-bold px-1.5 py-0.5 rounded-md ${ven ? tonoVence[ven.nivel] : t.meta}`}>
+                                    Vence {fmtVence(item.fechaVencimiento)}{ven ? ` · ${ven.texto}` : ''}
+                                </span>
+                            )}
                         </div>
                         <button onClick={onClose} className={`p-1 shrink-0 ${t.closeBtn}`}><X size={18} /></button>
                     </div>
 
                     <div className={`rounded-xl px-3 py-2.5 mb-3 flex items-center justify-between ${t.card}`}>
                         <span className={`text-xs font-semibold ${t.meta}`}>Stock actual</span>
-                        <span className={`text-lg font-black ${t.currentStock}`}>{current} <span className="text-xs opacity-60">{unit}</span></span>
+                        <span className={`text-right ${t.currentStock}`}>
+                            <span className="text-lg font-black">{current} <span className="text-xs opacity-60">{unit}</span></span>
+                            {enDoc && current > 0 && <span className="block text-xs font-bold text-emerald-500">{enDocenas(current)}</span>}
+                        </span>
                     </div>
 
                     {/* Ver la pista del lote — siempre disponible */}
@@ -172,7 +210,18 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                                 </div>
                             )}
 
-                            {/* Stepper */}
+                            {enDoc ? (
+                                /* En docenas + sueltas (pedido del dueño): es como se cuenta en el almacén. */
+                                <>
+                                    <div className="flex gap-3 mb-2">
+                                        <Contador label="Docenas" value={doc} onChange={cambiarDoc} t={t} />
+                                        <Contador label="Sueltas" value={sue} onChange={cambiarSue} max={11} t={t} />
+                                    </div>
+                                    <p className={`text-center text-xs mb-4 ${t.result}`}>
+                                        {modo === 'correccion' ? 'Hay' : modo === 'salida' ? 'Descuentas' : 'Entran'} <b className={t.resultStrong}>{value} ud</b>
+                                    </p>
+                                </>
+                            ) : (<>
                             <div className="flex items-center justify-center gap-3 mb-3">
                                 <button type="button" onClick={() => setValue(v => r2(Math.max(0, v - step)))}
                                     className={`w-14 h-14 rounded-xl flex items-center justify-center active:scale-95 ${t.stepperBtn}`}><Minus size={20} /></button>
@@ -190,9 +239,12 @@ const StockAdjustSheet = ({ item, isMaster = false, onClose, onSave, onNotifyAdm
                                 ))}
                             </div>
 
+                            </>)}
+
                             <p className={`text-center text-sm mb-4 ${t.result}`}>
                                 {modo === 'correccion' ? 'Nuevo stock total: ' : 'Stock resultante: '}
                                 <span className={`font-bold ${t.resultStrong}`}>{newTotal} {unit}</span>
+                                {enDoc && newTotal > 0 && <span className="block text-xs font-bold text-emerald-500">{enDocenas(newTotal)}</span>}
                             </p>
 
                             <textarea value={notas} onChange={e => setNotas(e.target.value)}

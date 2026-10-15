@@ -106,6 +106,16 @@ tamaño de doc si una recepción trae muchas fotos de novedad.
 
 ---
 
+### Almacén Comercial en docenas, con el vencimiento en color (2026-10-15) ✅
+
+Pedido del dueño: todo el que ve el inventario de Frimaca (máster, gerencia, vendedor, mercaderista: es la misma `AlmacenComercialPage`) lo ve en unidades Y en docenas con sueltas, y los ajustes se capturan en docenas y sueltas.
+- **`src/utils/docenas.js`** (único, Kroma lo re-exporta desde `inventarioPT.js`): `enDocenas`, `partirDocenas`, `desdeDocenas`, `cuentaEnDocenas(item)` y `estadoVence(fecha)`.
+- **Las presentaciones de 1 kg (y el granel en kg) NUNCA van en docenas** (`cuentaEnDocenas`: `unit:'kg'`, `pesoPorUnidad ≥ 1` o "N kg" con N ≥ 1 en la presentación).
+- **Cada lote**: chip con el tamaño ("250 g" / "1 kg"), lote resaltado y el vencimiento como pastilla de color (rojo si venció o faltan ≤7 días, ámbar ≤30, verde el resto) con "faltan N d". Debajo de las unidades, en verde, "4 docenas y 2 sueltas".
+- **Encabezado del almacén**: una línea por tamaño ("250 g: 206 ud · 17 docenas y 2 sueltas", "1 kg: 6 ud"); antes sumaba 250 g y 1 kg en un solo "212 unid.".
+- **Ajuste del máster** (`StockAdjustSheet`): para 250 g, dos contadores (Docenas / Sueltas 0–11) en Entrada, Descontar y Corregir; 1 kg y kg siguen por unidad. **Picking**: paso "por docena" y lo retirado / lo que queda en docenas.
+- Prueba: `node --import ./tests/alias.mjs tests/docenas.test.mjs` (14 en verde).
+
 ## Facturar desde GK hacia Zoho Books (2026-08) ✅ — requiere 2 pasos del dueño
 
 El vendedor emite facturas en Zoho **sin tener acceso a Zoho**. Decisiones del

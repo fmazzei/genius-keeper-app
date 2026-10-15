@@ -82,14 +82,8 @@ export const esHuerfana = (item, logsVivosPorId = {}) => {
  * cuenta y se despacha por docena). "2 docenas y 6 sueltas", "3 docenas",
  * "8 sueltas". Siempre acompaña a las unidades, nunca las reemplaza.
  */
-export const enDocenas = (unidades) => {
-    const n = Math.max(0, Math.floor(Number(unidades) || 0));
-    const d = Math.floor(n / 12), s = n % 12;
-    const tD = d === 1 ? '1 docena' : `${d} docenas`;
-    const tS = s === 1 ? '1 suelta' : `${s} sueltas`;
-    if (d === 0) return tS;
-    return s === 0 ? tD : `${tD} y ${tS}`;
-};
+// Una sola definición de docenas para Kroma y GK.
+export { enDocenas } from '@/utils/docenas.js';
 
 /** "250 g" / "1 kg" a partir del peso por unidad en kg ('' si no hay). */
 export const etiquetaPeso = (pesoKg) => {
