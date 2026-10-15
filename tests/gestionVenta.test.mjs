@@ -182,6 +182,9 @@ ok(p3 && !p3.pagada && p3.saldo === 56 && p3.dias === 16, 'y lo que sigue sin co
     ok(d.cartera === 1, 'el PDV inactivo no entra a la cartera');
     ok(d.sinActivar[0]?.nombre === 'Páramo (Piedra Azul)' && d.sinActivar[0]?.razonSocial === 'Hipermercado Paramo C.A', 'se muestra el PDV y la razón social aparte');
     ok(d.fuera[0]?.nombre === 'Páramo (Guatire)' && d.fuera[0]?.motivo === 'PDV inactivo', 'el de fuera también por nombre de PDV');
+    // Sin facturas suyas visibles: los días sin comprar salen de la última factura en Zoho, no "nunca".
+    const d2 = detalleActivacion({ facturas: [], clientes: [{ ...cliP[0], ultimaFactura: '2026-04-29T00:00:00.000Z' }], inicio: new Date(2026, 9, 6), fin: new Date(2026, 9, 13), ahora: new Date(2026, 9, 15), posList: posP });
+    ok(d2.sinActivar[0]?.diasSinComprar === 169, 'días sin comprar desde la última factura de Zoho (169), no "nunca"');
 }
 
 console.log(fallas ? `\n${fallas} FALLAS` : '\nTodo correcto');

@@ -106,7 +106,12 @@ export function detalleActivacion({ facturas = [], clientes = [], inicio, fin, a
     const ultima = new Map();
     validas.forEach(f => { const k = clave(f); if (!ultima.has(k) || ultima.get(k) < f._t) ultima.set(k, f._t); });
     const sinActivar = cartera.filter(c => !porCliente.has(String(c.customerId || c.id))).map(c => {
-        const t = ultima.get(String(c.customerId || c.id));
+        // La última compra sale de sus facturas y, si es más reciente o no tiene
+        // ninguna visible (compras de antes de su ingreso o de otro vendedor),
+        // de la última factura que Zoho registra para ese carnet.
+        const tFact = ultima.get(String(c.customerId || c.id));
+        const tZoho = c.ultimaFactura ? (fechaCalendario(c.ultimaFactura)?.getTime() || null) : null;
+        const t = Math.max(tFact || 0, tZoho || 0) || null;
         return { clave: String(c.customerId || c.id), nombre: etiqueta(c), razonSocial: c.customerName || '', diasSinComprar: t ? Math.floor((ahora - t) / DIA) : null };
     }).sort((a, b) => (b.diasSinComprar ?? 9999) - (a.diasSinComprar ?? 9999));
 

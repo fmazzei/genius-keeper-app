@@ -456,6 +456,14 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     // sin historial abierto en GK) NO cuenta como cobrada por él (la cobró otro
     // antes). Clave para NO pagar comisión de recuperada sobre el historial viejo
     // ya pagado de sus clientes. Una vez true, se conserva.
+    // Factura que volvió a borrador en Zoho y después se EMITIÓ otra vez: ya es
+    // una venta viva. Se quitan las marcas del retiro; si quedaran, la comisión
+    // seguiría anulada al cobrarla y varias vistas la seguirían excluyendo.
+    if (existingData && (existingData.borradorEnZoho === true || existingData.estado === 'borrador') && estado !== 'borrador') {
+        facturaData.borradorEnZoho = false;
+        facturaData.comisionAnulada = false;
+    }
+
     const transicionoAPagada = !!existingData && existingData.estado && existingData.estado !== 'pagada' && estado === 'pagada';
     facturaData.cobradaVigente = existingData?.cobradaVigente === true || transicionoAPagada;
 

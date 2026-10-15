@@ -3857,6 +3857,9 @@ Reclamo del dueño: en Gestión salían "Hipermercado Paramo C.A" (una razón so
 - **Retail ≠ foodservice:** la Activación cuenta solo PDV retail; en las sugerencias del plan, un cliente foodservice lleva la etiqueta "Cliente foodservice".
 - **Dato (15-oct, por el conector):** `pos/cm-la-lagunita` → inactivo (`active:false`, `visitInterval:0`), decisión del dueño: no se aborda más. Cartera de Carolina: 26 PDV retail, meta 21.
 - Prueba: `tests/gestionVenta.test.mjs` (28 en verde).
+- **Verificación del 15-oct** (captura de Carolina con "Hipermercado Paramo C.A" y "Mocanatura Import C.A"): era la versión vieja de la app en el teléfono. Los dos carnets son PDV activos reales: Mocanatura = **Fit Eco Market**, Hipermercado Paramo C.A = **Páramo (Piedra Azul)**; la versión publicada ya los muestra así. Las 10 activaciones de la semana del 10-oct se verificaron factura por factura contra Zoho (10 carnets distintos, ≥12 uds).
+  - **Bug real encontrado:** una factura que vuelve a borrador en Zoho y después se EMITE otra vez quedaba con `borradorEnZoho:true` y `comisionAnulada:true` (INV-001784, INV-001787 de Carolina): al cobrarse no habría pagado comisión, y el vigilante, la ruta del mercaderista, el informe por PDV y el anaquel la excluían. `upsertFacturaFromZoho` quita las dos marcas cuando la factura revive; las dos facturas se corrigieron por el conector (reversible).
+  - **"Días sin comprar"** usa también `clientes_zoho.ultimaFactura`: antes decía "nunca" para un PDV cuya última compra era anterior al ingreso del vendedor o de otro vendedor (facturas que el vendedor no puede leer). Prueba: 29 en verde.
 
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 
