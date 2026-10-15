@@ -21,7 +21,7 @@
 // promediado); el bono paga las semanas LOGRADAS. Misma definición, dos usos.
 
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
-import { fechaCalendario, cuentaParaActivacion, carteraActivacion, clavesCartera, facturaDeLaCartera, llaveNombre } from '@/utils/vendedorMeta.js';
+import { fechaCalendario, cuentaParaActivacion, carteraActivacion, clavesCartera, facturaDeLaCartera, llaveNombre, nombrePdvPorCarnet } from '@/utils/vendedorMeta.js';
 
 const DIA = 86400000, SEMANA = 7 * DIA;
 
@@ -36,6 +36,9 @@ const DIA = 86400000, SEMANA = 7 * DIA;
  */
 export function detalleActivacion({ facturas = [], clientes = [], inicio, fin, ahora = new Date(), minUnits = 12, threshold = 80, gestiones = [], posList = null }) {
     const cartera = carteraActivacion(clientes, posList);
+    // Se muestra el PUNTO DE VENTA, no la razón social (la razón social va debajo).
+    const pdvDe = nombrePdvPorCarnet(posList);
+    const etiqueta = (c) => { const id = String(c.customerId || c.id); return pdvDe.get(id) || c.customerName || id; };
     const total = cartera.length;
     const claves = clavesCartera(cartera);
     // Una factura sin carnet (webhook todavía sin conciliar) se lleva a su sucursal por el nombre.
@@ -47,10 +50,11 @@ export function detalleActivacion({ facturas = [], clientes = [], inicio, fin, a
     const fuera = (clientes || []).filter(c => cuentaParaActivacion(c) && !enCartera.has(String(c.customerId || c.id))).map(c => {
         const id = String(c.customerId || c.id);
         const tienePdv = (posList || []).some(p => p.type !== 'depot' && String(p.zohoCustomerId || '') === id);
-        return { clave: id, nombre: c.customerName || id, motivo: tienePdv ? 'PDV inactivo' : 'Sin PDV en la lista maestra' };
+        return { clave: id, nombre: etiqueta(c), razonSocial: c.customerName || '', motivo: tienePdv ? 'PDV inactivo' : 'Sin PDV en la lista maestra' };
     }).sort((a, b) => a.nombre.localeCompare(b.nombre));
     const objetivo = total > 0 ? Math.max(1, Math.ceil(total * threshold / 100)) : 0;
-    const nombreDe = new Map(cartera.map(c => [String(c.customerId || c.id), c.customerName || c.customerId || c.id]));
+    const nombreDe = new Map(cartera.map(c => [String(c.customerId || c.id), etiqueta(c)]));
+    const razonDe = new Map(cartera.map(c => [String(c.customerId || c.id), c.customerName || '']));
     const limite = Math.min(fin.getTime(), ahora.getTime());
     const validas = (facturas || []).filter(f => cuentaEnCartera(f) && !f.recuperada && f.categoria !== 'foodservice' && facturaDeLaCartera(f, claves))
         .map(f => ({ ...f, _t: fechaCalendario(f.fecha)?.getTime() || 0 })).filter(f => f._t);
@@ -70,7 +74,7 @@ export function detalleActivacion({ facturas = [], clientes = [], inicio, fin, a
         enSemana.forEach((x, k) => {
             if (x.uds < minUnits) return;
             activados.push(k);
-            const c = porCliente.get(k) || { clave: k, nombre: nombreDe.get(k) || x.fs[0].clienteName || x.fs[0].customerName || k, facturas: 0, unidades: 0, monto: 0, semanas: new Set() };
+            const c = porCliente.get(k) || { clave: k, nombre: nombreDe.get(k) || x.fs[0].clienteName || x.fs[0].customerName || k, razonSocial: razonDe.get(k) || '', facturas: 0, unidades: 0, monto: 0, semanas: new Set() };
             c.facturas += x.fs.length;
             c.unidades += x.uds;
             c.monto += x.fs.reduce((s, f) => s + (Number(f.monto ?? f.total) || 0), 0);
@@ -103,7 +107,7 @@ export function detalleActivacion({ facturas = [], clientes = [], inicio, fin, a
     validas.forEach(f => { const k = clave(f); if (!ultima.has(k) || ultima.get(k) < f._t) ultima.set(k, f._t); });
     const sinActivar = cartera.filter(c => !porCliente.has(String(c.customerId || c.id))).map(c => {
         const t = ultima.get(String(c.customerId || c.id));
-        return { clave: String(c.customerId || c.id), nombre: c.customerName || c.customerId, diasSinComprar: t ? Math.floor((ahora - t) / DIA) : null };
+        return { clave: String(c.customerId || c.id), nombre: etiqueta(c), razonSocial: c.customerName || '', diasSinComprar: t ? Math.floor((ahora - t) / DIA) : null };
     }).sort((a, b) => (b.diasSinComprar ?? 9999) - (a.diasSinComprar ?? 9999));
 
     const cerradas = semanas.filter(s => s.pct != null);

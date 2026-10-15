@@ -17,6 +17,7 @@ import { db } from '@/Firebase/config.js';
 import { collection, getDocs, getDoc, setDoc, addDoc, doc, query, where, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { Plus, Check, MapPin, Phone, MessageCircle, Search, X, Loader, Target, AlertTriangle, CalendarDays, Zap } from 'lucide-react';
 import { detalleActivacion } from '@/utils/activacion.js';
+import { pdvVigente } from '@/utils/vendedorMeta.js';
 import {
     TIPOS_GESTION, OBJETIVOS_GESTION, RESULTADOS_GESTION, etiqueta, esProactiva,
     claveSemana, claveObjetivo, sugerirPlan, evaluarPlan, configGestion, lunesDe,
@@ -75,8 +76,8 @@ function RegistrarSheet({ uid, nombreVendedor, clientes, plan, onClose, onGuarda
     const lista = useMemo(() => {
         const q = busca.trim().toLowerCase();
         return (clientes || [])
-            .filter(c => !q || (c.customerName || '').toLowerCase().includes(q))
-            .sort((a, b) => Number(enPlan.has(`c:${b.customerId}`)) - Number(enPlan.has(`c:${a.customerId}`)) || (a.customerName || '').localeCompare(b.customerName || ''))
+            .filter(c => !q || `${c.nombrePdv || ''} ${c.customerName || ''}`.toLowerCase().includes(q))
+            .sort((a, b) => Number(enPlan.has(`c:${b.customerId}`)) - Number(enPlan.has(`c:${a.customerId}`)) || (a.nombrePdv || a.customerName || '').localeCompare(b.nombrePdv || b.customerName || ''))
             .slice(0, 40);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [clientes, busca, plan]);
@@ -96,7 +97,7 @@ function RegistrarSheet({ uid, nombreVendedor, clientes, plan, onClose, onGuarda
                 tipo, objetivo, resultado, nota: nota.trim() || null,
                 esProspecto: prospecto,
                 clienteZohoId: prospecto ? null : cliente.customerId,
-                nombre: prospecto ? nombreProspecto.trim() : (cliente.customerName || cliente.customerId),
+                nombre: prospecto ? nombreProspecto.trim() : (cliente.nombrePdv || cliente.customerName || cliente.customerId),
                 telefono: prospecto && telefono.trim() ? telefono.trim() : null,
                 gps: gps || null,
             };
@@ -143,7 +144,7 @@ function RegistrarSheet({ uid, nombreVendedor, clientes, plan, onClose, onGuarda
                         </div>
                     ) : cliente ? (
                         <div className="flex items-center justify-between bg-slate-800 border border-slate-600 rounded-xl px-3 py-2.5">
-                            <span className="text-white text-sm font-semibold">{cliente.customerName}</span>
+                            <span className="text-white text-sm font-semibold">{cliente.nombrePdv || cliente.customerName}</span>
                             <button onClick={() => setCliente(null)} className="text-slate-400"><X size={16} /></button>
                         </div>
                     ) : (
@@ -157,7 +158,7 @@ function RegistrarSheet({ uid, nombreVendedor, clientes, plan, onClose, onGuarda
                                 {lista.map(c => (
                                     <button key={c.customerId} onClick={() => setCliente(c)}
                                         className="w-full text-left px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-sm text-slate-200 flex items-center justify-between">
-                                        <span className="truncate">{c.customerName || c.customerId}</span>
+                                        <span className="truncate">{c.nombrePdv || c.customerName || c.customerId}</span>
                                         {enPlan.has(`c:${c.customerId}`) && <span className="text-[10px] font-bold text-[#FFD600] shrink-0 ml-2">EN TU PLAN</span>}
                                     </button>
                                 ))}
@@ -238,10 +239,26 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [gestiones, plan]);
     const hechosSemana = new Set(ev.lista.filter(esProactiva).map(claveObjetivo));
+    // Su cartera como PUNTOS DE VENTA de la lista maestra (pedido del dueño,
+    // 15-oct): solo carnets con un PDV activo (con visitas, o foodservice
+    // activo), con el nombre del PDV. Un PDV inactivo (Gama, Páramo Guatire…) no
+    // se sugiere ni se ofrece. Sin lista de PDV, la regla anterior.
+    const clientesPdv = useMemo(() => {
+        if (!Array.isArray(posList) || !posList.length) return clientes;
+        const nombres = new Map();
+        posList.forEach(p => {
+            if (!p?.zohoCustomerId || p.type === 'depot' || p.eliminado === true || p.active === false) return;
+            if (!(pdvVigente(p) || p.canal === 'foodservice')) return;
+            const k = String(p.zohoCustomerId);
+            nombres.set(k, nombres.has(k) ? `${nombres.get(k)} · ${p.name}` : p.name);
+        });
+        return clientes.filter(c => nombres.has(String(c.customerId)))
+            .map(c => ({ ...c, nombrePdv: nombres.get(String(c.customerId)) }));
+    }, [clientes, posList]);
     const sugerencias = useMemo(() => {
         const enPlan = new Set((plan?.items || []).map(claveObjetivo));
-        return sugerirPlan({ clientes, facturas, gestiones }).filter(s => !enPlan.has(claveObjetivo(s)));
-    }, [clientes, facturas, gestiones, plan]);
+        return sugerirPlan({ clientes: clientesPdv, facturas, gestiones }).filter(s => !enPlan.has(claveObjetivo(s)));
+    }, [clientesPdv, facturas, gestiones, plan]);
 
     const guardarPlan = async (items) => {
         setGuardandoPlan(true);
@@ -284,7 +301,7 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
                         <div className={`h-full rounded-full ${actSem?.lograda ? 'bg-emerald-400' : 'bg-[#FFD600]'}`} style={{ width: `${Math.min(100, act.objetivo ? activadosSem / act.objetivo * 100 : 0)}%` }} />
                     </div>
                     <p className="text-xs text-slate-400 mt-2">
-                        Un PDV se activa cuando lo visitas y le facturas al menos {act.minUnits} unidades en la semana. Meta: visitar {act.objetivo} de tus {act.cartera} PDV activos cada semana.
+                        Tienes <b className="text-white">{act.cartera} PDV activos</b> en tu cartera (lista maestra, sin foodservice). La meta es activar {act.objetivo} cada semana ({act.threshold}%): un PDV se activa cuando le facturas al menos {act.minUnits} unidades en la semana.
                         {actSem?.lograda ? ' ¡Semana lograda!' : ` Te faltan ${Math.max(0, act.objetivo - activadosSem)}.`}
                         {' '}Semana del {semIni.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}.
                     </p>
@@ -294,7 +311,7 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
                             <div className="mt-1 space-y-1 max-h-56 overflow-y-auto">
                                 {act.sinActivar.map(c => (
                                     <p key={c.clave} className="text-xs text-slate-300 flex justify-between gap-2">
-                                        <span className="truncate">{c.nombre}</span>
+                                        <span className="truncate">{c.nombre}{c.razonSocial && c.razonSocial !== c.nombre && <span className="text-slate-500"> · {c.razonSocial}</span>}</span>
                                         <span className="text-slate-500 shrink-0">{c.diasSinComprar == null ? 'nunca' : `${c.diasSinComprar} d sin comprar`}</span>
                                     </p>
                                 ))}
@@ -379,7 +396,7 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
             </section>
 
             {registrar && (
-                <RegistrarSheet uid={uid} nombreVendedor={nombreVendedor} clientes={clientes} plan={plan}
+                <RegistrarSheet uid={uid} nombreVendedor={nombreVendedor} clientes={clientesPdv} plan={plan}
                     onClose={() => setRegistrar(false)}
                     onGuardada={(g) => { setGestiones(prev => [g, ...prev]); setRegistrar(false); }} />
             )}

@@ -282,7 +282,7 @@ export function sugerirPlan({ clientes = [], facturas = [], gestiones = [], ahor
         // idea es llegar antes de perderlo.
         if (dias == null || dias > umbralReactivacion(compras) * 0.8) {
             out.push({
-                clienteZohoId: c.customerId, nombre: c.customerName || c.customerId,
+                clienteZohoId: c.customerId, nombre: c.nombrePdv || c.customerName || c.customerId, razonSocial: c.nombrePdv ? c.customerName : undefined,
                 motivo: dias == null ? 'nunca_compro' : 'sin_comprar', dias,
             });
         }

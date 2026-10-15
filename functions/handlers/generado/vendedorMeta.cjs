@@ -22,6 +22,7 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var vendedorMeta_exports = {};
 __export(vendedorMeta_exports, {
   carteraActivacion: () => carteraActivacion,
+  carteraComoPdv: () => carteraComoPdv,
   clavesCartera: () => clavesCartera,
   computeActivacionPeriodo: () => computeActivacionPeriodo,
   computeDesglosePeriodo: () => computeDesglosePeriodo,
@@ -32,6 +33,7 @@ __export(vendedorMeta_exports, {
   fechaCalendario: () => fechaCalendario,
   listPeriodos: () => listPeriodos,
   llaveNombre: () => llaveNombre,
+  nombrePdvPorCarnet: () => nombrePdvPorCarnet,
   pdvVigente: () => pdvVigente,
   tamanoCartera: () => tamanoCartera,
   tierParaPct: () => tierParaPct
@@ -248,6 +250,26 @@ function carteraActivacion(clientes = [], posList = null) {
     else if (p.razonSocialZoho) nombres.add(llaveNombre(p.razonSocialZoho));
   });
   return base.filter((c) => carnets.has(String(c.customerId || c.id)) || nombres.has(llaveNombre(c.customerName)));
+}
+function nombrePdvPorCarnet(posList = null) {
+  const vig = /* @__PURE__ */ new Map(), otros = /* @__PURE__ */ new Map();
+  (posList || []).forEach((p) => {
+    if (!p || p.type === "depot" || p.eliminado === true || !p.zohoCustomerId || !p.name) return;
+    const m = pdvVigente(p) ? vig : otros;
+    const k = String(p.zohoCustomerId);
+    m.set(k, m.has(k) ? `${m.get(k)} \xB7 ${p.name}` : p.name);
+  });
+  otros.forEach((v, k) => {
+    if (!vig.has(k)) vig.set(k, v);
+  });
+  return vig;
+}
+function carteraComoPdv(clientes = [], posList = null) {
+  const nombres = nombrePdvPorCarnet(posList);
+  return carteraActivacion(clientes, posList).map((c) => {
+    const id = String(c.customerId || c.id);
+    return { ...c, nombrePdv: nombres.get(id) || c.customerName || id, razonSocial: c.customerName || "" };
+  });
 }
 function clavesCartera(cartera = []) {
   return {
@@ -664,6 +686,7 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   carteraActivacion,
+  carteraComoPdv,
   clavesCartera,
   computeActivacionPeriodo,
   computeDesglosePeriodo,
@@ -674,6 +697,7 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
   fechaCalendario,
   listPeriodos,
   llaveNombre,
+  nombrePdvPorCarnet,
   pdvVigente,
   tamanoCartera,
   tierParaPct

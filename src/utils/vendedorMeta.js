@@ -272,6 +272,36 @@ export function carteraActivacion(clientes = [], posList = null) {
     return base.filter(c => carnets.has(String(c.customerId || c.id)) || nombres.has(llaveNombre(c.customerName)));
 }
 
+/**
+ * Nombre de PDV por carnet, desde la lista maestra (pedido del dueño, 15-oct):
+ * al vendedor se le muestra el PUNTO DE VENTA ("Páramo Piedra Azul"), nunca la
+ * razón social ("Hipermercado Paramo C.A"). Prefiere los PDV vigentes; si el
+ * carnet solo tiene PDV inactivos, usa ese nombre (para la lista de "fuera").
+ */
+export function nombrePdvPorCarnet(posList = null) {
+    const vig = new Map(), otros = new Map();
+    (posList || []).forEach(p => {
+        if (!p || p.type === 'depot' || p.eliminado === true || !p.zohoCustomerId || !p.name) return;
+        const m = pdvVigente(p) ? vig : otros;
+        const k = String(p.zohoCustomerId);
+        m.set(k, m.has(k) ? `${m.get(k)} · ${p.name}` : p.name);
+    });
+    otros.forEach((v, k) => { if (!vig.has(k)) vig.set(k, v); });
+    return vig;
+}
+
+/**
+ * La cartera del vendedor como PUNTOS DE VENTA: las sucursales que cuentan
+ * (`carteraActivacion`) con `nombrePdv` (el nombre del PDV) y `razonSocial`.
+ */
+export function carteraComoPdv(clientes = [], posList = null) {
+    const nombres = nombrePdvPorCarnet(posList);
+    return carteraActivacion(clientes, posList).map(c => {
+        const id = String(c.customerId || c.id);
+        return { ...c, nombrePdv: nombres.get(id) || c.customerName || id, razonSocial: c.customerName || '' };
+    });
+}
+
 /** Llaves de una cartera ya filtrada, para contar SOLO sus facturas como activación. */
 export function clavesCartera(cartera = []) {
     return {

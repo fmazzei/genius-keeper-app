@@ -3847,6 +3847,14 @@ El dueño corrigió los conceptos (13-oct):
   - **Texto de la tarjeta (pedido del dueño):** bajo "Activación" ya no va lo que hizo ("19 de 27 sucursales"), sino lo que tiene que hacer: "Meta: visitar 22 de 27 PDV activos por semana". El % grande es cuántos de sus PDV activos visitó y facturó por semana, en promedio, y la línea de adentro lo dice. En la Activación se habla de "PDV activos", no de "sucursales".
   - **Cobranza, con el mismo criterio:** bajo el título dice la meta ("Meta: cobrar a tiempo los $1.433 que vencían") en vez de "$613 de $1.433". Adentro: cobrado a tiempo, lo que vencía, lo que falta cobrar de eso y el vencido de hoy de toda su cartera, más dos listas plegadas con cada factura (`pilar.fallas`): **Sin cobrar** (saldo y días vencida) y **Cobradas tarde** (días después del plazo). La línea explicativa dice los días de gracia reales (`cobranzaGraciaDias`). Fuera por PDV inactivo: Gama, Río Palos Grandes, Páramo Palo Verde y Guatire, CM Plaza Las Américas, Chacaíto y San Antonio.
 
+#### El vendedor ve PUNTOS DE VENTA, no razones sociales (2026-10-15) ✅
+
+Reclamo del dueño: en Gestión salían "Hipermercado Paramo C.A" (una razón social) y PDV inactivos (Excelsior Gama), y el máster ve 31 PDV activos mientras el vendedor ve 22. La única fuente es la lista maestra (`pos`).
+- **Los números reales (15-oct):** 31 PDV activos en la lista maestra = **27 con visitas** (retail) + **4 foodservice** (Festejos Elite, Grupo 212 Steak, La Cava, Los Gorditos; sin frecuencia de visita). Los 27 son todos de la cartera de Carolina. El **22** no es otro conteo: es la meta semanal de Activación (80 % de 27). La tarjeta lo dice ahora: "Tienes 27 PDV activos… la meta es activar 22 cada semana".
+- **Nombre del PDV en todas las listas de Activación** (`nombrePdvPorCarnet` y `carteraComoPdv` en `vendedorMeta.js`; `detalleActivacion` devuelve `nombre` = nombre del PDV y `razonSocial` aparte): "Páramo (Piedra Azul)", no "Hipermercado Paramo C.A". Aplica a Gestión del vendedor, Comercial → Vendedores y el PDF.
+- **Plan de la semana y Registrar gestión** (`GestionVentaView`, `clientesPdv`): solo carnets con un PDV activo de la lista maestra (con visitas, o foodservice activo), con el nombre del PDV. Un PDV inactivo (Gama, Páramo Guatire…) ya no se sugiere ni se ofrece.
+- Prueba: `tests/gestionVenta.test.mjs` (28 en verde).
+
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 
 Pedido del dueño: las alertas de los reportes deben llegar al máster y a la gerencia, abrir el reporte al tocarlas y decir las unidades; el reporte debe traer la coordenada de donde se hizo; y las alertas del sistema o del agente van solo al máster, en Configuraciones, con un punto rojo cuando llega una.

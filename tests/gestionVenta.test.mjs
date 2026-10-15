@@ -171,5 +171,18 @@ ok(p3 && !p3.pagada && p3.saldo === 56 && p3.dias === 16, 'y lo que sigue sin co
         'el Bono Activación cuenta solo facturas de la cartera (con Río solo: 0 semanas; sin filtro: 1)');
 }
 
+// ── La lista sale con el nombre del PDV, no la razón social (15-oct) ──
+{
+    const posP = [
+        { id: 'pa', name: 'Páramo (Piedra Azul)', zohoCustomerId: 'H1', active: true, visitInterval: 7 },
+        { id: 'pg', name: 'Páramo (Guatire)', zohoCustomerId: 'H2', active: false, visitInterval: 0 },
+    ];
+    const cliP = [{ customerId: 'H1', customerName: 'Hipermercado Paramo C.A' }, { customerId: 'H2', customerName: 'Hipermercado Paramo C.A (Guatire)' }];
+    const d = detalleActivacion({ facturas: [], clientes: cliP, inicio: new Date(2026, 9, 6), fin: new Date(2026, 9, 13), ahora: new Date(2026, 9, 10), posList: posP });
+    ok(d.cartera === 1, 'el PDV inactivo no entra a la cartera');
+    ok(d.sinActivar[0]?.nombre === 'Páramo (Piedra Azul)' && d.sinActivar[0]?.razonSocial === 'Hipermercado Paramo C.A', 'se muestra el PDV y la razón social aparte');
+    ok(d.fuera[0]?.nombre === 'Páramo (Guatire)' && d.fuera[0]?.motivo === 'PDV inactivo', 'el de fuera también por nombre de PDV');
+}
+
 console.log(fallas ? `\n${fallas} FALLAS` : '\nTodo correcto');
 process.exit(fallas ? 1 : 0);
