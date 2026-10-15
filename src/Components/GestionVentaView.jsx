@@ -255,6 +255,7 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
         return clientes.filter(c => nombres.has(String(c.customerId)))
             .map(c => ({ ...c, nombrePdv: nombres.get(String(c.customerId)) }));
     }, [clientes, posList]);
+    const fsCarnets = useMemo(() => new Set((posList || []).filter(p => p?.canal === 'foodservice' && p.zohoCustomerId).map(p => String(p.zohoCustomerId))), [posList]);
     const sugerencias = useMemo(() => {
         const enPlan = new Set((plan?.items || []).map(claveObjetivo));
         return sugerirPlan({ clientes: clientesPdv, facturas, gestiones }).filter(s => !enPlan.has(claveObjetivo(s)));
@@ -296,14 +297,21 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
             <section className="rounded-2xl bg-gradient-to-br from-[#FFD600]/15 to-slate-900 border border-[#FFD600]/30 p-4">
                 <p className="text-[11px] font-black uppercase tracking-wider text-[#FFD600]/80 flex items-center gap-1"><Zap size={12} /> Tu activación de esta semana</p>
                 {act.cartera > 0 ? (<>
-                    <p className="text-white font-black text-3xl mt-1">{activadosSem} <span className="text-base text-slate-400 font-bold">de {act.objetivo} PDV</span></p>
-                    <div className="h-2 rounded-full bg-slate-800 overflow-hidden mt-2">
-                        <div className={`h-full rounded-full ${actSem?.lograda ? 'bg-emerald-400' : 'bg-[#FFD600]'}`} style={{ width: `${Math.min(100, act.objetivo ? activadosSem / act.objetivo * 100 : 0)}%` }} />
+                    {/* Lenguaje único (pedido del dueño, 15-oct): se cuenta contra SU CARTERA
+                        de PDV retail; la meta (80 %) es una marca en la barra, no el techo. */}
+                    <p className="text-white font-black text-3xl mt-1">{activadosSem} <span className="text-base text-slate-400 font-bold">de {act.cartera} PDV retail activados</span></p>
+                    <div className="relative mt-2">
+                        <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden">
+                            <div className={`h-full rounded-full ${actSem?.lograda ? 'bg-emerald-400' : 'bg-[#FFD600]'}`} style={{ width: `${Math.min(100, activadosSem / act.cartera * 100)}%` }} />
+                        </div>
+                        <div className="absolute -top-1 w-0.5 bg-white/80" style={{ left: `${act.objetivo / act.cartera * 100}%`, height: 18 }} title={`Meta: ${act.objetivo} PDV`} />
                     </div>
+                    <p className="text-[11px] text-slate-300 mt-1" style={{ paddingLeft: `calc(${Math.min(80, act.objetivo / act.cartera * 100)}% - 2.5rem)` }}>▲ meta {act.threshold}% ({act.objetivo} PDV)</p>
                     <p className="text-xs text-slate-400 mt-2">
-                        Tienes <b className="text-white">{act.cartera} PDV activos</b> en tu cartera (lista maestra, sin foodservice). La meta es activar {act.objetivo} cada semana ({act.threshold}%): un PDV se activa cuando le facturas al menos {act.minUnits} unidades en la semana.
-                        {actSem?.lograda ? ' ¡Semana lograda!' : ` Te faltan ${Math.max(0, act.objetivo - activadosSem)}.`}
-                        {' '}Semana del {semIni.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}.
+                        Tu cartera: <b className="text-white">{act.cartera} PDV retail activos</b>. Un PDV se activa cuando le facturas al menos {act.minUnits} unidades en la semana.
+                        {' '}La meta es el {act.threshold}% de tu cartera ({act.objetivo} PDV), no el techo: cada PDV que actives de más suma.
+                        {actSem?.lograda ? ` ¡Meta lograda! Vas por los ${act.cartera}.` : ` Te faltan ${Math.max(0, act.objetivo - activadosSem)} para la meta.`}
+                        {' '}Semana del {semIni.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })}. Los clientes foodservice no cuentan aquí.
                     </p>
                     {act.sinActivar.length > 0 && (
                         <details className="mt-2">
@@ -366,7 +374,7 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
                                     <Plus size={14} className="text-[#FFD600] shrink-0" />
                                     <span className="flex-1 min-w-0">
                                         <span className="block text-sm text-slate-200 truncate">{s.nombre}</span>
-                                        <span className="block text-[11px] text-slate-500">{(MOTIVO_PLAN[s.motivo] || MOTIVO_PLAN.otro)(s.dias)}</span>
+                                        <span className="block text-[11px] text-slate-500">{fsCarnets.has(String(s.clienteZohoId)) && <b className="text-sky-300">Cliente foodservice · </b>}{(MOTIVO_PLAN[s.motivo] || MOTIVO_PLAN.otro)(s.dias)}</span>
                                     </span>
                                 </button>
                             ))}

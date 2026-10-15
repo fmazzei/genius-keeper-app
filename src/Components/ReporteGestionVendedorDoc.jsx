@@ -92,7 +92,7 @@ export default function ReporteGestionVendedorDoc({ nombre, ev, anio, onClose })
                     <div className="gk-rgv-blk">
                         <p style={h2}>Activación: la visita que factura</p>
                         <p style={{ fontSize: 11, margin: '0 0 6px', color: '#334155' }}>
-                            Meta: visitar {det.objetivo} de {det.cartera} PDV activos ({det.threshold}%) con ≥{det.minUnits} uds cada semana ·
+                            Cartera: {det.cartera} PDV retail · meta {det.threshold}% ({det.objetivo} PDV) con ≥{det.minUnits} uds cada semana ·
                             <b> {det.activadosPeriodo} PDV activados</b> en el período con {det.interacciones} facturas · {det.conVisita} con visita suya registrada.
                         </p>
                         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 8 }}>

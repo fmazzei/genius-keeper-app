@@ -221,10 +221,10 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
         pilares.activacion = {
             score: clamp(prom * 100),
             // Lo que tiene que hacer, no lo que ya hizo (pedido del dueño): la meta semanal en PDV activos.
-            valor: `Meta: visitar ${det.objetivo} de ${det.cartera} PDV activos por semana`,
+            valor: `Cartera: ${det.cartera} PDV retail · meta ${umbral}% (${det.objetivo} PDV) por semana`,
             pctMeta: prom * umbral / 100,
-            sobreMeta: `${pctTxt(prom * umbral / 100)} de sus PDV activos por semana en promedio (meta ${umbral}%)`,
-            detalle: `${act.semanasLogradas} de ${act.semanasTotales} semana${act.semanasTotales === 1 ? '' : 's'} logradas (${det.objetivo} de ${det.cartera} PDV activos con ≥${minU} uds)${ultima?.enCurso ? ` · esta semana van ${ultima.activados}/${det.objetivo}` : ''} · ${det.interacciones} facturas a ${det.activadosPeriodo} PDV en el período`,
+            sobreMeta: `${pctTxt(prom * umbral / 100)} de sus PDV retail por semana en promedio (meta ${umbral}%)`,
+            detalle: `${act.semanasLogradas} de ${act.semanasTotales} semana${act.semanasTotales === 1 ? '' : 's'} logradas (meta ${det.objetivo} de ${det.cartera} PDV retail con ≥${minU} uds)${ultima?.enCurso ? ` · esta semana van ${ultima.activados}/${det.objetivo}` : ''} · ${det.interacciones} facturas a ${det.activadosPeriodo} PDV en el período`,
             semanasLogradas: act.semanasLogradas, semanasTotales: act.semanasTotales,
             cifras: [
                 { k: 'Semanas logradas', v: `${act.semanasLogradas} de ${act.semanasTotales}` },
