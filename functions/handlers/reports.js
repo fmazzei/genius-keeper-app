@@ -45,42 +45,17 @@ async function getVisitReports(start, end) {
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-// ── Meta efectiva del vendedor — espejo de computeMetaMensual (src/utils/
-// vendedorMeta.js): meta plena con fallback a defaults, reducida por el
-// período de ARRANQUE según los meses de empleo (fechaIngreso). Mantener en
-// sync con el frontend para que el % de meta del correo mensual cuadre con
-// Ventas / Rendimiento Comercial.
-const { DEFAULT_COMMISSION_CONFIG } = require("./commissionEngine");
-
-function parseFechaLocal(v) {
-    if (!v) return null;
-    if (typeof v === "string") {
-        const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    }
-    const d = v?.toDate ? v.toDate() : new Date(v);
-    return isNaN(d?.getTime?.()) ? null : d;
-}
-
-function metaEfectivaVendedor(v) {
-    const cfg = v.commissionConfig
-        ? { ...DEFAULT_COMMISSION_CONFIG, ...v.commissionConfig }
-        : DEFAULT_COMMISSION_CONFIG;
-    const metaPlena = v.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-    const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
-    const ingreso = parseFechaLocal(v.fechaIngreso);
-    if (!ingreso || arranque.length === 0) return metaPlena;
-    const hoy = new Date();
-    let meses = (hoy.getFullYear() - ingreso.getFullYear()) * 12 + (hoy.getMonth() - ingreso.getMonth());
-    if (hoy.getDate() < ingreso.getDate()) meses -= 1;
-    meses = Math.max(0, meses);
-    return meses < arranque.length ? (arranque[meses].meta || metaPlena) : metaPlena;
-}
+// ── Meta del vendedor en el mes del reporte — la misma regla que la app
+// (src/utils/periodosComision.js, empaquetada): sus períodos (de aniversario
+// hasta sep-2026; desde octubre cortados a fin de mes) aportan su meta en
+// proporción a los días que caen en el mes. Para un mes completo es la meta de
+// su período, la misma que ve en su Home.
+const { metaEnVentana } = require("./generado/periodosComision.cjs");
 
 // Meta general de la empresa para el reporte mensual: el número fijado en
 // settings/appConfig.metaVentasGeneral; si es 0, la suma de las metas
-// EFECTIVAS de los vendedores activos (misma regla que Ventas / Rendimiento).
-async function getSalesGoal() {
+// de los vendedores activos EN ESE MES (misma regla que Comercial → Meta).
+async function getSalesGoal(desde, hasta) {
     const db = admin.firestore();
     const cfg = await db.doc("settings/appConfig").get();
     const manual = Number(cfg.data()?.metaVentasGeneral) || 0;
@@ -91,7 +66,7 @@ async function getSalesGoal() {
     vends.forEach((d) => {
         const v = d.data();
         if (v.active === false) return;
-        sum += Number(metaEfectivaVendedor(v)) || 0;
+        sum += Number(metaEnVentana(v, desde, hasta)) || 0;
     });
     return sum;
 }
@@ -439,7 +414,7 @@ async function buildAndSend(type, recipients) {
         const firstThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         const firstLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const firstPrevMonth = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-        const salesGoal = await getSalesGoal();
+        const salesGoal = await getSalesGoal(firstLastMonth, firstThisMonth);
         const [reports, prevReports] = await Promise.all([
             getVisitReports(firstLastMonth, firstThisMonth),
             getVisitReports(firstPrevMonth, firstLastMonth),

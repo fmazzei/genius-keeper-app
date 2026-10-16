@@ -150,23 +150,28 @@ function enSilencio(ms, cfg = DEFAULTS) {
     return diaSemana(ms) === 0 || h >= cfg.silencioDesde || h < cfg.silencioHasta;
 }
 
-// ── C. Meta del período de empleo (misma lógica que vendedorMeta.js) ───────
+// ── C. Meta del período del vendedor (misma regla que la app) ───────────────
 
-const addMonths = (d, n) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, d.getUTCDate()));
+// Los períodos salen de src/utils/periodosComision.js (empaquetado): de
+// aniversario hasta septiembre de 2026 y, desde octubre, cortados a fin de mes,
+// con la meta en proporción si el período es corto. Se le pasan los días de reloj
+// de Caracas como fechas locales y se vuelven a llevar a instantes con TZ, así el
+// resultado no depende de la zona horaria del proceso.
+const { periodosConMeta } = require('./generado/periodosComision.cjs');
+const msDeLocal = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) + TZ;
 function periodoMeta(vend, ahoraMs, metaPorDefecto = 2400) {
     const cfg = vend.commissionConfig || {};
     const metaPlena = num(vend.metaMensual) || num(cfg.metaMensual) || metaPorDefecto;
-    const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
-    const ing = vend.fechaIngreso ? new Date(toMs(vend.fechaIngreso) || Date.parse(vend.fechaIngreso)) : null;
+    const ingMs = vend.fechaIngreso ? (toMs(vend.fechaIngreso) || Date.parse(vend.fechaIngreso)) : NaN;
     const hoy = new Date(ahoraMs - TZ);
-    if (ing && !Number.isNaN(ing.getTime())) {
-        const ingDia = new Date(Date.UTC(ing.getUTCFullYear(), ing.getUTCMonth(), ing.getUTCDate()));
-        if (hoy < ingDia) return null;   // aún no comienza
-        let m = (hoy.getUTCFullYear() - ingDia.getUTCFullYear()) * 12 + (hoy.getUTCMonth() - ingDia.getUTCMonth());
-        if (hoy.getUTCDate() < ingDia.getUTCDate()) m -= 1;
-        m = Math.max(0, m);
-        const ini = addMonths(ingDia, m), fin = addMonths(ingDia, m + 1);
-        return { meta: (m < arranque.length && num(arranque[m].meta)) || metaPlena, ini: ini.getTime() + TZ, fin: fin.getTime() + TZ };
+    if (Number.isFinite(ingMs)) {
+        const ingDia = new Date(ingMs).toISOString().slice(0, 10);
+        const hoyLocal = new Date(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate());
+        const [y, m, d] = ingDia.split('-').map(Number);
+        if (hoyLocal < new Date(y, m - 1, d)) return null;   // aún no comienza
+        const ps = periodosConMeta({ ...vend, metaMensual: metaPlena, fechaIngreso: ingDia }, hoyLocal);
+        const p = ps[ps.length - 1];
+        return { meta: p.meta, ini: msDeLocal(p.start), fin: msDeLocal(p.end), corto: p.corto };
     }
     const ini = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1) + TZ;
     const fin = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, 1) + TZ;

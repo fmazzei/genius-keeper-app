@@ -23,6 +23,7 @@ import { cuentaEnCartera, esPorCobrar, saldoAbierto } from '@/utils/facturaEstad
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { clasificarVentas, evaluarPlan } from '@/utils/gestionVenta.js';
 import { detalleActivacion } from '@/utils/activacion.js';
+import { reglasDelVendedor, periodosConMeta, fechaLocal } from '@/utils/periodosComision.js';
 
 const DIA = 86400000;
 const toDate = fechaCalendario;
@@ -45,30 +46,23 @@ export function estadoDe(score) {
     return { key: 'no_cumple', label: 'No está cumpliendo', tono: 'rojo' };
 }
 
-const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, d.getDate());
 const fmtCorto = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
 const rango = (a, b) => `${fmtCorto(a)} – ${fmtCorto(new Date(b.getTime() - DIA))}`;
 
 /**
- * Los últimos `n` meses de empleo del vendedor (el más reciente primero), con su
- * meta. Sin fecha de ingreso, meses de calendario con la meta plena.
+ * Los últimos `n` períodos del vendedor (el más reciente primero), con su meta.
+ * Son los mismos con los que se le paga (periodosComision.js): de aniversario
+ * hasta septiembre de 2026 y, desde octubre, cortados a fin de mes. Sin fecha de
+ * ingreso, meses de calendario con la meta plena.
  */
 export function periodosVendedor(vendedor = {}, n = 12, ahora = new Date()) {
-    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.commissionConfig || {}) };
-    const metaPlena = Number(vendedor.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual) || 0;
-    const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
-    const actual = computeMetaMensual(vendedor);
+    const { metaPlena } = reglasDelVendedor(vendedor);
     const out = [];
-    if (actual.ingreso) {
-        // Índice del mes de empleo a la fecha `ahora` (no a la del reloj), para
-        // poder evaluar cualquier corte.
-        const ing = actual.ingreso;
-        let idx = (ahora.getFullYear() - ing.getFullYear()) * 12 + (ahora.getMonth() - ing.getMonth());
-        if (ahora.getDate() < ing.getDate()) idx -= 1;
-        for (let i = Math.max(0, idx); i >= 0 && out.length < n; i--) {
-            const start = addMonths(actual.ingreso, i), end = addMonths(actual.ingreso, i + 1);
-            const meta = i < arranque.length ? (Number(arranque[i].meta) || metaPlena) : metaPlena;
-            out.push({ start, end, meta, mes: i + 1, label: `Mes ${i + 1}`, rango: rango(start, end), enCurso: end > ahora });
+    if (fechaLocal(vendedor.fechaIngreso)) {
+        const ps = periodosConMeta(vendedor, ahora);
+        for (let k = ps.length - 1; k >= 0 && out.length < n; k--) {
+            const p = ps[k];
+            out.push({ start: p.start, end: p.end, meta: p.meta, mes: p.mes, corto: p.corto, label: `Mes ${p.mes}`, rango: rango(p.start, p.end), enCurso: p.end > ahora });
         }
     } else {
         for (let i = 0; i < n; i++) {
@@ -94,7 +88,7 @@ export function ventanasVendedor(vendedor = {}, ahora = new Date()) {
     const diasMes = Math.max(1, Math.round((delMes.end - delMes.start) / DIA));
     const tri = per.slice(0, 3);
     return {
-        mes: { tipo: 'mes', inicio: mes.start, fin: mes.end, meta: mes.meta, titulo: mes.mes ? `Mes ${mes.mes} de su empleo` : 'Mes en curso', rango: mes.rango },
+        mes: { tipo: 'mes', inicio: mes.start, fin: mes.end, meta: mes.meta, titulo: mes.mes ? `Mes ${mes.mes} de su empleo${mes.corto ? ' (período corto)' : ''}` : 'Mes en curso', rango: mes.rango },
         semana: { tipo: 'semana', inicio: semIni, fin: lunes, meta: delMes.meta * 7 / diasMes, titulo: 'Última semana cerrada', rango: rango(semIni, lunes) },
         trimestre: {
             tipo: 'trimestre', inicio: tri[tri.length - 1].start, fin: mes.end, meta: tri.reduce((s, p) => s + p.meta, 0),

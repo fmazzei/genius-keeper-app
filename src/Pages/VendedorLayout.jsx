@@ -191,7 +191,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                 <button onClick={onBack} className="p-2 rounded-xl bg-slate-800 text-slate-400 shrink-0"><ChevronLeft size={18} /></button>
                 <div className="flex-1 min-w-0">
                     <p className="text-white font-black text-lg leading-tight">Estado de Cuenta</p>
-                    <p className="text-slate-400 text-xs">Tu comisión por período (mes de empleo)</p>
+                    <p className="text-slate-400 text-xs">Tu comisión por período (se corta el último día de cada mes)</p>
                 </div>
                 {estados.length > 0 && (
                     <button
@@ -1296,10 +1296,12 @@ const VendedorLayout = ({ user, onLogout }) => {
                     ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
                     : DEFAULT_COMMISSION_CONFIG;
 
-                // Meta y PERÍODO efectivos. El período corre por mes de empleo
-                // (anclado a fechaIngreso), no por mes de calendario — ver
-                // vendedorMeta.js.
-                const { metaMensual, mesArranque, periodStart, periodEnd, periodoLabel, antesDeIngreso, sinIngreso, ingreso } = computeMetaMensual(meta);
+                // Meta y PERÍODO efectivos (periodosComision.js): mes de empleo
+                // hasta septiembre de 2026; desde octubre se cortan el último día
+                // de cada mes. Un período corto lleva la meta en proporción.
+                const per = computeMetaMensual(meta);
+                const { metaMensual, mesArranque, periodStart, periodEnd, antesDeIngreso, sinIngreso, ingreso } = per;
+                const periodoLabel = per.corto ? `${per.periodoLabel} · período corto, meta en proporción` : per.periodoLabel;
 
                 setCommConfig(cfg);
                 const vendedorObj = { uid: user.uid, nombre, metaMensual, reporterId, mesArranque, antesDeIngreso, sinIngreso, ingreso };

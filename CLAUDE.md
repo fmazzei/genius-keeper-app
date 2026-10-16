@@ -1068,7 +1068,7 @@ items.
 
 **Decisiones de negocio (cerradas con el dueño, 2026-06/07):**
 - **Atribución por CARTERA, no por salesperson.** Una factura pertenece al vendedor dueño del cliente. Se mapea `zohoCustomerId` (de la factura Zoho) → `vendor_clients` → `vendedorId`. El salesperson de Zoho suele ser genérico ("Ventas de oficina"), por eso NO sirve para atribuir.
-- **Período del vendedor = MES DE EMPLEO** (anclado a `users_metadata.fechaIngreso`), no mes de calendario. Ej.: ingreso 15/06 → Mes 1 = 15/06–14/07. El arranque y todo lo que ve el vendedor corren por este período.
+- **Período del vendedor = MES DE EMPLEO** (anclado a `users_metadata.fechaIngreso`), no mes de calendario. Ej.: ingreso 15/06 → Mes 1 = 15/06–14/07. El arranque y todo lo que ve el vendedor corren por este período. **Reemplazado desde octubre de 2026**: la comisión se corta el último día de cada mes (ver "La comisión se corta el último día de cada mes").
 - **Dos metas que se afectan entre sí:** Facturación (colocar ~2.000 uds/mes, mover inventario) y **Cobranza** (cobrar ~1.340 uds ≈ $7.500 = costos del mes, en ≤30 días). La comisión se paga **sobre lo cobrado**, con la **tasa que da el nivel de facturación**. "Una unidad solo vale cuando se cobra."
 - **Ventanas de cobro:** 0–30 días → comisión base + Bono Cobranza; 31–45 → base sin bono; >45 → anulada (`facturaMaxDias=45`, `cobranzaDias=30`).
 - **Bono Cobranza 2%** (reusa la clave `bonusPuntualidad` hasta la Fase 3.6). **Comisión por Cuentas Recuperadas 5% flat**: facturas heredadas de la cartera (previas al ingreso o sin dueño) que el vendedor cobra — cuentan para su **comisión** pero NO para su **meta de facturación**.
@@ -3879,6 +3879,21 @@ Reclamo del dueño con dos capturas: la Meta de la empresa (octubre) decía **32
 - **Las dos cifras miden ventanas distintas a propósito** (decisiones del dueño): la empresa, mes CALENDARIO; el vendedor, su MES DE EMPLEO (Carolina 19-sep → 18-oct: 346 uds de septiembre + 345 de octubre = 691). La meta de 1.700 es la misma porque, sin meta de empresa fijada, se usa la suma de las metas de los vendedores. Para que se cuadren a la vista, la Meta de la empresa ahora dice "Mes calendario: del 1 al N" y trae el bloque **"¿Por qué la cifra del vendedor es otra?"**: por vendedor, su mes de empleo (X de meta, lo de Vendedores) y su aporte al mes calendario (lo que suma aquí), con las mismas facturas.
 - **Pendiente anotado:** la tarjeta del vendedor y el motor de comisiones suman `unidades` tal cual; la meta de la empresa usa `unidadesReales` (reinterpreta kg no normalizados). Hoy dan lo mismo (todas las facturas recientes están normalizadas); unificarlo toca el motor de comisiones.
 - Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/fechasFactura.test.mjs` (4 en verde).
+
+#### La comisión se corta el último día de cada mes: una sola meta para todos (2026-10-16) ✅
+
+Decisión del dueño: *"en 15 días solamente vender 345 unidades es lamentablemente poco pero el vendedor se alinea por su meta… la meta del vendedor debe ser el reflejo de la necesidad de venta de la empresa"*. Aprobado: período corto en octubre y que todos corran con la misma meta.
+- **Una sola regla, `src/utils/periodosComision.js`** (empaquetada a `functions/handlers/generado/periodosComision.cjs` por `tools/generarMotorFunciones.mjs`; no editar el `.cjs`):
+  - Los períodos que empezaron antes de `CIERRE_MES_CALENDARIO_DESDE` (`2026-10-01`) siguen de aniversario: ya se pagaron o se están trabajando con esa regla.
+  - El primero que empieza desde esa fecha va hasta el fin de su mes (**período corto**) y desde ahí cada período es un mes calendario. Un vendedor nuevo: de su ingreso al fin de ese mes.
+  - El período corto lleva la **meta y la base (salario + viáticos) en proporción a sus días**. Los niveles son % de la meta, así que se ajustan solos. El arranque sigue por número de período.
+  - **Carolina** (ingreso 19-ago): Mes 2 = 19-sep–18-oct (1.700, sin cambios); **Mes 3 = 19–31 oct, meta 839** (2.000 × 13/31), salario $400 × 13/31 = $167,74; Mes 4 = noviembre completo (2.000, $400).
+  - Las claves de período (`periodKey` = fecha de inicio) no cambian para los períodos de aniversario: cierres congelados, liquidaciones y `comisiones_periodos` siguen igual. El corto es `2026-10-19`; noviembre, `2026-11-01`.
+- **La usan**: `vendedorMeta.js` (`computeMetaMensual`, `listPeriodos`, `motorComisiones`; el estado de cuenta y el comprobante toman la base del período), `desempenoVendedor.js` (`periodosVendedor`), el servidor (`commissionEngine.periodoCohorteFromDate`: cohorte de cada factura), el vigilante (`vigilanteReglas.periodoMeta`, ritmo de la meta) y el correo mensual (`reports.getSalesGoal`).
+- **Una sola meta**: la meta de la empresa sin meta fijada = Σ `metaEnVentana(vendedor, mes)`: cada período aporta su meta en proporción a los días que caen en el mes. Para un mes completo es la meta del vendedor, así que desde noviembre la tarjeta de la empresa y la del vendedor miden lo mismo. **Octubre (mes del cambio) = 1.859** (1.700 × 18/30 + 839). Comercial → Meta de la empresa muestra "La meta de cada vendedor este mes" y avisa si la meta fijada en Configuraciones no es la suma de las de los vendedores. `useTeamMetaMensual` usa la misma suma.
+- **Pantallas**: el Home dice "período corto, meta en proporción"; los textos de "mes de empleo" se cambiaron.
+- **Pendiente anotado**: la tarjeta del vendedor y el motor suman `unidades`; la meta de la empresa, `unidadesReales`. Hoy coinciden.
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/periodosComision.test.mjs` (31 en verde: períodos de Carolina, vendedor nuevo, app = servidor = vigilante, misma meta empresa/vendedor, estado de cuenta del período corto).
 
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 

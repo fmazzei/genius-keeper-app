@@ -93,6 +93,57 @@ var esFantasma = (f) => f?.ausenteEnZoho === true || f?.estado === "borrador";
 var esReposicion = (f) => f?.esReposicion === true;
 var cuentaEnCartera = (f) => !!f && !esAnulada(f) && !esFantasma(f) && !esReposicion(f);
 
+// src/utils/periodosComision.js
+var DIA = 864e5;
+var CIERRE_MES_CALENDARIO_DESDE = "2026-10-01";
+function fechaLocal(v) {
+  if (!v) return null;
+  if (typeof v === "string") {
+    const m = v.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  const d = v?.toDate ? v.toDate() : new Date(v);
+  return isNaN(d?.getTime?.()) ? null : d;
+}
+var addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, d.getDate());
+var pad = (n) => String(n).padStart(2, "0");
+var claveDe = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+var diasEntre = (a, b) => Math.round((b - a) / DIA);
+var diasDelMes = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+function periodosDeEmpleo(fechaIngreso, hasta = /* @__PURE__ */ new Date(), { desde = CIERRE_MES_CALENDARIO_DESDE } = {}) {
+  const ingreso = fechaLocal(fechaIngreso);
+  if (!ingreso) return [];
+  const corte = desde ? fechaLocal(desde) : null;
+  const out = [];
+  let start = ingreso;
+  for (let i = 0; i < 1200; i++) {
+    const calendario = !!corte && start >= corte;
+    const end = calendario ? new Date(start.getFullYear(), start.getMonth() + 1, 1) : addMonths(ingreso, i + 1);
+    const dias = diasEntre(start, end);
+    const fraccion = calendario ? dias / diasDelMes(start) : 1;
+    out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto: fraccion < 1 });
+    if (end > hasta) break;
+    start = end;
+  }
+  return out;
+}
+function reglasDelVendedor(vendedor = {}) {
+  const cfg = vendedor.commissionConfig ? { ...DEFAULT_COMMISSION_CONFIG, ...vendedor.commissionConfig } : DEFAULT_COMMISSION_CONFIG;
+  const metaPlena = Number(vendedor.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual) || 0;
+  const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
+  const baseMes = (Number(cfg.salarioFijo) || 0) + (Number(cfg.viaticosSemanales) || 0) * 4;
+  return { cfg, metaPlena, arranque, baseMes };
+}
+function metaDePeriodo(p, { metaPlena, arranque }) {
+  const base = p.i < arranque.length ? Number(arranque[p.i]?.meta) || metaPlena : metaPlena;
+  return p.corto ? Math.round(base * p.fraccion) : base;
+}
+var baseDePeriodo = (p, { baseMes }) => baseMes * (p.fraccion ?? 1);
+function periodosConMeta(vendedor = {}, hasta = /* @__PURE__ */ new Date(), opts) {
+  const reglas = reglasDelVendedor(vendedor);
+  return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({ ...p, meta: metaDePeriodo(p, reglas), base: baseDePeriodo(p, reglas) }));
+}
+
 // src/utils/vendedorMeta.js
 var MS_DIA = 864e5;
 var toDate = (v) => {
@@ -104,31 +155,22 @@ var toDate = (v) => {
   const d = v?.toDate ? v.toDate() : new Date(v);
   return isNaN(d?.getTime?.()) ? null : d;
 };
-var addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, d.getDate());
-var mesesCompletos = (ingreso, hoy) => {
-  let m = (hoy.getFullYear() - ingreso.getFullYear()) * 12 + (hoy.getMonth() - ingreso.getMonth());
-  if (hoy.getDate() < ingreso.getDate()) m -= 1;
-  return Math.max(0, m);
-};
-function computeMetaMensual(meta = {}) {
-  const cfg = meta.commissionConfig ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig } : DEFAULT_COMMISSION_CONFIG;
-  const metaPlena = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-  const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
-  const ahora = /* @__PURE__ */ new Date();
+function computeMetaMensual(meta = {}, ahora = /* @__PURE__ */ new Date()) {
+  const { metaPlena, arranque, baseMes } = reglasDelVendedor(meta);
   const ingreso = toDate(meta.fechaIngreso);
-  let periodStart, periodEnd, periodIndex, mesArranque, metaMensual;
   const antesDeIngreso = !!(ingreso && ahora < ingreso);
+  let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, fraccion = 1, base = baseMes;
   if (ingreso) {
-    periodIndex = mesesCompletos(ingreso, ahora);
-    periodStart = addMonths(ingreso, periodIndex);
-    periodEnd = addMonths(ingreso, periodIndex + 1);
-    if (periodIndex < arranque.length) {
-      mesArranque = periodIndex + 1;
-      metaMensual = arranque[periodIndex].meta || metaPlena;
-    } else {
-      mesArranque = 0;
-      metaMensual = metaPlena;
-    }
+    const ps = periodosConMeta(meta, ahora);
+    const p = ps[ps.length - 1];
+    periodIndex = p.i;
+    periodStart = p.start;
+    periodEnd = p.end;
+    mesArranque = p.i < arranque.length ? p.i + 1 : 0;
+    metaMensual = p.meta;
+    corto = p.corto;
+    fraccion = p.fraccion;
+    base = p.base;
   } else {
     periodStart = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
     periodEnd = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 1);
@@ -138,7 +180,7 @@ function computeMetaMensual(meta = {}) {
   }
   const fmt = (d) => d.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
   const periodoLabel = `${fmt(periodStart)} \u2013 ${fmt(new Date(periodEnd.getTime() - MS_DIA))}`;
-  return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
+  return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, fraccion, base, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
 }
 var rangoLabel = (start, end) => {
   const fmt = (d) => d.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
@@ -157,24 +199,17 @@ function tierParaPct(commissionConfig = {}, pct = 0) {
 function listPeriodos(meta = {}) {
   const ingreso = toDate(meta.fechaIngreso);
   if (!ingreso) return [];
-  const pad = (n2) => String(n2).padStart(2, "0");
   const ahora = /* @__PURE__ */ new Date();
-  const n = mesesCompletos(ingreso, ahora) + 1;
-  const out = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const start = addMonths(ingreso, i);
-    const end = addMonths(ingreso, i + 1);
-    out.push({
-      periodKey: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
-      mes: i + 1,
-      rango: rangoLabel(start, end),
-      anio: String(start.getFullYear()),
-      start,
-      end,
-      cerrado: end <= ahora
-    });
-  }
-  return out;
+  return periodosDeEmpleo(ingreso, ahora).reverse().map((p) => ({
+    periodKey: p.periodKey,
+    mes: p.mes,
+    rango: rangoLabel(p.start, p.end),
+    anio: String(p.start.getFullYear()),
+    start: p.start,
+    end: p.end,
+    corto: p.corto,
+    cerrado: p.end <= ahora
+  }));
 }
 var rankEstado = (e) => e === "pagada" ? 3 : e === "vencida" ? 2 : e === "anulada" ? 0 : 1;
 function dedupFacturas(facturas) {
@@ -287,8 +322,6 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
   const ingreso = toDate(meta.fechaIngreso);
   if (!ingreso) return null;
   const facturas = dedupFacturas(facturasIn);
-  const metaPlena = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-  const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
   const tiersDesc = [...cfg.tiers || []].sort((a, b) => b.minPct - a.minPct);
   const bajaRate = cfg.bajaRate ?? 0;
   const bajaLabel = cfg.bajaLabel || "Baja";
@@ -301,29 +334,26 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
     return { label: bajaLabel, rate: bajaRate };
   };
-  const pad = (n2) => String(n2).padStart(2, "0");
   const ahora = opts.ahora instanceof Date ? opts.ahora : /* @__PURE__ */ new Date();
-  const n = mesesCompletos(ingreso, ahora) + 1;
-  const periodos = [];
-  for (let i = 0; i < n; i++) {
-    const start = addMonths(ingreso, i);
-    const end = addMonths(ingreso, i + 1);
-    periodos.push({
-      i,
-      mes: i + 1,
-      start,
-      end,
-      periodKey: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
-      metaMensual: i < arranque.length ? arranque[i].meta || metaPlena : metaPlena,
-      cerrado: end <= ahora,
-      facturadas: [],
-      // facturas cuya FECHA cae en el período (nivel)
-      cobros: [],
-      // cobros cuyo PAGO cae en el período (comisión)
-      recuperadas: []
-      // cuentas recuperadas cobradas en el período
-    });
-  }
+  const periodos = periodosConMeta(meta, ahora).map((p) => ({
+    i: p.i,
+    mes: p.mes,
+    start: p.start,
+    end: p.end,
+    periodKey: p.periodKey,
+    metaMensual: p.meta,
+    base: p.base,
+    corto: p.corto,
+    fraccion: p.fraccion,
+    dias: p.dias,
+    cerrado: p.end <= ahora,
+    facturadas: [],
+    // facturas cuya FECHA cae en el período (nivel)
+    cobros: [],
+    // cobros cuyo PAGO cae en el período (comisión)
+    recuperadas: []
+    // cuentas recuperadas cobradas en el período
+  }));
   const idxDe = (d) => {
     if (!d) return -1;
     for (const p of periodos) if (d >= p.start && d < p.end) return p.i;
@@ -494,7 +524,6 @@ function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], op
   const m = motorComisiones(meta, facturas, opts);
   if (!m) return [];
   const { cfg, periodos, carteraSize } = m;
-  const baseMes = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
   const cerrados = opts.cerrados || {};
   const pagadoPorPeriodo = {};
   (liquidaciones || []).forEach((l) => {
@@ -547,8 +576,12 @@ function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], op
       carteraSize,
       tasaRecup: mt.tasaRecup,
       devengadoComision: mt.devengadoComision,
-      base: baseMes,
-      devengadoTotal: mt.devengadoComision + baseMes,
+      // Salario y viáticos del período: completos en un mes entero, en
+      // proporción a sus días en un período corto.
+      base: p.base,
+      corto: p.corto,
+      dias: p.dias,
+      devengadoTotal: mt.devengadoComision + p.base,
       congelado: false
     };
     const frozen = cerrados[p.periodKey];
@@ -579,7 +612,7 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
   const p = periodos.find((x) => x.periodKey === periodKey);
   if (!p) return null;
   const mt = montosPeriodo(p, cfg, opts);
-  const baseMes = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
+  const baseMes = p.base;
   const facturadas = [...p.facturadas].sort((a, b) => a.fecha - b.fecha);
   const facturadoMonto = facturadas.reduce((s, f) => s + f.monto, 0);
   const cobradoDeLoFacturado = facturadas.filter((f) => f.pagada).reduce((s, f) => s + f.monto, 0);
@@ -627,6 +660,8 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
   return {
     periodKey,
     mes: p.mes,
+    corto: p.corto,
+    dias: p.dias,
     rango: rangoLabel(p.start, p.end),
     rangoCorte: rangoLabel(p.start, enCurso ? new Date(ahora.getTime() + MS_DIA) : p.end),
     enCurso,

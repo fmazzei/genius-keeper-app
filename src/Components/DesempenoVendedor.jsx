@@ -418,7 +418,7 @@ function VistaAnio({ anio }) {
                     </tbody>
                 </table>
             </div>
-            <p className="text-[11px] text-slate-400 mt-2">Cada mes es su mes de empleo, contra su meta de ese mes. Las cifras de la tabla son el % sobre la meta de cada pilar (Fact. facturación, Activ. activación, Cobr. cobranza, Capt. captación). Punto azul = mes en curso.</p>
+            <p className="text-[11px] text-slate-400 mt-2">Cada mes es su período de comisión (mes de empleo hasta septiembre de 2026; desde octubre, el mes calendario), contra su meta de ese período. Las cifras de la tabla son el % sobre la meta de cada pilar (Fact. facturación, Activ. activación, Cobr. cobranza, Capt. captación). Punto azul = mes en curso.</p>
         </div>
     );
 }

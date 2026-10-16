@@ -277,7 +277,7 @@ export default function GestionVentaView({ uid, nombreVendedor, facturas = [], c
     if (cargando) return <div className="flex-1 flex items-center justify-center"><Loader className="animate-spin text-[#FFD600]" /></div>;
 
     // Activación de la semana en curso: las MISMAS semanas del bono (de 7 días
-    // desde el inicio de su mes de empleo), las mismas sucursales y el mismo
+    // desde el inicio de su período de comisión), las mismas sucursales y el mismo
     // mínimo de unidades.
     const semIni = (() => {
         const base = periodStart ? new Date(periodStart) : lunes;

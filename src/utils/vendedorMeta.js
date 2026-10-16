@@ -2,6 +2,7 @@
 
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
+import { reglasDelVendedor, periodosConMeta, periodosDeEmpleo } from '@/utils/periodosComision.js';
 
 const MS_DIA = 86400000;
 
@@ -18,57 +19,37 @@ const toDate = (v) => {
     return isNaN(d?.getTime?.()) ? null : d;
 };
 
-// Suma `n` meses conservando el día del mes (con desborde natural de JS).
-const addMonths = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, d.getDate());
-
-// Meses COMPLETOS transcurridos desde `ingreso` hasta `hoy` (índice de período,
-// base 0). El período del vendedor corre de aniversario a aniversario según su
-// fecha de ingreso: p.ej. ingreso 15/06 → Mes 1 = 15/06–14/07, Mes 2 = 15/07…
-// Así, el 01/07 (16 días) sigue siendo Mes 1, no salta a Mes 2 por calendario.
-const mesesCompletos = (ingreso, hoy) => {
-    let m = (hoy.getFullYear() - ingreso.getFullYear()) * 12 + (hoy.getMonth() - ingreso.getMonth());
-    if (hoy.getDate() < ingreso.getDate()) m -= 1; // aún no llega el día-aniversario este mes
-    return Math.max(0, m);
-};
-
 /**
  * Calcula el período de comisión vigente del vendedor y su meta efectiva.
  *
- * El período se ancla a `fechaIngreso` (mes de empleo, no de calendario). Si no
- * hay fecha de ingreso, cae al mes de calendario actual y meta plena.
+ * Los períodos salen de `periodosComision.js`: de aniversario (desde la fecha de
+ * ingreso) hasta septiembre de 2026; desde octubre se cortan el último día de
+ * cada mes (el primero puede ser corto, con la meta en proporción). Sin fecha de
+ * ingreso, el mes de calendario actual y la meta plena.
  *
  * @param {object} meta - documento de users_metadata del vendedor.
  * @returns {{ metaMensual:number, mesArranque:number, periodIndex:number,
- *             periodStart:Date, periodEnd:Date, periodoLabel:string }}
+ *             periodStart:Date, periodEnd:Date, periodoLabel:string, corto:boolean,
+ *             fraccion:number, base:number }}
  */
-export function computeMetaMensual(meta = {}) {
-    const cfg = meta.commissionConfig
-        ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
-        : DEFAULT_COMMISSION_CONFIG;
-
-    const metaPlena = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-    const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
-    const ahora = new Date();
+export function computeMetaMensual(meta = {}, ahora = new Date()) {
+    const { metaPlena, arranque, baseMes } = reglasDelVendedor(meta);
     const ingreso = toDate(meta.fechaIngreso);
-
-    let periodStart, periodEnd, periodIndex, mesArranque, metaMensual;
     // Ingreso en el FUTURO: el vendedor aún no comienza. Su Mes 1 arranca en la
-    // fecha de ingreso (no antes), con la meta reducida del Mes 1. `antesDeIngreso`
-    // permite al Home mostrar un estado "comienza el DD/MM" en vez de un período
-    // en curso con velocidad/porcentajes engañosos.
+    // fecha de ingreso (no antes). `antesDeIngreso` permite al Home mostrar
+    // "comienza el DD/MM" en vez de un período en curso con cifras engañosas.
     const antesDeIngreso = !!(ingreso && ahora < ingreso);
 
+    let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, fraccion = 1, base = baseMes;
     if (ingreso) {
-        periodIndex = mesesCompletos(ingreso, ahora);   // 0-based (0 si aún no ingresa)
-        periodStart = addMonths(ingreso, periodIndex);
-        periodEnd   = addMonths(ingreso, periodIndex + 1);
-        if (periodIndex < arranque.length) {
-            mesArranque = periodIndex + 1;               // 1-based (Mes 1, Mes 2…)
-            metaMensual = arranque[periodIndex].meta || metaPlena;
-        } else {
-            mesArranque = 0;
-            metaMensual = metaPlena;
-        }
+        const ps = periodosConMeta(meta, ahora);
+        const p = ps[ps.length - 1];
+        periodIndex = p.i;
+        periodStart = p.start;
+        periodEnd = p.end;
+        mesArranque = p.i < arranque.length ? p.i + 1 : 0;   // 1-based (Mes 1, Mes 2…) o 0 si ya pasó
+        metaMensual = p.meta;
+        corto = p.corto; fraccion = p.fraccion; base = p.base;
     } else {
         // Sin fecha de ingreso: período = mes de calendario actual, meta plena.
         periodStart = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
@@ -81,7 +62,7 @@ export function computeMetaMensual(meta = {}) {
     const fmt = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
     const periodoLabel = `${fmt(periodStart)} – ${fmt(new Date(periodEnd.getTime() - MS_DIA))}`;
 
-    return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
+    return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, fraccion, base, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
 }
 
 const rangoLabel = (start, end) => {
@@ -115,23 +96,15 @@ export function tierParaPct(commissionConfig = {}, pct = 0) {
 export function listPeriodos(meta = {}) {
     const ingreso = toDate(meta.fechaIngreso);
     if (!ingreso) return [];
-    const pad = (n) => String(n).padStart(2, '0');
     const ahora = new Date();
-    const n = mesesCompletos(ingreso, ahora) + 1;
-    const out = [];
-    for (let i = n - 1; i >= 0; i--) {
-        const start = addMonths(ingreso, i);
-        const end = addMonths(ingreso, i + 1);
-        out.push({
-            periodKey: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
-            mes: i + 1,
-            rango: rangoLabel(start, end),
-            anio: String(start.getFullYear()),
-            start, end,
-            cerrado: end <= ahora,
-        });
-    }
-    return out;
+    return periodosDeEmpleo(ingreso, ahora).reverse().map(p => ({
+        periodKey: p.periodKey,
+        mes: p.mes,
+        rango: rangoLabel(p.start, p.end),
+        anio: String(p.start.getFullYear()),
+        start: p.start, end: p.end, corto: p.corto,
+        cerrado: p.end <= ahora,
+    }));
 }
 
 // Deduplica facturas por NÚMERO — blinda todos los cálculos contra documentos
@@ -345,8 +318,6 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     if (!ingreso) return null;
     const facturas = dedupFacturas(facturasIn);
 
-    const metaPlena    = meta.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-    const arranque     = Array.isArray(cfg.arranque) ? cfg.arranque : [];
     const tiersDesc    = [...(cfg.tiers || [])].sort((a, b) => b.minPct - a.minPct);
     const bajaRate     = cfg.bajaRate ?? 0;
     const bajaLabel    = cfg.bajaLabel || 'Baja';
@@ -362,24 +333,19 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
         return { label: bajaLabel, rate: bajaRate };
     };
-    const pad = (n) => String(n).padStart(2, '0');
     const ahora = opts.ahora instanceof Date ? opts.ahora : new Date();
-    const n = mesesCompletos(ingreso, ahora) + 1;
-
-    const periodos = [];
-    for (let i = 0; i < n; i++) {
-        const start = addMonths(ingreso, i);
-        const end = addMonths(ingreso, i + 1);
-        periodos.push({
-            i, mes: i + 1, start, end,
-            periodKey: `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`,
-            metaMensual: i < arranque.length ? (arranque[i].meta || metaPlena) : metaPlena,
-            cerrado: end <= ahora,
-            facturadas: [],   // facturas cuya FECHA cae en el período (nivel)
-            cobros: [],       // cobros cuyo PAGO cae en el período (comisión)
-            recuperadas: [],  // cuentas recuperadas cobradas en el período
-        });
-    }
+    // Los períodos (aniversario hasta sep-2026; desde octubre, cortados a fin de
+    // mes) y su meta salen de periodosComision.js: la misma regla que el servidor.
+    const periodos = periodosConMeta(meta, ahora).map(p => ({
+        i: p.i, mes: p.mes, start: p.start, end: p.end,
+        periodKey: p.periodKey,
+        metaMensual: p.meta,
+        base: p.base, corto: p.corto, fraccion: p.fraccion, dias: p.dias,
+        cerrado: p.end <= ahora,
+        facturadas: [],   // facturas cuya FECHA cae en el período (nivel)
+        cobros: [],       // cobros cuyo PAGO cae en el período (comisión)
+        recuperadas: [],  // cuentas recuperadas cobradas en el período
+    }));
     const idxDe = (d) => {
         if (!d) return -1;
         for (const p of periodos) if (d >= p.start && d < p.end) return p.i;
@@ -546,7 +512,6 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
     const m = motorComisiones(meta, facturas, opts);
     if (!m) return [];
     const { cfg, periodos, carteraSize } = m;
-    const baseMes = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
     const cerrados = opts.cerrados || {};
 
     const pagadoPorPeriodo = {};
@@ -589,8 +554,10 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             carteraSize,
             tasaRecup: mt.tasaRecup,
             devengadoComision: mt.devengadoComision,
-            base: baseMes,
-            devengadoTotal: mt.devengadoComision + baseMes,
+            // Salario y viáticos del período: completos en un mes entero, en
+            // proporción a sus días en un período corto.
+            base: p.base, corto: p.corto, dias: p.dias,
+            devengadoTotal: mt.devengadoComision + p.base,
             congelado: false,
         };
         const frozen = cerrados[p.periodKey];
@@ -626,7 +593,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const p = periodos.find(x => x.periodKey === periodKey);
     if (!p) return null;
     const mt = montosPeriodo(p, cfg, opts);
-    const baseMes = (cfg.salarioFijo || 0) + (cfg.viaticosSemanales || 0) * 4;
+    const baseMes = p.base;
 
     const facturadas = [...p.facturadas].sort((a, b) => a.fecha - b.fecha);
     const facturadoMonto = facturadas.reduce((s, f) => s + f.monto, 0);
@@ -676,7 +643,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const enCurso = !p.cerrado;
 
     return {
-        periodKey, mes: p.mes,
+        periodKey, mes: p.mes, corto: p.corto, dias: p.dias,
         rango: rangoLabel(p.start, p.end),
         rangoCorte: rangoLabel(p.start, enCurso ? new Date(ahora.getTime() + MS_DIA) : p.end),
         enCurso,

@@ -8,6 +8,8 @@
 
 // Valores por defecto — espejo de DEFAULT_COMMISSION_CONFIG en
 // src/Components/CommissionConstructor.jsx.
+const { periodoDeFecha } = require('./generado/periodosComision.cjs');
+
 const DEFAULT_COMMISSION_CONFIG = {
     metaMensual: 2400,
     precioUnidad: 5.6,
@@ -90,24 +92,20 @@ function toLocalDate(v) {
 }
 
 /**
- * Período de EMPLEO (mes 15→14, anclado a `fechaIngreso`) al que pertenece una
- * fecha de factura. La clave es la fecha de inicio del período ("YYYY-MM-DD").
+ * Período de comisión al que pertenece una fecha de factura. La clave es la fecha
+ * de inicio del período ("YYYY-MM-DD"). La regla vive en
+ * src/utils/periodosComision.js (empaquetada en generado/): de aniversario hasta
+ * septiembre de 2026 y, desde octubre, cortada el último día de cada mes.
  * Si la factura es ANTERIOR al ingreso → `recuperada: true` y `periodKey: null`
- * (no cuenta para la meta del vendedor; es Cuenta Recuperada — 5% en Fase 3.6).
+ * (no cuenta para la meta del vendedor; es Cuenta Recuperada).
  * Si no hay `fechaIngreso`, no se puede periodizar → `{ periodKey: null }`.
  */
 function periodoCohorteFromDate(fechaIngreso, date) {
     const ingreso = toLocalDate(fechaIngreso);
     const d = toLocalDate(date);
     if (!ingreso || !d) return { periodKey: null, recuperada: false };
-
-    let m = (d.getFullYear() - ingreso.getFullYear()) * 12 + (d.getMonth() - ingreso.getMonth());
-    if (d.getDate() < ingreso.getDate()) m -= 1;
-    if (m < 0) return { periodKey: null, recuperada: true }; // previa al ingreso
-
-    const start = new Date(ingreso.getFullYear(), ingreso.getMonth() + m, ingreso.getDate());
-    const key = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
-    return { periodKey: key, recuperada: false };
+    const r = periodoDeFecha(ingreso, d);
+    return { periodKey: r.periodKey, recuperada: r.recuperada };
 }
 
 /** Diferencia en días completos entre dos fechas (b - a). */

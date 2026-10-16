@@ -6,6 +6,10 @@
 // cálculo se separan solas. Este script empaqueta el MISMO archivo a CommonJS en
 // `functions/handlers/generado/vendedorMeta.cjs`.
 //
+// Igual con los períodos de comisión (`src/utils/periodosComision.js` →
+// `generado/periodosComision.cjs`): la cohorte de cada factura en el servidor y
+// la meta del vigilante se cortan con la misma regla que la app.
+//
 // Igual con los datos reales del simulador de negocio (`src/utils/simuladorDatos.js`
 // → `generado/simuladorDatos.cjs`): usan las definiciones de la app (qué factura
 // cuenta, qué saldo está abierto, cuántos kg salieron de un lote).
@@ -20,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PAQUETES = [
     { fuente: 'src/utils/vendedorMeta.js', salida: 'functions/handlers/generado/vendedorMeta.cjs', que: 'el motor de comisiones' },
+    { fuente: 'src/utils/periodosComision.js', salida: 'functions/handlers/generado/periodosComision.cjs', que: 'los períodos de comisión' },
     { fuente: 'src/utils/simuladorDatos.js', salida: 'functions/handlers/generado/simuladorDatos.cjs', que: 'los datos reales del simulador' },
 ];
 

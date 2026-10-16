@@ -20,6 +20,7 @@ import { useFinancialKpis } from '@/hooks/useFinancialKpis.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { useCarteraComercial } from '@/hooks/useCarteraComercial.js';
 import { computeMetaMensual, fechaCalendario } from '@/utils/vendedorMeta.js';
+import { metaEnVentana } from '@/utils/periodosComision.js';
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 import DesempenoVendedor, { DesempenoMini } from '@/Components/DesempenoVendedor.jsx';
 import ReporteGestionVendedorDoc from '@/Components/ReporteGestionVendedorDoc.jsx';
@@ -78,8 +79,13 @@ function MetaEmpresa({ cc, onVerVendedores }) {
     const avance = now.getDate() / diasMes;
 
     // Meta: la que fijó el dueño en Configuraciones → Metas. Si no la fijó, la
-    // suma de las metas de los vendedores (se dice en pantalla).
-    const sumaVendedores = cc.vendedores.reduce((s, v) => s + (Number(computeMetaMensual(v).metaMensual) || 0), 0);
+    // suma de las metas de los vendedores EN ESTE MES (se dice en pantalla). Desde
+    // octubre de 2026 el período del vendedor es el mes calendario, así que su
+    // meta del mes es la misma que ve en su Home; en el mes del cambio suma la
+    // parte de cada período que cae en el mes.
+    const mesIni = new Date(now.getFullYear(), now.getMonth(), 1);
+    const mesFin = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const sumaVendedores = cc.vendedores.reduce((s, v) => s + (Number(metaEnVentana(v, mesIni, mesFin)) || 0), 0);
     const meta = metaVentasGeneral > 0 ? metaVentasGeneral : sumaVendedores;
     const metaDeclarada = metaVentasGeneral > 0;
 
@@ -121,7 +127,9 @@ function MetaEmpresa({ cc, onVerVendedores }) {
             if (t >= m.periodStart && t < m.periodEnd) enPeriodo += u;
             if (t >= mIni && t < mFin) enCalendario += u;
         });
+        const mismoMes = m.periodStart.getTime() === mIni.getTime() && m.periodEnd.getTime() === mFin.getTime();
         return { id: v.id, nombre: v.name || v.nombre || 'Vendedor', meta: Number(m.metaMensual) || 0, enPeriodo, enCalendario,
+            metaMes: metaEnVentana(v, mIni, mFin), mismoMes, corto: m.corto,
             desde: fmtCorto(m.periodStart), hasta: fmtCorto(new Date(m.periodEnd.getTime() - 86400000)) };
     }).filter(Boolean), [cc.vendedores, cc.facturas]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -168,22 +176,34 @@ function MetaEmpresa({ cc, onVerVendedores }) {
                 )}
             </section>
 
-            {/* Cuadre con la tarjeta de cada vendedor */}
+            {/* Una sola meta: la de la empresa es la suma de la de cada vendedor */}
+            {metaDeclarada && sumaVendedores !== meta && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    La meta fijada para la empresa ({num(meta)} uds) no es la suma de las metas de los vendedores este mes ({num(sumaVendedores)} uds).
+                    Para que todos corran con la misma meta, ajusta una de las dos: la de la empresa en Configuraciones → Metas o la de cada vendedor en su ficha.
+                </p>
+            )}
             {mesesEmpleo.length > 0 && (
                 <section className="bg-white border border-slate-200 rounded-2xl p-5">
-                    <p className="text-sm font-bold text-slate-700">¿Por qué la cifra del vendedor es otra?</p>
+                    <p className="text-sm font-bold text-slate-700">La meta de cada vendedor este mes</p>
                     <p className="text-[11px] text-slate-500 mb-3">
-                        Esta meta se mide por mes calendario. Cada vendedor se mide en su <b>mes de empleo</b> (desde su fecha de ingreso),
-                        que es con el que se le paga. Las facturas son las mismas; cambia la ventana.
+                        Desde octubre de 2026 la comisión se corta el último día de cada mes: el mes del vendedor es el mismo de la empresa.
+                        {mesesEmpleo.some(v => !v.mismoMes) && ' Este mes es el del cambio: su período anterior cerró a mitad de mes y el nuevo es corto, con la meta en proporción a sus días.'}
                     </p>
                     <div className="space-y-2">
                         {mesesEmpleo.map(v => (
                             <div key={v.id} className="text-sm rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
                                 <p className="font-bold text-slate-800">{v.nombre}</p>
-                                <p className="text-slate-600 text-xs leading-relaxed">
-                                    Su mes de empleo ({v.desde} – {v.hasta}): <b className="text-slate-800 tabular-nums">{num(v.enPeriodo)} de {num(v.meta)} uds</b> · lo que ves en Vendedores.
-                                    <br />Su aporte a {now.toLocaleString('es', { month: 'long' })}: <b className="text-slate-800 tabular-nums">{num(v.enCalendario)} uds</b> · lo que suma aquí.
-                                </p>
+                                {v.mismoMes ? (
+                                    <p className="text-slate-600 text-xs leading-relaxed">
+                                        {num(v.enCalendario)} de <b className="text-slate-800 tabular-nums">{num(v.meta)} uds</b> · la misma cifra que ve en su Home y en Vendedores.
+                                    </p>
+                                ) : (
+                                    <p className="text-slate-600 text-xs leading-relaxed">
+                                        Su período de hoy ({v.desde} – {v.hasta}{v.corto ? ', período corto' : ''}): <b className="text-slate-800 tabular-nums">{num(v.enPeriodo)} de {num(v.meta)} uds</b> · lo que ves en Vendedores.
+                                        <br />Su meta en {now.toLocaleString('es', { month: 'long' })}: <b className="text-slate-800 tabular-nums">{num(v.metaMes)} uds</b> (la parte de cada período que cae en el mes) · lleva {num(v.enCalendario)} uds.
+                                    </p>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -337,7 +357,7 @@ function VendedoresTab({ cc }) {
     return (
         <section className="space-y-3">
             <p className="text-sm text-slate-600">
-                Cada vendedor contra <b>su</b> meta en su mes de empleo. De quien más necesita atención a quien menos. Toca uno para el detalle,
+                Cada vendedor contra <b>su</b> meta en su período (desde octubre de 2026, el mes calendario). De quien más necesita atención a quien menos. Toca uno para el detalle,
                 la última semana, el trimestre y el año.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
