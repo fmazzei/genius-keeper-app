@@ -207,21 +207,24 @@ const ReportersManagement = () => {
 // de verdad en settings/appConfig.metaVentasGeneral. Si se deja en 0, todos los
 // tableros usan automáticamente la suma de las metas de los vendedores.
 const SalesGoalsManagement = () => {
-    const { metaVentasGeneral, updateMetaVentasGeneral, configLoading } = useAppConfig();
-    const { teamGoal, loading: teamLoading } = useTeamMetaMensual();
+    const { metaVentasGeneral, updateMetaVentasGeneral, metaKgFoodservice, updateMetaKgFoodservice, configLoading } = useAppConfig();
+    const { teamGoal, teamGoalKg, loading: teamLoading } = useTeamMetaMensual();
     const [draft, setDraft]   = useState('');
+    const [draftKg, setDraftKg] = useState('');
     const [saving, setSaving] = useState(false);
     const [savedMsg, setSavedMsg] = useState('');
 
     useEffect(() => {
         if (!configLoading) setDraft(metaVentasGeneral > 0 ? String(metaVentasGeneral) : '');
-    }, [metaVentasGeneral, configLoading]);
+        if (!configLoading) setDraftKg(metaKgFoodservice > 0 ? String(metaKgFoodservice) : '');
+    }, [metaVentasGeneral, metaKgFoodservice, configLoading]);
 
     const guardar = async () => {
         setSaving(true); setSavedMsg('');
         try {
             await updateMetaVentasGeneral(Number(draft) || 0);
-            setSavedMsg('Meta general actualizada.');
+            await updateMetaKgFoodservice(Number(String(draftKg).replace(',', '.')) || 0);
+            setSavedMsg('Metas de la empresa actualizadas.');
             setTimeout(() => setSavedMsg(''), 3000);
         } catch {
             alert('No se pudo guardar la meta.');
@@ -234,16 +237,18 @@ const SalesGoalsManagement = () => {
 
     const usarSuma = !(Number(draft) > 0);
     const efectiva = Number(draft) > 0 ? Number(draft) : teamGoal;
+    const kgNum = Number(String(draftKg).replace(',', '.')) || 0;
+    const efectivaKg = kgNum > 0 ? kgNum : teamGoalKg;
 
     return (
         <div>
             <h3 className="text-xl font-semibold text-slate-700 mb-2">Meta de ventas general</h3>
-            <p className="text-sm text-slate-500 mb-4">Meta mensual de la empresa en unidades. Es el objetivo global que ven Ventas, Rendimiento Comercial y el reporte mensual. Si la dejas vacía (0), se usa automáticamente la suma de las metas de los vendedores.</p>
+            <p className="text-sm text-slate-500 mb-4">Metas mensuales de la empresa: <b>retail en unidades</b> y <b>foodservice en kg de queso</b> (se miden por separado desde octubre de 2026). Las ve Comercial → Meta de la empresa y el reporte mensual. Si dejas una vacía (0), se usa la suma de las metas de los vendedores. Cuentan todas las ventas: de los vendedores y de Oficina (clientes directos).</p>
 
             <div className="bg-white p-4 sm:p-6 rounded-lg shadow space-y-5 max-w-lg">
                 <div className="flex flex-col sm:flex-row sm:items-end gap-3">
                     <div className="flex-1">
-                        <label className="block text-sm font-semibold text-slate-700 mb-1">Meta mensual (unidades)</label>
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Retail al mes (unidades de 250 g)</label>
                         <div className="flex items-center gap-2">
                             <Target size={18} className="text-slate-500 shrink-0" />
                             <input
@@ -254,6 +259,16 @@ const SalesGoalsManagement = () => {
                                 className="w-full p-2.5 border border-slate-300 rounded-lg"
                             />
                         </div>
+                    </div>
+                    <div className="flex-1">
+                        <label className="block text-sm font-semibold text-slate-700 mb-1">Foodservice al mes (kg)</label>
+                        <input
+                            type="text" inputMode="decimal"
+                            value={draftKg}
+                            onChange={e => setDraftKg(e.target.value.replace(/[^0-9.,]/g, ''))}
+                            placeholder="Ej. 120 (vacío = suma de vendedores)"
+                            className="w-full p-2.5 border border-slate-300 rounded-lg"
+                        />
                     </div>
                     <button onClick={guardar} disabled={saving} className="flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50 shrink-0">
                         {saving ? <LoadingSpinner size="sm" /> : <Save size={18} />}
@@ -273,6 +288,14 @@ const SalesGoalsManagement = () => {
                         <span className="font-black text-brand-blue tabular-nums">{efectiva.toLocaleString('es-VE')} uds</span>
                     </div>
                     <p className="text-xs text-slate-400 mt-2">{usarSuma ? 'Usando la suma de vendedores (no hay meta manual fijada).' : 'Usando la meta manual que fijaste arriba.'}</p>
+                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-200">
+                        <span className="text-slate-500">Foodservice · suma de vendedores</span>
+                        <span className="font-bold text-slate-700 tabular-nums">{teamLoading ? '…' : `${teamGoalKg.toLocaleString('es-VE')} kg`}</span>
+                    </div>
+                    <div className="flex justify-between items-center mt-2">
+                        <span className="text-slate-600 font-semibold">Meta foodservice en uso</span>
+                        <span className="font-black text-amber-600 tabular-nums">{efectivaKg > 0 ? `${efectivaKg.toLocaleString('es-VE')} kg` : 'Sin meta'}</span>
+                    </div>
                 </div>
             </div>
         </div>

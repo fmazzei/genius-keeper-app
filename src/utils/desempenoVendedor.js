@@ -23,7 +23,8 @@ import { cuentaEnCartera, esPorCobrar, saldoAbierto } from '@/utils/facturaEstad
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { clasificarVentas, evaluarPlan } from '@/utils/gestionVenta.js';
 import { detalleActivacion } from '@/utils/activacion.js';
-import { reglasDelVendedor, periodosConMeta, fechaLocal } from '@/utils/periodosComision.js';
+import { reglasDelVendedor, periodosConMeta, fechaLocal, metaKgEnVentana, CIERRE_MES_CALENDARIO_DESDE } from '@/utils/periodosComision.js';
+import { kgDeUnidades, redKg, fmtKg } from '@/utils/canalVenta.js';
 
 const DIA = 86400000;
 const toDate = fechaCalendario;
@@ -134,7 +135,19 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
     const pilares = {};
 
     // ── 1. Facturación vs. ritmo ─────────────────────────────────────────────
-    const unidades = suyas.filter(f => !f.recuperada).filter(enVentana).reduce((s, f) => s + (Number(f.unidades) || 0), 0);
+    // Desde el corte a fin de mes, foodservice se mide aparte en kg y no suma a
+    // las unidades (misma regla que el motor de comisiones): una factura
+    // foodservice cuenta en unidades solo si cae en un período de aniversario.
+    const inicioSepara = (() => {
+        const ps = periodosConMeta(vendedor, ahora);
+        const p = ps.find(x => x.separaFood);
+        return p ? p.start : (fechaLocal(vendedor.fechaIngreso) ? null : fechaLocal(CIERRE_MES_CALENDARIO_DESDE));
+    })();
+    const separada = (f) => f.categoria === 'foodservice' && inicioSepara && toDate(f.fecha) >= inicioSepara;
+    const propias = suyas.filter(f => !f.recuperada).filter(enVentana);
+    const unidades = propias.filter(f => !separada(f)).reduce((s, f) => s + (Number(f.unidades) || 0), 0);
+    const kgFood = redKg(kgDeUnidades(propias.filter(separada).reduce((s, f) => s + (Number(f.unidades) || 0), 0)));
+    const metaKg = metaKgEnVentana(vendedor, inicio, fin);
     const meta = Number(v.meta) || 0;
     const esperado = meta * avance;
     pilares.facturacion = meta > 0 ? {
@@ -149,8 +162,10 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
             { k: 'Facturó', v: `${num(unidades)} uds` },
             { k: enCurso ? 'Tocaba a hoy' : 'Meta', v: `${num(enCurso ? esperado : meta)} uds` },
             { k: 'Faltan para la meta', v: `${num(Math.max(0, meta - unidades))} uds` },
-            { k: 'Monto facturado', v: money0(suyas.filter(f => !f.recuperada).filter(enVentana).reduce((x, f) => x + (Number(f.monto ?? f.total) || 0), 0)) },
+            { k: 'Monto facturado', v: money0(propias.reduce((x, f) => x + (Number(f.monto ?? f.total) || 0), 0)) },
+            ...((kgFood > 0 || metaKg > 0) ? [{ k: 'Foodservice (aparte)', v: metaKg > 0 ? `${fmtKg(kgFood)} de ${fmtKg(metaKg)}` : fmtKg(kgFood) }] : []),
         ],
+        kgFood, metaKg,
     } : { score: null, valor: '—', detalle: 'El vendedor no tiene meta mensual configurada.' };
 
     // ── 2. Cobranza a tiempo ─────────────────────────────────────────────────

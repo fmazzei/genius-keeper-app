@@ -28,6 +28,8 @@ interface AppConfigContextType {
   /** Campaña de material POP en los PDV. null = aún no se leyó del servidor. */
   campanaPopActiva: boolean | null;
   metaVentasGeneral: number;
+  /** Meta de la empresa en kg de queso foodservice al mes (0 = suma de vendedores). */
+  metaKgFoodservice: number;
   /** Cuándo se sincronizó GK con Zoho por última vez. Permite que una pantalla
    *  de dinero declare que su número puede estar viejo en vez de mentir. */
   zohoSyncAt: Date | null;
@@ -40,6 +42,7 @@ interface AppConfigContextType {
   updateModule: (moduleName: keyof ModulesConfig, enabled: boolean) => Promise<void>;
   updateRoleModule: (role: string, moduleName: keyof ModulesConfig, enabled: boolean) => Promise<void>;
   updateMetaVentasGeneral: (unidades: number) => Promise<void>;
+  updateMetaKgFoodservice: (kg: number) => Promise<void>;
   getModulesForRole: (role: string) => ModulesConfig;
 }
 
@@ -74,6 +77,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [competitorFrequencyDays, setCompetitorFrequencyDays] = useState<number>(15);
   const [campanaPopActiva, setCampanaPopActiva] = useState<boolean | null>(null);
   const [metaVentasGeneral, setMetaVentasGeneral] = useState<number>(0);
+  const [metaKgFoodservice, setMetaKgFoodservice] = useState<number>(0);
   const [zohoSyncAt, setZohoSyncAt] = useState<Date | null>(null);
   const [zohoCuadre, setZohoCuadre] = useState<any | null>(null);
   const [zohoCarteraCarnets, setZohoCarteraCarnets] = useState<any | null>(null);
@@ -109,6 +113,7 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
                 setOurProductWeight_g(data.ourProductWeight_g);
               }
               setMetaVentasGeneral(typeof data.metaVentasGeneral === 'number' ? data.metaVentasGeneral : 0);
+              setMetaKgFoodservice(typeof data.metaKgFoodservice === 'number' ? data.metaKgFoodservice : 0);
               // La MÁS RECIENTE de las dos: el barrido automático estampa
               // `zohoAutoUltima` y el botón manual `zohoUltimaConciliacion`.
               // Con un `||` el manual no movía la señal si ya existía la
@@ -156,12 +161,17 @@ export const AppConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
     await setDoc(configRef, { metaVentasGeneral: Number(unidades) || 0 }, { merge: true });
   };
 
+  const updateMetaKgFoodservice = async (kg: number) => {
+    const configRef = doc(db, 'settings', 'appConfig');
+    await setDoc(configRef, { metaKgFoodservice: Number(kg) || 0 }, { merge: true });
+  };
+
   const getModulesForRole = (role: string): ModulesConfig => {
     return { ...defaultModules, ...roleModules[role] };
   };
 
   return (
-    <AppConfigContext.Provider value={{ modules, roleModules, ourProductWeight_g, competitorFrequencyDays, campanaPopActiva, metaVentasGeneral, zohoSyncAt, zohoCuadre, zohoCarteraCarnets, configLoading, updateModule, updateRoleModule, updateMetaVentasGeneral, getModulesForRole }}>
+    <AppConfigContext.Provider value={{ modules, roleModules, ourProductWeight_g, competitorFrequencyDays, campanaPopActiva, metaVentasGeneral, metaKgFoodservice, zohoSyncAt, zohoCuadre, zohoCarteraCarnets, configLoading, updateModule, updateRoleModule, updateMetaVentasGeneral, updateMetaKgFoodservice, getModulesForRole }}>
       {children}
     </AppConfigContext.Provider>
   );

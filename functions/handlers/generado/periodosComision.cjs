@@ -27,10 +27,13 @@ __export(periodosComision_exports, {
   fechaLocal: () => fechaLocal,
   metaDePeriodo: () => metaDePeriodo,
   metaEnVentana: () => metaEnVentana,
+  metaKgDePeriodo: () => metaKgDePeriodo,
+  metaKgEnVentana: () => metaKgEnVentana,
   periodoDeFecha: () => periodoDeFecha,
   periodosConMeta: () => periodosConMeta,
   periodosDeEmpleo: () => periodosDeEmpleo,
-  reglasDelVendedor: () => reglasDelVendedor
+  reglasDelVendedor: () => reglasDelVendedor,
+  separaFoodservice: () => separaFoodservice
 });
 module.exports = __toCommonJS(periodosComision_exports);
 
@@ -72,13 +75,16 @@ var DEFAULT_COMMISSION_CONFIG = {
   // % flat sobre lo cobrado de esas facturas adoptadas
   facturaMaxDias: 45,
   // >45 días sin cobrar → la comisión se anula
-  // FOODSERVICE: canal aparte (clientes marcados 'foodservice'). Sus unidades
-  // CUENTAN a la meta (a su propio precio), pero la comisión es FLAT (no la del
-  // nivel). Precio y % editables aquí.
+  // FOODSERVICE: canal aparte (clientes marcados 'foodservice'), con comisión
+  // FLAT (no la del nivel). Desde el corte a fin de mes (octubre de 2026) se
+  // mide en KG de queso colocado contra su propia meta y NO cuenta a la meta de
+  // unidades retail (decisión del dueño, 16-oct). Antes contaba a la meta.
   precioUnidadFoodservice: 4.8,
   // precio de venta por unidad foodservice
-  comisionFoodservice: 5
+  comisionFoodservice: 5,
   // % flat sobre lo cobrado de facturas foodservice
+  metaKgFoodservice: 0
+  // kg de queso foodservice al mes (0 = sin meta)
 };
 
 // src/utils/periodosComision.js
@@ -129,7 +135,13 @@ function reglasDelVendedor(vendedor = {}) {
   const metaPlena = Number(vendedor.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual) || 0;
   const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
   const baseMes = (Number(cfg.salarioFijo) || 0) + (Number(cfg.viaticosSemanales) || 0) * 4;
-  return { cfg, metaPlena, arranque, baseMes };
+  const metaKgPlena = Number(cfg.metaKgFoodservice) || 0;
+  return { cfg, metaPlena, arranque, baseMes, metaKgPlena };
+}
+var separaFoodservice = (p) => !!p?.calendario;
+function metaKgDePeriodo(p, { metaKgPlena = 0 } = {}) {
+  if (!separaFoodservice(p) || !(metaKgPlena > 0)) return 0;
+  return Math.round(metaKgPlena * (p.fraccion ?? 1) * 10) / 10;
 }
 function metaDePeriodo(p, { metaPlena, arranque }) {
   const base = p.i < arranque.length ? Number(arranque[p.i]?.meta) || metaPlena : metaPlena;
@@ -138,7 +150,13 @@ function metaDePeriodo(p, { metaPlena, arranque }) {
 var baseDePeriodo = (p, { baseMes }) => baseMes * (p.fraccion ?? 1);
 function periodosConMeta(vendedor = {}, hasta = /* @__PURE__ */ new Date(), opts) {
   const reglas = reglasDelVendedor(vendedor);
-  return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({ ...p, meta: metaDePeriodo(p, reglas), base: baseDePeriodo(p, reglas) }));
+  return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({
+    ...p,
+    meta: metaDePeriodo(p, reglas),
+    base: baseDePeriodo(p, reglas),
+    separaFood: separaFoodservice(p),
+    metaKg: metaKgDePeriodo(p, reglas)
+  }));
 }
 function metaEnVentana(vendedor = {}, desde, hasta, opts) {
   const reglas = reglasDelVendedor(vendedor);
@@ -153,6 +171,20 @@ function metaEnVentana(vendedor = {}, desde, hasta, opts) {
   }
   return Math.round(total);
 }
+function metaKgEnVentana(vendedor = {}, desde, hasta, opts) {
+  const reglas = reglasDelVendedor(vendedor);
+  if (!(reglas.metaKgPlena > 0)) return 0;
+  const ingreso = fechaLocal(vendedor.fechaIngreso);
+  if (!ingreso) return Math.round(reglas.metaKgPlena * diasEntre(desde, hasta) / diasDelMes(desde) * 10) / 10;
+  let total = 0;
+  for (const p of periodosDeEmpleo(ingreso, new Date(hasta.getTime() - 1), opts)) {
+    const a = Math.max(p.start.getTime(), desde.getTime());
+    const b = Math.min(p.end.getTime(), hasta.getTime());
+    if (b <= a) continue;
+    total += metaKgDePeriodo(p, reglas) * ((b - a) / DIA) / p.dias;
+  }
+  return Math.round(total * 10) / 10;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   CIERRE_MES_CALENDARIO_DESDE,
@@ -161,8 +193,11 @@ function metaEnVentana(vendedor = {}, desde, hasta, opts) {
   fechaLocal,
   metaDePeriodo,
   metaEnVentana,
+  metaKgDePeriodo,
+  metaKgEnVentana,
   periodoDeFecha,
   periodosConMeta,
   periodosDeEmpleo,
-  reglasDelVendedor
+  reglasDelVendedor,
+  separaFoodservice
 });

@@ -171,7 +171,7 @@ function periodoMeta(vend, ahoraMs, metaPorDefecto = 2400) {
         if (hoyLocal < new Date(y, m - 1, d)) return null;   // aún no comienza
         const ps = periodosConMeta({ ...vend, metaMensual: metaPlena, fechaIngreso: ingDia }, hoyLocal);
         const p = ps[ps.length - 1];
-        return { meta: p.meta, ini: msDeLocal(p.start), fin: msDeLocal(p.end), corto: p.corto };
+        return { meta: p.meta, ini: msDeLocal(p.start), fin: msDeLocal(p.end), corto: p.corto, separaFood: p.separaFood };
     }
     const ini = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 1) + TZ;
     const fin = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() + 1, 1) + TZ;
@@ -183,6 +183,8 @@ function avanceMeta(vend, facturas, ahoraMs, cfg = DEFAULTS) {
     if (!p) return null;
     const unidades = facturas
         .filter(f => f.vendedorId === vend.uid && cuentaEnCartera(f) && f.recuperada !== true)
+        // Desde el corte a fin de mes, foodservice va aparte (kg): no suma a la meta.
+        .filter(f => !(p.separaFood && f.categoria === 'foodservice'))
         .filter(f => { const t = toMs(f.fecha); return t >= p.ini && t < p.fin; })
         .reduce((s, f) => s + num(f.unidades), 0);
     const total = (p.fin - p.ini) / DIA;

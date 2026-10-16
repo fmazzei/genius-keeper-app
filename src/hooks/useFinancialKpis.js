@@ -11,6 +11,7 @@ import { db } from '@/Firebase/config.js';
 import { unidadesReales, buildCanalResolver } from '@/utils/unidadesFactura.js';
 import { cuentaEnCartera as _cuentaEnCartera, saldoAbierto as _saldoAbierto, motivoFuera } from '@/utils/facturaEstado.js';
 import { fechaCalendario } from '@/utils/vendedorMeta.js';
+import { kgDeUnidades } from '@/utils/canalVenta.js';
 
 const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 const sum = (arr, sel) => arr.reduce((s, f) => s + (Number(sel(f)) || 0), 0);
@@ -187,14 +188,39 @@ export function useFinancialKpis() {
         // vendedorId de la factura. Oficina y "sin asignar" se declaran aparte:
         // también son ventas de la empresa, solo que no son de ningún vendedor.
         const cliPorId = new Map(clientes.filter(c => c.customerId).map(c => [String(c.customerId), c]));
+        const duenoDe = (f) => {
+            const c = f.zohoCustomerId ? cliPorId.get(String(f.zohoCustomerId)) : null;
+            return c ? (c.esOficina ? 'oficina' : (c.vendedorId || f.vendedorId || 'sin_asignar'))
+                     : (f.vendedorId || 'sin_asignar');
+        };
         const aportePorVendedorMes = {};
         mesF.forEach(f => {
-            const c = f.zohoCustomerId ? cliPorId.get(String(f.zohoCustomerId)) : null;
-            const k = c ? (c.esOficina ? 'oficina' : (c.vendedorId || f.vendedorId || 'sin_asignar'))
-                        : (f.vendedorId || 'sin_asignar');
+            const k = duenoDe(f);
             const a = aportePorVendedorMes[k] || (aportePorVendedorMes[k] = { unidades: 0, monto: 0, facturas: 0 });
             a.unidades += uds(f); a.monto += Number(f.monto) || 0; a.facturas += 1;
         });
+
+        // ── RETAIL (unidades) y FOODSERVICE (kg), por separado (decisión del
+        // dueño, 16-oct): cada canal con su meta y, dentro, quién lo vendió —
+        // cada vendedor, Oficina (clientes directos) o sin asignar.
+        const porCanal = (lista) => {
+            const out = {
+                retail: { unidades: 0, monto: 0, facturas: 0, porDueno: {} },
+                food:   { unidades: 0, kg: 0, monto: 0, facturas: 0, porDueno: {} },
+            };
+            lista.forEach(f => {
+                const c = canalDe(f) === 'foodservice' ? out.food : out.retail;
+                const u = uds(f); const m = Number(f.monto) || 0;
+                c.unidades += u; c.monto += m; c.facturas += 1;
+                const k = duenoDe(f);
+                const d = c.porDueno[k] || (c.porDueno[k] = { unidades: 0, kg: 0, monto: 0, facturas: 0 });
+                d.unidades += u; d.monto += m; d.facturas += 1;
+            });
+            out.food.kg = kgDeUnidades(out.food.unidades);
+            Object.values(out.food.porDueno).forEach(d => { d.kg = kgDeUnidades(d.unidades); });
+            return out;
+        };
+        const canalesMes = porCanal(mesF);
 
         // ── Histórico de 12 meses (unidades y $), para la meta de la empresa
         const historico12 = [];
@@ -202,7 +228,9 @@ export function useFinancialKpis() {
             const a = new Date(now.getFullYear(), now.getMonth() - i, 1);
             const b = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
             const lista = activas.filter(f => inWin(f, a, b));
+            const cn = porCanal(lista);
             historico12.push({
+                retailUds: cn.retail.unidades, foodKg: cn.food.kg,
                 key: `${a.getFullYear()}-${String(a.getMonth() + 1).padStart(2, '0')}`,
                 label: a.toLocaleString('es', { month: 'short' }).replace('.', ''),
                 anio: a.getFullYear(),
@@ -266,7 +294,7 @@ export function useFinancialKpis() {
             facturasMesCount: mesF.length, facturasPrevCount: prevF.length,
             unidadesAjustadasMes, unidadesAjustadasPrev,
             cobradoMes, nCobradasMes,
-            aportePorVendedorMes, historico12,
+            aportePorVendedorMes, canalesMes, historico12,
             porCobrar, aging: { d0_30: a0, d31_45: a1, d45p: a2 }, clientesMas45,
             diasTrasVencimiento, dso: diasTrasVencimiento, diasPagoAnio, aTiempoPct,
             facturas,

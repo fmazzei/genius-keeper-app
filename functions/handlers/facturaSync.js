@@ -72,9 +72,26 @@ function factorUnidadZoho(unidad, gramosPorUnidad) {
     return 1; // und / pcs / caja / sin unidad → ya viene en unidades de venta
 }
 
+// Peso del empaque escrito en el NOMBRE del artículo ("Chèvre Original 3 Kg P3",
+// "Chèvre Bolsa 1 Kg", "… 250 g"), en gramos. null si no lo trae.
+function gramosDelNombre(nombre) {
+    const m = String(nombre || '').match(/(\d+(?:[.,]\d+)?)\s*(kg|kgs|kilo|kilos|g|gr|grs|gramos)\b/i);
+    if (!m) return null;
+    const n = Number(m[1].replace(',', '.'));
+    if (!(n > 0)) return null;
+    return /^k/i.test(m[2]) ? n * 1000 : n;
+}
+
+// Unidades de 250 g de una línea. Si el nombre del artículo dice su peso (bolsa
+// de 1 kg, de 3 kg), la cantidad es de EMPAQUES y se multiplica por su peso: la
+// bolsa de 3 kg facturada "1 kg" a $57,60 (INV-001760) son 12 uds, no 4. Sin
+// peso en el nombre, manda la unidad de la línea (kg → 4 uds por kg).
 function unidadesDeLinea(item, gramosPorUnidad) {
     const q = Number(item?.quantity) || 0;
     if (!q) return 0;
+    const g = Number(gramosPorUnidad) > 0 ? Number(gramosPorUnidad) : GRAMOS_POR_UNIDAD_DEFAULT;
+    const peso = gramosDelNombre(item?.name || item?.item_name || item?.description);
+    if (peso) return q * peso / g;
     return q * factorUnidadZoho(item?.unit, gramosPorUnidad);
 }
 
@@ -503,6 +520,7 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
 module.exports = {
     GRAMOS_POR_UNIDAD_DEFAULT,
     factorUnidadZoho,
+    gramosDelNombre,
     unidadesDeLinea,
     unidadesDeLineItems,
     toDate,

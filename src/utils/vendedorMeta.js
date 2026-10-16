@@ -3,6 +3,7 @@
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 import { reglasDelVendedor, periodosConMeta, periodosDeEmpleo } from '@/utils/periodosComision.js';
+import { kgDeUnidades } from '@/utils/canalVenta.js';
 
 const MS_DIA = 86400000;
 
@@ -40,7 +41,7 @@ export function computeMetaMensual(meta = {}, ahora = new Date()) {
     // "comienza el DD/MM" en vez de un período en curso con cifras engañosas.
     const antesDeIngreso = !!(ingreso && ahora < ingreso);
 
-    let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, fraccion = 1, base = baseMes;
+    let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, fraccion = 1, base = baseMes, separaFood = false, metaKg = 0;
     if (ingreso) {
         const ps = periodosConMeta(meta, ahora);
         const p = ps[ps.length - 1];
@@ -50,6 +51,7 @@ export function computeMetaMensual(meta = {}, ahora = new Date()) {
         mesArranque = p.i < arranque.length ? p.i + 1 : 0;   // 1-based (Mes 1, Mes 2…) o 0 si ya pasó
         metaMensual = p.meta;
         corto = p.corto; fraccion = p.fraccion; base = p.base;
+        separaFood = p.separaFood; metaKg = p.metaKg;
     } else {
         // Sin fecha de ingreso: período = mes de calendario actual, meta plena.
         periodStart = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
@@ -62,7 +64,7 @@ export function computeMetaMensual(meta = {}, ahora = new Date()) {
     const fmt = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
     const periodoLabel = `${fmt(periodStart)} – ${fmt(new Date(periodEnd.getTime() - MS_DIA))}`;
 
-    return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, fraccion, base, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
+    return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, fraccion, base, separaFood, metaKg, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
 }
 
 const rangoLabel = (start, end) => {
@@ -341,6 +343,9 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         periodKey: p.periodKey,
         metaMensual: p.meta,
         base: p.base, corto: p.corto, fraccion: p.fraccion, dias: p.dias,
+        // Desde el corte a fin de mes, foodservice se mide aparte en kg: el nivel
+        // y la meta de unidades son solo retail.
+        separaFood: p.separaFood, metaKg: p.metaKg,
         cerrado: p.end <= ahora,
         facturadas: [],   // facturas cuya FECHA cae en el período (nivel)
         cobros: [],       // cobros cuyo PAGO cae en el período (comisión)
@@ -407,7 +412,9 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
 
     // 2) Nivel y Activación de cada período (por facturación).
     periodos.forEach(p => {
-        p.unidades = p.facturadas.reduce((s, f) => s + f.unidades, 0);
+        p.unidadesFood = p.facturadas.filter(f => f.esFood).reduce((s, f) => s + f.unidades, 0);
+        p.kgFood = kgDeUnidades(p.unidadesFood);
+        p.unidades = p.facturadas.filter(f => !(p.separaFood && f.esFood)).reduce((s, f) => s + f.unidades, 0);
         p.pct = p.metaMensual > 0 ? p.unidades / p.metaMensual : 0;
         p.tier = tierFor(p.pct);
         p.act = computeActivacionPeriodo(facturas, p.start, p.end, ahora, carteraSize, actMinUnits, actThreshold, claves);
@@ -531,6 +538,7 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             cerrado: p.cerrado,
             modelo: 'cobro',
             unidades: p.unidades, metaMensual: p.metaMensual,
+            separaFood: p.separaFood, unidadesFood: p.unidadesFood, kgFood: p.kgFood, metaKgFood: p.metaKg,
             nivel: p.tier.label, tasa: p.tier.rate,
             cobranzaTasa: p.cobrDen > 0 ? (p.cobrATiempo / p.cobrDen) * 100 : null,
             cobrATiempo: p.cobrATiempo, cobrDen: p.cobrDen,
@@ -652,6 +660,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
         modelo: congelado ? (frozen.modelo || 'factura') : 'cobro',
         // Facturación → nivel
         metaMensual: p.metaMensual, unidades: p.unidades, pct: Math.round(p.pct * 100),
+        separaFood: p.separaFood, unidadesFood: p.unidadesFood, kgFood: p.kgFood, metaKgFood: p.metaKg,
         nivel: p.tier.label, tasa: p.tier.rate,
         facturas: facturadas,
         facturadoMonto, cobradoDeLoFacturado,

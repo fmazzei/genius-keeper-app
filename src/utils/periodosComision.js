@@ -95,7 +95,24 @@ export function reglasDelVendedor(vendedor = {}) {
     const metaPlena = Number(vendedor.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual) || 0;
     const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
     const baseMes = (Number(cfg.salarioFijo) || 0) + (Number(cfg.viaticosSemanales) || 0) * 4;
-    return { cfg, metaPlena, arranque, baseMes };
+    // Meta de FOODSERVICE en kg de queso al mes (0 = sin meta). Solo rige en los
+    // períodos de mes calendario: en los de aniversario las unidades foodservice
+    // siguen contando a la meta de unidades, como cuando se pagaron.
+    const metaKgPlena = Number(cfg.metaKgFoodservice) || 0;
+    return { cfg, metaPlena, arranque, baseMes, metaKgPlena };
+}
+
+/**
+ * ¿El período separa foodservice (kg) de retail (unidades)? Sí desde el corte a
+ * fin de mes (decisión del dueño, 16-oct-2026): el nivel y la meta de unidades
+ * son solo retail y foodservice se mide en kg contra su propia meta.
+ */
+export const separaFoodservice = (p) => !!p?.calendario;
+
+/** Meta de kg foodservice de un período: en proporción si es corto (1 decimal). */
+export function metaKgDePeriodo(p, { metaKgPlena = 0 } = {}) {
+    if (!separaFoodservice(p) || !(metaKgPlena > 0)) return 0;
+    return Math.round(metaKgPlena * (p.fraccion ?? 1) * 10) / 10;
 }
 
 /** Meta de un período: la del arranque o la plena, en proporción si es corto. */
@@ -111,7 +128,10 @@ export const baseDePeriodo = (p, { baseMes }) => baseMes * (p.fraccion ?? 1);
 export function periodosConMeta(vendedor = {}, hasta = new Date(), opts) {
     const reglas = reglasDelVendedor(vendedor);
     return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts)
-        .map(p => ({ ...p, meta: metaDePeriodo(p, reglas), base: baseDePeriodo(p, reglas) }));
+        .map(p => ({
+            ...p, meta: metaDePeriodo(p, reglas), base: baseDePeriodo(p, reglas),
+            separaFood: separaFoodservice(p), metaKg: metaKgDePeriodo(p, reglas),
+        }));
 }
 
 /**
@@ -133,4 +153,24 @@ export function metaEnVentana(vendedor = {}, desde, hasta, opts) {
         total += metaDePeriodo(p, reglas) * ((b - a) / DIA) / p.dias;
     }
     return Math.round(total);
+}
+
+/**
+ * Meta de kg foodservice del vendedor en una ventana [desde, hasta), con la misma
+ * proporción por días que `metaEnVentana`. Solo suman los períodos de mes
+ * calendario (los de aniversario no tienen meta de kg). 1 decimal.
+ */
+export function metaKgEnVentana(vendedor = {}, desde, hasta, opts) {
+    const reglas = reglasDelVendedor(vendedor);
+    if (!(reglas.metaKgPlena > 0)) return 0;
+    const ingreso = fechaLocal(vendedor.fechaIngreso);
+    if (!ingreso) return Math.round(reglas.metaKgPlena * diasEntre(desde, hasta) / diasDelMes(desde) * 10) / 10;
+    let total = 0;
+    for (const p of periodosDeEmpleo(ingreso, new Date(hasta.getTime() - 1), opts)) {
+        const a = Math.max(p.start.getTime(), desde.getTime());
+        const b = Math.min(p.end.getTime(), hasta.getTime());
+        if (b <= a) continue;
+        total += metaKgDePeriodo(p, reglas) * ((b - a) / DIA) / p.dias;
+    }
+    return Math.round(total * 10) / 10;
 }

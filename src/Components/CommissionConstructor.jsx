@@ -529,7 +529,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                         />
                         <InlineRow
                             label="Precio por unidad Foodservice"
-                            hint="Precio de la unidad foodservice (presentaciones 1–3 Kg → unidades). Sus unidades cuentan a la meta."
+                            hint="Precio de la unidad de 250 g en foodservice (las bolsas de 1–3 kg se convierten a unidades para el precio)."
                             suffix="$"
                             value={config.precioUnidadFoodservice}
                             step={0.1}
@@ -542,6 +542,14 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             value={config.comisionFoodservice}
                             step={0.5}
                             onChange={v => setConfig(p => ({ ...p, comisionFoodservice: v }))}
+                        />
+                        <InlineRow
+                            label="Meta Foodservice"
+                            hint="Kg de queso al mes a clientes foodservice. Desde octubre de 2026 foodservice se mide aparte en kg y no suma a la meta de unidades. 0 = sin meta."
+                            suffix="kg"
+                            value={config.metaKgFoodservice}
+                            step={5}
+                            onChange={v => setConfig(p => ({ ...p, metaKgFoodservice: v }))}
                         />
                     </div>
                 </section>

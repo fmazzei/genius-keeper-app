@@ -40,6 +40,7 @@ const DEFAULT_COMMISSION_CONFIG = {
     // Foodservice: unidades cuentan a la meta (a su precio), comisión FLAT.
     precioUnidadFoodservice: 4.8,
     comisionFoodservice: 5.0,
+    metaKgFoodservice: 0,
 };
 
 /**

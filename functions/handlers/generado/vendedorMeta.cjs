@@ -78,13 +78,16 @@ var DEFAULT_COMMISSION_CONFIG = {
   // % flat sobre lo cobrado de esas facturas adoptadas
   facturaMaxDias: 45,
   // >45 días sin cobrar → la comisión se anula
-  // FOODSERVICE: canal aparte (clientes marcados 'foodservice'). Sus unidades
-  // CUENTAN a la meta (a su propio precio), pero la comisión es FLAT (no la del
-  // nivel). Precio y % editables aquí.
+  // FOODSERVICE: canal aparte (clientes marcados 'foodservice'), con comisión
+  // FLAT (no la del nivel). Desde el corte a fin de mes (octubre de 2026) se
+  // mide en KG de queso colocado contra su propia meta y NO cuenta a la meta de
+  // unidades retail (decisión del dueño, 16-oct). Antes contaba a la meta.
   precioUnidadFoodservice: 4.8,
   // precio de venta por unidad foodservice
-  comisionFoodservice: 5
+  comisionFoodservice: 5,
   // % flat sobre lo cobrado de facturas foodservice
+  metaKgFoodservice: 0
+  // kg de queso foodservice al mes (0 = sin meta)
 };
 
 // src/utils/facturaEstado.js
@@ -132,7 +135,13 @@ function reglasDelVendedor(vendedor = {}) {
   const metaPlena = Number(vendedor.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual) || 0;
   const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
   const baseMes = (Number(cfg.salarioFijo) || 0) + (Number(cfg.viaticosSemanales) || 0) * 4;
-  return { cfg, metaPlena, arranque, baseMes };
+  const metaKgPlena = Number(cfg.metaKgFoodservice) || 0;
+  return { cfg, metaPlena, arranque, baseMes, metaKgPlena };
+}
+var separaFoodservice = (p) => !!p?.calendario;
+function metaKgDePeriodo(p, { metaKgPlena = 0 } = {}) {
+  if (!separaFoodservice(p) || !(metaKgPlena > 0)) return 0;
+  return Math.round(metaKgPlena * (p.fraccion ?? 1) * 10) / 10;
 }
 function metaDePeriodo(p, { metaPlena, arranque }) {
   const base = p.i < arranque.length ? Number(arranque[p.i]?.meta) || metaPlena : metaPlena;
@@ -141,8 +150,18 @@ function metaDePeriodo(p, { metaPlena, arranque }) {
 var baseDePeriodo = (p, { baseMes }) => baseMes * (p.fraccion ?? 1);
 function periodosConMeta(vendedor = {}, hasta = /* @__PURE__ */ new Date(), opts) {
   const reglas = reglasDelVendedor(vendedor);
-  return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({ ...p, meta: metaDePeriodo(p, reglas), base: baseDePeriodo(p, reglas) }));
+  return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({
+    ...p,
+    meta: metaDePeriodo(p, reglas),
+    base: baseDePeriodo(p, reglas),
+    separaFood: separaFoodservice(p),
+    metaKg: metaKgDePeriodo(p, reglas)
+  }));
 }
+
+// src/utils/canalVenta.js
+var GRAMOS_UNIDAD = 250;
+var kgDeUnidades = (u, gramos = GRAMOS_UNIDAD) => (Number(u) || 0) * (Number(gramos) || GRAMOS_UNIDAD) / 1e3;
 
 // src/utils/vendedorMeta.js
 var MS_DIA = 864e5;
@@ -159,7 +178,7 @@ function computeMetaMensual(meta = {}, ahora = /* @__PURE__ */ new Date()) {
   const { metaPlena, arranque, baseMes } = reglasDelVendedor(meta);
   const ingreso = toDate(meta.fechaIngreso);
   const antesDeIngreso = !!(ingreso && ahora < ingreso);
-  let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, fraccion = 1, base = baseMes;
+  let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, fraccion = 1, base = baseMes, separaFood = false, metaKg = 0;
   if (ingreso) {
     const ps = periodosConMeta(meta, ahora);
     const p = ps[ps.length - 1];
@@ -171,6 +190,8 @@ function computeMetaMensual(meta = {}, ahora = /* @__PURE__ */ new Date()) {
     corto = p.corto;
     fraccion = p.fraccion;
     base = p.base;
+    separaFood = p.separaFood;
+    metaKg = p.metaKg;
   } else {
     periodStart = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
     periodEnd = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 1);
@@ -180,7 +201,7 @@ function computeMetaMensual(meta = {}, ahora = /* @__PURE__ */ new Date()) {
   }
   const fmt = (d) => d.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
   const periodoLabel = `${fmt(periodStart)} \u2013 ${fmt(new Date(periodEnd.getTime() - MS_DIA))}`;
-  return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, fraccion, base, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
+  return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, fraccion, base, separaFood, metaKg, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
 }
 var rangoLabel = (start, end) => {
   const fmt = (d) => d.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
@@ -346,6 +367,10 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     corto: p.corto,
     fraccion: p.fraccion,
     dias: p.dias,
+    // Desde el corte a fin de mes, foodservice se mide aparte en kg: el nivel
+    // y la meta de unidades son solo retail.
+    separaFood: p.separaFood,
+    metaKg: p.metaKg,
     cerrado: p.end <= ahora,
     facturadas: [],
     // facturas cuya FECHA cae en el período (nivel)
@@ -407,7 +432,9 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     normales.push(item);
   });
   periodos.forEach((p) => {
-    p.unidades = p.facturadas.reduce((s, f) => s + f.unidades, 0);
+    p.unidadesFood = p.facturadas.filter((f) => f.esFood).reduce((s, f) => s + f.unidades, 0);
+    p.kgFood = kgDeUnidades(p.unidadesFood);
+    p.unidades = p.facturadas.filter((f) => !(p.separaFood && f.esFood)).reduce((s, f) => s + f.unidades, 0);
     p.pct = p.metaMensual > 0 ? p.unidades / p.metaMensual : 0;
     p.tier = tierFor(p.pct);
     p.act = computeActivacionPeriodo(facturas, p.start, p.end, ahora, carteraSize, actMinUnits, actThreshold, claves);
@@ -542,6 +569,10 @@ function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], op
       modelo: "cobro",
       unidades: p.unidades,
       metaMensual: p.metaMensual,
+      separaFood: p.separaFood,
+      unidadesFood: p.unidadesFood,
+      kgFood: p.kgFood,
+      metaKgFood: p.metaKg,
       nivel: p.tier.label,
       tasa: p.tier.rate,
       cobranzaTasa: p.cobrDen > 0 ? p.cobrATiempo / p.cobrDen * 100 : null,
@@ -673,6 +704,10 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
     metaMensual: p.metaMensual,
     unidades: p.unidades,
     pct: Math.round(p.pct * 100),
+    separaFood: p.separaFood,
+    unidadesFood: p.unidadesFood,
+    kgFood: p.kgFood,
+    metaKgFood: p.metaKg,
     nivel: p.tier.label,
     tasa: p.tier.rate,
     facturas: facturadas,

@@ -5,7 +5,9 @@
 // ventas por cliente que vivían escondidas como segunda página del Dashboard.
 //
 //   1. Meta de la empresa   — mes CALENDARIO (decisión del dueño): la empresa
-//                             reporta del 1 al 30.
+//                             reporta del 1 al 30. Retail en unidades y
+//                             foodservice en kg, cada barra partida por quién
+//                             vendió (vendedores / Oficina).
 //   2. Vendedores           — desempeño contra SU meta, en su período de empleo
 //                             (el mismo con el que se le paga). Cada pilar en %
 //                             sobre la meta y en unidades sobre la meta.
@@ -20,7 +22,8 @@ import { useFinancialKpis } from '@/hooks/useFinancialKpis.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { useCarteraComercial } from '@/hooks/useCarteraComercial.js';
 import { computeMetaMensual, fechaCalendario } from '@/utils/vendedorMeta.js';
-import { metaEnVentana } from '@/utils/periodosComision.js';
+import { metaEnVentana, metaKgEnVentana } from '@/utils/periodosComision.js';
+import { kgDeUnidades, fmtKg, redKg } from '@/utils/canalVenta.js';
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 import DesempenoVendedor, { DesempenoMini } from '@/Components/DesempenoVendedor.jsx';
 import ReporteGestionVendedorDoc from '@/Components/ReporteGestionVendedorDoc.jsx';
@@ -70,71 +73,147 @@ export default function ComercialView({ posList = [], reports = [], irA = null }
 }
 
 // ─── 1. Meta de la empresa ───────────────────────────────────────────────────
+// Colores de la barra: cada vendedor un tono propio; Oficina (clientes directos)
+// verde; sin asignar ámbar. La misma barra mide el avance contra la meta.
+const COLOR_VEND = ['bg-brand-blue', 'bg-indigo-500', 'bg-sky-500', 'bg-violet-500', 'bg-cyan-600'];
+const colorDueno = (id, orden) => id === 'oficina' ? 'bg-emerald-500'
+    : id === 'sin_asignar' ? 'bg-amber-400'
+    : COLOR_VEND[orden % COLOR_VEND.length];
+
+/**
+ * La barra de UN canal contra su meta, partida por quién vendió: cada vendedor,
+ * Oficina (clientes directos) y sin asignar. La marca negra es donde deberíamos
+ * ir a hoy. `fmt` da la cifra con su unidad ("1.234 uds" / "56,5 kg").
+ */
+function BarraCanal({ titulo, nota, total, meta, metaFuente, porDueno, nombreDe, avance, monto, facturas, fmt, sinMeta }) {
+    const esperado = meta * avance;
+    const ritmo = meta > 0 && esperado > 0 ? total / esperado : null;
+    const proyeccion = avance > 0 ? total / avance : 0;
+    const tono = ritmo == null ? 'text-slate-700' : ritmo >= 1 ? 'text-emerald-600' : ritmo >= 0.85 ? 'text-amber-600' : 'text-red-600';
+    // Escala: la meta, o lo vendido si ya la pasó (la barra nunca se desborda).
+    const escala = Math.max(meta, total) || 1;
+    let orden = 0;
+    const segs = Object.entries(porDueno || {})
+        .map(([id, d]) => ({ id, nombre: nombreDe(id), valor: d.valor, monto: d.monto, facturas: d.facturas }))
+        .filter(x => x.valor > 0)
+        .sort((a, b) => {
+            const peso = (x) => x.id === 'sin_asignar' ? 2 : x.id === 'oficina' ? 1 : 0;
+            return peso(a) - peso(b) || b.valor - a.valor;
+        })
+        .map(x => ({ ...x, color: colorDueno(x.id, x.id === 'oficina' || x.id === 'sin_asignar' ? 0 : orden++) }));
+    const vendedores = segs.filter(x => x.id !== 'oficina' && x.id !== 'sin_asignar').reduce((s, x) => s + x.valor, 0);
+    const oficina = segs.find(x => x.id === 'oficina')?.valor || 0;
+
+    return (
+        <div>
+            <p className="text-sm font-bold text-slate-700">{titulo}</p>
+            {nota && <p className="text-[11px] text-slate-400">{nota}</p>}
+            <div className="flex flex-wrap items-end gap-x-6 gap-y-1 mt-2">
+                <p className={`text-4xl font-black leading-none tabular-nums ${tono}`}>{meta > 0 ? pct(total / meta) : '—'}</p>
+                <div>
+                    <p className="text-xl font-black text-slate-800 tabular-nums">{fmt(total)} <span className="text-sm font-bold text-slate-400">{meta > 0 ? `de ${fmt(meta)}` : 'sin meta'}</span></p>
+                    <p className="text-xs text-slate-500">{money0(monto)} facturado · {num(facturas)} factura{facturas === 1 ? '' : 's'}{meta > 0 ? ` · faltan ${fmt(Math.max(0, meta - total))}` : ''}</p>
+                </div>
+            </div>
+            <div className="relative h-5 rounded-full bg-slate-100 mt-3 overflow-hidden flex">
+                {segs.map(x => (
+                    <div key={x.id} className={`h-full ${x.color}`} style={{ width: `${x.valor / escala * 100}%` }}
+                        title={`${x.nombre}: ${fmt(x.valor)}`} />
+                ))}
+                {meta > 0 && (
+                    <div className="absolute top-0 bottom-0 w-0.5 bg-slate-900" style={{ left: `${Math.min(100, esperado / escala * 100)}%` }} title="Donde deberíamos ir a hoy" />
+                )}
+            </div>
+            {segs.length > 0 ? (
+                <div className="mt-2 space-y-1">
+                    {segs.map(x => (
+                        <div key={x.id} className="flex items-center gap-2 text-xs">
+                            <span className={`w-3 h-3 rounded-sm shrink-0 ${x.color}`} />
+                            <span className={`truncate ${x.id === 'sin_asignar' ? 'text-amber-700 font-semibold' : 'text-slate-700 font-semibold'}`}>{x.nombre}</span>
+                            <span className="ml-auto text-slate-500 tabular-nums shrink-0">
+                                <b className="text-slate-800">{fmt(x.valor)}</b> · {money0(x.monto)}{meta > 0 ? ` · ${pct(x.valor / meta)} de la meta` : ''}
+                            </span>
+                        </div>
+                    ))}
+                    <p className="text-[11px] text-slate-500 pt-1">
+                        Vendedores {fmt(vendedores)} · Oficina (clientes directos) {fmt(oficina)}
+                        {total > 0 && ` · ${pct(vendedores / total)} lo vendieron los vendedores`}
+                    </p>
+                </div>
+            ) : (
+                <p className="text-xs text-slate-400 mt-2">Sin ventas este mes todavía.</p>
+            )}
+            {meta > 0 && (
+                <p className="text-xs text-slate-600 mt-2">
+                    A hoy tocaba llevar <b>{fmt(esperado)}</b>.
+                    {ritmo != null && <> Vamos al <b className={tono}>{pct(ritmo)} del ritmo</b>; a este paso el mes cierra en <b>{fmt(proyeccion)}</b>.</>}
+                </p>
+            )}
+            {metaFuente && <p className="text-[11px] text-slate-400 mt-1">{metaFuente}</p>}
+            {sinMeta && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">{sinMeta}</p>}
+        </div>
+    );
+}
+
 function MetaEmpresa({ cc, onVerVendedores }) {
     const k = useFinancialKpis();
-    const { metaVentasGeneral } = useAppConfig();
+    const { metaVentasGeneral, metaKgFoodservice } = useAppConfig();
 
     const now = new Date();
     const diasMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const avance = now.getDate() / diasMes;
 
-    // Meta: la que fijó el dueño en Configuraciones → Metas. Si no la fijó, la
-    // suma de las metas de los vendedores EN ESTE MES (se dice en pantalla). Desde
-    // octubre de 2026 el período del vendedor es el mes calendario, así que su
-    // meta del mes es la misma que ve en su Home; en el mes del cambio suma la
-    // parte de cada período que cae en el mes.
+    // Dos metas, una por canal (decisión del dueño, 16-oct): RETAIL en unidades y
+    // FOODSERVICE en kg de queso. Cada una es la fijada en Configuraciones →
+    // Metas o, si no se fijó, la suma de las metas de los vendedores en este mes
+    // calendario (la parte de cada período que cae en el mes).
     const mesIni = new Date(now.getFullYear(), now.getMonth(), 1);
     const mesFin = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     const sumaVendedores = cc.vendedores.reduce((s, v) => s + (Number(metaEnVentana(v, mesIni, mesFin)) || 0), 0);
+    const sumaKgVendedores = redKg(cc.vendedores.reduce((s, v) => s + (Number(metaKgEnVentana(v, mesIni, mesFin)) || 0), 0));
     const meta = metaVentasGeneral > 0 ? metaVentasGeneral : sumaVendedores;
     const metaDeclarada = metaVentasGeneral > 0;
+    const metaKg = metaKgFoodservice > 0 ? metaKgFoodservice : sumaKgVendedores;
+    const metaKgDeclarada = metaKgFoodservice > 0;
 
-    const uds = k.unidadesMes || 0;
-    const esperado = meta * avance;
-    const ritmo = esperado > 0 ? uds / esperado : null;
-    const proyeccion = avance > 0 ? uds / avance : 0;
-    const tono = ritmo == null ? 'slate' : ritmo >= 1 ? 'emerald' : ritmo >= 0.85 ? 'amber' : 'red';
-    const TONO = {
-        emerald: 'text-emerald-600 bg-emerald-500', amber: 'text-amber-600 bg-amber-500',
-        red: 'text-red-600 bg-red-500', slate: 'text-slate-500 bg-slate-400',
-    }[tono].split(' ');
+    const nombreDe = (id) => id === 'oficina' ? 'Oficina (clientes directos)'
+        : id === 'sin_asignar' ? 'Sin asignar'
+        : (cc.vendedores.find(v => v.id === id)?.name || 'Vendedor inactivo');
+    const canales = k.canalesMes || { retail: { unidades: 0, monto: 0, facturas: 0, porDueno: {} }, food: { kg: 0, monto: 0, facturas: 0, porDueno: {} } };
+    const porDuenoRetail = Object.fromEntries(Object.entries(canales.retail.porDueno).map(([id, d]) => [id, { ...d, valor: d.unidades }]));
+    const porDuenoFood = Object.fromEntries(Object.entries(canales.food.porDueno).map(([id, d]) => [id, { ...d, valor: d.kg }]));
+    const sinAsignar = (canales.retail.porDueno.sin_asignar?.unidades || 0) + (canales.food.porDueno.sin_asignar?.unidades || 0);
 
-    const aporte = k.aportePorVendedorMes || {};
-    const filasAporte = useMemo(() => {
-        const nombre = (id) => id === 'oficina' ? 'Oficina (sin vendedor)'
-            : id === 'sin_asignar' ? 'Sin asignar'
-            : (cc.vendedores.find(v => v.id === id)?.name || 'Vendedor inactivo');
-        return Object.entries(aporte)
-            .map(([id, a]) => ({ id, nombre: nombre(id), ...a }))
-            .sort((a, b) => b.unidades - a.unidades);
-    }, [aporte, cc.vendedores]);
-
-    // Cada vendedor se mide en su MES DE EMPLEO (no en el calendario): misma
-    // regla que su tarjeta en Vendedores, para que las dos cifras se puedan
-    // cuadrar a la vista (pedido del dueño: una sola fuente de la verdad).
+    // Cada vendedor se mide en su PERÍODO (desde octubre, el mes calendario): misma
+    // regla que su tarjeta en Vendedores. En sus períodos de mes calendario
+    // foodservice va aparte, en kg.
     const fmtCorto = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' }).replace('.', '');
     const mesesEmpleo = useMemo(() => cc.vendedores.map(v => {
         const m = computeMetaMensual(v);
         if (!m.periodStart || !m.periodEnd) return null;
         const vistas = new Set();
-        let enPeriodo = 0, enCalendario = 0;
+        let enPeriodo = 0, enCalendario = 0, foodPeriodo = 0, foodCalendario = 0;
         const mIni = new Date(now.getFullYear(), now.getMonth(), 1), mFin = new Date(now.getFullYear(), now.getMonth() + 1, 1);
         (cc.facturas || []).forEach(f => {
             if (f.vendedorId !== v.id || !cuentaEnCartera(f) || f.recuperada) return;
             const key = f.numero || f.id; if (vistas.has(key)) return; vistas.add(key);
             const t = fechaCalendario(f.fecha); if (!t) return;
             const u = Number(f.unidades) || 0;
-            if (t >= m.periodStart && t < m.periodEnd) enPeriodo += u;
-            if (t >= mIni && t < mFin) enCalendario += u;
+            const food = f.categoria === 'foodservice';
+            if (t >= m.periodStart && t < m.periodEnd) { if (food) foodPeriodo += u; if (!(food && m.separaFood)) enPeriodo += u; }
+            if (t >= mIni && t < mFin) { if (food) foodCalendario += u; else enCalendario += u; }
         });
         const mismoMes = m.periodStart.getTime() === mIni.getTime() && m.periodEnd.getTime() === mFin.getTime();
         return { id: v.id, nombre: v.name || v.nombre || 'Vendedor', meta: Number(m.metaMensual) || 0, enPeriodo, enCalendario,
+            kgPeriodo: kgDeUnidades(foodPeriodo), kgCalendario: kgDeUnidades(foodCalendario), metaKg: m.metaKg || 0,
+            metaKgMes: metaKgEnVentana(v, mIni, mFin), separaFood: m.separaFood,
             metaMes: metaEnVentana(v, mIni, mFin), mismoMes, corto: m.corto,
             desde: fmtCorto(m.periodStart), hasta: fmtCorto(new Date(m.periodEnd.getTime() - 86400000)) };
     }).filter(Boolean), [cc.vendedores, cc.facturas]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const hist = k.historico12 || [];
-    const maxHist = Math.max(1, meta, ...hist.map(h => h.unidades));
+    const valRetail = (h) => h.retailUds ?? h.unidades;
+    const maxHist = Math.max(1, meta, ...hist.map(valRetail));
 
     if (k.loading && !k.tieneFacturas) {
         return <div className="bg-white border border-slate-200 rounded-2xl py-16 flex justify-center"><Loader className="animate-spin text-brand-blue" /></div>;
@@ -142,36 +221,40 @@ function MetaEmpresa({ cc, onVerVendedores }) {
 
     return (
         <div className="space-y-4">
-            {/* Avance del mes */}
-            <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Meta de la empresa · {now.toLocaleString('es', { month: 'long', year: 'numeric' })}
-                </p>
-                <p className="text-[11px] text-slate-400">Mes calendario: del 1 al {diasMes}. Cuenta las facturas de toda la empresa.</p>
-                <div className="flex flex-wrap items-end gap-x-6 gap-y-2 mt-2">
+            {/* Avance del mes: una barra por canal, partida por quién vendió */}
+            <section className="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-6">
+                <div className="flex items-start justify-between gap-2">
                     <div>
-                        <p className={`text-5xl font-black leading-none tabular-nums ${TONO[0]}`}>{meta > 0 ? pct(uds / meta) : '—'}</p>
-                        <p className="text-sm text-slate-500 mt-1">de la meta</p>
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                            Meta de la empresa · {now.toLocaleString('es', { month: 'long', year: 'numeric' })}
+                        </p>
+                        <p className="text-[11px] text-slate-400">
+                            Mes calendario: del 1 al {diasMes} (hoy, día {now.getDate()}). Cuenta las facturas de toda la empresa: vendedores y Oficina.
+                            La marca negra es donde deberíamos ir a hoy.
+                        </p>
                     </div>
-                    <div>
-                        <p className="text-2xl font-black text-slate-800 tabular-nums">{num(uds)} <span className="text-base font-bold text-slate-400">de {num(meta)} uds</span></p>
-                        <p className="text-sm text-slate-500">{money0(k.facturadoMes)} facturado · faltan {num(Math.max(0, meta - uds))} uds</p>
-                    </div>
+                    <button onClick={onVerVendedores} className="text-xs font-bold text-brand-blue shrink-0">Ver desempeño →</button>
                 </div>
-
-                {/* Barra con la marca de "donde deberíamos ir" */}
-                <div className="relative h-4 rounded-full bg-slate-100 mt-4 overflow-hidden">
-                    <div className={`h-full rounded-full ${TONO[1]}`} style={{ width: `${Math.min(100, meta > 0 ? uds / meta * 100 : 0)}%` }} />
-                    <div className="absolute top-0 bottom-0 w-0.5 bg-slate-800" style={{ left: `${Math.min(100, avance * 100)}%` }} title="Donde deberíamos ir a hoy" />
-                </div>
-                <p className="text-sm text-slate-600 mt-2">
-                    Día {now.getDate()} de {diasMes}: a hoy tocaba llevar <b>{num(esperado)} uds</b> ({pct(avance)} de la meta).
-                    {ritmo != null && <> Vamos al <b className={TONO[0]}>{pct(ritmo)} del ritmo</b>; a este paso el mes cierra en <b>{num(proyeccion)} uds</b> ({meta > 0 ? pct(proyeccion / meta) : '—'} de la meta).</>}
-                </p>
-                {!metaDeclarada && (
-                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-                        No hay una meta de la empresa fijada: se usa la suma de las metas de los vendedores ({num(sumaVendedores)} uds).
-                        Fíjala en Configuraciones → Metas.
+                <BarraCanal
+                    titulo="Retail · unidades"
+                    nota="Bolsas de 250 g a supermercados, automercados y tiendas."
+                    total={canales.retail.unidades} meta={meta} porDueno={porDuenoRetail} nombreDe={nombreDe}
+                    avance={avance} monto={canales.retail.monto} facturas={canales.retail.facturas}
+                    fmt={(x) => `${num(x)} uds`}
+                    metaFuente={metaDeclarada ? 'Meta fijada en Configuraciones → Metas.' : `Meta = suma de las metas de los vendedores (${num(sumaVendedores)} uds).`}
+                />
+                <BarraCanal
+                    titulo="Foodservice · kg de queso"
+                    nota="Bolsas de 1 y 3 kg a restaurantes, hoteles y procesadores. Se mide aparte, en kg."
+                    total={canales.food.kg} meta={metaKg} porDueno={porDuenoFood} nombreDe={nombreDe}
+                    avance={avance} monto={canales.food.monto} facturas={canales.food.facturas}
+                    fmt={fmtKg}
+                    metaFuente={metaKg > 0 ? (metaKgDeclarada ? 'Meta fijada en Configuraciones → Metas.' : `Meta = suma de las metas de kg de los vendedores (${fmtKg(sumaKgVendedores)}).`) : null}
+                    sinMeta={metaKg > 0 ? null : 'No hay meta de foodservice: fíjala en Configuraciones → Metas (kg al mes) o en la ficha de comisiones de cada vendedor.'}
+                />
+                {sinAsignar > 0 && (
+                    <p className="text-xs text-amber-700">
+                        Hay ventas de clientes sin vendedor ni Oficina: cuentan para la empresa pero no para ningún vendedor. Asígnalos en Clientes y PDV.
                     </p>
                 )}
             </section>
@@ -180,15 +263,16 @@ function MetaEmpresa({ cc, onVerVendedores }) {
             {metaDeclarada && sumaVendedores !== meta && (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                     La meta fijada para la empresa ({num(meta)} uds) no es la suma de las metas de los vendedores este mes ({num(sumaVendedores)} uds).
-                    Para que todos corran con la misma meta, ajusta una de las dos: la de la empresa en Configuraciones → Metas o la de cada vendedor en su ficha.
+                    La diferencia es lo que se espera de Oficina (clientes directos); si no, ajusta una de las dos: la de la empresa en Configuraciones → Metas o la de cada vendedor en su ficha.
                 </p>
             )}
             {mesesEmpleo.length > 0 && (
                 <section className="bg-white border border-slate-200 rounded-2xl p-5">
                     <p className="text-sm font-bold text-slate-700">La meta de cada vendedor este mes</p>
                     <p className="text-[11px] text-slate-500 mb-3">
-                        Desde octubre de 2026 la comisión se corta el último día de cada mes: el mes del vendedor es el mismo de la empresa.
-                        {mesesEmpleo.some(v => !v.mismoMes) && ' Este mes es el del cambio: su período anterior cerró a mitad de mes y el nuevo es corto, con la meta en proporción a sus días.'}
+                        Desde octubre de 2026 la comisión se corta el último día de cada mes: el mes del vendedor es el mismo de la empresa,
+                        y foodservice se mide aparte en kg (no suma a la meta de unidades).
+                        {mesesEmpleo.some(v => !v.mismoMes) && ' Este mes es el del cambio: su período anterior cerró a mitad de mes (con la regla de antes) y el nuevo es corto, con la meta en proporción a sus días.'}
                     </p>
                     <div className="space-y-2">
                         {mesesEmpleo.map(v => (
@@ -196,12 +280,13 @@ function MetaEmpresa({ cc, onVerVendedores }) {
                                 <p className="font-bold text-slate-800">{v.nombre}</p>
                                 {v.mismoMes ? (
                                     <p className="text-slate-600 text-xs leading-relaxed">
-                                        {num(v.enCalendario)} de <b className="text-slate-800 tabular-nums">{num(v.meta)} uds</b> · la misma cifra que ve en su Home y en Vendedores.
+                                        Retail: {num(v.enCalendario)} de <b className="text-slate-800 tabular-nums">{num(v.meta)} uds</b> · foodservice: {fmtKg(v.kgCalendario)}{v.metaKg > 0 ? <> de <b className="text-slate-800">{fmtKg(v.metaKg)}</b></> : ' (sin meta de kg)'} · lo mismo que ve en su Home y en Vendedores.
                                     </p>
                                 ) : (
                                     <p className="text-slate-600 text-xs leading-relaxed">
-                                        Su período de hoy ({v.desde} – {v.hasta}{v.corto ? ', período corto' : ''}): <b className="text-slate-800 tabular-nums">{num(v.enPeriodo)} de {num(v.meta)} uds</b> · lo que ves en Vendedores.
-                                        <br />Su meta en {now.toLocaleString('es', { month: 'long' })}: <b className="text-slate-800 tabular-nums">{num(v.metaMes)} uds</b> (la parte de cada período que cae en el mes) · lleva {num(v.enCalendario)} uds.
+                                        Su período de hoy ({v.desde} – {v.hasta}{v.corto ? ', período corto' : ''}): <b className="text-slate-800 tabular-nums">{num(v.enPeriodo)} de {num(v.meta)} uds</b>
+                                        {v.separaFood ? <> + {fmtKg(v.kgPeriodo)} foodservice{v.metaKg > 0 ? ` de ${fmtKg(v.metaKg)}` : ''}</> : ' (foodservice incluido, regla de antes)'} · lo que ves en Vendedores.
+                                        <br />Su meta en {now.toLocaleString('es', { month: 'long' })}: <b className="text-slate-800 tabular-nums">{num(v.metaMes)} uds</b>{v.metaKgMes > 0 ? ` y ${fmtKg(v.metaKgMes)}` : ''} (la parte de cada período que cae en el mes) · lleva {num(v.enCalendario)} uds retail y {fmtKg(v.kgCalendario)} foodservice.
                                     </p>
                                 )}
                             </div>
@@ -218,57 +303,24 @@ function MetaEmpresa({ cc, onVerVendedores }) {
                 <Dato label="Más de 45 días" valor={money0(k.aging?.d45p)} sub={`${num(k.clientesMas45)} cliente${k.clientesMas45 === 1 ? '' : 's'}`} tono={k.aging?.d45p > 0 ? 'text-red-600' : 'text-slate-800'} />
             </div>
 
-            {/* Quién aporta a la meta */}
-            <section className="bg-white border border-slate-200 rounded-2xl p-5">
-                <div className="flex items-center justify-between gap-2 mb-3">
-                    <p className="text-sm font-bold text-slate-700">Quién aporta a la meta este mes</p>
-                    <button onClick={onVerVendedores} className="text-xs font-bold text-brand-blue">Ver desempeño →</button>
-                </div>
-                {filasAporte.length === 0 ? (
-                    <p className="text-sm text-slate-400 py-4">Sin facturas este mes todavía.</p>
-                ) : (
-                    <div className="space-y-2.5">
-                        {filasAporte.map(f => (
-                            <div key={f.id}>
-                                <div className="flex items-baseline justify-between gap-2 text-sm">
-                                    <span className={`font-semibold truncate ${f.id === 'sin_asignar' ? 'text-amber-700' : 'text-slate-700'}`}>{f.nombre}</span>
-                                    <span className="text-slate-500 tabular-nums shrink-0">
-                                        <b className="text-slate-800">{num(f.unidades)} uds</b> · {money0(f.monto)} · {meta > 0 ? pct(f.unidades / meta) : '—'} de la meta
-                                    </span>
-                                </div>
-                                <div className="h-2 rounded-full bg-slate-100 overflow-hidden mt-1">
-                                    <div className={`h-full rounded-full ${f.id === 'sin_asignar' ? 'bg-amber-400' : f.id === 'oficina' ? 'bg-slate-400' : 'bg-brand-blue'}`}
-                                        style={{ width: `${uds > 0 ? f.unidades / uds * 100 : 0}%` }} />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-                {aporte.sin_asignar?.unidades > 0 && (
-                    <p className="text-xs text-amber-700 mt-3">
-                        {num(aporte.sin_asignar.unidades)} uds son de clientes sin vendedor ni Oficina: cuentan para la empresa pero
-                        no para ningún vendedor. Asígnalos en Clientes y PDV.
-                    </p>
-                )}
-            </section>
-
             {/* Histórico de 12 meses contra la meta */}
             <section className="bg-white border border-slate-200 rounded-2xl p-5">
                 <p className="text-sm font-bold text-slate-700 flex items-center gap-2"><TrendingUp size={16} /> Últimos 12 meses</p>
-                <p className="text-[11px] text-slate-400 mb-3">Unidades facturadas por mes. La línea es la meta actual{metaDeclarada ? '' : ' (suma de vendedores)'}.</p>
+                <p className="text-[11px] text-slate-400 mb-3">Unidades retail por mes (sin foodservice). La línea es la meta retail actual{metaDeclarada ? '' : ' (suma de vendedores)'}. Foodservice, en kg, en la tabla.</p>
                 <div className="relative h-40 flex items-end gap-1.5">
                     {meta > 0 && (
                         <div className="absolute left-0 right-0 border-t-2 border-dashed border-slate-400 pointer-events-none"
                             style={{ bottom: `${meta / maxHist * 100}%` }} />
                     )}
                     {hist.map((h, i) => {
-                        const cumple = meta > 0 && h.unidades >= meta;
+                        const v = valRetail(h);
+                        const cumple = meta > 0 && v >= meta;
                         const actual = i === hist.length - 1;
                         return (
                             <div key={h.key} className="flex-1 h-full flex flex-col justify-end items-center min-w-0"
-                                title={`${h.label} ${h.anio}: ${num(h.unidades)} uds · ${money0(h.monto)}${meta > 0 ? ` · ${pct(h.unidades / meta)} de la meta` : ''}`}>
+                                title={`${h.label} ${h.anio}: ${num(v)} uds retail · ${fmtKg(h.foodKg || 0)} foodservice · ${money0(h.monto)}`}>
                                 <div className={`w-full rounded-t-md ${actual ? 'bg-brand-blue' : cumple ? 'bg-emerald-400' : 'bg-slate-300'}`}
-                                    style={{ height: `${h.unidades / maxHist * 100}%`, minHeight: h.unidades > 0 ? 2 : 0 }} />
+                                    style={{ height: `${v / maxHist * 100}%`, minHeight: v > 0 ? 2 : 0 }} />
                             </div>
                         );
                     })}
@@ -277,17 +329,21 @@ function MetaEmpresa({ cc, onVerVendedores }) {
                     {hist.map(h => <span key={h.key} className="flex-1 text-center text-[10px] text-slate-400 truncate">{h.label}</span>)}
                 </div>
                 <div className="mt-3 overflow-x-auto">
-                    <table className="w-full text-xs min-w-[420px]">
-                        <thead><tr className="text-left text-slate-400 uppercase tracking-wide"><th className="py-1">Mes</th><th className="py-1 text-right">Unidades</th><th className="py-1 text-right">% meta</th><th className="py-1 text-right">Facturado</th></tr></thead>
+                    <table className="w-full text-xs min-w-[480px]">
+                        <thead><tr className="text-left text-slate-400 uppercase tracking-wide"><th className="py-1">Mes</th><th className="py-1 text-right">Retail (uds)</th><th className="py-1 text-right">% meta</th><th className="py-1 text-right">Foodservice</th><th className="py-1 text-right">Facturado</th></tr></thead>
                         <tbody>
-                            {[...hist].reverse().map(h => (
-                                <tr key={h.key} className="border-t border-slate-100">
-                                    <td className="py-1.5 font-semibold text-slate-700 capitalize">{h.label} {h.anio}</td>
-                                    <td className="py-1.5 text-right tabular-nums">{num(h.unidades)}</td>
-                                    <td className={`py-1.5 text-right tabular-nums font-bold ${meta > 0 && h.unidades >= meta ? 'text-emerald-600' : 'text-slate-500'}`}>{meta > 0 ? pct(h.unidades / meta) : '—'}</td>
-                                    <td className="py-1.5 text-right tabular-nums">{money0(h.monto)}</td>
-                                </tr>
-                            ))}
+                            {[...hist].reverse().map(h => {
+                                const v = valRetail(h);
+                                return (
+                                    <tr key={h.key} className="border-t border-slate-100">
+                                        <td className="py-1.5 font-semibold text-slate-700 capitalize">{h.label} {h.anio}</td>
+                                        <td className="py-1.5 text-right tabular-nums">{num(v)}</td>
+                                        <td className={`py-1.5 text-right tabular-nums font-bold ${meta > 0 && v >= meta ? 'text-emerald-600' : 'text-slate-500'}`}>{meta > 0 ? pct(v / meta) : '—'}</td>
+                                        <td className="py-1.5 text-right tabular-nums">{fmtKg(h.foodKg || 0)}</td>
+                                        <td className="py-1.5 text-right tabular-nums">{money0(h.monto)}</td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

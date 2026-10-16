@@ -29,6 +29,7 @@ import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo, fechaCalendario, carteraActivacion } from '@/utils/vendedorMeta.js';
+import { kgDeUnidades, fmtKg } from '@/utils/canalVenta.js';
 import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
@@ -578,13 +579,30 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                         </div>
 
                         <div className="flex items-center justify-between">
-                            <p className="text-slate-500 text-xs">{(pct * 100).toFixed(0)}% del objetivo</p>
+                            <p className="text-slate-500 text-xs">{(pct * 100).toFixed(0)}% del objetivo{vendedor.separaFood ? ' · retail' : ''}</p>
                             {faltan !== null && (
                                 <p className={`text-xs font-semibold ${tier.color}`}>
                                     {faltan.toLocaleString()} uds → Nivel {siguiente.tier.label} ({(siguiente.tier.rate * 100).toFixed(1)}%)
                                 </p>
                             )}
                         </div>
+                        {/* Foodservice va aparte, en kg (desde el corte a fin de mes) */}
+                        {vendedor.separaFood && (vendedor.metaKg > 0 || stats.kgFoodMes > 0) && (
+                            <div className="mt-3 pt-3 border-t border-slate-800">
+                                <div className="flex items-baseline justify-between gap-2">
+                                    <p className="text-slate-400 text-xs font-semibold">Foodservice</p>
+                                    <p className="text-sm font-black font-mono text-amber-300">
+                                        {fmtKg(stats.kgFoodMes || 0)}{vendedor.metaKg > 0 && <span className="text-slate-500 font-normal"> / {fmtKg(vendedor.metaKg)}</span>}
+                                    </p>
+                                </div>
+                                {vendedor.metaKg > 0 && (
+                                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-1.5">
+                                        <div className="h-2 rounded-full bg-amber-400" style={{ width: `${Math.min(100, (stats.kgFoodMes || 0) / vendedor.metaKg * 100).toFixed(1)}%` }} />
+                                    </div>
+                                )}
+                                <p className="text-slate-500 text-[11px] mt-1">Kg de queso a clientes foodservice. No suma a tus unidades: comisión fija del {commConfig.comisionFoodservice}% sobre lo cobrado.</p>
+                            </div>
+                        )}
                     </>
                 )}
             </button>
@@ -1082,7 +1100,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     const [carteraFacturas, setCarteraFacturas]       = useState([]); // facturas de su cartera (ventas por cliente/PDV)
     const [showVentas, setShowVentas]                 = useState(false);
     const [stats, setStats]                           = useState({
-        unidadesDelMes: 0, comisionSemana: 0, despachoHoy: 0,
+        unidadesDelMes: 0, kgFoodMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
         facturasPorVencer: 0, puntualidadPct: null,
         runRateActual: 0, runRateNeeded: 0, diasRestantes: 0,
@@ -1304,7 +1322,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const periodoLabel = per.corto ? `${per.periodoLabel} · período corto, meta en proporción` : per.periodoLabel;
 
                 setCommConfig(cfg);
-                const vendedorObj = { uid: user.uid, nombre, metaMensual, reporterId, mesArranque, antesDeIngreso, sinIngreso, ingreso };
+                const vendedorObj = { uid: user.uid, nombre, metaMensual, reporterId, mesArranque, antesDeIngreso, sinIngreso, ingreso, separaFood: per.separaFood, metaKg: per.metaKg || 0 };
                 setVendedor(vendedorObj);
 
                 const now       = new Date();
@@ -1396,9 +1414,15 @@ const VendedorLayout = ({ user, onLogout }) => {
                     const t = fechaCalendario(f.fecha);
                     return t && t >= periodStart && t < periodEnd;
                 };
-                const unidadesDelMes = facturasVend
-                    .filter(f => cuentaEnCartera(f) && enPeriodo(f))
+                // Desde el corte a fin de mes, foodservice se mide aparte en kg y no
+                // suma a la meta de unidades (misma regla que el motor de comisiones).
+                const delPeriodo = facturasVend.filter(f => cuentaEnCartera(f) && enPeriodo(f) && !f.recuperada);
+                const unidadesDelMes = delPeriodo
+                    .filter(f => !(per.separaFood && f.categoria === 'foodservice'))
                     .reduce((s, f) => s + (Number(f.unidades) || 0), 0);
+                const kgFoodMes = kgDeUnidades(delPeriodo
+                    .filter(f => f.categoria === 'foodservice')
+                    .reduce((s, f) => s + (Number(f.unidades) || 0), 0));
 
                 // 2c. Velocidad de Venta — ritmo actual vs. ritmo necesario, medido
                 //     sobre el período de empleo vigente (no el mes de calendario).
@@ -1499,7 +1523,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                 //    esto es la diferencia entre "abre al instante" y "spinner de
                 //    varios segundos".
                 const heroStats = {
-                    unidadesDelMes, comisionSemana, despachoHoy,
+                    unidadesDelMes, kgFoodMes, comisionSemana, despachoHoy,
                     activacionOk, puntosActivacion, puntosTotal,
                     facturasPorVencer, puntualidadPct,
                     hasAnaquel: false, anaquelOk: false, anaquelCubiertos: 0, anaquelTotal: 0,

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../Firebase/config.js';
-import { metaEnVentana } from '../utils/periodosComision.js';
+import { metaEnVentana, metaKgEnVentana } from '../utils/periodosComision.js';
 
 /**
  * Escucha en tiempo real a todos los vendedores activos y suma su meta del MES
@@ -9,10 +9,14 @@ import { metaEnVentana } from '../utils/periodosComision.js';
  * a cortes de fin de mes, la parte de cada período que cae en el mes) — la misma
  * cifra que usa Comercial → Meta de la empresa.
  *
- * @returns {{ teamGoal: number, loading: boolean }}
+ * También suma la meta de kg foodservice (`teamGoalKg`), que desde octubre de
+ * 2026 se mide aparte.
+ *
+ * @returns {{ teamGoal: number, teamGoalKg: number, loading: boolean }}
  */
 export const useTeamMetaMensual = () => {
     const [teamGoal, setTeamGoal] = useState(0);
+    const [teamGoalKg, setTeamGoalKg] = useState(0);
     const [loading, setLoading]   = useState(true);
 
     useEffect(() => {
@@ -24,6 +28,7 @@ export const useTeamMetaMensual = () => {
             const hasta = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
             const total = vends.reduce((s, v) => s + metaEnVentana(v, desde, hasta), 0);
             setTeamGoal(total);
+            setTeamGoalKg(Math.round(vends.reduce((s, v) => s + metaKgEnVentana(v, desde, hasta), 0) * 10) / 10);
             setLoading(false);
         }, (error) => {
             console.error('Error fetching team meta mensual:', error);
@@ -33,5 +38,5 @@ export const useTeamMetaMensual = () => {
         return () => unsubscribe();
     }, []);
 
-    return { teamGoal, loading };
+    return { teamGoal, teamGoalKg, loading };
 };

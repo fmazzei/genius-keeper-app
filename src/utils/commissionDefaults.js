@@ -39,9 +39,11 @@ export const DEFAULT_COMMISSION_CONFIG = {
     // Cuentas Recuperadas: facturas heredadas de la cartera que el vendedor cobra
     comisionRecuperadas: 5.0,   // % flat sobre lo cobrado de esas facturas adoptadas
     facturaMaxDias:      45,    // >45 días sin cobrar → la comisión se anula
-    // FOODSERVICE: canal aparte (clientes marcados 'foodservice'). Sus unidades
-    // CUENTAN a la meta (a su propio precio), pero la comisión es FLAT (no la del
-    // nivel). Precio y % editables aquí.
+    // FOODSERVICE: canal aparte (clientes marcados 'foodservice'), con comisión
+    // FLAT (no la del nivel). Desde el corte a fin de mes (octubre de 2026) se
+    // mide en KG de queso colocado contra su propia meta y NO cuenta a la meta de
+    // unidades retail (decisión del dueño, 16-oct). Antes contaba a la meta.
     precioUnidadFoodservice: 4.8,  // precio de venta por unidad foodservice
     comisionFoodservice:     5.0,  // % flat sobre lo cobrado de facturas foodservice
+    metaKgFoodservice:       0,    // kg de queso foodservice al mes (0 = sin meta)
 };
