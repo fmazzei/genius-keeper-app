@@ -30,11 +30,13 @@ import DossierComercialDoc from '@/Components/DossierComercialDoc.jsx';
 import CarteraVencidaModal from '@/Components/CarteraVencidaModal.jsx';
 import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
 import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
+import { fechaCalendario } from '@/utils/vendedorMeta.js';
 
 const money  = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 const num    = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
-const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
+// Las fechas de Zoho (facturas, bills) se guardan a las 00:00 UTC: se leen como SU día, no el anterior.
+const toDate = (t) => fechaCalendario(t);
 const fmt    = (d) => d ? d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
 
 // ── Tarjeta ──────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import { Clock, Info } from 'lucide-react';
 import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
 import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 import { computeDiasPago } from '@/hooks/useFinancialKpis.js';
+import { fechaCalendario } from '@/utils/vendedorMeta.js';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
@@ -57,7 +58,7 @@ export default function DiasPagoModal({ facturas = [], onClose }) {
         const ahora = new Date();
         let minY = ahora.getFullYear();
         (facturas || []).forEach(f => {
-            const t = toDate(f.fecha);
+            const t = fechaCalendario(f.fecha);
             if (t && t.getFullYear() < minY) minY = t.getFullYear();
         });
         const arr = [];

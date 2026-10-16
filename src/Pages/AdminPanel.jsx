@@ -3683,7 +3683,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
         if (!ingresoDate) return false;
         if (!f.recuperada) return false;            // solo aplica a previas al ingreso
         if (f.estado !== 'pagada') return false;    // abiertas SÍ se muestran (heredadas)
-        const fp = f.fechaPago?.toDate ? f.fechaPago.toDate() : (f.fechaPago ? new Date(f.fechaPago) : null);
+        const fp = fechaCalendario(f.fechaPago);
         if (!fp) return true;                        // pagada sin fecha de cobro → histórico previo
         return fp < ingresoDate;                     // cobrada ANTES de su ingreso → no es suya
     };
@@ -3718,7 +3718,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
     // Base de despliegue: incluye anuladas y ausentes (para poder filtrarlas por
     // pill). Las métricas de arriba siguen sobre las activas.
     const PROX_VENCER = 3;
-    const facVenc = (f) => (f.vencimiento?.toDate ? f.vencimiento.toDate() : (f.vencimiento ? new Date(f.vencimiento) : null));
+    const facVenc = (f) => fechaCalendario(f.vencimiento);
     const esPorVencer = (f) => { const v = facVenc(f); if (!v) return false; const dias = (v - new Date()) / 86400000; return (f.estado || 'pendiente') === 'pendiente' && dias >= 0 && dias <= PROX_VENCER; };
     const statusOf = (f) => f.estado || 'pendiente';
     const displayBase = facturasVis.filter(enPeriodo);

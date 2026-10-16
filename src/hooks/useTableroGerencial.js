@@ -24,6 +24,7 @@ import { kgProducidos, fechaProduccion, esProduccionAbierta, faltaEmpacar } from
 import { indexById, indexPackagingAssignments, buildMilkPriceLookup } from '@/Kroma/costeoLote.js';
 import { costeoLote, listaDeCompras, capitalEnInsumos, relacionProveedores } from '@/utils/tableroPlanta.js';
 import { facturacionPorPdv, pdvActivo, ciudadDePdv, agruparPdvPorCliente, DESDE_VENTAS } from '@/utils/facturacionPdv.js';
+import { fechaCalendario } from '@/utils/vendedorMeta.js';
 
 const EMPRESA_GK = 'lacteoca';
 
@@ -35,7 +36,8 @@ export const CATEGORIAS_CXP = [
     { id: 'proveedor', nombre: 'Proveedores' },
 ];
 
-const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
+// Las fechas de Zoho (facturas, bills) se guardan a las 00:00 UTC: se leen como SU día, no el anterior.
+const toDate = (t) => fechaCalendario(t);
 const mesKey = (d) => d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : null;
 
 /** Últimos N meses como claves "YYYY-MM", del más viejo al más nuevo. */
@@ -177,7 +179,7 @@ export function useTableroGerencial() {
         const abiertas = data.facturas.filter(f => cuentaEnCartera(f) && f.estado !== 'pagada' && saldoAbierto(f) > 0.005);
         const porCobrar = abiertas.reduce((s, f) => s + saldoAbierto(f), 0);
         const cobrarVencido = abiertas
-            .filter(f => { const v = toDate(f.vencimiento); return v && v < now; })
+            .filter(f => { const v = fechaCalendario(f.vencimiento); return v && v < now; })
             .reduce((s, f) => s + saldoAbierto(f), 0);
 
         // ── 2. Cuentas por PAGAR (bills de Zoho)
@@ -211,7 +213,7 @@ export function useTableroGerencial() {
         const enCartera = data.facturas.filter(cuentaEnCartera);
         const ventasPorMes = {};
         enCartera.forEach(f => {
-            const k = mesKey(toDate(f.fecha)); if (!k) return;
+            const k = mesKey(fechaCalendario(f.fecha)); if (!k) return;
             if (!ventasPorMes[k]) ventasPorMes[k] = { monto: 0, n: 0 };
             ventasPorMes[k].monto += Number(f.monto) || 0;
             ventasPorMes[k].n += 1;

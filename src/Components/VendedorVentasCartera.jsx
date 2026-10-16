@@ -19,6 +19,7 @@ import { db } from '@/Firebase/config.js';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import FacturacionDoc from '@/Components/FacturacionDoc.jsx';
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
+import { fechaCalendario } from '@/utils/vendedorMeta.js';
 
 const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 });
 const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
@@ -30,7 +31,7 @@ export function ventasDeSuCartera(facturas = [], { desde = null, carnets = null,
     return (facturas || []).filter(f => {
         if (!cuentaEnCartera(f)) return false;
         if (f.recuperada) return false;                  // heredada: antes de su ingreso
-        const t = toDate(f.fecha);
+        const t = fechaCalendario(f.fecha);
         if (desde && (!t || t < desde)) return false;
         if (carnets) {                                   // null = no se pudo leer la cartera: no se filtra
             const cid = String(f.zohoCustomerId || '');

@@ -10,6 +10,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { unidadesReales, buildCanalResolver } from '@/utils/unidadesFactura.js';
 import { cuentaEnCartera as _cuentaEnCartera, saldoAbierto as _saldoAbierto, motivoFuera } from '@/utils/facturaEstado.js';
+import { fechaCalendario } from '@/utils/vendedorMeta.js';
 
 const toDate = (t) => t?.toDate?.() || (t ? new Date(t) : null);
 const sum = (arr, sel) => arr.reduce((s, f) => s + (Number(sel(f)) || 0), 0);
@@ -29,19 +30,19 @@ const sum = (arr, sel) => arr.reduce((s, f) => s + (Number(sel(f)) || 0), 0);
 // El promedio ponderado por monto de factura equivale exactamente a ponderar
 // por el peso de cada cliente: Σ(monto·días)/Σ(monto).
 export function computeDiasPago(facturas, start, end, modo = 'vencimiento') {
-    const baseDe = (f) => modo === 'emision' ? toDate(f.fecha) : toDate(f.vencimiento);
+    const baseDe = (f) => modo === 'emision' ? fechaCalendario(f.fecha) : fechaCalendario(f.vencimiento);
     const enPeriodo = (facturas || []).filter(f => {
         if (f.estado !== 'pagada') return false;
-        const t = toDate(f.fecha);
+        const t = fechaCalendario(f.fecha);
         if (!t || t < start || t >= end) return false;
-        return baseDe(f) && toDate(f.fechaPago);
+        return baseDe(f) && fechaCalendario(f.fechaPago);
     });
 
     const porClienteMap = {};
     let totMonto = 0, totMontoDias = 0, totSimpleDias = 0, n = 0;
 
     enPeriodo.forEach(f => {
-        const dias = (toDate(f.fechaPago) - baseDe(f)) / 86400000;
+        const dias = (fechaCalendario(f.fechaPago) - baseDe(f)) / 86400000;
         if (!Number.isFinite(dias)) return;
         const monto = Number(f.monto) || 0;
         const k = f.razonSocialCanonica || f.clienteName || '—';
@@ -140,7 +141,7 @@ export function useFinancialKpis() {
         // Sin este filtro GK reportaba cuentas por cobrar que en Zoho no existen.
         const activas   = facturas.filter(_cuentaEnCartera);
         const fantasmas = facturas.filter(f => f.estado !== 'anulada' && !_cuentaEnCartera(f));
-        const inWin = (f, a, b) => { const t = toDate(f.fecha); return t && t >= a && t < b; };
+        const inWin = (f, a, b) => { const t = fechaCalendario(f.fecha); return t && t >= a && t < b; };
 
         // Unidades de VENTA reales: Zoho factura foodservice por kilo, así que la
         // cantidad de la línea no siempre está en unidades de 250 g. Se
@@ -215,7 +216,7 @@ export function useFinancialKpis() {
         // dueño al lado de lo facturado ("cuánto vendimos / cuánto cobramos").
         const cobradasMes = activas.filter(f => {
             if (f.estado !== 'pagada') return false;
-            const p = toDate(f.fechaPago);
+            const p = fechaCalendario(f.fechaPago);
             return p && p >= mStart && p < mEnd;
         });
         const cobradoMes    = sum(cobradasMes, f => f.monto);
@@ -231,12 +232,12 @@ export function useFinancialKpis() {
         // 0–30 a tiempo · 31–45 sin bono · >45 en riesgo de anularse la comisión).
         let a0 = 0, a1 = 0, a2 = 0;
         abiertas.forEach(f => {
-            const t = toDate(f.fecha); const monto = _saldoAbierto(f);
+            const t = fechaCalendario(f.fecha); const monto = _saldoAbierto(f);
             const age = t ? (now - t) / 86400000 : 0;
             if (age <= 30) a0 += monto; else if (age <= 45) a1 += monto; else a2 += monto;
         });
         const clientesMas45 = new Set(
-            abiertas.filter(f => { const t = toDate(f.fecha); return t && (now - t) / 86400000 > 45; })
+            abiertas.filter(f => { const t = fechaCalendario(f.fecha); return t && (now - t) / 86400000 > 45; })
                     .map(f => f.razonSocialCanonica || f.clienteName)
         ).size;
 
@@ -250,7 +251,7 @@ export function useFinancialKpis() {
 
         // % a tiempo sobre los pagos del año (dentro de vencimiento + gracia).
         const pagadasAnio = activas.filter(f =>
-            f.estado === 'pagada' && toDate(f.fecha) && toDate(f.fecha) >= yStart && toDate(f.fecha) < yEnd
+            f.estado === 'pagada' && fechaCalendario(f.fecha) && fechaCalendario(f.fecha) >= yStart && fechaCalendario(f.fecha) < yEnd
         );
         const aTiempoPct = pagadasAnio.length
             ? (pagadasAnio.filter(f => f.pagadaDentroDePlazo === true).length / pagadasAnio.length) * 100

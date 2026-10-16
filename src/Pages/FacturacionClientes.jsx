@@ -13,6 +13,7 @@ import { RefreshCw, FileDown, Search, Store, Building2, AlertCircle, Calendar, U
 import FacturacionDoc from '@/Components/FacturacionDoc.jsx';
 import { cuentaEnCartera, saldoAbierto } from '@/utils/facturaEstado.js';
 import { unidadesReales, buildCanalResolver } from '@/utils/unidadesFactura.js';
+import { fechaCalendario } from '@/utils/vendedorMeta.js';
 
 // Filtro de cartera: TODAS las ventas, las de un vendedor, Oficina o sin asignar.
 // Se resuelve por la cartera ACTUAL (clientes_zoho por carnet), que es lo que
@@ -76,7 +77,7 @@ export default function FacturacionClientes() {
     const years = useMemo(() => {
         const cur = new Date().getFullYear();
         let min = cur;
-        facturas.forEach(f => { const t = toDate(f.fecha); if (t && t.getFullYear() < min) min = t.getFullYear(); });
+        facturas.forEach(f => { const t = fechaCalendario(f.fecha); if (t && t.getFullYear() < min) min = t.getFullYear(); });
         const arr = []; for (let y = cur; y >= min; y--) arr.push(y);
         return arr;
     }, [facturas]);
@@ -113,7 +114,7 @@ export default function FacturacionClientes() {
         const map = new Map();
         for (const f of facturas) {
             if (!cuentaEnCartera(f)) continue;
-            const t = toDate(f.fecha);
+            const t = fechaCalendario(f.fecha);
             if (!t || t < winStart || t >= winEnd) continue; // ← filtro de período
             if (carteraSel !== CARTERA_TODOS && duenoDe(f) !== carteraSel) continue; // ← filtro de cartera
             const key = groupBy === 'razon'
@@ -130,7 +131,7 @@ export default function FacturacionClientes() {
             g.cobrado += monto - saldo;
             if (saldo > 0.005) {
                 g.porCobrar += saldo;
-                const venc = toDate(f.vencimiento);
+                const venc = fechaCalendario(f.vencimiento);
                 if (f.estado === 'vencida' || (venc && venc < now)) g.vencido += saldo;
             }
         }

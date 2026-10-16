@@ -11,6 +11,7 @@
 // cargados y devuelve los indicadores con sus listas.
 
 import { cuentaEnCartera, saldoAbierto } from './facturaEstado.js';
+import { fechaCalendario } from './vendedorMeta.js';
 
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 // "Central Madeirense, C.A. (Santa Marta)" → "central madeirense, c.a."
@@ -166,7 +167,7 @@ function ultimaFacturaPorPos(cartera, facturas, corte) {
         };
         Object.values(claves).forEach(k => { if (k) conocidas.add(k); });
 
-        const t = toDate(f.fecha);
+        const t = fechaCalendario(f.fecha);
         if (!t || (corte && t > corte)) return;   // reconstrucción histórica
         Object.entries(claves).forEach(([nivel, k]) => {
             if (k && (!idx[nivel][k] || t > idx[nivel][k].t)) idx[nivel][k] = { t, nombre };
@@ -416,22 +417,22 @@ export function computeSeguidor({ cartera = [], visitas = [], facturas = [], opt
     const abiertaAlCorte = (f) => {
         if (!cuentaEnCartera(f)) return false;
         if (f.estado !== 'pagada') return saldoAbierto(f) > 0.005;
-        const fp = toDate(f.fechaPago);
+        const fp = fechaCalendario(f.fechaPago);
         return fp ? fp > corte : false;
     };
     const vencidasItems = (facturas || [])
         .filter(f => !cfg.vendedorId || f.vendedorId === cfg.vendedorId)
         .filter(abiertaAlCorte)
-        .filter(f => { const t = toDate(f.vencimiento); return t && t < corte; })
+        .filter(f => { const t = fechaCalendario(f.vencimiento); return t && t < corte; })
         .map(f => {
-            const fFact = toDate(f.fecha);
+            const fFact = fechaCalendario(f.fecha);
             // Heredada: emitida antes del ingreso del vendedor (misma noción que
             // `recuperada` del motor de comisiones; se respeta si ya viene marcada).
             const heredada = f.recuperada === true || (!!ingreso && !!fFact && fFact < ingreso);
             return {
                 id: f.numero || f.id, cliente: f.razonSocialCanonica || f.clienteName || '—',
                 monto: Number(f.balance != null ? f.balance : f.monto) || 0,
-                diasVencida: Math.floor((corte - toDate(f.vencimiento)) / DIA),
+                diasVencida: Math.floor((corte - fechaCalendario(f.vencimiento)) / DIA),
                 heredada,
             };
         })

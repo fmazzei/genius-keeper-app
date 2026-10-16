@@ -5,13 +5,14 @@ import { db } from '@/Firebase/config.js';
 import { collection, query, where, getDocs, getDocsFromCache } from 'firebase/firestore';
 import { Receipt, RefreshCw, Link2, AlertCircle, Search } from 'lucide-react';
 import { cuentaEnCartera, motivoFuera, saldoAbierto } from '@/utils/facturaEstado.js';
+import { fechaCalendario } from '@/utils/vendedorMeta.js';
 
 const PROXIMO_A_VENCER_DIAS = 3;
 
 // Fecha de una factura como Date (soporta Timestamp de Firestore o string).
-const facturaDate = (f) => f?.fecha?.toDate?.() || (f?.fecha ? new Date(f.fecha) : null);
+const facturaDate = (f) => fechaCalendario(f?.fecha);
 // Fecha de COBRO (pago) de una factura como Date.
-const pagoDate = (f) => f?.fechaPago?.toDate?.() || (f?.fechaPago ? new Date(f.fechaPago) : null);
+const pagoDate = (f) => fechaCalendario(f?.fechaPago);
 
 const TABS = [
     { id: 'vencidas', label: 'Vencidas' },
@@ -86,7 +87,7 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
 
         const groups = { vencidas: [], porVencer: [], vigentes: [], pagadas: [], anuladas: [] };
         for (const f of facturas) {
-            const vencimiento = f.vencimiento?.toDate?.();
+            const vencimiento = fechaCalendario(f.vencimiento);
             // Anuladas y "fantasma" (ya no existen en Zoho o volvieron a
             // borrador) van juntas: quedan visibles para auditoría, pero NO son
             // cobranza. Antes las fantasma aparecían como vencidas — cuentas por
@@ -114,8 +115,8 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
         }
 
         const byVencimientoAsc = (a, b) => {
-            const ta = a.vencimiento?.toDate?.() || new Date(0);
-            const tb = b.vencimiento?.toDate?.() || new Date(0);
+            const ta = fechaCalendario(a.vencimiento) || new Date(0);
+            const tb = fechaCalendario(b.vencimiento) || new Date(0);
             return ta - tb;
         };
         const byFechaDesc = (a, b) => {
@@ -240,7 +241,7 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
             ) : (
                 <div className="space-y-3">
                     {visibleFacturas.map(f => {
-                        const fecha = f.fecha?.toDate?.();
+                        const fecha = fechaCalendario(f.fecha);
                         const dateStr = fecha
                             ? fecha.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })
                             : '—';
@@ -252,7 +253,7 @@ const MisFacturasView = ({ vendedorId, fechaIngreso = null }) => {
                         // atribuidas antes de fijar la fecha de ingreso).
                         const heredada = f.recuperada === true
                             || (ingresoDate && facturaDate(f) && facturaDate(f) < ingresoDate);
-                        const vencimiento = f.vencimiento?.toDate?.();
+                        const vencimiento = fechaCalendario(f.vencimiento);
                         const vencStr = vencimiento
                             ? vencimiento.toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' })
                             : null;

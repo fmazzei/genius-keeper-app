@@ -23,6 +23,7 @@ import EncabezadoHoja from '@/Components/EncabezadoHoja.jsx';
 import { useAtrasCierra } from '@/hooks/useAtrasCierra.js';
 import { saldoAbierto, cuentaEnCartera } from '@/utils/facturaEstado.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
+import { fechaCalendario } from '@/utils/vendedorMeta.js';
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
@@ -57,8 +58,8 @@ export default function CarteraVencidaModal({
             // allá o devuelto a borrador): no es cartera por cobrar de la empresa.
             .filter(f => cuentaEnCartera(f) && f.estado !== 'pagada')
             .map(f => {
-                const emis = toDate(f.fecha);
-                const venc = toDate(f.vencimiento);
+                const emis = fechaCalendario(f.fecha);
+                const venc = fechaCalendario(f.vencimiento);
                 const edad = emis ? Math.floor((now - emis) / 86400000) : null;         // días desde emisión
                 const diasVencida = venc ? Math.floor((now - venc) / 86400000) : null;   // días desde vencimiento
                 return {

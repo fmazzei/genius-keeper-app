@@ -19,7 +19,8 @@ import { Target, Users, Store, Loader, AlertTriangle, ChevronLeft, TrendingUp } 
 import { useFinancialKpis } from '@/hooks/useFinancialKpis.js';
 import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import { useCarteraComercial } from '@/hooks/useCarteraComercial.js';
-import { computeMetaMensual } from '@/utils/vendedorMeta.js';
+import { computeMetaMensual, fechaCalendario } from '@/utils/vendedorMeta.js';
+import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 import DesempenoVendedor, { DesempenoMini } from '@/Components/DesempenoVendedor.jsx';
 import ReporteGestionVendedorDoc from '@/Components/ReporteGestionVendedorDoc.jsx';
 import FacturacionClientes from '@/Pages/FacturacionClientes.jsx';
@@ -102,6 +103,28 @@ function MetaEmpresa({ cc, onVerVendedores }) {
             .sort((a, b) => b.unidades - a.unidades);
     }, [aporte, cc.vendedores]);
 
+    // Cada vendedor se mide en su MES DE EMPLEO (no en el calendario): misma
+    // regla que su tarjeta en Vendedores, para que las dos cifras se puedan
+    // cuadrar a la vista (pedido del dueño: una sola fuente de la verdad).
+    const fmtCorto = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' }).replace('.', '');
+    const mesesEmpleo = useMemo(() => cc.vendedores.map(v => {
+        const m = computeMetaMensual(v);
+        if (!m.periodStart || !m.periodEnd) return null;
+        const vistas = new Set();
+        let enPeriodo = 0, enCalendario = 0;
+        const mIni = new Date(now.getFullYear(), now.getMonth(), 1), mFin = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        (cc.facturas || []).forEach(f => {
+            if (f.vendedorId !== v.id || !cuentaEnCartera(f) || f.recuperada) return;
+            const key = f.numero || f.id; if (vistas.has(key)) return; vistas.add(key);
+            const t = fechaCalendario(f.fecha); if (!t) return;
+            const u = Number(f.unidades) || 0;
+            if (t >= m.periodStart && t < m.periodEnd) enPeriodo += u;
+            if (t >= mIni && t < mFin) enCalendario += u;
+        });
+        return { id: v.id, nombre: v.name || v.nombre || 'Vendedor', meta: Number(m.metaMensual) || 0, enPeriodo, enCalendario,
+            desde: fmtCorto(m.periodStart), hasta: fmtCorto(new Date(m.periodEnd.getTime() - 86400000)) };
+    }).filter(Boolean), [cc.vendedores, cc.facturas]); // eslint-disable-line react-hooks/exhaustive-deps
+
     const hist = k.historico12 || [];
     const maxHist = Math.max(1, meta, ...hist.map(h => h.unidades));
 
@@ -116,6 +139,7 @@ function MetaEmpresa({ cc, onVerVendedores }) {
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     Meta de la empresa · {now.toLocaleString('es', { month: 'long', year: 'numeric' })}
                 </p>
+                <p className="text-[11px] text-slate-400">Mes calendario: del 1 al {diasMes}. Cuenta las facturas de toda la empresa.</p>
                 <div className="flex flex-wrap items-end gap-x-6 gap-y-2 mt-2">
                     <div>
                         <p className={`text-5xl font-black leading-none tabular-nums ${TONO[0]}`}>{meta > 0 ? pct(uds / meta) : '—'}</p>
@@ -143,6 +167,28 @@ function MetaEmpresa({ cc, onVerVendedores }) {
                     </p>
                 )}
             </section>
+
+            {/* Cuadre con la tarjeta de cada vendedor */}
+            {mesesEmpleo.length > 0 && (
+                <section className="bg-white border border-slate-200 rounded-2xl p-5">
+                    <p className="text-sm font-bold text-slate-700">¿Por qué la cifra del vendedor es otra?</p>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                        Esta meta se mide por mes calendario. Cada vendedor se mide en su <b>mes de empleo</b> (desde su fecha de ingreso),
+                        que es con el que se le paga. Las facturas son las mismas; cambia la ventana.
+                    </p>
+                    <div className="space-y-2">
+                        {mesesEmpleo.map(v => (
+                            <div key={v.id} className="text-sm rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
+                                <p className="font-bold text-slate-800">{v.nombre}</p>
+                                <p className="text-slate-600 text-xs leading-relaxed">
+                                    Su mes de empleo ({v.desde} – {v.hasta}): <b className="text-slate-800 tabular-nums">{num(v.enPeriodo)} de {num(v.meta)} uds</b> · lo que ves en Vendedores.
+                                    <br />Su aporte a {now.toLocaleString('es', { month: 'long' })}: <b className="text-slate-800 tabular-nums">{num(v.enCalendario)} uds</b> · lo que suma aquí.
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
 
             {/* Facturar no es cobrar */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

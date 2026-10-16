@@ -9,7 +9,7 @@
 import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
-import { computeMetaMensual } from '@/utils/vendedorMeta.js';
+import { computeMetaMensual, fechaCalendario } from '@/utils/vendedorMeta.js';
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 
 const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -43,7 +43,7 @@ export function useTeamFacturado() {
                 vends.forEach(v => {
                     const { periodStart, periodEnd } = computeMetaMensual(v);
                     (byVend[v.id] || []).forEach(f => {
-                        const t = f.fecha?.toDate?.() || (f.fecha ? new Date(f.fecha) : null);
+                        const t = fechaCalendario(f.fecha);
                         if (cuentaEnCartera(f) && t && t >= periodStart && t < periodEnd) {
                             const u = Number(f.unidades) || 0;
                             teamUnits += u;

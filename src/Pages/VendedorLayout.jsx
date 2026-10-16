@@ -1469,7 +1469,7 @@ const VendedorLayout = ({ user, onLogout }) => {
 
                     facturas.forEach(f => {
                         if (!cuentaEnCartera(f)) return;
-                        const venc = f.vencimiento?.toDate?.() || (f.vencimiento ? new Date(f.vencimiento) : null);
+                        const venc = fechaCalendario(f.vencimiento);
                         const vencida = venc && venc <= now;
                         const pagada = f.estado === 'pagada';
 
