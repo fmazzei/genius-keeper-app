@@ -176,10 +176,14 @@ export function useFinancialKpis() {
         const byCliente = {};
         mesF.forEach(f => {
             const k = f.razonSocialCanonica || f.clienteName || '—';
-            byCliente[k] = (byCliente[k] || 0) + uds(f);
+            const c = byCliente[k] || (byCliente[k] = { unidades: 0, food: 0 });
+            c.unidades += uds(f);
+            if (canalDe(f) === 'foodservice') c.food += uds(f);
         });
+        // Canal del cliente en el mes: foodservice si la mayoría de lo que
+        // compró fue foodservice (se muestra en kg).
         const topClientes = Object.entries(byCliente)
-            .map(([nombre, unidades]) => ({ nombre, unidades }))
+            .map(([nombre, c]) => ({ nombre, unidades: c.unidades, canal: c.food * 2 > c.unidades ? 'foodservice' : 'retail', kg: kgDeUnidades(c.unidades) }))
             .sort((a, b) => b.unidades - a.unidades)
             .slice(0, 5);
 
@@ -221,6 +225,7 @@ export function useFinancialKpis() {
             return out;
         };
         const canalesMes = porCanal(mesF);
+        const canalesPrev = porCanal(prevF);   // mismo tramo del mes anterior
 
         // ── Histórico de 12 meses (unidades y $), para la meta de la empresa
         const historico12 = [];
@@ -294,7 +299,7 @@ export function useFinancialKpis() {
             facturasMesCount: mesF.length, facturasPrevCount: prevF.length,
             unidadesAjustadasMes, unidadesAjustadasPrev,
             cobradoMes, nCobradasMes,
-            aportePorVendedorMes, canalesMes, historico12,
+            aportePorVendedorMes, canalesMes, canalesPrev, historico12,
             porCobrar, aging: { d0_30: a0, d31_45: a1, d45p: a2 }, clientesMas45,
             diasTrasVencimiento, dso: diasTrasVencimiento, diasPagoAnio, aTiempoPct,
             facturas,

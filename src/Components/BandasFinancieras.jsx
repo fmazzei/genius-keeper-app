@@ -12,6 +12,34 @@ import { useAppConfig } from '@/context/AppConfigContext.tsx';
 import DiasPagoModal from '@/Components/DiasPagoModal.jsx';
 import CarteraVencidaModal from '@/Components/CarteraVencidaModal.jsx';
 import RotacionModal from '@/Components/RotacionModal.jsx';
+import { useTeamMetaMensual } from '@/hooks/useTeamMetaMensual.js';
+import { fmtKg } from '@/utils/canalVenta.js';
+
+// Barra corta partida por quién vendió: vendedores (azul), Oficina / clientes
+// directos (verde) y sin asignar (ámbar), contra la meta del canal. La raya
+// negra es donde deberíamos ir a hoy. Misma lectura que Comercial → Meta.
+function BarraDueno({ titulo, total, meta, porDueno = {}, valor, fmt, pace }) {
+    const v = (id) => valor(porDueno[id]);
+    const oficina = v('oficina'), sinAsig = v('sin_asignar');
+    const vend = Math.max(0, total - oficina - sinAsig);
+    const escala = Math.max(meta, total) || 1;
+    const seg = [['bg-brand-blue', vend, 'Vendedores'], ['bg-emerald-500', oficina, 'Oficina'], ['bg-amber-400', sinAsig, 'Sin asignar']];
+    return (
+        <div className="mt-2">
+            <div className="flex justify-between text-[11px] text-slate-500 tabular-nums">
+                <span className="font-bold text-slate-600">{titulo}</span>
+                <span>{fmt(total)}{meta > 0 ? ` / ${fmt(meta)} · ${Math.round(total / meta * 100)}%` : ' · sin meta'}</span>
+            </div>
+            <div className="relative h-2.5 rounded-full bg-slate-200 overflow-hidden mt-1 flex">
+                {seg.map(([c, x, n]) => x > 0 && <div key={n} className={`h-full ${c}`} style={{ width: `${x / escala * 100}%` }} title={`${n}: ${fmt(x)}`} />)}
+                {meta > 0 && <div className="absolute top-0 bottom-0 w-0.5 bg-slate-900" style={{ left: `${Math.min(100, meta * pace / escala * 100)}%` }} />}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
+                Vendedores {fmt(vend)} · Oficina {fmt(oficina)}{sinAsig > 0 ? ` · Sin asignar ${fmt(sinAsig)}` : ''}
+            </p>
+        </div>
+    );
+}
 
 const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const money0 = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { maximumFractionDigits: 0 })}`;
@@ -100,7 +128,8 @@ const Tile = ({ label, children, className = '', onClick = null }) => {
 
 export default function BandasFinancieras({ rotacion = null, rotacionReports = null, rotacionVentanaLabel = '', onMapa = null, onAnaquel = null, refreshKey = 0 }) {
     const fin = useFinancialKpis();
-    const { metaVentasGeneral, zohoSyncAt, zohoCuadre } = useAppConfig();
+    const { metaVentasGeneral, metaKgFoodservice, zohoSyncAt, zohoCuadre } = useAppConfig();
+    const { teamGoal, teamGoalKg } = useTeamMetaMensual();
     const refetch = fin.refetch;
 
     // ── La tarjeta tiene que estar CONECTADA, no ser una foto ────────────────
@@ -138,15 +167,24 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
     }
     if (!fin.tieneFacturas) return null; // sin facturas de Zoho todavía → no ocupamos espacio
 
-    // ── ¿Vendemos? — ritmo vs meta (unidades) del mes en curso
-    const meta = Number(metaVentasGeneral) || 0;
+    // ── ¿Vendemos? — ritmo vs meta del mes en curso. Desde octubre de 2026
+    // RETAIL (unidades) y FOODSERVICE (kg) se miden por separado, cada uno con
+    // su meta: la fijada en Configuraciones → Metas o, si no, la suma de las
+    // metas de los vendedores (la misma regla de Comercial → Meta de la empresa).
+    const canales = fin.canalesMes || { retail: { unidades: fin.unidadesMes, monto: 0, facturas: 0, porDueno: {} }, food: { kg: 0, unidades: 0, monto: 0, facturas: 0, porDueno: {} } };
+    const prevC = fin.canalesPrev || { retail: { unidades: fin.unidadesPrev }, food: { kg: 0 } };
+    const udsRetail = canales.retail.unidades;
+    const kgFood = canales.food.kg;
+    const meta = Number(metaVentasGeneral) > 0 ? Number(metaVentasGeneral) : (Number(teamGoal) || 0);
+    const metaKg = Number(metaKgFoodservice) > 0 ? Number(metaKgFoodservice) : (Number(teamGoalKg) || 0);
     const now = new Date();
     const diaMes = now.getDate();
     const diasMes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const pace = diasMes > 0 ? diaMes / diasMes : 0;
-    const pctMeta = meta > 0 ? fin.unidadesMes / meta : null;
-    const proyeccion = pace > 0 ? Math.round(fin.unidadesMes / pace) : fin.unidadesMes;
-    const faltan = meta > 0 ? Math.max(0, meta - fin.unidadesMes) : 0;
+    const pctMeta = meta > 0 ? udsRetail / meta : null;
+    const proyeccion = pace > 0 ? Math.round(udsRetail / pace) : udsRetail;
+    const faltan = meta > 0 ? Math.max(0, meta - udsRetail) : 0;
+    const proyKg = pace > 0 ? kgFood / pace : kgFood;
 
     let ventaStatus = 'good', ventaLabel = 'En meta';
     if (pctMeta !== null) {
@@ -155,10 +193,12 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
         else { ventaStatus = 'bad'; ventaLabel = 'Bajo la meta'; }
     }
     const ventaAction = meta > 0
-        ? `A este ritmo cierras el mes en ~${num(proyeccion)} uds. Faltan ${num(faltan)} para la meta de ${num(meta)}.`
+        ? `Retail: a este ritmo cierras el mes en ~${num(proyeccion)} uds; faltan ${num(faltan)} para la meta de ${num(meta)}.`
+            + (metaKg > 0 ? ` Foodservice: vas por ${fmtKg(kgFood)} de ${fmtKg(metaKg)} (cierre ~${fmtKg(proyKg)}).` : '')
         : null;
     const dFact = pctChange(fin.facturadoMes, fin.facturadoPrev, fin.facturasPrevCount);
-    const dUds  = pctChange(fin.unidadesMes, fin.unidadesPrev, fin.facturasPrevCount);
+    const dUds  = pctChange(udsRetail, prevC.retail.unidades, fin.facturasPrevCount);
+    const dKg   = pctChange(kgFood, prevC.food.kg, fin.facturasPrevCount);
     const deltaConfiable = (fin.facturasPrevCount ?? 0) >= MIN_FACTURAS_CONFIABLE;
     const maxTop = Math.max(1, ...fin.topClientes.map(c => c.unidades));
 
@@ -183,16 +223,11 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                 <div className="grid gap-4 md:grid-cols-3">
                     <Tile label="Facturado del mes" className="bg-gradient-to-br from-slate-50 to-slate-100">
                         <p className="text-3xl font-black text-slate-800 tracking-tight tabular-nums mt-1">{money(fin.facturadoMes)}</p>
-                        {meta > 0 && (
-                            <>
-                                <div className="h-2 rounded-full bg-slate-200 overflow-hidden my-2">
-                                    <div className="h-full rounded-full bg-brand-blue" style={{ width: `${Math.min(100, (pctMeta || 0) * 100)}%` }} />
-                                </div>
-                                <div className="flex justify-between text-[11px] text-slate-500 tabular-nums">
-                                    <span>{Math.round((pctMeta || 0) * 100)}% de la meta</span>
-                                    <span>{num(fin.unidadesMes)} / {num(meta)} uds</span>
-                                </div>
-                            </>
+                        <BarraDueno titulo="Retail" total={udsRetail} meta={meta} porDueno={canales.retail.porDueno}
+                            valor={(d) => d?.unidades || 0} fmt={(x) => `${num(x)} uds`} pace={pace} />
+                        {(metaKg > 0 || kgFood > 0) && (
+                            <BarraDueno titulo="Foodservice" total={kgFood} meta={metaKg} porDueno={canales.food.porDueno}
+                                valor={(d) => d?.kg || 0} fmt={fmtKg} pace={pace} />
                         )}
                         <div className="mt-2">
                             {deltaConfiable
@@ -215,12 +250,21 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                             </p>
                         </div>
                     </Tile>
-                    <Tile label="Unidades colocadas">
-                        <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{num(fin.unidadesMes)} <span className="text-sm font-bold text-slate-400">uds</span></p>
+                    <Tile label="Retail colocado">
+                        <p className="text-2xl font-black text-slate-800 tabular-nums mt-1">{num(udsRetail)} <span className="text-sm font-bold text-slate-400">uds</span></p>
                         <div className="mt-2">{deltaConfiable ? <Delta value={dUds} /> : (
                             <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">muestra insuficiente</span>
                         )}</div>
-                        <p className="text-xs text-slate-400 mt-2">Mismo período mes anterior: {num(fin.unidadesPrev)} uds</p>
+                        <p className="text-xs text-slate-400 mt-2">Mismo período mes anterior: {num(prevC.retail.unidades)} uds</p>
+                        <div className="mt-3 pt-2 border-t border-slate-200">
+                            <p className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Foodservice colocado</p>
+                            <p className="text-xl font-black text-amber-600 tabular-nums">{fmtKg(kgFood)}</p>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {deltaConfiable && (kgFood > 0 || prevC.food.kg > 0) && <Delta value={dKg} />}
+                                <span className="text-xs text-slate-400">Mes anterior: {fmtKg(prevC.food.kg)}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 leading-snug mt-1">Bolsas de 1 y 3 kg. Se mide en kg de queso y no suma a las unidades retail.</p>
+                        </div>
                         {/* Trazabilidad de la conversión kg → uds: sin esto el total
                             cambia "solo" y no hay forma de contrastarlo con Zoho. */}
                         {(fin.unidadesAjustadasMes?.facturas > 0 || fin.unidadesAjustadasPrev?.facturas > 0) && (
@@ -237,7 +281,7 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                             </p>
                         )}
                     </Tile>
-                    <Tile label="Top clientes del mes (uds)" className="min-w-0">
+                    <Tile label="Top clientes del mes" className="min-w-0">
                         <div className="flex flex-col gap-2 mt-1">
                             {fin.topClientes.length === 0 ? <p className="text-xs text-slate-400">Sin facturación este mes.</p> :
                              fin.topClientes.map((c, i) => (
@@ -248,7 +292,9 @@ export default function BandasFinancieras({ rotacion = null, rotacionReports = n
                                     <div className="flex items-baseline justify-between gap-2 text-xs min-w-0">
                                         <span className="font-semibold text-slate-700 truncate min-w-0 flex-1" title={c.nombre}>{c.nombre}</span>
                                         <span className="font-extrabold text-slate-800 tabular-nums shrink-0 whitespace-nowrap">
-                                            {num(c.unidades)} <span className="font-bold text-slate-400">uds</span>
+                                            {c.canal === 'foodservice'
+                                                ? <>{fmtKg(c.kg)} <span className="font-bold text-amber-500">FS</span></>
+                                                : <>{num(c.unidades)} <span className="font-bold text-slate-400">uds</span></>}
                                         </span>
                                     </div>
                                     <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden mt-1">
