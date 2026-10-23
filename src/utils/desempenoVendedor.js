@@ -18,7 +18,7 @@
 // Las visitas del MERCADERISTA no cuentan (no son trabajo del vendedor): quedan
 // como contexto. Un pilar sin datos NO cuenta: se declara y su peso se reparte.
 
-import { computeActivacionPeriodo, tierParaPct, fechaCalendario, computeMetaMensual, carteraActivacion, clavesCartera } from '@/utils/vendedorMeta.js';
+import { computeActivacionPeriodo, tierParaPct, fechaCalendario, computeMetaMensual, carteraActivacion, clavesCartera, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
 import { cuentaEnCartera, esPorCobrar, saldoAbierto } from '@/utils/facturaEstado.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { clasificarVentas, evaluarPlan } from '@/utils/gestionVenta.js';
@@ -292,8 +292,18 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
     }
 
     const nivel = tierParaPct(cfg, meta > 0 ? unidades / meta : 0);
-    const comisionGenerada = suyas.filter(f => f.estado === 'pagada' && !f.comisionAnulada).filter(enVentana)
-        .reduce((s, f) => s + (Number(f.comisionGenerada) || 0), 0);
+    // La comisión del mes sale del MISMO motor que el Estado de Cuenta y las
+    // Liquidaciones (lo cobrado en el mes, a la tasa del mes en que se facturó,
+    // más bonos, foodservice y recuperadas). Antes sumaba `comisionGenerada`, la
+    // cifra provisional del servidor, de las facturas EMITIDAS en el mes: otro
+    // número, que no coincidía con lo que se le paga.
+    let comisionGenerada = null;
+    if (v.tipo === 'mes' && vendedor.fechaIngreso) {
+        const pad = (n) => String(n).padStart(2, '0');
+        const periodKey = `${inicio.getFullYear()}-${pad(inicio.getMonth() + 1)}-${pad(inicio.getDate())}`;
+        const d = computeDesglosePeriodo(vendedor, suyas, periodKey, cartera ? { cartera, ahora } : { carteraSize, ahora });
+        if (d) comisionGenerada = d.devengadoComision;
+    }
 
     return {
         global, estado: estadoDe(global),

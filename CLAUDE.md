@@ -3971,3 +3971,13 @@ Corrección del dueño: los avisos del agente que reciben Carolina y administrac
 - **Ajustes de la gerencia** (`AjustesGerencia.jsx`, menú "Ajustes"): Alertas del agente, Avisos en este teléfono (encender/apagar) y Mi cuenta (contraseña y huella). Nada de usuarios, integraciones, comisiones ni módulos: eso sigue en Configuraciones, solo del máster.
 - `AlertasAgentePanel` acepta `nota` (qué trae la bandeja) y `pie` (p. ej. `ActivarAvisos`). En el vendedor, `AlertasView` tiene `modo` `agente`/`operacion`; el encabezado se compactó en el teléfono para que quepan los dos botones.
 - Prueba: `tests/vigilante.e2e.test.mjs` con un usuario de gerencia (41 en verde): le llegan PDV sin visita y sin reportes; no le llegan Zoho ni comisiones.
+
+### Auditoría de las comisiones de Carolina (2026-10-23) ✅
+
+Recalculadas con el motor de la app (`computeEstadosDeCuenta`) sobre sus 73 facturas propias, las 66 recuperadas y los 4 pagos. El motor cuadra con lo que ven ella y administración. Al 23-oct:
+- **Mes 1** (19-ago→18-sep): 678 de 1.400 uds (Baja 2,5 %). Comisión $189,38 + base $400 = $589,38; pagado $593,23; saldo −$3,85. **$127,68 (dos tercios) son "cuentas recuperadas" al 5 %**: 20 facturas del vendedor anterior. 14 de ellas ($2.284,80, Central Madeirense del 10-ago, crédito 21 días) se pagaron el 21-ago, dos días después de que ella entró, en el ciclo normal del cliente. La recuperada paga 5 %, más que su propia venta (2,5 % + 1,5 %). Es la regla vigente; decisión pendiente del dueño.
+- **Mes 2** (19-sep→18-oct): 703 de 1.700 (Baja). $86,54 + $400 = $486,54; pagado $350; saldo $136,54.
+- **Mes 3** (en curso): $56,68 + $400.
+- **Los meses cerrados NO están congelados** (`comisiones_cerradas` vacío): marcar LA CAVA como foodservice (13-oct) subió el Mes 1 ya pagado en $2,87. Hay que congelarlos (Liquidaciones → "Cerrar y congelar").
+- INV-001776/1777 (Inside Market) quedaron con $11,20 y $5,60 de saldo en Zoho: $375,20 cobrados sin comisión hasta que se salden, y si pasan de 45 días (14-nov) se anula toda.
+- **Bug corregido**: Comercial → Vendedores mostraba "comisión generada por lo cobrado" sumando `comisionGenerada` (la provisional del servidor) de las facturas EMITIDAS en el mes: otra cifra. Ahora `evaluarDesempeno` usa `computeDesglosePeriodo` (el mismo motor del Estado de Cuenta) y dice "comisión devengada en el mes (lo cobrado)".

@@ -451,7 +451,7 @@ export default function DesempenoVendedor({ ev, anio, nombre, ventana = 'mes', o
                                 {ev.comision && (
                                     <p className="text-xs text-slate-500 mt-1.5">
                                         Nivel de comisión <b className="text-slate-700">{ev.comision.nivel} ({(ev.comision.tasa * 100).toLocaleString('es-VE', { maximumFractionDigits: 1 })}%)</b>
-                                        {' · '}comisión generada por lo cobrado: <b className="text-slate-700">{money0(ev.comision.generada)}</b>
+                                        {ev.comision.generada != null && <>{' · '}comisión devengada en el mes (lo cobrado): <b className="text-slate-700">{money0(ev.comision.generada)}</b></>}
                                     </p>
                                 )}
                                 {p.sinIngreso && <p className="text-xs text-amber-700 mt-2">Sin fecha de ingreso: se evalúa el mes de calendario con la meta plena.</p>}
