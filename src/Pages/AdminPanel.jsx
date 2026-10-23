@@ -13,6 +13,8 @@ import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.j
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
 import InformeVerificacionDoc from '../Components/InformeVerificacionDoc.jsx';
 import CarteraManager from '../Components/CarteraManager.jsx';
+import CorregirPagoSheet from '../Components/CorregirPagoSheet.jsx';
+import { describirCambio } from '../utils/liquidacionCorrecciones.js';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useTeamMetaMensual } from '../hooks/useTeamMetaMensual.js';
 import { useDashboardConfig } from '../hooks/useDashboardConfig.js';
@@ -2798,6 +2800,8 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
     // Dos vistas: registrar liquidaciones / ver el histórico.
     const [vista, setVista]             = useState('registrar'); // 'registrar' | 'historico'
     const [histPeriodo, setHistPeriodo] = useState('todos');     // filtro de período en el histórico
+    const [correcciones, setCorrecciones] = useState([]);        // constancias de pagos corregidos o eliminados
+    const [editarPago, setEditarPago] = useState(null);          // {liq, modo:'corregir'|'eliminar'}
     const [verComprobante, setVerComprobante] = useState(null);  // {dataUrl} del comprobante a mostrar
     const [subiendoComp, setSubiendoComp]     = useState('');    // id de la liquidación cuyo comprobante se sube
     // Asistente de pago por pasos: null | {paso:2|3, periodKey, ...resultado}
@@ -2840,6 +2844,11 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
             setEstados(computeEstadosDeCuenta(meta, facturas, liqs, { carteraSize, cartera, cerrados }));
             setLiquid(liqs.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')));
             setRaw({ meta, facturas, carteraSize, cartera, cerrados, liqs });
+            try {
+                const cs = await getDocs(query(collection(db, 'liquidaciones_correcciones'), where('vendedorId', '==', uid)));
+                setCorrecciones(cs.docs.map(d => ({ id: d.id, ...d.data() }))
+                    .sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0)));
+            } catch { setCorrecciones([]); }
         } catch (e) {
             console.error(e);
             setError('No se pudo cargar el estado de cuenta del vendedor.');
@@ -2893,15 +2902,14 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
         }
     };
 
-    const eliminar = async (id) => {
-        if (!window.confirm('¿Eliminar esta liquidación? El saldo del período volverá a subir.')) return;
-        try {
-            await deleteDoc(doc(db, 'liquidaciones', id));
-            await deleteDoc(doc(db, 'liquidacion_comprobantes', id)).catch(() => {}); // limpia el comprobante si existe
-            await cargar(vendedorId);
-        } catch (e) {
-            alert(e.message || 'No se pudo eliminar.');
-        }
+    // Eliminar un pago también deja constancia (motivo obligatorio): ver CorregirPagoSheet.
+    const eliminar = (id) => {
+        const l = liquidaciones.find(x => x.id === id);
+        if (l) setEditarPago({ liq: l, modo: 'eliminar' });
+    };
+    const trasEditarPago = async (liq, modo) => {
+        if (modo === 'eliminar') await deleteDoc(doc(db, 'liquidacion_comprobantes', liq.id)).catch(() => {});
+        await cargar(vendedorId);
     };
 
     // Comprobante de pago del banco: la app comprime la imagen a ~1400px / JPEG y
@@ -3205,6 +3213,18 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                 {estados.map(e => <option key={e.periodKey} value={e.periodKey}>Mes {e.mes} · {e.rango}</option>)}
                             </select>
 
+                            {correcciones.some(c => c.tipo === 'eliminacion') && (
+                                <details className="mb-4 text-xs">
+                                    <summary className="cursor-pointer font-semibold text-slate-600">Pagos eliminados ({correcciones.filter(c => c.tipo === 'eliminacion').length})</summary>
+                                    <div className="mt-2 space-y-1.5">
+                                        {correcciones.filter(c => c.tipo === 'eliminacion').map(c => (
+                                            <p key={c.id} className="text-red-800 bg-red-50 border border-red-100 rounded px-2 py-1">
+                                                {money(c.antes?.monto)} del {c.antes?.fecha || '—'} · {periodLabel(c.antes?.periodKey)}. Eliminado {c.at?.toDate ? c.at.toDate().toLocaleDateString('es-VE') : ''}{c.porEmail ? ` por ${c.porEmail}` : ''}. Motivo: {c.motivo}
+                                            </p>
+                                        ))}
+                                    </div>
+                                </details>
+                            )}
                             {(() => {
                                 const list = liquidaciones.filter(l => histPeriodo === 'todos' || l.periodKey === histPeriodo);
                                 if (list.length === 0) return <p className="text-slate-400 text-sm">No hay pagos registrados{histPeriodo !== 'todos' ? ' en este período' : ''}.</p>;
@@ -3222,9 +3242,15 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                                         </div>
                                                         <div className="flex items-center gap-1 shrink-0">
                                                             <button onClick={() => setComprobante(l)} className="p-1.5 text-slate-400 hover:text-brand-blue" title="Comprobante GK (PDF)"><Receipt size={16} /></button>
-                                                            <button onClick={() => eliminar(l.id)} className="p-1.5 text-slate-300 hover:text-red-500" title="Eliminar liquidación"><Trash2 size={16} /></button>
+                                                            <button onClick={() => setEditarPago({ liq: l, modo: 'corregir' })} className="p-1.5 text-slate-400 hover:text-brand-blue" title="Corregir pago (queda registro)"><Pencil size={16} /></button>
+                                                            <button onClick={() => eliminar(l.id)} className="p-1.5 text-slate-300 hover:text-red-500" title="Eliminar pago (queda registro)"><Trash2 size={16} /></button>
                                                         </div>
                                                     </div>
+                                                    {correcciones.filter(c => c.liquidacionId === l.id).map(c => (
+                                                        <p key={c.id} className="mt-1.5 text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded px-2 py-1">
+                                                            Corregido {c.at?.toDate ? c.at.toDate().toLocaleDateString('es-VE') : ''}{c.porEmail ? ` por ${c.porEmail}` : ''}: {describirCambio(c, { money, periodo: periodLabel })}. Motivo: {c.motivo}
+                                                        </p>
+                                                    ))}
                                                     <div className="mt-2 pt-2 border-t border-slate-50 flex items-center gap-3">
                                                         {l.comprobanteAdjunto ? (
                                                             <button onClick={() => abrirComprobante(l.id)} className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">📎 Ver comprobante del banco</button>
@@ -3266,6 +3292,10 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                 </div>
             )}
 
+            {editarPago && (
+                <CorregirPagoSheet liq={editarPago.liq} modo={editarPago.modo} periodos={estados}
+                    onClose={() => setEditarPago(null)} onDone={() => trasEditarPago(editarPago.liq, editarPago.modo)} />
+            )}
             {comprobante && (
                 <ComprobanteLiquidacionDoc
                     liquidacion={comprobante}
