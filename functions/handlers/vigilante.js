@@ -184,6 +184,24 @@ async function ejecutarVigilante({ ahoraMs = Date.now(), enviarPush = enviarPush
     d.config = vig.config || {};
     d.grupos = g;
     d.web = webEstado;
+    // Congelar los meses de comisión ya cerrados ANTES de evaluar: así el aviso
+    // "mes sin congelar" solo queda si la escritura falló.
+    if (g.pesado && d.comisiones) {
+        try {
+            const { cierresAutomaticos } = require('./vigilanteComisiones');
+            const vendedores = (d.supervisores || []).filter(v => v.active !== false);
+            const nuevos = cierresAutomaticos({ ...d.comisiones, vendedores, ahoraMs });
+            for (const c of nuevos) {
+                try {
+                    // create: si administración lo congeló a mano mientras tanto, se respeta el suyo.
+                    await db().doc(`comisiones_cerradas/${c.id}`).create({ ...c.data, congeladoEn: FieldValue.serverTimestamp() });
+                    d.comisiones.cerradas = [...(d.comisiones.cerradas || []), { ...c.data, congeladoEn: new Date(ahoraMs) }];
+                    await bitacora('mes_congelado', { clave: `comision_cierre:${c.id}`, tipo: 'comision_cierre' },
+                        { vendedorId: c.data.vendedorId, periodKey: c.data.periodKey, devengadoTotal: c.data.devengadoTotal });
+                } catch (e) { if (e.code !== 6 && !/already exists/i.test(e.message || '')) logger.warn('congelar mes', c.id, e.message); }
+            }
+        } catch (e) { logger.warn('cierresAutomaticos', e.message); }
+    }
     const { problemas, contexto } = R.evaluar(d);
 
     // Abiertos guardados hasta ahora.

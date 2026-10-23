@@ -399,6 +399,48 @@ function evaluarComisiones(d, cfg) {
     return problemas;
 }
 
+/**
+ * CIERRE AUTOMÁTICO de los meses (pedido del dueño, 23-oct: "arréglalo de una vez
+ * por todas"). Antes congelar dependía de que alguien pulsara "Cerrar y congelar"
+ * en Liquidaciones; nadie lo hizo y los meses ya pagados se seguían moviendo con
+ * cada corrección de datos (p. ej. marcar un cliente como foodservice).
+ *
+ * Devuelve, por vendedor, el snapshot de cada mes CERRADO que todavía no tiene
+ * cierre: exactamente la fila del estado de cuenta (el MISMO motor y los mismos
+ * insumos que ven el vendedor y administración), sin pagado ni saldo, que siguen
+ * en vivo. Con el modelo de cobro (`cobrosIncluidos`) congelar al cerrar es
+ * seguro: un pago que Zoho registre después con fecha de ese mes pasa al mes
+ * siguiente, no se pierde.
+ * @returns {Array<{id, data}>} documentos para `comisiones_cerradas`.
+ */
+function cierresAutomaticos(d) {
+    const ahora = d.ahoraMs;
+    const facturas = d.facturas || [];
+    const carteraDe = {};
+    (d.clientes || []).filter(c => c.vendedorId).forEach(c => { (carteraDe[c.vendedorId] = carteraDe[c.vendedorId] || []).push(c); });
+    const out = [];
+    (d.vendedores || []).forEach(v => {
+        const ingreso = diaCal(v.fechaIngreso);
+        if (!ingreso) return;
+        const cerrados = {};
+        (d.cerradas || []).filter(c => c.vendedorId === v.uid && c.periodKey).forEach(c => { cerrados[c.periodKey] = relojCierre(c); });
+        const liqs = (d.liquidaciones || []).filter(l => l.vendedorId === v.uid);
+        const carteraV = M.carteraActivacion(carteraDe[v.uid] || [], d.pos || null);
+        const opts = { carteraSize: carteraV.length, cartera: carteraV, cerrados, ahora: new Date(ahora - TZ) };
+        let estados;
+        try { estados = M.computeEstadosDeCuenta({ ...v, fechaIngreso: ingreso }, facturas.filter(f => f.vendedorId === v.uid).map(relojFactura), liqs, opts); } catch { estados = null; }
+        (estados || []).filter(e => e.cerrado && !e.congelado && !cerrados[e.periodKey]).forEach(e => {
+            const { pagado, saldo, congelado, ...snap } = e;
+            out.push({
+                id: `${v.uid}_${e.periodKey}`,
+                // Sin undefined (Firestore los rechaza) ni tipos raros: la fila es JSON.
+                data: { ...JSON.parse(JSON.stringify(snap)), vendedorId: v.uid, congeladoPor: 'automatico', congeladoPorEmail: null },
+            });
+        });
+    });
+    return out;
+}
+
 /** Último día ('YYYY-MM-DD') del Mes `mes` de empleo (misma regla de aniversario que el motor). */
 function finDePeriodo(ingreso, mes) {
     const [y, m, d] = ingreso.split('-').map(Number);
@@ -412,4 +454,4 @@ const TIPOS_COMISION = [
     'comision_liquidacion_huerfana', 'comision_pagado_de_mas', 'comision_sin_congelar', 'comision_congelado_difiere',
 ];
 
-module.exports = { evaluarComisiones, TIPOS_COMISION, diaCal, finDePeriodo };
+module.exports = { evaluarComisiones, cierresAutomaticos, TIPOS_COMISION, diaCal, finDePeriodo };
