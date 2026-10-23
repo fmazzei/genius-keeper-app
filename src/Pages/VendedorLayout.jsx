@@ -462,14 +462,17 @@ function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
 function deudaVendedor(estados = []) {
     if (!estados.length) return null;
     const r2 = (n) => Math.round(n * 100) / 100;
-    const ant = estados.filter(e => e.cerrado);
-    const act = estados.find(e => !e.cerrado);
-    const comisionAnt = r2(ant.reduce((s, e) => s + (e.saldoComision || 0), 0));
-    const comisionAct = r2(act?.saldoComision || 0);
+    // De más antiguo a más reciente, cada monto con su período.
+    const orden = [...estados].reverse();
+    const linea = (e, monto) => ({ key: e.periodKey, mes: e.mes, rango: e.rango, enCurso: !e.cerrado, monto: r2(monto) });
+    const comisiones = orden
+        .filter(e => !e.cerrado || Math.abs(e.saldoComision || 0) > 0.005)
+        .map(e => linea(e, e.saldoComision || 0));
+    const fijo = orden.filter(e => e.cerrado && (e.saldoFijo || 0) > 0.005).map(e => linea(e, e.saldoFijo));
     return {
-        comisionAnt, comisionAct,
-        comision: r2(comisionAnt + comisionAct),
-        fijoAnt: r2(ant.reduce((s, e) => s + (e.saldoFijo || 0), 0)),
+        comisiones, fijo,
+        comision: r2(comisiones.reduce((s, l) => s + l.monto, 0)),
+        fijoTotal: r2(fijo.reduce((s, l) => s + l.monto, 0)),
     };
 }
 
@@ -582,22 +585,35 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                     </p>
                     {/* Lo que se le debe HOY, sumando todos sus meses: el número de
                         arriba es solo lo ganado en el período en curso. */}
-                    {deuda && (deuda.comision > 0.005 || deuda.fijoAnt > 0.005) && (
-                        <div className="mt-3 bg-slate-800/60 rounded-lg p-2.5 space-y-1">
+                    {deuda && (deuda.comision > 0.005 || deuda.fijoTotal > 0.005) && (
+                        <div className="mt-3 bg-slate-800/60 rounded-lg p-2.5 space-y-1.5">
                             <p className="text-slate-400 text-[11px] font-semibold uppercase tracking-widest">Lo que te deben hoy</p>
                             <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-slate-300 text-xs">Comisiones</span>
+                                <span className="text-slate-200 text-xs font-semibold">Comisiones</span>
                                 <b className="text-emerald-400 font-mono text-sm">{money(Math.max(0, deuda.comision))}</b>
                             </div>
-                            {deuda.comisionAnt !== 0 && (
-                                <p className="text-slate-500 text-[11px] leading-snug">
-                                    {money(deuda.comisionAct)} de este período {deuda.comisionAnt > 0 ? '+' : '−'} {money(Math.abs(deuda.comisionAnt))} {deuda.comisionAnt > 0 ? 'de meses anteriores' : 'pagado de más en meses anteriores'}
-                                </p>
+                            {deuda.comisiones.map(l => (
+                                <div key={`c${l.key}`} className="flex items-baseline justify-between gap-2 pl-2">
+                                    <span className="text-slate-400 text-[11px] leading-snug">
+                                        Mes {l.mes} · {l.rango}{l.enCurso ? ' (en curso)' : ''}{l.monto < 0 ? ': pagado de más, se descuenta' : ''}
+                                    </span>
+                                    <span className={`font-mono text-[11px] ${l.monto < 0 ? 'text-slate-400' : 'text-slate-200'}`}>{l.monto < 0 ? '−' : ''}{money(Math.abs(l.monto))}</span>
+                                </div>
+                            ))}
+                            {deuda.fijoTotal > 0.005 && (
+                                <>
+                                    <div className="flex items-baseline justify-between gap-2 pt-1 border-t border-slate-700/60">
+                                        <span className="text-slate-200 text-xs font-semibold">Fijo</span>
+                                        <b className="text-sky-300 font-mono text-sm">{money(deuda.fijoTotal)}</b>
+                                    </div>
+                                    {deuda.fijo.map(l => (
+                                        <div key={`f${l.key}`} className="flex items-baseline justify-between gap-2 pl-2">
+                                            <span className="text-slate-400 text-[11px] leading-snug">Mes {l.mes} · {l.rango}</span>
+                                            <span className="font-mono text-[11px] text-slate-200">{money(l.monto)}</span>
+                                        </div>
+                                    ))}
+                                </>
                             )}
-                            <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-slate-300 text-xs">Fijo de meses anteriores</span>
-                                <b className="text-sky-300 font-mono text-sm">{money(Math.max(0, deuda.fijoAnt))}</b>
-                            </div>
                         </div>
                     )}
                     {faltan !== null && siguiente && (
