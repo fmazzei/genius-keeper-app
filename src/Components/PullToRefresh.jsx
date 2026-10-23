@@ -63,6 +63,13 @@ export default function PullToRefresh({ onRefresh, children, className = '' }) {
 
     const listo = dist >= UMBRAL;
 
+    // El espaciado entre hijos (space-y-*) tiene que ir al div que envuelve el
+    // contenido: puesto en el contenedor solo separaba el indicador del bloque,
+    // y las tarjetas quedaban pegadas unas a otras.
+    const clases = className.split(/\s+/).filter(Boolean);
+    const deHijos = clases.filter(c => /^space-[xy]-/.test(c)).join(' ');
+    const delMarco = clases.filter(c => !/^space-[xy]-/.test(c)).join(' ');
+
     return (
         <div
             ref={ref}
@@ -70,7 +77,7 @@ export default function PullToRefresh({ onRefresh, children, className = '' }) {
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
             onTouchCancel={onTouchEnd}
-            className={`relative overflow-y-auto ${className}`}
+            className={`relative overflow-y-auto ${delMarco}`}
         >
             {/* Indicador: aparece desde arriba conforme se tira */}
             <div
@@ -92,7 +99,7 @@ export default function PullToRefresh({ onRefresh, children, className = '' }) {
             {/* Sin transform en reposo: un transform (aunque sea 0px) convierte
                 este div en el marco de todo `position: fixed` de adentro, y las
                 ventanas que abre el contenido quedaban recortadas a esta área. */}
-            <div style={{
+            <div className={deHijos || undefined} style={{
                 transform: dist > 0 ? `translateY(${dist}px)` : 'none',
                 transition: inicio.current === null ? 'transform .2s ease' : 'none',
             }}>

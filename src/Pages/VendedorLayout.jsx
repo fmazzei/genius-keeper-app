@@ -453,7 +453,24 @@ function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
     );
 }
 
-function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, estadoActual, ultimoCerrado, loadError, onRetry, onRefresh }) {
+// Lo que se le debe al vendedor HOY, en dos cuentas. Comisiones: el saldo de
+// todos sus meses (lo pagado de más en un mes cerrado se descuenta). Fijo: solo
+// el de meses cerrados; el del período en curso aún se está ganando.
+function deudaVendedor(estados = []) {
+    if (!estados.length) return null;
+    const r2 = (n) => Math.round(n * 100) / 100;
+    const ant = estados.filter(e => e.cerrado);
+    const act = estados.find(e => !e.cerrado);
+    const comisionAnt = r2(ant.reduce((s, e) => s + (e.saldoComision || 0), 0));
+    const comisionAct = r2(act?.saldoComision || 0);
+    return {
+        comisionAnt, comisionAct,
+        comision: r2(comisionAnt + comisionAct),
+        fijoAnt: r2(ant.reduce((s, e) => s + (e.saldoFijo || 0), 0)),
+    };
+}
+
+function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, estados = [], estadoActual, ultimoCerrado, loadError, onRetry, onRefresh }) {
     const [showMetaModal, setShowMetaModal] = useState(false);
     const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -492,6 +509,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
     const siguiente = unidadesParaSiguiente();
     const faltan = siguiente?.uds ?? null;
     const ingresoBase = commConfig.salarioFijo + commConfig.viaticosSemanales * 4;
+    const deuda = deudaVendedor(estados);
     const hasComision = (tiers || []).some(t => t.rate > 0);
     const showAnaquel      = commConfig.bonusAnaquel > 0 && stats.hasAnaquel;
     const showActivacion   = commConfig.bonusActivacion > 0 && !stats.hasAnaquel;
@@ -557,10 +575,25 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                     <p className="text-slate-400 text-xs mt-1.5">
                         Tu fijo va aparte: <b className="text-sky-300">{money(estadoActual?.base ?? ingresoBase)}</b> {estadoActual?.corto ? `(${estadoActual.dias} días)` : 'este mes'}
                     </p>
-                    {estadoActual && (estadoActual.saldoComision > 0.5 || estadoActual.saldoFijo > 0.5) && (
-                        <p className="text-xs mt-0.5 text-amber-400">
-                            Por cobrar: comisiones {money(Math.max(0, estadoActual.saldoComision))} · fijo {money(Math.max(0, estadoActual.saldoFijo))}
-                        </p>
+                    {/* Lo que se le debe HOY, sumando todos sus meses: el número de
+                        arriba es solo lo ganado en el período en curso. */}
+                    {deuda && (deuda.comision > 0.005 || deuda.fijoAnt > 0.005) && (
+                        <div className="mt-3 bg-slate-800/60 rounded-lg p-2.5 space-y-1">
+                            <p className="text-slate-400 text-[11px] font-semibold uppercase tracking-widest">Lo que te deben hoy</p>
+                            <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-slate-300 text-xs">Comisiones</span>
+                                <b className="text-emerald-400 font-mono text-sm">{money(Math.max(0, deuda.comision))}</b>
+                            </div>
+                            {deuda.comisionAnt !== 0 && (
+                                <p className="text-slate-500 text-[11px] leading-snug">
+                                    {money(deuda.comisionAct)} de este período {deuda.comisionAnt > 0 ? '+' : '−'} {money(Math.abs(deuda.comisionAnt))} {deuda.comisionAnt > 0 ? 'de meses anteriores' : 'pagado de más en meses anteriores'}
+                                </p>
+                            )}
+                            <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-slate-300 text-xs">Fijo de meses anteriores</span>
+                                <b className="text-sky-300 font-mono text-sm">{money(Math.max(0, deuda.fijoAnt))}</b>
+                            </div>
+                        </div>
                     )}
                     {faltan !== null && siguiente && (
                         <div className="mt-3 bg-slate-800/50 rounded-lg p-2.5 flex items-center gap-2">
@@ -2025,6 +2058,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                             onNavigate={navigate}
                             tiers={tiers}
                             commConfig={commConfig}
+                            estados={estados}
                             estadoActual={estados[0] || null}
                             ultimoCerrado={estados.find(e => e.cerrado) || null}
                             loadError={loadError}
@@ -2082,7 +2116,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     {/* El botón de recarga se retiró para ganar espacio en la barra:
                         ahora se actualiza HALANDO hacia abajo en cualquiera de las
                         tres vistas del Home (ver PullToRefresh). */}
-                    {/* Estado de Cuenta — píldora glanceable: tu comisión del período en curso */}
+                    {/* Estado de Cuenta — píldora: comisiones que se le deben hoy (todos sus meses) */}
                     <button
                         onClick={() => navigate('estado_cuenta')}
                         className="flex items-center gap-1.5 h-8 sm:h-9 pl-2 pr-2.5 sm:pl-2.5 sm:pr-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 active:scale-95 transition-transform"
@@ -2090,7 +2124,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     >
                         <Wallet size={16} className="text-emerald-400 shrink-0" />
                         <span className="text-emerald-300 font-bold text-sm font-mono leading-none">
-                            ${Math.round(Number(estados[0]?.devengadoComision) || 0).toLocaleString('es-VE')}
+                            ${Math.max(0, Math.round(deudaVendedor(estados)?.comision || 0)).toLocaleString('es-VE')}
                         </span>
                     </button>
                     <button

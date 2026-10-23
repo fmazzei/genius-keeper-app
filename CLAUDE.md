@@ -3926,6 +3926,8 @@ Pedido del dueño: *"ni Carolina, ni nadie confunda los montos"*. Lo que se le d
   - Vigilante: el detalle del mes muestra las dos cuentas.
 - **Regla rota que se arregló de paso:** el commit anterior había copiado por error la regla de corrección de pagos en `comisiones_cerradas` y `liquidacion_comprobantes`. Por eso "Reabrir" un mes y reemplazar el comprobante del banco estaban bloqueados. Se restauraron las reglas.
 - **"Los meses cierran el 30":** ya cierran el **último día de cada mes** desde octubre (igual que el mes de la empresa). Un corte literal el 30 dejaría el 31 en el mes siguiente; no se cambió.
+- **Inicio del vendedor: "Lo que te deben hoy"** (pregunta del dueño, 23-oct: el número grande es SOLO lo ganado en el período en curso). Bajo él, `deudaVendedor(estados)` (`VendedorLayout.jsx`) suma las dos cuentas: comisiones = saldo de todos los meses (lo pagado de más en un mes cerrado se descuenta) y fijo = saldo de los meses cerrados (el del período en curso se sigue ganando). La píldora de la barra (billetera) muestra ahora las comisiones que se le deben hoy, no las del período. Carolina al 23-oct: comisiones $139,37 (Mes 3 $56,68 + Mes 2 $86,54 − $3,85 pagados de más en Mes 1) y fijo de Mes 2 $200.
+- **Tarjetas pegadas en el inicio y en Mis KPIs**: `PullToRefresh` metía los hijos en un div interno, así que el `space-y-4` del contenedor no separaba las tarjetas. Ahora pasa las clases `space-x-*`/`space-y-*` a ese div.
 - Pruebas:
   - `TZ=America/Caracas node --import ./tests/alias.mjs tests/pagoFijoComision.test.mjs` (24 en verde).
   - `tests/liquidacionCorrecciones.e2e.test.mjs` (pago sin concepto rechazado; clasificar un pago viejo; congelar/reabrir y comprobante).
