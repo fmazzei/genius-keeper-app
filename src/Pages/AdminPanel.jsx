@@ -8,7 +8,7 @@ import { httpsCallable } from 'firebase/functions';
 import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench, Bot, Megaphone } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
 import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, carteraActivacion, fechaCalendario, topePagoFijo, conceptoLiquidacion } from '../utils/vendedorMeta.js';
-import { reglasDelVendedor } from '../utils/periodosComision.js';
+import { reglasDelVendedor, etiquetaFijo, notaTransicion } from '../utils/periodosComision.js';
 import { cuentaEnCartera, motivoFuera } from '../utils/facturaEstado.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
@@ -3351,7 +3351,8 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                         <p className="font-bold text-amber-600">Por pagar {money(est?.saldoComision)}</p>
                                     </div>
                                     <div className={`rounded-lg border p-2.5 ${conc === 'fijo' ? 'border-sky-400 bg-sky-50' : 'border-slate-200'}`}>
-                                        <p className="font-black uppercase tracking-wider text-[10px] text-sky-700">Fijo {est?.corto ? `(${est.dias} días)` : 'del mes'}</p>
+                                        <p className="font-black uppercase tracking-wider text-[10px] text-sky-700">{etiquetaFijo(est)}</p>
+                                        {est?.transicion && <p className="text-slate-500 text-[10px] leading-snug">Para pagar la quincena, elige el Mes {est.mes - 1}.</p>}
                                         <p className="text-slate-600">Sueldo + viáticos {money(est?.base)}</p>
                                         <p className="text-slate-600">Pagado {money(est?.pagadoFijo)}</p>
                                         <p className="font-bold text-amber-600">Por pagar {money(est?.saldoFijo)}</p>
@@ -4059,7 +4060,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                             </div>
                             <p className="text-[11px] font-black uppercase tracking-wider text-sky-700 mt-2 mb-1">Fijo (sueldo + viáticos) — aparte</p>
                             <div className="grid grid-cols-3 gap-2">
-                                <StatCard label={desgloseActual.corto ? `Fijo (${desgloseActual.dias} días)` : 'Fijo del mes'} value={money(desgloseActual.base)} bg="bg-white" border="border-slate-200" />
+                                <StatCard label={etiquetaFijo(desgloseActual)} value={money(desgloseActual.base)} bg="bg-white" border="border-slate-200" />
                                 <StatCard label="Pagado" value={money(desgloseActual.pagadoFijo)} color="text-emerald-700" bg="bg-white" border="border-slate-200" />
                                 <StatCard label="Por pagar" value={money(desgloseActual.saldoFijo)} color={desgloseActual.saldoFijo > 0.5 ? 'text-amber-600' : 'text-emerald-700'} bg="bg-white" border="border-slate-200" />
                             </div>

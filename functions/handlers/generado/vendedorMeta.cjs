@@ -127,7 +127,9 @@ function periodosDeEmpleo(fechaIngreso, hasta = /* @__PURE__ */ new Date(), { de
     const end = calendario ? new Date(start.getFullYear(), start.getMonth() + 1, 1) : addMonths(ingreso, i + 1);
     const dias = diasEntre(start, end);
     const fraccion = calendario ? dias / diasDelMes(start) : 1;
-    out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto: fraccion < 1 });
+    const corto = fraccion < 1;
+    const transicion = corto && i > 0;
+    out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto, transicion });
     if (end > hasta) break;
     start = end;
   }
@@ -150,7 +152,7 @@ function metaDePeriodo(p, { metaPlena, arranque }) {
   const base = p.i < arranque.length ? Number(arranque[p.i]?.meta) || metaPlena : metaPlena;
   return p.corto ? Math.round(base * p.fraccion) : base;
 }
-var baseDePeriodo = (p, { baseMes }) => baseMes * (p.fraccion ?? 1);
+var baseDePeriodo = (p, { baseMes }) => p.transicion ? 0 : baseMes * (p.fraccion ?? 1);
 function periodosConMeta(vendedor = {}, hasta = /* @__PURE__ */ new Date(), opts) {
   const reglas = reglasDelVendedor(vendedor);
   return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({
@@ -181,7 +183,7 @@ function computeMetaMensual(meta = {}, ahora = /* @__PURE__ */ new Date()) {
   const { metaPlena, arranque, baseMes } = reglasDelVendedor(meta);
   const ingreso = toDate(meta.fechaIngreso);
   const antesDeIngreso = !!(ingreso && ahora < ingreso);
-  let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, fraccion = 1, base = baseMes, separaFood = false, metaKg = 0;
+  let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, transicion = false, fraccion = 1, base = baseMes, separaFood = false, metaKg = 0;
   if (ingreso) {
     const ps = periodosConMeta(meta, ahora);
     const p = ps[ps.length - 1];
@@ -193,6 +195,7 @@ function computeMetaMensual(meta = {}, ahora = /* @__PURE__ */ new Date()) {
     corto = p.corto;
     fraccion = p.fraccion;
     base = p.base;
+    transicion = p.transicion;
     separaFood = p.separaFood;
     metaKg = p.metaKg;
   } else {
@@ -204,7 +207,7 @@ function computeMetaMensual(meta = {}, ahora = /* @__PURE__ */ new Date()) {
   }
   const fmt = (d) => d.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
   const periodoLabel = `${fmt(periodStart)} \u2013 ${fmt(new Date(periodEnd.getTime() - MS_DIA))}`;
-  return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, fraccion, base, separaFood, metaKg, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
+  return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, transicion, fraccion, base, separaFood, metaKg, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
 }
 var rangoLabel = (start, end) => {
   const fmt = (d) => d.toLocaleDateString("es-VE", { day: "2-digit", month: "short" });
@@ -232,6 +235,7 @@ function listPeriodos(meta = {}) {
     start: p.start,
     end: p.end,
     corto: p.corto,
+    transicion: p.transicion,
     cerrado: p.end <= ahora
   }));
 }
@@ -368,6 +372,7 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     metaMensual: p.meta,
     base: p.base,
     corto: p.corto,
+    transicion: p.transicion,
     fraccion: p.fraccion,
     dias: p.dias,
     // Desde el corte a fin de mes, foodservice se mide aparte en kg: el nivel
@@ -646,6 +651,7 @@ function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], op
       // proporción a sus días en un período corto.
       base: p.base,
       corto: p.corto,
+      transicion: p.transicion,
       dias: p.dias,
       devengadoTotal: mt.devengadoComision + p.base,
       congelado: false
@@ -736,6 +742,7 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
     periodKey,
     mes: p.mes,
     corto: p.corto,
+    transicion: p.transicion,
     dias: p.dias,
     rango: rangoLabel(p.start, p.end),
     rangoCorte: rangoLabel(p.start, enCurso ? new Date(ahora.getTime() + MS_DIA) : p.end),

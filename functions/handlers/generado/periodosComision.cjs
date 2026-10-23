@@ -24,11 +24,13 @@ __export(periodosComision_exports, {
   CIERRE_MES_CALENDARIO_DESDE: () => CIERRE_MES_CALENDARIO_DESDE,
   baseDePeriodo: () => baseDePeriodo,
   claveDe: () => claveDe,
+  etiquetaFijo: () => etiquetaFijo,
   fechaLocal: () => fechaLocal,
   metaDePeriodo: () => metaDePeriodo,
   metaEnVentana: () => metaEnVentana,
   metaKgDePeriodo: () => metaKgDePeriodo,
   metaKgEnVentana: () => metaKgEnVentana,
+  notaTransicion: () => notaTransicion,
   periodoDeFecha: () => periodoDeFecha,
   periodosConMeta: () => periodosConMeta,
   periodosDeEmpleo: () => periodosDeEmpleo,
@@ -115,7 +117,9 @@ function periodosDeEmpleo(fechaIngreso, hasta = /* @__PURE__ */ new Date(), { de
     const end = calendario ? new Date(start.getFullYear(), start.getMonth() + 1, 1) : addMonths(ingreso, i + 1);
     const dias = diasEntre(start, end);
     const fraccion = calendario ? dias / diasDelMes(start) : 1;
-    out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto: fraccion < 1 });
+    const corto = fraccion < 1;
+    const transicion = corto && i > 0;
+    out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto, transicion });
     if (end > hasta) break;
     start = end;
   }
@@ -147,7 +151,13 @@ function metaDePeriodo(p, { metaPlena, arranque }) {
   const base = p.i < arranque.length ? Number(arranque[p.i]?.meta) || metaPlena : metaPlena;
   return p.corto ? Math.round(base * p.fraccion) : base;
 }
-var baseDePeriodo = (p, { baseMes }) => baseMes * (p.fraccion ?? 1);
+var baseDePeriodo = (p, { baseMes }) => p.transicion ? 0 : baseMes * (p.fraccion ?? 1);
+function etiquetaFijo(p) {
+  if (p?.transicion) return `Fijo: va con el Mes ${(p.mes || 2) - 1}`;
+  if (p?.corto) return `Fijo (${p.dias} d\xEDas)`;
+  return "Fijo del mes";
+}
+var notaTransicion = (p) => p?.transicion ? `Este per\xEDodo no lleva fijo propio: el fijo sigue siendo el mismo de cada mes, en las quincenas del 15 y el 30, y va con el Mes ${(p.mes || 2) - 1}.` : null;
 function periodosConMeta(vendedor = {}, hasta = /* @__PURE__ */ new Date(), opts) {
   const reglas = reglasDelVendedor(vendedor);
   return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({
@@ -190,11 +200,13 @@ function metaKgEnVentana(vendedor = {}, desde, hasta, opts) {
   CIERRE_MES_CALENDARIO_DESDE,
   baseDePeriodo,
   claveDe,
+  etiquetaFijo,
   fechaLocal,
   metaDePeriodo,
   metaEnVentana,
   metaKgDePeriodo,
   metaKgEnVentana,
+  notaTransicion,
   periodoDeFecha,
   periodosConMeta,
   periodosDeEmpleo,

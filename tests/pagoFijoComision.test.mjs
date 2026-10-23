@@ -54,20 +54,24 @@ const caro = {
 };
 const liqs = [
     { id: 'a', periodKey: '2026-09-19', monto: 200, fecha: '2026-10-14' },
-    { id: 'b', periodKey: '2026-10-19', monto: 83.87, fecha: '2026-10-31', concepto: 'fijo', fijoTipo: 'quincena' },
+    { id: 'b', periodKey: '2026-09-19', monto: 200, fecha: '2026-10-30', concepto: 'fijo', fijoTipo: 'quincena' },
 ];
 const ec = computeEstadosDeCuenta(caro, [], liqs, { ahora: new Date(2026, 10, 10, 12) });
 const m2 = ec.find(e => e.periodKey === '2026-09-19');
 const m3 = ec.find(e => e.periodKey === '2026-10-19');
-ok(m2.pagadoFijo === 200 && m2.saldoFijo === 200 && m2.pagadoComision === 0, 'estado de cuenta Mes 2: fijo pagado 200, falta 200');
-ok(cerca(m3.base, 167.74) && m3.pagadoFijo === 83.87 && cerca(m3.saldoFijo, 83.87), 'estado de cuenta Mes 3 (corto): quincena pagada, falta la otra');
+ok(m2.pagadoFijo === 400 && m2.saldoFijo === 0 && m2.pagadoComision === 0, 'Mes 2: quincenas del 14/10 y 30/10 completan el fijo');
+ok(m3.transicion && m3.base === 0 && m3.saldoFijo === 0, 'Mes 3 (transición 19–31 oct): no lleva fijo propio (no hay $167,74)');
 ok(cerca(m3.saldo, m3.saldoFijo + m3.saldoComision), 'estado de cuenta: total = fijo + comisiones');
 const d3 = computeDesglosePeriodo(caro, [], '2026-10-19', { liquidaciones: liqs, ahora: new Date(2026, 10, 10, 12) });
-ok(d3.pagadoFijo === m3.pagadoFijo && d3.saldoFijo === m3.saldoFijo && d3.saldoComision === m3.saldoComision, 'comprobante = estado de cuenta');
-ok(d3.pagos.length === 1 && d3.pagos[0].fijoTipo === 'quincena', 'el comprobante trae los pagos del período con su concepto');
+ok(d3.pagadoFijo === m3.pagadoFijo && d3.saldoFijo === m3.saldoFijo && d3.saldoComision === m3.saldoComision && d3.transicion, 'comprobante = estado de cuenta');
+const d2 = computeDesglosePeriodo(caro, [], '2026-09-19', { liquidaciones: liqs, ahora: new Date(2026, 10, 10, 12) });
+ok(d2.pagos.length === 2 && d2.pagos.some(l => l.fijoTipo === 'quincena'), 'el comprobante trae los pagos del período con su concepto');
+// Hoy (23-oct), antes del pago del 30: se le deben $200 de fijo, nada más.
+const hoy = computeEstadosDeCuenta(caro, [], [{ periodKey: '2026-08-19', monto: 400, fecha: '2026-09-18' }, liqs[0]], { ahora: new Date(2026, 9, 23, 12) });
+ok(cerca(hoy.reduce((s, e) => s + e.saldoFijo, 0), 200), 'Carolina hoy: $200 de fijo por cobrar (la quincena del 30/10)');
 
 // Un mes congelado conserva su fijo congelado.
-const cong = computeDesglosePeriodo(caro, [], '2026-09-19', { liquidaciones: liqs, cerrados: { '2026-09-19': { periodKey: '2026-09-19', base: 400, devengadoComision: 86.54, devengadoTotal: 486.54, modelo: 'cobro' } }, ahora: new Date(2026, 10, 10, 12) });
+const cong = computeDesglosePeriodo(caro, [], '2026-09-19', { liquidaciones: [liqs[0]], cerrados: { '2026-09-19': { periodKey: '2026-09-19', base: 400, devengadoComision: 86.54, devengadoTotal: 486.54, modelo: 'cobro' } }, ahora: new Date(2026, 10, 10, 12) });
 ok(cong.congelado && cong.base === 400 && cerca(cong.saldoComision, 86.54) && cong.saldoFijo === 200, 'mes congelado: comisiones y fijo congelados, pagos en vivo');
 
 // 4. Corregir el concepto de un pago deja constancia.

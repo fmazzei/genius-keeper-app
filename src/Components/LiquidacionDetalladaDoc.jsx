@@ -11,6 +11,7 @@
 // del corte y el detalle de cada período. Puede ocupar más de una hoja carta.
 
 import React from 'react';
+import { notaTransicion } from '../utils/periodosComision.js';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
 
@@ -153,7 +154,7 @@ function CuentaFijo({ d }) {
             <table className="w-full text-[12px]" style={{ tableLayout: 'fixed' }}>
                 <colgroup><col style={{ width: '68%' }} /><col style={{ width: '32%' }} /></colgroup>
                 <tbody>
-                <tr><td className="py-0.5">{d.corto ? `Fijo en proporción (${d.dias} días)` : 'Fijo del mes'}</td><td className="text-right"><Num bold>{money(d.base)}</Num></td></tr>
+                <tr><td className="py-0.5">{d.transicion ? notaTransicion(d) : d.corto ? `Fijo en proporción (${d.dias} días)` : 'Fijo del mes'}</td><td className="text-right"><Num bold>{money(d.base)}</Num></td></tr>
                 {pagosFijo.map(l => (
                     <tr key={l.id || `${l.fecha}-${l.monto}`}><td className="py-0.5 pl-3 text-slate-600">Pago {l.fijoTipo === 'quincena' ? 'de quincena' : 'de mes completo'} · {fechaPago(l)}</td><td className="text-right"><Num color="#127c3e">{money(l.monto)}</Num></td></tr>
                 ))}

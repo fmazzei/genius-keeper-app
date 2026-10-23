@@ -33,7 +33,7 @@ ok(ps[0].periodKey === '2026-08-19' && dia(ps[0].end) === '2026-09-19' && ps[0].
 ok(ps[1].periodKey === '2026-09-19' && dia(ps[1].end) === '2026-10-19' && ps[1].meta === 1700 && !ps[1].corto, 'Mes 2: 19-sep → 18-oct, meta 1700 (el que está trabajando, sin cambios)');
 ok(ps[2].periodKey === '2026-10-19' && dia(ps[2].end) === '2026-11-01' && ps[2].corto && ps[2].dias === 13, 'Mes 3: 19-oct → 31-oct, período corto de 13 días');
 ok(ps[2].meta === Math.round(2000 * 13 / 31), `Mes 3: meta en proporción (${ps[2].meta} = 2000 × 13/31)`);
-ok(Math.abs(ps[2].base - 400 * 13 / 31) < 1e-9, 'Mes 3: salario en proporción a sus días');
+ok(ps[2].transicion && ps[2].base === 0, 'Mes 3 (transición): sin fijo propio, el fijo sigue con el Mes 2');
 ok(ps[3].periodKey === '2026-11-01' && dia(ps[3].end) === '2026-12-01' && ps[3].meta === 2000 && ps[3].base === 400, 'Mes 4: noviembre completo, meta 2000 y salario completo');
 ok(ps[4].periodKey === '2026-12-01' && dia(ps[4].end) === '2027-01-01', 'Mes 5: diciembre completo');
 
@@ -41,6 +41,7 @@ ok(ps[4].periodKey === '2026-12-01' && dia(ps[4].end) === '2027-01-01', 'Mes 5: 
 const nuevo = { fechaIngreso: '2026-11-20', metaMensual: 2000, commissionConfig: { salarioFijo: 300, viaticosSemanales: 0, arranque: [{ meta: 1400 }] } };
 const pn = periodosConMeta(nuevo, new Date(2027, 0, 10));
 ok(pn[0].periodKey === '2026-11-20' && dia(pn[0].end) === '2026-12-01' && pn[0].corto, 'vendedor nuevo: su Mes 1 va de su ingreso al fin del mes');
+ok(!pn[0].transicion && Math.abs(pn[0].base - 300 * 11 / 30) < 1e-9, 'vendedor nuevo: su primer período lleva el fijo en proporción a sus días');
 ok(pn[0].meta === Math.round(1400 * 11 / 30), 'su Mes 1 lleva la meta de arranque en proporción a los días');
 ok(pn[1].periodKey === '2026-12-01' && pn[1].meta === 2000, 'su Mes 2 es diciembre completo');
 const delPrimero = periodosDeEmpleo('2026-12-01', new Date(2027, 1, 5));
@@ -89,7 +90,7 @@ const facturas = [
 const ec = computeEstadosDeCuenta(carolina, facturas, [], { ahora: new Date(2026, 10, 10, 12) });
 const corto = ec.find(r => r.periodKey === '2026-10-19');
 ok(corto && corto.corto && corto.cerrado, 'el período corto aparece en el estado de cuenta, ya cerrado en noviembre');
-ok(corto && Math.abs(corto.base - 400 * 13 / 31) < 1e-9 && Math.abs(corto.devengadoTotal - corto.devengadoComision - corto.base) < 1e-9, 'su base es el salario en proporción y entra al devengado');
+ok(corto && corto.transicion && corto.base === 0 && Math.abs(corto.devengadoTotal - corto.devengadoComision) < 1e-9, 'transición: sin fijo propio, el devengado es solo comisión');
 ok(corto && corto.metaMensual === ps[2].meta && corto.unidades === 500, 'las 500 uds del 20-oct cuentan contra la meta corta (nivel por % de esa meta)');
 const novRow = ec.find(r => r.periodKey === '2026-11-01');
 ok(novRow && novRow.base === 400 && novRow.unidades === 100, 'noviembre lleva el salario completo y sus propias facturas');

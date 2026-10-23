@@ -1,6 +1,7 @@
 // RUTA: src/Pages/VendedorLayout.jsx
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { etiquetaFijo, notaTransicion } from '../utils/periodosComision.js';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
 import {
@@ -344,9 +345,10 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                             notaDeMas="cobros que ahora cuentan en el mes siguiente; se descuenta allí"
                         />
                         <BloqueCuenta
-                            titulo={p.corto ? `Fijo (${p.dias} días)` : 'Fijo del mes'} acento="sky" money={money}
+                            titulo={etiquetaFijo(p)} acento="sky" money={money}
                             filas={[['Sueldo + viáticos', p.base], ['Pagado', p.pagadoFijo]]}
                             saldo={p.saldoFijo}
+                            nota={notaTransicion(p)}
                         />
                     </div>
                     <div className="flex justify-between items-center mt-2 px-1 text-xs">
@@ -383,7 +385,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
 
 // Una cuenta (comisiones o fijo): lo ganado, lo pagado y lo que falta. Las dos
 // se muestran siempre por separado para que nadie confunda un monto con otro.
-function BloqueCuenta({ titulo, acento, filas, saldo, notaDeMas, money }) {
+function BloqueCuenta({ titulo, acento, filas, saldo, notaDeMas, nota, money }) {
     const color = acento === 'sky' ? 'text-sky-300 border-sky-500/30' : 'text-emerald-300 border-emerald-500/30';
     const deMas = saldo < -0.5;
     return (
@@ -398,6 +400,7 @@ function BloqueCuenta({ titulo, acento, filas, saldo, notaDeMas, money }) {
                     <span className={`font-black font-mono ${deMas ? 'text-slate-300' : saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(deMas ? -saldo : saldo)}</span>
                 </div>
                 {deMas && notaDeMas && <p className="text-slate-500 text-[10px]">{notaDeMas}</p>}
+                {nota && <p className="text-slate-400 text-[10px] leading-snug">{nota}</p>}
             </div>
         </div>
     );
@@ -573,7 +576,9 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                         <span className="text-slate-400 text-sm mb-0.5">y subiendo</span>
                     </div>
                     <p className="text-slate-400 text-xs mt-1.5">
-                        Tu fijo va aparte: <b className="text-sky-300">{money(estadoActual?.base ?? ingresoBase)}</b> {estadoActual?.corto ? `(${estadoActual.dias} días)` : 'este mes'}
+                        {estadoActual?.transicion
+                            ? <>Tu fijo va aparte: <b className="text-sky-300">{money(ingresoBase)}</b> al mes, en quincenas del 15 y el 30</>
+                            : <>Tu fijo va aparte: <b className="text-sky-300">{money(estadoActual?.base ?? ingresoBase)}</b> {estadoActual?.corto ? `(${estadoActual.dias} días)` : 'este mes'}</>}
                     </p>
                     {/* Lo que se le debe HOY, sumando todos sus meses: el número de
                         arriba es solo lo ganado en el período en curso. */}

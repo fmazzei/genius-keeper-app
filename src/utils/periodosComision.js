@@ -13,9 +13,14 @@
 //   · El primer período que empieza desde esa fecha va hasta el fin de su mes
 //     (período corto) y desde ahí cada período es un mes calendario.
 //   · Un vendedor nuevo: su primer período va de su ingreso al fin de ese mes.
-//   · Un período corto lleva la meta y la base (salario y viáticos) en proporción
-//     a sus días: 13 de 31 días = 13/31 de la meta. Los niveles son % de la meta,
-//     así que se ajustan solos.
+//   · Un período corto lleva la meta en proporción a sus días: 13 de 31 días =
+//     13/31 de la meta. Los niveles son % de la meta, así que se ajustan solos.
+//   · El FIJO (salario + viáticos) es $X al mes, pagado en dos quincenas (15 y
+//     30). El cambio de corte no lo cambia (decisión del dueño, 23-oct-2026):
+//     el período de TRANSICIÓN de un vendedor que ya trabajaba (19→31 oct de
+//     Carolina) no lleva fijo propio; su fijo sigue con el mes anterior, que se
+//     paga en las quincenas del 15 y el 30. Solo el primer período de un
+//     vendedor NUEVO lleva el fijo en proporción a sus días.
 //
 // Caso real: Carolina (ingreso 19-ago) → Mes 1 19-ago–18-sep, Mes 2 19-sep–18-oct,
 // Mes 3 19-oct–31-oct (corto) y desde noviembre, un mes calendario por período.
@@ -66,7 +71,11 @@ export function periodosDeEmpleo(fechaIngreso, hasta = new Date(), { desde = CIE
         const end = calendario ? new Date(start.getFullYear(), start.getMonth() + 1, 1) : addMonths(ingreso, i + 1);
         const dias = diasEntre(start, end);
         const fraccion = calendario ? dias / diasDelMes(start) : 1;
-        out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto: fraccion < 1 });
+        const corto = fraccion < 1;
+        // Transición: el período corto con que un vendedor que ya trabajaba pasa
+        // del aniversario al mes calendario (no el primero de un vendedor nuevo).
+        const transicion = corto && i > 0;
+        out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto, transicion });
         if (end > hasta) break;
         start = end;
     }
@@ -121,8 +130,24 @@ export function metaDePeriodo(p, { metaPlena, arranque }) {
     return p.corto ? Math.round(base * p.fraccion) : base;
 }
 
-/** Salario y viáticos de un período, en proporción si es corto. */
-export const baseDePeriodo = (p, { baseMes }) => baseMes * (p.fraccion ?? 1);
+/**
+ * Salario y viáticos de un período: el mes completo; en proporción en el primer
+ * período (corto) de un vendedor nuevo; nada en el período de transición, cuyo
+ * fijo sigue con el mes anterior (ver arriba).
+ */
+export const baseDePeriodo = (p, { baseMes }) => (p.transicion ? 0 : baseMes * (p.fraccion ?? 1));
+
+/** Cómo se nombra el fijo de un período en pantallas y comprobantes. */
+export function etiquetaFijo(p) {
+    if (p?.transicion) return `Fijo: va con el Mes ${(p.mes || 2) - 1}`;
+    if (p?.corto) return `Fijo (${p.dias} días)`;
+    return 'Fijo del mes';
+}
+
+/** Nota del período de transición: por qué no lleva fijo propio. */
+export const notaTransicion = (p) => (p?.transicion
+    ? `Este período no lleva fijo propio: el fijo sigue siendo el mismo de cada mes, en las quincenas del 15 y el 30, y va con el Mes ${(p.mes || 2) - 1}.`
+    : null);
 
 /** Períodos del vendedor con su meta y su base. */
 export function periodosConMeta(vendedor = {}, hasta = new Date(), opts) {

@@ -41,7 +41,7 @@ export function computeMetaMensual(meta = {}, ahora = new Date()) {
     // "comienza el DD/MM" en vez de un período en curso con cifras engañosas.
     const antesDeIngreso = !!(ingreso && ahora < ingreso);
 
-    let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, fraccion = 1, base = baseMes, separaFood = false, metaKg = 0;
+    let periodStart, periodEnd, periodIndex, mesArranque, metaMensual, corto = false, transicion = false, fraccion = 1, base = baseMes, separaFood = false, metaKg = 0;
     if (ingreso) {
         const ps = periodosConMeta(meta, ahora);
         const p = ps[ps.length - 1];
@@ -50,7 +50,7 @@ export function computeMetaMensual(meta = {}, ahora = new Date()) {
         periodEnd = p.end;
         mesArranque = p.i < arranque.length ? p.i + 1 : 0;   // 1-based (Mes 1, Mes 2…) o 0 si ya pasó
         metaMensual = p.meta;
-        corto = p.corto; fraccion = p.fraccion; base = p.base;
+        corto = p.corto; fraccion = p.fraccion; base = p.base; transicion = p.transicion;
         separaFood = p.separaFood; metaKg = p.metaKg;
     } else {
         // Sin fecha de ingreso: período = mes de calendario actual, meta plena.
@@ -64,7 +64,7 @@ export function computeMetaMensual(meta = {}, ahora = new Date()) {
     const fmt = (d) => d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
     const periodoLabel = `${fmt(periodStart)} – ${fmt(new Date(periodEnd.getTime() - MS_DIA))}`;
 
-    return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, fraccion, base, separaFood, metaKg, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
+    return { metaMensual, mesArranque, periodIndex, periodStart, periodEnd, periodoLabel, corto, transicion, fraccion, base, separaFood, metaKg, antesDeIngreso, sinIngreso: !ingreso, ingreso: ingreso || null };
 }
 
 const rangoLabel = (start, end) => {
@@ -104,7 +104,7 @@ export function listPeriodos(meta = {}) {
         mes: p.mes,
         rango: rangoLabel(p.start, p.end),
         anio: String(p.start.getFullYear()),
-        start: p.start, end: p.end, corto: p.corto,
+        start: p.start, end: p.end, corto: p.corto, transicion: p.transicion,
         cerrado: p.end <= ahora,
     }));
 }
@@ -342,7 +342,7 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         i: p.i, mes: p.mes, start: p.start, end: p.end,
         periodKey: p.periodKey,
         metaMensual: p.meta,
-        base: p.base, corto: p.corto, fraccion: p.fraccion, dias: p.dias,
+        base: p.base, corto: p.corto, transicion: p.transicion, fraccion: p.fraccion, dias: p.dias,
         // Desde el corte a fin de mes, foodservice se mide aparte en kg: el nivel
         // y la meta de unidades son solo retail.
         separaFood: p.separaFood, metaKg: p.metaKg,
@@ -612,7 +612,7 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             devengadoComision: mt.devengadoComision,
             // Salario y viáticos del período: completos en un mes entero, en
             // proporción a sus días en un período corto.
-            base: p.base, corto: p.corto, dias: p.dias,
+            base: p.base, corto: p.corto, transicion: p.transicion, dias: p.dias,
             devengadoTotal: mt.devengadoComision + p.base,
             congelado: false,
         };
@@ -707,7 +707,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const enCurso = !p.cerrado;
 
     return {
-        periodKey, mes: p.mes, corto: p.corto, dias: p.dias,
+        periodKey, mes: p.mes, corto: p.corto, transicion: p.transicion, dias: p.dias,
         rango: rangoLabel(p.start, p.end),
         rangoCorte: rangoLabel(p.start, enCurso ? new Date(ahora.getTime() + MS_DIA) : p.end),
         enCurso,

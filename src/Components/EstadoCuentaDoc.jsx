@@ -208,7 +208,7 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
                                         <td className="py-1.5 px-2 break-words">
                                             <span className="font-bold">Mes {e.mes}</span> · {e.rango} {e.periodKey?.slice(0, 4)}
                                             <span className="block text-[10px] text-slate-500 break-words">
-                                                {e.corto ? `Período corto · ${e.dias} días (fijo en proporción)` : 'Mes completo'}
+                                                {e.transicion ? `Período corto · ${e.dias} días (el fijo va con el Mes ${e.mes - 1})` : e.corto ? `Período corto · ${e.dias} días (fijo en proporción)` : 'Mes completo'}
                                             </span>
                                         </td>
                                         <td className="py-1.5 px-1 text-right tabular-nums">{n2(e.base)}</td>

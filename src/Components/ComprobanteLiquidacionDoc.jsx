@@ -6,6 +6,7 @@
 // carta que el administrador entrega como constancia del pago registrado.
 
 import React from 'react';
+import { etiquetaFijo } from '../utils/periodosComision.js';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
 
@@ -128,7 +129,7 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
                                 <LeaderRow label="Pagadas (acumulado)" value={money(estado.pagadoComision)} valueColor="#127c3e" />
                                 <LeaderRow label="Por pagar" value={money(estado.saldoComision)} bold valueColor={NAVY} />
                                 <p className="font-bold text-[11px] mt-3" style={{ color: NAVY }}>FIJO (SUELDO + VIÁTICOS)</p>
-                                <LeaderRow label={estado.corto ? `Fijo del período (${estado.dias} días)` : 'Fijo del mes'} value={money(estado.base)} />
+                                <LeaderRow label={etiquetaFijo(estado)} value={money(estado.base)} />
                                 <LeaderRow label="Pagado (acumulado)" value={money(estado.pagadoFijo)} valueColor="#127c3e" />
                                 <LeaderRow label="Por pagar" value={money(estado.saldoFijo)} bold valueColor={NAVY} />
                             </div>
