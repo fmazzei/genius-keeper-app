@@ -11,7 +11,8 @@
 
 import { collection, doc, writeBatch, serverTimestamp, increment } from 'firebase/firestore';
 
-export const CAMPOS_CORREGIBLES = ['monto', 'fecha', 'periodKey', 'nota'];
+// `concepto` ('fijo' | 'comision') y `fijoTipo` ('quincena' | 'mes'): qué paga.
+export const CAMPOS_CORREGIBLES = ['monto', 'fecha', 'periodKey', 'nota', 'concepto', 'fijoTipo'];
 
 const igual = (a, b) => (a ?? '') === (b ?? '') || (typeof a === 'number' && Number(a) === Number(b));
 
@@ -47,6 +48,8 @@ export function validarCorreccion(liq, nuevo, motivo) {
     if ('monto' in nuevo && !(Number(nuevo.monto) > 0)) return 'El monto debe ser mayor que cero. Para quitar el pago, usa "Eliminar".';
     if ('fecha' in nuevo && !/^\d{4}-\d{2}-\d{2}$/.test(String(nuevo.fecha || ''))) return 'La fecha no es válida.';
     if ('periodKey' in nuevo && !nuevo.periodKey) return 'Elige el período.';
+    if (nuevo.concepto && !['fijo', 'comision'].includes(nuevo.concepto)) return 'El pago es de fijo o de comisiones.';
+    if (nuevo.concepto === 'fijo' && !['quincena', 'mes'].includes(nuevo.fijoTipo)) return 'Di si el fijo es de una quincena o del mes completo.';
     if (String(motivo || '').trim().length < 5) return 'Escribe el motivo de la corrección (queda en el registro).';
     if (!cambiosDe(liq, nuevo).campos.length) return 'No cambiaste nada.';
     return null;
@@ -93,12 +96,14 @@ export async function eliminarLiquidacion(db, { liq, motivo, user }) {
     await b.commit();
 }
 
-const NOMBRE_CAMPO = { monto: 'Monto', fecha: 'Fecha', periodKey: 'Período', nota: 'Nota' };
+const NOMBRE_CAMPO = { monto: 'Monto', fecha: 'Fecha', periodKey: 'Período', nota: 'Nota', concepto: 'Concepto', fijoTipo: 'Fijo' };
+const NOMBRE_VALOR = { fijo: 'fijo', comision: 'comisiones', quincena: 'quincena', mes: 'mes completo' };
 /** "Monto: $350,00 → $200,00 · Período: … → …" para mostrar el registro. */
 export function describirCambio(c, { money = (n) => `$${Number(n).toFixed(2)}`, periodo = (k) => k } = {}) {
     if (c.tipo === 'eliminacion') return `Pago eliminado (${money(c.antes?.monto)} del ${c.antes?.fecha || '—'})`;
     return (c.campos || []).map(k => {
-        const f = k === 'monto' ? money : k === 'periodKey' ? periodo : (v) => (v || '—');
+        const f = k === 'monto' ? money : k === 'periodKey' ? periodo
+            : (k === 'concepto' || k === 'fijoTipo') ? (v) => (v ? (NOMBRE_VALOR[v] || v) : 'sin concepto') : (v) => (v || '—');
         return `${NOMBRE_CAMPO[k] || k}: ${f(c.antes?.[k])} → ${f(c.despues?.[k])}`;
     }).join(' · ');
 }

@@ -92,7 +92,8 @@ ok(p.every(x => Array.isArray(x.detalle) && x.detalle.length && x.detalle.every(
 const pDup = t('comision_duplicadas');
 ok(pDup.detalle[0].filas.length === 2 && /copia/.test(pDup.detalle[0].filas[1].s), 'el detalle de las repetidas lista los dos documentos y marca la copia');
 const pMes = t('comision_sin_congelar', 'CARO:2026-08-19');
-ok(pMes.detalle[0].filas.some(f => f.t === 'Devengado') && pMes.detalle[0].filas.some(f => f.t === 'Saldo'), 'el mes sin congelar muestra devengado, pagado y saldo, como el estado de cuenta');
+ok(['Comisiones devengadas', 'Comisiones por pagar', 'Fijo del mes (sueldo + viáticos)', 'Fijo por pagar'].every(n => pMes.detalle[0].filas.some(f => f.t === n)),
+    'el mes sin congelar muestra comisiones y fijo por separado, como el estado de cuenta');
 const pAdm = evaluarComisiones({ ...datos, administradores: ['MJ'] }, cfg);
 ok(pAdm.every(x => x.uids.includes('FRAN') && x.uids.includes('MJ') && !x.uids.includes('CARO')), 'también le llegan a administración (María José); nunca al vendedor');
 ok(p.every(x => R.GRUPO_DE_TIPO[x.tipo] === 'pesado'), 'todos son del grupo diario (se cierran solos cuando se corrigen)');

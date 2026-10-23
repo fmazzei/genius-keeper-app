@@ -151,7 +151,7 @@ function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
 
 // ─── Estado de Cuenta (Fase 3.7/3.8) — histórico por período de empleo ───────
 function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor', desgloseInputs = null, onBack }) {
-    const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
+    const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const gracia   = commConfig.cobranzaGraciaDias ?? 5;
     const bonoRate = commConfig.bonusPuntualidad ?? 0;
     const [showDoc, setShowDoc] = useState(false);
@@ -175,6 +175,8 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
     // mes siguiente) se descuenta de lo que se adeuda de otros meses.
     const anteriores = estados.filter(e => e.cerrado && e.saldo > 0.5);
     const adeudado = estados.filter(e => e.cerrado).reduce((s, e) => s + e.saldo, 0);
+    const adeudadoFijo = estados.filter(e => e.cerrado).reduce((s, e) => s + (e.saldoFijo || 0), 0);
+    const adeudadoComision = estados.filter(e => e.cerrado).reduce((s, e) => s + (e.saldoComision || 0), 0);
     const primerAdeudadoIdx = adeudado > 0 ? estados.indexOf(anteriores[anteriores.length - 1]) : -1;
 
     const anio = (e) => (e?.periodKey ? e.periodKey.slice(0, 4) : '');
@@ -222,6 +224,9 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                         <Wallet size={20} className="text-amber-400 shrink-0" />
                         <div className="flex-1 min-w-0">
                             <p className="text-amber-300 font-bold text-sm leading-tight">Se te adeuda de períodos anteriores</p>
+                            <p className="text-amber-200 text-xs font-semibold mt-0.5">
+                                Comisiones {money(adeudadoComision)} · Fijo {money(adeudadoFijo)}
+                            </p>
                             <p className="text-amber-400/70 text-[11px]">{anteriores.length} período{anteriores.length === 1 ? '' : 's'} con saldo · toca para ver</p>
                         </div>
                         <span className="text-amber-300 font-black font-mono text-lg">{money(adeudado)}</span>
@@ -330,16 +335,23 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                     </div>
 
                     {/* Resultado */}
-                    <div className="border-t border-slate-800 pt-2 space-y-1 text-sm">
-                        <div className="flex justify-between"><span className="text-slate-400">Comisión devengada</span><span className="text-white font-bold font-mono">{money(p.devengadoComision)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-400">Base (fijo + viáticos)</span><span className="text-slate-300 font-mono">{money(p.base)}</span></div>
-                        <div className="flex justify-between border-t border-slate-800 pt-1"><span className="text-slate-300 font-semibold">Devengado total</span><span className="text-emerald-400 font-black font-mono">{money(p.devengadoTotal)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-400">Pagado (liquidado)</span><span className="text-slate-300 font-mono">{money(p.pagado)}</span></div>
-                        {p.saldo < -0.5 ? (
-                            <div className="flex justify-between gap-2"><span className="text-slate-300 font-semibold">Pagado de más <span className="text-slate-500 font-normal text-[11px]">(cobros que ahora cuentan en el mes siguiente; se descuenta allí)</span></span><span className="font-black font-mono text-slate-300">{money(-p.saldo)}</span></div>
-                        ) : (
-                            <div className="flex justify-between"><span className="text-slate-300 font-semibold">Saldo por cobrar</span><span className={`font-black font-mono ${p.saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(p.saldo)}</span></div>
-                        )}
+                    {/* Resultado: comisiones y fijo SIEMPRE por separado */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <BloqueCuenta
+                            titulo="Comisiones" acento="emerald" money={money}
+                            filas={[['Ganadas', p.devengadoComision], ['Pagadas', p.pagadoComision]]}
+                            saldo={p.saldoComision}
+                            notaDeMas="cobros que ahora cuentan en el mes siguiente; se descuenta allí"
+                        />
+                        <BloqueCuenta
+                            titulo={p.corto ? `Fijo (${p.dias} días)` : 'Fijo del mes'} acento="sky" money={money}
+                            filas={[['Sueldo + viáticos', p.base], ['Pagado', p.pagadoFijo]]}
+                            saldo={p.saldoFijo}
+                        />
+                    </div>
+                    <div className="flex justify-between items-center mt-2 px-1 text-xs">
+                        <span className="text-slate-500">Total por cobrar (comisiones + fijo)</span>
+                        <span className={`font-mono font-bold ${p.saldo > 0.5 ? 'text-slate-200' : 'text-slate-500'}`}>{money(p.saldo)}</span>
                     </div>
 
                     {desgloseInputs && (
@@ -361,7 +373,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                 <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-1.5">
                     <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Comisión</b> = lo que <b>cobras</b> en el período × la tasa del <b>nivel</b> que lograste el mes en que <b>facturaste</b> (a más colocación, mejor tasa). Un mes cerrado no cambia: lo que cobres después entra al mes en curso.</p>
                     <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Bono Cobranza</b> = <b>+{bonoRate}%</b> sobre <b>cada factura</b> que cobras a tiempo (dentro de vencimiento + {gracia} días de gracia).</p>
-                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Pagado</b> son las liquidaciones que te registra administración; el <b>saldo</b> se salda semanalmente sobre el mes vencido.</p>
+                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Fijo y comisiones se pagan por separado.</b> El fijo (sueldo + viáticos) puede pagarse por quincena o completo; las comisiones se liquidan sobre el mes vencido. Cada pago que te registra administración dice a cuál de los dos corresponde.</p>
                 </div>
               </>
             )}
@@ -369,9 +381,31 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
     );
 }
 
+// Una cuenta (comisiones o fijo): lo ganado, lo pagado y lo que falta. Las dos
+// se muestran siempre por separado para que nadie confunda un monto con otro.
+function BloqueCuenta({ titulo, acento, filas, saldo, notaDeMas, money }) {
+    const color = acento === 'sky' ? 'text-sky-300 border-sky-500/30' : 'text-emerald-300 border-emerald-500/30';
+    const deMas = saldo < -0.5;
+    return (
+        <div className={`rounded-xl border bg-slate-800/40 p-3 ${color.split(' ')[1]}`}>
+            <p className={`text-[11px] font-black uppercase tracking-wider mb-1.5 ${color.split(' ')[0]}`}>{titulo}</p>
+            <div className="space-y-1 text-xs">
+                {filas.map(([k, v]) => (
+                    <div key={k} className="flex justify-between"><span className="text-slate-400">{k}</span><span className="text-slate-200 font-mono">{money(v)}</span></div>
+                ))}
+                <div className="flex justify-between gap-2 border-t border-slate-700 pt-1">
+                    <span className="text-slate-200 font-semibold">{deMas ? 'Pagado de más' : 'Por cobrar'}</span>
+                    <span className={`font-black font-mono ${deMas ? 'text-slate-300' : saldo > 0.5 ? 'text-amber-400' : 'text-emerald-400'}`}>{money(deMas ? -saldo : saldo)}</span>
+                </div>
+                {deMas && notaDeMas && <p className="text-slate-500 text-[10px]">{notaDeMas}</p>}
+            </div>
+        </div>
+    );
+}
+
 // ─── Pantalla de cierre de período (Fase 3.9) — celebración al cerrar el mes ──
 function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
-    const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
+    const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const anio = periodo.periodKey ? periodo.periodKey.slice(0, 4) : '';
     return (
         <div className="fixed inset-0 z-[60] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-5">
@@ -387,9 +421,9 @@ function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
 
                 <div className="px-6 pb-6">
                     <div className="text-center mb-4">
-                        <p className="text-slate-400 text-xs uppercase tracking-widest">Ganaste este período</p>
-                        <p className="text-emerald-400 text-4xl font-black font-mono mt-1">{money(periodo.devengadoTotal)}</p>
-                        <p className="text-slate-500 text-xs mt-0.5">comisión {money(periodo.devengadoComision)} + base {money(periodo.base)}</p>
+                        <p className="text-slate-400 text-xs uppercase tracking-widest">Comisiones ganadas</p>
+                        <p className="text-emerald-400 text-4xl font-black font-mono mt-1">{money(periodo.devengadoComision)}</p>
+                        <p className="text-slate-400 text-xs mt-1">Fijo del período (aparte): <b className="text-sky-300">{money(periodo.base)}</b></p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 mb-4">
@@ -406,7 +440,9 @@ function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
                     </div>
 
                     {periodo.saldo > 0.5 && (
-                        <p className="text-amber-400/90 text-xs text-center mb-3">{money(periodo.saldo)} se te liquidará en las próximas semanas.</p>
+                        <p className="text-amber-400/90 text-xs text-center mb-3">
+                            Por liquidarte: comisiones {money(Math.max(0, periodo.saldoComision || 0))} · fijo {money(Math.max(0, periodo.saldoFijo || 0))}
+                        </p>
                     )}
 
                     <button onClick={onVerDetalle} className="w-full bg-emerald-500 hover:bg-emerald-400 text-white font-black py-3 rounded-xl mb-2">Ver mi estado de cuenta</button>
@@ -419,7 +455,7 @@ function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
 
 function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, estadoActual, ultimoCerrado, loadError, onRetry, onRefresh }) {
     const [showMetaModal, setShowMetaModal] = useState(false);
-    const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
+    const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     // Pantalla de cierre de período (Fase 3.9): al cerrar un mes de empleo, se
     // muestra UNA vez una celebración con el resultado. Se recuerda el último
@@ -519,9 +555,13 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                         <span className="text-slate-400 text-sm mb-0.5">y subiendo</span>
                     </div>
                     <p className="text-slate-400 text-xs mt-1.5">
-                        + base {money(ingresoBase)} = <b className="text-white">{money((estadoActual?.devengadoComision || 0) + ingresoBase)}</b> devengado
-                        {estadoActual?.saldo > 0.5 && <> · <span className="text-amber-400">{money(estadoActual.saldo)} por cobrar</span></>}
+                        Tu fijo va aparte: <b className="text-sky-300">{money(estadoActual?.base ?? ingresoBase)}</b> {estadoActual?.corto ? `(${estadoActual.dias} días)` : 'este mes'}
                     </p>
+                    {estadoActual && (estadoActual.saldoComision > 0.5 || estadoActual.saldoFijo > 0.5) && (
+                        <p className="text-xs mt-0.5 text-amber-400">
+                            Por cobrar: comisiones {money(Math.max(0, estadoActual.saldoComision))} · fijo {money(Math.max(0, estadoActual.saldoFijo))}
+                        </p>
+                    )}
                     {faltan !== null && siguiente && (
                         <div className="mt-3 bg-slate-800/50 rounded-lg p-2.5 flex items-center gap-2">
                             <TrendingUp size={15} className="text-emerald-400 shrink-0" />

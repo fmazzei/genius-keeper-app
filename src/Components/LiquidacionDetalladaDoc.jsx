@@ -58,7 +58,10 @@ export default function LiquidacionDetalladaDoc({ desgloses, desglose, vendedorN
     const ordered = [...list].sort((a, b) => a.mes - b.mes);
     const multi = ordered.length > 1;
     const fechaHora = new Date().toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const tot = ordered.reduce((a, d) => ({ dev: a.dev + (d.devengadoTotal || 0), pag: a.pag + (d.pagado || 0), saldo: a.saldo + (d.saldo || 0) }), { dev: 0, pag: 0, saldo: 0 });
+    const tot = ordered.reduce((a, d) => ({
+        comDev: a.comDev + (d.devengadoComision || 0), comPag: a.comPag + (d.pagadoComision || 0), comSal: a.comSal + (d.saldoComision || 0),
+        fijDev: a.fijDev + (d.base || 0), fijPag: a.fijPag + (d.pagadoFijo || 0), fijSal: a.fijSal + (d.saldoFijo || 0),
+    }), { comDev: 0, comPag: 0, comSal: 0, fijDev: 0, fijPag: 0, fijSal: 0 });
 
     return createPortal((
         <div id="gk-liq-portal" className="fixed inset-0 z-[100] bg-slate-900/80 flex flex-col overflow-auto">
@@ -112,9 +115,12 @@ export default function LiquidacionDetalladaDoc({ desgloses, desglose, vendedorN
                             <table className="w-full text-[12px]" style={{ tableLayout: 'fixed' }}>
                                 <colgroup><col style={{ width: '66%' }} /><col style={{ width: '34%' }} /></colgroup>
                                 <tbody>
-                                <tr className="border-b-2" style={{ borderColor: NAVY }}><td className="py-1 font-bold">DEVENGADO TOTAL DEL CORTE</td><td className="text-right"><Num bold color={NAVY}>{money(tot.dev)}</Num></td></tr>
-                                <tr><td className="py-0.5">Pagado (liquidaciones)</td><td className="text-right"><Num color="#127c3e">{money(tot.pag)}</Num></td></tr>
-                                <tr><td className="py-0.5 font-bold">Saldo por pagar</td><td className="text-right"><Num bold color={tot.saldo > 0.5 ? '#b45309' : '#127c3e'}>{money(tot.saldo)}</Num></td></tr>
+                                <tr className="border-b-2" style={{ borderColor: NAVY }}><td className="py-1 font-bold">COMISIONES GANADAS EN EL CORTE</td><td className="text-right"><Num bold color={NAVY}>{money(tot.comDev)}</Num></td></tr>
+                                <tr><td className="py-0.5">Comisiones pagadas</td><td className="text-right"><Num color="#127c3e">{money(tot.comPag)}</Num></td></tr>
+                                <tr><td className="py-0.5 font-bold">Comisiones por pagar</td><td className="text-right"><Num bold color={tot.comSal > 0.5 ? '#b45309' : '#127c3e'}>{money(tot.comSal)}</Num></td></tr>
+                                <tr className="border-b-2" style={{ borderColor: NAVY }}><td className="pt-3 pb-1 font-bold">FIJO DEL CORTE (SUELDO + VIÁTICOS)</td><td className="text-right align-bottom"><Num bold color={NAVY}>{money(tot.fijDev)}</Num></td></tr>
+                                <tr><td className="py-0.5">Fijo pagado</td><td className="text-right"><Num color="#127c3e">{money(tot.fijPag)}</Num></td></tr>
+                                <tr><td className="py-0.5 font-bold">Fijo por pagar</td><td className="text-right"><Num bold color={tot.fijSal > 0.5 ? '#b45309' : '#127c3e'}>{money(tot.fijSal)}</Num></td></tr>
                             </tbody></table>
                         </div>
                     )}
@@ -135,6 +141,33 @@ export default function LiquidacionDetalladaDoc({ desgloses, desglose, vendedorN
     ), document.body);
 }
 
+// El fijo (sueldo + viáticos) es una cuenta aparte de las comisiones: su monto,
+// lo pagado (cada pago con su quincena o mes) y lo que falta.
+function CuentaFijo({ d }) {
+    const pagosFijo = (d.pagos || []).filter(l => l.concepto === 'fijo');
+    const sinConcepto = d.pagadoSinConcepto || 0;
+    const fechaPago = (l) => (l.fecha?.toDate ? fdate(l.fecha.toDate()) : l.fecha ? String(l.fecha) : '—');
+    return (
+        <>
+            <p className="font-bold text-[11px] mt-4 mb-1" style={{ color: NAVY }}>FIJO DEL PERÍODO (SUELDO + VIÁTICOS) — CUENTA APARTE</p>
+            <table className="w-full text-[12px]" style={{ tableLayout: 'fixed' }}>
+                <colgroup><col style={{ width: '68%' }} /><col style={{ width: '32%' }} /></colgroup>
+                <tbody>
+                <tr><td className="py-0.5">{d.corto ? `Fijo en proporción (${d.dias} días)` : 'Fijo del mes'}</td><td className="text-right"><Num bold>{money(d.base)}</Num></td></tr>
+                {pagosFijo.map(l => (
+                    <tr key={l.id || `${l.fecha}-${l.monto}`}><td className="py-0.5 pl-3 text-slate-600">Pago {l.fijoTipo === 'quincena' ? 'de quincena' : 'de mes completo'} · {fechaPago(l)}</td><td className="text-right"><Num color="#127c3e">{money(l.monto)}</Num></td></tr>
+                ))}
+                {sinConcepto > 0 && (
+                    <tr><td className="py-0.5 pl-3 text-slate-600 text-[11px]">Pagos sin concepto (anteriores a la separación): aplicados primero al fijo</td><td className="text-right"><Num color="#127c3e">{money(Math.min(sinConcepto, d.pagadoFijo))}</Num></td></tr>
+                )}
+                <tr><td className="py-0.5">Fijo pagado</td><td className="text-right"><Num color="#127c3e">{money(d.pagadoFijo)}</Num></td></tr>
+                <tr><td className="py-0.5 font-bold">{d.saldoFijo < -0.5 ? 'Fijo pagado de más' : 'Fijo por pagar'}</td><td className="text-right"><Num bold color={d.saldoFijo > 0.5 ? '#b45309' : '#127c3e'}>{money(Math.abs(d.saldoFijo))}</Num></td></tr>
+                </tbody>
+            </table>
+        </>
+    );
+}
+
 function PeriodoDetalle({ d, multi }) {
     const porOrigen = Array.isArray(d.cobrosPorOrigen) ? d.cobrosPorOrigen : null;
     const comisionNivel = porOrigen ? (d.comisionNivelMonto || 0) : d.cobradoRegular * d.tasa / 100;
@@ -148,7 +181,7 @@ function PeriodoDetalle({ d, multi }) {
 
             {/* Resumen del devengado */}
             <div className="px-8 gk-sec">
-                <SecTitle>RESUMEN DEL DEVENGADO</SecTitle>
+                <SecTitle>COMISIONES DEL PERÍODO</SecTitle>
                 <table className="w-full text-[12px]" style={{ tableLayout: 'fixed' }}>
                     <colgroup><col style={{ width: '68%' }} /><col style={{ width: '32%' }} /></colgroup>
                     <tbody>
@@ -161,12 +194,11 @@ function PeriodoDetalle({ d, multi }) {
                     {d.bonoActivacionMonto > 0 && <tr><td className="py-0.5">Bono Activación ({d.bonoActRate}% × semanas logradas del mes de cada factura)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoActivacionMonto)}</Num></td></tr>}
                     {d.comisionFoodMonto > 0 && <tr><td className="py-0.5">Foodservice ({d.tasaFood}% de {money(d.cobradoFood)})</td><td className="text-right"><Num>{money(d.comisionFoodMonto)}</Num></td></tr>}
                     {d.bonoRecupMonto > 0 && <tr><td className="py-0.5">Cuentas recuperadas ({d.tasaRecup}%)</td><td className="text-right"><Num>{money(d.bonoRecupMonto)}</Num></td></tr>}
-                    <tr className="border-t border-slate-300"><td className="py-1 font-bold">Comisión devengada</td><td className="text-right"><Num bold>{money(d.devengadoComision)}</Num></td></tr>
-                    <tr><td className="py-0.5">Base del paquete (fijo + viáticos)</td><td className="text-right"><Num>{money(d.base)}</Num></td></tr>
-                    <tr className="border-t-2" style={{ borderColor: NAVY }}><td className="py-1 font-bold">DEVENGADO TOTAL</td><td className="text-right"><Num bold color={NAVY}>{money(d.devengadoTotal)}</Num></td></tr>
-                    <tr><td className="py-0.5">Pagado (liquidaciones)</td><td className="text-right"><Num color="#127c3e">{money(d.pagado)}</Num></td></tr>
-                    <tr><td className="py-0.5 font-bold">Saldo por pagar</td><td className="text-right"><Num bold color={d.saldo > 0.5 ? '#b45309' : '#127c3e'}>{money(d.saldo)}</Num></td></tr>
+                    <tr className="border-t-2" style={{ borderColor: NAVY }}><td className="py-1 font-bold">COMISIONES GANADAS</td><td className="text-right"><Num bold color={NAVY}>{money(d.devengadoComision)}</Num></td></tr>
+                    <tr><td className="py-0.5">Comisiones pagadas</td><td className="text-right"><Num color="#127c3e">{money(d.pagadoComision)}</Num></td></tr>
+                    <tr><td className="py-0.5 font-bold">{d.saldoComision < -0.5 ? 'Comisiones pagadas de más' : 'Comisiones por pagar'}</td><td className="text-right"><Num bold color={d.saldoComision > 0.5 ? '#b45309' : '#127c3e'}>{money(Math.abs(d.saldoComision))}</Num></td></tr>
                 </tbody></table>
+                <CuentaFijo d={d} />
                 {d.congelado && d.modelo !== 'cobro' && (
                     <p className="text-[10px] text-slate-500 mt-1">Período congelado con la regla anterior (cobro por mes de factura): su total quedó fijo al cierre.</p>
                 )}

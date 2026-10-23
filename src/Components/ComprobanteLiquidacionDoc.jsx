@@ -44,6 +44,14 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
         ? `Mes ${estado.mes} · ${estado.rango} ${estado.periodKey?.slice(0, 4) || ''}`.trim()
         : (liquidacion.periodKey || '—');
 
+    // Qué se pagó: FIJO (quincena o mes) o COMISIONES. Los pagos anteriores a la
+    // separación no lo dicen y se muestran como tales.
+    const concepto = liquidacion.concepto === 'fijo'
+        ? `FIJO (SUELDO + VIÁTICOS) · ${liquidacion.fijoTipo === 'quincena' ? 'QUINCENA' : 'MES COMPLETO'}`
+        : liquidacion.concepto === 'comision' ? 'COMISIONES' : 'SIN CONCEPTO (anterior a la separación fijo / comisiones)';
+    const titulo = liquidacion.concepto === 'fijo' ? 'COMPROBANTE DE PAGO DE FIJO'
+        : liquidacion.concepto === 'comision' ? 'COMPROBANTE DE PAGO DE COMISIONES' : 'COMPROBANTE DE LIQUIDACIÓN';
+
     const SecTitle = ({ children }) => (
         <p className="font-bold text-[12px] tracking-wide mt-5 mb-2 pb-1 border-b-2" style={{ color: NAVY, borderColor: NAVY }}>{children}</p>
     );
@@ -80,7 +88,7 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
                             <p className="text-[12px] text-slate-500 leading-tight">Lácteoca, C.A. — Banco de Comisiones</p>
                         </div>
                     </div>
-                    <p className="px-8 text-center font-bold text-[14px] tracking-wide mt-5">COMPROBANTE DE LIQUIDACIÓN</p>
+                    <p className="px-8 text-center font-bold text-[14px] tracking-wide mt-5">{titulo}</p>
                     <div className="mx-8 mt-2" style={{ height: 2, background: '#3aa66b' }} />
 
                     {/* ── Datos del comprobante ── */}
@@ -89,6 +97,7 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
                         <LeaderRow label="Empresa" value="LACTEOCA, C.A." />
                         <LeaderRow label="Emitido" value={fechaHora} />
                         <LeaderRow label="Fecha del pago" value={liquidacion.fecha || '—'} />
+                        <LeaderRow label="Concepto" value={concepto} bold nowrap={false} />
                         <div className="pt-1">
                             <span className="text-slate-600">Período liquidado:</span>{' '}
                             <span className="break-words">{periodoLabel}</span>
@@ -104,7 +113,7 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
                     {/* ── Monto liquidado (destacado) ── */}
                     <div className="px-8 mt-5">
                         <div className="border-2 rounded-md px-4 py-3 flex items-center justify-between" style={{ borderColor: NAVY }}>
-                            <span className="font-bold" style={{ color: NAVY, fontFamily: SANS }}>MONTO LIQUIDADO</span>
+                            <span className="font-bold" style={{ color: NAVY, fontFamily: SANS }}>{liquidacion.concepto === 'fijo' ? 'FIJO PAGADO' : liquidacion.concepto === 'comision' ? 'COMISIONES PAGADAS' : 'MONTO LIQUIDADO'}</span>
                             <span className="font-black text-[20px]" style={{ color: '#127c3e' }}>{money(liquidacion.monto)}</span>
                         </div>
                     </div>
@@ -114,9 +123,14 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
                         <div className="px-8">
                             <SecTitle>ESTADO DEL PERÍODO</SecTitle>
                             <div className="text-[12px]">
-                                <LeaderRow label="Devengado (comisión + fijo)" value={money(estado.devengadoTotal)} />
-                                <LeaderRow label="Pagado acumulado" value={money(estado.pagado)} valueColor="#127c3e" />
-                                <LeaderRow label="Saldo por cobrar" value={money(estado.saldo)} bold valueColor={NAVY} />
+                                <p className="font-bold text-[11px]" style={{ color: NAVY }}>COMISIONES</p>
+                                <LeaderRow label="Ganadas" value={money(estado.devengadoComision)} />
+                                <LeaderRow label="Pagadas (acumulado)" value={money(estado.pagadoComision)} valueColor="#127c3e" />
+                                <LeaderRow label="Por pagar" value={money(estado.saldoComision)} bold valueColor={NAVY} />
+                                <p className="font-bold text-[11px] mt-3" style={{ color: NAVY }}>FIJO (SUELDO + VIÁTICOS)</p>
+                                <LeaderRow label={estado.corto ? `Fijo del período (${estado.dias} días)` : 'Fijo del mes'} value={money(estado.base)} />
+                                <LeaderRow label="Pagado (acumulado)" value={money(estado.pagadoFijo)} valueColor="#127c3e" />
+                                <LeaderRow label="Por pagar" value={money(estado.saldoFijo)} bold valueColor={NAVY} />
                             </div>
                         </div>
                     )}
@@ -139,7 +153,7 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
 
                     {/* ── Descripción ── */}
                     <div className="px-8 pt-5 pb-4 text-[10.5px] text-slate-600 leading-relaxed">
-                        <p>Este comprobante certifica el registro de una liquidación de comisiones a favor del titular indicado, imputada al período señalado. El devengado incluye la comisión más el fijo del paquete.</p>
+                        <p>Este comprobante certifica el registro de un pago a favor del titular indicado, imputado al período señalado y al concepto indicado. El fijo (sueldo + viáticos) y las comisiones se llevan en cuentas separadas: un pago de uno nunca descuenta del otro.</p>
                     </div>
 
                     {/* ── Pie ── */}

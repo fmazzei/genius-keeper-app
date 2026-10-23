@@ -68,6 +68,27 @@ t(lista.size === 2, 'el vendedor ve las constancias de sus pagos');
 let venNo = false; try { await corregirLiquidacion(ven, { liq: await liq('L1'), nuevo: { monto: 999 }, motivo: 'intento de vendedor', user: { uid: 'ven' } }); } catch { venNo = true; }
 t(venNo, 'el vendedor no puede corregir');
 
+// 8. Cada pago nuevo dice qué paga: fijo (quincena o mes) o comisiones.
+const base = { vendedorId: 'ven', periodKey: '2026-10-19', fecha: '2026-10-31', nota: '' };
+await assertFails(setDoc(doc(adm, 'liquidaciones', 'N0'), { ...base, monto: 50 }));
+await assertFails(setDoc(doc(adm, 'liquidaciones', 'N1'), { ...base, monto: 50, concepto: 'fijo' }));
+await assertFails(setDoc(doc(adm, 'liquidaciones', 'N2'), { ...base, monto: 50, concepto: 'otro' }));
+await assertSucceeds(setDoc(doc(adm, 'liquidaciones', 'N3'), { ...base, monto: 83.87, concepto: 'fijo', fijoTipo: 'quincena' }));
+await assertSucceeds(setDoc(doc(adm, 'liquidaciones', 'N4'), { ...base, monto: 40, concepto: 'comision' }));
+t(true, 'un pago sin concepto o con fijo sin quincena/mes: rechazado');
+
+// 9. Clasificar un pago viejo (sin concepto) deja constancia.
+const corr2 = await corregirLiquidacion(adm, { liq: await liq('L1'), nuevo: { concepto: 'fijo', fijoTipo: 'quincena' }, motivo: 'era la quincena', user: { uid: 'adm', email: 'a@x' } });
+const l1b = await liq('L1');
+t(l1b.concepto === 'fijo' && l1b.fijoTipo === 'quincena' && l1b.ultimaCorreccionId === corr2, 'el pago viejo queda como fijo de quincena, con constancia');
+
+// 10. Congelar y reabrir un mes; reemplazar el comprobante del banco (regla que se había roto).
+await assertSucceeds(setDoc(doc(adm, 'comisiones_cerradas', 'ven_2026-09-19'), { vendedorId: 'ven', periodKey: '2026-09-19', base: 400 }));
+await assertSucceeds(deleteDoc(doc(adm, 'comisiones_cerradas', 'ven_2026-09-19')));
+await assertSucceeds(setDoc(doc(adm, 'liquidacion_comprobantes', 'N3'), { dataUrl: 'data:x', vendedorId: 'ven' }));
+await assertSucceeds(setDoc(doc(adm, 'liquidacion_comprobantes', 'N3'), { dataUrl: 'data:y', vendedorId: 'ven' }));
+t(true, 'congelar, reabrir y reemplazar el comprobante funcionan');
+
 await env.cleanup();
 console.log(mal ? `${mal} fallaron, ${ok} en verde` : `Todo en verde (${ok})`);
 process.exit(mal ? 1 : 0);

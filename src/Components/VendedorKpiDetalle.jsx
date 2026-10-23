@@ -58,9 +58,17 @@ function Extra({ id, ctx, kpi }) {
     }
     if (id === 'comision_periodo' && estadoActual) {
         return (
-            <div className="grid grid-cols-3 gap-2">
-                {[['Devengado', estadoActual.devengado, 'text-white'], ['Pagado', estadoActual.pagado, 'text-emerald-400'], ['Saldo', estadoActual.saldo, 'text-amber-400']].map(([l, v, c], i) => (
-                    <div key={i} className="rounded-xl bg-slate-900 border border-slate-800 p-3"><p className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">{l}</p><p className={`font-black ${c}`}>{money(v)}</p></div>
+            <div className="space-y-2">
+                {[['Comisiones', estadoActual.devengadoComision, estadoActual.pagadoComision, estadoActual.saldoComision, 'text-emerald-400'],
+                  ['Fijo (sueldo + viáticos)', estadoActual.base, estadoActual.pagadoFijo, estadoActual.saldoFijo, 'text-sky-300']].map(([t, dev, pag, sal, c]) => (
+                    <div key={t}>
+                        <p className={`text-[11px] font-black uppercase tracking-wide mb-1 ${c}`}>{t}</p>
+                        <div className="grid grid-cols-3 gap-2">
+                            {[['Ganado', dev, 'text-white'], ['Pagado', pag, 'text-emerald-400'], ['Por cobrar', sal, 'text-amber-400']].map(([l, v, cc]) => (
+                                <div key={l} className="rounded-xl bg-slate-900 border border-slate-800 p-3"><p className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">{l}</p><p className={`font-black ${cc}`}>{money(v)}</p></div>
+                            ))}
+                        </div>
+                    </div>
                 ))}
             </div>
         );

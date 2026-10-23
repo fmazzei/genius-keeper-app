@@ -26,7 +26,7 @@ function buildKpi(id, ctx) {
     const { stats, vendedor, estadoActual, tier, pct, execKpis } = ctx;
     switch (id) {
         case 'comision_periodo':
-            return { value: money(estadoActual?.devengado || 0), unit: 'devengado', sub: `Saldo por cobrar: ${money(estadoActual?.saldo || 0)}`, tone: 'good' };
+            return { value: money(estadoActual?.devengadoComision || 0), unit: 'en comisiones', sub: `Por cobrar: comisiones ${money(Math.max(0, estadoActual?.saldoComision || 0))} · fijo ${money(Math.max(0, estadoActual?.saldoFijo || 0))}`, tone: 'good' };
         case 'meta_nivel': {
             const p = Math.round((pct || 0) * 100);
             return { value: `${num(stats.unidadesDelMes)} / ${num(vendedor.metaMensual)}`, unit: 'uds', sub: `Nivel ${tier?.label || '—'} · ${p}% de la meta`, tone: p >= 100 ? 'good' : p >= 60 ? 'warn' : 'neutral', bar: Math.min(1, pct || 0) };

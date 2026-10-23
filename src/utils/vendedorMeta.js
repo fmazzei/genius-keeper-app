@@ -507,6 +507,54 @@ const CAMPOS_CONGELADOS = [
 ];
 
 /**
+ * Lo pagado a un vendedor en un período, separado en FIJO (salario y viáticos)
+ * y COMISIONES. Cada liquidación declara su `concepto` ('fijo' | 'comision').
+ * Las anteriores a esa separación no lo traen: se aplican primero al fijo
+ * (hasta lo que falte del fijo del período) y el resto a comisiones.
+ *
+ * @returns {{pagado, pagadoFijo, pagadoComision, pagadoSinConcepto,
+ *   saldoFijo, saldoComision, saldo}}
+ */
+export function repartirPagos(liquidacionesPeriodo = [], base = 0, devengadoComision = 0) {
+    let fijo = 0, comision = 0, sinConcepto = 0;
+    (liquidacionesPeriodo || []).forEach(l => {
+        const monto = Number(l.monto) || 0;
+        if (l.concepto === 'fijo') fijo += monto;
+        else if (l.concepto === 'comision') comision += monto;
+        else sinConcepto += monto;
+    });
+    const baseN = Number(base) || 0;
+    const alFijo = Math.min(sinConcepto, Math.max(0, baseN - fijo));
+    fijo += alFijo;
+    comision += sinConcepto - alFijo;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const pagado = fijo + comision;
+    return {
+        pagado: r2(pagado),
+        pagadoFijo: r2(fijo), pagadoComision: r2(comision), pagadoSinConcepto: r2(sinConcepto),
+        saldoFijo: r2(baseN - fijo),
+        saldoComision: r2((Number(devengadoComision) || 0) - comision),
+        saldo: r2(baseN + (Number(devengadoComision) || 0) - pagado),
+    };
+}
+
+/**
+ * Tope de un pago de FIJO: una quincena es como máximo la mitad del fijo mensual
+ * del vendedor (sueldo + viáticos de su ficha de comisiones); un mes completo,
+ * el fijo mensual. Nunca más de lo que falta del fijo del período.
+ */
+export function topePagoFijo(tipo, baseMes = 0, saldoFijo = 0) {
+    const mensual = Math.max(0, Number(baseMes) || 0);
+    const porTipo = tipo === 'quincena' ? mensual / 2 : mensual;
+    return Math.max(0, Math.round(Math.min(porTipo, Number(saldoFijo) || 0) * 100) / 100);
+}
+
+/** Concepto de una liquidación para mostrarla: 'fijo' | 'comision' | null (anterior a la separación). */
+export function conceptoLiquidacion(l) {
+    return l?.concepto === 'fijo' || l?.concepto === 'comision' ? l.concepto : null;
+}
+
+/**
  * Fase 3.7 — Estado de Cuenta por PERÍODO de empleo (más reciente primero).
  * Ver `motorComisiones` para la regla de atribución. `pagado` sale de las
  * liquidaciones. Un período CERRADO puede CONGELARse (opts.cerrados[periodKey])
@@ -521,10 +569,10 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
     const { cfg, periodos, carteraSize } = m;
     const cerrados = opts.cerrados || {};
 
-    const pagadoPorPeriodo = {};
+    const liqPorPeriodo = {};
     (liquidaciones || []).forEach(l => {
         if (!l.periodKey) return;
-        pagadoPorPeriodo[l.periodKey] = (pagadoPorPeriodo[l.periodKey] || 0) + (Number(l.monto) || 0);
+        (liqPorPeriodo[l.periodKey] = liqPorPeriodo[l.periodKey] || []).push(l);
     });
 
     const out = [];
@@ -577,9 +625,15 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             // Un cierre del modelo anterior no trae el desglose por origen.
             if (frozen.comisionNivelMonto == null) { row.comisionNivelMonto = null; row.cobrosPorOrigen = null; }
         }
-        const pagado = pagadoPorPeriodo[p.periodKey] || 0;
-        row.pagado = pagado;
-        row.saldo = row.devengadoTotal - pagado;
+        // Fijo y comisiones por separado: lo que se debe de cada cosa.
+        const rep = repartirPagos(liqPorPeriodo[p.periodKey], row.base, row.devengadoComision);
+        row.pagado = rep.pagado;
+        row.pagadoFijo = rep.pagadoFijo;
+        row.pagadoComision = rep.pagadoComision;
+        row.pagadoSinConcepto = rep.pagadoSinConcepto;
+        row.saldoFijo = rep.saldoFijo;
+        row.saldoComision = rep.saldoComision;
+        row.saldo = row.devengadoTotal - rep.pagado;
         out.push(row);
     }
     return out;
@@ -640,14 +694,16 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     let devengadoTotal = devengadoComision + baseMes;
     let congelado = false;
     const frozen = (opts.cerrados || {})[periodKey];
+    let base = baseMes;
     if (frozen && p.cerrado) {
         congelado = true;
         if (frozen.devengadoTotal != null) devengadoTotal = Number(frozen.devengadoTotal);
         if (frozen.devengadoComision != null) devengadoComision = Number(frozen.devengadoComision);
+        if (frozen.base != null) base = Number(frozen.base);
     }
-    const pagado = (opts.liquidaciones || [])
-        .filter(l => l.periodKey === periodKey)
-        .reduce((s, l) => s + (Number(l.monto) || 0), 0);
+    const liqPeriodo = (opts.liquidaciones || []).filter(l => l.periodKey === periodKey);
+    const rep = repartirPagos(liqPeriodo, base, devengadoComision);
+    const pagado = rep.pagado;
     const enCurso = !p.cerrado;
 
     return {
@@ -681,7 +737,10 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
         // Foodservice (comisión flat)
         cobradoFood: mt.cobradoFood, tasaFood: mt.tasaFood, comisionFoodMonto: mt.comisionFoodMonto,
         // Totales
-        base: baseMes, devengadoComision, devengadoTotal,
+        base, devengadoComision, devengadoTotal,
         pagado, saldo: devengadoTotal - pagado,
+        pagadoFijo: rep.pagadoFijo, pagadoComision: rep.pagadoComision, pagadoSinConcepto: rep.pagadoSinConcepto,
+        saldoFijo: rep.saldoFijo, saldoComision: rep.saldoComision,
+        pagos: liqPeriodo,
     };
 }

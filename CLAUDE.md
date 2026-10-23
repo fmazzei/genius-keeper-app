@@ -3906,6 +3906,31 @@ Decisión del dueño: *"tener por separado los Kg de las unidades retail… con 
 - Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/foodserviceKg.test.mjs` (18 en verde).
 - **¿Vendemos?** (`BandasFinancieras`, Indicadores de campo; pedido del dueño 17-oct): la meta y el semáforo son de **retail**, con la misma regla de Comercial (la fijada o, si no, la suma de vendedores vía `useTeamMetaMensual`, que ahora da también `teamGoalKg`). "Facturado del mes" lleva dos barras cortas (`BarraDueno`: Retail en uds y Foodservice en kg, partidas en vendedores / Oficina / sin asignar, con la raya de "a hoy"). "Retail colocado" y debajo "Foodservice colocado" en kg, cada uno contra el mismo tramo del mes anterior (`useFinancialKpis.canalesPrev`). Top clientes: los de foodservice en kg con la marca FS (`topClientes[].canal/kg`). La línea de acción da el cierre proyectado de los dos.
 
+#### Fijo y comisiones, dos cuentas separadas en todas partes; el pago se elige primero (2026-10-23) ✅
+
+Pedido del dueño: *"ni Carolina, ni nadie confunda los montos"*. Lo que se le debe a un vendedor se muestra SIEMPRE en dos cuentas: **comisiones** (ganadas · pagadas · por pagar) y **fijo** (sueldo + viáticos del período · pagado · por pagar). El total solo aparece como suma de las dos.
+- **Motor** (`vendedorMeta.js`):
+  - `repartirPagos(liqs, base, devengadoComision)`: cada pago cuenta en su cuenta. Un pago sin `concepto` (los anteriores al cambio) se aplica primero al fijo del período, hasta completarlo, y el resto a comisiones.
+  - `computeEstadosDeCuenta` y `computeDesglosePeriodo` devuelven `pagadoFijo`, `pagadoComision`, `pagadoSinConcepto`, `saldoFijo` y `saldoComision` (el `saldo` total no cambia). El desglose trae además `pagos` y usa la `base` congelada si el mes está congelado.
+  - Lo pagado nunca se congela: se excluye del cierre manual y del automático (`cierresAutomaticos`).
+- **Cada pago dice qué paga**: `liquidaciones.concepto` = `'fijo'` (con `fijoTipo` `'quincena'` | `'mes'`) o `'comision'`. Las reglas exigen el concepto al crear (`conceptoLiquidacionValido`).
+- **Pago del administrador** (Liquidaciones, paso 2):
+  - ① Fijo o comisiones. ② Si es fijo: quincena o mes completo.
+  - `topePagoFijo`: la quincena es como máximo la **mitad del fijo mensual** de la ficha de comisiones (`reglasDelVendedor().baseMes`); el mes completo, el fijo mensual. Nunca más de lo que falta del fijo del período. El botón no deja pasar el tope.
+  - Las comisiones no tienen tope: avisan si se paga más de lo que falta. "Pagar descontando lo adelantado" mira solo comisiones pagadas de más.
+- **Corregir un pago** (`CorregirPagoSheet`, `liquidacionCorrecciones.js`): `concepto` y `fijoTipo` son corregibles, con constancia y con el mismo tope. Un pago viejo que mezcló fijo y comisiones se deja sin concepto: se reparte solo.
+- **Dónde se ve**:
+  - Vendedor: Home (comisiones en grande; el fijo aparte), Estado de Cuenta (dos tarjetas por período y el aviso "Se te adeuda" separado), cierre del mes y el KPI "Comisión del período". Los montos van con 2 decimales.
+  - PDF del estado de cuenta (resumen y una tabla por cuenta), comprobante detallado (cuenta de fijo con cada pago de quincena o mes) y comprobante de pago (concepto en el título y las dos cuentas del período).
+  - Administración: Liquidaciones (totales, lista por período, histórico con la etiqueta del concepto), Conciliación y Comisiones a pagar.
+  - Vigilante: el detalle del mes muestra las dos cuentas.
+- **Regla rota que se arregló de paso:** el commit anterior había copiado por error la regla de corrección de pagos en `comisiones_cerradas` y `liquidacion_comprobantes`. Por eso "Reabrir" un mes y reemplazar el comprobante del banco estaban bloqueados. Se restauraron las reglas.
+- **"Los meses cierran el 30":** ya cierran el **último día de cada mes** desde octubre (igual que el mes de la empresa). Un corte literal el 30 dejaría el 31 en el mes siguiente; no se cambió.
+- Pruebas:
+  - `TZ=America/Caracas node --import ./tests/alias.mjs tests/pagoFijoComision.test.mjs` (24 en verde).
+  - `tests/liquidacionCorrecciones.e2e.test.mjs` (pago sin concepto rechazado; clasificar un pago viejo; congelar/reabrir y comprobante).
+  - `tests/vigilanteComisiones.test.mjs`.
+
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 
 Pedido del dueño: las alertas de los reportes deben llegar al máster y a la gerencia, abrir el reporte al tocarlas y decir las unidades; el reporte debe traer la coordenada de donde se hizo; y las alertas del sistema o del agente van solo al máster, en Configuraciones, con un punto rojo cuando llega una.

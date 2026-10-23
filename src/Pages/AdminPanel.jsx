@@ -7,7 +7,8 @@ import { collection, onSnapshot, writeBatch, doc, addDoc, deleteDoc, query, setD
 import { httpsCallable } from 'firebase/functions';
 import { FileDown, Radar, Users, Store, FileText, Settings, Book, Lock, ChevronDown, ChevronRight, Save, AlertCircle, PlusCircle, Filter, UserPlus, Target, Warehouse, Trash2, Bell, ClipboardList, Link2, DollarSign, TrendingUp, Sun, LayoutGrid, Map as MapIcon, Truck, Mail, Eye, EyeOff, ShoppingCart, Package, CheckCircle, BarChart2, Calendar, Send, RefreshCw, Briefcase, Receipt, Pencil, Wallet, X, Shield, KeyRound, Search, Wrench, Bot, Megaphone } from 'lucide-react';
 import CommissionConstructor from '../Components/CommissionConstructor.jsx';
-import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, carteraActivacion, fechaCalendario } from '../utils/vendedorMeta.js';
+import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, carteraActivacion, fechaCalendario, topePagoFijo, conceptoLiquidacion } from '../utils/vendedorMeta.js';
+import { reglasDelVendedor } from '../utils/periodosComision.js';
 import { cuentaEnCartera, motivoFuera } from '../utils/facturaEstado.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
@@ -2770,6 +2771,14 @@ const SELECT_STYLE = {
 // Tarjeta de indicador reutilizable (todo el módulo). La etiqueta tiene altura
 // fija (alinea el monto abajo aunque el texto ocupe 1 o 2 líneas) y el monto se
 // ENCOGE para caber siempre en el ancho de la tarjeta, sin desbordarse.
+// Qué se pagó: fijo (quincena / mes) o comisiones; los pagos viejos no lo dicen.
+const EtiquetaConcepto = ({ l }) => {
+    const c = conceptoLiquidacion(l);
+    if (c === 'fijo') return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 align-middle">Fijo · {l.fijoTipo === 'quincena' ? 'quincena' : 'mes completo'}</span>;
+    if (c === 'comision') return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 align-middle">Comisiones</span>;
+    return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 align-middle" title="Pago anterior a la separación: se aplica primero al fijo del período y el resto a comisiones">Sin concepto</span>;
+};
+
 const StatCard = ({ label, value, color = 'text-slate-800', bg = 'bg-slate-50', border = 'border-slate-200' }) => (
     <div className={`rounded-lg px-1.5 py-2.5 border ${bg} ${border} flex flex-col justify-between overflow-hidden`} style={{ containerType: 'inline-size' }}>
         <p className="text-slate-400 text-[10px] leading-tight text-center min-h-[26px] flex items-end justify-center">{label}</p>
@@ -2806,6 +2815,9 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
     const [subiendoComp, setSubiendoComp]     = useState('');    // id de la liquidación cuyo comprobante se sube
     // Asistente de pago por pasos: null | {paso:2|3, periodKey, ...resultado}
     const [pago, setPago]               = useState(null);
+    // Qué se paga: primero se elige fijo (quincena o mes completo) o comisiones.
+    const [concepto, setConcepto]       = useState('');          // '' | 'fijo' | 'comision'
+    const [fijoTipo, setFijoTipo]       = useState('');          // '' | 'quincena' | 'mes'
     const [pendingComp, setPendingComp] = useState(null);        // dataUrl del comprobante antes de confirmar
     const [compFileName, setCompFileName] = useState('');
     const [comprobantePago, setComprobantePago] = useState(null); // {liquidacion, estado, dataUrl} para el PDF del Paso 3
@@ -2872,36 +2884,6 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lockedVendedorId]);
 
-    const registrar = async () => {
-        if (!vendedorId || !periodKey || !(Number(monto) > 0)) return;
-        setSaving(true);
-        setError('');
-        setOkMsg('');
-        try {
-            const hoy = new Date();
-            const fechaVal = fecha || `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-            await addDoc(collection(db, 'liquidaciones'), {
-                vendedorId,
-                periodKey,
-                monto: Number(monto),
-                fecha: fechaVal,
-                nota: nota.trim(),
-                registradoPor: auth.currentUser?.uid || null,
-                registradoPorEmail: auth.currentUser?.email || null,
-                createdAt: serverTimestamp(),
-            });
-            setMonto('');
-            setNota('');
-            setOkMsg('Liquidación registrada.');
-            await cargar(vendedorId);
-        } catch (e) {
-            console.error(e);
-            setError(e.message || 'No se pudo registrar la liquidación.');
-        } finally {
-            setSaving(false);
-        }
-    };
-
     // Eliminar un pago también deja constancia (motivo obligatorio): ver CorregirPagoSheet.
     const eliminar = (id) => {
         const l = liquidaciones.find(x => x.id === id);
@@ -2966,6 +2948,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
         const hoy = new Date();
         const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
         setPeriodKey(pk); setMonto(''); setFecha(hoyStr); setNota('');
+        setConcepto(''); setFijoTipo('');
         setPendingComp(null); setCompFileName(''); setOkMsg(''); setError('');
         setPago({ paso: 2, periodKey: pk });
     };
@@ -2980,13 +2963,19 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
     };
     const confirmarPago = async () => {
         if (!vendedorId || !periodKey || !(Number(monto) > 0)) return;
+        if (!concepto || (concepto === 'fijo' && !fijoTipo)) { setError('Elige primero qué vas a pagar: fijo o comisiones.'); return; }
         const estAntes = estados.find(e => e.periodKey === periodKey);
+        if (concepto === 'fijo') {
+            const tope = topePagoFijo(fijoTipo, baseMesVendedor, estAntes?.saldoFijo);
+            if (Number(monto) > tope + 0.005) { setError(`El pago de fijo no puede pasar de ${money(tope)}.`); return; }
+        }
         setSaving(true); setError('');
         try {
             const hoy = new Date();
             const fechaVal = fecha || `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
             const ref = await addDoc(collection(db, 'liquidaciones'), {
                 vendedorId, periodKey, monto: Number(monto), fecha: fechaVal, nota: nota.trim(),
+                concepto, ...(concepto === 'fijo' ? { fijoTipo } : {}),
                 registradoPor: auth.currentUser?.uid || null, registradoPorEmail: auth.currentUser?.email || null,
                 comprobanteAdjunto: !!pendingComp, createdAt: serverTimestamp(),
             });
@@ -2996,13 +2985,18 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
             await cargar(vendedorId);
             setPago({
                 paso: 3, periodKey, liqId: ref.id, monto: Number(monto), fecha: fechaVal,
-                dataUrl: pendingComp, saldoAntes: estAntes ? estAntes.saldo : null,
+                concepto, fijoTipo: concepto === 'fijo' ? fijoTipo : null,
+                dataUrl: pendingComp,
+                saldoAntes: estAntes ? (concepto === 'fijo' ? estAntes.saldoFijo : estAntes.saldoComision) : null,
             });
         } catch (e) {
             setError(e.message || 'No se pudo registrar el pago.');
         } finally { setSaving(false); }
     };
-    const cerrarWizard = () => { setPago(null); setPendingComp(null); setCompFileName(''); setPeriodKey(''); setMonto(''); setFecha(''); setNota(''); };
+    const cerrarWizard = () => { setPago(null); setPendingComp(null); setCompFileName(''); setPeriodKey(''); setMonto(''); setFecha(''); setNota(''); setConcepto(''); setFijoTipo(''); };
+    // Fijo mensual de la ficha de comisiones del vendedor (sueldo + viáticos):
+    // la quincena es como máximo la mitad; el mes completo, todo.
+    const baseMesVendedor = raw ? reglasDelVendedor(raw.meta).baseMes : 0;
 
     // Cierre/freeze de período (Fase 3.10): congela el devengado de un período
     // cerrado para que cobros tardíos / notas de crédito posteriores no alteren
@@ -3010,10 +3004,12 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
     const [cerrando, setCerrando] = useState('');
     const cerrarPeriodo = async (e) => {
         if (!e.cerrado || e.congelado) return;
-        if (!window.confirm(`¿Cerrar y congelar el Mes ${e.mes} (${e.rango})? Su devengado (${money(e.devengadoTotal)}) quedará fijo.`)) return;
+        if (!window.confirm(`¿Cerrar y congelar el Mes ${e.mes} (${e.rango})? Sus comisiones (${money(e.devengadoComision)}) y su fijo (${money(e.base)}) quedarán fijos.`)) return;
         setCerrando(e.periodKey);
         try {
-            const { pagado, saldo, congelado, ...snapshot } = e; // congelamos el devengado, no el pagado
+            // congelamos el devengado, no lo pagado
+            // eslint-disable-next-line no-unused-vars
+            const { pagado, saldo, congelado, pagadoFijo, pagadoComision, pagadoSinConcepto, saldoFijo, saldoComision, ...snapshot } = e;
             await setDoc(doc(db, 'comisiones_cerradas', `${vendedorId}_${e.periodKey}`), {
                 ...snapshot,
                 vendedorId,
@@ -3047,23 +3043,24 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
     // Lo pagado de MÁS en meses cerrados anteriores a `est` (saldo negativo): con
     // la regla de cobro por mes de pago, esos cobros se mudaron a un mes posterior.
     // Se descuenta al pagar para no liquidarlos dos veces.
+    // Solo comisiones: el fijo nunca se paga de más por cobros que se mudan.
     const aFavorAntes = (est) => !est ? 0 : estados
-        .filter(e => e.cerrado && e.mes < est.mes && e.saldo < -0.5)
-        .reduce((s, e) => s - e.saldo, 0);
+        .filter(e => e.cerrado && e.mes < est.mes && e.saldoComision < -0.5)
+        .reduce((s, e) => s - e.saldoComision, 0);
 
+    // Fijo y comisiones SIEMPRE por separado.
     const totales = estados.reduce((acc, e) => {
-        acc.devengado += e.devengadoTotal;
-        acc.pagado    += e.pagado;
-        acc.saldo     += e.saldo;
+        acc.comDev += e.devengadoComision || 0; acc.comPag += e.pagadoComision || 0; acc.comSal += e.saldoComision || 0;
+        acc.fijDev += e.base || 0; acc.fijPag += e.pagadoFijo || 0; acc.fijSal += e.saldoFijo || 0;
         return acc;
-    }, { devengado: 0, pagado: 0, saldo: 0 });
+    }, { comDev: 0, comPag: 0, comSal: 0, fijDev: 0, fijPag: 0, fijSal: 0 });
 
     return (
         <div className="max-w-3xl">
             <div className="mb-6">
                 <h3 className="text-lg font-bold text-slate-800">Liquidaciones</h3>
                 <p className="text-sm text-slate-500 mt-1">
-                    Registra los pagos de comisión a cada vendedor y consulta su estado de cuenta (devengado / pagado / saldo) por período de empleo.
+                    Registra los pagos a cada vendedor y consulta su estado de cuenta por período. El <b>fijo</b> (sueldo + viáticos) y las <b>comisiones</b> se llevan y se pagan por separado.
                 </p>
             </div>
 
@@ -3099,20 +3096,27 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
 
                     {vista === 'registrar' && (<>
                     {/* Resumen global */}
+                    <p className="text-[11px] font-black uppercase tracking-wider text-emerald-700 mb-1">Comisiones</p>
+                    <div className="grid grid-cols-3 gap-3 mb-3">
+                        <StatCard label="Ganadas" value={money(totales.comDev)} bg="bg-white" />
+                        <StatCard label="Pagadas" value={money(totales.comPag)} color="text-emerald-600" bg="bg-white" />
+                        <StatCard label="Por pagar" value={money(totales.comSal)} color={totales.comSal > 0.5 ? 'text-amber-600' : 'text-emerald-600'} bg="bg-white" />
+                    </div>
+                    <p className="text-[11px] font-black uppercase tracking-wider text-sky-700 mb-1">Fijo (sueldo + viáticos)</p>
                     <div className="grid grid-cols-3 gap-3 mb-4">
-                        <StatCard label="Devengado total" value={money(totales.devengado)} bg="bg-white" />
-                        <StatCard label="Pagado" value={money(totales.pagado)} color="text-emerald-600" bg="bg-white" />
-                        <StatCard label="Saldo pendiente" value={money(totales.saldo)} color={totales.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'} bg="bg-white" />
+                        <StatCard label="Fijo de los meses" value={money(totales.fijDev)} bg="bg-white" />
+                        <StatCard label="Pagado" value={money(totales.fijPag)} color="text-emerald-600" bg="bg-white" />
+                        <StatCard label="Por pagar" value={money(totales.fijSal)} color={totales.fijSal > 0.5 ? 'text-amber-600' : 'text-emerald-600'} bg="bg-white" />
                     </div>
 
                     {/* Ejecutar una liquidación — abre el asistente por pasos */}
                     <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
                         <p className="font-bold text-slate-800 mb-1">Ejecutar una liquidación</p>
-                        <p className="text-slate-500 text-xs mb-3">Elige el período y presiona <b>Registrar pago</b> para abrir el asistente (monto, fecha y comprobante).</p>
+                        <p className="text-slate-500 text-xs mb-3">Elige el período y presiona <b>Registrar pago</b>. En el asistente eliges primero si pagas <b>fijo</b> (quincena o mes completo) o <b>comisiones</b>.</p>
                         <div className="flex flex-col sm:flex-row gap-2">
                             <select value={periodKey} onChange={e => setPeriodKey(e.target.value)} className={`${SELECT_CLS} sm:flex-1`} style={SELECT_STYLE}>
                                 <option value="">Selecciona el período…</option>
-                                {estados.map(e => <option key={e.periodKey} value={e.periodKey}>Mes {e.mes} · {e.rango} — saldo {money(e.saldo)}</option>)}
+                                {estados.map(e => <option key={e.periodKey} value={e.periodKey}>Mes {e.mes} · {e.rango} — comisiones {money(e.saldoComision)} · fijo {money(e.saldoFijo)}</option>)}
                             </select>
                             <button onClick={() => periodKey && iniciarPago(periodKey)} disabled={!periodKey} className="bg-brand-blue text-white font-bold text-sm px-5 py-2.5 rounded-xl disabled:opacity-50 shrink-0">Registrar pago →</button>
                         </div>
@@ -3132,8 +3136,8 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                             <p className="text-slate-400 text-xs">{e.cerrado ? 'Cerrado' : 'En curso'} · Nivel {e.nivel} · {e.unidades.toLocaleString()} uds</p>
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <p className="text-slate-700">Dev. {money(e.devengadoTotal)} · Pag. {money(e.pagado)}</p>
-                                            <p className={`font-bold ${e.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>Saldo {money(e.saldo)}</p>
+                                            <p className="text-slate-700 text-xs">Comisiones {money(e.devengadoComision)} · pag. {money(e.pagadoComision)} → <b className={e.saldoComision > 0.5 ? 'text-amber-600' : 'text-emerald-600'}>{money(e.saldoComision)}</b></p>
+                                            <p className="text-slate-700 text-xs">Fijo {money(e.base)} · pag. {money(e.pagadoFijo)} → <b className={e.saldoFijo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}>{money(e.saldoFijo)}</b></p>
                                             <div className="flex items-center justify-end gap-2 mt-1">
                                                 {raw && (
                                                     <button
@@ -3229,15 +3233,16 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                 const list = liquidaciones.filter(l => histPeriodo === 'todos' || l.periodKey === histPeriodo);
                                 if (list.length === 0) return <p className="text-slate-400 text-sm">No hay pagos registrados{histPeriodo !== 'todos' ? ' en este período' : ''}.</p>;
                                 const totalHist = list.reduce((s, l) => s + (Number(l.monto) || 0), 0);
+                                const sumaDe = (c) => list.filter(l => conceptoLiquidacion(l) === c).reduce((s, l) => s + (Number(l.monto) || 0), 0);
                                 return (
                                     <>
-                                        <p className="text-sm text-slate-600 mb-2">{list.length} pago{list.length === 1 ? '' : 's'} · <b>{money(totalHist)}</b> abonado en total.</p>
+                                        <p className="text-sm text-slate-600 mb-2">{list.length} pago{list.length === 1 ? '' : 's'} · comisiones <b>{money(sumaDe('comision'))}</b> · fijo <b>{money(sumaDe('fijo'))}</b>{sumaDe(null) > 0 ? <> · sin concepto <b>{money(sumaDe(null))}</b></> : null} <span className="text-slate-400">(total {money(totalHist)})</span></p>
                                         <div className="space-y-2">
                                             {list.map(l => (
                                                 <div key={l.id} className="border border-slate-100 rounded-lg px-3 py-2.5 text-sm">
                                                     <div className="flex items-center justify-between gap-2">
                                                         <div className="min-w-0">
-                                                            <p className="font-semibold text-slate-700">{money(l.monto)} <span className="text-slate-400 font-normal">· {l.fecha}</span></p>
+                                                            <p className="font-semibold text-slate-700">{money(l.monto)} <EtiquetaConcepto l={l} /> <span className="text-slate-400 font-normal">· {l.fecha}</span></p>
                                                             <p className="text-slate-400 text-xs truncate">{periodLabel(l.periodKey)}{l.nota ? ` · ${l.nota}` : ''}</p>
                                                         </div>
                                                         <div className="flex items-center gap-1 shrink-0">
@@ -3293,7 +3298,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
             )}
 
             {editarPago && (
-                <CorregirPagoSheet liq={editarPago.liq} modo={editarPago.modo} periodos={estados}
+                <CorregirPagoSheet liq={editarPago.liq} modo={editarPago.modo} periodos={estados} baseMes={baseMesVendedor}
                     onClose={() => setEditarPago(null)} onDone={() => trasEditarPago(editarPago.liq, editarPago.modo)} />
             )}
             {comprobante && (
@@ -3309,9 +3314,23 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
             {pago && (() => {
                 const est = estados.find(e => e.periodKey === pago.periodKey);
                 const nombre = vendedores.find(v => v.id === vendedorId)?.name || 'Vendedor';
+                const conc = pago.paso === 3 ? pago.concepto : concepto;
+                const tipoF = pago.paso === 3 ? pago.fijoTipo : fijoTipo;
+                const saldoConc = (e) => !e ? 0 : (conc === 'fijo' ? e.saldoFijo : e.saldoComision);
+                const tope = conc === 'fijo' && tipoF ? topePagoFijo(tipoF, baseMesVendedor, est?.saldoFijo) : null;
+                const nMonto = Number(monto) || 0;
+                const excedeTope = tope != null && nMonto > tope + 0.005;
                 const saldoDespues = pago.paso === 3
-                    ? (pago.saldoAntes != null ? pago.saldoAntes - pago.monto : (est ? est.saldo : null))
-                    : (est ? est.saldo - (Number(monto) || 0) : null);
+                    ? (pago.saldoAntes != null ? pago.saldoAntes - pago.monto : saldoConc(est))
+                    : saldoConc(est) - nMonto;
+                const nombreConc = conc === 'fijo' ? `fijo (${tipoF === 'quincena' ? 'quincena' : 'mes completo'})` : 'comisiones';
+                const Opcion = ({ activo, onClick, titulo, sub, disabled, tono = 'blue' }) => (
+                    <button type="button" onClick={onClick} disabled={disabled}
+                        className={`flex-1 text-left rounded-xl border-2 p-3 transition-colors disabled:opacity-40 ${activo ? (tono === 'sky' ? 'border-sky-500 bg-sky-50' : 'border-emerald-500 bg-emerald-50') : 'border-slate-200 bg-white'}`}>
+                        <p className="font-bold text-slate-800 text-sm">{titulo}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{sub}</p>
+                    </button>
+                );
                 return (
                     <div className="fixed inset-0 z-[100] bg-slate-900/70 flex flex-col overflow-auto">
                         <div className="sticky top-0 bg-slate-900 px-4 py-3 flex items-center justify-between">
@@ -3323,27 +3342,67 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                 <p className="font-black text-slate-800 text-lg">{nombre}</p>
                                 <p className="text-slate-500 text-sm mb-3">{est ? `Mes ${est.mes} · ${est.rango}` : pago.periodKey}</p>
 
-                                {/* Estado del período */}
-                                <div className="grid grid-cols-3 gap-2 mb-4">
-                                    <StatCard label="Devengado" value={money(est?.devengadoTotal)} />
-                                    <StatCard label="Pagado" value={money(est?.pagado)} color="text-emerald-600" />
-                                    <StatCard label={`Saldo ${pago.paso === 3 ? 'actual' : 'pendiente'}`} value={money(pago.paso === 3 ? saldoDespues : est?.saldo)} color="text-amber-600" />
+                                {/* Las dos cuentas del período, siempre por separado */}
+                                <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
+                                    <div className={`rounded-lg border p-2.5 ${conc === 'comision' ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200'}`}>
+                                        <p className="font-black uppercase tracking-wider text-[10px] text-emerald-700">Comisiones</p>
+                                        <p className="text-slate-600">Ganadas {money(est?.devengadoComision)}</p>
+                                        <p className="text-slate-600">Pagadas {money(est?.pagadoComision)}</p>
+                                        <p className="font-bold text-amber-600">Por pagar {money(est?.saldoComision)}</p>
+                                    </div>
+                                    <div className={`rounded-lg border p-2.5 ${conc === 'fijo' ? 'border-sky-400 bg-sky-50' : 'border-slate-200'}`}>
+                                        <p className="font-black uppercase tracking-wider text-[10px] text-sky-700">Fijo {est?.corto ? `(${est.dias} días)` : 'del mes'}</p>
+                                        <p className="text-slate-600">Sueldo + viáticos {money(est?.base)}</p>
+                                        <p className="text-slate-600">Pagado {money(est?.pagadoFijo)}</p>
+                                        <p className="font-bold text-amber-600">Por pagar {money(est?.saldoFijo)}</p>
+                                    </div>
                                 </div>
 
                                 {pago.paso === 2 ? (
                                     <>
-                                        {aFavorAntes(est) > 0.5 && (
+                                        {/* ① Qué vas a pagar */}
+                                        <p className="text-xs font-bold text-slate-700 mb-1.5">① ¿Qué vas a pagar?</p>
+                                        <div className="flex gap-2 mb-3">
+                                            <Opcion activo={concepto === 'fijo'} tono="sky" titulo="Fijo" sub="Sueldo + viáticos"
+                                                onClick={() => { setConcepto('fijo'); setFijoTipo(''); setMonto(''); setError(''); }}
+                                                disabled={!est || est.saldoFijo <= 0.005} />
+                                            <Opcion activo={concepto === 'comision'} titulo="Comisiones" sub="Lo ganado por cobranza y bonos"
+                                                onClick={() => { setConcepto('comision'); setFijoTipo(''); setMonto(''); setError(''); }} />
+                                        </div>
+                                        {est && est.saldoFijo <= 0.005 && <p className="text-[11px] text-slate-500 -mt-2 mb-3">El fijo de este período ya está pagado.</p>}
+
+                                        {/* ② Quincena o mes completo (solo fijo) */}
+                                        {concepto === 'fijo' && (
+                                            <>
+                                                <p className="text-xs font-bold text-slate-700 mb-1.5">② ¿Quincena o mes completo?</p>
+                                                <div className="flex gap-2 mb-1">
+                                                    <Opcion activo={fijoTipo === 'quincena'} tono="sky" titulo="Quincena"
+                                                        sub={`Hasta ${money(topePagoFijo('quincena', baseMesVendedor, est?.saldoFijo))} (mitad del fijo de ${money(baseMesVendedor)})`}
+                                                        onClick={() => { setFijoTipo('quincena'); setMonto(String(topePagoFijo('quincena', baseMesVendedor, est?.saldoFijo).toFixed(2))); setError(''); }} />
+                                                    <Opcion activo={fijoTipo === 'mes'} tono="sky" titulo="Mes completo"
+                                                        sub={`Hasta ${money(topePagoFijo('mes', baseMesVendedor, est?.saldoFijo))}`}
+                                                        onClick={() => { setFijoTipo('mes'); setMonto(String(topePagoFijo('mes', baseMesVendedor, est?.saldoFijo).toFixed(2))); setError(''); }} />
+                                                </div>
+                                                <p className="text-[11px] text-slate-400 mb-3">El tope nunca pasa de lo que falta del fijo de este período.</p>
+                                            </>
+                                        )}
+
+                                        {(concepto === 'comision' || (concepto === 'fijo' && fijoTipo)) && (<>
+                                        {concepto === 'comision' && aFavorAntes(est) > 0.5 && (
                                             <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800">
-                                                En meses anteriores se pagaron <b>{money(aFavorAntes(est))}</b> de más (cobros que ahora cuentan en este mes). Para no pagarlos dos veces, descuéntalos de este pago.
-                                                <button onClick={() => setMonto(String(Math.max(0, est.saldo - aFavorAntes(est)).toFixed(2)))} className="block mt-1.5 font-bold text-brand-blue">
-                                                    Pagar descontando lo adelantado ({money(Math.max(0, est.saldo - aFavorAntes(est)))})
+                                                En meses anteriores se pagaron <b>{money(aFavorAntes(est))}</b> de comisiones de más (cobros que ahora cuentan en este mes). Para no pagarlos dos veces, descuéntalos de este pago.
+                                                <button onClick={() => setMonto(String(Math.max(0, est.saldoComision - aFavorAntes(est)).toFixed(2)))} className="block mt-1.5 font-bold text-brand-blue">
+                                                    Pagar descontando lo adelantado ({money(Math.max(0, est.saldoComision - aFavorAntes(est)))})
                                                 </button>
                                             </div>
                                         )}
-                                        <label className="text-xs font-semibold text-slate-600 block mb-1">Monto del pago (USD)</label>
-                                        <input type="text" inputMode="decimal" value={monto} onChange={e => setMonto(e.target.value.replace(',', '.'))} placeholder="0.00" className="w-full p-2.5 border border-slate-300 rounded-lg text-sm" />
-                                        <button onClick={() => est && setMonto(String(Math.max(0, est.saldo).toFixed(2)))} className="mt-1.5 text-xs font-bold text-brand-blue">Pagar saldo completo ({money(est?.saldo || 0)})</button>
-                                        {est && Number(monto) > est.saldo + 0.01 && <p className="text-amber-600 text-xs mt-1">El monto excede el saldo ({money(est.saldo)}). Puedes continuar, pero revísalo.</p>}
+                                        <label className="text-xs font-semibold text-slate-600 block mb-1">{concepto === 'fijo' ? '③' : '②'} Monto del pago de {nombreConc} (USD)</label>
+                                        <input type="text" inputMode="decimal" value={monto} onChange={e => setMonto(e.target.value.replace(',', '.'))} placeholder="0.00" className={`w-full p-2.5 border rounded-lg text-sm ${excedeTope ? 'border-red-400' : 'border-slate-300'}`} />
+                                        {concepto === 'comision' && (
+                                            <button onClick={() => est && setMonto(String(Math.max(0, est.saldoComision).toFixed(2)))} className="mt-1.5 text-xs font-bold text-brand-blue">Pagar todas las comisiones por pagar ({money(Math.max(0, est?.saldoComision || 0))})</button>
+                                        )}
+                                        {excedeTope && <p className="text-red-600 text-xs mt-1">El pago de {nombreConc} no puede pasar de {money(tope)}.</p>}
+                                        {concepto === 'comision' && est && nMonto > est.saldoComision + 0.01 && <p className="text-amber-600 text-xs mt-1">El monto excede las comisiones por pagar ({money(est.saldoComision)}). Puedes continuar, pero revísalo.</p>}
 
                                         <label className="text-xs font-semibold text-slate-600 mt-3 block mb-1">Fecha del pago</label>
                                         <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}
@@ -3364,31 +3423,32 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                             <p className="text-[11px] text-slate-400 mt-1">{pendingComp ? compFileName : 'Opcional — se puede adjuntar luego desde el Histórico.'}</p>
                                         </div>
 
-                                        {Number(monto) > 0 && est && (
+                                        {nMonto > 0 && est && !excedeTope && (
                                             <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-2.5 text-xs text-slate-700">
-                                                Vas a registrar <b>{money(Number(monto))}</b> al Mes {est.mes}. El saldo pasará de <b>{money(est.saldo)}</b> a <b>{money(saldoDespues)}</b>.
+                                                Vas a registrar <b>{money(nMonto)}</b> de <b>{nombreConc}</b> al Mes {est.mes}. Lo que falta de {conc === 'fijo' ? 'fijo' : 'comisiones'} pasará de <b>{money(saldoConc(est))}</b> a <b>{money(saldoDespues)}</b>. {conc === 'fijo' ? 'Las comisiones' : 'El fijo'} no cambia.
                                             </div>
                                         )}
+                                        </>)}
                                         {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
 
                                         <div className="flex gap-2 mt-4">
                                             <button onClick={cerrarWizard} className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-slate-100 text-slate-600">Cancelar</button>
-                                            <button onClick={confirmarPago} disabled={saving || !(Number(monto) > 0)} className="flex-1 py-2.5 rounded-lg text-sm font-bold bg-brand-blue text-white disabled:opacity-50">{saving ? 'Registrando…' : 'Confirmar pago'}</button>
+                                            <button onClick={confirmarPago} disabled={saving || !(nMonto > 0) || !concepto || (concepto === 'fijo' && !fijoTipo) || excedeTope} className="flex-1 py-2.5 rounded-lg text-sm font-bold bg-brand-blue text-white disabled:opacity-50">{saving ? 'Registrando…' : 'Confirmar pago'}</button>
                                         </div>
                                     </>
                                 ) : (
                                     <>
                                         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-3">
-                                            <p className="font-bold text-emerald-800 text-sm">✓ Pago registrado</p>
+                                            <p className="font-bold text-emerald-800 text-sm">✓ Pago de {nombreConc} registrado</p>
                                             <p className="text-sm text-slate-700 mt-1">Monto: <b>{money(pago.monto)}</b> · Fecha: <b>{pago.fecha}</b></p>
-                                            <p className="text-sm text-slate-700">Saldo del período: <b>{money(pago.saldoAntes)}</b> → <b className="text-amber-600">{money(saldoDespues)}</b></p>
-                                            <p className="text-xs text-slate-500 mt-1">Comprobante del banco: {pago.dataUrl ? <b className="text-emerald-700">adjunto ✓</b> : 'pendiente (adjúntalo en el Histórico)'} · Total abonado al período: <b>{money(est?.pagado)}</b></p>
+                                            <p className="text-sm text-slate-700">{conc === 'fijo' ? 'Fijo' : 'Comisiones'} por pagar del período: <b>{money(pago.saldoAntes)}</b> → <b className="text-amber-600">{money(saldoDespues)}</b></p>
+                                            <p className="text-xs text-slate-500 mt-1">Comprobante del banco: {pago.dataUrl ? <b className="text-emerald-700">adjunto ✓</b> : 'pendiente (adjúntalo en el Histórico)'}</p>
                                         </div>
                                         <button
-                                            onClick={() => setComprobantePago({ liquidacion: { periodKey: pago.periodKey, monto: pago.monto, fecha: pago.fecha, nota, registradoPorEmail: auth.currentUser?.email }, estado: est, dataUrl: pago.dataUrl })}
+                                            onClick={() => setComprobantePago({ liquidacion: { periodKey: pago.periodKey, monto: pago.monto, fecha: pago.fecha, nota, concepto: pago.concepto, fijoTipo: pago.fijoTipo, registradoPorEmail: auth.currentUser?.email }, estado: est, dataUrl: pago.dataUrl })}
                                             className="w-full py-2.5 rounded-lg text-sm font-bold bg-brand-blue text-white flex items-center justify-center gap-2"
                                         >
-                                            <Receipt size={16} /> Descargar estado de cuenta (con comprobante)
+                                            <Receipt size={16} /> Descargar comprobante del pago
                                         </button>
                                         <button onClick={cerrarWizard} className="w-full mt-2 py-2.5 rounded-lg text-sm font-semibold bg-slate-100 text-slate-600">Cerrar</button>
                                     </>
@@ -3991,18 +4051,25 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                                     <Receipt size={14} /> Comprobante de liquidación
                                 </button>
                             </div>
+                            <p className="text-[11px] font-black uppercase tracking-wider text-emerald-700 mb-1">Comisiones</p>
                             <div className="grid grid-cols-3 gap-2">
-                                <StatCard label="Devengado" value={money(desgloseActual.devengadoTotal)} color="text-brand-blue" bg="bg-white" border="border-brand-blue/20" />
-                                <StatCard label="Pagado" value={money(desgloseActual.pagado)} color="text-emerald-700" bg="bg-white" border="border-slate-200" />
-                                <StatCard label="Saldo por pagar" value={money(desgloseActual.saldo)} color={desgloseActual.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-700'} bg="bg-white" border="border-slate-200" />
+                                <StatCard label="Ganadas" value={money(desgloseActual.devengadoComision)} color="text-brand-blue" bg="bg-white" border="border-brand-blue/20" />
+                                <StatCard label="Pagadas" value={money(desgloseActual.pagadoComision)} color="text-emerald-700" bg="bg-white" border="border-slate-200" />
+                                <StatCard label="Por pagar" value={money(desgloseActual.saldoComision)} color={desgloseActual.saldoComision > 0.5 ? 'text-amber-600' : 'text-emerald-700'} bg="bg-white" border="border-slate-200" />
+                            </div>
+                            <p className="text-[11px] font-black uppercase tracking-wider text-sky-700 mt-2 mb-1">Fijo (sueldo + viáticos) — aparte</p>
+                            <div className="grid grid-cols-3 gap-2">
+                                <StatCard label={desgloseActual.corto ? `Fijo (${desgloseActual.dias} días)` : 'Fijo del mes'} value={money(desgloseActual.base)} bg="bg-white" border="border-slate-200" />
+                                <StatCard label="Pagado" value={money(desgloseActual.pagadoFijo)} color="text-emerald-700" bg="bg-white" border="border-slate-200" />
+                                <StatCard label="Por pagar" value={money(desgloseActual.saldoFijo)} color={desgloseActual.saldoFijo > 0.5 ? 'text-amber-600' : 'text-emerald-700'} bg="bg-white" border="border-slate-200" />
                             </div>
                             <p className="text-slate-600 text-xs mt-2">
                                 Base de la comisión: <b>{money((desgloseActual.cobradoRegular || 0) + (desgloseActual.cobradoFood || 0) + (desgloseActual.cobradoRecup || 0))}</b> cobrados <b>dentro</b> de este período.
                                 {' '}"Cobrado de estas facturas" cuenta también lo que se cobró después: eso paga en el mes en que entró el dinero.
                             </p>
-                            {desgloseActual.saldo < -0.5 && (
+                            {desgloseActual.saldoComision < -0.5 && (
                                 <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-xs mt-2">
-                                    En este mes se pagaron <b>{money(-desgloseActual.saldo)}</b> de más: son cobros que ahora cuentan en el mes siguiente (no es dinero perdido ni duplicado). Descuéntalo al liquidar el mes siguiente.
+                                    En este mes se pagaron <b>{money(-desgloseActual.saldoComision)}</b> de comisiones de más: son cobros que ahora cuentan en el mes siguiente (no es dinero perdido ni duplicado). Descuéntalo al liquidar el mes siguiente.
                                 </p>
                             )}
                             <p className="text-slate-400 text-[10px] mt-1.5">
@@ -4178,7 +4245,7 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
 // con cierres congelados) y suma el SALDO A PAGAR por período. Total general
 // arriba; desglose por vendedor y por período.
 export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}) => {
-    const [rows, setRows]       = useState([]);   // [{vendedor, periodos, totDev, totPag, totSaldo}]
+    const [rows, setRows]       = useState([]);   // [{vendedor, periodos, comDev…, fijDev…, totSaldo}]
     const [loading, setLoading] = useState(true);
     const [error, setError]     = useState('');
     const [abierto, setAbierto] = useState({});   // vendedorId → expandido
@@ -4210,10 +4277,13 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                     if (cerradosSnap) cerradosSnap.docs.forEach(d => { const c = d.data(); if (c.periodKey) cerrados[c.periodKey] = c; });
                     const cartera = carteraSnap ? carteraActivacion(carteraSnap.docs.map(d => ({ customerId: d.id, ...d.data() })), posTodos) : undefined;
                     const periodos = computeEstadosDeCuenta(v, facturas, liqs, { carteraSize: cartera ? cartera.length : 0, cartera, cerrados });
-                    const totDev = periodos.reduce((s, p) => s + p.devengadoTotal, 0);
-                    const totPag = periodos.reduce((s, p) => s + p.pagado, 0);
-                    const totSaldo = periodos.reduce((s, p) => s + p.saldo, 0);
-                    return { vendedor: v, periodos, totDev, totPag, totSaldo };
+                    const suma = (k) => periodos.reduce((s, p) => s + (p[k] || 0), 0);
+                    return {
+                        vendedor: v, periodos,
+                        comDev: suma('devengadoComision'), comPag: suma('pagadoComision'), comSaldo: suma('saldoComision'),
+                        fijDev: suma('base'), fijPag: suma('pagadoFijo'), fijSaldo: suma('saldoFijo'),
+                        totSaldo: suma('saldo'),
+                    };
                 }));
                 if (!cancel) setRows(out.sort((a, b) => b.totSaldo - a.totSaldo));
             } catch (e) {
@@ -4226,26 +4296,24 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
         return () => { cancel = true; };
     }, [vendedoresProp]);
 
-    const granDev   = rows.reduce((s, r) => s + r.totDev, 0);
-    const granPag   = rows.reduce((s, r) => s + r.totPag, 0);
-    const granSaldo = rows.reduce((s, r) => s + r.totSaldo, 0);
+    const gran = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
 
     return (
         <div className="max-w-3xl">
             <div className="mb-6">
                 <h3 className="text-lg font-bold text-slate-800">Comisiones a pagar</h3>
-                <p className="text-sm text-slate-500 mt-1">Cuánto se le debe a cada vendedor por período. <b>Devengado</b> = comisión + fijo del paquete; <b>saldo a pagar</b> = devengado − liquidado. Los períodos congelados 🔒 tienen su devengado fijo.</p>
+                <p className="text-sm text-slate-500 mt-1">Cuánto se le debe a cada vendedor por período, con el <b>fijo</b> (sueldo + viáticos) y las <b>comisiones</b> por separado: cada uno se paga aparte. Los períodos congelados 🔒 tienen sus montos fijos.</p>
             </div>
 
             {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
             {loading ? <LoadingSpinner /> : (
                 <>
                     {/* Totales generales */}
-                    <div className="grid grid-cols-3 gap-3 mb-4">
-                        <StatCard label="Devengado total" value={money(granDev)} bg="bg-white" />
-                        <StatCard label="Pagado" value={money(granPag)} color="text-emerald-600" bg="bg-white" />
-                        <StatCard label="Total a pagar" value={money(granSaldo)} color="text-amber-600" bg="bg-white" border="border-2 border-amber-300" />
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                        <StatCard label="Comisiones por pagar" value={money(gran('comSaldo'))} color="text-amber-600" bg="bg-white" border="border-2 border-amber-300" />
+                        <StatCard label="Fijo por pagar" value={money(gran('fijSaldo'))} color="text-sky-700" bg="bg-white" border="border-2 border-sky-300" />
                     </div>
+                    <p className="text-slate-400 text-[11px] -mt-2 mb-4">Comisiones: ganadas {money(gran('comDev'))} · pagadas {money(gran('comPag'))}. Fijo: {money(gran('fijDev'))} · pagado {money(gran('fijPag'))}.</p>
 
                     <label className="flex items-center gap-2 text-xs text-slate-500 mb-3 cursor-pointer">
                         <input type="checkbox" checked={soloSaldo} onChange={e => setSoloSaldo(e.target.checked)} />
@@ -4253,9 +4321,9 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                     </label>
 
                     <div className="space-y-2">
-                        {rows.filter(r => !soloSaldo || r.totSaldo > 0.5).length === 0 ? (
+                        {rows.filter(r => !soloSaldo || r.comSaldo > 0.5 || r.fijSaldo > 0.5).length === 0 ? (
                             <p className="text-slate-400 text-sm">No hay saldos por pagar.</p>
-                        ) : rows.filter(r => !soloSaldo || r.totSaldo > 0.5).map(r => (
+                        ) : rows.filter(r => !soloSaldo || r.comSaldo > 0.5 || r.fijSaldo > 0.5).map(r => (
                             <div key={r.vendedor.id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                                 <button
                                     onClick={() => setAbierto(a => ({ ...a, [r.vendedor.id]: !a[r.vendedor.id] }))}
@@ -4263,10 +4331,11 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                                 >
                                     <div className="min-w-0">
                                         <p className="font-bold text-slate-800 truncate">{r.vendedor.name}</p>
-                                        <p className="text-slate-400 text-xs">Dev. {money(r.totDev)} · Pag. {money(r.totPag)}</p>
+                                        <p className="text-slate-400 text-xs">Comisiones {money(r.comDev)} (pag. {money(r.comPag)}) · Fijo {money(r.fijDev)} (pag. {money(r.fijPag)})</p>
                                     </div>
                                     <div className="text-right shrink-0">
-                                        <p className={`font-black ${r.totSaldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>{money(r.totSaldo)}</p>
+                                        <p className={`text-xs font-bold ${r.comSaldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>Comisiones {money(r.comSaldo)}</p>
+                                        <p className={`text-xs font-bold ${r.fijSaldo > 0.5 ? 'text-sky-700' : 'text-emerald-600'}`}>Fijo {money(r.fijSaldo)}</p>
                                         <p className="text-slate-400 text-[11px]">{abierto[r.vendedor.id] ? 'ocultar' : 'ver períodos'}</p>
                                     </div>
                                 </button>
@@ -4289,8 +4358,8 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                                                     <p className="text-slate-400 text-xs">{p.cerrado ? 'Cerrado' : 'En curso'} · Nivel {p.nivel}</p>
                                                 </div>
                                                 <div className="text-right">
-                                                    <p className="text-slate-600 text-xs">Dev. {money(p.devengadoTotal)} · Pag. {money(p.pagado)}</p>
-                                                    <p className={`font-bold ${p.saldo > 0.5 ? 'text-amber-600' : 'text-emerald-600'}`}>Saldo {money(p.saldo)}</p>
+                                                    <p className="text-slate-600 text-xs">Comisiones {money(p.devengadoComision)} · pag. {money(p.pagadoComision)} → <b className={p.saldoComision > 0.5 ? 'text-amber-600' : 'text-emerald-600'}>{money(p.saldoComision)}</b></p>
+                                                    <p className="text-slate-600 text-xs">Fijo {money(p.base)} · pag. {money(p.pagadoFijo)} → <b className={p.saldoFijo > 0.5 ? 'text-sky-700' : 'text-emerald-600'}>{money(p.saldoFijo)}</b></p>
                                                 </div>
                                             </div>
                                         ))}

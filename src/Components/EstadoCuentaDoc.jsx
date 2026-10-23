@@ -48,12 +48,19 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
     // De más antiguo a más reciente (como un extracto).
     const filas = [...estados].reverse();
 
+    // Comisiones y fijo SIEMPRE por separado: dos cuentas, cada una con lo
+    // ganado, lo pagado y su saldo. El total solo se muestra como suma de las dos.
     const tot = estados.reduce((a, e) => {
-        a.devengado += Number(e.devengadoTotal) || 0;
-        a.pagado    += Number(e.pagado) || 0;
-        a.saldo     += Number(e.saldo) || 0;
+        a.comDev += Number(e.devengadoComision) || 0;
+        a.comPag += Number(e.pagadoComision) || 0;
+        a.comSal += Number(e.saldoComision) || 0;
+        a.fijDev += Number(e.base) || 0;
+        a.fijPag += Number(e.pagadoFijo) || 0;
+        a.fijSal += Number(e.saldoFijo) || 0;
+        a.saldo += Number(e.saldo) || 0;
         return a;
-    }, { devengado: 0, pagado: 0, saldo: 0 });
+    }, { comDev: 0, comPag: 0, comSal: 0, fijDev: 0, fijPag: 0, fijSal: 0, saldo: 0 });
+    const n2 = (v) => (Number(v) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
     const rangoAnio = (e) => `${e.rango} ${e.periodKey?.slice(0, 4) || ''}`.trim();
     const periodoCubierto = filas.length === 0
@@ -113,19 +120,26 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
                         </div>
                     </div>
 
-                    {/* ── Resumen ── */}
+                    {/* ── Resumen: comisiones y fijo por separado ── */}
                     <div className="px-8">
                         <SecTitle>RESUMEN</SecTitle>
                         <div className="text-[12px]">
-                            <LeaderRow label="Total devengado (comisión + base)" value={money(tot.devengado)} />
-                            <LeaderRow label="Total pagado (liquidaciones)" value={money(tot.pagado)} valueColor="#127c3e" />
-                            <LeaderRow label="SALDO A FAVOR" value={money(tot.saldo)} bold valueColor={NAVY} />
+                            <p className="font-bold text-[11px] mt-1" style={{ color: NAVY }}>COMISIONES</p>
+                            <LeaderRow label="Comisiones ganadas" value={money(tot.comDev)} />
+                            <LeaderRow label="Comisiones pagadas" value={money(tot.comPag)} valueColor="#127c3e" />
+                            <LeaderRow label="SALDO DE COMISIONES" value={money(tot.comSal)} bold valueColor={NAVY} />
+                            <p className="font-bold text-[11px] mt-3" style={{ color: NAVY }}>FIJO (SUELDO + VIÁTICOS)</p>
+                            <LeaderRow label="Fijo de los períodos" value={money(tot.fijDev)} />
+                            <LeaderRow label="Fijo pagado" value={money(tot.fijPag)} valueColor="#127c3e" />
+                            <LeaderRow label="SALDO DE FIJO" value={money(tot.fijSal)} bold valueColor={NAVY} />
+                            <div className="mt-3 pt-1 border-t border-slate-300">
+                                <LeaderRow label="Total a favor (comisiones + fijo)" value={money(tot.saldo)} />
+                            </div>
                         </div>
                     </div>
 
-                    {/* ── Movimientos por período ── */}
                     <div className="px-8">
-                        <SecTitle>MOVIMIENTOS POR PERÍODO</SecTitle>
+                        <SecTitle>COMISIONES POR PERÍODO</SecTitle>
                         <table className="w-full text-[11px]" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
                             <colgroup>
                                 <col style={{ width: '46%' }} />
@@ -136,7 +150,7 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
                             <thead>
                                 <tr className="text-white text-[10px]" style={{ background: NAVY }}>
                                     <th className="py-1.5 px-2 text-left font-bold">PERÍODO</th>
-                                    <th className="py-1.5 px-1 text-right font-bold">DEVENG.</th>
+                                    <th className="py-1.5 px-1 text-right font-bold">GANADO</th>
                                     <th className="py-1.5 px-1 text-right font-bold">PAGADO</th>
                                     <th className="py-1.5 px-2 text-right font-bold">SALDO</th>
                                 </tr>
@@ -152,18 +166,63 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
                                                 {e.cerrado ? 'Cerrado' : 'En curso'} · Nivel {e.nivel} ({e.tasa}%) · {uds(e.unidades)} uds{e.cobranzaTasa != null ? ` · cobr. ${Math.round(e.cobranzaTasa)}%` : ''}
                                             </span>
                                         </td>
-                                        <td className="py-1.5 px-1 text-right tabular-nums">{(Number(e.devengadoTotal) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                        <td className="py-1.5 px-1 text-right tabular-nums" style={{ color: '#127c3e' }}>{(Number(e.pagado) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                        <td className="py-1.5 px-2 text-right tabular-nums font-bold">{(Number(e.saldo) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                        <td className="py-1.5 px-1 text-right tabular-nums">{n2(e.devengadoComision)}</td>
+                                        <td className="py-1.5 px-1 text-right tabular-nums" style={{ color: '#127c3e' }}>{n2(e.pagadoComision)}</td>
+                                        <td className="py-1.5 px-2 text-right tabular-nums font-bold">{n2(e.saldoComision)}</td>
                                     </tr>
                                 ))}
                             </tbody>
                             <tfoot>
                                 <tr className="text-white text-[11px] font-bold" style={{ background: NAVY }}>
                                     <td className="py-1.5 px-2">TOTALES</td>
-                                    <td className="py-1.5 px-1 text-right tabular-nums">{tot.devengado.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                    <td className="py-1.5 px-1 text-right tabular-nums">{tot.pagado.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                    <td className="py-1.5 px-2 text-right tabular-nums">{tot.saldo.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    <td className="py-1.5 px-1 text-right tabular-nums">{n2(tot.comDev)}</td>
+                                    <td className="py-1.5 px-1 text-right tabular-nums">{n2(tot.comPag)}</td>
+                                    <td className="py-1.5 px-2 text-right tabular-nums">{n2(tot.comSal)}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <div className="px-8">
+                        <SecTitle>FIJO POR PERÍODO (SUELDO + VIÁTICOS)</SecTitle>
+                        <table className="w-full text-[11px]" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
+                            <colgroup>
+                                <col style={{ width: '46%' }} />
+                                <col style={{ width: '18%' }} />
+                                <col style={{ width: '18%' }} />
+                                <col style={{ width: '18%' }} />
+                            </colgroup>
+                            <thead>
+                                <tr className="text-white text-[10px]" style={{ background: NAVY }}>
+                                    <th className="py-1.5 px-2 text-left font-bold">PERÍODO</th>
+                                    <th className="py-1.5 px-1 text-right font-bold">FIJO</th>
+                                    <th className="py-1.5 px-1 text-right font-bold">PAGADO</th>
+                                    <th className="py-1.5 px-2 text-right font-bold">SALDO</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filas.length === 0 ? (
+                                    <tr><td colSpan={4} className="py-4 text-center text-slate-400 border border-slate-200">Sin movimientos.</td></tr>
+                                ) : filas.map((e, i) => (
+                                    <tr key={e.periodKey || e.mes} className="align-top" style={{ background: i % 2 ? '#f6f7f9' : '#fff' }}>
+                                        <td className="py-1.5 px-2 break-words">
+                                            <span className="font-bold">Mes {e.mes}</span> · {e.rango} {e.periodKey?.slice(0, 4)}
+                                            <span className="block text-[10px] text-slate-500 break-words">
+                                                {e.corto ? `Período corto · ${e.dias} días (fijo en proporción)` : 'Mes completo'}
+                                            </span>
+                                        </td>
+                                        <td className="py-1.5 px-1 text-right tabular-nums">{n2(e.base)}</td>
+                                        <td className="py-1.5 px-1 text-right tabular-nums" style={{ color: '#127c3e' }}>{n2(e.pagadoFijo)}</td>
+                                        <td className="py-1.5 px-2 text-right tabular-nums font-bold">{n2(e.saldoFijo)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                            <tfoot>
+                                <tr className="text-white text-[11px] font-bold" style={{ background: NAVY }}>
+                                    <td className="py-1.5 px-2">TOTALES</td>
+                                    <td className="py-1.5 px-1 text-right tabular-nums">{n2(tot.fijDev)}</td>
+                                    <td className="py-1.5 px-1 text-right tabular-nums">{n2(tot.fijPag)}</td>
+                                    <td className="py-1.5 px-2 text-right tabular-nums">{n2(tot.fijSal)}</td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -172,9 +231,10 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
                     {/* ── Notas ── */}
                     <div className="px-8 pt-5 pb-6 text-[10.5px] text-slate-600 leading-relaxed">
                         <p className="font-bold" style={{ color: NAVY }}>Notas</p>
-                        <p className="mt-1">Devengado = comisión ganada (lo cobrado × la tasa del nivel final del período, más bonos y cuentas recuperadas) + base (fijo + viáticos).</p>
-                        <p>Pagado = liquidaciones registradas por administración.</p>
-                        <p>Saldo = devengado − pagado, liquidable semanalmente sobre el mes vencido.</p>
+                        <p className="mt-1">Comisiones = lo cobrado × la tasa del nivel del mes en que se facturó, más bonos, foodservice y cuentas recuperadas.</p>
+                        <p>Fijo = sueldo + viáticos del período (en proporción a sus días si el período es corto). Se paga por quincena o completo.</p>
+                        <p>Cada pago registrado por administración indica si es de fijo o de comisiones. Los pagos anteriores a esa separación se aplicaron primero al fijo del período y el resto a comisiones.</p>
+                        <p>Saldo = ganado − pagado, en cada cuenta por separado.</p>
                     </div>
 
                     {/* ── Pie ── */}

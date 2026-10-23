@@ -248,60 +248,35 @@ service cloud.firestore {
       // 3.10). El vendedor lee los suyos; admin/master leen y congelan; master o
       // administrador reabren (borran) — el administrador es quien congela.
       allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
-      allow create: if isAdmin() || isMaster();
-      // Un pago registrado NO se edita en silencio (2026-10, pedido del dueño):
-      // corregirlo o borrarlo exige, en la MISMA escritura, su constancia en
-      // `liquidaciones_correcciones` (quién, cuándo, por qué, antes y después).
-      // Lo único que se toca sin constancia es la marca del comprobante del banco.
-      allow update: if (isAdmin() || isMaster()) && (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comprobanteAdjunto'])
-        || (
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['monto', 'fecha', 'periodKey', 'nota', 'correcciones', 'ultimaCorreccionId', 'ultimaCorreccionAt'])
-          && request.resource.data.vendedorId == resource.data.vendedorId
-          && request.resource.data.correcciones == resource.data.get('correcciones', 0) + 1
-          && getAfter(/databases/$(database)/documents/liquidaciones_correcciones/$(request.resource.data.ultimaCorreccionId)).data.liquidacionId == liqId
-        )
-      );
-      allow delete: if (isMaster() || isAdministrador())
-        && getAfter(/databases/$(database)/documents/liquidaciones_correcciones/$(liqId + '__eliminado')).data.tipo == 'eliminacion';
+      allow create, update: if isAdmin() || isMaster();
+      allow delete: if isMaster() || isAdministrador();
     }
 
-    match /liquidaciones_correcciones/{corrId} {
-      // Constancia de cada corrección o eliminación de un pago. Inmutable: nadie
-      // la edita ni la borra. El vendedor ve las de sus pagos.
-      allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
-      allow create: if (isAdmin() || isMaster())
-        && request.resource.data.por == request.auth.uid
-        && request.resource.data.motivo is string && request.resource.data.motivo.size() >= 5
-        && request.resource.data.tipo in ['correccion', 'eliminacion']
-        && (
-          (request.resource.data.tipo == 'correccion'
-            && getAfter(/databases/$(database)/documents/liquidaciones/$(request.resource.data.liquidacionId)).data.ultimaCorreccionId == corrId)
-          || (request.resource.data.tipo == 'eliminacion'
-            && corrId == request.resource.data.liquidacionId + '__eliminado'
-            && !existsAfter(/databases/$(database)/documents/liquidaciones/$(request.resource.data.liquidacionId)))
-        );
-      allow update, delete: if false;
+    // Cada pago dice QUÉ paga (2026-10, pedido del dueño): 'fijo' (sueldo +
+    // viáticos, con su 'quincena' o 'mes') o 'comision'. El tope del fijo lo
+    // aplica la pantalla de liquidaciones.
+    function conceptoLiquidacionValido(d) {
+      return d.get('concepto', '') == 'comision'
+        || (d.get('concepto', '') == 'fijo' && d.get('fijoTipo', '') in ['quincena', 'mes']);
     }
 
     match /liquidaciones/{liqId} {
-      // Pagos de comisión al vendedor (Fase 3.8). El vendedor lee solo los
-      // suyos (Estado de Cuenta: devengado/pagado/saldo); admin/master leen y
-      // registran todos. El administrador (operativo) y el master pueden borrar
-      // para corregir un pago mal cargado.
+      // Pagos al vendedor (Fase 3.8). El vendedor lee solo los suyos (Estado de
+      // Cuenta); admin/master leen y registran todos.
       allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
-      allow create: if isAdmin() || isMaster();
+      allow create: if (isAdmin() || isMaster()) && conceptoLiquidacionValido(request.resource.data);
       // Un pago registrado NO se edita en silencio (2026-10, pedido del dueño):
       // corregirlo o borrarlo exige, en la MISMA escritura, su constancia en
       // `liquidaciones_correcciones` (quién, cuándo, por qué, antes y después).
       // Lo único que se toca sin constancia es la marca del comprobante del banco.
+      // Un pago anterior a la separación (sin concepto) puede clasificarse así.
       allow update: if (isAdmin() || isMaster()) && (
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comprobanteAdjunto'])
         || (
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['monto', 'fecha', 'periodKey', 'nota', 'correcciones', 'ultimaCorreccionId', 'ultimaCorreccionAt'])
+            .hasOnly(['monto', 'fecha', 'periodKey', 'nota', 'concepto', 'fijoTipo', 'correcciones', 'ultimaCorreccionId', 'ultimaCorreccionAt'])
           && request.resource.data.vendedorId == resource.data.vendedorId
+          && (!('concepto' in request.resource.data) || conceptoLiquidacionValido(request.resource.data))
           && request.resource.data.correcciones == resource.data.get('correcciones', 0) + 1
           && getAfter(/databases/$(database)/documents/liquidaciones_correcciones/$(request.resource.data.ultimaCorreccionId)).data.liquidacionId == liqId
         )
@@ -332,41 +307,8 @@ service cloud.firestore {
     // doc aparte para no inflar la liquidación). Mismo acceso que liquidaciones.
     match /liquidacion_comprobantes/{liqId} {
       allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
-      allow create: if isAdmin() || isMaster();
-      // Un pago registrado NO se edita en silencio (2026-10, pedido del dueño):
-      // corregirlo o borrarlo exige, en la MISMA escritura, su constancia en
-      // `liquidaciones_correcciones` (quién, cuándo, por qué, antes y después).
-      // Lo único que se toca sin constancia es la marca del comprobante del banco.
-      allow update: if (isAdmin() || isMaster()) && (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comprobanteAdjunto'])
-        || (
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['monto', 'fecha', 'periodKey', 'nota', 'correcciones', 'ultimaCorreccionId', 'ultimaCorreccionAt'])
-          && request.resource.data.vendedorId == resource.data.vendedorId
-          && request.resource.data.correcciones == resource.data.get('correcciones', 0) + 1
-          && getAfter(/databases/$(database)/documents/liquidaciones_correcciones/$(request.resource.data.ultimaCorreccionId)).data.liquidacionId == liqId
-        )
-      );
-      allow delete: if (isMaster() || isAdministrador())
-        && getAfter(/databases/$(database)/documents/liquidaciones_correcciones/$(liqId + '__eliminado')).data.tipo == 'eliminacion';
-    }
-
-    match /liquidaciones_correcciones/{corrId} {
-      // Constancia de cada corrección o eliminación de un pago. Inmutable: nadie
-      // la edita ni la borra. El vendedor ve las de sus pagos.
-      allow get, list: if isAuthenticated() && (isAdmin() || isMaster() || resource.data.vendedorId == request.auth.uid);
-      allow create: if (isAdmin() || isMaster())
-        && request.resource.data.por == request.auth.uid
-        && request.resource.data.motivo is string && request.resource.data.motivo.size() >= 5
-        && request.resource.data.tipo in ['correccion', 'eliminacion']
-        && (
-          (request.resource.data.tipo == 'correccion'
-            && getAfter(/databases/$(database)/documents/liquidaciones/$(request.resource.data.liquidacionId)).data.ultimaCorreccionId == corrId)
-          || (request.resource.data.tipo == 'eliminacion'
-            && corrId == request.resource.data.liquidacionId + '__eliminado'
-            && !existsAfter(/databases/$(database)/documents/liquidaciones/$(request.resource.data.liquidacionId)))
-        );
-      allow update, delete: if false;
+      allow create, update: if isAdmin() || isMaster();
+      allow delete: if isMaster() || isAdministrador();
     }
 
     match /pos/{posId} {

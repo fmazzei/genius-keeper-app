@@ -80,10 +80,14 @@ const filasMes = (e) => [
     num(e.bonoActivacionMonto) ? fila('Bono activación', `${num(e.actSemanasLogradas)} de ${num(e.actSemanasTotales)} semanas`, usd(e.bonoActivacionMonto)) : null,
     num(e.cobradoRecup) ? fila('Cuentas recuperadas', `cobrado ${usd(e.cobradoRecup)} al ${num(e.tasaRecup)} %`, usd(num(e.cobradoRecup) * num(e.tasaRecup) / 100)) : null,
     num(e.comisionFoodMonto) ? fila('Foodservice', `cobrado ${usd(e.cobradoFood)}`, usd(e.comisionFoodMonto)) : null,
-    num(e.base) ? fila('Base (sueldo + viáticos)', null, usd(e.base)) : null,
-    fila('Devengado', e.congelado ? 'congelado' : 'calculado hoy', usd(e.devengadoTotal)),
-    fila('Pagado', null, usd(e.pagado)),
-    fila('Saldo', num(e.saldo) < 0 ? 'pagado de más' : null, usd(e.saldo), num(e.saldo) < -0.5 ? 'rojo' : null),
+    // Fijo y comisiones siempre por separado: que nadie confunda un monto con otro.
+    fila('Comisiones devengadas', e.congelado ? 'congelado' : 'calculado hoy', usd(e.devengadoComision)),
+    fila('Comisiones pagadas', null, usd(e.pagadoComision)),
+    fila('Comisiones por pagar', num(e.saldoComision) < 0 ? 'pagado de más' : null, usd(e.saldoComision), num(e.saldoComision) < -0.5 ? 'rojo' : null),
+    fila('Fijo del mes (sueldo + viáticos)', null, usd(e.base)),
+    fila('Fijo pagado', null, usd(e.pagadoFijo)),
+    fila('Fijo por pagar', num(e.saldoFijo) < 0 ? 'pagado de más' : null, usd(e.saldoFijo), num(e.saldoFijo) < -0.5 ? 'rojo' : null),
+    fila('Total por pagar (fijo + comisiones)', null, usd(e.saldo), num(e.saldo) < -0.5 ? 'rojo' : null),
 ];
 
 const lista = (xs, n = 4) => xs.slice(0, n).join(', ') + (xs.length > n ? ` y ${xs.length - n} más` : '');
@@ -333,7 +337,7 @@ function evaluarComisiones(d, cfg) {
             datos: { vendedorId: v.uid, neto: Math.round(neto * 100) / 100 },
             detalle: [
                 seccion('Meses cerrados', cerradosRows.slice().reverse().map(e => fila(`Mes ${e.mes} · ${e.rango}`,
-                    `devengado ${usd(e.devengadoTotal)} · pagado ${usd(e.pagado)}${e.congelado ? ' · congelado' : ''}`, usd(e.saldo), num(e.saldo) < -tol ? 'rojo' : num(e.saldo) > tol ? 'ambar' : null))),
+                    `comisiones ${usd(e.devengadoComision)} (pagado ${usd(e.pagadoComision)}) · fijo ${usd(e.base)} (pagado ${usd(e.pagadoFijo)})${e.congelado ? ' · congelado' : ''}`, usd(e.saldo), num(e.saldo) < -tol ? 'rojo' : num(e.saldo) > tol ? 'ambar' : null))),
                 seccion('Neto', [fila('Lo pagado de más', 'se descuenta al pagar el mes en curso', usd(-neto), 'rojo')]),
             ],
         });
@@ -347,7 +351,7 @@ function evaluarComisiones(d, cfg) {
             add({
                 clave: `comision_sin_congelar:${v.uid}:${e.periodKey}`, tipo: 'comision_sin_congelar',
                 titulo: `${nombre}: Mes ${e.mes} cerró hace ${dias} días y no está congelado`,
-                cuerpo: `Devengado hoy ${usd(e.devengadoTotal)}, pagado ${usd(e.pagado)}. Mientras no se congele, una corrección de facturas de ese mes cambia la cifra.`,
+                cuerpo: `Comisiones devengadas hoy ${usd(e.devengadoComision)} (pagado ${usd(e.pagadoComision)}); fijo ${usd(e.base)} (pagado ${usd(e.pagadoFijo)}). Mientras no se congele, una corrección de facturas de ese mes cambia la cifra.`,
                 causa: 'Falta el paso "Cerrar y congelar".', accion: 'Liquidaciones → revisar el comprobante → "Cerrar y congelar".',
                 datos: { vendedorId: v.uid, periodKey: e.periodKey, dias },
                 detalle: [seccion(`Mes ${e.mes} hoy`, filasMes(e), `Cerró el ${diaTxt(fin)}.`)],
@@ -430,7 +434,8 @@ function cierresAutomaticos(d) {
         let estados;
         try { estados = M.computeEstadosDeCuenta({ ...v, fechaIngreso: ingreso }, facturas.filter(f => f.vendedorId === v.uid).map(relojFactura), liqs, opts); } catch { estados = null; }
         (estados || []).filter(e => e.cerrado && !e.congelado && !cerrados[e.periodKey]).forEach(e => {
-            const { pagado, saldo, congelado, ...snap } = e;
+            // Se congela lo ganado, nunca lo pagado (fijo y comisiones).
+            const { pagado, saldo, congelado, pagadoFijo, pagadoComision, pagadoSinConcepto, saldoFijo, saldoComision, ...snap } = e;
             out.push({
                 id: `${v.uid}_${e.periodKey}`,
                 // Sin undefined (Firestore los rechaza) ni tipos raros: la fila es JSON.
