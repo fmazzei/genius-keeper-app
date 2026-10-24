@@ -475,6 +475,12 @@ service cloud.firestore {
     // avisos donde es destinataria (Carolina nunca ve los de Francisco, que
     // pueden tener datos del sistema); el máster los ve todos. Lo único que el
     // destinatario puede tocar es su marca de "visto" (queda registrado quién vio).
+    // Alerta de ANAQUEL BAJO (una por PDV): la leen todos menos administración;
+    // la escribe solo el servidor (alertaAnaquel.js).
+    match /alertas_anaquel/{posId} {
+      allow read: if isAuthenticated() && !isAdministrador();
+      allow write: if false;
+    }
     match /vigilancia_avisos/{avisoId} {
       // La campanita consulta por `destinatariosAbiertos` (array-contains): la regla
       // nombra ese mismo campo para que Firestore pueda aprobar la consulta.

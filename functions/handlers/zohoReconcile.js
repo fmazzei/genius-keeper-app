@@ -296,6 +296,8 @@ exports.conciliarZohoAutomatico = onSchedule({
     // nuevo: costo cero). Va primero y en su propio try/catch: si la conciliación
     // falla o se salta su turno, la vigilancia igual se hace.
     try { await require('./vigilante').ejecutarVigilante(); } catch (e) { logger.error('Vigilante:', e); }
+    // Alerta de anaquel bajo: cierra lo vencido o repuesto y manda los recordatorios.
+    try { await require('./alertaAnaquel').barridoAlertasAnaquel(); } catch (e) { logger.error('Alerta de anaquel bajo:', e); }
 
     const cfgRef = admin.firestore().doc('settings/appConfig');
     const marcar = async (data) => {

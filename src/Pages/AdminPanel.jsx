@@ -25,6 +25,7 @@ import Modal from '../Components/Modal.jsx';
 import ListaMaestraPdv from './ListaMaestraPdv.jsx';
 import AlmacenComercialPage from './AlmacenComercialPage.jsx';
 import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
+import AlertaAnaquelConfig from '@/Components/AlertaAnaquelConfig.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
 
@@ -5271,6 +5272,7 @@ const AdminPanel = ({ user, posList, reports, loading, alertasAgente = null }) =
             items: [
                 { id: 'visibilidad',    label: 'Visibilidad por rol', Icon: LayoutGrid },
                 { id: 'notificaciones', label: 'Notificaciones',      Icon: Bell       },
+                { id: 'alerta_anaquel', label: 'Alerta de anaquel bajo', Icon: AlertCircle, badge: 'Nuevo' },
             ],
         },
         {
@@ -5328,6 +5330,7 @@ const AdminPanel = ({ user, posList, reports, loading, alertasAgente = null }) =
             case 'competitors':    return <CompetitorManagement />;
             case 'visibilidad':    return <VisibilidadSection />;
             case 'notificaciones': return <NotificacionesSection />;
+            case 'alerta_anaquel': return <AlertaAnaquelConfig />;
             case 'settings':       return <GeneralSettings />;
             case 'integraciones':  return <IntegracionesSection />;
             case 'kroma_reparacion': return <KromaReparacion />;

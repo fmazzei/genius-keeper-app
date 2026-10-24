@@ -4031,3 +4031,35 @@ Reporte del dueño tras actualizar a iOS 27: una franja gris difuminada tapaba l
 - **Intento fallido (no repetir):** `viewport-fit=cover` + relleno `env(safe-area-inset-top)` en los encabezados. En la app instalada de iOS 26/27 la ventana quedó más baja que la pantalla: página corrida hacia arriba y una franja blanca abajo que ningún CSS pinta (está fuera de la página). Medir el alto real con `screen.height` tampoco sirvió: la página pasa del borde de esa ventana y se corta la barra inferior.
 - **Lo que quedó:** `status-bar-style` = **`black`** (opaca) y viewport SIN `viewport-fit=cover`: la app empieza debajo de la barra de estado, como una app normal, sin difuminado encima y con la misma vista de siempre. `theme-color` oscuro; `useColorBarraEstado` en cada layout. Las clases `.pt-safe`/`.pb-safe`/`.barra-estado-oscura` siguen en los encabezados pero valen 0 sin `cover`. Las raíces usan `.app-pantalla` (fija a los cuatro bordes) en vez de `h-screen`.
 - Si en algún iPhone el cambio de estilo de la barra no se aplica, puede hacer falta quitar el ícono de inicio y agregarlo de nuevo (iOS a veces guarda ese ajuste al instalar).
+
+### Alerta de ANAQUEL BAJO: renglón rojo, panel luminoso y recordatorios (2026-10-24) ✅
+
+Pedido del dueño: cuando el mercaderista cuenta en un PDV **6 unidades o menos y en esa misma visita no repone**, una alerta especial para todos los usuarios menos administración. Debe cerrarse sola a las 72 h o al reponer, y llegar al teléfono varias veces al día.
+- **Reglas puras** (`functions/handlers/alertaAnaquelReglas.js`):
+  - Contadas = `inventoryLevel`; un anaquel vacío sin conteo cuenta como 0. Repuestas = `orderQuantity` + `retiroVisita.repuestas`.
+  - **Se abre** si la ÚLTIMA visita del PDV (por hora REAL, `horaVisitaMs`) tiene contadas ≤ umbral y repuestas = 0.
+  - **Se cierra** si una visita posterior repone (`reposicion`) o cuenta más del umbral (`conteo`), o a las `horas` de la última visita baja (`vencida`).
+  - Una visita sin conteo no decide. Varias visitas bajas seguidas son el MISMO episodio: suma `detecciones` y el plazo de 72 h corre desde la última.
+  - `slotRecordatorio`: la última hora de recordatorio de HOY que ya pasó, en hora de Caracas. No hay recordatorios los domingos (`recordarDomingo`).
+  - `recibeAlerta`: máster, gerencia, vendedor y mercaderista, activos y sin `users_metadata.alertaAnaquelBajo:false`. Administración nunca la recibe.
+- **El estado se DERIVA de los reportes**, por dos caminos que llegan al mismo resultado (`functions/handlers/alertaAnaquel.js`, colección `alertas_anaquel/{posId}`):
+  1. `onReportCreated` llama `evaluarPdvTrasReporte` ANTES de la configuración de avisos de reportes: un aviso inmediato al teléfono al abrirse.
+  2. `barridoAlertasAnaquel` corre en el programador horario de `conciliarZohoAutomatico`, en su propio try/catch y sin costo nuevo. Lee los reportes de las últimas 74 h más las alertas abiertas y recalcula cada PDV. Así corrige un disparador perdido o un reporte editado o borrado, cierra lo vencido y manda los recordatorios.
+  - Una transacción por PDV garantiza **un solo aviso de apertura** por episodio, aunque el disparador corra dos veces o coincida con el barrido.
+  - El recordatorio reserva su hora (`settings/alertaAnaquelEstado.ultimoRecordatorio`) en una transacción: nunca sale dos veces. Es UN aviso por persona con todas las alertas vivas abiertas al menos 30 min antes.
+  - El barrido deja `ultimoBarrido`, `abiertas` y `revisados` en `settings/alertaAnaquelEstado`.
+- **Push**: apertura "⚠ Anaquel bajo: {PDV}" con `link:/reports/{id}`; recordatorio con `link:/alertas-anaquel`, que al abrir la app muestra el panel.
+- **Configuración** (`settings/alertaAnaquel`, la lee el servidor en cada corrida): `umbral` 6, `horas` 72, `recordatorios` [9, 13, 17].
+- **Reglas Firestore**: `alertas_anaquel` se lee con sesión y sin ser `administrador`; escribe solo el servidor.
+- **En la app** (`src/Components/AlertaAnaquelBajo.jsx`, debajo del encabezado en `VendedorLayout`, `ManagerLayout` y `AppShell`):
+  - **Renglón rojo delgado** con brillo y un punto que late: "N PDV con 6 uds o menos sin reponer · nombres".
+  - La **X** lo cierra en esa sesión. Vuelve al abrir la app otra vez, al regresar tras 3 min o más fuera, o cuando llega una alerta nueva.
+  - **Panel grande y luminoso** (portal, rojo con resplandor): sale solo al abrir la app y con cada alerta nueva, y también al tocar el renglón. Muestra, por PDV, las unidades en grande, quién y cuándo contó, las visitas seguidas y las horas que faltan. En máster y gerencia trae "Ver el reporte".
+  - Al volver tras unos minutos solo reaparece el renglón, no el panel, para no tapar al mercaderista a mitad de un reporte.
+  - La app esconde por sí sola las alertas cuyo `venceAt` ya pasó, aunque el barrido llegue tarde.
+  - Respeta en vivo `alertaAnaquelBajo:false` del propio usuario.
+- **Máster** (Configuraciones → Sistema → **Alerta de anaquel bajo**, `AlertaAnaquelConfig.jsx`): alertas abiertas ahora, última revisión automática y último recordatorio (en rojo si pasan 5 h sin correr), reglas (umbral, horas, horas de recordatorio entre 7 y 20) y un interruptor **por usuario**.
+- No llega a Kroma (otro mundo) ni a administración.
+- Pruebas:
+  - `node tests/alertaAnaquel.test.mjs`: 29 en verde.
+  - `npx firebase emulators:exec --only firestore --project demo-anaq "node tests/alertaAnaquel.e2e.test.mjs"`: 21 en verde. Cubre destinatarios, un solo aviso con dos disparadores a la vez, segunda visita baja sin nuevo aviso, cierre al reponer, apertura por el barrido, recordatorio de las 13 una sola vez (también con dos barridos a la vez), el de las 17, cierre a las 72 h y reglas.

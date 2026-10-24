@@ -9,6 +9,7 @@ import {
     doc, getDoc, addDoc, deleteDoc, serverTimestamp, onSnapshot,
 } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
+import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
 import {
     Home, MapPin, Package, Bell,
     LogOut, TrendingUp, CheckCircle, AlertCircle,
@@ -2216,6 +2217,8 @@ const VendedorLayout = ({ user, onLogout }) => {
                     </button>
                 </div>
             </header>
+            {/* Alerta de anaquel bajo: renglón rojo + panel grande */}
+            <AlertaAnaquelBajo tema="oscuro" />
 
             {/* ── Content ── */}
             <div className="flex-1 overflow-hidden flex flex-col">

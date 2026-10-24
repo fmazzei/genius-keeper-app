@@ -317,6 +317,13 @@ exports.onReportCreated = functions.firestore
             }
         }
 
+        // Alerta de ANAQUEL BAJO (≤6 uds sin reponer): va antes de la
+        // configuración de avisos de reportes, que no la apaga.
+        if (reportData.posId) {
+            try { await require("./alertaAnaquel").evaluarPdvTrasReporte(reportData.posId); }
+            catch (e) { functions.logger.error("Alerta de anaquel bajo:", e); }
+        }
+
         try {
             // Respeta la configuración de Alertas (settings/notificationsConfig).
             const config = await getNotifConfig();

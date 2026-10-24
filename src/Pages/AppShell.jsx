@@ -4,6 +4,7 @@ import { db, functions } from '@/Firebase/config.js';
 import { httpsCallable } from 'firebase/functions';
 import { doc, getDoc, getDocs, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { useMerchandiserData } from '@/hooks/useMerchandiserData.js';
+import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
 import { useOfflineSync } from '@/hooks/useOfflineSync.js';
 import { useDelegatedTasks } from '@/hooks/useDelegatedTasks.jsx';
 import { useReporter } from '@/context/ReporterContext.jsx';
@@ -397,6 +398,8 @@ const AppShell = ({ user, role, onLogout }) => {
                         </span>
                     )}
                 </header>
+                {/* Alerta de anaquel bajo: renglón rojo + panel grande */}
+                <AlertaAnaquelBajo />
                 <main className="flex-1 overflow-y-auto bg-slate-50">
                     <Suspense fallback={<div className="flex justify-center items-center h-full"><LoadingSpinner /></div>}>
                         {merchandiserContent()}
