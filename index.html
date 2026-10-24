@@ -14,51 +14,17 @@
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Genius Keeper" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!--
-      Barra de estado del iPhone (iOS 26+): la app se dibuja debajo de la hora y
-      la batería (black-translucent + viewport-fit=cover) y cada encabezado deja
-      ese espacio con `pt-safe`, pintado de su propio color. `theme-color` lo
-      ajusta cada pantalla (useColorBarraEstado); este es el de arranque.
+      Barra de estado del iPhone: "black" (no translúcida). La app empieza DEBAJO
+      de la hora y la batería, como una app normal. Con "black-translucent" la
+      página se dibujaba debajo de la barra y iOS 26/27 le pone encima un
+      difuminado que tapaba los íconos del encabezado. No usar viewport-fit=cover:
+      en la app instalada de iOS 26/27 deja una franja vacía abajo.
     -->
     <meta name="theme-color" content="#020617" />
-    <!--
-      App instalada en el iPhone (iOS 26/27): el sistema dibuja la página debajo
-      de la hora y la batería, pero calcula la ventana más baja que la pantalla
-      (le resta el alto de esa barra). Resultado: la página quedaba corrida hacia
-      arriba y abajo sobraba una franja vacía. Aquí se marca el caso (clase
-      `ios-app`) y se mide la pantalla real (--alto-pantalla); las pantallas
-      principales (.app-pantalla) toman ese alto. Además el documento nunca se
-      queda desplazado. ES5 y todo en try/catch: no puede impedir el arranque.
-    -->
-    <script>
-      (function () {
-        try {
-          var ua = navigator.userAgent || '';
-          var esIphone = /iPhone|iPod/.test(ua);
-          var instalada = window.navigator.standalone === true;
-          if (!esIphone || !instalada) return;
-          var html = document.documentElement;
-          html.className += ' ios-app';
-          var medir = function () {
-            try {
-              var vertical = window.innerHeight >= window.innerWidth;
-              var alto = vertical ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
-              html.style.setProperty('--alto-pantalla', Math.max(alto, window.innerHeight) + 'px');
-              if (window.scrollY || window.pageYOffset) window.scrollTo(0, 0);
-            } catch (e) {}
-          };
-          medir();
-          window.addEventListener('resize', medir);
-          window.addEventListener('orientationchange', function () { setTimeout(medir, 300); });
-          window.addEventListener('pageshow', medir);
-          window.addEventListener('scroll', function () { if (window.scrollY) window.scrollTo(0, 0); });
-          document.addEventListener('visibilitychange', medir);
-        } catch (err) {}
-      })();
-    </script>
     <link rel="manifest" href="/manifest.json" />
     <!--
       "Instalar Genius Keeper": Chrome ofrece la instalación con el evento
