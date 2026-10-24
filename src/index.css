@@ -25,6 +25,13 @@ html { background-color: #020617; }
   position: fixed;
   top: 0; right: 0; bottom: 0; left: 0;
 }
+/* iPhone, app instalada: la ventana que reporta iOS 26/27 es más baja que la
+   pantalla. La pantalla principal toma el alto real, medido en index.html. */
+.ios-app .app-pantalla {
+  bottom: auto;
+  height: var(--alto-pantalla, 100%);
+}
+.ios-app, .ios-app body { overscroll-behavior: none; }
 body {
   background-color: #f1f5f9; /* bg-slate-100 */
 }

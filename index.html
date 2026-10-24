@@ -24,6 +24,41 @@
       ajusta cada pantalla (useColorBarraEstado); este es el de arranque.
     -->
     <meta name="theme-color" content="#020617" />
+    <!--
+      App instalada en el iPhone (iOS 26/27): el sistema dibuja la página debajo
+      de la hora y la batería, pero calcula la ventana más baja que la pantalla
+      (le resta el alto de esa barra). Resultado: la página quedaba corrida hacia
+      arriba y abajo sobraba una franja vacía. Aquí se marca el caso (clase
+      `ios-app`) y se mide la pantalla real (--alto-pantalla); las pantallas
+      principales (.app-pantalla) toman ese alto. Además el documento nunca se
+      queda desplazado. ES5 y todo en try/catch: no puede impedir el arranque.
+    -->
+    <script>
+      (function () {
+        try {
+          var ua = navigator.userAgent || '';
+          var esIphone = /iPhone|iPod/.test(ua);
+          var instalada = window.navigator.standalone === true;
+          if (!esIphone || !instalada) return;
+          var html = document.documentElement;
+          html.className += ' ios-app';
+          var medir = function () {
+            try {
+              var vertical = window.innerHeight >= window.innerWidth;
+              var alto = vertical ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+              html.style.setProperty('--alto-pantalla', Math.max(alto, window.innerHeight) + 'px');
+              if (window.scrollY || window.pageYOffset) window.scrollTo(0, 0);
+            } catch (e) {}
+          };
+          medir();
+          window.addEventListener('resize', medir);
+          window.addEventListener('orientationchange', function () { setTimeout(medir, 300); });
+          window.addEventListener('pageshow', medir);
+          window.addEventListener('scroll', function () { if (window.scrollY) window.scrollTo(0, 0); });
+          document.addEventListener('visibilitychange', medir);
+        } catch (err) {}
+      })();
+    </script>
     <link rel="manifest" href="/manifest.json" />
     <!--
       "Instalar Genius Keeper": Chrome ofrece la instalación con el evento
