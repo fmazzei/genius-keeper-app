@@ -368,7 +368,7 @@ export default function KromaUserSelect({ onExitKroma }) {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6">
+        <div className="app-pantalla overflow-y-auto bg-slate-950 flex flex-col items-center justify-center p-6" style={{ paddingTop: 'calc(1.5rem + env(safe-area-inset-top, 0px))' }}>
             {/* Header */}
             <div className="text-center mb-10">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500 mb-4 shadow-lg shadow-emerald-500/30">

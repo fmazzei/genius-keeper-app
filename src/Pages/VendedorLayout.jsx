@@ -2156,7 +2156,7 @@ const VendedorLayout = ({ user, onLogout }) => {
     };
 
     return (
-        <div className="relative flex flex-col h-screen bg-slate-950 text-white overflow-hidden">
+        <div className="app-pantalla flex flex-col bg-slate-950 text-white overflow-hidden">
 
             {/* ── Header ── */}
             <header className="box-content h-14 pt-safe bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0">

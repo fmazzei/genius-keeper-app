@@ -293,7 +293,7 @@ function KromaInner({ onExitKroma }) {
     const initials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 
     return (
-        <div className="h-screen bg-slate-950 flex flex-col font-sans overflow-hidden">
+        <div className="app-pantalla bg-slate-950 flex flex-col font-sans overflow-hidden">
 
             {/* ── Top Header ── */}
             <header className="box-content h-14 pt-safe bg-slate-900 border-b border-slate-800 flex items-center px-4 shrink-0 z-20">

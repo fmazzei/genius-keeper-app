@@ -67,7 +67,7 @@ export default function KromaLoginScreen({ onBack }) {
     }, [digits, busy, tryPin]);
 
     return (
-        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6">
+        <div className="app-pantalla overflow-y-auto bg-slate-950 flex flex-col items-center justify-center p-6" style={{ paddingTop: 'calc(1.5rem + env(safe-area-inset-top, 0px))' }}>
             {onBack && (
                 <button onClick={onBack} className="fixed top-5 left-5 flex items-center gap-1 text-slate-500 hover:text-slate-300 text-sm transition-colors">
                     <ChevronLeft size={18} /> Volver

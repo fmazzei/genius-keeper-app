@@ -119,7 +119,7 @@ export default function AdministracionLayout({ user, onLogout }) {
     const salirDelPago = () => { setPayVendedorId(null); setPayStep('conciliar'); };
 
     return (
-        <div className="h-screen flex flex-col bg-slate-100 overflow-hidden">
+        <div className="app-pantalla flex flex-col bg-slate-100 overflow-hidden">
             {/* ── Header ── */}
             <header className="shrink-0 bg-[#0D2B4C] px-4 sm:px-6 pb-3 flex items-center justify-between" style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}>
                 <div className="flex items-center gap-3 min-w-0">

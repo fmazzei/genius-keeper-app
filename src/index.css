@@ -10,6 +10,21 @@ html, body, #root {
   padding: 0;
   overflow: hidden;
 }
+/* Fondo oscuro detrás de todo: si algo deja ver el lienzo (la barra de estado
+   del iPhone, un rebote), se ve oscuro y no una franja gris clara. */
+html { background-color: #020617; }
+
+/* ── Pantalla principal de cada perfil ─────────────────────────────────────
+   Se ancla a los cuatro bordes de la pantalla (fixed + inset 0) en vez de medir
+   100vh. En la app instalada de iOS 26/27, con la página dibujada debajo de la
+   barra de estado, 100vh no coincide con la pantalla y el documento quedaba
+   corrido hacia arriba: el encabezado se escondía bajo la hora y abajo sobraba
+   una franja vacía. Anclada a los bordes, no depende de esa medida ni de que el
+   documento se desplace. */
+.app-pantalla {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+}
 body {
   background-color: #f1f5f9; /* bg-slate-100 */
 }

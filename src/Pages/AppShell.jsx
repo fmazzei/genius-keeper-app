@@ -383,7 +383,7 @@ const AppShell = ({ user, role, onLogout }) => {
     }
 
     return (
-        <div className="h-screen font-sans flex">
+        <div className="app-pantalla font-sans flex">
             <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white barra-estado-oscura transition-transform duration-300 ease-in-out md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}><SidebarContent /></div>
             {mobileMenuOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden" onClick={() => setMobileMenuOpen(false)}></div>}
             <aside className={`transition-all duration-300 hidden md:flex md:flex-col ${desktopSidebarOpen ? 'w-64' : 'w-20'}`}><SidebarContent /></aside>

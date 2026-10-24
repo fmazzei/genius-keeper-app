@@ -335,7 +335,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
     };
 
     return (
-        <div className="h-screen font-sans flex">
+        <div className="app-pantalla font-sans flex">
             <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white barra-estado-oscura transition-transform duration-300 ease-in-out md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <SidebarContent />
             </div>

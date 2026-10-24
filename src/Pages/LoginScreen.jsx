@@ -171,7 +171,7 @@ const LoginScreen = () => {
     }
 
     return (
-        <div className="min-h-screen bg-[#0D2B4C] flex flex-col items-center justify-start p-5 pb-28 font-sans">
+        <div className="app-pantalla overflow-y-auto bg-[#0D2B4C] flex flex-col items-center justify-start p-5 pb-28 font-sans" style={{ paddingTop: 'calc(1.25rem + env(safe-area-inset-top, 0px))' }}>
 
             {/* ── Logo ── */}
             <div className="text-center mt-10 mb-8">
