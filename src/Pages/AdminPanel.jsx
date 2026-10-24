@@ -3390,16 +3390,16 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                         {(concepto === 'comision' || (concepto === 'fijo' && fijoTipo)) && (<>
                                         {concepto === 'comision' && aFavorAntes(est) > 0.5 && (
                                             <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800">
-                                                En meses anteriores se pagaron <b>{money(aFavorAntes(est))}</b> de comisiones de más (cobros que ahora cuentan en este mes). Para no pagarlos dos veces, descuéntalos de este pago.
-                                                <button onClick={() => setMonto(String(Math.max(0, est.saldoComision - aFavorAntes(est)).toFixed(2)))} className="block mt-1.5 font-bold text-brand-blue">
-                                                    Pagar descontando lo adelantado ({money(Math.max(0, est.saldoComision - aFavorAntes(est)))})
+                                                En un mes anterior se le pagaron <b>{money(aFavorAntes(est))}</b> de comisiones de más. Para no pagarlos dos veces, haz un pago parcial que los descuenta:
+                                                <button onClick={() => setMonto(String(Math.max(0, est.saldoComision - aFavorAntes(est)).toFixed(2)))} className="block mt-1.5 font-bold text-brand-blue text-left">
+                                                    Pago parcial: {money(Math.max(0, est.saldoComision - aFavorAntes(est)))} ({money(est.saldoComision)} − {money(aFavorAntes(est))} pagados de más)
                                                 </button>
                                             </div>
                                         )}
                                         <label className="text-xs font-semibold text-slate-600 block mb-1">{concepto === 'fijo' ? '③' : '②'} Monto del pago de {nombreConc} (USD)</label>
                                         <input type="text" inputMode="decimal" value={monto} onChange={e => setMonto(e.target.value.replace(',', '.'))} placeholder="0.00" className={`w-full p-2.5 border rounded-lg text-sm ${excedeTope ? 'border-red-400' : 'border-slate-300'}`} />
                                         {concepto === 'comision' && (
-                                            <button onClick={() => est && setMonto(String(Math.max(0, est.saldoComision).toFixed(2)))} className="mt-1.5 text-xs font-bold text-brand-blue">Pagar todas las comisiones por pagar ({money(Math.max(0, est?.saldoComision || 0))})</button>
+                                            <button onClick={() => est && setMonto(String(Math.max(0, est.saldoComision).toFixed(2)))} className="mt-1.5 text-xs font-bold text-brand-blue">Pago total: {money(Math.max(0, est?.saldoComision || 0))} (todas las comisiones por pagar de este mes)</button>
                                         )}
                                         {excedeTope && <p className="text-red-600 text-xs mt-1">El pago de {nombreConc} no puede pasar de {money(tope)}.</p>}
                                         {concepto === 'comision' && est && nMonto > est.saldoComision + 0.01 && <p className="text-amber-600 text-xs mt-1">El monto excede las comisiones por pagar ({money(est.saldoComision)}). Puedes continuar, pero revísalo.</p>}

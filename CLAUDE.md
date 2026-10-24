@@ -1144,7 +1144,7 @@ Reclamo del dueño (captura del Estado de Cuenta de Carolina): María José cerr
 - **Prueba:** `TZ=America/Caracas node --import ./tests/alias.mjs tests/comisionesCobro.test.mjs`, 25 verificaciones en verde. `vendedorMeta.js` ahora importa `commissionDefaults.js` directo (no el `.jsx`), para poder probarlo en Node.
 - **Decisión del dueño (11-oct, confirmada):** un cobro tardío paga la tasa del nivel del mes en que se FACTURÓ, no la del mes en que se cobra.
 - **Caso real tras publicar (Mes 1 de Carolina, 11-oct):** devengado $586,51, pagado $593,23, saldo **−$6,72**. El mes no estaba congelado y se recalculó: lo que había crecido después del cierre (los $37) se fue al Mes 2. Los −$6,72 son un cobro que entró desde el 19-sep, cuando ya había empezado el Mes 2. Antes se contaba en el Mes 1, por la fecha corrida o por ser una factura del Mes 1, y se pagó con la liquidación del Mes 1. No es dinero perdido ni duplicado: hay que descontarlo al pagar el Mes 2.
-  - **Liquidaciones** (`aFavorAntes`): si un mes anterior quedó con saldo negativo, el paso 2 del pago lo dice y ofrece "Pagar descontando lo adelantado". El monto pasó a `type="text"` con coma decimal.
+  - **Liquidaciones** (`aFavorAntes`): si un mes anterior quedó con saldo negativo, el paso 2 del pago lo dice y ofrece un "Pago parcial" que los descuenta (y "Pago total" para pagar todo). El monto pasó a `type="text"` con coma decimal.
   - **Vendedor:** un saldo negativo se lee "Pagado de más (se descuenta en el mes siguiente)". El aviso "Se te adeuda" es NETO (suma los saldos de todos los meses cerrados).
   - **Conciliación:**
     - `facturasDelPeriodo` usa `fechaCalendario` (tenía el mismo corrimiento de fecha).
@@ -3918,7 +3918,7 @@ Pedido del dueño: *"ni Carolina, ni nadie confunda los montos"*. Lo que se le d
 - **Pago del administrador** (Liquidaciones, paso 2):
   - ① Fijo o comisiones. ② Si es fijo: quincena o mes completo.
   - `topePagoFijo`: la quincena es como máximo la **mitad del fijo mensual** de la ficha de comisiones (`reglasDelVendedor().baseMes`); el mes completo, el fijo mensual. Nunca más de lo que falta del fijo del período. El botón no deja pasar el tope.
-  - Las comisiones no tienen tope: avisan si se paga más de lo que falta. "Pagar descontando lo adelantado" mira solo comisiones pagadas de más.
+  - Las comisiones no tienen tope: avisan si se paga más de lo que falta. El "Pago parcial" (descuenta lo pagado de más en meses anteriores) mira solo comisiones pagadas de más.
 - **Corregir un pago** (`CorregirPagoSheet`, `liquidacionCorrecciones.js`): `concepto` y `fijoTipo` son corregibles, con constancia y con el mismo tope. Un pago viejo que mezcló fijo y comisiones se deja sin concepto: se reparte solo.
 - **Dónde se ve**:
   - Vendedor: Home (comisiones en grande; el fijo aparte), Estado de Cuenta (dos tarjetas por período y el aviso "Se te adeuda" separado), cierre del mes y el KPI "Comisión del período". Los montos van con 2 decimales.
