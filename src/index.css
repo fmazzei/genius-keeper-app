@@ -14,6 +14,18 @@ body {
   background-color: #f1f5f9; /* bg-slate-100 */
 }
 
+/* ── Zona de la barra de estado (iPhone) ──────────────────────────────────
+   La app ocupa toda la pantalla, también debajo de la hora y la batería. Los
+   encabezados agregan ese alto como relleno (con `box-content` conservan su
+   alto de siempre) para que su color llene la zona y nada quede tapado por el
+   difuminado que iOS 26+ pone ahí. Fuera del iPhone el relleno vale 0. */
+.pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+/* Encabezados blancos: la hora y la batería se ven en blanco (black-translucent),
+   así que la zona se pinta oscura en vez de blanca. */
+.barra-estado-oscura { border-top: env(safe-area-inset-top, 0px) solid #0f172a; }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+@media (min-width: 768px) { .md\:pt-0 { padding-top: 0; } }
+
 /* Prevent iOS Safari auto-zoom on input focus (triggers when font-size < 16px) */
 /* !important overrides Tailwind text-sm (14px) which re-triggers zoom */
 input, select, textarea {

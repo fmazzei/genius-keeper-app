@@ -42,6 +42,7 @@ import {
 // para no romper a quien ya la importaba desde acá.
 export { DEFAULT_MODULES } from './permisos.js';
 import { DEFAULT_MODULES } from './permisos.js';
+import { useColorBarraEstado } from '@/utils/colorBarraEstado.js';
 
 // ─── Single universal nav list — filtered by effective modules ────────────────
 
@@ -146,6 +147,7 @@ function useUnreadCount(kromaUser) {
 }
 
 function KromaInner({ onExitKroma }) {
+    useColorBarraEstado('#0f172a');
     const { kromaUser, kromaRole, kromaLoading, clearUser, canDo } = useKroma();
     const [currentView, setCurrentView] = useState('home');
     const [prevView,    setPrevView]    = useState(null); // set when navigating from home tiles/shortcuts
@@ -294,7 +296,7 @@ function KromaInner({ onExitKroma }) {
         <div className="h-screen bg-slate-950 flex flex-col font-sans overflow-hidden">
 
             {/* ── Top Header ── */}
-            <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center px-4 shrink-0 z-20">
+            <header className="box-content h-14 pt-safe bg-slate-900 border-b border-slate-800 flex items-center px-4 shrink-0 z-20">
                 {/* Mobile hamburger (hidden when back button is shown) */}
                 {!prevView && (
                     <button
@@ -410,7 +412,7 @@ function KromaInner({ onExitKroma }) {
                 {/* ── Sidebar ── */}
                 <aside className={`
                     fixed md:relative top-0 md:top-auto left-0 h-full md:h-auto
-                    w-56 bg-slate-900 border-r border-slate-800
+                    w-56 bg-slate-900 border-r border-slate-800 pt-safe md:pt-0
                     flex flex-col shrink-0 z-20
                     transition-transform duration-200 ease-in-out
                     ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}

@@ -27,6 +27,7 @@ import UpdatePosGpsModal from '@/Components/UpdatePosGpsModal.jsx';
 import ProvisionalGpsModal from '@/Components/ProvisionalGpsModal.jsx';
 import { leerRuta, guardarRuta } from '@/utils/rutaOffline.js';
 import { enviarLatido } from '@/utils/latidoDispositivo.js';
+import { useColorBarraEstado } from '@/utils/colorBarraEstado.js';
 // Lazy: el mercaderista abre la app casi siempre en 'hub', no en 'planner' —
 // cargar leaflet/react-beautiful-dnd solo cuando navega a esa vista.
 const Planner = lazy(() => import('./Planner/Planner.jsx'));
@@ -84,6 +85,7 @@ const ReporterSelectionScreen = ({ onSelect }) => {
 };
 
 const AppShell = ({ user, role, onLogout }) => {
+    useColorBarraEstado('#0f172a');
     const { selectedReporter, setSelectedReporter } = useReporter();
 
     const [currentView, setCurrentView] = useState('hub');
@@ -382,11 +384,11 @@ const AppShell = ({ user, role, onLogout }) => {
 
     return (
         <div className="h-screen font-sans flex">
-            <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white transition-transform duration-300 ease-in-out md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}><SidebarContent /></div>
+            <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white barra-estado-oscura transition-transform duration-300 ease-in-out md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}><SidebarContent /></div>
             {mobileMenuOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden" onClick={() => setMobileMenuOpen(false)}></div>}
             <aside className={`transition-all duration-300 hidden md:flex md:flex-col ${desktopSidebarOpen ? 'w-64' : 'w-20'}`}><SidebarContent /></aside>
             <div className="flex-1 flex flex-col overflow-hidden">
-                <header className="h-16 bg-white border-b flex items-center px-4 shadow-sm shrink-0">
+                <header className="box-content h-16 barra-estado-oscura bg-white border-b flex items-center px-4 shadow-sm shrink-0">
                     <button onClick={() => setMobileMenuOpen(true)} className="p-2 mr-2 rounded-full hover:bg-slate-100 md:hidden"><Menu size={24} /></button>
                     <h2 className="text-lg sm:text-2xl font-semibold text-slate-800 ml-2 truncate flex-1">{getGreeting()}</h2>
                     {pendientes > 0 && (

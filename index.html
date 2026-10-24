@@ -16,7 +16,14 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Genius Keeper" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!--
+      Barra de estado del iPhone (iOS 26+): la app se dibuja debajo de la hora y
+      la batería (black-translucent + viewport-fit=cover) y cada encabezado deja
+      ese espacio con `pt-safe`, pintado de su propio color. `theme-color` lo
+      ajusta cada pantalla (useColorBarraEstado); este es el de arranque.
+    -->
+    <meta name="theme-color" content="#020617" />
     <link rel="manifest" href="/manifest.json" />
     <!--
       "Instalar Genius Keeper": Chrome ofrece la instalación con el evento

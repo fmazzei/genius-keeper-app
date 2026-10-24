@@ -49,6 +49,7 @@ import { fmtVence } from '@/utils/fechaCorta.js';
 import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import GestionVentaView from '@/Components/GestionVentaView.jsx';
+import { useColorBarraEstado } from '@/utils/colorBarraEstado.js';
 
 // ─── Caché del Home (stale-while-revalidate) ─────────────────────────────────
 // Firestore `getDocs` es "servidor primero" estando online (la caché de
@@ -1204,6 +1205,7 @@ function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], o
 // ─── Main Layout ──────────────────────────────────────────────────────────────
 
 const VendedorLayout = ({ user, onLogout }) => {
+    useColorBarraEstado('#0f172a');
     const { role } = useAuth();
     const { getModulesForRole, ourProductWeight_g } = useAppConfig();
     const modules = getModulesForRole('vendedor');
@@ -2157,7 +2159,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         <div className="relative flex flex-col h-screen bg-slate-950 text-white overflow-hidden">
 
             {/* ── Header ── */}
-            <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0">
+            <header className="box-content h-14 pt-safe bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-[#0D2B4C] border border-blue-800/50 flex items-center justify-center">
                         <TrendingUp size={16} className="text-[#FFD600]" />
@@ -2269,7 +2271,7 @@ const VendedorLayout = ({ user, onLogout }) => {
 
             {/* ── Bottom Tab Bar ── */}
             {!subView && (
-                <nav className="h-16 bg-slate-900 border-t border-slate-800 flex items-center shrink-0">
+                <nav className="box-content h-16 pb-safe bg-slate-900 border-t border-slate-800 flex items-center shrink-0">
                     {tabs.map(({ id, label, Icon, badgeCount }) => {
                         const active = currentView === id;
                         return (

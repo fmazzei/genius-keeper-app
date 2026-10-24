@@ -33,8 +33,10 @@ import TableroGerencial from './TableroGerencial.jsx';
 // ✅ Se importan ambos componentes del planificador
 import MonthlyPlanner from './Planner/MonthlyPlanner.jsx';
 import Planner from './Planner/Planner.jsx';
+import { useColorBarraEstado } from '@/utils/colorBarraEstado.js';
 
 const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
+    useColorBarraEstado('#0f172a');
     const { posList, reports, loading: geniusLoading } = useGeniusEngine(role);
     const [refreshKey, setRefreshKey] = useState(0);   // "tirar para actualizar" del tablero
     const [vistaDash, setVistaDash] = useState('tablero');   // 'tablero' (8 bloques) | 'kpis' (indicadores de campo)
@@ -334,7 +336,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
 
     return (
         <div className="h-screen font-sans flex">
-            <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white transition-transform duration-300 ease-in-out md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+            <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white barra-estado-oscura transition-transform duration-300 ease-in-out md:hidden ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                 <SidebarContent />
             </div>
             {mobileMenuOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden" onClick={() => setMobileMenuOpen(false)}></div>}
@@ -344,7 +346,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
             </aside>
             
             <div className="flex-1 flex flex-col overflow-hidden">
-                <header className="h-16 bg-white border-b flex items-center px-4 shadow-sm shrink-0 gap-3">
+                <header className="box-content h-16 barra-estado-oscura bg-white border-b flex items-center px-4 shadow-sm shrink-0 gap-3">
                     <button onClick={() => setMobileMenuOpen(true)} className="relative p-2 rounded-full hover:bg-slate-100 md:hidden shrink-0" aria-label="Menú">
                         <Menu size={24} />
                         {agenteNoLeidas > 0 && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white" />}

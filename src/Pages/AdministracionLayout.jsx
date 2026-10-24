@@ -27,6 +27,7 @@ import ListaMaestraPdv from '@/Pages/ListaMaestraPdv.jsx';
 import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
+import { useColorBarraEstado } from '@/utils/colorBarraEstado.js';
 
 const saludoDelDia = () => {
     const h = new Date().getHours();
@@ -58,6 +59,7 @@ const CarteraAdmin = ({ vendedores = [] }) => {
 };
 
 export default function AdministracionLayout({ user, onLogout }) {
+    useColorBarraEstado('#0D2B4C');
     const { user: authUser } = useAuth();
     const { getModulesForRole } = useAppConfig();
     const uid = user?.uid || authUser?.uid;
@@ -119,7 +121,7 @@ export default function AdministracionLayout({ user, onLogout }) {
     return (
         <div className="h-screen flex flex-col bg-slate-100 overflow-hidden">
             {/* ── Header ── */}
-            <header className="shrink-0 bg-[#0D2B4C] px-4 sm:px-6 py-3 flex items-center justify-between">
+            <header className="shrink-0 bg-[#0D2B4C] px-4 sm:px-6 pb-3 flex items-center justify-between" style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}>
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center shrink-0">
                         <LayoutGrid size={18} className="text-[#FFD600]" />
