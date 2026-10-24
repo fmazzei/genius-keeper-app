@@ -152,7 +152,23 @@ function metaDePeriodo(p, { metaPlena, arranque }) {
   const base = p.i < arranque.length ? Number(arranque[p.i]?.meta) || metaPlena : metaPlena;
   return p.corto ? Math.round(base * p.fraccion) : base;
 }
-var baseDePeriodo = (p, { baseMes }) => p.transicion ? 0 : baseMes * (p.fraccion ?? 1);
+function quincenasDe(p) {
+  const out = [];
+  if (!p?.start || !p?.end) return out;
+  let d = new Date(p.start.getFullYear(), p.start.getMonth(), 1);
+  while (d < p.end) {
+    const y = d.getFullYear(), m = d.getMonth();
+    for (const q of [new Date(y, m, 15), new Date(y, m + 1, 0)]) {
+      if (q >= p.start && q < p.end) out.push(q);
+    }
+    d = new Date(y, m + 1, 1);
+  }
+  return out;
+}
+var baseDePeriodo = (p, { baseMes }) => {
+  if (p.corto && !p.transicion) return baseMes * (p.fraccion ?? 1);
+  return baseMes / 2 * quincenasDe(p).length;
+};
 function periodosConMeta(vendedor = {}, hasta = /* @__PURE__ */ new Date(), opts) {
   const reglas = reglasDelVendedor(vendedor);
   return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({
@@ -653,6 +669,8 @@ function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], op
       corto: p.corto,
       transicion: p.transicion,
       dias: p.dias,
+      start: p.start,
+      end: p.end,
       devengadoTotal: mt.devengadoComision + p.base,
       congelado: false
     };
@@ -744,6 +762,8 @@ function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts = {}) 
     corto: p.corto,
     transicion: p.transicion,
     dias: p.dias,
+    start: p.start,
+    end: p.end,
     rango: rangoLabel(p.start, p.end),
     rangoCorte: rangoLabel(p.start, enCurso ? new Date(ahora.getTime() + MS_DIA) : p.end),
     enCurso,

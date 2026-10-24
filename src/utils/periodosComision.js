@@ -15,12 +15,14 @@
 //   · Un vendedor nuevo: su primer período va de su ingreso al fin de ese mes.
 //   · Un período corto lleva la meta en proporción a sus días: 13 de 31 días =
 //     13/31 de la meta. Los niveles son % de la meta, así que se ajustan solos.
-//   · El FIJO (salario + viáticos) es $X al mes, pagado en dos quincenas (15 y
-//     30). El cambio de corte no lo cambia (decisión del dueño, 23-oct-2026):
-//     el período de TRANSICIÓN de un vendedor que ya trabajaba (19→31 oct de
-//     Carolina) no lleva fijo propio; su fijo sigue con el mes anterior, que se
-//     paga en las quincenas del 15 y el 30. Solo el primer período de un
-//     vendedor NUEVO lleva el fijo en proporción a sus días.
+//   · El FIJO (salario + viáticos) se paga por QUINCENAS: la mitad del fijo
+//     mensual el 15 y la otra mitad el último día de cada mes (decisión del
+//     dueño, 23-oct-2026; así se ha pagado en el banco). Un período lleva una
+//     quincena por cada 15 o fin de mes que cae dentro de él: un mes de empleo
+//     completo lleva 2 (el fijo mensual) y el período de TRANSICIÓN de un
+//     vendedor que ya trabajaba (19→31 oct de Carolina) lleva 1, la del 31.
+//     Solo el primer período de un vendedor NUEVO lleva el fijo en proporción
+//     a sus días.
 //
 // Caso real: Carolina (ingreso 19-ago) → Mes 1 19-ago–18-sep, Mes 2 19-sep–18-oct,
 // Mes 3 19-oct–31-oct (corto) y desde noviembre, un mes calendario por período.
@@ -131,23 +133,51 @@ export function metaDePeriodo(p, { metaPlena, arranque }) {
 }
 
 /**
- * Salario y viáticos de un período: el mes completo; en proporción en el primer
- * período (corto) de un vendedor nuevo; nada en el período de transición, cuyo
- * fijo sigue con el mes anterior (ver arriba).
+ * Las quincenas (15 y último día de cada mes) que cierran dentro de [start, end).
+ * Un mes de empleo completo siempre tiene dos.
  */
-export const baseDePeriodo = (p, { baseMes }) => (p.transicion ? 0 : baseMes * (p.fraccion ?? 1));
+export function quincenasDe(p) {
+    const out = [];
+    if (!p?.start || !p?.end) return out;
+    let d = new Date(p.start.getFullYear(), p.start.getMonth(), 1);
+    while (d < p.end) {
+        const y = d.getFullYear(), m = d.getMonth();
+        for (const q of [new Date(y, m, 15), new Date(y, m + 1, 0)]) {
+            if (q >= p.start && q < p.end) out.push(q);
+        }
+        d = new Date(y, m + 1, 1);
+    }
+    return out;
+}
+
+/**
+ * Salario y viáticos de un período: la mitad del fijo mensual por cada quincena
+ * que cierra en él. El primer período corto de un vendedor nuevo, en proporción
+ * a sus días.
+ */
+export const baseDePeriodo = (p, { baseMes }) => {
+    if (p.corto && !p.transicion) return baseMes * (p.fraccion ?? 1);
+    return (baseMes / 2) * quincenasDe(p).length;
+};
+
+const ddmm = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 
 /** Cómo se nombra el fijo de un período en pantallas y comprobantes. */
 export function etiquetaFijo(p) {
-    if (p?.transicion) return `Fijo: va con el Mes ${(p.mes || 2) - 1}`;
+    if (p?.transicion) {
+        const q = quincenasDe(p);
+        return q.length === 1 ? `Fijo (quincena del ${ddmm(q[0])})` : `Fijo (${q.length} quincenas)`;
+    }
     if (p?.corto) return `Fijo (${p.dias} días)`;
     return 'Fijo del mes';
 }
 
-/** Nota del período de transición: por qué no lleva fijo propio. */
-export const notaTransicion = (p) => (p?.transicion
-    ? `Este período no lleva fijo propio: el fijo sigue siendo el mismo de cada mes, en las quincenas del 15 y el 30, y va con el Mes ${(p.mes || 2) - 1}.`
-    : null);
+/** Nota del período de transición: qué quincenas lleva. */
+export function notaTransicion(p) {
+    if (!p?.transicion) return null;
+    const q = quincenasDe(p);
+    return `El fijo se paga por quincenas (el 15 y el último día del mes). Este período lleva ${q.length === 1 ? 'la quincena' : 'las quincenas'} del ${q.map(ddmm).join(' y ')}.`;
+}
 
 /** Períodos del vendedor con su meta y su base. */
 export function periodosConMeta(vendedor = {}, hasta = new Date(), opts) {

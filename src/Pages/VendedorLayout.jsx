@@ -579,9 +579,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                         <span className="text-slate-400 text-sm mb-0.5">y subiendo</span>
                     </div>
                     <p className="text-slate-400 text-xs mt-1.5">
-                        {estadoActual?.transicion
-                            ? <>Tu fijo va aparte: <b className="text-sky-300">{money(ingresoBase)}</b> al mes, en quincenas del 15 y el 30</>
-                            : <>Tu fijo va aparte: <b className="text-sky-300">{money(estadoActual?.base ?? ingresoBase)}</b> {estadoActual?.corto ? `(${estadoActual.dias} días)` : 'este mes'}</>}
+                        Tu fijo va aparte: <b className="text-sky-300">{money(estadoActual?.base ?? ingresoBase)}</b> {estadoActual?.transicion ? `(${etiquetaFijo(estadoActual).replace(/^Fijo \(|\)$/g, '')})` : estadoActual?.corto ? `(${estadoActual.dias} días)` : 'este mes'}
                     </p>
                     {/* Lo que se le debe HOY, sumando todos sus meses: el número de
                         arriba es solo lo ganado en el período en curso. */}

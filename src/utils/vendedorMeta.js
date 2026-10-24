@@ -612,7 +612,7 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             devengadoComision: mt.devengadoComision,
             // Salario y viáticos del período: completos en un mes entero, en
             // proporción a sus días en un período corto.
-            base: p.base, corto: p.corto, transicion: p.transicion, dias: p.dias,
+            base: p.base, corto: p.corto, transicion: p.transicion, dias: p.dias, start: p.start, end: p.end,
             devengadoTotal: mt.devengadoComision + p.base,
             congelado: false,
         };
@@ -707,7 +707,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const enCurso = !p.cerrado;
 
     return {
-        periodKey, mes: p.mes, corto: p.corto, transicion: p.transicion, dias: p.dias,
+        periodKey, mes: p.mes, corto: p.corto, transicion: p.transicion, dias: p.dias, start: p.start, end: p.end,
         rango: rangoLabel(p.start, p.end),
         rangoCorte: rangoLabel(p.start, enCurso ? new Date(ahora.getTime() + MS_DIA) : p.end),
         enCurso,

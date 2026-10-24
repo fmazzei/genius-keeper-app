@@ -34,6 +34,7 @@ __export(periodosComision_exports, {
   periodoDeFecha: () => periodoDeFecha,
   periodosConMeta: () => periodosConMeta,
   periodosDeEmpleo: () => periodosDeEmpleo,
+  quincenasDe: () => quincenasDe,
   reglasDelVendedor: () => reglasDelVendedor,
   separaFoodservice: () => separaFoodservice
 });
@@ -151,13 +152,37 @@ function metaDePeriodo(p, { metaPlena, arranque }) {
   const base = p.i < arranque.length ? Number(arranque[p.i]?.meta) || metaPlena : metaPlena;
   return p.corto ? Math.round(base * p.fraccion) : base;
 }
-var baseDePeriodo = (p, { baseMes }) => p.transicion ? 0 : baseMes * (p.fraccion ?? 1);
+function quincenasDe(p) {
+  const out = [];
+  if (!p?.start || !p?.end) return out;
+  let d = new Date(p.start.getFullYear(), p.start.getMonth(), 1);
+  while (d < p.end) {
+    const y = d.getFullYear(), m = d.getMonth();
+    for (const q of [new Date(y, m, 15), new Date(y, m + 1, 0)]) {
+      if (q >= p.start && q < p.end) out.push(q);
+    }
+    d = new Date(y, m + 1, 1);
+  }
+  return out;
+}
+var baseDePeriodo = (p, { baseMes }) => {
+  if (p.corto && !p.transicion) return baseMes * (p.fraccion ?? 1);
+  return baseMes / 2 * quincenasDe(p).length;
+};
+var ddmm = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
 function etiquetaFijo(p) {
-  if (p?.transicion) return `Fijo: va con el Mes ${(p.mes || 2) - 1}`;
+  if (p?.transicion) {
+    const q = quincenasDe(p);
+    return q.length === 1 ? `Fijo (quincena del ${ddmm(q[0])})` : `Fijo (${q.length} quincenas)`;
+  }
   if (p?.corto) return `Fijo (${p.dias} d\xEDas)`;
   return "Fijo del mes";
 }
-var notaTransicion = (p) => p?.transicion ? `Este per\xEDodo no lleva fijo propio: el fijo sigue siendo el mismo de cada mes, en las quincenas del 15 y el 30, y va con el Mes ${(p.mes || 2) - 1}.` : null;
+function notaTransicion(p) {
+  if (!p?.transicion) return null;
+  const q = quincenasDe(p);
+  return `El fijo se paga por quincenas (el 15 y el \xFAltimo d\xEDa del mes). Este per\xEDodo lleva ${q.length === 1 ? "la quincena" : "las quincenas"} del ${q.map(ddmm).join(" y ")}.`;
+}
 function periodosConMeta(vendedor = {}, hasta = /* @__PURE__ */ new Date(), opts) {
   const reglas = reglasDelVendedor(vendedor);
   return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({
@@ -210,6 +235,7 @@ function metaKgEnVentana(vendedor = {}, desde, hasta, opts) {
   periodoDeFecha,
   periodosConMeta,
   periodosDeEmpleo,
+  quincenasDe,
   reglasDelVendedor,
   separaFoodservice
 });
