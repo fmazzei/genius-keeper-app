@@ -98,12 +98,68 @@ export function periodoDeFecha(fechaIngreso, fecha, opts) {
     return { periodKey: p.periodKey, recuperada: false, periodo: p };
 }
 
-/** Meta plena, arranque y base mensual del vendedor (con los valores por defecto). */
-export function reglasDelVendedor(vendedor = {}) {
-    const cfg = vendedor.commissionConfig
-        ? { ...DEFAULT_COMMISSION_CONFIG, ...vendedor.commissionConfig }
-        : DEFAULT_COMMISSION_CONFIG;
-    const metaPlena = Number(vendedor.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual) || 0;
+// ─── Esquemas de comisión con fecha de inicio ────────────────────────────────
+//
+// Un vendedor puede cambiar de esquema (decisión del dueño, 24-oct-2026: Carolina
+// pasa el 1-nov de niveles a una tasa fija de 4,5 % con un solo bono). El cambio
+// no puede tocar los meses anteriores, así que cada esquema rige desde una fecha:
+//   · `commissionConfig` es el primer esquema (rige desde el ingreso);
+//   · `commissionConfigCambios = [{desde:'YYYY-MM-DD', config}]` son los
+//     siguientes. Un período usa el esquema vigente el día en que EMPIEZA.
+// La meta plena del primer esquema es `metaMensual` del documento (la que se
+// ha usado siempre); la de los siguientes, la de su propio `config`.
+//
+// Esquema de TASA FIJA (`esquema:'fija'`, `tasaFija`): una sola tasa sobre lo
+// cobrado, sin niveles. Se normaliza a "sin niveles y nivel más bajo = tasa
+// fija", así todo el cálculo de niveles (app, servidor, vigilante) lo entiende
+// sin cambios.
+
+/** Los esquemas del vendedor en orden: el primero (desde: null) y sus cambios. */
+export function esquemasComision(vendedor = {}) {
+    const raw = vendedor.commissionConfig || {};
+    const out = [{ desde: null, config: { ...raw, metaMensual: Number(vendedor.metaMensual || raw.metaMensual) || undefined } }];
+    (Array.isArray(vendedor.commissionConfigCambios) ? vendedor.commissionConfigCambios : [])
+        .filter(c => c && c.config && fechaLocal(c.desde))
+        .sort((a, b) => fechaLocal(a.desde) - fechaLocal(b.desde))
+        .forEach(c => out.push({ desde: c.desde, config: c.config }));
+    return out;
+}
+
+/** Un esquema con los valores por defecto y la tasa fija traducida a niveles. */
+export function normalizarEsquema(config = {}) {
+    const c = { ...DEFAULT_COMMISSION_CONFIG, ...config };
+    for (const k of Object.keys(DEFAULT_COMMISSION_CONFIG)) {
+        if (c[k] === undefined || c[k] === null) c[k] = DEFAULT_COMMISSION_CONFIG[k];
+    }
+    if (c.esquema === 'fija') {
+        return { ...c, tiers: [], bajaActiva: true, bajaRate: Number(c.tasaFija) || 0, bajaLabel: c.tasaFijaLabel || 'Tasa fija' };
+    }
+    return c;
+}
+
+/** ¿El esquema es de tasa fija? */
+export const esTasaFija = (cfg) => cfg?.esquema === 'fija';
+
+/** El esquema vigente en una fecha (normalizado). */
+export function configEnFecha(vendedor = {}, fecha = new Date()) {
+    const d = fechaLocal(fecha) || new Date();
+    const esquemas = esquemasComision(vendedor);
+    let elegido = esquemas[0];
+    for (const e of esquemas.slice(1)) if (fechaLocal(e.desde) <= d) elegido = e;
+    return normalizarEsquema(elegido.config);
+}
+
+/** El próximo cambio de esquema después de `fecha` (o null). */
+export function proximoCambioEsquema(vendedor = {}, fecha = new Date()) {
+    const d = fechaLocal(fecha) || new Date();
+    const e = esquemasComision(vendedor).slice(1).find(x => fechaLocal(x.desde) > d);
+    return e ? { desde: e.desde, config: normalizarEsquema(e.config) } : null;
+}
+
+/** Meta plena, arranque y base mensual del vendedor en una fecha (con los valores por defecto). */
+export function reglasDelVendedor(vendedor = {}, fecha = new Date()) {
+    const cfg = configEnFecha(vendedor, fecha);
+    const metaPlena = Number(cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual) || 0;
     const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
     const baseMes = (Number(cfg.salarioFijo) || 0) + (Number(cfg.viaticosSemanales) || 0) * 4;
     // Meta de FOODSERVICE en kg de queso al mes (0 = sin meta). Solo rige en los
@@ -181,12 +237,16 @@ export function notaTransicion(p) {
 
 /** Períodos del vendedor con su meta y su base. */
 export function periodosConMeta(vendedor = {}, hasta = new Date(), opts) {
-    const reglas = reglasDelVendedor(vendedor);
     return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts)
-        .map(p => ({
-            ...p, meta: metaDePeriodo(p, reglas), base: baseDePeriodo(p, reglas),
-            separaFood: separaFoodservice(p), metaKg: metaKgDePeriodo(p, reglas),
-        }));
+        .map(p => {
+            // Cada período, con el esquema vigente el día en que empieza.
+            const reglas = reglasDelVendedor(vendedor, p.start);
+            return {
+                ...p, meta: metaDePeriodo(p, reglas), base: baseDePeriodo(p, reglas),
+                separaFood: separaFoodservice(p), metaKg: metaKgDePeriodo(p, reglas),
+                cfg: reglas.cfg,
+            };
+        });
 }
 
 /**
@@ -197,15 +257,14 @@ export function periodosConMeta(vendedor = {}, hasta = new Date(), opts) {
  * Sin fecha de ingreso: la meta plena en proporción a los días de su mes.
  */
 export function metaEnVentana(vendedor = {}, desde, hasta, opts) {
-    const reglas = reglasDelVendedor(vendedor);
     const ingreso = fechaLocal(vendedor.fechaIngreso);
-    if (!ingreso) return Math.round(reglas.metaPlena * diasEntre(desde, hasta) / diasDelMes(desde));
+    if (!ingreso) return Math.round(reglasDelVendedor(vendedor, desde).metaPlena * diasEntre(desde, hasta) / diasDelMes(desde));
     let total = 0;
     for (const p of periodosDeEmpleo(ingreso, new Date(hasta.getTime() - 1), opts)) {
         const a = Math.max(p.start.getTime(), desde.getTime());
         const b = Math.min(p.end.getTime(), hasta.getTime());
         if (b <= a) continue;
-        total += metaDePeriodo(p, reglas) * ((b - a) / DIA) / p.dias;
+        total += metaDePeriodo(p, reglasDelVendedor(vendedor, p.start)) * ((b - a) / DIA) / p.dias;
     }
     return Math.round(total);
 }
@@ -216,16 +275,17 @@ export function metaEnVentana(vendedor = {}, desde, hasta, opts) {
  * calendario (los de aniversario no tienen meta de kg). 1 decimal.
  */
 export function metaKgEnVentana(vendedor = {}, desde, hasta, opts) {
-    const reglas = reglasDelVendedor(vendedor);
-    if (!(reglas.metaKgPlena > 0)) return 0;
     const ingreso = fechaLocal(vendedor.fechaIngreso);
-    if (!ingreso) return Math.round(reglas.metaKgPlena * diasEntre(desde, hasta) / diasDelMes(desde) * 10) / 10;
+    if (!ingreso) {
+        const reglas = reglasDelVendedor(vendedor, desde);
+        return Math.round(reglas.metaKgPlena * diasEntre(desde, hasta) / diasDelMes(desde) * 10) / 10;
+    }
     let total = 0;
     for (const p of periodosDeEmpleo(ingreso, new Date(hasta.getTime() - 1), opts)) {
         const a = Math.max(p.start.getTime(), desde.getTime());
         const b = Math.min(p.end.getTime(), hasta.getTime());
         if (b <= a) continue;
-        total += metaKgDePeriodo(p, reglas) * ((b - a) / DIA) / p.dias;
+        total += metaKgDePeriodo(p, reglasDelVendedor(vendedor, p.start)) * ((b - a) / DIA) / p.dias;
     }
     return Math.round(total * 10) / 10;
 }

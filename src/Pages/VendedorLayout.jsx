@@ -1,7 +1,7 @@
 // RUTA: src/Pages/VendedorLayout.jsx
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { etiquetaFijo, notaTransicion } from '../utils/periodosComision.js';
+import { etiquetaFijo, notaTransicion, configEnFecha, proximoCambioEsquema, esTasaFija } from '../utils/periodosComision.js';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
 import {
@@ -476,6 +476,24 @@ function deudaVendedor(estados = []) {
     };
 }
 
+// "2026-11-01" → "01/11/2026" (sin pasar por UTC).
+const fechaCortaDe = (s) => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(s || ''); };
+
+// Un esquema de comisión en una frase: tasa (fija o por niveles) y bonos activos.
+function resumenEsquema(cfg = {}) {
+    const partes = [];
+    if (esTasaFija(cfg)) partes.push(`Comisión fija del ${cfg.bajaRate}% sobre lo cobrado`);
+    else {
+        const tasas = [...(cfg.tiers || [])].map(t => t.rate).concat(cfg.bajaActiva === false ? [] : [cfg.bajaRate || 0]).filter(r => r > 0);
+        if (tasas.length) partes.push(`Comisión por niveles del ${Math.min(...tasas)}% al ${Math.max(...tasas)}%`);
+    }
+    if (cfg.bonusPuntualidad > 0) partes.push(`Bono Cobranza ${cfg.bonusPuntualidad}%`);
+    if (cfg.bonusActivacion > 0) partes.push(`Bono Activación ${cfg.bonusActivacion}%`);
+    if (cfg.bonusAnaquel > 0) partes.push(`Bono Anaquel ${cfg.bonusAnaquel}%`);
+    partes.push(`foodservice ${cfg.comisionFoodservice}%`, `cuentas recuperadas ${cfg.comisionRecuperadas}%`);
+    return partes.join(' · ') + '.';
+}
+
 function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, estados = [], estadoActual, ultimoCerrado, loadError, onRetry, onRefresh }) {
     const [showMetaModal, setShowMetaModal] = useState(false);
     const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -499,7 +517,9 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
     };
 
     const pct     = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
-    const tier    = getTierFromConfig(pct, tiers, commConfig.bajaRate, commConfig.bajaLabel);
+    const tierBase = getTierFromConfig(pct, tiers, commConfig.bajaRate, commConfig.bajaLabel);
+    // Con tasa fija no hay niveles: la tasa se muestra en verde, no como "nivel bajo".
+    const tier    = esTasaFija(commConfig) ? { ...tierBase, color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40' } : tierBase;
     const barPct  = Math.min(pct, 1.25);
     const metaAlcanzada = vendedor.metaMensual > 0 && stats.unidadesDelMes >= vendedor.metaMensual;
     const faltanParaMeta = Math.max(0, vendedor.metaMensual - stats.unidadesDelMes);
@@ -516,7 +536,9 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
     const faltan = siguiente?.uds ?? null;
     const ingresoBase = commConfig.salarioFijo + commConfig.viaticosSemanales * 4;
     const deuda = deudaVendedor(estados);
-    const hasComision = (tiers || []).some(t => t.rate > 0);
+    const tasaFija = esTasaFija(commConfig);
+    const hasComision = tasaFija ? (commConfig.bajaRate || 0) > 0 : (tiers || []).some(t => t.rate > 0);
+    const proximo = commConfig.proximoEsquema || null;
     const showAnaquel      = commConfig.bonusAnaquel > 0 && stats.hasAnaquel;
     const showActivacion   = commConfig.bonusActivacion > 0 && !stats.hasAnaquel;
     const showPuntualidad  = commConfig.bonusPuntualidad > 0;
@@ -625,10 +647,21 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                     {faltan === null && (
                         <div className="mt-3 bg-emerald-500/10 rounded-lg p-2.5 flex items-center gap-2">
                             <CheckCircle size={15} className="text-emerald-400 shrink-0" />
-                            <p className="text-xs text-emerald-300">¡Estás en el nivel más alto! Cada unidad que cobras suma a tu comisión.</p>
+                            <p className="text-xs text-emerald-300">{tasaFija
+                                ? <>Comisión fija del <b>{commConfig.bajaRate}%</b> sobre todo lo que cobras: cada unidad cobrada suma.</>
+                                : '¡Estás en el nivel más alto! Cada unidad que cobras suma a tu comisión.'}</p>
                         </div>
                     )}
                 </button>
+            )}
+
+            {/* ── Aviso de cambio de esquema (desde una fecha) ── */}
+            {!loading && proximo && (
+                <div className="bg-sky-500/10 border border-sky-500/40 rounded-2xl p-4">
+                    <p className="text-sky-300 text-xs font-semibold uppercase tracking-widest">Tu comisión cambia el {fechaCortaDe(proximo.desde)}</p>
+                    <p className="text-slate-200 text-sm mt-1.5 leading-snug">{resumenEsquema(proximo.config)}</p>
+                    <p className="text-slate-400 text-[11px] mt-1.5">Lo que facturaste antes de esa fecha se paga con las reglas de hoy, aunque lo cobres después.</p>
+                </div>
             )}
 
             {/* ── Commission Meter ── */}
@@ -650,7 +683,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                         )}
                     </div>
                     <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tier.bg} ${tier.color} shrink-0`}>
-                        Nivel {tier.label}
+                        {tasaFija ? `${tier.label} ${commConfig.bajaRate}%` : `Nivel ${tier.label}`}
                     </span>
                 </div>
 
@@ -986,7 +1019,7 @@ function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClos
 
                 {/* Niveles de comisión */}
                 <div className="mb-5">
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Niveles de Comisión</p>
+                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">{esTasaFija(commConfig) ? 'Tu comisión' : 'Niveles de Comisión'}</p>
                     <div className="space-y-2">
                         {[...tiers, ...(commConfig.bajaActiva === false ? [] : [{ label: commConfig.bajaLabel || 'Baja', rate: (commConfig.bajaRate || 0) / 100, min: 0, ...BAJA_STYLE }])].map((t, i) => {
                             const isBaja = t.min === 0 && i === tiers.length;
@@ -1005,7 +1038,7 @@ function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClos
                                     </div>
                                     <div className="text-right">
                                         <p className={`text-sm font-mono font-bold ${isActive ? t.color : 'text-slate-400'}`}>{t.rate > 0 ? `${(t.rate * 100).toFixed(1)}%` : '—'}</p>
-                                        <p className="text-slate-500 text-[10px]">{isBaja ? `< ${lowestMinUnits.toLocaleString()} uds` : `desde ${minUnits.toLocaleString()} uds`}</p>
+                                        <p className="text-slate-500 text-[10px]">{esTasaFija(commConfig) ? 'sobre todo lo cobrado, sin niveles' : isBaja ? `< ${lowestMinUnits.toLocaleString()} uds` : `desde ${minUnits.toLocaleString()} uds`}</p>
                                     </div>
                                 </div>
                             );
@@ -1402,14 +1435,14 @@ const VendedorLayout = ({ user, onLogout }) => {
                 const meta     = metaSnap.exists() ? metaSnap.data() : {};
                 const reporterId  = meta.reporterId  || null;
                 const nombre      = meta.name || user.displayName || user.email;
-                const cfg = meta.commissionConfig
-                    ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
-                    : DEFAULT_COMMISSION_CONFIG;
-
                 // Meta y PERÍODO efectivos (periodosComision.js): mes de empleo
                 // hasta septiembre de 2026; desde octubre se cortan el último día
                 // de cada mes. Un período corto lleva la meta en proporción.
                 const per = computeMetaMensual(meta);
+                // El esquema de comisión del período en curso (un vendedor puede
+                // cambiar de esquema desde una fecha: ver periodosComision.js), y
+                // el próximo cambio, si hay uno, para avisárselo.
+                const cfg = { ...configEnFecha(meta, per.periodStart), proximoEsquema: proximoCambioEsquema(meta, per.periodStart) };
                 const { metaMensual, mesArranque, periodStart, periodEnd, antesDeIngreso, sinIngreso, ingreso } = per;
                 const periodoLabel = per.corto ? `${per.periodoLabel} · período corto, meta en proporción` : per.periodoLabel;
 

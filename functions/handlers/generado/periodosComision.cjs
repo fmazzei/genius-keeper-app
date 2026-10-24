@@ -24,16 +24,21 @@ __export(periodosComision_exports, {
   CIERRE_MES_CALENDARIO_DESDE: () => CIERRE_MES_CALENDARIO_DESDE,
   baseDePeriodo: () => baseDePeriodo,
   claveDe: () => claveDe,
+  configEnFecha: () => configEnFecha,
+  esTasaFija: () => esTasaFija,
+  esquemasComision: () => esquemasComision,
   etiquetaFijo: () => etiquetaFijo,
   fechaLocal: () => fechaLocal,
   metaDePeriodo: () => metaDePeriodo,
   metaEnVentana: () => metaEnVentana,
   metaKgDePeriodo: () => metaKgDePeriodo,
   metaKgEnVentana: () => metaKgEnVentana,
+  normalizarEsquema: () => normalizarEsquema,
   notaTransicion: () => notaTransicion,
   periodoDeFecha: () => periodoDeFecha,
   periodosConMeta: () => periodosConMeta,
   periodosDeEmpleo: () => periodosDeEmpleo,
+  proximoCambioEsquema: () => proximoCambioEsquema,
   quincenasDe: () => quincenasDe,
   reglasDelVendedor: () => reglasDelVendedor,
   separaFoodservice: () => separaFoodservice
@@ -135,9 +140,38 @@ function periodoDeFecha(fechaIngreso, fecha, opts) {
   const p = ps[ps.length - 1];
   return { periodKey: p.periodKey, recuperada: false, periodo: p };
 }
-function reglasDelVendedor(vendedor = {}) {
-  const cfg = vendedor.commissionConfig ? { ...DEFAULT_COMMISSION_CONFIG, ...vendedor.commissionConfig } : DEFAULT_COMMISSION_CONFIG;
-  const metaPlena = Number(vendedor.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual) || 0;
+function esquemasComision(vendedor = {}) {
+  const raw = vendedor.commissionConfig || {};
+  const out = [{ desde: null, config: { ...raw, metaMensual: Number(vendedor.metaMensual || raw.metaMensual) || void 0 } }];
+  (Array.isArray(vendedor.commissionConfigCambios) ? vendedor.commissionConfigCambios : []).filter((c) => c && c.config && fechaLocal(c.desde)).sort((a, b) => fechaLocal(a.desde) - fechaLocal(b.desde)).forEach((c) => out.push({ desde: c.desde, config: c.config }));
+  return out;
+}
+function normalizarEsquema(config = {}) {
+  const c = { ...DEFAULT_COMMISSION_CONFIG, ...config };
+  for (const k of Object.keys(DEFAULT_COMMISSION_CONFIG)) {
+    if (c[k] === void 0 || c[k] === null) c[k] = DEFAULT_COMMISSION_CONFIG[k];
+  }
+  if (c.esquema === "fija") {
+    return { ...c, tiers: [], bajaActiva: true, bajaRate: Number(c.tasaFija) || 0, bajaLabel: c.tasaFijaLabel || "Tasa fija" };
+  }
+  return c;
+}
+var esTasaFija = (cfg) => cfg?.esquema === "fija";
+function configEnFecha(vendedor = {}, fecha = /* @__PURE__ */ new Date()) {
+  const d = fechaLocal(fecha) || /* @__PURE__ */ new Date();
+  const esquemas = esquemasComision(vendedor);
+  let elegido = esquemas[0];
+  for (const e of esquemas.slice(1)) if (fechaLocal(e.desde) <= d) elegido = e;
+  return normalizarEsquema(elegido.config);
+}
+function proximoCambioEsquema(vendedor = {}, fecha = /* @__PURE__ */ new Date()) {
+  const d = fechaLocal(fecha) || /* @__PURE__ */ new Date();
+  const e = esquemasComision(vendedor).slice(1).find((x) => fechaLocal(x.desde) > d);
+  return e ? { desde: e.desde, config: normalizarEsquema(e.config) } : null;
+}
+function reglasDelVendedor(vendedor = {}, fecha = /* @__PURE__ */ new Date()) {
+  const cfg = configEnFecha(vendedor, fecha);
+  const metaPlena = Number(cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual) || 0;
   const arranque = Array.isArray(cfg.arranque) ? cfg.arranque : [];
   const baseMes = (Number(cfg.salarioFijo) || 0) + (Number(cfg.viaticosSemanales) || 0) * 4;
   const metaKgPlena = Number(cfg.metaKgFoodservice) || 0;
@@ -184,39 +218,42 @@ function notaTransicion(p) {
   return `El fijo se paga por quincenas (el 15 y el \xFAltimo d\xEDa del mes). Este per\xEDodo lleva ${q.length === 1 ? "la quincena" : "las quincenas"} del ${q.map(ddmm).join(" y ")}.`;
 }
 function periodosConMeta(vendedor = {}, hasta = /* @__PURE__ */ new Date(), opts) {
-  const reglas = reglasDelVendedor(vendedor);
-  return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => ({
-    ...p,
-    meta: metaDePeriodo(p, reglas),
-    base: baseDePeriodo(p, reglas),
-    separaFood: separaFoodservice(p),
-    metaKg: metaKgDePeriodo(p, reglas)
-  }));
+  return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => {
+    const reglas = reglasDelVendedor(vendedor, p.start);
+    return {
+      ...p,
+      meta: metaDePeriodo(p, reglas),
+      base: baseDePeriodo(p, reglas),
+      separaFood: separaFoodservice(p),
+      metaKg: metaKgDePeriodo(p, reglas),
+      cfg: reglas.cfg
+    };
+  });
 }
 function metaEnVentana(vendedor = {}, desde, hasta, opts) {
-  const reglas = reglasDelVendedor(vendedor);
   const ingreso = fechaLocal(vendedor.fechaIngreso);
-  if (!ingreso) return Math.round(reglas.metaPlena * diasEntre(desde, hasta) / diasDelMes(desde));
+  if (!ingreso) return Math.round(reglasDelVendedor(vendedor, desde).metaPlena * diasEntre(desde, hasta) / diasDelMes(desde));
   let total = 0;
   for (const p of periodosDeEmpleo(ingreso, new Date(hasta.getTime() - 1), opts)) {
     const a = Math.max(p.start.getTime(), desde.getTime());
     const b = Math.min(p.end.getTime(), hasta.getTime());
     if (b <= a) continue;
-    total += metaDePeriodo(p, reglas) * ((b - a) / DIA) / p.dias;
+    total += metaDePeriodo(p, reglasDelVendedor(vendedor, p.start)) * ((b - a) / DIA) / p.dias;
   }
   return Math.round(total);
 }
 function metaKgEnVentana(vendedor = {}, desde, hasta, opts) {
-  const reglas = reglasDelVendedor(vendedor);
-  if (!(reglas.metaKgPlena > 0)) return 0;
   const ingreso = fechaLocal(vendedor.fechaIngreso);
-  if (!ingreso) return Math.round(reglas.metaKgPlena * diasEntre(desde, hasta) / diasDelMes(desde) * 10) / 10;
+  if (!ingreso) {
+    const reglas = reglasDelVendedor(vendedor, desde);
+    return Math.round(reglas.metaKgPlena * diasEntre(desde, hasta) / diasDelMes(desde) * 10) / 10;
+  }
   let total = 0;
   for (const p of periodosDeEmpleo(ingreso, new Date(hasta.getTime() - 1), opts)) {
     const a = Math.max(p.start.getTime(), desde.getTime());
     const b = Math.min(p.end.getTime(), hasta.getTime());
     if (b <= a) continue;
-    total += metaKgDePeriodo(p, reglas) * ((b - a) / DIA) / p.dias;
+    total += metaKgDePeriodo(p, reglasDelVendedor(vendedor, p.start)) * ((b - a) / DIA) / p.dias;
   }
   return Math.round(total * 10) / 10;
 }
@@ -225,16 +262,21 @@ function metaKgEnVentana(vendedor = {}, desde, hasta, opts) {
   CIERRE_MES_CALENDARIO_DESDE,
   baseDePeriodo,
   claveDe,
+  configEnFecha,
+  esTasaFija,
+  esquemasComision,
   etiquetaFijo,
   fechaLocal,
   metaDePeriodo,
   metaEnVentana,
   metaKgDePeriodo,
   metaKgEnVentana,
+  normalizarEsquema,
   notaTransicion,
   periodoDeFecha,
   periodosConMeta,
   periodosDeEmpleo,
+  proximoCambioEsquema,
   quincenasDe,
   reglasDelVendedor,
   separaFoodservice

@@ -20,10 +20,9 @@
 
 import { computeActivacionPeriodo, tierParaPct, fechaCalendario, computeMetaMensual, carteraActivacion, clavesCartera, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
 import { cuentaEnCartera, esPorCobrar, saldoAbierto } from '@/utils/facturaEstado.js';
-import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { clasificarVentas, evaluarPlan } from '@/utils/gestionVenta.js';
 import { detalleActivacion } from '@/utils/activacion.js';
-import { reglasDelVendedor, periodosConMeta, fechaLocal, metaKgEnVentana, CIERRE_MES_CALENDARIO_DESDE } from '@/utils/periodosComision.js';
+import { reglasDelVendedor, periodosConMeta, fechaLocal, metaKgEnVentana, configEnFecha, CIERRE_MES_CALENDARIO_DESDE } from '@/utils/periodosComision.js';
 import { kgDeUnidades, redKg, fmtKg } from '@/utils/canalVenta.js';
 
 const DIA = 86400000;
@@ -57,7 +56,7 @@ const rango = (a, b) => `${fmtCorto(a)} – ${fmtCorto(new Date(b.getTime() - DI
  * ingreso, meses de calendario con la meta plena.
  */
 export function periodosVendedor(vendedor = {}, n = 12, ahora = new Date()) {
-    const { metaPlena } = reglasDelVendedor(vendedor);
+    const { metaPlena } = reglasDelVendedor(vendedor, ahora);
     const out = [];
     if (fechaLocal(vendedor.fechaIngreso)) {
         const ps = periodosConMeta(vendedor, ahora);
@@ -113,13 +112,14 @@ export function ventanasVendedor(vendedor = {}, ahora = new Date()) {
  * @param {Array}  [p.posList]   — la colección `pos`: la cartera son solo las sucursales con PDV activo.
  */
 export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null, gestiones = null, planes = null, seguidor = null, clientes = null, carteraSize = 0, posList = null, ahora = new Date() } = {}) {
-    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.commissionConfig || {}) };
     const cartera = clientes ? carteraActivacion(clientes, posList) : null;
     if (cartera) carteraSize = cartera.length;
-    const per = computeMetaMensual(vendedor);
+    const per = computeMetaMensual(vendedor, ahora);
     const v = ventana || ventanasVendedor(vendedor, ahora).mes
         || { tipo: 'mes', inicio: per.periodStart, fin: per.periodEnd, meta: per.metaMensual, titulo: 'Mes en curso', rango: per.periodoLabel };
     const inicio = v.inicio, fin = v.fin;
+    // El esquema de comisión vigente al empezar la ventana.
+    const cfg = configEnFecha(vendedor, inicio);
     const corte = new Date(Math.min(fin.getTime(), ahora.getTime()));
     const enCurso = fin > ahora;
     const diasTotales = Math.max(1, Math.round((fin - inicio) / DIA));

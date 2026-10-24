@@ -8,7 +8,7 @@
 
 // Valores por defecto — espejo de DEFAULT_COMMISSION_CONFIG en
 // src/Components/CommissionConstructor.jsx.
-const { periodoDeFecha } = require('./generado/periodosComision.cjs');
+const { periodoDeFecha, configEnFecha } = require('./generado/periodosComision.cjs');
 
 const DEFAULT_COMMISSION_CONFIG = {
     metaMensual: 2400,
@@ -48,7 +48,11 @@ const DEFAULT_COMMISSION_CONFIG = {
  * `min`/`rate` a fracciones (0–1).
  */
 function buildTiers(config) {
-    const tiers = (config.tiers && config.tiers.length > 0 ? config.tiers : DEFAULT_COMMISSION_CONFIG.tiers)
+    // Un esquema de TASA FIJA llega normalizado sin niveles (configEnFecha): por
+    // debajo de "ningún nivel" paga la tasa fija (bajaRate). Solo un esquema por
+    // niveles sin niveles cargados cae a los de por defecto.
+    const sinNiveles = config.esquema === 'fija';
+    const tiers = (sinNiveles ? [] : (config.tiers && config.tiers.length > 0 ? config.tiers : DEFAULT_COMMISSION_CONFIG.tiers))
         .slice()
         .sort((a, b) => b.minPct - a.minPct)
         .map((t) => ({ label: t.label, min: t.minPct / 100, rate: t.rate / 100 }));
@@ -61,13 +65,23 @@ function buildTiers(config) {
  * cuarto escalón independiente y editable (`cfg.bajaRate`), no la tasa del
  * tier más bajo — ver VendedorLayout.jsx::getTierFromConfig.
  */
-function getTierFromConfig(pct, tiers, bajaRate) {
+function getTierFromConfig(pct, tiers, bajaRate, bajaLabel = 'Baja') {
     for (const t of tiers) {
         if (pct >= t.min) return t;
     }
     const lowest = tiers[tiers.length - 1];
     const rate = bajaRate !== undefined && bajaRate !== null ? bajaRate / 100 : (lowest ? lowest.rate : 0);
-    return { label: 'Baja', min: 0, rate };
+    return { label: bajaLabel || 'Baja', min: 0, rate };
+}
+
+/**
+ * El esquema de comisión del vendedor vigente en una fecha (users_metadata con
+ * `commissionConfig` y `commissionConfigCambios`). Misma regla que la app
+ * (src/utils/periodosComision.js): un cambio de esquema rige desde su fecha y
+ * nunca recalcula lo anterior.
+ */
+function configDelVendedor(vendedorData, fecha) {
+    return configEnFecha(vendedorData || {}, fecha || new Date());
 }
 
 /** Mes calendario (YYYY-MM) a partir de un objeto Date. */
@@ -119,6 +133,7 @@ module.exports = {
     DEFAULT_COMMISSION_CONFIG,
     buildTiers,
     getTierFromConfig,
+    configDelVendedor,
     mesCohorteFromDate,
     periodoCohorteFromDate,
     diffDias,

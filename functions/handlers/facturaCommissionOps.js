@@ -8,7 +8,7 @@
 
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const { DEFAULT_COMMISSION_CONFIG, buildTiers, getTierFromConfig, diffDias } = require('./commissionEngine');
+const { DEFAULT_COMMISSION_CONFIG, buildTiers, getTierFromConfig, configDelVendedor, diffDias } = require('./commissionEngine');
 
 /**
  * Normaliza el nombre de una razón social (customer_name de Zoho) a una clave
@@ -36,7 +36,7 @@ async function acumularEnDoc(ref, vendedor, mesLabel, unidades, cfg, metaMensual
         const prevUnidades = snap.exists ? (snap.data().unidadesFacturadas || 0) : 0;
         const nuevoTotal = prevUnidades + unidades;
         const pct = metaMensual > 0 ? nuevoTotal / metaMensual : 0;
-        const tier = getTierFromConfig(pct, tiers, cfg.bajaRate);
+        const tier = getTierFromConfig(pct, tiers, cfg.bajaRate, cfg.bajaLabel);
         tx.set(ref, {
             vendedorId: vendedor.id,
             reporterId: vendedor.data.reporterId || null,
@@ -65,8 +65,9 @@ async function acumularEnDoc(ref, vendedor, mesLabel, unidades, cfg, metaMensual
  * para no romper el comportamiento anterior.
  */
 async function congelarTasaCohorte(vendedor, mesCohorte, unidades, periodoCohorte) {
-    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
-    const metaMensual = vendedor.data.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+    // El esquema vigente al empezar el período de la factura (o su mes calendario).
+    const cfg = configDelVendedor(vendedor.data, periodoCohorte || (mesCohorte ? `${mesCohorte}-01` : null));
+    const metaMensual = cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
     const tiers = buildTiers(cfg);
 
     let tierCalendario = null;
@@ -82,7 +83,7 @@ async function congelarTasaCohorte(vendedor, mesCohorte, unidades, periodoCohort
     }
 
     // La tasa del vendedor manda; calendario es respaldo (compat.).
-    return tierPeriodo || tierCalendario || getTierFromConfig(0, tiers, cfg.bajaRate);
+    return tierPeriodo || tierCalendario || getTierFromConfig(0, tiers, cfg.bajaRate, cfg.bajaLabel);
 }
 
 /**
@@ -106,7 +107,8 @@ async function procesarPagoFactura({ vendedor, facturaData, fechaFactura, vencim
         return;
     }
 
-    const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedor.data.commissionConfig || {}) };
+    // Las reglas con que se comisiona una factura son las vigentes cuando se facturó.
+    const cfg = configDelVendedor(vendedor.data, fechaFactura);
     const facturaMaxDias = cfg.facturaMaxDias || DEFAULT_COMMISSION_CONFIG.facturaMaxDias;
     const cobranzaGraciaDias = cfg.cobranzaGraciaDias ?? DEFAULT_COMMISSION_CONFIG.cobranzaGraciaDias;
     const comisionRecuperadas = cfg.comisionRecuperadas ?? DEFAULT_COMMISSION_CONFIG.comisionRecuperadas;
@@ -217,11 +219,14 @@ async function revertirEnDoc(ref, vendedorId, unidades) {
 
         const vendedorSnap = await tx.get(admin.firestore().doc(`users_metadata/${vendedorId}`));
         const vendedorData = vendedorSnap.exists ? vendedorSnap.data() : {};
-        const cfg = { ...DEFAULT_COMMISSION_CONFIG, ...(vendedorData.commissionConfig || {}) };
-        const metaMensual = vendedorData.metaMensual || cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
+        // El acumulador es de un período ({vendedor}_{YYYY-MM-DD}) o de un mes
+        // ({vendedor}_{YYYY-MM}): su esquema es el vigente al empezar.
+        const clave = String(ref.id).slice(vendedorId.length + 1);
+        const cfg = configDelVendedor(vendedorData, /^\d{4}-\d{2}$/.test(clave) ? `${clave}-01` : clave);
+        const metaMensual = cfg.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
         const tiers = buildTiers(cfg);
         const pct = metaMensual > 0 ? nuevoTotal / metaMensual : 0;
-        const tier = getTierFromConfig(pct, tiers, cfg.bajaRate);
+        const tier = getTierFromConfig(pct, tiers, cfg.bajaRate, cfg.bajaLabel);
         tx.update(ref, {
             unidadesFacturadas: nuevoTotal,
             nivel: tier.label,

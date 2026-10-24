@@ -5,6 +5,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
 import { Plus, Trash2, AlertCircle, FileText } from 'lucide-react';
 import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
+import { esquemasComision, fechaLocal } from '@/utils/periodosComision.js';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import CommissionProposalDoc from '@/Components/CommissionProposalDoc.jsx';
 
@@ -98,8 +99,36 @@ const getScenarios = (config) => [
 ];
 
 // ─── Main component ───────────────────────────────────────────────────────────
+// "YYYY-MM-DD" → "01/11/2026".
+const ddmmaaaa = (s) => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
+const hoyClave = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const primeroDelMesSiguiente = () => { const d = new Date(); const n = new Date(d.getFullYear(), d.getMonth() + 1, 1); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-01`; };
+
+// Un esquema guardado → el formulario (valores por defecto + arranque normalizado).
+const aFormulario = (raw = {}) => {
+    const merged = { ...DEFAULT_COMMISSION_CONFIG, ...raw };
+    Object.keys(DEFAULT_COMMISSION_CONFIG).forEach(k => { if (merged[k] === undefined || merged[k] === null) merged[k] = DEFAULT_COMMISSION_CONFIG[k]; });
+    if (!merged.esquema) merged.esquema = 'niveles';
+    if (merged.tasaFija === undefined) merged.tasaFija = 0;
+    const topMeta = merged.metaMensual;
+    // Normaliza arranque a { mes, pct, meta }: si solo había `meta`
+    // (formato anterior), deriva el % equivalente sobre la meta plena.
+    merged.arranque = (merged.arranque || []).map((a, i) => {
+        const pct = a.pct ?? (topMeta > 0 ? Math.round(((a.meta || 0) / topMeta) * 100) : 0);
+        return { mes: a.mes ?? (i + 1), pct, meta: a.meta ?? Math.round(topMeta * pct / 100) };
+    });
+    return merged;
+};
+
 const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
-    const [config, setConfig]       = useState(DEFAULT_COMMISSION_CONFIG);
+    // Esquemas del vendedor: el primero rige desde su ingreso; cada cambio, desde
+    // su fecha (ver periodosComision.js). Se edita uno a la vez.
+    const [esquemas, setEsquemas]   = useState([{ desde: null, config: aFormulario() }]);
+    const [slot, setSlot]           = useState(0);
+    const [nuevoDesde, setNuevoDesde] = useState(null);   // fecha del cambio que se está creando
+    const config = esquemas[slot]?.config || esquemas[0].config;
+    const setConfig = (fn) => setEsquemas(es => es.map((e, i) => i === slot
+        ? { ...e, config: typeof fn === 'function' ? fn(e.config) : fn } : e));
     const [loading, setLoading]     = useState(true);
     const [saving, setSaving]       = useState(false);
     const [error, setError]         = useState('');
@@ -114,20 +143,14 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                 if (snap.exists()) {
                     const userData = snap.data();
                     if (userData.name) setVendedorName(userData.name);
-                    // metaMensual lives at the top level; merge into config
-                    const topMeta = userData.metaMensual || DEFAULT_COMMISSION_CONFIG.metaMensual;
-                    const merged = {
-                        ...DEFAULT_COMMISSION_CONFIG,
-                        metaMensual: topMeta,
-                        ...(userData.commissionConfig || {}),
-                    };
-                    // Normaliza arranque a { mes, pct, meta }: si solo había `meta`
-                    // (formato anterior), deriva el % equivalente sobre la meta plena.
-                    merged.arranque = (merged.arranque || []).map((a, i) => {
-                        const pct = a.pct ?? (topMeta > 0 ? Math.round(((a.meta || 0) / topMeta) * 100) : 0);
-                        return { mes: a.mes ?? (i + 1), pct, meta: a.meta ?? Math.round(topMeta * pct / 100) };
-                    });
-                    setConfig(merged);
+                    // metaMensual del primer esquema vive arriba del documento.
+                    const lista = esquemasComision(userData).map(e => ({ desde: e.desde, config: aFormulario(e.config) }));
+                    setEsquemas(lista);
+                    // Abre el esquema vigente hoy.
+                    const hoy = fechaLocal(hoyClave());
+                    let vigente = 0;
+                    lista.forEach((e, i) => { if (i > 0 && fechaLocal(e.desde) <= hoy) vigente = i; });
+                    setSlot(vigente);
                 }
             } catch (e) {
                 console.warn('CommissionConstructor load error:', e);
@@ -141,9 +164,11 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
         setSaving(true);
         setError('');
         try {
+            const [primero, ...cambios] = esquemas;
             await updateDoc(doc(db, 'users_metadata', vendedor.id), {
-                commissionConfig: config,
-                metaMensual: config.metaMensual,   // keep top-level field in sync
+                commissionConfig: primero.config,
+                metaMensual: primero.config.metaMensual,   // keep top-level field in sync
+                commissionConfigCambios: cambios.map(e => ({ desde: e.desde, config: e.config })),
             });
             onClose();
         } catch (e) {
@@ -152,7 +177,46 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
         }
     };
 
-    useImperativeHandle(ref, () => ({ save: handleSave, saving }), [saving, config]);
+    useImperativeHandle(ref, () => ({ save: handleSave, saving }), [saving, esquemas]);
+
+    // Esquema vigente hoy (para marcarlo).
+    const idxVigente = (() => {
+        const hoy = fechaLocal(hoyClave());
+        let v = 0;
+        esquemas.forEach((e, i) => { if (i > 0 && fechaLocal(e.desde) <= hoy) v = i; });
+        return v;
+    })();
+    const etiquetaEsquema = (i) => {
+        const e = esquemas[i];
+        const sig = esquemas[i + 1];
+        if (i === 0) {
+            if (!sig) return 'Desde el ingreso';
+            const d = fechaLocal(sig.desde); const a = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1);
+            return `Hasta el ${String(a.getDate()).padStart(2, '0')}/${String(a.getMonth() + 1).padStart(2, '0')}/${a.getFullYear()}`;
+        }
+        return `Desde el ${ddmmaaaa(e.desde)}`;
+    };
+    const crearCambio = () => {
+        if (!nuevoDesde || !fechaLocal(nuevoDesde)) { setError('Elige la fecha desde la que rige el nuevo esquema.'); return; }
+        if (esquemas.some(e => e.desde === nuevoDesde)) { setError('Ya hay un esquema que empieza ese día.'); return; }
+        // El nuevo esquema arranca como copia del que estaba vigente en esa fecha.
+        const d = fechaLocal(nuevoDesde);
+        let base = 0;
+        esquemas.forEach((e, i) => { if (i > 0 && fechaLocal(e.desde) <= d) base = i; });
+        const lista = [...esquemas, { desde: nuevoDesde, config: { ...esquemas[base].config, arranque: [] } }]
+            .sort((a, b) => (a.desde === null ? -1 : b.desde === null ? 1 : fechaLocal(a.desde) - fechaLocal(b.desde)));
+        setEsquemas(lista);
+        setSlot(lista.findIndex(e => e.desde === nuevoDesde));
+        setNuevoDesde(null);
+        setError('');
+    };
+    const quitarCambio = (i) => {
+        if (i === 0) return;
+        if (!window.confirm(`¿Quitar el esquema que rige ${etiquetaEsquema(i).toLowerCase()}? Los meses desde esa fecha volverán al esquema anterior (salvo los ya congelados).`)) return;
+        setEsquemas(es => es.filter((_, j) => j !== i));
+        setSlot(s => (s >= i ? Math.max(0, s - 1) : s));
+    };
+    const fija = config.esquema === 'fija';
 
     const updateTier    = (i, field, val) =>
         setConfig(p => ({ ...p, tiers: p.tiers.map((t, j) => j === i ? { ...t, [field]: val } : t) }));
@@ -181,7 +245,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
 
     const project = (rate) => {
         const commission = simAmount * (rate / 100);
-        const bonuses    = simAmount * ((config.bonusPuntualidad + config.bonusActivacion) / 100);
+        const bonuses    = simAmount * (((config.bonusPuntualidad || 0) + (config.bonusActivacion || 0)) / 100);
         const fijo       = config.salarioFijo;
         const viaticos   = config.viaticosSemanales * 4;
         return { commission, bonuses, fijo, viaticos, total: commission + bonuses + fijo + viaticos };
@@ -204,6 +268,50 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                         <span>{error}</span>
                     </div>
                 )}
+
+                {/* ── Esquemas por fecha ── */}
+                <section>
+                    <SectionHeader label="Esquema de comisión" />
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                        <div className="flex flex-wrap gap-2">
+                            {esquemas.map((e, i) => (
+                                <button key={e.desde || 'inicio'} type="button" onClick={() => setSlot(i)}
+                                    className={`text-left px-3 py-2 rounded-lg border text-xs font-semibold ${i === slot ? 'bg-[#0D2B4C] text-white border-[#0D2B4C]' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
+                                    {etiquetaEsquema(i)}
+                                    <span className={`block text-[10px] font-normal ${i === slot ? 'text-white/70' : 'text-slate-400'}`}>
+                                        {e.config.esquema === 'fija' ? `Tasa fija ${e.config.tasaFija || 0}%` : 'Por niveles'}{i === idxVigente ? ' · vigente hoy' : fechaLocal(e.desde) > new Date() ? ' · programado' : ''}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                        {nuevoDesde === null ? (
+                            <button type="button" onClick={() => setNuevoDesde(primeroDelMesSiguiente())}
+                                className="flex items-center gap-1 text-xs font-semibold text-blue-600 active:opacity-60">
+                                <Plus size={13} /> Cambiar el esquema desde una fecha
+                            </button>
+                        ) : (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-2.5 space-y-2">
+                                <p className="text-xs text-slate-600">El nuevo esquema rige para los meses que <b>empiezan</b> desde esta fecha. Lo anterior no se toca. Lo facturado antes se sigue pagando con su esquema aunque se cobre después.</p>
+                                <div className="flex items-center gap-2">
+                                    <input type="date" value={nuevoDesde} onChange={e => setNuevoDesde(e.target.value)}
+                                        className="min-w-0 flex-1 p-2 border border-slate-200 rounded-lg text-sm bg-white" />
+                                    <button type="button" onClick={crearCambio} className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold">Crear</button>
+                                    <button type="button" onClick={() => setNuevoDesde(null)} className="px-2 py-2 text-xs text-slate-500">Cancelar</button>
+                                </div>
+                            </div>
+                        )}
+                        <p className="text-[11px] text-slate-500 leading-snug">
+                            Estás editando: <b>{etiquetaEsquema(slot).toLowerCase()}</b>.
+                            {slot === 0 && esquemas.length > 1 ? ' Corregir este esquema recalcula los meses anteriores al cambio que no estén congelados.' : ''}
+                            {slot === 0 && esquemas.length === 1 ? ' Corregir este esquema recalcula los meses que no estén congelados. Para que un cambio rija solo desde una fecha, usa "Cambiar el esquema desde una fecha".' : ''}
+                        </p>
+                        {slot > 0 && (
+                            <button type="button" onClick={() => quitarCambio(slot)} className="flex items-center gap-1 text-xs font-semibold text-red-600">
+                                <Trash2 size={13} /> Quitar este cambio
+                            </button>
+                        )}
+                    </div>
+                </section>
 
                 {/* ── 0. Descargar propuesta ── */}
                 <button
@@ -276,8 +384,34 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </p>
                 </section>
 
-                {/* ── 3. Estructura de Comisión ── */}
+                {/* ── 3. Tipo de comisión ── */}
                 <section>
+                    <SectionHeader label="Tipo de comisión" />
+                    <div className="grid grid-cols-2 gap-2">
+                        {[['niveles', 'Por niveles', 'La tasa sube con el % de la meta'], ['fija', 'Tasa fija', 'Una sola tasa sobre todo lo cobrado']].map(([k, t, h]) => (
+                            <button key={k} type="button" onClick={() => setConfig(p => ({ ...p, esquema: k }))}
+                                className={`text-left p-3 rounded-xl border ${config.esquema === k ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-slate-200'}`}>
+                                <p className={`text-sm font-bold ${config.esquema === k ? 'text-emerald-800' : 'text-slate-700'}`}>{t}</p>
+                                <p className="text-xs text-slate-400 mt-0.5">{h}</p>
+                            </button>
+                        ))}
+                    </div>
+                    {fija && (
+                        <div className="bg-white border border-slate-200 rounded-xl px-4 mt-2">
+                            <InlineRow
+                                label="Comisión fija"
+                                hint="Sobre lo cobrado de retail, sin importar el % de la meta. La meta sigue contando para los indicadores."
+                                suffix="%"
+                                value={config.tasaFija}
+                                step={0.5}
+                                onChange={v => setConfig(p => ({ ...p, tasaFija: v }))}
+                            />
+                        </div>
+                    )}
+                </section>
+
+                {/* ── 3b. Estructura de Comisión (por niveles) ── */}
+                {!fija && <section>
                     <SectionHeader
                         label="Estructura de Comisión — Tu % Según Meta"
                         action={
@@ -414,11 +548,12 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     <p className="text-xs text-slate-400 mt-1.5 px-1">
                         Evalúa de arriba a abajo — ordénalos de mayor a menor. El nivel más bajo (editable y eliminable) aplica por debajo del mínimo configurado; si lo eliminas, por debajo del mínimo no hay comisión. El % total suma Bono Cobranza (+{config.bonusPuntualidad}%) y Bono Activación (+{config.bonusActivacion}%). El Bono Anaquel <b>sustituye</b> al de Activación en cuentas de régimen anaquel (no se suman), por eso no aparece aparte en el total. En el nivel más bajo no aplican bonos por meta.
                     </p>
-                </section>
+                </section>}
 
                 {/* ── 4. Bonos ── */}
                 <section>
                     <SectionHeader label="Bonos" />
+                    <p className="text-xs text-slate-400 mb-1.5 px-1">Un bono en 0 % queda apagado.</p>
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
                         <InlineRow
                             label="Bono Cobranza"
@@ -572,6 +707,23 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             </div>
                         </div>
 
+                        {fija ? (() => {
+                            const p = project(config.tasaFija || 0);
+                            return (
+                                <div className="bg-white rounded-xl p-3.5 border border-slate-200">
+                                    <div className="flex items-baseline justify-between mb-1.5">
+                                        <span className="font-bold text-slate-800">Tasa fija {config.tasaFija || 0}%</span>
+                                        <span className="font-black text-emerald-700 text-xl">${p.total.toFixed(0)}</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
+                                        <span>Fijo <b className="text-slate-600 font-semibold">${p.fijo}</b></span>
+                                        <span>Viáticos <b className="text-slate-600 font-semibold">${p.viaticos}</b></span>
+                                        <span>Comisión <b className="text-slate-600 font-semibold">${p.commission.toFixed(0)}</b></span>
+                                        <span>Bonos <b className="text-slate-600 font-semibold">${p.bonuses.toFixed(0)}</b></span>
+                                    </div>
+                                </div>
+                            );
+                        })() : (
                         <div className="space-y-2">
                             {[...config.tiers]
                                 .sort((a, b) => b.minPct - a.minPct)
@@ -611,9 +763,10 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                 );
                             })()}
                         </div>
+                        )}
 
                         <p className="text-[11px] text-slate-400">
-                            * Con ambos bonos activos. Tasas sobre el monto efectivamente cobrado.
+                            * Con los bonos activos (los que no están en 0 %). Tasas sobre el monto efectivamente cobrado.
                         </p>
                     </div>
                 </section>

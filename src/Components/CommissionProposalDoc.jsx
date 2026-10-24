@@ -20,9 +20,11 @@ function computeProposal(config = {}) {
     const viaticosMes = (Number(config.viaticosSemanales) || 0) * 4;
     const base   = fijo + viaticosMes;
 
-    const tiers = [...(config.tiers || [])].sort((a, b) => b.minPct - a.minPct);
-    // Nivel "objetivo" = el que aplica al 100% de cumplimiento.
-    const objetivo = tiers.filter(t => t.minPct <= 100).sort((a, b) => b.minPct - a.minPct)[0]
+    const fija = config.esquema === 'fija';
+    const tiers = fija ? [] : [...(config.tiers || [])].sort((a, b) => b.minPct - a.minPct);
+    // Nivel "objetivo" = el que aplica al 100% de cumplimiento (con tasa fija, la tasa fija).
+    const objetivo = fija ? { label: 'Tasa fija', rate: Number(config.tasaFija) || 0 }
+        : tiers.filter(t => t.minPct <= 100).sort((a, b) => b.minPct - a.minPct)[0]
         || tiers[tiers.length - 1]
         || { label: 'Óptima', rate: 5 };
 
@@ -40,7 +42,7 @@ function computeProposal(config = {}) {
     const montoCobranza    = montoFacturacion;
     const comisionEjemplo  = montoCobranza * tasaObjetivo / 100;
 
-    return { precio, base, fijo, viaticosMes, tiers, objetivo, bonoCobranza, bonoActivacion, tasaObjetivo, topRate, montoFacturacion, comisionObjetivo, potencial, montoCobranza, comisionEjemplo };
+    return { fija, precio, base, fijo, viaticosMes, tiers, objetivo, bonoCobranza, bonoActivacion, tasaObjetivo, topRate, montoFacturacion, comisionObjetivo, potencial, montoCobranza, comisionEjemplo };
 }
 
 const PRINT_CSS = `
@@ -163,8 +165,17 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                             );
                         })()}
 
+                        {/* Tasa fija */}
+                        {p.fija && (
+                            <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-center">
+                                <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em]">Tu comisión</p>
+                                <p className="text-emerald-700 text-2xl font-black leading-tight">{p.objetivo.rate}% fijo</p>
+                                <p className="text-slate-500 text-[11px] leading-snug">Sobre todo lo que <b>cobras</b>, sin niveles: cada unidad cobrada suma igual.</p>
+                            </div>
+                        )}
+
                         {/* Escalera de comisión */}
-                        <div>
+                        {!p.fija && <div>
                             <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
                                 <ArrowUpRight size={14} /> Tu comisión crece contigo
                             </p>
@@ -180,7 +191,7 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                                 })()}
                             </div>
                             <p className="text-slate-400 text-[10px] mt-1 text-center">"Meta" = % de tu meta de colocación que alcanzas · % = comisión sobre lo que <b>cobras</b></p>
-                        </div>
+                        </div>}
 
                         {/* Bonos que suben tu tasa */}
                         <div>
@@ -188,20 +199,20 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                                 <Zap size={14} /> Bonos que suben tu comisión
                             </p>
                             <div className="space-y-2">
-                                <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2 flex items-start gap-2.5">
+                                {p.bonoCobranza > 0 && <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2 flex items-start gap-2.5">
                                     <Zap size={17} className="text-emerald-600 shrink-0 mt-0.5" />
                                     <div className="min-w-0">
                                         <p className="text-emerald-800 text-sm font-black leading-tight">Bono Cobranza +{p.bonoCobranza}%</p>
                                         <p className="text-slate-500 text-[11px] leading-snug">Sobre <b>cada factura</b> que cobras a tiempo (dentro de vencimiento + {gracia} días de gracia). Mientras más puntual, más ganas.</p>
                                     </div>
-                                </div>
-                                <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2 flex items-start gap-2.5">
+                                </div>}
+                                {p.bonoActivacion > 0 && <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2 flex items-start gap-2.5">
                                     <Target size={17} className="text-amber-600 shrink-0 mt-0.5" />
                                     <div className="min-w-0">
                                         <p className="text-amber-800 text-sm font-black leading-tight">Bono Activación +{p.bonoActivacion}%</p>
                                         <p className="text-slate-500 text-[11px] leading-snug">Coloca ≥{minUnits} uds en el <b>{threshold}% de tu cartera cada semana</b>. Se paga proporcional a las semanas que lo logras, sobre lo que cobras.</p>
                                     </div>
-                                </div>
+                                </div>}
                             </div>
                             <p className="text-center text-sm font-black text-emerald-700 mt-1.5">Hasta {p.topRate.toFixed(1)}% sobre lo que cobras</p>
                         </div>
@@ -220,7 +231,7 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                         <div className="rounded-xl border-2 border-emerald-200 px-4 py-2.5 text-center">
                             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Ejemplo</p>
                             <p className="text-slate-700 text-[13px] mt-0.5 leading-snug">
-                                Cobras a tiempo <b>{money(p.montoCobranza)}</b> en nivel <b>{p.objetivo.label}</b> con tu cartera activa →
+                                Cobras a tiempo <b>{money(p.montoCobranza)}</b> {p.fija ? <>con tu comisión fija</> : <>en nivel <b>{p.objetivo.label}</b></>}{p.bonoActivacion > 0 ? ' con tu cartera activa' : ''} →
                                 <span className="text-emerald-700 font-black"> ~{money(p.comisionEjemplo)}</span> de comisión <b>+ tu base</b>
                             </p>
                         </div>

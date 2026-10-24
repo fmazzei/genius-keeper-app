@@ -34,7 +34,7 @@ const toDate = (v) => {
  *             fraccion:number, base:number }}
  */
 export function computeMetaMensual(meta = {}, ahora = new Date()) {
-    const { metaPlena, arranque, baseMes } = reglasDelVendedor(meta);
+    const { metaPlena, arranque, baseMes } = reglasDelVendedor(meta, ahora);
     const ingreso = toDate(meta.fechaIngreso);
     // Ingreso en el FUTURO: el vendedor aún no comienza. Su Mes 1 arranca en la
     // fecha de ingreso (no antes). `antesDeIngreso` permite al Home mostrar
@@ -313,27 +313,20 @@ export function facturaDeLaCartera(f, claves) {
  *   se vuelven a pagar en el período siguiente (`yaEnCierreMes`).
  */
 function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
-    const cfg = meta.commissionConfig
-        ? { ...DEFAULT_COMMISSION_CONFIG, ...meta.commissionConfig }
-        : DEFAULT_COMMISSION_CONFIG;
     const ingreso = toDate(meta.fechaIngreso);
     if (!ingreso) return null;
     const facturas = dedupFacturas(facturasIn);
-
-    const tiersDesc    = [...(cfg.tiers || [])].sort((a, b) => b.minPct - a.minPct);
-    const bajaRate     = cfg.bajaRate ?? 0;
-    const bajaLabel    = cfg.bajaLabel || 'Baja';
-    const actMinUnits  = cfg.activacionMinUnits ?? 24;
-    const actThreshold = cfg.activacionThreshold ?? 80;
     // La cartera de la Activación: si llega la lista (`opts.cartera`, ya filtrada
     // con `carteraActivacion`), manda ella y solo cuentan las facturas de esas
     // sucursales; si no, el tamaño suelto de siempre.
     const carteraSize  = Array.isArray(opts.cartera) ? opts.cartera.length : (Number(opts.carteraSize) || 0);
     const claves       = Array.isArray(opts.cartera) ? clavesCartera(opts.cartera) : null;
     const cerrados     = opts.cerrados || {};
-    const tierFor = (pct) => {
+    // Nivel según el esquema del período (niveles o tasa fija, ver periodosComision.js).
+    const tierFor = (cfgP, pct) => {
+        const tiersDesc = [...(cfgP.tiers || [])].sort((a, b) => b.minPct - a.minPct);
         for (const t of tiersDesc) if (pct >= t.minPct / 100) return { label: t.label, rate: t.rate };
-        return { label: bajaLabel, rate: bajaRate };
+        return { label: cfgP.bajaLabel || 'Baja', rate: cfgP.bajaRate ?? 0 };
     };
     const ahora = opts.ahora instanceof Date ? opts.ahora : new Date();
     // Los períodos (aniversario hasta sep-2026; desde octubre, cortados a fin de
@@ -346,6 +339,11 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         // Desde el corte a fin de mes, foodservice se mide aparte en kg: el nivel
         // y la meta de unidades son solo retail.
         separaFood: p.separaFood, metaKg: p.metaKg,
+        // El esquema de comisión vigente el día en que empieza el período: un
+        // cambio de esquema nunca recalcula los meses anteriores.
+        cfg: p.cfg,
+        actMinUnits: p.cfg.activacionMinUnits ?? 24,
+        actThreshold: p.cfg.activacionThreshold ?? 80,
         cerrado: p.end <= ahora,
         facturadas: [],   // facturas cuya FECHA cae en el período (nivel)
         cobros: [],       // cobros cuyo PAGO cae en el período (comisión)
@@ -416,8 +414,8 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         p.kgFood = kgDeUnidades(p.unidadesFood);
         p.unidades = p.facturadas.filter(f => !(p.separaFood && f.esFood)).reduce((s, f) => s + f.unidades, 0);
         p.pct = p.metaMensual > 0 ? p.unidades / p.metaMensual : 0;
-        p.tier = tierFor(p.pct);
-        p.act = computeActivacionPeriodo(facturas, p.start, p.end, ahora, carteraSize, actMinUnits, actThreshold, claves);
+        p.tier = tierFor(p.cfg, p.pct);
+        p.act = computeActivacionPeriodo(facturas, p.start, p.end, ahora, carteraSize, p.actMinUnits, p.actThreshold, claves);
         let den = 0, aTiempo = 0;
         p.facturadas.forEach(f => {
             if (f.esFood) return;
@@ -436,7 +434,13 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         let j = f.fechaPago ? idxDe(f.fechaPago) : f.origen;
         if (j < 0) j = f.origen;                    // pago con fecha rara → período de la factura
         const o = periodos[f.origen];
-        const c = { ...f, origenMes: o.mes, origenNivel: o.tier.label, origenTasa: o.tier.rate, origenFactor: o.act.factor };
+        // Una factura se comisiona con el esquema vigente cuando se FACTURÓ: su
+        // nivel, sus bonos y su tasa de foodservice son los de ese período.
+        const c = {
+            ...f, origenMes: o.mes, origenNivel: o.tier.label, origenTasa: o.tier.rate, origenFactor: o.act.factor,
+            origenBonoCobranza: o.cfg.bonusPuntualidad ?? 0, origenBonoAct: o.cfg.bonusActivacion ?? 0,
+            origenTasaFood: o.cfg.comisionFoodservice ?? 5,
+        };
         // Cierre del modelo anterior: si ya se pagó dentro de ese cierre, no se repite.
         if (j !== f.origen && o.cierreLegado && f.fechaPago && f.fechaPago.getTime() < o.congeladoEnMs) {
             c.yaEnCierreMes = o.mes;
@@ -444,11 +448,13 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         periodos[destino(j, f.numero, c)].cobros.push(c);
     });
 
-    return { cfg, ingreso, ahora, periodos, carteraSize, claves, actMinUnits, actThreshold };
+    const actual = periodos[periodos.length - 1];
+    return { cfg: actual.cfg, ingreso, ahora, periodos, carteraSize, claves };
 }
 
-/** Montos de un período a partir del motor. */
-function montosPeriodo(p, cfg, opts = {}) {
+/** Montos de un período a partir del motor (con el esquema de su período y, por cobro, el de la factura). */
+function montosPeriodo(p, opts = {}) {
+    const cfg = p.cfg;
     const bonoCobranza = cfg.bonusPuntualidad ?? 0;
     const bonoAct      = cfg.bonusActivacion ?? 0;
     const tasaRecup    = cfg.comisionRecuperadas ?? 5;
@@ -464,6 +470,9 @@ function montosPeriodo(p, cfg, opts = {}) {
     const aTiempo = regulares.filter(c => c.aTiempo);
     const cobradoRegularATiempo = aTiempo.reduce((s, c) => s + c.monto, 0);
     const cobradoFood = food.reduce((s, c) => s + c.monto, 0);
+    const bonoCobDe = (c) => c.origenBonoCobranza ?? bonoCobranza;
+    const bonoActDe = (c) => c.origenBonoAct ?? bonoAct;
+    const tasaFoodDe = (c) => c.origenTasaFood ?? tasaFood;
     const cobradoRecup = p.recuperadas.reduce((s, c) => s + c.monto, 0);
 
     // Comisión de nivel agrupada por el período de origen de la factura.
@@ -475,13 +484,13 @@ function montosPeriodo(p, cfg, opts = {}) {
     const cobrosPorOrigen = Object.values(porOrigen).sort((a, b) => a.mes - b.mes)
         .map(g => ({ ...g, comision: g.cobrado * g.tasa / 100 }));
     const comisionNivelMonto = cobrosPorOrigen.reduce((s, g) => s + g.comision, 0);
-    const bonoCobranzaMonto = cobradoRegularATiempo * bonoCobranza / 100;
+    const bonoCobranzaMonto = aTiempo.reduce((s, c) => s + c.monto * bonoCobDe(c) / 100, 0);
     const bonoActivacionMonto = hasAnaquel ? 0
-        : regulares.reduce((s, c) => s + c.monto * (bonoAct / 100) * (c.origenFactor || 0), 0);
+        : regulares.reduce((s, c) => s + c.monto * (bonoActDe(c) / 100) * (c.origenFactor || 0), 0);
     const enCurso = !p.cerrado;
     const bonoAnaquelMonto = (hasAnaquel && enCurso) ? cobradoRegular * (bonoAnaquel / 100) * anaquelFactor : 0;
     const bonoRecupMonto = cobradoRecup * tasaRecup / 100;
-    const comisionFoodMonto = cobradoFood * tasaFood / 100;
+    const comisionFoodMonto = food.reduce((s, c) => s + c.monto * tasaFoodDe(c) / 100, 0);
     const devengadoComision = comisionNivelMonto + bonoCobranzaMonto + bonoActivacionMonto + bonoAnaquelMonto + bonoRecupMonto + comisionFoodMonto;
     return {
         cobradoRegular, cobradoRegularATiempo, cobradoFood, cobradoRecup,
@@ -566,7 +575,7 @@ export function conceptoLiquidacion(l) {
 export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones = [], opts = {}) {
     const m = motorComisiones(meta, facturas, opts);
     if (!m) return [];
-    const { cfg, periodos, carteraSize } = m;
+    const { periodos, carteraSize } = m;
     const cerrados = opts.cerrados || {};
 
     const liqPorPeriodo = {};
@@ -578,7 +587,7 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
     const out = [];
     for (let k = periodos.length - 1; k >= 0; k--) {
         const p = periodos[k];
-        const mt = montosPeriodo(p, cfg, opts);
+        const mt = montosPeriodo(p, opts);
         const row = {
             mes: p.mes,
             periodKey: p.periodKey,
@@ -651,10 +660,11 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     if (!periodKey) return null;
     const m = motorComisiones(meta, facturas, opts);
     if (!m) return null;
-    const { cfg, periodos, carteraSize, claves, actMinUnits, actThreshold, ahora } = m;
+    const { periodos, carteraSize, claves, ahora } = m;
     const p = periodos.find(x => x.periodKey === periodKey);
     if (!p) return null;
-    const mt = montosPeriodo(p, cfg, opts);
+    const { actMinUnits, actThreshold } = p;
+    const mt = montosPeriodo(p, opts);
     const baseMes = p.base;
 
     const facturadas = [...p.facturadas].sort((a, b) => a.fecha - b.fecha);
