@@ -5,6 +5,9 @@ on:
     branches:
       - web-lacteoca
   workflow_dispatch:
+  # Todos los días a las 6:00 a.m. de Caracas: refresca los puntos de venta desde GK y vuelve a publicar
+  schedule:
+    - cron: '0 10 * * *'
 
 concurrency:
   group: web-lacteoca
@@ -27,6 +30,16 @@ jobs:
       - name: Instalar Firebase CLI
         run: npm install -g firebase-tools
 
+      # Puntos de venta activos de retail desde GK; si falla, se usa la última lista guardada.
+      - name: Leer puntos de venta de GK
+        continue-on-error: true
+        run: |
+          npm install --no-save --no-audit --no-fund firebase-admin
+          node tools/gk-puntos.mjs
+
+      - name: Generar páginas (dónde comprar, recetas, sitemap)
+        run: node tools/build-paginas.mjs
+
       # Busca o crea el sitio de Hosting para la web (los nombres son únicos en todo Firebase).
       - name: Preparar sitio de Hosting
         id: sitio
@@ -47,6 +60,7 @@ jobs:
 
       # Registra lacteoca.com y www.lacteoca.com en el sitio e imprime los registros DNS que hay que poner.
       - name: Conectar dominio lacteoca.com
+        if: github.event_name == 'workflow_dispatch'
         continue-on-error: true
         env:
           SITIO: ${{ steps.sitio.outputs.id }}
