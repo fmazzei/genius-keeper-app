@@ -135,6 +135,10 @@
 
   .foot { padding-block: 40px 48px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 14px 28px; color: var(--muted); font-size: 0.95rem; }
   .foot img { width: 110px; }
+  .ico .tel { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+  .contact-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 26px; }
+  .contact-btns .igbtn { margin-top: 0; white-space: nowrap; font-size: 0.92rem; letter-spacing: 0.04em; padding: 14px 20px; }
+  .phone-line { margin-top: 16px; font-family: var(--display); font-weight: 700; letter-spacing: 0.06em; font-size: 1.15rem; }
   .foot .ig { color: var(--navy); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
   .ico { width: 1.15em; height: 1.15em; flex: none; }
   .ico rect, .ico circle { fill: none; stroke: currentColor; stroke-width: 2; }
@@ -298,7 +302,11 @@
     <div class="in center">
       <h2 id="horeca-h">Restaurantes, hoteles y cafés</h2>
       <p>El Chèvre de 250 g cuenta con ficha de especificaciones técnicas para cocinas profesionales. Disponible bajo pedido, con sus condiciones de suministro.</p>
-      <a class="igbtn light" href="https://www.instagram.com/lacteocave/" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle class="dot" cx="17.3" cy="6.7" r="1.2"/></svg>Escríbenos por Instagram</a>
+<div class="contact-btns">
+        <a class="igbtn light" href="https://wa.me/584120719307" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path class="tel" d="M6.6 3.5h2.6l1.5 4-2 1.3a11 11 0 0 0 6.5 6.5l1.3-2 4 1.5v2.6a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z"/></svg>Escríbenos por WhatsApp</a>
+        <a class="igbtn light" href="https://www.instagram.com/lacteocave/" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle class="dot" cx="17.3" cy="6.7" r="1.2"/></svg>Escríbenos por Instagram</a>
+      </div>
+      <p class="phone-line">Lacteoca Clientes · <a href="tel:+584120719307" style="color:inherit; white-space:nowrap">+58 412 071 9307</a></p>
     </div>
   </section>
 </main>
@@ -322,6 +330,7 @@
 
 <footer class="in foot">
   <img src="assets/palabra-azul.png" alt="Lacteoca" width="884" height="174">
+  <a class="ig" href="tel:+584120719307"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path class="tel" d="M6.6 3.5h2.6l1.5 4-2 1.3a11 11 0 0 0 6.5 6.5l1.3-2 4 1.5v2.6a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.6 5.7a2 2 0 0 1 2-2.2z"/></svg>+58 412 071 9307</a>
   <a class="ig" href="https://www.instagram.com/lacteocave/" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle class="dot" cx="17.3" cy="6.7" r="1.2"/></svg>@lacteocave</a>
   <span>Lacteoca, C.A. · RIF J-50044805-8</span>
 </footer>
