@@ -39,6 +39,7 @@ jobs:
           if [ -z "$SITIO" ]; then echo "No se pudo crear ni encontrar un sitio de Hosting"; exit 1; fi
           echo "Sitio de Hosting: $SITIO  ->  https://$SITIO.web.app"
           echo "id=$SITIO" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Sitio publicado::https://$SITIO.web.app"
           jq --arg s "$SITIO" '.hosting.site = $s' firebase.json > /tmp/fb.json && mv /tmp/fb.json firebase.json
 
       - name: Publicar en Firebase Hosting
@@ -59,9 +60,17 @@ jobs:
             "$API?customDomainId=www.lacteoca.com" -d '{"redirectTarget":"lacteoca.com"}' | jq -c '{name, error}' || true
           sleep 20
           for d in lacteoca.com www.lacteoca.com; do
-            echo "===== Registros DNS para $d ====="
-            curl -s -H "Authorization: Bearer $TOKEN" "$API/$d" \
-              | jq '{estado: .hostState, propiedad: .ownershipState, cert: .cert.state, dns_requeridos: .requiredDnsUpdates.desired, dns_actuales: .requiredDnsUpdates.discovered, error}'
+            R=$(curl -s -H "Authorization: Bearer $TOKEN" "$API/$d")
+            echo "$R" | jq '{hostState, ownershipState, cert: .cert.state, requiredDnsUpdates, error}'
+            ERR=$(echo "$R" | jq -r '.error.message // empty')
+            if [ -n "$ERR" ]; then echo "::warning title=Dominio $d::$ERR"; continue; fi
+            echo "::notice title=Estado $d::host=$(echo "$R" | jq -r '.hostState // "-"') propiedad=$(echo "$R" | jq -r '.ownershipState // "-"') cert=$(echo "$R" | jq -r '.cert.state // "-"')"
+            echo "$R" | jq -r '.requiredDnsUpdates.desired[]?.records[]? | "\(.domainName) | \(.type) | \(.rdata) | \(.requiredAction)"' | while read -r L; do
+              echo "::notice title=DNS requerido $d::$L"
+            done
+            echo "$R" | jq -r '.requiredDnsUpdates.discovered[]?.records[]? | "\(.domainName) | \(.type) | \(.rdata)"' | while read -r L; do
+              echo "::notice title=DNS actual $d::$L"
+            done
           done
 
       - name: Limpiar credenciales
