@@ -67,8 +67,8 @@
   .hero-copy h1 { margin: 0; }
   .hero-copy .logo { width: clamp(200px, 18vw, 260px); }
   .hero-copy .claim { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--navy); font-size: clamp(1rem, 1.6vw, 1.2rem); }
-  .hero-btns { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
-  .hbtn { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; text-decoration: none; padding: 12px 22px; border-radius: 999px; border: 2px solid var(--navy); color: var(--navy); background: rgba(255, 255, 255, 0.55); }
+  .hero-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; max-width: 520px; }
+  .hbtn { font-family: var(--display); font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; text-decoration: none; padding: 9px 18px; font-size: 0.88rem; border-radius: 999px; border: 2px solid var(--navy); color: var(--navy); background: rgba(255, 255, 255, 0.55); }
   .hbtn.solid { background: var(--navy); color: var(--white); }
   .hbtn:hover { opacity: 0.88; }
 
@@ -159,7 +159,7 @@
     body { font-size: 17px; }
     .sec { padding-block: 64px; }
     .hero { background: #B3C3D7 url(assets/portada-completa.jpg) 50% 100% / 122% auto no-repeat; }
-    .hbtn { font-size: 0.9rem; padding: 11px 18px; white-space: nowrap; }
+    .hbtn { font-size: 0.8rem; padding: 8px 15px; white-space: nowrap; }
     .bar .nav { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; gap: 18px; padding-bottom: 2px; }
     .bar .nav a { white-space: nowrap; }
     .hero-top { display: none; }
@@ -207,6 +207,7 @@
       <div class="hero-btns">
         <a class="hbtn solid" href="#chevre">Conoce a Lacteoca Chèvre</a>
         <a class="hbtn" href="#donde">Dónde encontrarnos</a>
+        <a class="hbtn" href="/foodservice#contacto">Foodservice</a>
       </div>
     </div>
   </section>
@@ -216,7 +217,6 @@
       <h2 id="quienes-h">¿Quiénes somos?</h2>
       <p class="lede">Lacteoca es una <strong>empresa familiar</strong>.</p>
       <p class="body-lg">Nuestra misión es crear valor en productos lácteos elaborados a partir de leche de cabra para atender <strong>altos estándares de calidad</strong> en el sector de la quesería.</p>
-      <p class="statement" style="margin-inline:auto">Contamos con un rebaño propio.</p>
     </div>
     <img class="goat-mark" src="assets/cabra-azul.png" alt="" width="179" height="157">
   </section>
@@ -227,8 +227,6 @@
       <div class="q-grid">
         <div class="q-text">
           <p>Toda la leche que procesa Lacteoca pasa por los mayores controles de calidad y proviene de <strong>cabras sanas, libres y felices que pastorean en la abundancia de nuestro llano.</strong></p>
-          <hr>
-          <p>Respetamos a nuestros animales y les damos <strong>todo el cuido necesario</strong> para que entreguen su mayor potencial lechero.</p>
         </div>
         <div class="q-photo">
           <img class="foto" src="assets/cabra-cria.jpg" alt="Cabra con su cría recién nacida en el pasto" width="800" height="1199" loading="lazy">
@@ -238,8 +236,7 @@
       <div class="q-grid q-row2">
         <img src="assets/cabras-pasto.jpg" alt="Cabras comiendo forraje verde" width="1100" height="734" loading="lazy">
         <div class="q-text">
-          <div class="num">90%</div>
-          <p>No usamos leche de animales tratados con antibióticos, y cerca del <strong>90% de la alimentación</strong> de nuestras cabras proviene de <strong>forrajes verdes</strong> que cuidamos con <strong>abonos orgánicos</strong>.</p>
+          <p>No usamos leche de animales tratados con antibióticos. La leche viene de cabras con una alimentación alta en <strong>forrajes verdes y leguminosas forrajeras</strong>.</p>
         </div>
       </div>
     </div>
