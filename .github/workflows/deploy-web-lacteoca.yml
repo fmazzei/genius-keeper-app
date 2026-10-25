@@ -1,0 +1,69 @@
+name: Publicar web de Lacteoca
+
+on:
+  push:
+    branches:
+      - web-lacteoca
+  workflow_dispatch:
+
+concurrency:
+  group: web-lacteoca
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    env:
+      PROYECTO: geniuskeeper-36553
+      GOOGLE_APPLICATION_CREDENTIALS: /tmp/firebase-sa.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Escribir credenciales
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: printf '%s' "$SA_JSON" > /tmp/firebase-sa.json
+
+      - name: Instalar Firebase CLI
+        run: npm install -g firebase-tools
+
+      # Busca o crea el sitio de Hosting para la web (los nombres son únicos en todo Firebase).
+      - name: Preparar sitio de Hosting
+        id: sitio
+        run: |
+          SITIO=""
+          for s in lacteoca lacteoca-web lacteoca-ve lacteoca-com; do
+            if firebase hosting:sites:get "$s" --project "$PROYECTO" --non-interactive >/dev/null 2>&1; then SITIO="$s"; break; fi
+            if firebase hosting:sites:create "$s" --project "$PROYECTO" --non-interactive >/dev/null 2>&1; then SITIO="$s"; break; fi
+          done
+          if [ -z "$SITIO" ]; then echo "No se pudo crear ni encontrar un sitio de Hosting"; exit 1; fi
+          echo "Sitio de Hosting: $SITIO  ->  https://$SITIO.web.app"
+          echo "id=$SITIO" >> "$GITHUB_OUTPUT"
+          jq --arg s "$SITIO" '.hosting.site = $s' firebase.json > /tmp/fb.json && mv /tmp/fb.json firebase.json
+
+      - name: Publicar en Firebase Hosting
+        run: firebase deploy --only hosting --project "$PROYECTO" --non-interactive
+
+      # Registra lacteoca.com y www.lacteoca.com en el sitio e imprime los registros DNS que hay que poner.
+      - name: Conectar dominio lacteoca.com
+        continue-on-error: true
+        env:
+          SITIO: ${{ steps.sitio.outputs.id }}
+        run: |
+          gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS" --quiet
+          TOKEN=$(gcloud auth print-access-token)
+          API="https://firebasehosting.googleapis.com/v1beta1/projects/$PROYECTO/sites/$SITIO/customDomains"
+          curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            "$API?customDomainId=lacteoca.com" -d '{}' | jq -c '{name, error}' || true
+          curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            "$API?customDomainId=www.lacteoca.com" -d '{"redirectTarget":"lacteoca.com"}' | jq -c '{name, error}' || true
+          sleep 20
+          for d in lacteoca.com www.lacteoca.com; do
+            echo "===== Registros DNS para $d ====="
+            curl -s -H "Authorization: Bearer $TOKEN" "$API/$d" \
+              | jq '{estado: .hostState, propiedad: .ownershipState, cert: .cert.state, dns_requeridos: .requiredDnsUpdates.desired, dns_actuales: .requiredDnsUpdates.discovered, error}'
+          done
+
+      - name: Limpiar credenciales
+        if: always()
+        run: rm -f /tmp/firebase-sa.json
