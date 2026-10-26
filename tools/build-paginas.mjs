@@ -115,13 +115,13 @@ const n = puntos.length;
 const ldTiendas = { '@context': 'https://schema.org', '@type': 'ItemList', name: 'Dónde comprar Lacteoca Chèvre en Caracas', numberOfItems: n,
   itemListElement: puntos.map((p, i) => ({ '@type': 'ListItem', position: i + 1, name: `${p.tienda}${p.lugar ? ' ' + p.lugar : ''}, Caracas` })) };
 const dondeHtml = cabeza(`Dónde comprar queso de cabra Lacteoca Chèvre en Caracas · ${n} puntos de venta`,
-  `Lacteoca Chèvre, queso de cabra original, está en ${n} supermercados de Caracas: ${orden.join(', ')}. Encuentra el más cercano en ${zonas.slice(0, 8).join(', ')} y más.`,
+  `Lacteoca Chèvre, queso de cabra, está en ${n} supermercados de Caracas: ${orden.join(', ')}. Encuentra el más cercano en ${zonas.slice(0, 8).join(', ')} y más.`,
   '/donde-comprar', [ldTiendas]) + `
 <header class="page-top">
   ${barra}
   <div class="in head">
     <h1>Dónde comprar Lacteoca Chèvre</h1>
-    <p>Queso de cabra original, en la nevera de lácteos de ${n} supermercados de Caracas. Busca por zona o por supermercado.</p>
+    <p>Queso de cabra, en la nevera de lácteos de ${n} supermercados de Caracas. Busca por zona o por supermercado.</p>
     <div class="finder"><label class="sr" for="q" style="position:absolute;left:-9999px">Buscar zona o supermercado</label><input id="q" type="search" placeholder="Escribe tu zona: El Hatillo, Chacao, La Boyera…" autocomplete="off"></div>
   </div>
 </header>
