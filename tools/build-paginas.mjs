@@ -140,15 +140,21 @@ escribir('sitio/donde-comprar/index.html', dondeHtml);
 
 // ---------- Recetas ----------
 const recetas = [
-  { t: 'Arepa con Chèvre y aguacate', m: 'Desayuno · 10 minutos', ing: ['2 arepas recién asadas', '4 cucharadas de Lacteoca Chèvre', '½ aguacate en láminas', 'Sal y pimienta'], pasos: ['Abre las arepas aún calientes.', 'Unta el Chèvre por dentro para que se ablande con el calor.', 'Agrega el aguacate, sal y pimienta.'] },
-  { t: 'Pasta cremosa con Chèvre', m: 'Almuerzo · 15 minutos', ing: ['250 g de pasta corta', '125 g de Lacteoca Chèvre (media tina)', '1 taza del agua de cocción', 'Pimienta negra y aceite de oliva'], pasos: ['Cocina la pasta y guarda una taza del agua de cocción.', 'En la misma olla, mezcla el Chèvre con un poco del agua hasta formar una salsa lisa.', 'Agrega la pasta, ajusta con más agua si hace falta y termina con pimienta y aceite de oliva.'] },
-  { t: 'Huevos revueltos con Chèvre', m: 'Desayuno · 8 minutos', ing: ['3 huevos', '2 cucharadas de Lacteoca Chèvre', 'Cebollín picado', 'Sal'], pasos: ['Bate los huevos con una pizca de sal.', 'Cocínalos a fuego bajo, moviendo siempre.', 'Justo antes de que cuajen, agrega el Chèvre en trocitos y el cebollín. Retira del fuego.'] },
-  { t: 'Tostadas con Chèvre y miel', m: 'Merienda · 5 minutos', ing: ['Pan tostado', 'Lacteoca Chèvre', 'Miel', 'Nueces o frutos secos (opcional)'], pasos: ['Unta una capa generosa de Chèvre sobre el pan tostado.', 'Termina con un hilo de miel y frutos secos.'] },
-  { t: 'Ensalada con Chèvre desmenuzado', m: 'Almuerzo · 10 minutos', ing: ['Hojas verdes', 'Tomates cherry o fruta de temporada', '4 cucharadas de Lacteoca Chèvre', 'Aceite de oliva, limón y sal'], pasos: ['Arma la ensalada con las hojas y el tomate o la fruta.', 'Desmenuza el Chèvre por encima con una cucharita.', 'Aliña con aceite, limón y sal.'] },
-  { t: 'Dip de Chèvre con hierbas', m: 'Para compartir · 5 minutos', ing: ['1 tina de Lacteoca Chèvre (250 g)', '2 cucharadas de aceite de oliva', 'Hierbas frescas picadas (perejil, cilantro o albahaca)', 'Ralladura de limón'], pasos: ['Mezcla el Chèvre con el aceite hasta que quede suave.', 'Incorpora las hierbas y la ralladura.', 'Sirve con vegetales crudos, tostadas o tequeños.'] },
+  { t: 'Arepa con Chèvre y aguacate', c: 0, m: 'Desayuno · 10 minutos', ing: ['2 arepas recién asadas', '4 cucharadas de Lacteoca Chèvre', '½ aguacate en láminas', 'Sal y pimienta'], pasos: ['Abre las arepas aún calientes.', 'Unta el Chèvre por dentro para que se ablande con el calor.', 'Agrega el aguacate, sal y pimienta.'] },
+  { t: 'Pasta cremosa con Chèvre', c: 10, m: 'Almuerzo · 15 minutos', ing: ['250 g de pasta corta', '125 g de Lacteoca Chèvre (media tina)', '1 taza del agua de cocción', 'Pimienta negra y aceite de oliva'], pasos: ['Cocina la pasta y guarda una taza del agua de cocción.', 'En la misma olla, mezcla el Chèvre con un poco del agua hasta formar una salsa lisa.', 'Agrega la pasta, ajusta con más agua si hace falta y termina con pimienta y aceite de oliva.'] },
+  { t: 'Huevos revueltos con Chèvre', c: 5, m: 'Desayuno · 8 minutos', ing: ['3 huevos', '2 cucharadas de Lacteoca Chèvre', 'Cebollín picado', 'Sal'], pasos: ['Bate los huevos con una pizca de sal.', 'Cocínalos a fuego bajo, moviendo siempre.', 'Justo antes de que cuajen, agrega el Chèvre en trocitos y el cebollín. Retira del fuego.'] },
+  { t: 'Tostadas con Chèvre y miel', c: 0, m: 'Merienda · 5 minutos', ing: ['Pan tostado', 'Lacteoca Chèvre', 'Miel', 'Nueces o frutos secos (opcional)'], pasos: ['Unta una capa generosa de Chèvre sobre el pan tostado.', 'Termina con un hilo de miel y frutos secos.'] },
+  { t: 'Ensalada con Chèvre desmenuzado', c: 0, m: 'Almuerzo · 10 minutos', ing: ['Hojas verdes', 'Tomates cherry o fruta de temporada', '4 cucharadas de Lacteoca Chèvre', 'Aceite de oliva, limón y sal'], pasos: ['Arma la ensalada con las hojas y el tomate o la fruta.', 'Desmenuza el Chèvre por encima con una cucharita.', 'Aliña con aceite, limón y sal.'] },
+  { t: 'Dip de Chèvre con hierbas', c: 0, m: 'Para compartir · 5 minutos', ing: ['1 tina de Lacteoca Chèvre (250 g)', '2 cucharadas de aceite de oliva', 'Hierbas frescas picadas (perejil, cilantro o albahaca)', 'Ralladura de limón'], pasos: ['Mezcla el Chèvre con el aceite hasta que quede suave.', 'Incorpora las hierbas y la ralladura.', 'Sirve con vegetales crudos, tostadas o tequeños.'] },
 ];
-const ldRecetas = recetas.map(r => ({ '@context': 'https://schema.org', '@type': 'Recipe', name: r.t, image: 'https://lacteoca.com/assets/chevre-textura.jpg', author: { '@type': 'Organization', name: 'Lacteoca' },
-  recipeCategory: r.m.split(' · ')[0], recipeIngredient: r.ing, recipeInstructions: r.pasos.map(p => ({ '@type': 'HowToStep', text: p })) }));
+const ldRecetas = recetas.map(r => {
+  const min = parseInt(r.m.split(' · ')[1], 10) || 10;
+  return { '@context': 'https://schema.org', '@type': 'Recipe', name: r.t, image: 'https://lacteoca.com/assets/chevre-textura.jpg', author: { '@type': 'Organization', name: 'Lacteoca' },
+    description: `${r.t}: una forma fácil de usar Lacteoca Chèvre, queso de cabra cremoso.`,
+    keywords: `queso de cabra, Lacteoca Chèvre, ${r.t.toLowerCase()}, receta con queso de cabra`,
+    recipeCategory: r.m.split(' · ')[0], prepTime: `PT${min - (r.c || 0)}M`, cookTime: `PT${r.c || 0}M`, totalTime: `PT${min}M`, recipeYield: '2 porciones',
+    recipeIngredient: r.ing, recipeInstructions: r.pasos.map(p => ({ '@type': 'HowToStep', text: p })) };
+});
 const recetasHtml = cabeza('Recetas con queso de cabra · Lacteoca Chèvre', 'Ideas fáciles para usar queso de cabra Lacteoca Chèvre: arepas, pasta cremosa, huevos revueltos, tostadas con miel, ensaladas y dips.', '/recetas', ldRecetas) + `
 <header class="page-top">
   ${barra}
