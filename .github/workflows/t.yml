@@ -1,0 +1,17 @@
+name: transcribir-cabras
+on: push
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q faster-whisper
+      - run: |
+          python - <<'PY'
+          from faster_whisper import WhisperModel
+          m = WhisperModel("large-v3", device="cpu", compute_type="int8")
+          for i in (1,2,3):
+              segs,_ = m.transcribe(f"audio/clip{i}.wav", language="es", word_timestamps=True, vad_filter=False, beam_size=5)
+              lines=[f"[{s.start:.2f}-{s.end:.2f}] {s.text.strip()}" for s in segs]
+              print(f"::notice title=clip{i}::" + " %0A ".join(lines))
+          PY
