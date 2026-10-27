@@ -4,6 +4,7 @@ try:
     m = WhisperModel("large-v3", device="cpu", compute_type="int8")
     for i in (1,2,3):
         segs,_ = m.transcribe(f"audio/clip{i}.wav", language="es", word_timestamps=True, beam_size=5)
+        segs=list(segs); print("::notice title=words::"+" ".join(f"{w.start:.2f}:{w.word.strip()}" for s in segs for w in s.words))
         lines=[f"[{s.start:.2f}-{s.end:.2f}] {s.text.strip()}" for s in segs]
         print(f"::notice title=clip{i}::" + " %0A ".join(lines))
 except Exception:
