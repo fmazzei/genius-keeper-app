@@ -114,8 +114,9 @@ const slotRecordatorio = (ahoraMs, cfg) => {
     return { clave: `${p.y}-${dos(p.m)}-${dos(p.d)}-${dos(h)}`, ms };
 };
 
-// ¿Recibe esta persona la alerta? (rol que la recibe, activa y no apagada por el máster)
-const recibeAlerta = (u) => !!u && ROLES_DESTINO.includes(u.role) && u.active !== false && u.alertaAnaquelBajo !== false;
+// ¿Recibe esta persona la alerta? Lo decide el centro de notificaciones
+// (categoría 'anaquel'; por defecto todos menos administración).
+const recibeAlerta = (u, cfg = {}) => require('./generado/centroNotificaciones.cjs').recibe(cfg, u, 'anaquel');
 
 const fmtHora = (ms) => {
     const p = partesCaracas(ms);

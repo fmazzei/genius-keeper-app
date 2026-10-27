@@ -44,15 +44,14 @@ const ts = (ms) => Timestamp.fromMillis(ms);
 
 // ── Push (FCM). Inyectable para las pruebas. ───────────────────────────────
 async function enviarPushFCM(uid, titulo, cuerpo, data = {}) {
-    const snap = await db().collection(`users_metadata/${uid}/tokens`).get();
-    if (snap.empty) return { ok: false, motivo: 'sin_tokens' };
-    const tokens = snap.docs.map(d => d.id);
-    const r = await admin.messaging().sendEachForMulticast({
-        tokens,
-        notification: { title: titulo, body: cuerpo },
-        data: { tipo: 'vigilante', link: '/', ...Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])) },
+    // Categoría 🤖 Agente: el centro de notificaciones decide si la persona la
+    // recibe, y el teléfono es solo el de la cuenta con la que se usa.
+    return require('./pushCentral').enviar({
+        uid, categoria: 'agente', titulo, cuerpo,
+        link: typeof data.link === 'string' ? data.link : '/',
+        clave: data.clave ? `${data.clave}|${titulo}|${cuerpo}` : null,
+        data: { tipo: 'vigilante', ...data },
     });
-    return { ok: r.successCount > 0, enviados: r.successCount, fallidos: r.failureCount, motivo: r.successCount ? null : 'fallo_envio' };
 }
 
 // ¿La página de GK abre? (una lectura HTTP, sin costo).

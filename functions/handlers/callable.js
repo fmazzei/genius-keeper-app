@@ -40,23 +40,10 @@ const logInventoryMovement = (transaction, movementData) => {
 };
 
 // --- Helper de Notificaciones ---
-const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
-    if (!userId) return;
-    await admin.firestore().collection("notifications").add({
-        userId,
-        title: notificationPayload.title,
-        body: notificationPayload.body,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        read: false,
-        link: dataPayload.link || ''
-    });
-    const tokensRef = admin.firestore().collection("users_metadata").doc(userId).collection("tokens");
-    const tokensSnap = await tokensRef.get();
-    if (tokensSnap.empty) return;
-    const tokens = tokensSnap.docs.map(doc => doc.id);
-    const payload = { notification: notificationPayload, data: dataPayload };
-    await admin.messaging().sendEachForMulticast({ tokens, ...payload });
-};
+// Aviso a una persona (campanita + teléfono). Un solo camino para toda la app:
+// categoría, centro de notificaciones y un teléfono por cuenta (pushCentral.js).
+const sendNotificationToUser = (userId, notificationPayload, dataPayload) =>
+    require('./pushCentral').notificar(userId, notificationPayload, dataPayload || {});
 
 
 // ==========================================================

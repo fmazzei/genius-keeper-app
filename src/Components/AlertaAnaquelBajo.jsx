@@ -10,29 +10,28 @@
 // volver a la app después de unos minutos fuera). Las alertas las abre y cierra
 // SOLO el servidor (`alertas_anaquel`, ver functions/handlers/alertaAnaquel.js);
 // además aquí se esconden las que ya pasaron su hora de vencer, por si el
-// barrido llega tarde. El máster la apaga por usuario (`alertaAnaquelBajo:false`).
+// barrido llega tarde. Quién la ve lo decide el centro de notificaciones
+// (Configuraciones → Sistema), por rol y por persona.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { AlertTriangle, ChevronRight, X } from 'lucide-react';
 import { db } from '@/Firebase/config.js';
-import { useAuth } from '@/context/AuthContext';
+import { useCentroNotificaciones } from '@/hooks/useCentroNotificaciones.js';
 import { fmtFechaHora, horasRestantes, textoUnidades } from '@/utils/alertaAnaquel.js';
 
 // Fuera de la app por más de esto = "volvió a abrir el perfil".
 const MIN_FUERA_MS = 3 * 60 * 1000;
-const ROLES_SIN_ALERTA = ['administrador'];
 
 const msDe = (v) => (v && typeof v.toMillis === 'function') ? v.toMillis() : (Number.isFinite(v) ? v : NaN);
 
 export function useAlertasAnaquel() {
-    const { user, role } = useAuth();
-    const uid = user?.uid || null;
+    const { uid, recibe } = useCentroNotificaciones();
     const [docs, setDocs] = useState([]);
-    const [apagada, setApagada] = useState(false);
     const [ahora, setAhora] = useState(() => Date.now());
-    const habilitado = !!uid && !ROLES_SIN_ALERTA.includes(role);
+    // Lo decide el centro de notificaciones (categoría 🔴 Anaquel bajo).
+    const habilitado = !!uid && recibe('anaquel');
 
     useEffect(() => {
         if (!habilitado) { setDocs([]); return undefined; }
@@ -40,21 +39,16 @@ export function useAlertasAnaquel() {
         return onSnapshot(q, (s) => setDocs(s.docs.map(d => ({ id: d.id, ...d.data() }))), () => { /* sin señal: se queda lo último */ });
     }, [habilitado]);
 
-    useEffect(() => {
-        if (!habilitado) return undefined;
-        return onSnapshot(doc(db, 'users_metadata', uid), (s) => setApagada(s.exists() && s.data().alertaAnaquelBajo === false), () => {});
-    }, [habilitado, uid]);
-
     // Revisa cada minuto qué alertas ya vencieron.
     useEffect(() => {
         const t = setInterval(() => setAhora(Date.now()), 60 * 1000);
         return () => clearInterval(t);
     }, []);
 
-    const alertas = useMemo(() => (habilitado && !apagada ? docs : [])
+    const alertas = useMemo(() => (habilitado ? docs : [])
         .filter(a => msDe(a.venceAt) > ahora)
         .sort((a, b) => (a.contadas ?? 0) - (b.contadas ?? 0) || msDe(b.horaVisita) - msDe(a.horaVisita)),
-    [docs, apagada, habilitado, ahora]);
+    [docs, habilitado, ahora]);
 
     return { alertas, ahora };
 }

@@ -2,11 +2,37 @@
 
 import { getToken, onMessage } from "firebase/messaging";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import { messaging, db } from "@/Firebase/config.js";
+import { messaging, db, auth } from "@/Firebase/config.js";
 
 // IMPORTANTE: Esta clave VAPID se genera en la consola de Firebase
 // en Configuración del Proyecto > Cloud Messaging > Certificados push web.
 const VAPID_KEY = "BMYvW8ZCm6LD6VSWkV5DjslHK506zfZrMMzcvEIAS8W0iECbmPUEml5cG0lBu0UUEQaqW3wgpSEFIPfVkbVVzWc";
+
+// Entrar con la llave maestra (impersonación) NO registra el teléfono: si no,
+// el teléfono del máster quedaría recibiendo los avisos de la otra cuenta.
+const esImpersonacion = async () => {
+  try {
+    const r = await auth?.currentUser?.getIdTokenResult();
+    return !!r?.claims?.impersonatedBy;
+  } catch { return false; }
+};
+
+// Guarda el token de ESTE teléfono a nombre de la cuenta en uso. `ultimaVez`
+// decide de quién es el teléfono si alguna vez se entró con otra cuenta: el
+// servidor le manda los avisos solo a la última (functions/handlers/pushCentral.js).
+const guardarToken = async (userId) => {
+  const currentToken = await getToken(messaging, { vapidKey: VAPID_KEY });
+  if (!currentToken) {
+    console.warn("No se pudo generar un token FCM. Esto puede pasar si el Service Worker no está bien registrado.");
+    return null;
+  }
+  await setDoc(doc(db, "users_metadata", userId, "tokens", currentToken), {
+    createdAt: serverTimestamp(),
+    ultimaVez: serverTimestamp(),
+    userAgent: navigator.userAgent,
+  }, { merge: true });
+  return currentToken;
+};
 
 /**
  * Solicita permiso al usuario para recibir notificaciones y guarda el token FCM.
@@ -22,44 +48,33 @@ export const requestNotificationPermission = async (userId) => {
     console.warn("Este navegador no soporta notificaciones push.");
     return;
   }
+  if (await esImpersonacion()) return;
 
-  console.log("Solicitando permiso para notificaciones...");
-  
   try {
     const permission = await Notification.requestPermission();
-    
-    if (permission === "granted") {
-      console.log("Permiso de notificación concedido.");
-      
-      try {
-        const currentToken = await getToken(messaging, { vapidKey: VAPID_KEY });
-        
-        if (currentToken) {
-          console.log("Token FCM recibido: ", currentToken);
-          
-          // Guardamos el token en una subcolección dentro del documento del usuario
-          // para poder tener múltiples tokens por usuario (uno por cada dispositivo/navegador).
-          const tokenRef = doc(db, "users_metadata", userId, "tokens", currentToken);
-          
-          // Usamos el token como ID del documento para evitar duplicados.
-          await setDoc(tokenRef, { 
-            createdAt: serverTimestamp(),
-            userAgent: navigator.userAgent // Guardamos información del navegador/dispositivo
-          });
-
-          console.log("Token FCM guardado exitosamente en Firestore.");
-        } else {
-          console.warn("No se pudo generar un token FCM. Esto puede pasar si el Service Worker no está bien registrado.");
-        }
-      } catch (err) {
-        console.error("Ocurrió un error al obtener o guardar el token FCM.", err);
-      }
-    } else {
-      console.log("El usuario no concedió permiso para recibir notificaciones.");
+    if (permission !== "granted") return;
+    try {
+      await guardarToken(userId);
+    } catch (err) {
+      console.error("Ocurrió un error al obtener o guardar el token FCM.", err);
     }
   } catch (err) {
     console.error("Ocurrió un error al solicitar el permiso de notificación: ", err);
   }
+};
+
+/**
+ * Al abrir la app: si el teléfono YA dio permiso, se vuelve a registrar a nombre
+ * de la cuenta en uso (sin preguntar nada). Así, si en ese teléfono se entró
+ * antes con otra cuenta, los avisos vuelven a ser solo de esta.
+ */
+export const renovarTokenSiHayPermiso = async (userId) => {
+  try {
+    if (!userId || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (!("serviceWorker" in navigator) || !messaging) return;
+    if (await esImpersonacion()) return;
+    await guardarToken(userId);
+  } catch { /* sin señal o sin service worker: se intenta la próxima vez */ }
 };
 
 /**

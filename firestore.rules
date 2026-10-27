@@ -448,7 +448,8 @@ service cloud.firestore {
 
     match /settings/{settingId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      // El centro de notificaciones (quién recibe qué) es solo del máster.
+      allow write: if isAdmin() && (settingId != 'centroNotificaciones' || isMaster());
     }
 
     // Credenciales de la API de Zoho Books (OAuth self-client). SOLO el Admin SDK
@@ -478,8 +479,16 @@ service cloud.firestore {
     // Alerta de ANAQUEL BAJO (una por PDV): la leen todos menos administración;
     // la escribe solo el servidor (alertaAnaquel.js).
     match /alertas_anaquel/{posId} {
-      allow read: if isAuthenticated() && !isAdministrador();
+      allow read: if isAuthenticated() && (!isAdministrador() || centroDaAnaquel());
       allow write: if false;
+    }
+    // Centro de notificaciones: ¿el máster le dio el anaquel bajo a esta persona
+    // de administración (o a su rol)?
+    function centroDaAnaquel() {
+      let ruta = /databases/$(database)/documents/settings/centroNotificaciones;
+      let c = exists(ruta) ? get(ruta).data : {};
+      return c.get('usuarios', {}).get(request.auth.uid, {})
+        .get('anaquel', c.get('roles', {}).get('administrador', {}).get('anaquel', false)) == true;
     }
     match /vigilancia_avisos/{avisoId} {
       // La campanita consulta por `destinatariosAbiertos` (array-contains): la regla

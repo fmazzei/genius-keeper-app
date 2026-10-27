@@ -14,6 +14,10 @@
 // → `generado/simuladorDatos.cjs`): usan las definiciones de la app (qué factura
 // cuenta, qué saldo está abierto, cuántos kg salieron de un lote).
 //
+// Igual con el centro de notificaciones (`src/utils/centroNotificaciones.js`) y las
+// novedades de la app (`src/utils/novedades.js`): el servidor decide quién recibe
+// cada notificación con la misma regla que muestra la pantalla del máster.
+//
 //   node tools/generarMotorFunciones.mjs          → genera (lo corre `npm run build`)
 //   node tools/generarMotorFunciones.mjs --check  → falla si una copia no coincide
 import { build } from 'esbuild';
@@ -26,6 +30,8 @@ const PAQUETES = [
     { fuente: 'src/utils/vendedorMeta.js', salida: 'functions/handlers/generado/vendedorMeta.cjs', que: 'el motor de comisiones' },
     { fuente: 'src/utils/periodosComision.js', salida: 'functions/handlers/generado/periodosComision.cjs', que: 'los períodos de comisión' },
     { fuente: 'src/utils/simuladorDatos.js', salida: 'functions/handlers/generado/simuladorDatos.cjs', que: 'los datos reales del simulador' },
+    { fuente: 'src/utils/centroNotificaciones.js', salida: 'functions/handlers/generado/centroNotificaciones.cjs', que: 'las categorías del centro de notificaciones' },
+    { fuente: 'src/utils/novedades.js', salida: 'functions/handlers/generado/novedades.cjs', que: 'las novedades de la app' },
 ];
 
 const alias = {

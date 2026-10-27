@@ -26,6 +26,8 @@ import { ComisionesDashboard, LiquidacionesManagement, ConciliacionFacturas } fr
 import ListaMaestraPdv from '@/Pages/ListaMaestraPdv.jsx';
 import AlertasAgentePanel from '@/Components/AlertasAgentePanel.jsx';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
+import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
+import NovedadesApp from '@/Components/NovedadesApp.jsx';
 import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
 import { useColorBarraEstado } from '@/utils/colorBarraEstado.js';
 
@@ -153,6 +155,9 @@ export default function AdministracionLayout({ user, onLogout }) {
                     </button>
                 </div>
             </header>
+            {/* Anaquel bajo (si el centro de notificaciones se lo da) y novedades */}
+            <AlertaAnaquelBajo />
+            <NovedadesApp />
 
             {/* ── Tabs (scroll horizontal en móvil) ── */}
             <nav className="shrink-0 bg-white border-b border-slate-200 px-2 sm:px-4 flex gap-1 overflow-x-auto">

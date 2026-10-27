@@ -4063,3 +4063,50 @@ Pedido del dueño: cuando el mercaderista cuenta en un PDV **6 unidades o menos 
 - Pruebas:
   - `node tests/alertaAnaquel.test.mjs`: 29 en verde.
   - `npx firebase emulators:exec --only firestore --project demo-anaq "node tests/alertaAnaquel.e2e.test.mjs"`: 21 en verde. Cubre destinatarios, un solo aviso con dos disparadores a la vez, segunda visita baja sin nuevo aviso, cierre al reponer, apertura por el barrido, recordatorio de las 13 una sola vez (también con dos barridos a la vez), el de las 17, cierre a las 72 h y reglas.
+
+## Centro de notificaciones: un aviso, un teléfono, un tipo (2026-10-27) ✅
+
+Reporte del dueño con captura del iPhone: cada aviso llegaba **dos veces seguidas**, y los del robot, los de reportes y los de anaquel bajo se veían iguales.
+
+**Por qué llegaban dos veces (dos causas, las dos corregidas):**
+1. **El service worker mostraba cada aviso dos veces.** Los avisos llegan con `notification` y Firebase ya los muestra solo; `onBackgroundMessage` llamaba además a `showNotification`. Ahora `public/firebase-messaging-sw.js` solo muestra a mano un mensaje que llegue SIN `notification`. **No volver a mostrar ahí un aviso que traiga `notification`.**
+2. **Un teléfono registrado en varias cuentas** (máster, gerencia, un vendedor, administración…) recibía los avisos de todas. Ahora un teléfono es de UNA cuenta: la última que lo registró (`ultimaVez`). La app lo renueva al abrirse (`renovarTokenSiHayPermiso` en `src/utils/firebaseMessaging.js`, llamado desde `AuthContext`), y **entrar con la llave maestra no registra el teléfono**.
+
+**Un solo camino al teléfono: `functions/handlers/pushCentral.js`.**
+- `enviar({uid, categoria, titulo, cuerpo, link, data, clave})`: mira el centro, busca los teléfonos de esa cuenta y manda.
+- `notificar(uid, notif, data)`: igual, más la entrada de la campanita (`notifications`, con `categoria` e id determinista de 10 min). Reemplazó las cinco copias de `sendNotificationToUser` (triggers, callable, scheduled, webhooks) y el envío propio del vigilante y del anaquel.
+- `contexto()` lee el centro, `users_metadata` y `collectionGroup('tokens')` una vez por minuto. `tokensPorDueno` elige el dueño de cada token (los desafíos de la huella, `regChallenge`/`authChallenge`, no son teléfonos).
+- Cada aviso lleva `webpush.notification.tag` (`gk-<tipo>-<hash>`): el mismo aviso no se apila. `fcmOptions.link` lleva la ruta completa.
+- Fuera de esto quedan los avisos de espera de Kroma (`kromaHoldNotifier`), que son de otro mundo.
+
+**Cinco tipos (`src/utils/centroNotificaciones.js`, empaquetado al servidor como `generado/centroNotificaciones.cjs`):**
+
+| Tipo | En el teléfono | Color en la app |
+|---|---|---|
+| `anaquel` | 🔴 Anaquel bajo · PDV | rojo |
+| `reporte` | 📋 Reporte · PDV | azul |
+| `agente` | 🤖 Agente · … (el vigilante) | violeta |
+| `operacion` | 📦 Operación · … (pedidos, despachos, recepciones, ajustes, cartera, facturas) | verde |
+| `novedades` | ✨ Novedades · … | dorado |
+
+- `tituloPush` pone el emoji y el nombre al inicio; `categoriaDeTipo` clasifica las notificaciones viejas por su `tipo`.
+- **Un reporte que abre una alerta de anaquel bajo manda UN solo aviso** (el rojo): quien recibe el rojo de ese reporte no recibe además el 📋.
+- **Campanita** (`NotificationsBell` + `CategoriaNotif.jsx`): filtros por tipo, agrupada por tipo (anaquel, reporte, agente, operación, novedades), sin leer primero, con la barra y el chip del color de su tipo.
+
+**Centro de notificaciones** (Configuraciones → Sistema → **Centro de notificaciones**, `CentroNotificacionesConfig.jsx`, solo máster):
+- Muestra cómo llega cada tipo al teléfono.
+- **Por rol** (máster, gerencia —incluye sales_manager y director—, vendedor, mercaderista, administración) y **por persona**. Lo de la persona manda sobre su rol; "Como su rol" lo borra.
+- Guarda en `settings/centroNotificaciones` = `{roles:{rol:{tipo:bool}}, usuarios:{uid:{tipo:bool}}}`. Reglas: solo el máster lo escribe (el resto de `settings` lo sigue escribiendo `isAdmin`).
+- Por defecto (`DEFAULT_ROLES`), lo mismo que llegaba antes: máster y gerencia todo; vendedor todo menos reportes; mercaderista anaquel, operación y novedades; administración agente, operación y novedades.
+- Apagado = no llega al teléfono ni a la campanita. Los avisos del agente siguen en la bandeja del robot (solo dejan de sonar).
+- Quién recibe el 📋 reporte, el 🔴 anaquel y las ✨ novedades lo decide SOLO el centro. Agente y operación: el que los manda elige a quién, y el centro filtra.
+- El interruptor anterior `users_metadata.alertaAnaquelBajo:false` sigue apagando el anaquel hasta que se toque en el centro. La lista de personas salió de "Alerta de anaquel bajo".
+- `alertas_anaquel` también la lee administración si el centro se lo da (`centroDaAnaquel()` en las reglas). El renglón rojo se monta también en `AdministracionLayout`.
+
+**Novedades de la app (✨):**
+- `src/utils/novedades.js` (empaquetado a `generado/novedades.cjs`). **REGLA: cada cambio que se publica agrega aquí su novedad, arriba:** `id` único con fecha, `roles` (vacío = todos), `titulo` corto y `resumen` de una o dos frases en lenguaje de quien usa la app.
+- `functions/handlers/novedadesApp.js` → `anunciarNovedades`, en el programador horario de la conciliación (sin costo nuevo). Anuncia una vez, de 7 a 21 h de Caracas, solo novedades de los últimos 7 días, con UN aviso por persona con lo de su rol. Reserva en una transacción (`settings/novedadesEstado.anunciadas`).
+- En la app, `NovedadesApp.jsx`: un renglón dorado debajo del encabezado mientras haya novedades sin ver (30 días) y una hoja con la lista. Lo visto se guarda en el teléfono. El aviso abre la hoja (`/novedades`).
+- Pruebas:
+  - `node tests/centroNotificaciones.test.mjs`: 28 en verde (roles, persona, interruptor anterior, títulos, dueño del teléfono, novedades).
+  - `npx firebase emulators:exec --only firestore --project demo-anaq "node tests/alertaAnaquel.e2e.test.mjs"`: 34 en verde. Ahora cubre el teléfono compartido entre dos cuentas, el centro, la etiqueta, las novedades una sola vez y no de noche, y las reglas del centro.

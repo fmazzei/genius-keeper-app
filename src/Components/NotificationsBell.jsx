@@ -12,6 +12,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bell, Check, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import AvisoDetalleSheet from '@/Components/AvisoDetalleSheet.jsx';
+import { ChipCategoria, ORDEN_CATEGORIAS, categoriaDe, estiloDe } from '@/Components/CategoriaNotif.jsx';
+import { CATEGORIA_POR_ID } from '@/utils/centroNotificaciones.js';
 
 const fmtRel = (d) => {
     if (!d) return '';
@@ -32,7 +34,21 @@ export default function NotificationsBell({
     const [expandida, setExpandida] = useState(null);
     // Aviso del vigilante abierto en su hoja completa (n.aviso trae el documento).
     const [avisoAbierto, setAvisoAbierto] = useState(null);
+    // Filtro por tipo ('todas' = agrupadas por tipo).
+    const [filtro, setFiltro] = useState('todas');
     const ref = useRef(null);
+
+    // Clasificadas por tipo: dentro de cada uno, las no leídas primero y luego
+    // las más nuevas.
+    const ts = (n) => (n.createdAt?.toDate ? n.createdAt.toDate().getTime() : 0);
+    const porCategoria = ORDEN_CATEGORIAS
+        .map(cat => ({
+            cat,
+            items: notifications.filter(n => categoriaDe(n) === cat)
+                .sort((a, b) => (a.read === b.read ? ts(b) - ts(a) : (a.read ? 1 : -1))),
+        }))
+        .filter(g => g.items.length);
+    const grupos = filtro === 'todas' ? porCategoria : porCategoria.filter(g => g.cat === filtro);
 
     // Cerrar al tocar fuera.
     useEffect(() => {
@@ -99,17 +115,47 @@ export default function NotificationsBell({
                         )}
                     </div>
 
+                    {porCategoria.length > 1 && (
+                        <div className="flex gap-1.5 px-3 py-2 border-b border-slate-100 overflow-x-auto shrink-0">
+                            <button onClick={() => setFiltro('todas')}
+                                className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full border ${filtro === 'todas' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>
+                                Todas
+                            </button>
+                            {porCategoria.map(g => {
+                                const c = CATEGORIA_POR_ID[g.cat];
+                                const sinLeer = g.items.filter(n => !n.read).length;
+                                const activo = filtro === g.cat;
+                                return (
+                                    <button key={g.cat} onClick={() => setFiltro(activo ? 'todas' : g.cat)}
+                                        className={`shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full border ${activo ? `${estiloDe(g.cat).chip} ring-2 ring-offset-1 ring-slate-300` : 'bg-white text-slate-600 border-slate-200'}`}>
+                                        {c.emoji} {c.nombre}{sinLeer ? ` · ${sinLeer}` : ''}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     <div className="overflow-y-auto">
                         {notifications.length === 0 ? (
                             <p className="text-sm text-slate-400 text-center py-10">No tienes notificaciones.</p>
-                        ) : notifications.map(n => {
+                        ) : grupos.map(g => (
+                            <div key={g.cat}>
+                                {filtro === 'todas' && (
+                                    <div className={`px-4 py-1.5 flex items-center gap-2 border-b border-slate-100 ${estiloDe(g.cat).fondo}`}>
+                                        <ChipCategoria categoria={g.cat} chico />
+                                        <span className="text-[11px] text-slate-500">{g.items.length}</span>
+                                    </div>
+                                )}
+                                {g.items.map(n => {
                             const fecha = n.createdAt?.toDate ? n.createdAt.toDate() : null;
                             const abiertaEsta = expandida === n.id;
+                            const est = estiloDe(g.cat);
                             return (
                                 <div key={n.id}
-                                    className={`border-b border-slate-100 transition-opacity ${n.read ? 'opacity-55' : 'bg-blue-50/40'}`}>
-                                    <button onClick={() => abrirNotif(n)} className="w-full text-left px-4 py-3 flex gap-2.5">
-                                        <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.read ? 'bg-slate-300' : 'bg-brand-blue'}`} />
+                                    className={`relative border-b border-slate-100 transition-opacity ${n.read ? 'opacity-55' : est.fondo}`}>
+                                    <span className={`absolute left-0 top-0 bottom-0 w-1 ${est.barra}`} aria-hidden />
+                                    <button onClick={() => abrirNotif(n)} className="w-full text-left pl-5 pr-4 py-3 flex gap-2.5">
+                                        <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.read ? 'bg-slate-300' : est.punto}`} />
                                         <div className="min-w-0 flex-1">
                                             <p className={`text-sm leading-snug ${n.read ? 'font-semibold text-slate-600' : 'font-bold text-slate-800'}`}>
                                                 {n.title}
@@ -128,7 +174,7 @@ export default function NotificationsBell({
                                     </button>
 
                                     {abiertaEsta && (
-                                        <div className="px-4 pb-3 flex items-center gap-2">
+                                        <div className="pl-5 pr-4 pb-3 flex items-center gap-2">
                                             {n.link && onOpenLink && (
                                                 <button onClick={() => { onOpenLink(n.link); setAbierto(false); }}
                                                     className="text-xs font-bold text-brand-blue hover:underline">
@@ -143,7 +189,9 @@ export default function NotificationsBell({
                                     )}
                                 </div>
                             );
-                        })}
+                                })}
+                            </div>
+                        ))}
                     </div>
 
                     {pie && <div className="px-3 pt-3 border-t border-slate-100 shrink-0">{pie}</div>}

@@ -8,6 +8,7 @@ import { useAvisosVigilante, textoAviso } from '@/hooks/useAvisosVigilante.js';
 import ActivarAvisos from '@/Components/ActivarAvisos.jsx';
 import NotificationsBell from '@/Components/NotificationsBell.jsx';
 import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
+import NovedadesApp from '@/Components/NovedadesApp.jsx';
 import AjustesGerencia from '@/Components/AjustesGerencia.jsx';
 import { useAgenda } from '@/hooks/useAgenda';
 import { signOut } from 'firebase/auth';
@@ -377,6 +378,7 @@ const ManagerLayout = ({ user, role, readOnly = false, onLogout }) => {
                 </header>
                 {/* Alerta de anaquel bajo: renglón rojo + panel grande */}
                 <AlertaAnaquelBajo onAbrirReporte={(id) => abrirLink(`/reports/${id}`)} />
+                <NovedadesApp />
                 <div className="flex-1 p-4 md:p-6 overflow-y-auto bg-slate-50">
                     {renderMainContent()}
                 </div>

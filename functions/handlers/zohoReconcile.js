@@ -298,6 +298,8 @@ exports.conciliarZohoAutomatico = onSchedule({
     try { await require('./vigilante').ejecutarVigilante(); } catch (e) { logger.error('Vigilante:', e); }
     // Alerta de anaquel bajo: cierra lo vencido o repuesto y manda los recordatorios.
     try { await require('./alertaAnaquel').barridoAlertasAnaquel(); } catch (e) { logger.error('Alerta de anaquel bajo:', e); }
+    // Novedades de la app (✨): se anuncian una vez, al publicar un cambio.
+    try { await require('./novedadesApp').anunciarNovedades(); } catch (e) { logger.error('Novedades de la app:', e); }
 
     const cfgRef = admin.firestore().doc('settings/appConfig');
     const marcar = async (data) => {

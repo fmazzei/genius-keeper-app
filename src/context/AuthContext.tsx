@@ -6,7 +6,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signInWithCustomToken }
 import type { User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../Firebase/config';
-import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
+import { requestNotificationPermission, renovarTokenSiHayPermiso } from '@/utils/firebaseMessaging.js';
 
 interface AuthContextType {
   user: User | null;
@@ -85,6 +85,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } catch {
           setImpersonatedBy(null);
         }
+        // El teléfono queda registrado a nombre de la cuenta con la que se abre
+        // la app (no se espera: no frena la entrada).
+        renovarTokenSiHayPermiso(currentUser.uid);
         try {
           const userDocRef = doc(db, 'users_metadata', currentUser.uid);
           const docSnap = await withTimeout(getDoc(userDocRef), 15000);

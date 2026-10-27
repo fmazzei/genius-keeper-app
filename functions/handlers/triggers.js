@@ -7,58 +7,10 @@ const {
 } = require('./carteraBridge');
 
 // --- Helper de Notificaciones ---
-// Hash corto y estable de una cadena (para armar IDs deterministas).
-const hashCorto = (s) => {
-    let h = 0;
-    for (let i = 0; i < String(s).length; i++) { h = ((h << 5) - h + String(s).charCodeAt(i)) | 0; }
-    return Math.abs(h).toString(36);
-};
-
-const sendNotificationToUser = async (userId, notificationPayload, dataPayload) => {
-    if (!userId) return;
-
-    // 1. Notificación en la base de datos (centro de notificaciones interno).
-    //    ID DETERMINISTA para evitar DUPLICADOS: los triggers de Cloud Functions
-    //    son de entrega "al menos una vez" (pueden ejecutarse dos veces por el
-    //    mismo evento) y algunos flujos avisan al gerente y al máster por
-    //    separado. Con la misma clave, un reenvío sobrescribe en vez de crear
-    //    otra notificación. El bucket de 10 minutos permite que un aviso
-    //    legítimamente repetido más tarde sí genere una entrada nueva.
-    const bucket = Math.floor(Date.now() / (10 * 60 * 1000));
-    const notifId = `${userId}_${hashCorto(`${notificationPayload.title}|${notificationPayload.body}`)}_${bucket}`;
-    const notifRef = admin.firestore().collection("notifications").doc(notifId);
-    const yaExiste = (await notifRef.get()).exists;
-    if (yaExiste) {
-        functions.logger.log(`Notificación duplicada omitida para ${userId}: ${notificationPayload.title}`);
-        return;   // ya se envió (incluido el push): no repetir
-    }
-    await notifRef.set({
-        userId,
-        title: notificationPayload.title,
-        body: notificationPayload.body,
-        tipo: dataPayload.tipo || 'general',
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        read: false,
-        link: dataPayload.link || ''
-    });
-
-    // 2. Enviar notificación push
-    const tokensRef = admin.firestore().collection("users_metadata").doc(userId).collection("tokens");
-    const tokensSnap = await tokensRef.get();
-    if (tokensSnap.empty) {
-        console.log(`No se encontraron tokens para el usuario ${userId}`);
-        return;
-    }
-
-    const tokens = tokensSnap.docs.map(doc => doc.id);
-    const payload = { 
-        notification: notificationPayload, 
-        data: dataPayload 
-    };
-
-    await admin.messaging().sendEachForMulticast({ tokens, ...payload });
-    console.log(`Notificación push enviada a ${tokens.length} dispositivo(s) del usuario ${userId}`);
-};
+// Aviso a una persona (campanita + teléfono). Un solo camino para toda la app:
+// categoría, centro de notificaciones y un teléfono por cuenta (pushCentral.js).
+const sendNotificationToUser = (userId, notificationPayload, dataPayload) =>
+    require('./pushCentral').notificar(userId, notificationPayload, dataPayload || {});
 
 // --- Helpers de configuración y enrutamiento de notificaciones ---
 
@@ -318,10 +270,15 @@ exports.onReportCreated = functions.firestore
         }
 
         // Alerta de ANAQUEL BAJO (≤6 uds sin reponer): va antes de la
-        // configuración de avisos de reportes, que no la apaga.
+        // configuración de avisos de reportes, que no la apaga. Quien recibe el
+        // aviso rojo de este reporte no recibe además el del reporte: un solo
+        // aviso por visita.
+        let yaAvisados = new Set();
         if (reportData.posId) {
-            try { await require("./alertaAnaquel").evaluarPdvTrasReporte(reportData.posId); }
-            catch (e) { functions.logger.error("Alerta de anaquel bajo:", e); }
+            try {
+                const r = await require("./alertaAnaquel").evaluarPdvTrasReporte(reportData.posId);
+                if (r && r.reportId === reportId && Array.isArray(r.uids)) yaAvisados = new Set(r.uids);
+            } catch (e) { functions.logger.error("Alerta de anaquel bajo:", e); }
         }
 
         try {
@@ -330,19 +287,19 @@ exports.onReportCreated = functions.firestore
             const eventConfig = (config.events || {}).nuevo_reporte;
             if (eventConfig && eventConfig.enabled === false) return null;
 
-            // Máster y gerencia siempre (decisión del dueño, 14-oct); la
-            // configuración puede sumar otros destinos, no quitar estos.
-            const destinations = [...new Set([...((eventConfig && eventConfig.destinations) || []), "master", "gerencia", "sales_manager"])];
+            // Quién lo recibe lo decide el centro de notificaciones (categoría
+            // 'reporte'; por defecto máster y gerencia).
+            const uids = (await require("./pushCentral").destinatarios("reporte")).filter(u => !yaAvisados.has(u));
             const contadas = numOrNull(reportData.inventoryLevel);
             const repuestas = numOrNull(reportData.orderQuantity) ?? 0;
             const quedaron = anterior ? quedaronTrasVisita(anterior.r) : null;
             const cifras = anterior
                 ? `Quedaron ${quedaron ?? "—"} en la visita anterior · hoy contadas: ${contadas ?? "—"} · repuestas: ${repuestas}`
                 : `Primera visita · contadas: ${contadas ?? "—"} · repuestas: ${repuestas}`;
-            await notifyByDestinations(destinations, {
-                title: `Reporte: ${posName}`,
+            await Promise.all(uids.map(uid => sendNotificationToUser(uid, {
+                title: posName,
                 body: `${reporterName}. ${cifras}.`,
-            }, { link: `/reports/${reportId}`, tipo: "nuevo_reporte" });
+            }, { link: `/reports/${reportId}`, tipo: "nuevo_reporte", categoria: "reporte" })));
             return null;
         } catch (error) {
             functions.logger.error("Error al notificar nuevo reporte:", error);

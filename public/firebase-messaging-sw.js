@@ -150,23 +150,25 @@ try {
 }
 
 /**
- * Esta función se activa cuando llega una notificación y la app está en segundo plano.
+ * Mensaje en segundo plano.
+ *
+ * Los avisos llegan con `notification`, y Firebase ya los MUESTRA solo (con el
+ * título, la etiqueta y el ícono que manda el servidor). Si aquí se volvía a
+ * llamar a showNotification, cada aviso salía DOS veces en el teléfono (reporte
+ * del dueño, 27-oct). Solo se muestra a mano un mensaje que llegue sin
+ * `notification` (solo datos).
  */
 if (messaging) messaging.onBackgroundMessage((payload) => {
-  console.log(
-    "[firebase-messaging-sw.js] Mensaje recibido en segundo plano: ",
-    payload
-  );
-
-  const notificationTitle = payload.notification.title;
-  const notificationOptions = {
-    body: payload.notification.body,
-    icon: "/icon-192.png", // Ícono de tu app que aparece en la notificación
-    data: payload.data // Guardamos los datos (como el 'link') en la notificación
-  };
-
-  // Usamos la API del navegador para mostrar la notificación en el dispositivo.
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  if (!payload || payload.notification) return;
+  const d = payload.data || {};
+  if (!d.title) return;
+  self.registration.showNotification(d.title, {
+    body: d.body || '',
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: d.tag || undefined,
+    data: d,
+  });
 });
 
 /**

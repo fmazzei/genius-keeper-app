@@ -23,8 +23,14 @@ const { Timestamp } = require('firebase-admin/firestore');
 // Teléfono falso: cada multicast queda anotado con el uid dueño de sus tokens.
 const pushes = [];
 // admin.messaging() devuelve siempre la misma instancia por app: se le cambia el envío.
-admin.messaging().sendEachForMulticast = async (m) => { pushes.push({ uid: m.tokens[0].split('-')[1], title: m.notification.title, data: m.data }); return {}; };
+const dueno = (t) => t.split('-')[1];
+admin.messaging().sendEachForMulticast = async (m) => {
+    m.tokens.forEach(t => pushes.push({ uid: dueno(t), title: m.notification.title, data: m.data, tag: m.webpush?.notification?.tag }));
+    return { successCount: m.tokens.length, failureCount: 0, responses: m.tokens.map(() => ({ success: true })) };
+};
 const A = require('../functions/handlers/alertaAnaquel.js');
+const PC = require('../functions/handlers/pushCentral.js');
+const NA = require('../functions/handlers/novedadesApp.js');
 const fs = admin.firestore();
 
 let fallas = 0;
@@ -35,13 +41,15 @@ const caracas = (dia, h, m = 0) => Date.parse(`${dia}T${String(h).padStart(2, '0
 
 await fetch(`http://${HOST}:${PORT}/emulator/v1/projects/demo-anaq/databases/(default)/documents`, { method: 'DELETE' });
 
+// Un token de FCM de verdad mide más de 100 caracteres.
+const tokenDe = (uid, n = 1) => `tok-${uid}-${n}-`.padEnd(150, 'x');
 const usuarios = {
     FRAN: { role: 'master' }, GER: { role: 'gerencia' }, CARO: { role: 'vendedor' }, ANAQ: { role: 'merchandiser' },
     MJ: { role: 'administrador' }, APAG: { role: 'vendedor', alertaAnaquelBajo: false }, VIEJO: { role: 'vendedor', active: false },
 };
 for (const [uid, u] of Object.entries(usuarios)) {
     await fs.doc(`users_metadata/${uid}`).set({ name: uid, ...u });
-    await fs.doc(`users_metadata/${uid}/tokens/tok-${uid}`).set({ at: ts(Date.now()) });
+    await fs.doc(`users_metadata/${uid}/tokens/${tokenDe(uid)}`).set({ ultimaVez: ts(Date.now() - 3600000) });
 }
 await fs.doc('pos/P1').set({ name: 'Los Pomelos', chain: 'Pomelos', visitInterval: 7, active: true });
 await fs.doc('pos/P2').set({ name: 'Páramo La Urbina', visitInterval: 7, active: true });
@@ -62,7 +70,7 @@ let a = await alerta('P1');
 ok(a && a.estado === 'abierta' && a.contadas === 4 && a.posName === 'Los Pomelos' && a.reportId === 'r1', 'se abre con 4 uds, el nombre del PDV y el reporte');
 ok(quienes() === 'ANAQ,CARO,FRAN,GER', `le llega a máster, gerencia, vendedor y mercaderista (no a administración, apagada ni inactiva): ${quienes()}`);
 ok(pushes.length === 4, `un solo aviso por persona aunque el disparador corra dos veces (${pushes.length})`);
-ok(pushes[0].data.link === '/reports/r1' && pushes[0].title.includes('Los Pomelos'), 'el aviso abre el reporte');
+ok(pushes[0].data.link === '/reports/r1' && pushes[0].title === '🔴 Anaquel bajo · Los Pomelos', 'el aviso abre el reporte');
 
 // 2. Otra visita baja sin reponer: sigue la misma alerta, sin aviso nuevo, y extiende el plazo.
 pushes.length = 0;
@@ -82,7 +90,7 @@ ok(a.estado === 'cerrada' && a.cierre.motivo === 'reposicion' && a.cierre.report
 const VIE = '2026-10-23';
 pushes.length = 0;
 await reporte('p2a', 'P2', caracas(VIE, 9), { inventoryLevel: null, stockout: true });
-let res = await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 9, 30) });
+PC.olvidarCache(); let res = await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 9, 30) });
 a = await alerta('P2');
 ok(a && a.estado === 'abierta' && a.contadas === 0, 'el barrido abre la alerta que el disparador no vio (anaquel vacío = 0)');
 ok(pushes.filter(p => p.data.tipo === 'anaquel_bajo').length === 4, 'y avisa al abrirla');
@@ -90,25 +98,65 @@ ok(res.recordatorio && res.recordatorio.alertas === 0, 'la recién abierta no en
 
 // 5. Recordatorio de las 13: una vez; a las 13:40 no se repite; a las 17 sí.
 pushes.length = 0;
-res = await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 13, 5) });
+PC.olvidarCache(); res = await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 13, 5) });
 const rec13 = pushes.filter(p => p.data.tipo === 'anaquel_bajo_recordatorio');
 ok(rec13.length === 4 && rec13[0].title.includes('Páramo La Urbina'), `recordatorio de las 13 a las 4 personas (${rec13.length})`);
 pushes.length = 0;
 await Promise.all([A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 13, 40) }), A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 13, 41) })]);
 ok(pushes.length === 0, 'el recordatorio de las 13 no se repite, ni con dos barridos a la vez');
-await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 17, 2) });
+PC.olvidarCache(); await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 17, 2) });
 ok(pushes.filter(p => p.data.tipo === 'anaquel_bajo_recordatorio').length === 4, 'a las 17 sale el siguiente');
 a = await alerta('P2');
 ok(a.recordatorioSlot === '2026-10-23-17', 'la alerta anota su último recordatorio');
 
 // 6. A las 72 h se cierra sola.
-await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 9) + 72 * H + 60000 });
+PC.olvidarCache(); await A.barridoAlertasAnaquel({ ahoraMs: caracas(VIE, 9) + 72 * H + 60000 });
 a = await alerta('P2');
 ok(a.estado === 'cerrada' && a.cierre.motivo === 'vencida', 'a las 72 h el barrido la cierra');
 const est = (await fs.doc('settings/alertaAnaquelEstado').get()).data();
 ok(est && est.ultimoBarrido && est.abiertas === 0, 'el barrido deja su marca y el conteo de abiertas');
 
-// 7. Reglas: la leen todos menos administración; nadie la escribe desde la app.
+// 7. Un teléfono, una cuenta: el mismo token registrado por FRAN (último) y por GER
+//    solo recibe UNA vez, y como FRAN. El centro de notificaciones manda.
+pushes.length = 0;
+const compartido = 'tok-FRAN-compartido-'.padEnd(150, 'x');
+await fs.doc(`users_metadata/GER/tokens/${compartido}`).set({ ultimaVez: ts(Date.now() - 600000) });
+await fs.doc(`users_metadata/FRAN/tokens/${compartido}`).set({ ultimaVez: ts(Date.now()) });
+await fs.doc('settings/centroNotificaciones').set({ roles: { vendedor: { anaquel: false } }, usuarios: { MJ: { anaquel: true } } });
+PC.olvidarCache();
+await reporte('p3a', 'P1', Date.now() - 60000, { inventoryLevel: 3 });
+await A.evaluarPdvTrasReporte('P1');
+const alCompartido = pushes.filter(p => p.data && p.data.tipo === 'anaquel_bajo');
+const vecesCompartido = alCompartido.filter(p => p.uid === 'FRAN' && p.title.startsWith('🔴')).length;
+ok(vecesCompartido === 2, `FRAN recibe por sus dos teléfonos y GER no recibe por el que ya no es suyo (${vecesCompartido})`);
+ok(!alCompartido.some(p => p.uid === 'CARO'), 'el centro apagó el anaquel a los vendedores');
+ok(alCompartido.some(p => p.uid === 'MJ'), 'el centro se lo dio a una persona de administración');
+ok(alCompartido.every(p => p.tag && p.tag.startsWith('gk-anaquel-')), 'cada aviso lleva su etiqueta de tipo');
+await fs.doc('settings/centroNotificaciones').delete();
+PC.olvidarCache();
+
+// 8. Novedades: una vez por persona, solo las de su rol, y no de noche.
+pushes.length = 0;
+const lista = [
+    { id: 'n1', fecha: '2026-10-27', roles: [], titulo: 'Algo nuevo', resumen: 'Para todos.' },
+    { id: 'n2', fecha: '2026-10-27', roles: ['master'], titulo: 'Solo máster', resumen: 'Para el máster.' },
+];
+const noche = await NA.anunciarNovedades({ ahoraMs: caracas('2026-10-27', 23), lista });
+ok(noche.omitido === 'fuera_de_horario' && pushes.length === 0, 'de noche no se anuncian');
+const [r1, r2] = await Promise.all([
+    NA.anunciarNovedades({ ahoraMs: caracas('2026-10-27', 10), lista }),
+    NA.anunciarNovedades({ ahoraMs: caracas('2026-10-27', 10), lista }),
+]);
+const nov = pushes.filter(p => p.data.categoria === 'novedades');
+ok((r1.anunciadas || 0) + (r2.anunciadas || 0) === 2, 'dos corridas a la vez anuncian una sola vez');
+ok(nov.find(p => p.uid === 'FRAN')?.title === '✨ Novedades · 2 cambios en la app', 'el máster recibe las dos juntas');
+ok(nov.find(p => p.uid === 'CARO')?.title === '✨ Novedades · Algo nuevo', 'el vendedor solo la suya');
+ok(!nov.some(p => p.uid === 'VIEJO'), 'el inactivo no la recibe');
+pushes.length = 0;
+await NA.anunciarNovedades({ ahoraMs: caracas('2026-10-27', 11), lista });
+ok(pushes.length === 0, 'una hora después no se repiten');
+
+// 9. Reglas: la leen todos menos administración; nadie la escribe desde la app.
 const env = await initializeTestEnvironment({ projectId: 'demo-anaq-reglas', firestore: { rules: readFileSync('firestore.rules', 'utf8'), host: HOST, port: Number(PORT) } });
 await env.withSecurityRulesDisabled(async (c) => {
     const db = c.firestore();
@@ -122,6 +170,9 @@ await assertSucceeds(getDoc(doc(env.authenticatedContext('GER').firestore(), 'al
 await assertFails(q('MJ')); ok(true, 'administración no la lee');
 await assertFails(getDocs(collection(env.unauthenticatedContext().firestore(), 'alertas_anaquel'))); ok(true, 'sin sesión no se lee');
 await assertFails(setDoc(doc(env.authenticatedContext('FRAN').firestore(), 'alertas_anaquel/P1'), { estado: 'cerrada' })); ok(true, 'ni el máster la escribe desde la app');
+await assertFails(setDoc(doc(env.authenticatedContext('MJ').firestore(), 'settings/centroNotificaciones'), { roles: {} })); ok(true, 'administración no toca el centro de notificaciones');
+await assertSucceeds(setDoc(doc(env.authenticatedContext('FRAN').firestore(), 'settings/centroNotificaciones'), { usuarios: { MJ: { anaquel: true } } })); ok(true, 'el máster sí');
+await assertSucceeds(q('MJ')); ok(true, 'con el anaquel encendido en el centro, administración lo lee');
 await env.cleanup();
 
 console.log(fallas ? `\n${fallas} falla(s)` : '\nTodo en verde');

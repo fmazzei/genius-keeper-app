@@ -1,0 +1,45 @@
+// RUTA: src/utils/novedades.js — NOVEDADES DE LA APP (pedido del dueño, 27-oct-2026).
+//
+// Cada cambio que se publica deja aquí una entrada corta, en lenguaje de quien
+// usa la app. El servidor la anuncia UNA vez por teléfono (✨ Novedades) y la
+// app la muestra en su tarjeta dorada hasta que la persona la ve.
+//
+// Reglas para escribir una novedad:
+//   · `id` único y fijo (nunca se reutiliza): fecha + palabra.
+//   · `roles`: a quién le sirve (vacío = a todos). Roles: master, gerencia,
+//     vendedor, merchandiser, administrador.
+//   · `titulo` de pocas palabras; `resumen` de una o dos frases: qué cambia para
+//     esa persona, no cómo se hizo.
+//   · Las más nuevas van ARRIBA.
+//
+// Se empaqueta para el servidor en `functions/handlers/generado/novedades.cjs`.
+
+export const NOVEDADES = [
+    {
+        id: '2026-10-27-centro-notificaciones',
+        fecha: '2026-10-27',
+        roles: [],
+        titulo: 'Notificaciones por tipo',
+        resumen: 'Cada notificación empieza con su tipo: 🔴 Anaquel bajo, 📋 Reporte, 🤖 Agente, 📦 Operación y ✨ Novedades. Ya no llegan repetidas.',
+    },
+    {
+        id: '2026-10-27-centro-notificaciones-master',
+        fecha: '2026-10-27',
+        roles: ['master'],
+        titulo: 'Centro de notificaciones',
+        resumen: 'En Configuraciones → Sistema eliges qué tipo de notificación recibe cada rol y cada persona.',
+    },
+    {
+        id: '2026-10-24-anaquel-bajo',
+        fecha: '2026-10-24',
+        roles: ['master', 'gerencia', 'vendedor', 'merchandiser'],
+        titulo: 'Alerta de anaquel bajo',
+        resumen: 'Si un punto queda con 6 unidades o menos y no se repone en la visita, verás un renglón rojo arriba hasta que se reponga (o 72 h).',
+    },
+];
+
+// Las novedades que le tocan a un rol ('sales_manager' y 'director' = gerencia).
+export const novedadesDelRol = (role, lista = NOVEDADES) => {
+    const r = (role === 'sales_manager' || role === 'director') ? 'gerencia' : role;
+    return lista.filter(n => !n.roles?.length || n.roles.includes(r));
+};

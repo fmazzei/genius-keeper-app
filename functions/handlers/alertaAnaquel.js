@@ -32,30 +32,16 @@ const leerConfig = async (db) => {
     } catch { return R.config({}); }
 };
 
-// Personas que reciben la alerta: todos menos administración, activas y sin la
-// alerta apagada por el máster (`alertaAnaquelBajo:false`).
-const destinatarios = async (db) => {
-    const snap = await db.collection('users_metadata').where('role', 'in', R.ROLES_DESTINO).get();
-    return snap.docs.filter(d => R.recibeAlerta(d.data())).map(d => d.id);
-};
+// Personas que reciben la alerta: las que el centro de notificaciones deja
+// recibir la categoría 🔴 Anaquel bajo (por defecto todos menos administración).
+const destinatarios = () => require('./pushCentral').destinatarios('anaquel');
 
-const enviarPush = async (db, uids, title, body, data) => {
-    let enviados = 0;
-    await Promise.all(uids.map(async (uid) => {
-        try {
-            const toks = await db.collection('users_metadata').doc(uid).collection('tokens').get();
-            if (toks.empty) return;
-            await admin.messaging().sendEachForMulticast({
-                tokens: toks.docs.map(t => t.id),
-                notification: { title, body },
-                data: Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v ?? '')])),
-            });
-            enviados++;
-        } catch (e) {
-            logger.warn(`Alerta anaquel: no se pudo avisar a ${uid}:`, e.message);
-        }
-    }));
-    return enviados;
+const enviarPush = async (uids, title, body, data, clave) => {
+    const pc = require('./pushCentral');
+    const rs = await Promise.all(uids.map(uid => pc.enviar({
+        uid, categoria: 'anaquel', titulo: title, cuerpo: body, link: data.link || '/', data, clave,
+    }).catch(e => { logger.warn(`Alerta anaquel: no se pudo avisar a ${uid}:`, e.message); return { ok: false }; })));
+    return rs.filter(r => r && r.ok).length;
 };
 
 // Aplica a `alertas_anaquel/{posId}` el estado que dicen los reportes. Devuelve
@@ -134,12 +120,13 @@ const infoPdv = async (db, posId, reportes) => {
 };
 
 const avisarApertura = async (db, datos, cfg) => {
-    const uids = await destinatarios(db);
+    const uids = await destinatarios();
     const c = R.config(cfg);
-    const title = `⚠ Anaquel bajo: ${datos.posName}`;
     const quien = datos.reporterName ? `${datos.reporterName} contó` : 'Se contó';
-    const body = `${quien} ${R.textoUnidades(datos.contadas)} y no se repuso. La alerta se cierra al reponer o en ${c.horas} h.`;
-    return enviarPush(db, uids, title, body, { tipo: 'anaquel_bajo', link: `/reports/${datos.reportId}`, posId: datos.posId });
+    const body = `${quien} ${R.textoUnidades(datos.contadas)} y no se repuso. Se cierra al reponer o en ${c.horas} h.`;
+    await enviarPush(uids, datos.posName, body, { tipo: 'anaquel_bajo', link: `/reports/${datos.reportId}`, posId: datos.posId },
+        `abre|${datos.posId}|${datos.desdeReportId}`);
+    return uids;
 };
 
 // Camino 1: lo llama onReportCreated con el reporte recién subido.
@@ -151,7 +138,9 @@ const evaluarPdvTrasReporte = async (posId) => {
     const reportes = qs.docs.map(d => ({ id: d.id, ...d.data() }));
     const info = await infoPdv(db, posId, reportes);
     const abrir = await aplicarPdv(db, posId, reportes, Date.now(), cfg, info);
-    if (abrir) await avisarApertura(db, abrir, cfg);
+    if (!abrir) return null;
+    const uids = await avisarApertura(db, abrir, cfg);
+    return { reportId: abrir.reportId, uids };
 };
 
 // Camino 2: barrido de cada hora + recordatorios.
@@ -224,15 +213,15 @@ const enviarRecordatorio = async (db, ahoraMs, cfg) => {
     let title, body;
     if (vivas.length === 1) {
         const a = vivas[0];
-        title = `⚠ Recordatorio: ${a.posName} sigue sin reponer`;
+        title = `Recordatorio: ${a.posName} sigue sin reponer`;
         body = `${R.textoUnidades(a.contadas)} desde el ${R.fmtHora(msDe(a.desde))}. Se cierra al reponer.`;
     } else {
-        title = `⚠ Recordatorio: ${vivas.length} PDV con ${c.umbral} uds o menos sin reponer`;
+        title = `Recordatorio: ${vivas.length} PDV con ${c.umbral} uds o menos sin reponer`;
         const nombres = vivas.slice(0, 5).map(a => `${a.posName} (${a.contadas ?? 0})`).join(', ');
         body = `${nombres}${vivas.length > 5 ? ` y ${vivas.length - 5} más` : ''}.`;
     }
-    const uids = await destinatarios(db);
-    const enviados = await enviarPush(db, uids, title, body, { tipo: 'anaquel_bajo_recordatorio', link: '/alertas-anaquel' });
+    const uids = await destinatarios();
+    const enviados = await enviarPush(uids, title, body, { tipo: 'anaquel_bajo_recordatorio', link: '/alertas-anaquel' }, `recordatorio|${slot.clave}`);
     const lote = db.batch();
     vivas.forEach(a => lote.set(db.collection(COL).doc(a.id), { recordatorioSlot: slot.clave }, { merge: true }));
     await lote.commit();
