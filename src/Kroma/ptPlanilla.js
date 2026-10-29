@@ -114,6 +114,21 @@ export function reconciliarCava(existentes = [], deseadas = []) {
     return ops;
 }
 
+/**
+ * Al corregir la FECHA de una planilla cambia su lote (lleva la fecha). Sus
+ * partidas en cava tienen que llevar el lote nuevo: si no, el almacén muestra
+ * un lote que ya no existe. Solo cambia el nombre del lote, nunca la cantidad
+ * ni el costo, así que no mueve el inventario valorado.
+ * @returns {Array<{id:string, lote:string, loteLabel:string}>}
+ */
+export function cambiosDeLote(existentes = [], lote, productoNombre = '') {
+    if (!lote) return [];
+    const loteLabel = `${lote} — ${productoNombre}`;
+    return existentes
+        .filter(i => i && i.id && i.active !== false && (i.lote !== lote || i.loteLabel !== loteLabel))
+        .map(i => ({ id: i.id, lote, loteLabel }));
+}
+
 /** Huella de lo que declara la planilla para la cava (para saber si se cambió). */
 export const firmaCava = (deseadas = []) => deseadas
     .map(d => `${claveExacta(d)}=${r3(cantidadDeseada(d))}`).sort().join(';');

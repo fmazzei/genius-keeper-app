@@ -44,11 +44,12 @@ import { sinUndefined } from '@/Kroma/sinUndefined.js';
 import { costeoPlanilla, costoUnitarioDePartida, indexPackagingAssignments } from '@/Kroma/costeoLote.js';
 import { marcaMov } from '@/utils/movInventario.js';
 import CampoFecha, { hoyInput, fechaDesdeInput, sumarDiasInput, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
-import { partidasDePlanilla, reconciliarCava, firmaCava, modoSugerido, kgSinEnvasarSugerido, filasSinVencimiento } from '@/Kroma/ptPlanilla.js';
+import { fechaEnPalabras } from '@/Kroma/fechas.js';
+import { partidasDePlanilla, reconciliarCava, firmaCava, modoSugerido, kgSinEnvasarSugerido, filasSinVencimiento, cambiosDeLote } from '@/Kroma/ptPlanilla.js';
 import { leerSello, fmtSello } from '@/Kroma/selloDatos.js';
 import { redondear, fmtNum } from '@/Kroma/formato.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
-import { formularioDesdeLog, nombrePresentacion, pesoPresentacion, kgPorUnidadDeSku } from '@/Kroma/planillaForm.js';
+import { formularioDesdeLog, nombrePresentacion, pesoPresentacion, kgPorUnidadDeSku, loteHistorico, errorFechaPlanilla, vencTentativoTrasCambioDeFecha } from '@/Kroma/planillaForm.js';
 
 const MERMA_SUGERIDA = 10;   // lo que traen las planillas revisadas
 
@@ -76,14 +77,6 @@ const num = (v) => {
 // escribir — red de seguridad para TODO el formulario, no solo para los campos
 // que hoy fallan. Ver `src/Kroma/sinUndefined.js`.
 
-/** Lote con la fecha REAL de la producción, no la de hoy. */
-function loteHistorico(productoNombre, fecha) {
-    const p = (n) => String(n).padStart(2, '0');
-    const iniciales = (productoNombre || '')
-        .split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase()).join('').slice(0, 4);
-    return `${iniciales}${fecha.getFullYear()}${p(fecha.getMonth() + 1)}${p(fecha.getDate())}-H`;
-}
-
 export default function CargaPlanillaSheet({ fichas = [], suppliers = [], productsMap = {}, materialsMap = {}, verCostos = false, kromaUser, logEditar = null, onClose, onSaved }) {
     // Corregir una planilla es REABRIRLA con todo lo que ya tenía, no volver a
     // teclearla. Con `logEditar` el formulario arranca precargado y el guardado
@@ -92,6 +85,9 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     const editando = !!ini;
 
     const [fecha, setFecha]       = useState(ini?.fecha || hoyInput());
+    // Una planilla es de una producción que ya ocurrió: una fecha posterior a
+    // hoy es un error al elegirla (el `max` del campo no lo respeta el iPhone).
+    const errorFecha = errorFechaPlanilla(fecha);
     const [fichaId, setFichaId]   = useState(ini?.fichaId || '');
     const [entregas, setEntregas] = useState(ini?.entregas || [
         { proveedorId: '', litros: '', temperatura: '', pH: '', densidad: '' },
@@ -168,6 +164,11 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     const kgSinEnvasarNum = !esActual ? 0
         : String(sinEnvasar).trim() === '' ? kgSinEnvasarSug : redondear(num(sinEnvasar), 3);
     const vencSinEnvasarSug = sumarDiasInput(fecha, DIAS_VENCIMIENTO_SIN_ENVASAR);
+    // Cambiar la fecha recalcula el vencimiento tentativo si era el sugerido.
+    const cambiarFecha = (nueva) => {
+        setVencSinEnvasar(v => vencTentativoTrasCambioDeFecha(v, fecha));
+        setFecha(nueva);
+    };
     const vencSinEnvasarEf  = vencSinEnvasar || vencSinEnvasarSug;
     // Todo lo envasado lleva SIEMPRE la fecha de vencimiento con la que salió.
     const faltanVenc = filasSinVencimiento(empaques);
@@ -232,7 +233,7 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
     // deshacer. Si se tocó, la cava queda exactamente como se declara.
     const aplicarCava = !editando || (aplicarElegido ?? tocoCava);
 
-    const puedeGuardar = fecha && ficha && totalRecibido > 0 && kilosNum > 0 && !guardando && ptExistente !== null
+    const puedeGuardar = fecha && !errorFecha && ficha && totalRecibido > 0 && kilosNum > 0 && !guardando && ptExistente !== null
         && faltanVenc.length === 0;
 
     const setEntrega = (i, campo, valor) =>
@@ -245,7 +246,8 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
             // Partes locales: `new Date('2026-07-22')` se lee como UTC y en
             // Venezuela retrocede un día.
             const fechaDate = fechaDesdeInput(fecha);
-            if (!fechaDate) throw new Error('La fecha de la planilla no es válida.');
+            const malaFecha = errorFechaPlanilla(fecha);
+            if (malaFecha || !fechaDate) throw new Error(malaFecha || 'La fecha de la planilla no es válida.');
             const empresaId = kromaUser?.empresaId || 'lacteoca';
             const base = {
                 empresaId,
@@ -531,6 +533,17 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 }
             }
 
+            // Corregir la FECHA cambia el lote (lleva la fecha): las partidas de
+            // este lote en cava pasan al lote nuevo, se aplique o no el resto de
+            // la cava. Solo el nombre: ni cantidad ni costo, así que el libro
+            // valorado no se mueve. Las partidas que se acaban de crear ya
+            // nacen con el lote nuevo.
+            if (editando) {
+                for (const c of cambiosDeLote(ptExistente || [], datosLog.lote, ficha.productoNombre)) {
+                    batch.update(doc(db, 'kroma_inventory_pt', c.id), { lote: c.lote, loteLabel: c.loteLabel });
+                }
+            }
+
             // La única escritura de toda la operación.
             await batch.commit();
             onSaved?.();
@@ -575,10 +588,24 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                     {/* Cada uno en su propia fila: el control nativo de fecha no
                         se encoge, y en media columna desbordaba la tarjeta. */}
                     <div className="space-y-3 mb-4">
-                        <CampoFecha
-                            label="Fecha de la planilla" value={fecha} onChange={setFecha}
-                            acento="emerald" max={hoyInput()}
-                        />
+                        <div>
+                            <CampoFecha
+                                label="Fecha de la planilla" value={fecha} onChange={cambiarFecha}
+                                acento="emerald" max={hoyInput()}
+                            />
+                            {/* El mes en palabras: un mes equivocado en el control
+                                nativo ("29/10" en vez de "29/09") pasa de largo. */}
+                            {fechaEnPalabras(fecha) && (
+                                <p className={`text-sm font-semibold mt-1.5 ${errorFecha ? 'text-rose-300' : 'text-emerald-300'}`}>
+                                    {fechaEnPalabras(fecha)}
+                                </p>
+                            )}
+                            {errorFecha && (
+                                <p className="text-rose-300 text-xs mt-1 leading-snug flex items-start gap-1.5">
+                                    <AlertCircle size={13} className="shrink-0 mt-0.5" /> {errorFecha}
+                                </p>
+                            )}
+                        </div>
                         <div>
                             <Lbl>Producto</Lbl>
                             <select value={fichaId} onChange={e => setFichaId(e.target.value)}
@@ -897,7 +924,8 @@ export default function CargaPlanillaSheet({ fichas = [], suppliers = [], produc
                 </button>
                 {!puedeGuardar && !guardando && (
                     <p className="text-slate-600 text-xs text-center mt-2">
-                        {faltanVenc.length > 0
+                        {errorFecha ? errorFecha
+                            : faltanVenc.length > 0
                             ? `Falta la fecha de vencimiento en ${faltanVenc.length === 1 ? 'una presentación envasada' : `${faltanVenc.length} presentaciones envasadas`}.`
                             : 'Hacen falta fecha, producto, litros y kilos producidos.'}
                     </p>

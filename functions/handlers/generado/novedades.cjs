@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-10-29-planilla-fecha",
+    fecha: "2026-10-29",
+    roles: ["master"],
+    titulo: "Fecha de la planilla",
+    resumen: 'Al cargar una planilla en Kroma, la fecha se lee en palabras ("29 de septiembre de 2026") y no se puede guardar una fecha posterior a hoy. Si corriges la fecha, el lote y el vencimiento de su queso en cava cambian con ella.'
+  },
+  {
     id: "2026-10-29-rotacion-sin-vencido",
     fecha: "2026-10-29",
     roles: ["master", "gerencia", "vendedor"],

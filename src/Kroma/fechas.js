@@ -61,3 +61,23 @@ export const inputDeFecha = (v) => {
     const p = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
+
+const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+    'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+/**
+ * "YYYY-MM-DD" → "29 de septiembre de 2026" ('' si no es fecha). El control
+ * nativo muestra "29/10/2026" o "29 oct 2026" según el teléfono, y un mes
+ * equivocado pasa de largo: con el mes en palabras al lado se ve de una vez.
+ */
+export const fechaEnPalabras = (valor) => {
+    const f = fechaDesdeInput(valor);
+    return f ? `${f.getDate()} de ${MESES[f.getMonth()]} de ${f.getFullYear()}` : '';
+};
+
+/**
+ * ¿La fecha es posterior a hoy? Se revisa en JavaScript porque el `max` del
+ * <input type="date"> no lo respeta Safari en el iPhone: deja elegir cualquier día.
+ */
+export const esFechaFutura = (valor, hoy = hoyInput()) =>
+    !!fechaDesdeInput(valor) && String(valor) > String(hoy);

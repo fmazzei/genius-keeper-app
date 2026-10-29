@@ -3045,6 +3045,17 @@ Caso real del dueño, lote LCO20260722-H: redesueró, perdió 31 kg, ajustó la 
 - Ajustar en Almacenes una partida **sin envasar** de una producción actualiza `kgSinEnvasar` del registro. Si llega a 0, la producción queda cerrada.
 - "Finalizar empaque" calcula lo que queda por envasar con lo que HAY en cava, no con el número del registro.
 
+### La fecha de una planilla: un mes equivocado pasaba de largo (2026-10-29) ✅
+
+Caso real: la producción del **29-sep** se cargó el 7-oct con fecha **29-oct** (se cambió el día y el mes se quedó en octubre). Lote `LCO20261029-H`, vencimiento tentativo 06/02/27, y el queso parecía recién hecho.
+- **Datos corregidos por el conector** (reversible, sin tocar kg, costos ni montos): log `3ortM1njGXEtkiQs8aKx` (fechas 29-sep, lote `LCO20260929-H`, vencimiento sin envasar 2027-01-07), su recepción, la partida de cava, su movimiento, `kroma_inv_costos_lote` y el texto del asiento del libro valorado (el asiento conserva su fecha 7-oct y su monto). Además se dieron de baja (`active:false`) 4 partidas de junio vacías (0 ud, sin lote).
+- **`CargaPlanillaSheet`**:
+  - `errorFechaPlanilla` (en `planillaForm.js`) rechaza una fecha posterior a hoy al guardar y lo dice debajo del campo y del botón. Se revisa en JS: el `max` del `<input type="date">` no lo respeta Safari en el iPhone.
+  - Debajo del campo, la fecha **en palabras** (`fechaEnPalabras` en `fechas.js`): "29 de septiembre de 2026".
+  - Al corregir la fecha, las partidas del lote en cava pasan al lote nuevo (`cambiosDeLote` en `ptPlanilla.js`; solo `lote`/`loteLabel`, no mueve el libro valorado), y el vencimiento tentativo se recalcula si era el sugerido (`vencTentativoTrasCambioDeFecha`; `formularioDesdeLog` reabre vacío el sugerido). El libro de movimientos (`kroma_warehouse_movements`) conserva el lote con que se escribió.
+  - `loteHistorico` pasó a `planillaForm.js`.
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/planillaFecha.test.mjs` (24 en verde).
+
 ### Tablero de gerencia de Kroma: "vacío" el día 2 del mes (2026-10) ✅
 
 Reporte del dueño, captura del 2-oct: "Producciones / mes 0", "Litros procesados —", "Rendimiento —", "Costo/kg — sin lotes costeables este mes". Parecía desconectado.

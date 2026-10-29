@@ -10,6 +10,7 @@
 
 import { kgProducidos } from './estadoPlanta.js';
 import { modoDeLog } from './ptPlanilla.js';
+import { fechaDesdeInput, sumarDiasInput, hoyInput, esFechaFutura, fechaEnPalabras, DIAS_VENCIMIENTO_SIN_ENVASAR } from './fechas.js';
 
 const txt = (v) => (v === null || v === undefined || Number.isNaN(v)) ? '' : String(v);
 
@@ -63,13 +64,50 @@ function sinEnvasarInicial(log) {
     return txt(kg);
 }
 
+/**
+ * Lote de una planilla, con la fecha REAL de la producción (no la de hoy):
+ * iniciales del producto + AAAAMMDD + "-H". `fecha` es un Date local.
+ */
+export function loteHistorico(productoNombre, fecha) {
+    const p = (n) => String(n).padStart(2, '0');
+    const iniciales = (productoNombre || '')
+        .split(/\s+/).filter(Boolean).map(w => w[0].toUpperCase()).join('').slice(0, 4);
+    return `${iniciales}${fecha.getFullYear()}${p(fecha.getMonth() + 1)}${p(fecha.getDate())}-H`;
+}
+
+/**
+ * Por qué no se puede guardar esa fecha de planilla, o null si está bien.
+ * Una planilla es de una producción que YA ocurrió: un día posterior a hoy es
+ * un error al elegirlo (caso real, 7-oct: se cargó el 29-oct en vez del 29-sep,
+ * porque se cambió el día y el mes se quedó en octubre).
+ */
+export function errorFechaPlanilla(valor, hoy = hoyInput()) {
+    if (!fechaDesdeInput(valor)) return 'La fecha de la planilla no es válida.';
+    if (esFechaFutura(valor, hoy)) {
+        return `La fecha de la planilla es el ${fechaEnPalabras(valor)}, posterior a hoy. `
+            + 'Una planilla es de una producción que ya ocurrió: revisa el día y el mes.';
+    }
+    return null;
+}
+
+/**
+ * El vencimiento tentativo de lo sin envasar al CAMBIAR la fecha de la planilla.
+ * Si era el sugerido (fabricación + 100 días) se vuelve a calcular con la fecha
+ * nueva (''); si alguien lo escribió a mano, se respeta.
+ */
+export function vencTentativoTrasCambioDeFecha(venc, fechaAntes) {
+    if (!venc) return '';
+    return venc === sumarDiasInput(fechaAntes, DIAS_VENCIMIENTO_SIN_ENVASAR) ? '' : venc;
+}
+
 /** El estado inicial del formulario a partir de un log ya guardado. */
 export function formularioDesdeLog(log) {
     if (!log) return null;
     const recs = log.recepciones || [];
     const insumos = log.insumosDeclarados || {};
+    const fecha = aInputFecha(log.fechaInicio || log.fechaCierre || log.createdAt);
     return {
-        fecha:   aInputFecha(log.fechaInicio || log.fechaCierre || log.createdAt),
+        fecha,
         fichaId: log.fichaId || '',
         entregas: recs.length > 0
             ? recs.map(r => ({
@@ -105,7 +143,9 @@ export function formularioDesdeLog(log) {
         // conserva escrito si alguien declaró a propósito un valor distinto
         // y coherente (no más de lo producido).
         sinEnvasar: sinEnvasarInicial(log),
-        vencSinEnvasar: log.fechaVencimientoSinEnvasar || '',
+        // Si es el sugerido (fecha + 100 días) se reabre vacío: así, al corregir
+        // la fecha, el vencimiento tentativo se recalcula con la fecha nueva.
+        vencSinEnvasar: vencTentativoTrasCambioDeFecha(log.fechaVencimientoSinEnvasar || '', fecha),
         modo: modoDeLog(log),
         precioLeche: txt(recs.find(r => r.costoUsdLitro)?.costoUsdLitro),
         notas: log.notas || '',
