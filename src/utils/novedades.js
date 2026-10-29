@@ -16,6 +16,20 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-10-29-rotacion-sin-vencido',
+        fecha: '2026-10-29',
+        roles: ['master', 'gerencia', 'vendedor'],
+        titulo: 'Rotación sin vencidos',
+        resumen: 'La rotación ya no cuenta como venta el producto vencido que desapareció del anaquel, las devoluciones ni una entrega anotada dos veces. El reporte dice cuántas unidades se descontaron y por qué.',
+    },
+    {
+        id: '2026-10-29-entrega-repetida',
+        fecha: '2026-10-29',
+        roles: ['merchandiser'],
+        titulo: 'Entregas sin repetir',
+        resumen: 'Si anotaste una entrada "sin factura", el teléfono ya no te vuelve a pedir esa misma factura en la visita siguiente. Y si ves producto vencido, declara el retiro en la visita.',
+    },
+    {
         id: '2026-10-27-centro-notificaciones',
         fecha: '2026-10-27',
         roles: [],

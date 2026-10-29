@@ -13,8 +13,13 @@
 //    siguiente. Si no se entregó, el consumo se sobreestima.
 //  · Las diferencias negativas (reposiciones no registradas) se recortan a cero,
 //    lo que sesga el resultado ligeramente HACIA ARRIBA.
+//  · No cuenta como venta lo que bajó y no se vendió (ventaAnaquel.js): las
+//    unidades vencidas que desaparecieron sin registro, las devoluciones y una
+//    entrega anotada dos veces. Sí suma el retiro declarado en la visita.
 //  · Necesita al menos DOS visitas al mismo PDV para producir un dato; con pocas
 //    visitas el número es muy sensible (por eso se reporta la muestra).
+
+import { medidorDePdv } from './ventaAnaquel.js';
 
 const seg = (r) => r?.createdAt?.seconds ?? (r?.createdAt?.toDate ? r.createdAt.toDate().getTime() / 1000 : 0);
 
@@ -42,14 +47,14 @@ export function computeRotacion(reports = [], filtroPar = null) {
 
     Object.entries(porPos).forEach(([posId, lista]) => {
         const orden = [...lista].sort((a, b) => seg(a) - seg(b));
+        const medir = medidorDePdv(orden);
         for (let i = 1; i < orden.length; i++) {
             const prev = orden[i - 1];
             const curr = orden[i];
             const d = (seg(curr) - seg(prev)) / 86400;
             if (!(d > 0)) continue;
             if (filtroPar && !filtroPar(curr)) continue;   // atribución por mes de la visita actual
-            const disponible = (Number(prev.inventoryLevel) || 0) + (Number(prev.orderQuantity) || 0);
-            const consumido  = Math.max(0, disponible - (Number(curr.inventoryLevel) || 0));
+            const consumido  = Math.max(0, medir(prev, curr).ventas);
             unidades += consumido;
             dias     += d;
             pares    += 1;

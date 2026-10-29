@@ -12,7 +12,7 @@ import { fmtVence } from '@/utils/fechaCorta.js';
 import { ReporteVisitaDoc } from '@/Components/ReportesPdvDoc.jsx';
 import InformePdvSheet from '@/Components/InformePdvSheet.jsx';
 import { comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL } from '@/utils/reporteVisita.js';
-import { historialAnaquel, datosDelRegistro, cuadrosVisita, fmtDiaVE, DIAS_FACTURA_ANTES_DE_REPONER, ubicacionReporte, enlaceMapa } from '@/utils/reporteVisita.js';
+import { historialAnaquel, datosDelRegistro, cuadrosVisita, fmtDiaVE, DIAS_FACTURA_ANTES_DE_REPONER, ubicacionReporte, enlaceMapa, textoNoVenta, textoDuplicada } from '@/utils/reporteVisita.js';
 import {
     ClipboardList, ChevronRight, Search, X,
     Calendar, User, AlertTriangle, Loader,
@@ -402,7 +402,7 @@ function GraficoRotacion({ historial, actualId, t }) {
                 <p className={`text-xs mt-1 leading-snug ${t.meta}`}>
                     <b className={t.fieldValue}>{previo ? fmtDiaVE(previo.dia) : '—'} → {fmtDiaVE(elegido.dia)}</b>{' · '}
                     {elegido.medible
-                        ? <>{fmtUdsDia(elegido.rotacion)} uds/día: salieron {elegido.salieron} en {elegido.dias} {elegido.dias === 1 ? 'día' : 'días'} ({elegido.contadas != null && previo?.quedaron != null ? `${previo.quedaron} que quedaron − ${elegido.contadas} contadas` : ''}).</>
+                        ? <>{fmtUdsDia(elegido.rotacion)} uds/día: se vendieron {elegido.salieron} en {elegido.dias} {elegido.dias === 1 ? 'día' : 'días'} ({elegido.contadas != null && previo?.quedaron != null ? `${previo.quedaron} que quedaron − ${elegido.contadas} contadas` : ''}{textoNoVenta(elegido) ? `; ${textoNoVenta(elegido)}` : ''}).</>
                         : elegido.dias < 1 ? <>dos visitas el mismo día: no se mide.</>
                             : elegido.salieron != null ? <>no medible: se contaron {-elegido.salieron} más de las que quedaron (entró producto sin registrar o error de conteo).</>
                                 : <>sin conteo para medir.</>}
@@ -437,7 +437,7 @@ function BloqueRotacion({ va, comp, cargando, sinAnterior, t }) {
                         {va?.medible ? fmtUdsDia(va.rotacion) : cargando ? '…' : sinAnterior ? '—' : 'no medible'}
                     </p>
                     <p className={`text-[11px] font-semibold leading-snug ${va?.medible ? t.metricPrimary : t.metricCompetidores}`}>
-                        {va?.medible ? `salieron ${va.salieron} en ${va.dias} ${va.dias === 1 ? 'día' : 'días'}`
+                        {va?.medible ? `vendidas ${va.salieron} en ${va.dias} ${va.dias === 1 ? 'día' : 'días'}`
                             : sinAnterior ? 'sin visita anterior'
                                 : va?.dias === 0 ? 'dos visitas el mismo día'
                                     : va?.salieron != null && va.salieron < 0 ? `se contaron ${-va.salieron} más` : ''}
@@ -503,6 +503,12 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
             try {
                 const snap = await getDocs(query(collection(db, 'visit_reports'), where('posId', '==', report.posId)));
                 const reportes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                // Devoluciones registradas entre visitas: no son venta.
+                let devoluciones = null;
+                try {
+                    const ds = await getDocs(query(collection(db, 'devoluciones'), where('posId', '==', report.posId)));
+                    devoluciones = ds.docs.map(d => ({ id: d.id, ...d.data() }));
+                } catch { /* sin permiso o sin señal: se mide sin ellas */ }
                 let facturas = [];
                 if (carnet) {
                     try {
@@ -518,7 +524,7 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                 } else if (vivo) {
                     setFacturasNota('El PDV no está vinculado a un carnet de Zoho: solo se ven las facturas declaradas en el reporte.');
                 }
-                if (vivo) setHistorial(historialAnaquel(reportes, facturas));
+                if (vivo) setHistorial(historialAnaquel(reportes, facturas, devoluciones));
             } catch {
                 if (vivo) setHistorial(null);
             }
@@ -641,9 +647,15 @@ function ReportDetailSheet({ report, pos = null, isMaster, onEdit, onClose, t })
                         </div>
                         {vp?.quedaron != null && va?.contadas != null && va?.medible && (
                             <p className={`text-xs mt-2.5 leading-snug ${t.meta}`}>
-                                En la visita anterior quedaron <b>{vp.quedaron}</b> ({vp.contadas ?? 0} contadas + {vp.repuestas} repuestas); hoy se contaron <b>{va.contadas}</b>: salieron <b>{va.salieron}</b> en {va.dias} {va.dias === 1 ? 'día' : 'días'}.
+                                En la visita anterior quedaron <b>{vp.quedaron}</b> ({vp.contadas ?? 0} contadas + {vp.repuestas - (vp.duplicadas || 0)} repuestas); hoy se contaron <b>{va.contadas}</b>:
+                                {textoNoVenta(va) ? <> {textoNoVenta(va)}. Se vendieron <b>{va.salieron}</b></> : <> se vendieron <b>{va.salieron}</b></>} en {va.dias} {va.dias === 1 ? 'día' : 'días'}.
                             </p>
                         )}
+                        {[vp, va].filter(v => textoDuplicada(v)).map(v => (
+                            <p key={`dup-${v.id}`} className={`text-xs mt-1.5 leading-snug font-semibold ${t.metricCompetidores}`}>
+                                {fmtDiaVE(v.dia)}: {textoDuplicada(v)}.
+                            </p>
+                        ))}
                         <BloqueRotacion va={va} comp={comp} cargando={cargando} sinAnterior={sinAnterior} t={t} />
                         {[vp, va].some(v => v?.facturasRepo?.some(f => f.fuente === 'probable')) && (
                             <p className={`text-[11px] mt-1.5 ${t.meta}`}>

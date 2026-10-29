@@ -3,6 +3,7 @@
 import React, { useMemo } from 'react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts';
 import { TrendingUp, TrendingDown, HelpCircle } from 'lucide-react';
+import { medidorDePdv } from '@/utils/ventaAnaquel.js';
 
 const RotationModalContent = ({ reports }) => {
     const analysis = useMemo(() => {
@@ -25,12 +26,12 @@ const RotationModalContent = ({ reports }) => {
         Object.values(reportsByPos).forEach(storeReports => {
             const sorted = [...storeReports].sort((a, b) => a.createdAt.seconds - b.createdAt.seconds);
             const posName = sorted[0].posName;
+            const medir = medidorDePdv(sorted);
             for (let i = 1; i < sorted.length; i++) {
                 const prev = sorted[i - 1];
                 const curr = sorted[i];
                 if (curr.createdAt.seconds <= prev.createdAt.seconds) continue;
-                const stockDisponible = (Number(prev.inventoryLevel) || 0) + (Number(prev.orderQuantity) || 0);
-                const consumido = Math.max(0, stockDisponible - (Number(curr.inventoryLevel) || 0));
+                const consumido = Math.max(0, medir(prev, curr).ventas);
                 rotationByStore[posName] = (rotationByStore[posName] || 0) + consumido;
             }
         });

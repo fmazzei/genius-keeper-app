@@ -4110,3 +4110,47 @@ Reporte del dueño con captura del iPhone: cada aviso llegaba **dos veces seguid
 - Pruebas:
   - `node tests/centroNotificaciones.test.mjs`: 28 en verde (roles, persona, interruptor anterior, títulos, dueño del teléfono, novedades).
   - `npx firebase emulators:exec --only firestore --project demo-anaq "node tests/alertaAnaquel.e2e.test.mjs"`: 34 en verde. Ahora cubre el teléfono compartido entre dos cuentas, el centro, la etiqueta, las novedades una sola vez y no de noche, y las reglas del centro.
+
+## Rotación: lo que bajó del anaquel y no fue venta (2026-10-29) ✅
+
+Reclamo del dueño con la hoja de Central Madeirense - Manzanares (26-oct): «salieron 53 en 5 días», 10,6 uds/día, contra un histórico de 1,49. La rotación contaba como VENTA todo lo que bajaba el anaquel entre dos visitas. Revisados los 249 reportes, había dos causas, más una tercera posible:
+- **Vencido que desaparece sin registro.** El mercaderista cuenta lotes ya vencidos o que vencen antes de la visita siguiente, no los retira en el formulario y en la visita siguiente ya no están. Manzanares el 21-oct: 10 uds del lote 17-oct. En total, **100 uds en 19 intervalos de 12 PDV**.
+- **La misma entrega anotada dos veces.** El 13-oct se anotó «entró sin factura» 24 uds, porque el teléfono todavía no tenía la factura. El 21-oct el teléfono ofreció la INV-001787 (del 13-oct, la única factura del período) y el mercaderista marcó «Entregué todo»: 24 uds de más. Causa en el servidor: `armarDatosRuta` solo daba por entregada una factura del día de la última visita si el formulario era anterior a la v3.
+- **Devoluciones registradas entre visitas** (fuera del formulario de visita). Hoy hay una sola y con reposición 1:1.
+
+**Regla única, `src/utils/ventaAnaquel.js`** (pura):
+- `vencidasDesaparecidas`: unidades de lotes que vencen ANTES del día de la visita siguiente, que estaban en la anterior y ya no están. Antes se resta lo retirado en esa visita, que sale de lo más viejo.
+  - Las fechas imposibles no cuentan (`lotesCreibles`): más de 60 días antes de la visita, más de 365 después, o mes inválido. Hay reportes con «2020-10-17», «2099-07-02» y «2010-17-02».
+  - Un lote que todavía no vence se pudo vender: no se resta.
+- `entregasDuplicadas`: recorre las visitas del PDV en orden. Lo anotado «sin factura» espera su factura. Si una visita posterior confirma una factura fechada hasta ese día, o hasta 1 día después (`DIAS_TOLERANCIA_FACTURA`), esas unidades ya habían entrado.
+- `devolucionesEntre`: las de la colección `devoluciones` hechas entre las dos visitas. Las declaradas en una visita (`visitaReportId`) ya están en su `retiroVisita`. Lo que una devolución ya explica no se cuenta otra vez como vencido.
+- `ventaEntreVisitas(prev, curr, {duplicadasPrev, devoluciones})` → `{disponible, final, bruto, duplicadas, vencidas, devueltas, ventas}`. Aplica la regla A con el `retiroVisita` de la visita anterior. `medidorDePdv(ordenadas, devoluciones)` es el atajo para los motores.
+
+**La usan TODOS los cálculos de rotación**, así que dan el mismo número:
+- Hoja del reporte, PDF del reporte e informe por PDV (`historialAnaquel(reportes, facturas, devoluciones)`).
+  - Cada intervalo trae `bajo` (lo que bajó), `vencidas`, `devueltas` y `salieron` (= venta).
+  - Cada visita trae `duplicadas`, y su `quedaron` ya no suma la entrega repetida.
+  - La hoja lee además `devoluciones` del PDV.
+- Dashboard: `useKpiCalculations`, la ventana de rotación (`RotationModalContent`) y `rotacion.js`. **Ahora también restan el retiro declarado en la visita**, que antes ignoraban.
+- Mapa de calor (`anaquelAnalisis`), antes/después (`anaquelCambios`; las devoluciones de visita ya no se restan dos veces) y método v2. En v2: `tramosDePos` con `descontarNoVenta`, `visitasPorPos` exportada con `dup`, y el tramo trae `vencidas`.
+
+**En pantalla:**
+- «Se vendieron N».
+- Si hubo ajuste: «bajaron 29 del anaquel; 10 eran vencidas que ya no están: no se cuentan como venta».
+- En la visita con la entrada repetida: «24 de esta entrada ya se habían anotado… (INV-001787): no se suman otra vez».
+- El PDF del reporte y la tabla del informe dicen lo mismo.
+
+**Teléfono** (`rutaMercaderista.armarDatosRuta`): una factura sin responder, del día de la última visita o del siguiente, no se ofrece si esa visita ya anotó esas unidades como «entró sin factura» (v3: `entregaSinFactura`; antes, `orderQuantity`). Se consumen en orden de fecha.
+
+**Manzanares, 21→26 oct:**
+- Antes: 53 vendidas, 10,6 uds/día.
+- Ahora: 19 vendidas (53 − 24 repetidas − 10 vencidas), 3,8 uds/día.
+- El retiro de 12 «por vencer» del 26-oct no afecta: se repusieron las 12 en el acto.
+
+**Red completa (184 intervalos medibles):** 0,89 → 0,82 uds/día.
+
+**No se tocaron los datos guardados**: el cálculo corrige solo.
+
+**Límite:** si la tienda retira producto «por vencer» antes de su fecha y nadie lo registra, sigue contando como venta. No hay forma de verlo sin el registro.
+
+Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/ventaAnaquel.test.mjs` (27 en verde, con los reportes reales de Manzanares).

@@ -35,6 +35,7 @@
 import { UBICACIONES, CATEGORIAS, MIN_PDV_CONFIABLE, MIN_PDV_ORIENTATIVO } from './anaquelAnalisis.js';
 import { cuentaEnCartera } from './facturaEstado.js';
 import { unidadesReales } from './unidadesFactura.js';
+import { medidorDePdv } from './ventaAnaquel.js';
 
 const DIA = 86400;
 const seg = (r) => r?.createdAt?.seconds ?? (r?.createdAt?.toDate ? r.createdAt.toDate().getTime() / 1000 : 0);
@@ -83,6 +84,7 @@ const netoDevolucion = (d) => Math.max(0, (Number(d.unidades) || 0) - (Number(d.
  */
 function tramosDe(lista, devs = []) {
     const orden = [...lista].sort((a, b) => seg(a) - seg(b));
+    const medir = medidorDePdv(orden, devs);
     const out = [];
     for (let i = 1; i < orden.length; i++) {
         const prev = orden[i - 1], curr = orden[i];
@@ -90,15 +92,18 @@ function tramosDe(lista, devs = []) {
         const dias = (fin - ini) / DIA;
         if (!(dias > 0)) continue;
         const pedido = Number(prev.orderQuantity) || 0;
-        const disponible = (Number(prev.inventoryLevel) || 0) + pedido;
+        // Retiro de la visita, entrega repetida y vencido que desapareció (ventaAnaquel.js).
+        const m = medir(prev, curr);
+        const disponible = m.disponible;
         const finalInv = Number(curr.inventoryLevel) || 0;
         // El anaquel se vació (o ya estaba vacío y no se repuso): la venta real
         // pudo ser mayor y no se puede medir.
         const quiebre = !!curr.stockout || finalInv <= 0 || disponible <= 0 || (!!prev.stockout && pedido <= 0);
         // Devoluciones declaradas desde esta visita y hasta antes de la siguiente.
-        const devueltas = devs.filter(d => d._t >= ini && d._t < fin).reduce((s, d) => s + netoDevolucion(d), 0);
-        const uds = Math.max(0, disponible - finalInv - devueltas);
-        out.push({ ini, fin, dias, uds, devueltas, quiebre, ub: prev.shelfLocation || null, cat: prev.adjacentCategory || null });
+        // Las declaradas en una visita ya entran por su `retiroVisita` (en `disponible`).
+        const devueltas = devs.filter(d => !d.visitaReportId && d._t >= ini && d._t < fin).reduce((s, d) => s + netoDevolucion(d), 0);
+        const uds = Math.max(0, disponible - finalInv - devueltas - m.vencidas);
+        out.push({ ini, fin, dias, uds, devueltas, vencidas: m.vencidas, quiebre, ub: prev.shelfLocation || null, cat: prev.adjacentCategory || null });
     }
     return out;
 }

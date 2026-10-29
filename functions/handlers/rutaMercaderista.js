@@ -19,7 +19,11 @@
 //     central— no se puede asignar a un anaquel y no se ofrece);
 //   · su última respuesta en una visita fue "No entregué", o nadie la ha
 //     respondido y es del día de la última visita o posterior (lo anterior ya
-//     lo cubrió esa visita).
+//     lo cubrió esa visita);
+//   · y esa última visita no anotó ya esas unidades como "entró sin factura"
+//     (factura del mismo día o del siguiente). Sin esto, el 21-oct se ofreció
+//     en Manzanares la INV-001787, ya entregada y anotada sin factura el 13-oct,
+//     y el mercaderista la confirmó otra vez: 24 uds de más en el anaquel.
 
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
@@ -89,6 +93,8 @@ function armarDatosRuta({ pos = [], reportes = [], facturas = [], ahoraMs = Date
                 stockout: r.stockout === true,
                 orderQuantity: Number(r.orderQuantity) || 0,
                 formVersion: Number(r.formVersion) || 1,
+                // Lo que entró sin factura vinculada (antes de la v3, todo lo anotado).
+                sinFactura: (Number(r.formVersion) || 1) >= 3 ? (Number(r.entregaSinFactura) || 0) : (Number(r.orderQuantity) || 0),
                 batches: (r.batches || [])
                     .filter(b => b && !b.devuelto && (Number(b.quantity) || 0) > 0)
                     .map(b => ({ expiryDate: b.expiryDate || null, quantity: Number(b.quantity) || 0 })),
@@ -103,8 +109,10 @@ function armarDatosRuta({ pos = [], reportes = [], facturas = [], ahoraMs = Date
 
     const desde = diaCaracas(ahoraMs - DIAS_PENDIENTE * DIA_MS);
     const porPos = {};
+    const sinFacturaLibre = {};   // por PDV: unidades "sin factura" de su última visita aún sin factura
     let compartidas = 0;
-    facturas.filter(esFisica).forEach(f => {
+    const porFecha = (a, b) => String(diaFactura(a.fecha)).localeCompare(String(diaFactura(b.fecha)));
+    facturas.filter(esFisica).sort(porFecha).forEach(f => {
         const dia = diaFactura(f.fecha);
         if (!dia || dia < desde) return;
         const kC = f.zohoCustomerId ? `c:${f.zohoCustomerId}` : null;
@@ -122,9 +130,15 @@ function armarDatosRuta({ pos = [], reportes = [], facturas = [], ahoraMs = Date
         else {
             const diaUlt = diaCaracas(ult.t);
             pendiente = dia >= diaUlt;
-            // Una visita de antes de la versión con entregas, del mismo día, que
-            // anotó al menos esas unidades: se da por entregada en esa visita.
-            if (pendiente && dia === diaUlt && ult.formVersion < 3 && ult.orderQuantity >= (Number(f.unidades) || 0)) pendiente = false;
+            // La última visita (del día de la factura o del anterior) anotó esas
+            // unidades como entrada sin factura: ya se entregó en esa visita.
+            const diaSig = new Date(Date.parse(`${diaUlt}T00:00:00Z`) + DIA_MS).toISOString().slice(0, 10);
+            if (!(posId in sinFacturaLibre)) sinFacturaLibre[posId] = ult.sinFactura || 0;
+            const u = Number(f.unidades) || 0;
+            if (pendiente && dia <= diaSig && sinFacturaLibre[posId] >= u) {
+                sinFacturaLibre[posId] -= u;
+                pendiente = false;
+            }
         }
         if (!pendiente) return;
         (porPos[posId] = porPos[posId] || []).push({ numero, fecha: dia, unidades: Number(f.unidades) || 0 });

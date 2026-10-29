@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { medidorDePdv } from '@/utils/ventaAnaquel.js';
 
 // Función de ayuda para calcular promedios de forma segura, evitando divisiones por cero.
 const safeAvg = (sum, count) => (count > 0 ? sum / count : 0);
@@ -113,13 +114,14 @@ export const useKpiCalculations = (allReports, posList, timeRange = 'all', ourPr
         let totalStoreDays = 0;
         Object.values(reportsByPosForRotation).forEach(storeReports => {
             const sorted = [...storeReports].sort((a, b) => a.createdAt.seconds - b.createdAt.seconds);
+            // Vencido que desapareció, devoluciones y entregas repetidas no son venta.
+            const medir = medidorDePdv(sorted);
             for (let i = 1; i < sorted.length; i++) {
                 const prev = sorted[i - 1];
                 const curr = sorted[i];
                 const daysBetween = (curr.createdAt.seconds - prev.createdAt.seconds) / 86400;
                 if (daysBetween <= 0) continue;
-                const stockDisponible = (Number(prev.inventoryLevel) || 0) + (Number(prev.orderQuantity) || 0);
-                const consumido = Math.max(0, stockDisponible - (Number(curr.inventoryLevel) || 0));
+                const consumido = Math.max(0, medir(prev, curr).ventas);
                 totalUnitsSold += consumido;
                 totalStoreDays += daysBetween;
             }

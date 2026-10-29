@@ -10,7 +10,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
-import { fmtDiaVE, fmtMomentoVE, DIAS_FACTURA_ANTES_DE_REPONER, comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL } from '@/utils/reporteVisita.js';
+import { fmtDiaVE, fmtMomentoVE, DIAS_FACTURA_ANTES_DE_REPONER, comparativoRotacion, ETIQUETA_TENDENCIA, TENDENCIA_UMBRAL, textoNoVenta, textoDuplicada } from '@/utils/reporteVisita.js';
 import { fmtVence } from '@/utils/fechaCorta.js';
 import { etiquetaAltura, etiquetaCategoria } from '@/utils/anaquelCatalogo.js';
 import { estadoLote, ESTADO_LABEL, labelMotivo } from '@/utils/retiros.js';
@@ -229,7 +229,7 @@ export function ReporteVisitaDoc({ report, pos, va, vp, ub, registro, historial,
             <H2>Rotación (unidades que salen por día)</H2>
             <Fila>
                 <Kpi k="Esta visita" v={va?.medible ? `${fmtUdsDia(va.rotacion)} uds/día` : vp ? 'no medible' : '—'}
-                    sub={va?.medible ? `salieron ${va.salieron} en ${diasTxt(va.dias)}` : va?.salieron != null && va.salieron < 0 ? `se contaron ${-va.salieron} más de las que quedaron` : null}
+                    sub={va?.medible ? `vendidas ${va.salieron} en ${diasTxt(va.dias)}` : va?.salieron != null && va.salieron < 0 ? `se contaron ${-va.salieron} más de las que quedaron` : null}
                     color={va?.medible ? VERDE : AMBAR} />
                 <Kpi k="Histórico del PDV" v={comp?.historico ? `${fmtUdsDia(comp.historico.rot)} uds/día` : '—'}
                     sub={comp?.historico ? `${comp.historico.n} intervalos · ${comp.historico.salieron} uds en ${diasTxt(comp.historico.dias)}` : 'poca historia'} />
@@ -244,6 +244,10 @@ export function ReporteVisitaDoc({ report, pos, va, vp, ub, registro, historial,
             {[vp, va].some(v => v?.facturasRepo?.some(f => f.fuente === 'probable')) && (
                 <Nota>"Probable": factura de Zoho de este cliente fechada hasta {DIAS_FACTURA_ANTES_DE_REPONER} días antes de la visita; el reporte no la declaró.</Nota>
             )}
+            {textoNoVenta(va) && <Nota color={AMBAR}>Entre las dos visitas {textoNoVenta(va)}.</Nota>}
+            {[vp, va].filter(v => textoDuplicada(v)).map(v => (
+                <Nota key={`dup-${v.id}`} color={AMBAR}>{fmtDiaVE(v.dia)}: {textoDuplicada(v)}.</Nota>
+            ))}
 
             {intervalos.length > 0 && (<><H2>Rotación del anaquel en este PDV</H2><GraficoRotacionPdf intervalos={intervalos} resaltarId={va?.id} /></>)}
 
@@ -313,7 +317,7 @@ function SeccionPdv({ inf, salto }) {
             ) : (<>
                 <Fila>
                     <Kpi k="Visitas" v={s.visitas} sub={s.mercaderistas.map(m => m.valor).join(', ')} />
-                    <Kpi k="Rotación del intervalo" v={s.rotacion != null ? `${fmtUdsDia(s.rotacion)} uds/día` : '—'} sub={s.diasMedidos ? `salieron ${s.salieron} uds en ${diasTxt(s.diasMedidos)}` : 'sin intervalos medibles'} color={s.rotacion != null ? VERDE : AMBAR} />
+                    <Kpi k="Rotación del intervalo" v={s.rotacion != null ? `${fmtUdsDia(s.rotacion)} uds/día` : '—'} sub={s.diasMedidos ? `vendidas ${s.salieron} uds en ${diasTxt(s.diasMedidos)}${s.noVenta?.vencidas ? ` · sin contar ${s.noVenta.vencidas} vencidas que desaparecieron` : ''}` : 'sin intervalos medibles'} color={s.rotacion != null ? VERDE : AMBAR} />
                     <Kpi k="Histórico anterior" v={s.historico ? `${fmtUdsDia(s.historico.rot)} uds/día` : '—'}
                         sub={s.historico ? `${s.historico.n} intervalos antes del ${fmtDiaVE(inf.desde)}` : s.historicoFalta} />
                     <Kpi k="Tendencia" v={txtTendencia(s.tendencia)} sub={s.tendencia?.dir ? `${ETIQUETA_TENDENCIA[s.tendencia.dir]} frente a su histórico` : 'sin histórico para comparar'}
@@ -338,7 +342,7 @@ function SeccionPdv({ inf, salto }) {
                     <thead><tr>
                         <th style={{ ...th, textAlign: 'left' }}>Fecha</th><th style={{ ...th, textAlign: 'left' }}>Mercaderista</th>
                         <th style={th}>Contadas</th><th style={th}>Repuestas</th><th style={th}>Total</th>
-                        <th style={th}>Días</th><th style={th}>Salieron</th><th style={th}>Uds/día</th><th style={th}>PVP</th><th style={{ ...th, textAlign: 'left' }}>Notas</th>
+                        <th style={th}>Días</th><th style={th}>Vendidas</th><th style={th}>Uds/día</th><th style={th}>PVP</th><th style={{ ...th, textAlign: 'left' }}>Notas</th>
                     </tr></thead>
                     <tbody>{inf.visitas.map(v => (
                         <tr key={v.id}>
@@ -348,14 +352,14 @@ function SeccionPdv({ inf, salto }) {
                             <td style={td}>{v.repuestas}{v.repuestas ? <span style={{ display: 'block', fontSize: 8, color: colorFact(v) }}>{factTxt(v)}</span> : null}</td>
                             <td style={{ ...td, fontWeight: 700 }}>{v.quedaron ?? '—'}</td>
                             <td style={td}>{v.dias ?? '—'}</td>
-                            <td style={{ ...td, color: v.salieron != null && v.salieron < 0 ? AMBAR : '#0f172a' }}>{v.salieron ?? '—'}</td>
+                            <td style={{ ...td, color: v.salieron != null && v.salieron < 0 ? AMBAR : '#0f172a' }}>{v.salieron ?? '—'}{v.medible && v.bajo !== v.salieron ? <span style={{ display: 'block', fontSize: 8, color: AMBAR }}>bajaron {v.bajo}{v.vencidas ? ` · ${v.vencidas} vencidas` : ''}{v.devueltas ? ` · ${v.devueltas} devueltas` : ''}</span> : null}{v.duplicadas ? <span style={{ display: 'block', fontSize: 8, color: AMBAR }}>entrada repetida: −{v.duplicadas}</span> : null}</td>
                             <td style={{ ...td, fontWeight: 800, color: v.medible ? VERDE : '#94a3b8' }}>{v.medible ? fmtUdsDia(v.rotacion) : v.dias != null ? 'no medible' : '—'}</td>
                             <td style={td}>{fmtPrecio(v.precio)}</td>
                             <td style={{ ...td, textAlign: 'left', fontSize: 9, color: GRIS }}>{v.notas || ''}</td>
                         </tr>
                     ))}</tbody>
                 </table></Desliza>
-                <Nota>Total = contadas + repuestas en la visita. Salieron = lo que quedó en la visita anterior − lo contado en esta. "(R)": el anaquel estaba vacío y se repuso en la misma visita.</Nota>
+                <Nota>Total = contadas + repuestas en la visita. Vendidas = lo que quedó en la visita anterior − lo contado en esta, sin contar las unidades vencidas que desaparecieron sin registro ni las devoluciones. "Entrada repetida": una entrega ya anotada en una visita anterior como "entró sin factura"; no se suma otra vez. "(R)": el anaquel estaba vacío y se repuso en la misma visita.</Nota>
 
                 {inf.lotes.length > 0 && (<>
                     <H2>Lotes vistos</H2>

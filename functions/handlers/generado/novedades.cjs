@@ -27,6 +27,20 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-10-29-rotacion-sin-vencido",
+    fecha: "2026-10-29",
+    roles: ["master", "gerencia", "vendedor"],
+    titulo: "Rotaci\xF3n sin vencidos",
+    resumen: "La rotaci\xF3n ya no cuenta como venta el producto vencido que desapareci\xF3 del anaquel, las devoluciones ni una entrega anotada dos veces. El reporte dice cu\xE1ntas unidades se descontaron y por qu\xE9."
+  },
+  {
+    id: "2026-10-29-entrega-repetida",
+    fecha: "2026-10-29",
+    roles: ["merchandiser"],
+    titulo: "Entregas sin repetir",
+    resumen: 'Si anotaste una entrada "sin factura", el tel\xE9fono ya no te vuelve a pedir esa misma factura en la visita siguiente. Y si ves producto vencido, declara el retiro en la visita.'
+  },
+  {
     id: "2026-10-27-centro-notificaciones",
     fecha: "2026-10-27",
     roles: [],

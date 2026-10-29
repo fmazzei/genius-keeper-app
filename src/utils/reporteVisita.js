@@ -9,6 +9,7 @@
 
 import { horaVisitaMs, distanciaM, MOTIVOS_RETIRO, RESPUESTAS_ANTES_DESPUES, MOTIVOS_CORRECCION_CONTEO, RESPUESTAS_DUPLICADO, RESPUESTAS_CONTEO_IDENTICO } from '@/utils/visitaOla1.js';
 import { DISTANCIA_MISMO_PDV_M } from '@/utils/anaquelConstantes.js';
+import { entregasDuplicadas, ventaEntreVisitas } from '@/utils/ventaAnaquel.js';
 
 /** Hasta esta distancia se lee "lejos"; más allá, "muy lejos". */
 export const DISTANCIA_LEJOS_M = 500;
@@ -152,8 +153,14 @@ const facturaFisica = (f) => !!f && f.estado !== 'anulada' && f.estado !== 'borr
  *                  usan para nombrar la factura de una reposición que el reporte
  *                  no vinculó (`probable`); las declaradas en el reporte
  *                  (`entregas`) son `confirmada`.
+ * @param devoluciones  colección `devoluciones` del PDV (opcional): las
+ *                  registradas entre dos visitas no son venta.
+ *
+ * `salieron` es VENTA: lo que bajó el anaquel (`bajo`) menos las vencidas que
+ * desaparecieron sin registro y las devoluciones; `quedaron` ya no suma una
+ * entrega anotada dos veces (`duplicadas`). La regla está en ventaAnaquel.js.
  */
-export function historialAnaquel(reportes = [], facturas = []) {
+export function historialAnaquel(reportes = [], facturas = [], devoluciones = null) {
     const visitas = (reportes || [])
         .map(r => ({ r, t: horaVisitaMs(r) }))
         .filter(x => x.t)
@@ -164,6 +171,8 @@ export function historialAnaquel(reportes = [], facturas = []) {
     const usadas = new Set();
     // Las facturas declaradas en algún reporte no se vuelven a ofrecer como probables.
     visitas.forEach(({ r }) => (r.entregas || []).forEach(e => { if (e?.numero) usadas.add(e.numero); }));
+    // La misma entrega anotada dos veces (sin factura y luego con su factura).
+    const duplicadas = entregasDuplicadas(visitas.map(x => x.r));
 
     const out = [];
     visitas.forEach(({ r, t }, i) => {
@@ -179,18 +188,30 @@ export function historialAnaquel(reportes = [], facturas = []) {
                 .filter(f => !usadas.has(f.numero) && f.dia <= dia && diasCal(f.dia, dia) <= DIAS_FACTURA_ANTES_DE_REPONER)
                 .map(f => { usadas.add(f.numero); return { numero: f.numero, unidades: f.unidades, fuente: 'probable', dia: f.dia }; });
         }
+        const dup = duplicadas.get(r) || null;
+        const q = quedaronTrasVisita(r);
         const v = {
             id: r.id || r.reportId || null, t, dia, userName: r.userName || null,
             contadas, repuestas, facturasRepo, sinFactura,
-            quedaron: quedaronTrasVisita(r),
+            // Unidades de esta visita que ya se habían anotado como entrada en otra.
+            duplicadas: dup ? dup.unidades : 0, facturasDuplicadas: dup ? dup.facturas : [],
+            quedaron: q == null ? null : Math.max(0, q - (dup ? dup.unidades : 0)),
             dias: null, salieron: null, rotacion: null, medible: false,
+            // Lo que bajó el anaquel y no fue venta (ver ventaAnaquel.js).
+            bajo: null, vencidas: 0, devueltas: 0,
         };
         const prev = out[i - 1];
         if (prev) {
             v.dias = diasCal(prev.dia, dia);
             if (prev.quedaron != null && contadas != null) {
-                v.salieron = prev.quedaron - contadas;
-                v.medible = v.dias >= 1 && v.salieron >= 0;
+                const m = ventaEntreVisitas(visitas[i - 1].r, r, { duplicadasPrev: prev.duplicadas, devoluciones });
+                v.bajo = prev.quedaron - contadas;
+                v.medible = v.dias >= 1 && v.bajo >= 0;
+                if (v.medible) {
+                    v.vencidas = m.vencidas;
+                    v.devueltas = m.devueltas;
+                    v.salieron = Math.max(0, v.bajo - m.vencidas - m.devueltas);
+                } else v.salieron = v.bajo;
                 v.rotacion = v.medible ? Math.round((v.salieron / v.dias) * 100) / 100 : null;
             }
         }
@@ -480,3 +501,26 @@ export function comparativoRotacion(historial = [], hastaId = null) {
 }
 
 export const ETIQUETA_TENDENCIA = { sube: 'Subiendo', baja: 'Bajando', estable: 'Estable' };
+
+// ── Lo que bajó del anaquel y no fue venta (29-oct) ─────────────────────────
+
+/**
+ * Frase para un intervalo cuyo número de venta se ajustó: "bajaron 29 del
+ * anaquel; 10 eran vencidas que ya no están (no se vendieron)". `null` si no
+ * hubo ajuste.
+ */
+export function textoNoVenta(v) {
+    if (!v?.medible) return null;
+    const partes = [];
+    if (v.vencidas > 0) partes.push(`${v.vencidas} ${v.vencidas === 1 ? 'era vencida y ya no está' : 'eran vencidas que ya no están'}`);
+    if (v.devueltas > 0) partes.push(`${v.devueltas} ${v.devueltas === 1 ? 'se devolvió' : 'se devolvieron'}`);
+    if (!partes.length) return null;
+    return `bajaron ${v.bajo} del anaquel; ${partes.join(' y ')}: no se cuentan como venta`;
+}
+
+/** Frase para una visita con una entrada ya anotada en otra visita. */
+export function textoDuplicada(v) {
+    if (!(v?.duplicadas > 0)) return null;
+    const f = (v.facturasDuplicadas || []).filter(Boolean);
+    return `${v.duplicadas} de esta entrada ya se ${v.duplicadas === 1 ? 'había' : 'habían'} anotado en una visita anterior como "entró sin factura"${f.length ? ` (${f.join(', ')})` : ''}: no se suman otra vez`;
+}

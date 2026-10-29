@@ -45,6 +45,7 @@ import { computeRotacion } from './rotacion.js';
 import { diasParaVencer } from './retiros.js';
 import * as C from './anaquelConstantes.js';
 import { facturasPorPdv, facturasDelIntervalo } from './anaquelFacturas.js';
+import { entregasDuplicadas, vencidasDesaparecidas, diaCaracas } from './ventaAnaquel.js';
 import { ALTURAS, CATEGORIAS_VECINAS, etiquetaAltura, etiquetaCategoria } from './anaquelCatalogo.js';
 
 const DIA = 86400;
@@ -198,13 +199,19 @@ export function cambiosEntre(a, b) {
     return VARIABLES.filter(v => a[v] != null && b[v] != null && a[v] !== b[v]);
 }
 
-function visitasPorPos(reports) {
-    const m = {};
+export function visitasPorPos(reports) {
+    const crudos = {};
     (reports || []).forEach(r => {
         if (!r?.posId || !tVisita(r)) return;
-        (m[r.posId] = m[r.posId] || []).push(normalizarVisita(r));
+        (crudos[r.posId] = crudos[r.posId] || []).push(r);
     });
-    Object.values(m).forEach(l => l.sort((a, b) => a.t - b.t));
+    const m = {};
+    Object.entries(crudos).forEach(([id, l]) => {
+        l.sort((a, b) => tVisita(a) - tVisita(b));
+        // La misma entrega anotada dos veces (sin factura y luego con su factura).
+        const dup = entregasDuplicadas(l);
+        m[id] = l.map(r => ({ ...normalizarVisita(r), dup: dup.get(r)?.unidades || 0 }));
+    });
     return m;
 }
 
@@ -312,11 +319,14 @@ export const METODO_NUEVO = {
     usarMovimientos: true,      // regla A: devoluciones y traslados
     filtrarDuracion: true,      // fuera corto (<5 d) y largo (>21 d)
     excluirSinProducto: true,
+    // 29-oct: lo vencido que desapareció sin registro y la entrega anotada dos
+    // veces no son venta (ventaAnaquel.js).
+    descontarNoVenta: true,
 };
 // El método del Dashboard expresado con las mismas piezas (para comparar).
 export const METODO_DASHBOARD = {
     recortarNegativos: true, unirCortos: false, usarMovimientos: false,
-    filtrarDuracion: false, excluirSinProducto: false,
+    filtrarDuracion: false, excluirSinProducto: false, descontarNoVenta: true,
 };
 
 const CUENTAN = new Set(['valido', 'minimo']);
@@ -355,14 +365,21 @@ export function tramosDePos(visitas, movs = {}, metodo = METODO_NUEVO, facturasP
         let rep = 0, retiradas = 0, repuestas = 0, entradas = 0;
         partes.forEach(v => {
             const m = mov(v);
-            rep += v.rep; retiradas += m.retiradas; repuestas += m.repuestas; entradas += m.entradas;
+            rep += v.rep - (metodo.descontarNoVenta ? (v.dup || 0) : 0);
+            retiradas += m.retiradas; repuestas += m.repuestas; entradas += m.entradas;
         });
         // Entregas = facturas de Zoho del intervalo, en vez de lo anotado en la visita.
         const facturas = facturasPos ? facturasDelIntervalo(facturasPos, diaLocal(a.t), diaLocal(visitas[j].t)) : null;
         if (conFacturas) rep = (facturas || []).reduce((acc, f) => acc + f.unidades, 0);
         const disponible = a.inv + rep + repuestas + entradas - retiradas;
         const crudo = disponible - fin.inv;
-        const ventas = metodo.recortarNegativos ? Math.max(0, crudo) : crudo;
+        // Lotes vencidos antes de la visita final que ya no están: no se vendieron.
+        const vencidas = metodo.descontarNoVenta && crudo > 0 ? Math.min(crudo, vencidasDesaparecidas({
+            lotesAntes: a.vacio ? [] : a.lotes, diaAntes: diaCaracas(a.t * 1000), retiradasAntes: retiradas,
+            lotesDespues: fin.vacio ? [] : fin.lotes, diaDespues: diaCaracas(fin.t * 1000),
+        })) : 0;
+        const neto = crudo - vencidas;
+        const ventas = metodo.recortarNegativos ? Math.max(0, neto) : neto;
 
         let estado;
         if (!metodo.recortarNegativos && crudo < 0) estado = 'error_captura';
@@ -374,7 +391,7 @@ export function tramosDePos(visitas, movs = {}, metodo = METODO_NUEVO, facturasP
 
         out.push({
             posId: a.posId, inicio: a, fin, iIni: i, iFin: j, ini: a.t, finT: fin.t, dias,
-            unidos: j - i, invInicial: a.inv, invFinal: fin.inv, rep, retiradas, repuestas, entradas,
+            unidos: j - i, invInicial: a.inv, invFinal: fin.inv, rep, retiradas, repuestas, entradas, vencidas,
             ventas, crudo, estado, razonCorte: estado === 'corto' ? razonCorte : null,
             facturas, fuente: conFacturas ? 'facturas' : 'visita',
             conMovimientos: retiradas > 0 || repuestas > 0 || entradas > 0,

@@ -32,6 +32,8 @@
 // pueden ser también las que más venden por otros motivos. Las proyecciones son
 // un orden de magnitud para decidir, no una promesa.
 
+import { medidorDePdv } from './ventaAnaquel.js';
+
 export const UBICACIONES = [
     { id: 'ojos', label: 'Nivel ojos' },
     { id: 'manos', label: 'Nivel manos' },
@@ -128,6 +130,7 @@ export function analizarAnaquel({ reports = [], allReports = [], posList = [] })
     const tasaPdv = {}; // rotación global de cada PDV en la ventana (para proyecciones)
     Object.entries(porPos).forEach(([posId, lista]) => {
         const orden = [...lista].sort((a, b) => seg(a) - seg(b));
+        const medir = medidorDePdv(orden);
         for (let i = 1; i < orden.length; i++) {
             const prev = orden[i - 1], curr = orden[i];
             // Solo los intervalos de visitas que TERMINAN dentro de la ventana del dashboard.
@@ -137,8 +140,8 @@ export function analizarAnaquel({ reports = [], allReports = [], posList = [] })
             const ub = prev.shelfLocation || curr.shelfLocation;
             const cat = prev.adjacentCategory || curr.adjacentCategory;
             if (!ub) continue;
-            const disponible = (Number(prev.inventoryLevel) || 0) + (Number(prev.orderQuantity) || 0);
-            const uds = Math.max(0, disponible - (Number(curr.inventoryLevel) || 0));
+            // Vencido que desapareció, devoluciones y entregas repetidas no son venta.
+            const uds = Math.max(0, medir(prev, curr).ventas);
             paresTotales++; pdvConVenta.add(posId);
             const t = tasaPdv[posId] = tasaPdv[posId] || { uds: 0, dias: 0 };
             t.uds += uds; t.dias += dias;

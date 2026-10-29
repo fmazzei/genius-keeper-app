@@ -69,7 +69,7 @@ export function informePdv({ pos = {}, reportes = [], facturas = [], devolucione
     const ini = msDia(desde);
     const fin = msDia(hasta, true);
     const enRango = (t) => t != null && t >= ini && t <= fin;
-    const historial = historialAnaquel(reportes, facturas);
+    const historial = historialAnaquel(reportes, facturas, devoluciones);
     const porId = Object.fromEntries((reportes || []).map(r => [r.id || r.reportId, r]));
     const visitas = historial.filter(v => enRango(v.t)).map(v => {
         const r = porId[v.id] || {};
@@ -96,6 +96,11 @@ export function informePdv({ pos = {}, reportes = [], facturas = [], devolucione
     // cae en el intervalo, sobre los días de esos mismos intervalos.
     const medibles = visitas.filter(v => v.medible);
     const salieron = medibles.reduce((s, v) => s + v.salieron, 0);
+    // Lo que bajó del anaquel y no fue venta (vencido que desapareció, devoluciones)
+    // y las entradas anotadas dos veces que no cuentan.
+    const vencidas = medibles.reduce((s, v) => s + (v.vencidas || 0), 0);
+    const devueltasIntervalo = medibles.reduce((s, v) => s + (v.devueltas || 0), 0);
+    const duplicadas = visitas.reduce((s, v) => s + (v.duplicadas || 0), 0);
     const diasMedidos = medibles.reduce((s, v) => s + v.dias, 0);
     const noMedibles = visitas.filter(v => v.dias != null && !v.medible).length;
 
@@ -192,6 +197,7 @@ export function informePdv({ pos = {}, reportes = [], facturas = [], devolucione
             repuestas,
             salieron,
             diasMedidos,
+            noVenta: { vencidas, devueltas: devueltasIntervalo, duplicadas },
             rotacion: rotInt,
             historico: rotHist != null ? { rot: rotHist, n: antes.length, dias: hD, salieron: hS } : null,
             historicoFalta: rotHist == null ? `hacen falta ${MIN_INTERVALOS_HISTORICO} intervalos medibles antes del ${desde.slice(8, 10)}/${desde.slice(5, 7)} (hay ${antes.length})` : null,
