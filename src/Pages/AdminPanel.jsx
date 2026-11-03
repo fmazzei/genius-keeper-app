@@ -30,6 +30,7 @@ import AlertaAnaquelConfig from '@/Components/AlertaAnaquelConfig.jsx';
 import CentroNotificacionesConfig from '@/Components/CentroNotificacionesConfig.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
+import DesgloseBloques from '@/Components/DesgloseBloques.jsx';
 
 // Índice público usuario→correo para permitir login por NOMBRE DE USUARIO.
 // Se escribe al crear/editar cualquier usuario con username.
@@ -3147,7 +3148,10 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                     <div key={e.periodKey} className="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2 text-sm">
                                         <div className="min-w-0">
                                             <p className="font-semibold text-slate-700">Mes {e.mes} <span className="text-slate-400 font-normal">· {e.rango}</span>{e.congelado && <span className="ml-1.5 text-[10px] font-bold text-blue-600">🔒 congelado</span>}</p>
-                                            <p className="text-slate-400 text-xs">{e.cerrado ? 'Cerrado' : 'En curso'} · Nivel {e.nivel} · {e.unidades.toLocaleString()} uds</p>
+                                            <p className="text-slate-400 text-xs">{e.cerrado ? 'Cerrado' : 'En curso'} · {e.comisionActiva === false ? (e.bonoNivelEscalon ? `Bono ${e.bonoNivelEscalon}` : 'sin comisión %') : `Nivel ${e.nivel}`} · {e.unidades.toLocaleString()} uds{e.baseUnidades === 'cobradas' ? ' cobradas' : ''}</p>
+                                            {(e.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).length > 0 && (
+                                                <p className="text-slate-500 text-[11px]">{(e.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).map(b => `${b.nombre} ${money(b.monto)}`).join(' · ')}</p>
+                                            )}
                                         </div>
                                         <div className="text-right shrink-0">
                                             <p className="text-slate-700 text-xs">Comisiones {money(e.devengadoComision)} · pag. {money(e.pagadoComision)} → <b className={e.saldoComision > 0.5 ? 'text-amber-600' : 'text-emerald-600'}>{money(e.saldoComision)}</b></p>
@@ -4086,8 +4090,11 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                                     En este mes se pagaron <b>{money(-desgloseActual.saldoComision)}</b> de comisiones de más: son cobros que ahora cuentan en el mes siguiente (no es dinero perdido ni duplicado). Descuéntalo al liquidar el mes siguiente.
                                 </p>
                             )}
+                            <div className="mt-2"><DesgloseBloques fila={desgloseActual} tema="claro" titulo="Lo ganado, por bloque" /></div>
                             <p className="text-slate-400 text-[10px] mt-1.5">
-                                Comisión = lo cobrado EN este período × la tasa del nivel del mes en que se facturó + bonos (este mes: nivel {desgloseActual.nivel}, {desgloseActual.tasa}%). Lo que se cobre después de cerrar entra al mes siguiente. El comprobante detalla el número factura por factura.
+                                {desgloseActual.comisionActiva === false
+                                    ? <>Sin comisión %: lo variable son los bonos en USD, medidos con las unidades {desgloseActual.baseUnidades === 'cobradas' ? 'cobradas' : 'facturadas'} del período. El comprobante detalla cada factura.</>
+                                    : <>Comisión = lo cobrado EN este período × la tasa del nivel del mes en que se facturó + bonos (este mes: nivel {desgloseActual.nivel}, {desgloseActual.tasa}%). Lo que se cobre después de cerrar entra al mes siguiente. El comprobante detalla el número factura por factura.</>}
                             </p>
                             {onLiquidar && (
                                 <button onClick={onLiquidar} className="w-full mt-3 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-3 rounded-lg">
@@ -4369,7 +4376,10 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                                             <div key={p.periodKey} className="flex items-center justify-between px-4 py-2 text-sm">
                                                 <div>
                                                     <p className="text-slate-700">Mes {p.mes} <span className="text-slate-400 font-normal">· {p.rango} · {p.periodKey?.slice(0, 4)}</span>{p.congelado && <span className="ml-1 text-[10px] text-blue-600">🔒</span>}</p>
-                                                    <p className="text-slate-400 text-xs">{p.cerrado ? 'Cerrado' : 'En curso'} · Nivel {p.nivel}</p>
+                                                    <p className="text-slate-400 text-xs">{p.cerrado ? 'Cerrado' : 'En curso'} · {p.comisionActiva === false ? (p.bonoNivelEscalon ? `Bono ${p.bonoNivelEscalon}` : 'sin comisión %') : `Nivel ${p.nivel}`}</p>
+                                                    {(p.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).length > 0 && (
+                                                        <p className="text-slate-500 text-[11px]">{(p.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).map(b => `${b.nombre} ${money(b.monto)}`).join(' · ')}</p>
+                                                    )}
                                                 </div>
                                                 <div className="text-right">
                                                     <p className="text-slate-600 text-xs">Comisiones {money(p.devengadoComision)} · pag. {money(p.pagadoComision)} → <b className={p.saldoComision > 0.5 ? 'text-amber-600' : 'text-emerald-600'}>{money(p.saldoComision)}</b></p>

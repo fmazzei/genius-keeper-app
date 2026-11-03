@@ -8,6 +8,7 @@ import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { esquemasComision, fechaLocal } from '@/utils/periodosComision.js';
 import LoadingSpinner from '@/Components/LoadingSpinner';
 import CommissionProposalDoc from '@/Components/CommissionProposalDoc.jsx';
+import { bloquesDeEsquema, previaEsquema, PLANTILLAS, maximoBonosUSD } from '@/utils/bloquesRemuneracion.js';
 
 export { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 
@@ -132,7 +133,6 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
     const [loading, setLoading]     = useState(true);
     const [saving, setSaving]       = useState(false);
     const [error, setError]         = useState('');
-    const [simAmount, setSimAmount] = useState(10000);
     const [showProposal, setShowProposal] = useState(false);
     const [vendedorName, setVendedorName] = useState(vendedor.name || vendedor.nombre || 'Vendedor');
 
@@ -216,7 +216,27 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
         setEsquemas(es => es.filter((_, j) => j !== i));
         setSlot(s => (s >= i ? Math.max(0, s - 1) : s));
     };
-    const fija = config.esquema === 'fija';
+    const sinPct = config.comisionActiva === false;
+    const fija = !sinPct && config.esquema === 'fija';
+    const aplicarPlantilla = (pl) => {
+        if (!window.confirm(`¿Usar la plantilla "${pl.nombre}"? Cambia los bloques de este esquema; el sueldo, la meta y los precios se conservan salvo que la plantilla diga otra cosa. Nada se guarda hasta tocar Guardar.`)) return;
+        setConfig(p => ({ ...p, ...JSON.parse(JSON.stringify(pl.cambios)) }));
+    };
+    // Bono por nivel (escalones en USD)
+    const escalones = config.bonoNivel?.escalones || [];
+    const setBonoNivel = (fn) => setConfig(p => {
+        const b = p.bonoNivel || { activo: true, escalones: [] };
+        return { ...p, bonoNivel: fn({ ...b, escalones: [...(b.escalones || [])] }) };
+    });
+    const updEscalon = (i, campo, val) => setBonoNivel(b => ({ ...b, escalones: b.escalones.map((e, j) => j === i ? { ...e, [campo]: val } : e) }));
+    const setPorPct = (i, porPct) => setBonoNivel(b => ({ ...b, escalones: b.escalones.map((e, j) => {
+        if (j !== i) return e;
+        const meta = Number(config.metaMensual) || 0;
+        if (porPct) return { ...e, minPct: e.minPct ?? (meta > 0 ? Math.round((Number(e.minUnidades) || 0) / meta * 10000) / 100 : 0), minUnidades: null };
+        return { ...e, minUnidades: e.minUnidades ?? Math.round(meta * (Number(e.minPct) || 0) / 100), minPct: null };
+    }) }));
+    const setBonoSimple = (clave, campo, val) => setConfig(p => ({ ...p, [clave]: { activo: true, ...(p[clave] || {}), [campo]: val } }));
+    const previas = [0, 80, 90, 100, 120].map(pc => previaEsquema(config, pc));
 
     const updateTier    = (i, field, val) =>
         setConfig(p => ({ ...p, tiers: p.tiers.map((t, j) => j === i ? { ...t, [field]: val } : t) }));
@@ -243,19 +263,10 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
             arranque: p.arranque.map(a => ({ ...a, meta: Math.round(v * (a.pct || 0) / 100) })),
         }));
 
-    const project = (rate) => {
-        const commission = simAmount * (rate / 100);
-        const bonuses    = simAmount * (((config.bonusPuntualidad || 0) + (config.bonusActivacion || 0)) / 100);
-        const fijo       = config.salarioFijo;
-        const viaticos   = config.viaticosSemanales * 4;
-        return { commission, bonuses, fijo, viaticos, total: commission + bonuses + fijo + viaticos };
-    };
-
     if (loading) return (
         <div className="flex items-center justify-center py-16"><LoadingSpinner /></div>
     );
 
-    const lowestMinPct = config.tiers.length > 0 ? Math.min(...config.tiers.map(t => t.minPct)) : 90;
     const scenarios = getScenarios(config);
 
     return (
@@ -279,7 +290,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                     className={`text-left px-3 py-2 rounded-lg border text-xs font-semibold ${i === slot ? 'bg-[#0D2B4C] text-white border-[#0D2B4C]' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
                                     {etiquetaEsquema(i)}
                                     <span className={`block text-[10px] font-normal ${i === slot ? 'text-white/70' : 'text-slate-400'}`}>
-                                        {e.config.esquema === 'fija' ? `Tasa fija ${e.config.tasaFija || 0}%` : 'Por niveles'}{i === idxVigente ? ' · vigente hoy' : fechaLocal(e.desde) > new Date() ? ' · programado' : ''}
+                                        {e.config.comisionActiva === false ? 'Sin comisión %' : e.config.esquema === 'fija' ? `Tasa fija ${e.config.tasaFija || 0}%` : 'Por niveles'}{i === idxVigente ? ' · vigente hoy' : fechaLocal(e.desde) > new Date() ? ' · programado' : ''}
                                     </span>
                                 </button>
                             ))}
@@ -313,6 +324,30 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 </section>
 
+                {/* ── Bloques del esquema y plantillas ── */}
+                <section>
+                    <SectionHeader label="Cómo se le paga (bloques)" />
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-1.5">
+                        {bloquesDeEsquema(config).map(b => (
+                            <div key={b.id} className="flex gap-2 text-xs">
+                                <span className="font-bold text-slate-700 w-36 shrink-0">{b.nombre}</span>
+                                <span className="text-slate-500 min-w-0">{b.resumen}</span>
+                            </div>
+                        ))}
+                        {maximoBonosUSD(config) > 0 && <p className="text-[11px] text-slate-400 pt-1">Bonos en USD: hasta ${maximoBonosUSD(config)} al mes.</p>}
+                    </div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 mt-3 mb-1.5">Plantillas rápidas</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {PLANTILLAS.map(pl => (
+                            <button key={pl.id} type="button" onClick={() => aplicarPlantilla(pl)}
+                                className="text-left p-2.5 rounded-xl border border-slate-200 bg-white active:bg-slate-50">
+                                <p className="text-xs font-bold text-slate-700">{pl.nombre}</p>
+                                <p className="text-[11px] text-slate-400 leading-snug mt-0.5">{pl.descripcion}</p>
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
                 {/* ── 0. Descargar propuesta ── */}
                 <button
                     type="button"
@@ -343,6 +378,19 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                             onChange={v => setConfig(p => ({ ...p, precioUnidad: v }))}
                         />
                     </div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400 mt-3 mb-1.5">Unidades que cuentan para la meta y los bonos</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {[['facturadas', 'Facturadas', 'Las facturas con fecha en el mes'], ['cobradas', 'Cobradas', 'Las facturas cobradas en el mes (por su fecha de pago)']].map(([k, t, h]) => (
+                            <button key={k} type="button" onClick={() => setConfig(p => ({ ...p, baseUnidades: k }))}
+                                className={`text-left p-3 rounded-xl border ${(config.baseUnidades || 'facturadas') === k ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-slate-200'}`}>
+                                <p className={`text-sm font-bold ${(config.baseUnidades || 'facturadas') === k ? 'text-emerald-800' : 'text-slate-700'}`}>{t}</p>
+                                <p className="text-xs text-slate-400 mt-0.5">{h}</p>
+                            </button>
+                        ))}
+                    </div>
+                    {(config.baseUnidades || 'facturadas') === 'facturadas' && config.bonoNivel?.activo !== false && escalones.length > 0 && (
+                        <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg p-2 mt-2">Con bonos en USD conviene contar las unidades COBRADAS: así ningún bono se paga sobre lo que todavía no entró.</p>
+                    )}
                 </section>
 
                 {/* ── 2. Período de Arranque ── */}
@@ -386,15 +434,18 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
 
                 {/* ── 3. Tipo de comisión ── */}
                 <section>
-                    <SectionHeader label="Tipo de comisión" />
-                    <div className="grid grid-cols-2 gap-2">
-                        {[['niveles', 'Por niveles', 'La tasa sube con el % de la meta'], ['fija', 'Tasa fija', 'Una sola tasa sobre todo lo cobrado']].map(([k, t, h]) => (
-                            <button key={k} type="button" onClick={() => setConfig(p => ({ ...p, esquema: k }))}
-                                className={`text-left p-3 rounded-xl border ${config.esquema === k ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-slate-200'}`}>
-                                <p className={`text-sm font-bold ${config.esquema === k ? 'text-emerald-800' : 'text-slate-700'}`}>{t}</p>
-                                <p className="text-xs text-slate-400 mt-0.5">{h}</p>
-                            </button>
-                        ))}
+                    <SectionHeader label="Comisión %" />
+                    <div className="grid grid-cols-3 gap-2">
+                        {[['ninguna', 'Sin comisión %', 'Solo fijo y/o bonos en USD'], ['niveles', 'Por niveles', 'La tasa sube con el % de la meta'], ['fija', 'Tasa fija', 'Una sola tasa sobre todo lo cobrado']].map(([k, t, h]) => {
+                            const activo = k === 'ninguna' ? sinPct : (!sinPct && (config.esquema || 'niveles') === k);
+                            return (
+                                <button key={k} type="button" onClick={() => setConfig(p => (k === 'ninguna' ? { ...p, comisionActiva: false } : { ...p, comisionActiva: true, esquema: k }))}
+                                    className={`text-left p-3 rounded-xl border ${activo ? 'bg-emerald-50 border-emerald-400' : 'bg-white border-slate-200'}`}>
+                                    <p className={`text-sm font-bold ${activo ? 'text-emerald-800' : 'text-slate-700'}`}>{t}</p>
+                                    <p className="text-xs text-slate-400 mt-0.5">{h}</p>
+                                </button>
+                            );
+                        })}
                     </div>
                     {fija && (
                         <div className="bg-white border border-slate-200 rounded-xl px-4 mt-2">
@@ -411,7 +462,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                 </section>
 
                 {/* ── 3b. Estructura de Comisión (por niveles) ── */}
-                {!fija && <section>
+                {!fija && !sinPct && <section>
                     <SectionHeader
                         label="Estructura de Comisión — Tu % Según Meta"
                         action={
@@ -550,9 +601,61 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </p>
                 </section>}
 
+                {/* ── 3c. Bonos en USD ── */}
+                <section>
+                    <SectionHeader label="Bono por nivel (USD)"
+                        action={<button type="button" onClick={() => setBonoNivel(b => ({ ...b, activo: true, escalones: [...b.escalones, { etiqueta: `Escalón ${b.escalones.length + 1}`, minUnidades: 0, montoUSD: 0 }] }))}
+                            className="flex items-center gap-1 text-xs font-semibold text-blue-600 active:opacity-60"><Plus size={13} /> Escalón</button>} />
+                    {escalones.length === 0 ? (
+                        <p className="text-sm text-slate-400 italic py-1 px-1">Sin bono por nivel.</p>
+                    ) : (
+                        <div className="bg-white border border-slate-200 rounded-xl px-3">
+                            {escalones.map((e, i) => {
+                                const porPct = e.minUnidades == null && e.minPct != null;
+                                return (
+                                    <div key={i} className="py-2.5 border-b border-slate-100 last:border-b-0 space-y-1.5">
+                                        <div className="flex items-center gap-2">
+                                            <input type="text" value={e.etiqueta || ''} onChange={ev => updEscalon(i, 'etiqueta', ev.target.value)}
+                                                className="flex-1 min-w-0 text-sm font-bold text-slate-800 bg-slate-50 rounded-lg px-2 py-1" />
+                                            <button type="button" onClick={() => setBonoNivel(b => ({ ...b, escalones: b.escalones.filter((_, j) => j !== i) }))} className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 text-sm">
+                                            <span className="text-xs text-slate-400 shrink-0">Desde</span>
+                                            <input type="number" min="0" step={porPct ? 0.5 : 10}
+                                                value={(porPct ? e.minPct : e.minUnidades) || ''}
+                                                onChange={ev => updEscalon(i, porPct ? 'minPct' : 'minUnidades', Number(ev.target.value) || 0)}
+                                                className="w-20 text-center p-1.5 border border-slate-200 rounded-lg font-mono" />
+                                            <button type="button" onClick={() => setPorPct(i, !porPct)} className="px-2 py-1 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 shrink-0">{porPct ? '% de la meta' : 'uds'}</button>
+                                            <span className="text-xs text-slate-400 shrink-0">→ $</span>
+                                            <input type="number" min="0" step="10" value={e.montoUSD || ''} onChange={ev => updEscalon(i, 'montoUSD', Number(ev.target.value) || 0)}
+                                                className="w-20 text-center p-1.5 border border-slate-200 rounded-lg font-mono" />
+                                        </div>
+                                        <p className="text-[11px] text-slate-400">{porPct ? `= ${fmtUnits((Number(config.metaMensual) || 0) * (Number(e.minPct) || 0) / 100)} uds con la meta de ${fmtUnits(config.metaMensual)}` : `= ${(config.metaMensual > 0 ? Math.round((Number(e.minUnidades) || 0) / config.metaMensual * 1000) / 10 : 0)} % de la meta`}</p>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                    <p className="text-xs text-slate-400 mt-1.5 px-1">Se paga SOLO el escalón más alto que se alcance; por debajo del más bajo, $0. Un escalón en % se recalcula si cambia la meta; uno en unidades, en un mes corto, va en proporción a sus días.</p>
+                </section>
+
+                <section>
+                    <SectionHeader label="Bonos de penetración y crecimiento (USD)" />
+                    <div className="bg-white border border-slate-200 rounded-xl px-4">
+                        <InlineRow label="Bono de penetración" hint="Se paga si compró al menos este % de la cartera (PDV activos)" suffix="USD"
+                            value={config.bonoPenetracion?.montoUSD || 0} step={10} onChange={v => setBonoSimple('bonoPenetracion', 'montoUSD', v)} />
+                        <InlineRow label="% de la cartera" suffix="%" value={config.bonoPenetracion?.pct || 0} step={5} onChange={v => setBonoSimple('bonoPenetracion', 'pct', v)} />
+                        <InlineRow label="Mín. unidades por PDV" hint="Para que un PDV cuente como que compró en el mes" suffix="uds" value={config.bonoPenetracion?.minUnidades || 0} step={1} onChange={v => setBonoSimple('bonoPenetracion', 'minUnidades', v)} />
+                        <InlineRow label="Bono de crecimiento" hint="Se paga si las unidades crecen al menos este % contra el mes anterior (no aplica el primer mes)" suffix="USD"
+                            value={config.bonoCrecimiento?.montoUSD || 0} step={10} onChange={v => setBonoSimple('bonoCrecimiento', 'montoUSD', v)} />
+                        <InlineRow label="Crecimiento mínimo" suffix="%" value={config.bonoCrecimiento?.pct || 0} step={1} onChange={v => setBonoSimple('bonoCrecimiento', 'pct', v)} />
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1.5 px-1">Un bono en $0 queda apagado.</p>
+                </section>
+
                 {/* ── 4. Bonos ── */}
                 <section>
-                    <SectionHeader label="Bonos" />
+                    <SectionHeader label="Bonos en % (sobre lo cobrado)" />
                     <p className="text-xs text-slate-400 mb-1.5 px-1">Un bono en 0 % queda apagado.</p>
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
                         <InlineRow
@@ -689,85 +792,26 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 </section>
 
-                {/* ── 7. Simulador de Ingresos ── */}
+                {/* ── 7. Vista previa ── */}
                 <section>
-                    <SectionHeader label="Simulador de Ingresos" />
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-slate-600 shrink-0">Monto cobrado:</span>
-                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                                <span className="text-slate-400 shrink-0 text-sm">$</span>
-                                <input
-                                    type="number" min="0" step="1000"
-                                    value={simAmount}
-                                    onChange={e => setSimAmount(Number(e.target.value) || 0)}
-                                    className="flex-1 min-w-0 p-2.5 border border-slate-200 rounded-xl text-sm font-mono text-right bg-white"
-                                />
-                                <span className="text-xs text-slate-400 shrink-0">USD</span>
-                            </div>
-                        </div>
-
-                        {fija ? (() => {
-                            const p = project(config.tasaFija || 0);
-                            return (
-                                <div className="bg-white rounded-xl p-3.5 border border-slate-200">
-                                    <div className="flex items-baseline justify-between mb-1.5">
-                                        <span className="font-bold text-slate-800">Tasa fija {config.tasaFija || 0}%</span>
-                                        <span className="font-black text-emerald-700 text-xl">${p.total.toFixed(0)}</span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
-                                        <span>Fijo <b className="text-slate-600 font-semibold">${p.fijo}</b></span>
-                                        <span>Viáticos <b className="text-slate-600 font-semibold">${p.viaticos}</b></span>
-                                        <span>Comisión <b className="text-slate-600 font-semibold">${p.commission.toFixed(0)}</b></span>
-                                        <span>Bonos <b className="text-slate-600 font-semibold">${p.bonuses.toFixed(0)}</b></span>
-                                    </div>
+                    <SectionHeader label="Vista previa de un mes completo" />
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                        {previas.map(pv => (
+                            <div key={pv.pctMeta} className="bg-white rounded-xl p-3 border border-slate-200">
+                                <div className="flex items-baseline justify-between gap-2">
+                                    <span className="font-bold text-slate-800 text-sm">{pv.pctMeta} % de la meta <span className="text-xs font-normal text-slate-400">({fmtUnits(pv.unidades)} uds)</span></span>
+                                    <span className="font-black text-emerald-700 text-lg">${pv.total.toFixed(0)}</span>
                                 </div>
-                            );
-                        })() : (
-                        <div className="space-y-2">
-                            {[...config.tiers]
-                                .sort((a, b) => b.minPct - a.minPct)
-                                .map((tier, i) => {
-                                    const p = project(tier.rate);
-                                    return (
-                                        <div key={i} className="bg-white rounded-xl p-3.5 border border-slate-200">
-                                            <div className="flex items-baseline justify-between mb-1.5">
-                                                <span className="font-bold text-slate-800">{tier.label}</span>
-                                                <span className="font-black text-emerald-700 text-xl">${p.total.toFixed(0)}</span>
-                                            </div>
-                                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
-                                                <span>Fijo <b className="text-slate-600 font-semibold">${p.fijo}</b></span>
-                                                <span>Viáticos <b className="text-slate-600 font-semibold">${p.viaticos}</b></span>
-                                                <span>Comisión <b className="text-slate-600 font-semibold">${p.commission.toFixed(0)}</b></span>
-                                                <span>Bonos <b className="text-slate-600 font-semibold">${p.bonuses.toFixed(0)}</b></span>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-
-                            {(() => {
-                                const p = project(config.bajaRate || 0);
-                                return (
-                                    <div className="bg-slate-100 rounded-xl p-3.5 border border-slate-200">
-                                        <div className="flex items-baseline justify-between mb-1.5">
-                                            <span className="font-bold text-slate-500">Baja <span className="text-xs font-normal">(&lt;{lowestMinPct}%)</span></span>
-                                            <span className="font-black text-slate-600 text-xl">${p.total.toFixed(0)}</span>
-                                        </div>
-                                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400">
-                                            <span>Fijo <b className="text-slate-600 font-semibold">${p.fijo}</b></span>
-                                            <span>Viáticos <b className="text-slate-600 font-semibold">${p.viaticos}</b></span>
-                                            <span>Comisión <b className="text-slate-600 font-semibold">${p.commission.toFixed(0)}</b></span>
-                                            <span className="italic">Sin bonos por meta</span>
-                                        </div>
-                                    </div>
-                                );
-                            })()}
-                        </div>
-                        )}
-
-                        <p className="text-[11px] text-slate-400">
-                            * Con los bonos activos (los que no están en 0 %). Tasas sobre el monto efectivamente cobrado.
-                        </p>
+                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400 mt-1">
+                                    <span>Fijo <b className="text-slate-600">${pv.fijo.toFixed(0)}</b></span>
+                                    {pv.comision > 0 && <span>Comisión{pv.nivel ? ` ${pv.nivel} ${pv.tasa}%` : ''} <b className="text-slate-600">${pv.comision.toFixed(0)}</b></span>}
+                                    {pv.bonosPct > 0 && <span>Bonos % <b className="text-slate-600">${pv.bonosPct.toFixed(0)}</b></span>}
+                                    {escalones.length > 0 && <span>Bono por nivel <b className="text-slate-600">${pv.bonoNivel.toFixed(0)}</b>{pv.escalon ? ` (${pv.escalon})` : ''}</span>}
+                                    {pv.hasta > 0 && <span>+ hasta <b className="text-slate-600">${pv.hasta.toFixed(0)}</b> de penetración y crecimiento</span>}
+                                </div>
+                            </div>
+                        ))}
+                        <p className="text-[11px] text-slate-400">* Un mes completo, todo cobrado a tiempo al precio por unidad. La penetración y el crecimiento dependen de la cartera y del mes anterior.</p>
                     </div>
                 </section>
 
