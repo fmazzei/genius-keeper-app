@@ -91,8 +91,19 @@ var DEFAULT_COMMISSION_CONFIG = {
   // precio de venta por unidad foodservice
   comisionFoodservice: 5,
   // % flat sobre lo cobrado de facturas foodservice
-  metaKgFoodservice: 0
+  metaKgFoodservice: 0,
   // kg de queso foodservice al mes (0 = sin meta)
+  // BLOQUES (constructor de remuneración, 3-nov-2026; ver bloquesRemuneracion.js).
+  comisionActiva: true,
+  // false = sin comisión % (solo fijo y/o bonos en USD)
+  baseUnidades: "facturadas",
+  // 'cobradas' = unidades de facturas cobradas en el período
+  bonoNivel: null,
+  // {activo, escalones:[{etiqueta, minUnidades|minPct, montoUSD}]}
+  bonoPenetracion: null,
+  // {activo, pct, minUnidades, montoUSD}
+  bonoCrecimiento: null
+  // {activo, pct, montoUSD}
 };
 
 // src/utils/periodosComision.js
@@ -150,6 +161,9 @@ function normalizarEsquema(config = {}) {
   const c = { ...DEFAULT_COMMISSION_CONFIG, ...config };
   for (const k of Object.keys(DEFAULT_COMMISSION_CONFIG)) {
     if (c[k] === void 0 || c[k] === null) c[k] = DEFAULT_COMMISSION_CONFIG[k];
+  }
+  if (c.comisionActiva === false) {
+    return { ...c, tiers: [], bajaActiva: true, bajaRate: 0, bajaLabel: "Sin comisi\xF3n %" };
   }
   if (c.esquema === "fija") {
     return { ...c, tiers: [], bajaActiva: true, bajaRate: Number(c.tasaFija) || 0, bajaLabel: c.tasaFijaLabel || "Tasa fija" };

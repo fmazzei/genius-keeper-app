@@ -131,6 +131,12 @@ export function normalizarEsquema(config = {}) {
     for (const k of Object.keys(DEFAULT_COMMISSION_CONFIG)) {
         if (c[k] === undefined || c[k] === null) c[k] = DEFAULT_COMMISSION_CONFIG[k];
     }
+    // Sin bloque de comisión % (solo fijo, o fijo + bonos en USD): ninguna tasa.
+    // Se traduce igual que la tasa fija, a "sin niveles y nivel más bajo = 0",
+    // así el servidor deja la comisión provisional de cada factura en 0.
+    if (c.comisionActiva === false) {
+        return { ...c, tiers: [], bajaActiva: true, bajaRate: 0, bajaLabel: 'Sin comisión %' };
+    }
     if (c.esquema === 'fija') {
         return { ...c, tiers: [], bajaActiva: true, bajaRate: Number(c.tasaFija) || 0, bajaLabel: c.tasaFijaLabel || 'Tasa fija' };
     }

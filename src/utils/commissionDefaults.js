@@ -46,4 +46,10 @@ export const DEFAULT_COMMISSION_CONFIG = {
     precioUnidadFoodservice: 4.8,  // precio de venta por unidad foodservice
     comisionFoodservice:     5.0,  // % flat sobre lo cobrado de facturas foodservice
     metaKgFoodservice:       0,    // kg de queso foodservice al mes (0 = sin meta)
+    // BLOQUES (constructor de remuneración, 3-nov-2026; ver bloquesRemuneracion.js).
+    comisionActiva:      true,          // false = sin comisión % (solo fijo y/o bonos en USD)
+    baseUnidades:        'facturadas',  // 'cobradas' = unidades de facturas cobradas en el período
+    bonoNivel:           null,          // {activo, escalones:[{etiqueta, minUnidades|minPct, montoUSD}]}
+    bonoPenetracion:     null,          // {activo, pct, minUnidades, montoUSD}
+    bonoCrecimiento:     null,          // {activo, pct, montoUSD}
 };

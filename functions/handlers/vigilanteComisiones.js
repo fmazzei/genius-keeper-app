@@ -73,13 +73,17 @@ const MOTIVO_CONFLICTO = {
 // Resumen de un mes de empleo, con las MISMAS cifras del estado de cuenta.
 const filasMes = (e) => [
     fila('Período', null, `Mes ${e.mes} · ${e.rango}`),
-    fila('Facturado (define el nivel)', `meta ${num(e.metaMensual).toLocaleString('es-VE')} uds`, `${num(e.unidades).toLocaleString('es-VE')} uds · ${e.nivel} ${num(e.tasa)} %`),
+    fila(e.baseUnidades === 'cobradas' ? 'Unidades cobradas (definen el nivel)' : 'Facturado (define el nivel)', `meta ${num(e.metaMensual).toLocaleString('es-VE')} uds`, `${num(e.unidades).toLocaleString('es-VE')} uds${e.comisionActiva === false ? '' : ` · ${e.nivel} ${num(e.tasa)} %`}`),
     fila('Cobrado en el mes', null, usd(e.cobrado)),
     e.comisionNivelMonto != null ? fila('Comisión por nivel', null, usd(e.comisionNivelMonto)) : null,
     num(e.bonoCobranzaMonto) ? fila('Bono cobranza', null, usd(e.bonoCobranzaMonto)) : null,
     num(e.bonoActivacionMonto) ? fila('Bono activación', `${num(e.actSemanasLogradas)} de ${num(e.actSemanasTotales)} semanas`, usd(e.bonoActivacionMonto)) : null,
     num(e.cobradoRecup) ? fila('Cuentas recuperadas', `cobrado ${usd(e.cobradoRecup)} al ${num(e.tasaRecup)} %`, usd(num(e.cobradoRecup) * num(e.tasaRecup) / 100)) : null,
     num(e.comisionFoodMonto) ? fila('Foodservice', `cobrado ${usd(e.cobradoFood)}`, usd(e.comisionFoodMonto)) : null,
+    // Bonos en USD del constructor por bloques.
+    num(e.bonoNivelMonto) ? fila('Bono por nivel', e.bonoNivelEscalon ? `escalón ${e.bonoNivelEscalon}` : null, usd(e.bonoNivelMonto)) : null,
+    num(e.bonoPenetracionMonto) ? fila('Bono de penetración', e.penetracion ? `${num(e.penetracion.compraron)} de ${num(e.penetracion.cartera)} PDV` : null, usd(e.bonoPenetracionMonto)) : null,
+    num(e.bonoCrecimientoMonto) ? fila('Bono de crecimiento', e.crecimiento?.aplica ? `${num(e.crecimiento.crecimientoPct)} %` : null, usd(e.bonoCrecimientoMonto)) : null,
     // Fijo y comisiones siempre por separado: que nadie confunda un monto con otro.
     fila('Comisiones devengadas', e.congelado ? 'congelado' : 'calculado hoy', usd(e.devengadoComision)),
     fila('Comisiones pagadas', null, usd(e.pagadoComision)),
