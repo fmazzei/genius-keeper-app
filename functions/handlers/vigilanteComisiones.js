@@ -17,6 +17,7 @@
 // dinero (nunca al vendedor).
 
 const M = require('./generado/vendedorMeta.cjs');
+const { vendedorDelCarnetEnFecha, tieneTraspasos } = require('./traspasoReglas');
 const { fila, seccion, diaTxt } = require('./avisoDetalle');
 
 const DIA = 86400000;
@@ -170,10 +171,13 @@ function evaluarComisiones(d, cfg) {
     }
 
     // 1c. Factura de un vendedor distinto al dueño actual de su carnet: la reasignación no se completó.
+    // Con un traspaso con fecha de corte, el dueño se mide por la fecha de la factura.
+    const duenoDe = (f) => vendedorDelCarnetEnFecha(clientes[String(f.zohoCustomerId)], f.fecha, f.numero).vendedorId;
     const desalineadas = activas.filter(f => {
         if (!f.zohoCustomerId) return false;
         const c = clientes[String(f.zohoCustomerId)];
         if (!c) return false;
+        if (tieneTraspasos(c)) return (f.vendedorId || null) !== duenoDe(f);
         if (c.esOficina === true) return !!f.vendedorId;
         return !!c.vendedorId && f.vendedorId !== c.vendedorId;
     });

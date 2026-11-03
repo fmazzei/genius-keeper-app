@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-03-remuneracion-bloques",
+    fecha: "2026-11-03",
+    roles: ["master"],
+    titulo: "Comisiones por bloques y traspaso de cartera",
+    resumen: 'El esquema de cada vendedor se arma por bloques: fijo, comisi\xF3n %, bono por nivel en USD, penetraci\xF3n y crecimiento, con plantillas y vista previa. Nuevo en Comercial: "Traspasar cartera" con fecha de corte (lo anterior se queda con quien lo vendi\xF3).'
+  },
+  {
     id: "2026-11-03-kroma-hold-consumibles",
     fecha: "2026-11-03",
     roles: ["master"],

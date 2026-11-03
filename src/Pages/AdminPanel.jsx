@@ -31,6 +31,7 @@ import CentroNotificacionesConfig from '@/Components/CentroNotificacionesConfig.
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
 import DesgloseBloques from '@/Components/DesgloseBloques.jsx';
+import TraspasoCartera from '@/Components/TraspasoCartera.jsx';
 
 // Índice público usuario→correo para permitir login por NOMBRE DE USUARIO.
 // Se escribe al crear/editar cualquier usuario con username.
@@ -5285,6 +5286,7 @@ const AdminPanel = ({ user, posList, reports, loading, alertasAgente = null }) =
                 { id: 'facturacion', label: 'Facturación', Icon: Receipt, badge: 'Nuevo' },
                 { id: 'vendor_kpis', label: 'KPIs del Vendedor', Icon: LayoutGrid, badge: 'Nuevo' },
                 { id: 'liquidaciones', label: 'Liquidaciones', Icon: Wallet },
+                { id: 'traspaso_cartera', label: 'Traspasar cartera', Icon: Users, badge: 'Nuevo' },
                 { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
                 { id: 'almacen_comercial', label: 'Almacén Comercial', Icon: Truck },
                 { id: 'competitors', label: 'Competidores',     Icon: ShoppingCart },
@@ -5349,6 +5351,7 @@ const AdminPanel = ({ user, posList, reports, loading, alertasAgente = null }) =
             case 'facturacion':    return <FacturacionClientes />;
             case 'vendor_kpis':    return <VendorKpiConfig />;
             case 'liquidaciones':  return <LiquidacionesManagement />;
+            case 'traspaso_cartera': return <TraspasoCartera />;
             case 'depots':         return <DepotManagement />;
             case 'almacen_comercial': return <AlmacenComercialPage canPicking />;
             case 'competitors':    return <CompetitorManagement />;
