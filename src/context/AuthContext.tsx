@@ -90,7 +90,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         renovarTokenSiHayPermiso(currentUser.uid);
         try {
           const userDocRef = doc(db, 'users_metadata', currentUser.uid);
-          const docSnap = await withTimeout(getDoc(userDocRef), 15000);
+          // Hasta 3 intentos: en el arranque en frío de un teléfono nuevo (sin
+          // rol guardado) una sola lectura lenta dejaba a la persona en
+          // "sin rol" aunque su perfil estuviera bien (caso de un vendedor
+          // recién creado, 3-nov).
+          let docSnap: any = null;
+          let ultimoError: unknown = null;
+          for (const ms of [15000, 20000, 25000]) {
+            try { docSnap = await withTimeout(getDoc(userDocRef), ms); break; }
+            catch (e) { ultimoError = e; }
+          }
+          if (!docSnap) throw ultimoError || new Error('timeout');
           if (docSnap.exists()) {
             const data = docSnap.data();
             setRole(data.role);
@@ -128,8 +138,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           console.error("Error crítico al buscar el rol del usuario:", error);
           // Respaldo: último rol conocido de este uid (usuario recurrente en red
           // mala entra igual; los datos siguen protegidos por reglas del servidor).
+          // Sin rol guardado NO es "sin rol": es que no se pudo leer el perfil.
+          // Se dice así (App.tsx ofrece Reintentar) en vez de mandar a la
+          // persona a pedir un rol que ya tiene.
           const cached = safeGetRole(currentUser.uid);
-          setRole(cached || 'no-role');
+          setRole(cached || 'sin-lectura');
           setIsAccountSuspended(false);
         }
       } else {

@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-03-entrada-sin-lectura",
+    fecha: "2026-11-03",
+    roles: ["master"],
+    titulo: 'Entrar con se\xF1al lenta ya no dice "sin rol"',
+    resumen: "Si al entrar no se puede leer el perfil, GK lo intenta tres veces y, si no lo logra, dice que fue la conexi\xF3n y ofrece Reintentar, en vez de decir que la cuenta no tiene rol."
+  },
+  {
     id: "2026-11-03-liberar-correo",
     fecha: "2026-11-03",
     roles: ["master"],

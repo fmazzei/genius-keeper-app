@@ -104,6 +104,31 @@ const AppLayout: React.FC = () => {
         if (role === 'merchandiser') {
             return <AppShell user={user} role={role} onLogout={() => signOut(auth)} />;
         }
+        if (role === 'sin-lectura') {
+            // La cuenta entró pero el perfil no se pudo leer (señal lenta o
+            // caída). No es falta de rol: se dice y se ofrece reintentar.
+            return (
+                <div className="flex flex-col items-center justify-center h-screen bg-slate-950 gap-5 p-6">
+                    <div className="text-center max-w-sm space-y-2">
+                        <p className="text-slate-300 font-semibold">Entraste bien, pero no pudimos leer tu perfil.</p>
+                        <p className="text-slate-500 text-sm">Suele ser la señal. Revisa la conexión y toca Reintentar.</p>
+                        <p className="text-slate-400 text-xs">Cuenta: <span className="text-slate-200">{user?.email || '—'}</span></p>
+                    </div>
+                    <button
+                        onClick={() => { try { window.location.reload(); } catch { /* nada */ } }}
+                        className="flex items-center gap-2 bg-emerald-600 text-white font-semibold py-2.5 px-5 rounded-lg hover:bg-emerald-500 transition-colors"
+                    >
+                        <RefreshCw size={16} /> Reintentar
+                    </button>
+                    <button
+                        onClick={() => signOut(auth)}
+                        className="flex items-center gap-2 bg-slate-800 text-slate-300 font-semibold py-2.5 px-5 rounded-lg hover:bg-slate-700 transition-colors"
+                    >
+                        <LogOut size={16} /> Cerrar Sesión
+                    </button>
+                </div>
+            );
+        }
         return (
             // La contraseña era correcta: la persona ENTRÓ. Lo que falta es su
             // rol. Decirle solo "rol no reconocido" la deja sin nada que hacer
@@ -118,9 +143,15 @@ const AppLayout: React.FC = () => {
                     </p>
                     <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-left space-y-1">
                         <p className="text-slate-400 text-xs">Cuenta: <span className="text-slate-200">{user?.email || '—'}</span></p>
-                        <p className="text-slate-400 text-xs">Rol actual: <span className="text-slate-200">{role ? String(role) : 'sin rol'}</span></p>
+                        <p className="text-slate-400 text-xs">Rol actual: <span className="text-slate-200">{role && role !== 'no-role' ? String(role) : 'sin perfil en GK'}</span></p>
                     </div>
                 </div>
+                <button
+                    onClick={() => { try { window.location.reload(); } catch { /* nada */ } }}
+                    className="flex items-center gap-2 bg-emerald-600 text-white font-semibold py-2.5 px-5 rounded-lg hover:bg-emerald-500 transition-colors"
+                >
+                    <RefreshCw size={16} /> Ya me lo asignaron: reintentar
+                </button>
                 <button
                     onClick={() => signOut(auth)}
                     className="flex items-center gap-2 bg-slate-800 text-slate-300 font-semibold py-2.5 px-5 rounded-lg hover:bg-slate-700 transition-colors"

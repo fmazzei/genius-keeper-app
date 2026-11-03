@@ -3971,6 +3971,7 @@ Pedido del dueño: Carolina salió y entra Erick, que usará `ventas@lacteoca.co
 - **Se quitó la "recuperación" silenciosa en el alta de vendedores**: si la contraseña escrita coincidía con la de la cuenta vieja, el vendedor nuevo heredaba el uid de quien se fue, con sus facturas, su cartera y sus comisiones.
 - Prueba: `node tests/cuentasCorreo.test.mjs` (10 en verde). No probado contra el emulador de Auth.
 - **Node.js 22 en las funciones (3-nov):** Google retiró Node.js 20 el 30-oct-2026 y desde entonces TODO deploy de funciones fallaba ("Runtime Node.js 20 was decommissioned"); por eso `cuentaCorreo` no existía y la pantalla decía "internal". `functions/package.json` → `engines.node: "22"`. `CorreoEnUso` ya no muestra "internal" suelto: dice que el servidor no respondió.
+- **"Sin rol" que no era (3-nov):** Erick (`ventas@lacteoca.com`, uid `hu8Xkb3KO5WfHxRGGBwTWhrs0P32`) tenía perfil `vendedor` activo y al entrar vio "tu cuenta no tiene un rol asignado". Causa más probable: la lectura del perfil falló o tardó más de 15 s en un teléfono nuevo (sin rol guardado), y ese error caía en la misma pantalla que "sin rol". Ahora `AuthContext` intenta 3 veces (15/20/25 s) y, si no lee, pone `role:'sin-lectura'`: `App.tsx` dice que fue la conexión y ofrece Reintentar. La pantalla de sin rol (perfil que no existe, `no-role`) dice "sin perfil en GK" y trae "Ya me lo asignaron: reintentar".
 
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 
