@@ -8,6 +8,11 @@
 //   · `id` único y fijo (nunca se reutiliza): fecha + palabra.
 //   · `roles`: a quién le sirve (vacío = a todos). Roles: master, gerencia,
 //     vendedor, merchandiser, administrador.
+//   · Decisión del dueño (3-nov-2026): lo que es de administración —usuarios y
+//     accesos, configuración, correcciones de datos, Kroma, comisiones y
+//     pagos— va SOLO a `['master']`. Otros roles solo reciben una novedad si
+//     cambia algo que ellos mismos ven o hacen en su pantalla. Ante la duda,
+//     `['master']`.
 //   · `titulo` de pocas palabras; `resumen` de una o dos frases: qué cambia para
 //     esa persona, no cómo se hizo.
 //   · Las más nuevas van ARRIBA.

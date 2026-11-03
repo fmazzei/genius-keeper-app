@@ -4130,6 +4130,7 @@ Reporte del dueño con captura del iPhone: cada aviso llegaba **dos veces seguid
 
 **Novedades de la app (✨):**
 - `src/utils/novedades.js` (empaquetado a `generado/novedades.cjs`). **REGLA: cada cambio que se publica agrega aquí su novedad, arriba:** `id` único con fecha, `roles` (vacío = todos), `titulo` corto y `resumen` de una o dos frases en lenguaje de quien usa la app.
+- **A quién (decisión del dueño, 3-nov):** lo de administración (usuarios y accesos, configuración, correcciones de datos, Kroma, comisiones y pagos) va SOLO a `roles: ['master']`. Otro rol recibe una novedad solo si cambia algo que él mismo ve o hace. Ante la duda, `['master']`.
 - `functions/handlers/novedadesApp.js` → `anunciarNovedades`, en el programador horario de la conciliación (sin costo nuevo). Anuncia una vez, de 7 a 21 h de Caracas, solo novedades de los últimos 7 días, con UN aviso por persona con lo de su rol. Reserva en una transacción (`settings/novedadesEstado.anunciadas`).
 - En la app, `NovedadesApp.jsx`: un renglón dorado debajo del encabezado mientras haya novedades sin ver (30 días) y una hoja con la lista. Lo visto se guarda en el teléfono. El aviso abre la hoja (`/novedades`).
 - Pruebas:
