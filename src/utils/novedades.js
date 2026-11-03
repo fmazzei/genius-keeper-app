@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-03-kroma-hold-consumibles',
+        fecha: '2026-11-03',
+        roles: ['master'],
+        titulo: 'Kroma: hold con un botón y consumibles en ml y g',
+        resumen: 'El cuajado se cierra con el botón naranja "Hold": eliges la fecha, OK, y el botón dice hasta cuándo. En el cierre del día los consumibles se anotan en ml o g (o L y kg) y se pueden escribir.',
+    },
+    {
         id: '2026-11-03-entrada-sin-lectura',
         fecha: '2026-11-03',
         roles: ['master'],

@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-03-kroma-hold-consumibles",
+    fecha: "2026-11-03",
+    roles: ["master"],
+    titulo: "Kroma: hold con un bot\xF3n y consumibles en ml y g",
+    resumen: 'El cuajado se cierra con el bot\xF3n naranja "Hold": eliges la fecha, OK, y el bot\xF3n dice hasta cu\xE1ndo. En el cierre del d\xEDa los consumibles se anotan en ml o g (o L y kg) y se pueden escribir.'
+  },
+  {
     id: "2026-11-03-entrada-sin-lectura",
     fecha: "2026-11-03",
     roles: ["master"],

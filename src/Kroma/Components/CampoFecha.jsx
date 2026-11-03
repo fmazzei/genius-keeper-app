@@ -23,6 +23,27 @@ import React from 'react';
 // sin montar React) y se reexportan acá para no tener que importar de dos sitios.
 export { hoyInput, fechaDesdeInput, esHoyInput, sumarDiasInput, inputDeFecha, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/fechas.js';
 
+/**
+ * Fecha y hora (para programar un hold). Mismas defensas que CampoFecha: sin
+ * `min-w-0`/`appearance-none` el control nativo de iOS se desbordaba a la
+ * derecha de su tarjeta (captura del dueño, 3-nov).
+ */
+export function CampoFechaHora({ value, onChange, min, autoFocus }) {
+    return (
+        <input
+            type="datetime-local"
+            value={value}
+            min={min}
+            autoFocus={autoFocus}
+            onChange={e => onChange(e.target.value)}
+            style={{ colorScheme: 'dark' }}
+            className="block w-full min-w-0 max-w-full min-h-[48px] appearance-none bg-slate-800
+                border border-slate-700 rounded-xl px-3 py-3 text-white text-base
+                focus:outline-none focus:border-amber-500"
+        />
+    );
+}
+
 export default function CampoFecha({ label, value, onChange, ayuda, acento = 'teal', max }) {
     const borde = acento === 'emerald' ? 'focus:border-emerald-500' : 'focus:border-teal-500';
     return (

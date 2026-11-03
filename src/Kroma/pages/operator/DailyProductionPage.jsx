@@ -5,13 +5,15 @@ import {
     collection, getDocs, addDoc, updateDoc, doc, getDoc,
     serverTimestamp, query, where, writeBatch,
 } from 'firebase/firestore';
-import CampoFecha, { hoyInput, sumarDiasInput, inputDeFecha, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
+import CampoFecha, { CampoFechaHora, hoyInput, sumarDiasInput, inputDeFecha, DIAS_VENCIMIENTO_ENVASADO, DIAS_VENCIMIENTO_SIN_ENVASAR } from '@/Kroma/Components/CampoFecha.jsx';
 import { db } from '@/Firebase/config.js';
 import { marcaMov } from '@/utils/movInventario.js';
 import { useKroma } from '../../KromaContext';
 import FaltaAlgo from '@/Kroma/Components/FaltaAlgo.jsx';
 import { faltaEmpacar, kgProducidos, rendimientoLkg, fechaProduccion, msProduccion } from '@/Kroma/estadoPlanta.js';
 import { sinUndefined } from '@/Kroma/sinUndefined.js';
+import { unidadesDeConsumo, unidadInicial, pasoDe, convertirConsumo, leerCantidad, etiquetaUnidad } from '@/Kroma/consumoUnidades.js';
+import { usePasoSostenido } from '@/Kroma/pasoSostenido.js';
 import { costoBasePorKgTeorico, precioLecheDeProveedor } from '@/Kroma/costeoLote.js';
 import EliminarProduccionModal from '@/Kroma/Components/EliminarProduccionModal.jsx';
 import { eliminarProduccionCompleta } from '@/Kroma/eliminarProduccion.js';
@@ -379,9 +381,103 @@ function invStatus(inv) {
 }
 
 function convertUnit(amount, from, to) {
-    if (!from || !to || from === to) return amount;
+    // Sin distinguir mayúsculas: el inventario guarda "L" o "l" según quién lo cargó.
+    const f = String(from || '').toLowerCase(), t = String(to || '').toLowerCase();
+    if (!f || !t || f === t) return amount;
     const CONV = { 'g_kg': 0.001, 'kg_g': 1000, 'ml_l': 0.001, 'l_ml': 1000 };
-    return amount * (CONV[`${from}_${to}`] || 1);
+    return amount * (CONV[`${f}_${t}`] || 1);
+}
+
+// Una fila del cierre del día: se escribe la cantidad (con coma) o se usan + y −
+// (dejarlos presionados corre la cifra), y se elige la unidad chica o grande
+// (ml/L, g/kg). Arranca en la chica: lo de una jornada son mililitros o gramos.
+function ConsumoFila({ c, onChange }) {
+    const unidades = unidadesDeConsumo(c.unidadBase);
+    const paso = pasoDe(c.unidad);
+    const fijar = (n) => {
+        const v = Math.max(0, +n.toFixed(3));
+        onChange({ ...c, cantidad: v, texto: String(v).replace('.', ',') });
+    };
+    const menos = usePasoSostenido(() => fijar((c.cantidad || 0) - paso));
+    const mas   = usePasoSostenido(() => fijar((c.cantidad || 0) + paso));
+    const cambiarUnidad = (u) => {
+        if (u === c.unidad) return;
+        const v = +convertirConsumo(c.cantidad || 0, c.unidad, u).toFixed(3);
+        onChange({ ...c, unidad: u, cantidad: v, texto: v ? String(v).replace('.', ',') : '' });
+    };
+    return (
+        <div className="bg-slate-800 rounded-xl px-4 py-3 space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+                <p className="text-white text-sm font-medium truncate flex-1 min-w-0">{c.nombre}</p>
+                {unidades.length > 1 ? (
+                    <div className="flex rounded-lg overflow-hidden border border-slate-600 shrink-0">
+                        {unidades.map(u => (
+                            <button key={u} type="button" onClick={() => cambiarUnidad(u)}
+                                className={`px-3 py-1 text-xs font-bold ${c.unidad === u ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'}`}>
+                                {etiquetaUnidad(u)}
+                            </button>
+                        ))}
+                    </div>
+                ) : (
+                    <span className="text-slate-400 text-xs shrink-0">{etiquetaUnidad(c.unidad)}</span>
+                )}
+            </div>
+            <div className="flex items-center gap-2">
+                <button type="button" {...menos}
+                    className="w-11 h-11 rounded-xl bg-slate-700 active:bg-slate-600 text-white text-lg font-bold flex items-center justify-center select-none">−</button>
+                <input type="text" inputMode="decimal" value={c.texto ?? ''} placeholder="0"
+                    onChange={e => {
+                        const t = e.target.value.replace(/[^0-9.,]/g, '');
+                        onChange({ ...c, texto: t, cantidad: leerCantidad(t) });
+                    }}
+                    className="flex-1 min-w-0 h-11 bg-slate-900 border border-slate-700 rounded-xl text-center text-white font-mono text-base focus:outline-none focus:border-emerald-500" />
+                <span className="text-slate-400 text-sm w-8 text-center shrink-0">{etiquetaUnidad(c.unidad)}</span>
+                <button type="button" {...mas}
+                    className="w-11 h-11 rounded-xl bg-slate-700 active:bg-slate-600 text-white text-lg font-bold flex items-center justify-center select-none">+</button>
+            </div>
+        </div>
+    );
+}
+
+// Elegir hasta cuándo queda la producción en hold. Hoja propia (no un campo
+// suelto dentro del bloque) para que el control de fecha y hora no se desborde
+// en el iPhone, y para que el botón de hold diga la fecha elegida.
+function HoldSheet({ inicial, onCancel, onOk }) {
+    const [valor, setValor] = useState(inicial);
+    const fecha = valor ? new Date(valor) : null;
+    const valida = fecha && !Number.isNaN(fecha.getTime()) && fecha.getTime() > Date.now();
+    return (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/75" onClick={onCancel}>
+            <div className="bg-slate-900 rounded-t-2xl px-5 pt-5 pb-6 space-y-4" onClick={e => e.stopPropagation()}>
+                <div>
+                    <p className="text-white font-bold text-base">Poner en hold hasta…</p>
+                    <p className="text-slate-400 text-sm mt-0.5">Elige el día y la hora en que se retoma la producción.</p>
+                </div>
+                <CampoFechaHora value={valor} onChange={setValor} min={nowDatetimeLocal()} />
+                {valor && !valida && (
+                    <p className="text-amber-400 text-xs">La fecha tiene que ser posterior a ahora.</p>
+                )}
+                <div className="flex gap-3">
+                    <button type="button" onClick={onCancel}
+                        className="flex-1 py-3.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-semibold">
+                        Cancelar
+                    </button>
+                    <button type="button" disabled={!valida} onClick={() => onOk(valor)}
+                        className="flex-1 py-3.5 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-white text-sm font-bold">
+                        OK
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// "13:39 · 04/11/26"
+function fmtHold(valor) {
+    const d = valor ? new Date(valor) : null;
+    if (!d || Number.isNaN(d.getTime())) return '';
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())} · ${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)}`;
 }
 
 // Extract ingredients used in a block that need inventory decrement
@@ -978,10 +1074,9 @@ function MaduracionEditor({ bloque, reg, onChange }) {
                     <Calendar size={14} className="text-amber-400" />
                     <p className="text-amber-300 text-sm font-semibold">Programar salida de cava</p>
                 </div>
-                <input type="datetime-local"
+                <CampoFechaHora
                     value={reg.fechaSalidaProgramada ?? defaultResume}
-                    onChange={e => onChange({ ...reg, fechaSalidaProgramada: e.target.value })}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none" />
+                    onChange={v => onChange({ ...reg, fechaSalidaProgramada: v })} />
                 <p className="text-slate-500 text-xs">
                     La planilla quedará en <strong className="text-amber-400">hold</strong> hasta esta fecha.
                 </p>
@@ -2272,6 +2367,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
 
     // Hold option toggle per block
     const [holdOptions, setHoldOptions]   = useState({}); // { [idxStr]: bool }
+    const [holdPicker, setHoldPicker]     = useState(false); // hoja para elegir hasta cuándo
 
     // Notification config modal (operario only)
     const [showNotifConfig, setShowNotifConfig] = useState(false);
@@ -2534,7 +2630,8 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
     // litrosNetos: derived from pasteurizacion block or ingresados
     async function confirmCierreJornada() {
         if (!cierreJornada || !activeLog) return;
-        const usados = cierreConsumos.filter(c => c.cantidad > 0);
+        const usados = cierreConsumos.filter(c => c.cantidad > 0)
+            .map(({ texto, ...c }) => c); // eslint-disable-line no-unused-vars
         // Save cierre to log
         const jornadasConsumo = [...(activeLog.jornadasConsumo || []), {
             dia:       cierreJornada.dia,
@@ -2996,7 +3093,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         // remember exactly what they used today.
         if (!cierreJornada && wantHold && holdHasta && holdHasta.toDateString() !== new Date().toDateString()) {
             const completedSoFar = Object.values(activeLog?.bloquesData || {}).filter(b => b.completado).length;
-            setCierreConsumos(consumiblesInv.map(c => ({ materialId: c.id, nombre: c.materialNombre, cantidad: 0, unidad: c.unidadBase || 'und' })));
+            setCierreConsumos(consumiblesInv.map(c => ({ materialId: c.id, nombre: c.materialNombre, cantidad: 0, texto: '', unidadBase: c.unidadBase || 'und', unidad: unidadInicial(c.unidadBase || 'und') })));
             setCierreJornada({ pendingIdx: idx, dia: completedSoFar + 1 });
             return;
         }
@@ -3649,6 +3746,7 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
         const isEmpaque  = currentBloque?.tipo === 'empaque';
         const isMaduracion = currentBloque?.tipo === 'maduracion';
         const wantHold   = holdOptions[String(bloqueActualIdx)] || isMaduracion;
+        const holdFechaActual = bloquesData[String(bloqueActualIdx)]?.registros?.fechaSalidaProgramada || '';
         // Salmuera gate check
         const isSaladoSalmuera = currentBloque?.tipo === 'salado'
             && (bloquesData[String(bloqueActualIdx)]?.registros?.metodo ?? currentBloque?.params?.metodo) === 'salmuera';
@@ -3705,19 +3803,8 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                             {cierreConsumos.length === 0 ? (
                                 <p className="text-slate-500 text-sm text-center py-6">No hay consumibles ni detergentes en inventario.</p>
                             ) : cierreConsumos.map((c, i) => (
-                                <div key={c.materialId} className="flex items-center gap-3 bg-slate-800 rounded-xl px-4 py-3">
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-white text-sm font-medium truncate">{c.nombre}</p>
-                                        <p className="text-slate-500 text-xs">{c.unidad}</p>
-                                    </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <button onClick={() => setCierreConsumos(prev => prev.map((x, j) => j === i ? { ...x, cantidad: Math.max(0, +(x.cantidad - 1).toFixed(2)) } : x))}
-                                            className="w-9 h-9 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center">−</button>
-                                        <span className="text-white font-mono w-10 text-center text-sm">{c.cantidad}</span>
-                                        <button onClick={() => setCierreConsumos(prev => prev.map((x, j) => j === i ? { ...x, cantidad: +(x.cantidad + 1).toFixed(2) } : x))}
-                                            className="w-9 h-9 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold flex items-center justify-center">+</button>
-                                    </div>
-                                </div>
+                                <ConsumoFila key={c.materialId} c={c}
+                                    onChange={nuevo => setCierreConsumos(prev => prev.map((x, j) => j === i ? nuevo : x))} />
                             ))}
                         </div>
                         <div className="px-5 py-4 flex gap-3 shrink-0 border-t border-slate-800">
@@ -3830,40 +3917,43 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                 />
                             </div>
 
-                            {/* Hold option (for holdable non-maduracion blocks) */}
-                            {isHoldable && !isMaduracion && (
-                                <div className="px-4 pb-3">
-                                    <button type="button"
-                                        onClick={() => setHoldOptions(prev => ({ ...prev, [String(bloqueActualIdx)]: !prev[String(bloqueActualIdx)] }))}
-                                        className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm ${
-                                            wantHold
-                                                ? 'border-amber-600/60 bg-amber-900/20 text-amber-300'
-                                                : 'border-slate-700 bg-slate-800 text-slate-400'
-                                        }`}>
-                                        <div className="flex items-center gap-2">
-                                            <Pause size={13} />
-                                            <span>Poner en hold al completar</span>
-                                        </div>
-                                        <span className="font-bold">{wantHold ? 'Sí' : 'No'}</span>
-                                    </button>
-                                    {wantHold && (
-                                        <div className="mt-2">
-                                            <SecLabel>Reanudar el</SecLabel>
-                                            <input type="datetime-local"
-                                                value={bloquesData[String(bloqueActualIdx)]?.registros?.fechaSalidaProgramada ?? nowDatetimeLocal(plannedMin * 60 * 1000)}
-                                                onChange={e => {
-                                                    const idxStr = String(bloqueActualIdx);
-                                                    const cur = bloquesData[idxStr] || {};
-                                                    updateBlockLocal(idxStr, { ...cur, registros: { ...(cur.registros || {}), fechaSalidaProgramada: e.target.value } });
-                                                }}
-                                                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm focus:outline-none" />
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
                             {/* Complete button */}
                             <div className="px-4 pb-5">
+                                {/* Bloques largos: un solo botón naranja "Hold". Se elige la
+                                    fecha, OK, y el mismo botón dice "Hold 13:39 · 04/11/26":
+                                    tocarlo completa el bloque y deja la producción en hold.
+                                    El cuajado SOLO se cierra así (pedido del dueño, 3-nov). */}
+                                {isHoldable && !isMaduracion ? (
+                                    <div className="space-y-2">
+                                        <button
+                                            onClick={() => (wantHold ? completeBlock(bloqueActualIdx) : setHoldPicker(true))}
+                                            disabled={saving || !salmueraGateOk || !vencGateOk}
+                                            className="w-full flex items-center justify-center gap-2 text-white font-bold py-4 rounded-xl text-base bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500">
+                                            <Pause size={16} />
+                                            {saving ? 'Guardando…' : wantHold ? `Hold ${fmtHold(holdFechaActual)}` : 'Hold'}
+                                        </button>
+                                        {wantHold && (
+                                            <div className="flex justify-center gap-5 text-xs">
+                                                <button type="button" onClick={() => setHoldPicker(true)} className="text-amber-400 font-semibold py-1">
+                                                    Cambiar fecha
+                                                </button>
+                                                <button type="button"
+                                                    onClick={() => setHoldOptions(prev => ({ ...prev, [String(bloqueActualIdx)]: false }))}
+                                                    className="text-slate-400 py-1">
+                                                    Quitar hold
+                                                </button>
+                                            </div>
+                                        )}
+                                        {!wantHold && currentBloque?.tipo !== 'cuajado' && (
+                                            <button
+                                                onClick={() => completeBlock(bloqueActualIdx)}
+                                                disabled={saving || !salmueraGateOk || !vencGateOk}
+                                                className="w-full flex items-center justify-center gap-2 text-white font-bold py-3.5 rounded-xl text-sm bg-slate-600 hover:bg-slate-500 disabled:bg-slate-700 disabled:text-slate-500">
+                                                <Check size={15} /> Completar sin hold
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
                                 <button
                                     onClick={() => completeBlock(bloqueActualIdx)}
                                     disabled={saving || !salmueraGateOk || !vencGateOk}
@@ -3876,6 +3966,19 @@ export default function DailyProductionPage({ onNavigate, params = null }) {
                                     } disabled:bg-slate-700 disabled:text-slate-500`}>
                                     {saving ? 'Guardando…' : isEmpaque ? <><Check size={15} /> Cerrar Producción</> : wantHold ? <><Pause size={15} /> Completar y poner en hold</> : <><Check size={15} /> Completar bloque</>}
                                 </button>
+                                )}
+                                {holdPicker && (
+                                    <HoldSheet
+                                        inicial={holdFechaActual || nowDatetimeLocal(Math.max(plannedMin, 60) * 60 * 1000)}
+                                        onCancel={() => setHoldPicker(false)}
+                                        onOk={(valor) => {
+                                            const idxStr = String(bloqueActualIdx);
+                                            const cur = bloquesData[idxStr] || {};
+                                            updateBlockLocal(idxStr, { ...cur, registros: { ...(cur.registros || {}), fechaSalidaProgramada: valor } });
+                                            setHoldOptions(prev => ({ ...prev, [idxStr]: true }));
+                                            setHoldPicker(false);
+                                        }} />
+                                )}
                                 {!salmueraGateOk && (
                                     <p className="text-amber-400 text-xs text-center mt-2 flex items-center justify-center gap-1">
                                         <Lock size={11} /> Completa los 3 parámetros de salmuera

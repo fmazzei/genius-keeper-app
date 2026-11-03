@@ -3070,6 +3070,14 @@ Reporte del dueño, captura del 2-oct: "Producciones / mes 0", "Litros procesado
 - Capital, Lotes sin envasar e Inventario PT son una foto de HOY y no dependen del período (lo dicen).
 - `logDate` = `fechaProduccion`: una planilla de julio cargada en octubre cuenta en julio.
 
+### Producción: hold con un solo botón y consumibles en ml/g (2026-11-03) ✅
+
+Pedido del dueño con capturas:
+- **Cierre del día** (`ConsumoFila` en `DailyProductionPage`, lógica pura en `src/Kroma/consumoUnidades.js`): cada consumible se anota en la unidad chica o grande de su familia (ml/L, g/kg; arranca en la chica), se puede escribir con coma y los + / − corren al dejarlos presionados (`usePasoSostenido`, paso 10 en ml/g, 0,1 en L/kg, 1 en und/par). El descuento convierte a la unidad del inventario; `convertUnit` ya no distingue mayúsculas ("L" = "l").
+- **Hold** (bloques largos que no son maduración): se retiró el interruptor "Poner en hold al completar" y el campo suelto de fecha. Queda un botón naranja **"Hold"** → hoja `HoldSheet` (fecha y hora, OK) → el mismo botón dice **"Hold 13:39 · 04/11/26"** y al tocarlo completa el bloque en hold ("Cambiar fecha" / "Quitar hold" debajo). El **cuajado** solo se cierra así; los demás bloques largos conservan "Completar sin hold".
+- **Fecha descentrada**: `CampoFechaHora` (en `CampoFecha.jsx`, `datetime-local` con `min-w-0`, `appearance-none` y `colorScheme: dark`) en la hoja del hold y en la maduración; el campo de la recepción de leche lleva las mismas clases.
+- Prueba: `node --import ./tests/alias.mjs tests/consumoUnidades.test.mjs` (12 en verde).
+
 ### Tarjeta del almacén por presentación (2026-10) ✅
 
 Reporte del dueño: adentro de la Cava decía "250 g 468 ud" y "1 kg 109 ud", y la tarjeta de Almacenes "577 ud". No era un descuadre: la tarjeta SUMABA bolsas de 250 g y de 1 kg en una sola cifra, que no sirve para nada. Ahora `warehouseStock` trae `porPresentacion` (el mismo `resumenCava` de adentro) y la tarjeta muestra una línea por presentación con sus docenas. Regla: **nunca sumar unidades de presentaciones distintas**.
