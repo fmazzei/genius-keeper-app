@@ -132,7 +132,8 @@ function resolveVendedorFromPreload(invoice, preload) {
         // Traspaso con fecha de corte: la factura es del vendedor que tenía el
         // cliente en su fecha (el historial no se mueve con el traspaso).
         if (tieneTraspasos(c)) {
-            const { vendedorId: dueno, porTraspaso } = vendedorDelCarnetEnFecha(c, invoice.date, invoice.invoice_number);
+            const pago = invoice.status === 'paid' ? (invoice.last_payment_date || invoice.payment_date || null) : null;
+            const { vendedorId: dueno, porTraspaso } = vendedorDelCarnetEnFecha(c, invoice.date, invoice.invoice_number, pago);
             if (porTraspaso) {
                 if (dueno && preload.vendedorById.has(dueno)) return { id: dueno, data: preload.vendedorById.get(dueno) };
                 if (!dueno) return null;
@@ -236,7 +237,8 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
                 const cs = await admin.firestore().doc(`clientes_zoho/${cidW.replace(/\//g, '-')}`).get();
                 const c = cs.exists ? cs.data() : null;
                 if (tieneTraspasos(c)) {
-                    const { vendedorId: dueno, porTraspaso } = vendedorDelCarnetEnFecha(c, invoice.date, invoice.invoice_number);
+                    const pago = invoice.status === 'paid' ? (invoice.last_payment_date || invoice.payment_date || null) : null;
+                    const { vendedorId: dueno, porTraspaso } = vendedorDelCarnetEnFecha(c, invoice.date, invoice.invoice_number, pago);
                     if (porTraspaso && dueno && dueno !== vendedor?.id) {
                         const vs = await admin.firestore().doc(`users_metadata/${dueno}`).get();
                         if (vs.exists) vendedor = { id: dueno, data: vs.data() };

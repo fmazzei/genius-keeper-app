@@ -46,7 +46,7 @@ const DEFAULT_COMMISSION_CONFIG = {
     comisionActiva: true,
     baseUnidades: 'facturadas',
     bonoNivel: null,
-    bonoPenetracion: null,
+    bonoActivacionUSD: 0,
     bonoCrecimiento: null,
 };
 

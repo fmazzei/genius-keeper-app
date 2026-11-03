@@ -58,27 +58,36 @@ const diasDelMes = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate
  *
  * @param {string|Date} fechaIngreso
  * @param {Date} [hasta]
- * @param {{desde?: string|null}} [opts] desde = fecha de inicio del corte a fin de
- *   mes; null = solo aniversario (la regla anterior, para pruebas).
- * @returns {Array<{i, mes, start, end, periodKey, dias, calendario, fraccion, corto}>}
+ * @param {{desde?: string|null, cese?: string|null}} [opts] desde = fecha de inicio
+ *   del corte a fin de mes; null = solo aniversario (la regla anterior, para
+ *   pruebas). cese = fecha de cese del vendedor ('YYYY-MM-DD'): el último período
+ *   termina ese día (incluido) y no hay más.
+ * @returns {Array<{i, mes, start, end, periodKey, dias, calendario, fraccion, corto, transicion, cese}>}
  */
-export function periodosDeEmpleo(fechaIngreso, hasta = new Date(), { desde = CIERRE_MES_CALENDARIO_DESDE } = {}) {
+export function periodosDeEmpleo(fechaIngreso, hasta = new Date(), { desde = CIERRE_MES_CALENDARIO_DESDE, cese = null } = {}) {
     const ingreso = fechaLocal(fechaIngreso);
     if (!ingreso) return [];
     const corte = desde ? fechaLocal(desde) : null;
+    // Cese: el día siguiente al último día de trabajo.
+    const finCese = cese && fechaLocal(cese) ? new Date(fechaLocal(cese).getFullYear(), fechaLocal(cese).getMonth(), fechaLocal(cese).getDate() + 1) : null;
     const out = [];
     let start = ingreso;
     for (let i = 0; i < 1200; i++) {
+        if (finCese && start >= finCese) break;
         const calendario = !!corte && start >= corte;
-        const end = calendario ? new Date(start.getFullYear(), start.getMonth() + 1, 1) : addMonths(ingreso, i + 1);
+        const endPleno = calendario ? new Date(start.getFullYear(), start.getMonth() + 1, 1) : addMonths(ingreso, i + 1);
+        const conCese = !!(finCese && endPleno > finCese);
+        const end = conCese ? finCese : endPleno;
         const dias = diasEntre(start, end);
-        const fraccion = calendario ? dias / diasDelMes(start) : 1;
+        const diasPleno = calendario ? diasDelMes(start) : diasEntre(start, endPleno);
+        const fraccion = calendario || conCese ? dias / diasPleno : 1;
         const corto = fraccion < 1;
         // Transición: el período corto con que un vendedor que ya trabajaba pasa
         // del aniversario al mes calendario (no el primero de un vendedor nuevo).
-        const transicion = corto && i > 0;
-        out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto, transicion });
-        if (end > hasta) break;
+        // El período que corta el cese no es de transición: lleva sus quincenas.
+        const transicion = corto && i > 0 && !conCese;
+        out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto, transicion, cese: conCese });
+        if (conCese || end > hasta) break;
         start = end;
     }
     return out;
@@ -218,6 +227,8 @@ export function quincenasDe(p) {
  * a sus días.
  */
 export const baseDePeriodo = (p, { baseMes }) => {
+    // El último período (cortado por el cese): las quincenas que cerraron hasta el cese.
+    if (p.cese) return (baseMes / 2) * quincenasDe(p).length;
     if (p.corto && !p.transicion) return baseMes * (p.fraccion ?? 1);
     return (baseMes / 2) * quincenasDe(p).length;
 };
@@ -226,6 +237,10 @@ const ddmm = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth
 
 /** Cómo se nombra el fijo de un período en pantallas y comprobantes. */
 export function etiquetaFijo(p) {
+    if (p?.cese) {
+        const q = quincenasDe(p);
+        return q.length ? `Fijo hasta el cese (${q.length === 1 ? 'quincena' : 'quincenas'} del ${q.map(ddmm).join(' y ')})` : 'Fijo hasta el cese (sin quincena cerrada)';
+    }
     if (p?.transicion) {
         const q = quincenasDe(p);
         return q.length === 1 ? `Fijo (quincena del ${ddmm(q[0])})` : `Fijo (${q.length} quincenas)`;
@@ -243,7 +258,7 @@ export function notaTransicion(p) {
 
 /** Períodos del vendedor con su meta y su base. */
 export function periodosConMeta(vendedor = {}, hasta = new Date(), opts) {
-    return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts)
+    return periodosDeEmpleo(vendedor.fechaIngreso, hasta, { ...(opts || {}), cese: vendedor.fechaCese || null })
         .map(p => {
             // Cada período, con el esquema vigente el día en que empieza.
             const reglas = reglasDelVendedor(vendedor, p.start);

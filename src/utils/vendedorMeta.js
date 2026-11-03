@@ -4,7 +4,7 @@ import { DEFAULT_COMMISSION_CONFIG } from '@/utils/commissionDefaults.js';
 import { cuentaEnCartera } from '@/utils/facturaEstado.js';
 import { reglasDelVendedor, periodosConMeta, periodosDeEmpleo } from '@/utils/periodosComision.js';
 import { kgDeUnidades } from '@/utils/canalVenta.js';
-import { bonoNivelPara, bonoPenetracionPara, bonoCrecimientoPara, baseDeUnidades, tieneComisionPct } from '@/utils/bloquesRemuneracion.js';
+import { bonoNivelPara, bonoCrecimientoPara, baseDeUnidades, tieneComisionPct } from '@/utils/bloquesRemuneracion.js';
 
 const MS_DIA = 86400000;
 
@@ -100,7 +100,7 @@ export function listPeriodos(meta = {}) {
     const ingreso = toDate(meta.fechaIngreso);
     if (!ingreso) return [];
     const ahora = new Date();
-    return periodosDeEmpleo(ingreso, ahora).reverse().map(p => ({
+    return periodosDeEmpleo(ingreso, ahora, { cese: meta.fechaCese || null }).reverse().map(p => ({
         periodKey: p.periodKey,
         mes: p.mes,
         rango: rangoLabel(p.start, p.end),
@@ -336,7 +336,7 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         i: p.i, mes: p.mes, start: p.start, end: p.end,
         periodKey: p.periodKey,
         metaMensual: p.meta,
-        base: p.base, corto: p.corto, transicion: p.transicion, fraccion: p.fraccion, dias: p.dias,
+        base: p.base, corto: p.corto, transicion: p.transicion, cese: p.cese, fraccion: p.fraccion, dias: p.dias,
         // Desde el corte a fin de mes, foodservice se mide aparte en kg: el nivel
         // y la meta de unidades son solo retail.
         separaFood: p.separaFood, metaKg: p.metaKg,
@@ -457,18 +457,6 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
     periodos.forEach((p, k) => {
         const cfgP = p.cfg;
         p.bonoNivel = bonoNivelPara(cfgP, p.unidades, { meta: p.metaMensual, fraccion: p.corto ? p.fraccion : 1 });
-        // Penetración: sucursales de la cartera que compraron ≥ N uds en el período.
-        let compraron = 0;
-        const minU = Number(cfgP.bonoPenetracion?.minUnidades) || 0;
-        if (cfgP.bonoPenetracion && cfgP.bonoPenetracion.activo !== false) {
-            const porCliente = {};
-            p.lineasUnidades.forEach(f => {
-                if (f.esFood || !facturaDeLaCartera({ zohoCustomerId: f.zohoCustomerId, clienteName: f.cliente }, claves)) return;
-                porCliente[f.key] = (porCliente[f.key] || 0) + f.unidades;
-            });
-            compraron = Object.values(porCliente).filter(u => u >= minU).length;
-        }
-        p.bonoPenetracion = bonoPenetracionPara(cfgP, compraron, carteraSize);
         const prev = k > 0 ? periodos[k - 1] : null;
         p.bonoCrecimiento = bonoCrecimientoPara(cfgP, p.unidades, prev
             ? { unidades: prev.unidades, fraccion: prev.corto ? prev.fraccion : 1, fraccionActual: p.corto ? p.fraccion : 1, mes: prev.mes }
@@ -532,14 +520,16 @@ function montosPeriodo(p, opts = {}) {
     const bonoAnaquelMonto = (hasAnaquel && enCurso) ? cobradoRegular * (bonoAnaquel / 100) * anaquelFactor : 0;
     const bonoRecupMonto = cobradoRecup * tasaRecup / 100;
     const comisionFoodMonto = food.reduce((s, c) => s + c.monto * tasaFoodDe(c) / 100, 0);
-    // Bloques en USD (bono por nivel, penetración, crecimiento): por período.
+    // Bloques en USD (bono por nivel, Activación en USD, crecimiento): por período.
+    // La Activación en USD usa las semanas logradas del propio período (como el %),
+    // y el Bono Anaquel la sustituye igual que al %.
     const bonoNivelMonto = p.bonoNivel?.monto || 0;
-    const bonoPenetracionMonto = p.bonoPenetracion?.monto || 0;
+    const bonoActivacionUSDMonto = hasAnaquel ? 0 : (Number(cfg.bonoActivacionUSD) || 0) * (p.act?.factor || 0);
     const bonoCrecimientoMonto = p.bonoCrecimiento?.monto || 0;
     const devengadoComision = comisionNivelMonto + bonoCobranzaMonto + bonoActivacionMonto + bonoAnaquelMonto + bonoRecupMonto + comisionFoodMonto
-        + bonoNivelMonto + bonoPenetracionMonto + bonoCrecimientoMonto;
+        + bonoNivelMonto + bonoActivacionUSDMonto + bonoCrecimientoMonto;
     return {
-        bonoNivelMonto, bonoPenetracionMonto, bonoCrecimientoMonto,
+        bonoNivelMonto, bonoActivacionUSDMonto, bonoCrecimientoMonto, bonoActivacionUSD: Number(cfg.bonoActivacionUSD) || 0,
         cobradoRegular, cobradoRegularATiempo, cobradoFood, cobradoRecup,
         cobrosPorOrigen, comisionNivelMonto,
         bonoCobranzaRate: bonoCobranza, bonoCobranzaMonto,
@@ -561,7 +551,7 @@ const CAMPOS_CONGELADOS = [
     'actFactor', 'actSemanasLogradas', 'actSemanasTotales',
     'devengadoComision', 'base', 'devengadoTotal', 'modelo',
     // Bloques en USD y el desglose por bloque (constructor de remuneración).
-    'bonoNivelMonto', 'bonoPenetracionMonto', 'bonoCrecimientoMonto', 'baseUnidades', 'bloques',
+    'bonoNivelMonto', 'bonoActivacionUSDMonto', 'bonoCrecimientoMonto', 'baseUnidades', 'bloques',
 ];
 
 const r2m = (v) => Math.round((Number(v) || 0) * 100) / 100;
@@ -587,14 +577,15 @@ export function bloquesDeFila(r = {}, cfg = {}) {
     add('bonoNivel', 'Bono por nivel', r.bonoNivelMonto,
         r.bonoNivelEscalon ? `Escalón ${r.bonoNivelEscalon}` : (r.bonoNivelSiguiente ? `Faltan ${r.bonoNivelSiguiente.faltan} uds para ${r.bonoNivelSiguiente.etiqueta}` : ''),
         !!(cfg.bonoNivel && cfg.bonoNivel.activo !== false));
-    add('bonoPenetracion', 'Bono de penetración', r.bonoPenetracionMonto,
-        r.penetracion && r.penetracion.activo ? `${r.penetracion.compraron} de ${r.penetracion.cartera} PDV compraron (meta ${r.penetracion.objetivo})` : '',
-        !!(cfg.bonoPenetracion && cfg.bonoPenetracion.activo !== false));
     add('bonoCrecimiento', 'Bono de crecimiento', r.bonoCrecimientoMonto,
         r.crecimiento && r.crecimiento.activo ? (r.crecimiento.aplica ? `${pc(r.crecimiento.crecimientoPct)} contra el mes anterior` : r.crecimiento.motivo) : '',
         !!(cfg.bonoCrecimiento && cfg.bonoCrecimiento.activo !== false));
     add('bonoCobranza', 'Bono Cobranza', r.bonoCobranzaMonto, r.bonoCobranzaRate ? `${pc(r.bonoCobranzaRate)} de lo cobrado a tiempo` : '');
-    add('bonoActivacion', 'Bono Activación', r.bonoActivacionMonto, '');
+    // Activación: el % sobre lo cobrado y/o los USD, por semanas logradas.
+    const semL = r.actSemanasLogradas ?? r.semanasLogradas, semT = r.actSemanasTotales ?? r.semanasTotales;
+    add('bonoActivacion', 'Bono Activación', (Number(r.bonoActivacionMonto) || 0) + (Number(r.bonoActivacionUSDMonto) || 0),
+        semT != null ? `${semL || 0} de ${semT} semanas logradas` : '',
+        (Number(cfg.bonoActivacionUSD) || 0) > 0);
     add('bonoAnaquel', 'Bono Anaquel', r.bonoAnaquelMonto, '');
     add('foodservice', 'Foodservice', r.comisionFoodMonto, r.tasaFood ? `${pc(r.tasaFood)} flat` : '');
     add('recuperadas', 'Cuentas recuperadas', r.bonoRecupMonto, r.tasaRecup ? `${pc(r.tasaRecup)} flat` : '');
@@ -706,14 +697,14 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             tasaRecup: mt.tasaRecup, bonoRecupMonto: mt.bonoRecupMonto,
             // Bloques en USD
             baseUnidades: p.baseUnidades, comisionActiva: p.cfg.comisionActiva !== false,
-            bonoNivelMonto: mt.bonoNivelMonto, bonoPenetracionMonto: mt.bonoPenetracionMonto, bonoCrecimientoMonto: mt.bonoCrecimientoMonto,
+            bonoNivelMonto: mt.bonoNivelMonto, bonoActivacionUSDMonto: mt.bonoActivacionUSDMonto, bonoActivacionUSD: mt.bonoActivacionUSD, bonoCrecimientoMonto: mt.bonoCrecimientoMonto,
             bonoNivelEscalon: p.bonoNivel?.escalon?.etiqueta || null,
             bonoNivelSiguiente: p.bonoNivel?.siguiente ? { etiqueta: p.bonoNivel.siguiente.etiqueta, faltan: p.bonoNivel.siguiente.faltan, monto: p.bonoNivel.siguiente.monto, umbral: p.bonoNivel.siguiente.umbral } : null,
-            penetracion: p.bonoPenetracion, crecimiento: p.bonoCrecimiento,
+            crecimiento: p.bonoCrecimiento,
             devengadoComision: mt.devengadoComision,
             // Salario y viáticos del período: completos en un mes entero, en
             // proporción a sus días en un período corto.
-            base: p.base, corto: p.corto, transicion: p.transicion, dias: p.dias, start: p.start, end: p.end,
+            base: p.base, corto: p.corto, transicion: p.transicion, cese: p.cese, dias: p.dias, start: p.start, end: p.end,
             devengadoTotal: mt.devengadoComision + p.base,
             congelado: false,
         };
@@ -726,7 +717,7 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             // Un cierre del modelo anterior no trae el desglose por origen.
             if (frozen.comisionNivelMonto == null) { row.comisionNivelMonto = null; row.cobrosPorOrigen = null; }
             // Un cierre anterior a los bloques en USD no los tenía: valen 0.
-            ['bonoNivelMonto', 'bonoPenetracionMonto', 'bonoCrecimientoMonto'].forEach(k => { if (frozen[k] == null) row[k] = 0; });
+            ['bonoNivelMonto', 'bonoActivacionUSDMonto', 'bonoCrecimientoMonto'].forEach(k => { if (frozen[k] == null) row[k] = 0; });
         }
         // Desglose por bloque: el del cierre si lo guardó; si no, armado con las cifras de la fila.
         if (!(row.congelado && Array.isArray(frozen?.bloques))) row.bloques = bloquesDeFila(row, p.cfg);
@@ -813,7 +804,7 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
     const enCurso = !p.cerrado;
 
     return {
-        periodKey, mes: p.mes, corto: p.corto, transicion: p.transicion, dias: p.dias, start: p.start, end: p.end,
+        periodKey, mes: p.mes, corto: p.corto, transicion: p.transicion, cese: p.cese, dias: p.dias, start: p.start, end: p.end,
         rango: rangoLabel(p.start, p.end),
         rangoCorte: rangoLabel(p.start, enCurso ? new Date(ahora.getTime() + MS_DIA) : p.end),
         enCurso,
@@ -846,12 +837,12 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
         cfg: p.cfg, baseUnidades: p.baseUnidades, comisionActiva: p.cfg.comisionActiva !== false,
         lineasUnidades: [...p.lineasUnidades].sort((a, b) => (a.fechaPago || a.fecha) - (b.fechaPago || b.fecha)),
         bonoNivel: p.bonoNivel, bonoNivelMonto: mt.bonoNivelMonto,
-        penetracion: p.bonoPenetracion, bonoPenetracionMonto: mt.bonoPenetracionMonto,
+        bonoActivacionUSD: mt.bonoActivacionUSD, bonoActivacionUSDMonto: mt.bonoActivacionUSDMonto,
         crecimiento: p.bonoCrecimiento, bonoCrecimientoMonto: mt.bonoCrecimientoMonto,
         bloques: (congelado && Array.isArray(frozen.bloques)) ? frozen.bloques : bloquesDeFila({
             base, comisionNivelMonto: mt.comisionNivelMonto, cobradoRegular: mt.cobradoRegular,
             bonoNivelMonto: mt.bonoNivelMonto, bonoNivelEscalon: p.bonoNivel?.escalon?.etiqueta || null, bonoNivelSiguiente: p.bonoNivel?.siguiente || null,
-            bonoPenetracionMonto: mt.bonoPenetracionMonto, penetracion: p.bonoPenetracion,
+            bonoActivacionUSDMonto: mt.bonoActivacionUSDMonto, semanasLogradas: p.act.semanasLogradas, semanasTotales: p.act.semanasTotales,
             bonoCrecimientoMonto: mt.bonoCrecimientoMonto, crecimiento: p.bonoCrecimiento,
             bonoCobranzaMonto: mt.bonoCobranzaMonto, bonoCobranzaRate: mt.bonoCobranzaRate,
             bonoActivacionMonto: mt.bonoActivacionMonto, bonoAnaquelMonto: mt.bonoAnaquelMonto,

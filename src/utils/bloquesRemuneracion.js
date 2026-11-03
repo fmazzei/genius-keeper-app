@@ -16,9 +16,12 @@
 //                     alto logrado; por debajo del más bajo, $0. Un escalón en %
 //                     se recalcula solo si cambia la meta; uno en unidades, en un
 //                     período corto, se lleva en proporción (como la meta).
-//   Bono penetración  bonoPenetracion = {activo, pct, minUnidades, montoUSD}: si
-//                     al menos `pct` % de la cartera (las sucursales con PDV
-//                     activo, tamanoCartera) compró ≥ minUnidades en el período.
+//   Bono Activación . el de siempre (decisión del dueño, 3-nov: "la penetración
+//                     es lo mismo que la activación de cartera"): cada semana
+//                     lograda = `activacionThreshold` % de la cartera facturó
+//                     ≥ `activacionMinUnits`. Se paga en % de lo cobrado
+//                     (`bonusActivacion` × semanas logradas ÷ semanas) y/o en
+//                     USD (`bonoActivacionUSD` × semanas logradas ÷ semanas).
 //   Bono crecimiento  bonoCrecimiento = {activo, pct, montoUSD}: si las unidades
 //                     crecieron al menos `pct` % contra el período anterior (por
 //                     día, para no comparar un período corto con uno completo).
@@ -73,23 +76,6 @@ export function bonoNivelPara(cfg = {}, unidades = 0, { meta = 0, fraccion = 1 }
         escalon: logrado,
         siguiente: siguiente ? { ...siguiente, faltan: siguiente.umbral - num(unidades) } : null,
         escalones: esc,
-    };
-}
-
-/** Bono de penetración: % de la cartera que compró al menos `minUnidades`. */
-export function bonoPenetracionPara(cfg = {}, compraron = 0, cartera = 0) {
-    const b = cfg.bonoPenetracion;
-    if (!b || b.activo === false || !(num(b.montoUSD) > 0)) return { activo: false, monto: 0 };
-    const pct = num(b.pct);
-    const n = num(cartera);
-    const objetivo = n > 0 ? Math.ceil(n * pct / 100) : 0;
-    // Entero contra entero: 79 de 100 no llega al 80 %, 80 sí.
-    const logrado = n > 0 && num(compraron) * 100 >= pct * n;
-    return {
-        activo: true, pct, minUnidades: num(b.minUnidades), montoUSD: num(b.montoUSD),
-        cartera: n, compraron: num(compraron), objetivo, faltan: Math.max(0, objetivo - num(compraron)),
-        logrado, monto: logrado ? num(b.montoUSD) : 0,
-        sinCartera: n <= 0,
     };
 }
 
@@ -150,16 +136,15 @@ export function bloquesDeEsquema(cfg = {}) {
     }
     const esc = escalonesBonoNivel(cfg, { meta: num(cfg.metaMensual) });
     if (esc.length) out.push({ id: 'bonoNivel', nombre: 'Bono por nivel', resumen: esc.map(e => `${e.porPct ? `${e.minPct} %` : `${e.umbral} uds`} → ${usd(e.monto)}`).join(' · ') + ' (solo el más alto)' });
-    if (cfg.bonoPenetracion && cfg.bonoPenetracion.activo !== false && num(cfg.bonoPenetracion.montoUSD) > 0) {
-        const b = cfg.bonoPenetracion;
-        out.push({ id: 'bonoPenetracion', nombre: 'Bono de penetración', resumen: `${usd(b.montoUSD)} si compra el ${num(b.pct)} % de la cartera (mín. ${num(b.minUnidades)} uds por PDV)` });
-    }
     if (cfg.bonoCrecimiento && cfg.bonoCrecimiento.activo !== false && num(cfg.bonoCrecimiento.montoUSD) > 0) {
         const b = cfg.bonoCrecimiento;
         out.push({ id: 'bonoCrecimiento', nombre: 'Bono de crecimiento', resumen: `${usd(b.montoUSD)} si crece ${num(b.pct)} % o más contra el mes anterior` });
     }
     if (num(cfg.bonusPuntualidad) > 0) out.push({ id: 'bonoCobranza', nombre: 'Bono Cobranza', resumen: `${pct(cfg.bonusPuntualidad)} sobre cada factura cobrada a tiempo` });
-    if (num(cfg.bonusActivacion) > 0) out.push({ id: 'bonoActivacion', nombre: 'Bono Activación', resumen: `${pct(cfg.bonusActivacion)} × semanas logradas (${num(cfg.activacionThreshold)} % de la cartera con ≥${num(cfg.activacionMinUnits)} uds)` });
+    if (num(cfg.bonusActivacion) > 0 || num(cfg.bonoActivacionUSD) > 0) {
+        const pago = [num(cfg.bonusActivacion) > 0 ? `${pct(cfg.bonusActivacion)} de lo cobrado` : null, num(cfg.bonoActivacionUSD) > 0 ? usd(cfg.bonoActivacionUSD) : null].filter(Boolean).join(' + ');
+        out.push({ id: 'bonoActivacion', nombre: 'Bono Activación', resumen: `${pago} × semanas logradas (cada semana, ${num(cfg.activacionThreshold)} % de la cartera con ≥${num(cfg.activacionMinUnits)} uds)` });
+    }
     if (num(cfg.bonusAnaquel) > 0) out.push({ id: 'bonoAnaquel', nombre: 'Bono Anaquel', resumen: `${pct(cfg.bonusAnaquel)} en cuentas de régimen anaquel` });
     if (num(cfg.comisionFoodservice) > 0) out.push({ id: 'foodservice', nombre: 'Foodservice', resumen: `${pct(cfg.comisionFoodservice)} flat sobre lo cobrado` });
     if (num(cfg.comisionRecuperadas) > 0) out.push({ id: 'recuperadas', nombre: 'Cuentas recuperadas', resumen: `${pct(cfg.comisionRecuperadas)} flat sobre lo cobrado de facturas heredadas` });
@@ -172,14 +157,14 @@ export function bloquesDeEsquema(cfg = {}) {
 export function maximoBonosUSD(cfg = {}) {
     const esc = escalonesBonoNivel(cfg, { meta: num(cfg.metaMensual) });
     const nivel = esc.length ? Math.max(...esc.map(e => e.monto)) : 0;
-    const pen = cfg.bonoPenetracion && cfg.bonoPenetracion.activo !== false ? num(cfg.bonoPenetracion.montoUSD) : 0;
+    const pen = num(cfg.bonoActivacionUSD);
     const cre = cfg.bonoCrecimiento && cfg.bonoCrecimiento.activo !== false ? num(cfg.bonoCrecimiento.montoUSD) : 0;
     return nivel + pen + cre;
 }
 
 /**
  * Vista previa de un esquema a un % de la meta (constructor): un mes completo,
- * todo cobrado a tiempo y al precio de lista. Los bonos de penetración y
+ * todo cobrado a tiempo y al precio de lista. La Activación en USD y el
  * crecimiento dependen de la cartera y del mes anterior: se muestran como "hasta".
  */
 export function previaEsquema(cfg = {}, pctMeta = 100) {
@@ -199,7 +184,7 @@ export function previaEsquema(cfg = {}, pctMeta = 100) {
     const comision = cobrado * tasa / 100;
     const bonosPct = cobrado * (num(cfg.bonusPuntualidad) + num(cfg.bonusActivacion)) / 100;
     const bn = bonoNivelPara(cfg, unidades, { meta });
-    const hasta = (cfg.bonoPenetracion && cfg.bonoPenetracion.activo !== false ? num(cfg.bonoPenetracion.montoUSD) : 0)
+    const hasta = num(cfg.bonoActivacionUSD)
         + (cfg.bonoCrecimiento && cfg.bonoCrecimiento.activo !== false ? num(cfg.bonoCrecimiento.montoUSD) : 0);
     const variable = comision + bonosPct + bn.monto;
     return { pctMeta: num(pctMeta), unidades, cobrado, fijo, tasa, nivel, comision, bonosPct, bonoNivel: bn.monto, escalon: bn.escalon?.etiqueta || null, hasta, variable, total: fijo + variable };
@@ -210,17 +195,17 @@ export const PLANTILLAS = [
     {
         id: 'solo_fijo', nombre: 'Solo sueldo fijo',
         descripcion: 'Sueldo y viáticos; sin comisión ni bonos.',
-        cambios: { comisionActiva: false, bonusPuntualidad: 0, bonusActivacion: 0, bonusAnaquel: 0, comisionFoodservice: 0, comisionRecuperadas: 0, bonoNivel: null, bonoPenetracion: null, bonoCrecimiento: null },
+        cambios: { comisionActiva: false, bonusPuntualidad: 0, bonusActivacion: 0, bonusAnaquel: 0, comisionFoodservice: 0, comisionRecuperadas: 0, bonoNivel: null, bonoActivacionUSD: 0, bonoCrecimiento: null },
     },
     {
         id: 'fijo_niveles', nombre: 'Fijo + comisión por niveles',
         descripcion: 'El esquema de siempre: % según el nivel de la meta, con Bono Cobranza y Activación.',
-        cambios: { comisionActiva: true, esquema: 'niveles', bonoNivel: null, bonoPenetracion: null, bonoCrecimiento: null, baseUnidades: 'facturadas' },
+        cambios: { comisionActiva: true, esquema: 'niveles', bonoNivel: null, bonoActivacionUSD: 0, bonoCrecimiento: null, baseUnidades: 'facturadas' },
     },
     {
         id: 'fijo_tasa', nombre: 'Fijo + tasa fija',
         descripcion: 'Una sola tasa sobre lo cobrado, sin niveles.',
-        cambios: { comisionActiva: true, esquema: 'fija', bonoNivel: null, bonoPenetracion: null, bonoCrecimiento: null },
+        cambios: { comisionActiva: true, esquema: 'fija', bonoNivel: null, bonoActivacionUSD: 0, bonoCrecimiento: null },
     },
     {
         id: 'variable', nombre: '100 % variable',
@@ -229,7 +214,7 @@ export const PLANTILLAS = [
     },
     {
         id: 'fijo_bonos_usd', nombre: 'Fijo + bonos en USD',
-        descripcion: 'Sin comisión %: un bono en dólares por nivel de unidades cobradas, más penetración y crecimiento.',
+        descripcion: 'Sin comisión %: un bono en dólares por nivel de unidades cobradas, más Activación de cartera y crecimiento en dólares.',
         cambios: {
             comisionActiva: false, bonusPuntualidad: 0, bonusActivacion: 0, bonusAnaquel: 0, comisionRecuperadas: 0,
             baseUnidades: 'cobradas',
@@ -239,7 +224,7 @@ export const PLANTILLAS = [
                 { etiqueta: 'Meta', minPct: 100, montoUSD: 200 },
                 { etiqueta: 'Sobre meta', minPct: 118.75, montoUSD: 250 },
             ] },
-            bonoPenetracion: { activo: true, pct: 80, minUnidades: 12, montoUSD: 200 },
+            activacionThreshold: 80, activacionMinUnits: 12, bonoActivacionUSD: 200,
             bonoCrecimiento: { activo: true, pct: 10, montoUSD: 100 },
         },
     },

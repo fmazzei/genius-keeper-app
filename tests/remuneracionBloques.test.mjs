@@ -2,7 +2,8 @@
 //
 // Verifica:
 //   - el esquema de Erick: bono por nivel en USD (1.280/1.400/1.600/1.900 uds
-//     cobradas → $160/$180/$200/$250, solo el más alto), penetración ≥ 80 %
+//     cobradas → $160/$180/$200/$250, solo el más alto), Activación en USD
+//     (80 % de la cartera por semana, $200 × semanas logradas ÷ semanas)
 //     (+$200) y crecimiento ≥ 10 % (+$100), sin comisión %;
 //   - con base 'cobradas' lo facturado y no cobrado no cuenta; la bolsa de 1 kg = 4 uds;
 //   - solo fijo: devengado = fijo, comisión 0;
@@ -15,7 +16,7 @@ import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { computeEstadosDeCuenta, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
 import * as motor from '@/utils/vendedorMeta.js';
-import { bonoNivelPara, bonoPenetracionPara, bonoCrecimientoPara, bloquesDeEsquema, previaEsquema, maximoBonosUSD } from '@/utils/bloquesRemuneracion.js';
+import { bonoNivelPara, bonoCrecimientoPara, bloquesDeEsquema, previaEsquema, maximoBonosUSD } from '@/utils/bloquesRemuneracion.js';
 import { configEnFecha } from '@/utils/periodosComision.js';
 import { resultadosDe } from './fixtures/regresionComisiones.mjs';
 
@@ -35,7 +36,7 @@ const ERICK_CFG = {
         { etiqueta: 'Meta', minUnidades: 1600, montoUSD: 200 },
         { etiqueta: 'Sobre meta', minUnidades: 1900, montoUSD: 250 },
     ] },
-    bonoPenetracion: { activo: true, pct: 80, minUnidades: 12, montoUSD: 200 },
+    activacionThreshold: 80, activacionMinUnits: 12, bonoActivacionUSD: 200,
     bonoCrecimiento: { activo: true, pct: 10, montoUSD: 100 },
 };
 const erick = { id: 'E', fechaIngreso: '2026-11-03', metaMensual: 1600, commissionConfig: ERICK_CFG };
@@ -77,17 +78,23 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     ok(unidadesDeLinea({ quantity: 2, name: 'Chèvre', unit: 'kg' }) === 8, '2 kg a granel = 8 uds');
 }
 
-// 3. Penetración: 79 % no llega, 80 % sí (cartera de 100 sucursales con ≥12 uds cada una).
+// 3. Activación (la de siempre) pagada en USD: cada semana, 80 % de la cartera con ≥12 uds facturadas.
 {
     const cartera = Array.from({ length: 100 }, (_, i) => ({ customerId: `S${i}`, customerName: `Suc ${i}`, activoEnZoho: true }));
-    const compras = (n) => Array.from({ length: n }, (_, i) => F(`P${i}`, '2026-12-03', 12, { ...cobrada('2026-12-09'), cliente: `S${i}` }));
-    const d79 = diciembre(computeEstadosDeCuenta(erick, compras(79), [], { cartera, ahora: ahoraFeb }));
-    const d80 = diciembre(computeEstadosDeCuenta(erick, compras(80), [], { cartera, ahora: ahoraFeb }));
-    ok(d79.bonoPenetracionMonto === 0 && d79.penetracion.compraron === 79, 'penetración 79 % → $0');
-    ok(d80.bonoPenetracionMonto === 200 && d80.penetracion.logrado, 'penetración 80 % → +$200');
-    const pocas = [...compras(79), F('P79', '2026-12-03', 11, { ...cobrada('2026-12-09'), cliente: 'S79' })];
-    ok(diciembre(computeEstadosDeCuenta(erick, pocas, [], { cartera, ahora: ahoraFeb })).bonoPenetracionMonto === 0, 'una sucursal con 11 uds no cuenta (mínimo 12)');
-    ok(bonoPenetracionPara(ERICK_CFG, 8, 10).monto === 200 && bonoPenetracionPara(ERICK_CFG, 7, 10).monto === 0, 'penetración (pura): 8 de 10 sí, 7 de 10 no');
+    const semana = (n, dia, uds = 12) => Array.from({ length: n }, (_, i) => F(`P${dia}-${i}`, dia, uds, { ...cobrada('2026-12-30'), cliente: `S${i}` }));
+    const dic = (fs) => diciembre(computeEstadosDeCuenta(erick, fs, [], { cartera, ahora: ahoraFeb }));
+    // Diciembre tiene 5 semanas (1-7, 8-14, 15-21, 22-28, 29-31).
+    const d79 = dic(semana(79, '2026-12-02'));
+    const d80 = dic(semana(80, '2026-12-02'));
+    ok(d79.bonoActivacionUSDMonto === 0 && d79.actSemanasLogradas === 0, 'Activación: 79 % de la cartera en la semana → no se logra');
+    ok(d80.actSemanasLogradas === 1 && d80.actSemanasTotales === 5 && cerca(d80.bonoActivacionUSDMonto, 40), 'Activación: 80 % en 1 de 5 semanas → $200 × 1/5 = $40');
+    const cuatro = dic([...semana(80, '2026-12-02'), ...semana(80, '2026-12-09'), ...semana(80, '2026-12-16'), ...semana(80, '2026-12-23')]);
+    ok(cerca(cuatro.bonoActivacionUSDMonto, 160), 'Activación: 4 de 5 semanas → $160');
+    const pocas = [...semana(79, '2026-12-02'), F('P79', '2026-12-02', 11, { ...cobrada('2026-12-30'), cliente: 'S79' })];
+    ok(dic(pocas).bonoActivacionUSDMonto === 0, 'una sucursal con 11 uds no cuenta (mínimo 12)');
+    const viejoPct = { ...ERICK_CFG, bonoActivacionUSD: 0, bonusActivacion: 1 };
+    const conPct = diciembre(computeEstadosDeCuenta({ ...erick, commissionConfig: viejoPct }, semana(80, '2026-12-02'), [], { cartera, ahora: ahoraFeb }));
+    ok(conPct.bonoActivacionUSDMonto === 0 && conPct.bonoActivacionMonto > 0, 'la Activación en % sigue igual que siempre');
 }
 
 // 4. Crecimiento: 9,9 % no llega, 10 % sí; el primer mes no aplica.
@@ -118,12 +125,12 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     const facturas = Array.from({ length: 9 }, (_, i) => F(`B${i}`, '2026-12-03', 160, { ...cobrada('2026-12-09'), cliente: `S${i}` }));
     const d = diciembre(computeEstadosDeCuenta(erick, facturas, [], { cartera, ahora: ahoraFeb }));
     const suma = d.bloques.reduce((s, b) => s + b.monto, 0);
-    ok(d.unidades === 1440 && d.bonoNivelMonto === 180 && d.bonoPenetracionMonto === 200, 'diciembre: 1.440 uds → $180 por nivel + $200 de penetración');
+    ok(d.unidades === 1440 && d.bonoNivelMonto === 180 && cerca(d.bonoActivacionUSDMonto, 40), 'diciembre: 1.440 uds → $180 por nivel + $40 de Activación (1 de 5 semanas)');
     ok(cerca(suma, d.devengadoTotal), `los bloques suman lo devengado ($${d.devengadoTotal})`);
     ok(d.bloques.find(b => b.id === 'fijo').cuenta === 'fijo' && !d.bloques.some(b => b.id === 'comision'), 'el fijo va en su cuenta; sin bloque de comisión %');
     const des = computeDesglosePeriodo(erick, facturas, '2026-12-01', { cartera, ahora: ahoraFeb });
     ok(cerca(des.devengadoTotal, d.devengadoTotal) && des.bloques.length === d.bloques.length, 'el comprobante da lo mismo que el estado de cuenta');
-    const congelado = { ...d, modelo: 'cobro', congeladoEn: { toDate: () => new Date(2027, 0, 5) }, bloques: [{ id: 'fijo', nombre: 'Sueldo fijo', monto: 450, cuenta: 'fijo' }, { id: 'bonoNivel', nombre: 'Bono por nivel', monto: 180, cuenta: 'comision' }], devengadoComision: 180, devengadoTotal: 630, bonoPenetracionMonto: 0 };
+    const congelado = { ...d, modelo: 'cobro', congeladoEn: { toDate: () => new Date(2027, 0, 5) }, bloques: [{ id: 'fijo', nombre: 'Sueldo fijo', monto: 450, cuenta: 'fijo' }, { id: 'bonoNivel', nombre: 'Bono por nivel', monto: 180, cuenta: 'comision' }], devengadoComision: 180, devengadoTotal: 630, bonoActivacionUSDMonto: 0 };
     const dc = diciembre(computeEstadosDeCuenta(erick, facturas, [], { cartera, ahora: ahoraFeb, cerrados: { '2026-12-01': congelado } }));
     ok(dc.congelado && dc.devengadoTotal === 630 && dc.bloques.length === 2, 'un mes congelado conserva su desglose por bloque');
 }
@@ -149,11 +156,11 @@ for (const [u, m] of umbrales.slice(0, 7)) {
 // 9. Bloques del esquema y vista previa (constructor).
 {
     const ids = bloquesDeEsquema(configEnFecha(erick, new Date(2026, 11, 5))).map(b => b.id);
-    ok(ids.includes('fijo') && ids.includes('bonoNivel') && ids.includes('bonoPenetracion') && ids.includes('bonoCrecimiento') && !ids.includes('comision'), 'bloques de Erick: fijo, bono por nivel, penetración y crecimiento; sin comisión %');
+    ok(ids.includes('fijo') && ids.includes('bonoNivel') && ids.includes('bonoActivacion') && ids.includes('bonoCrecimiento') && !ids.includes('comision'), 'bloques de Erick: fijo, bono por nivel, Activación y crecimiento; sin comisión %');
     const caro = bloquesDeEsquema(configEnFecha({ commissionConfig: { tiers: [{ label: 'Óptima', minPct: 100, rate: 5 }], bajaRate: 2.5 }, metaMensual: 2000 }, new Date())).map(b => b.id);
     ok(caro.includes('comision') && caro.includes('bonoCobranza'), 'un esquema viejo se describe con sus bloques (comisión por niveles y bonos %)');
     const p100 = previaEsquema(ERICK_CFG, 100);
-    ok(p100.bonoNivel === 200 && p100.comision === 0 && p100.total === 650 && p100.hasta === 300, 'vista previa al 100 %: fijo $450 + bono $200 (+ hasta $300 de penetración y crecimiento)');
+    ok(p100.bonoNivel === 200 && p100.comision === 0 && p100.total === 650 && p100.hasta === 300, 'vista previa al 100 %: fijo $450 + bono $200 (+ hasta $300 de Activación y crecimiento)');
     ok(previaEsquema(ERICK_CFG, 79).bonoNivel === 0, 'vista previa al 79 %: sin bono por nivel');
 }
 

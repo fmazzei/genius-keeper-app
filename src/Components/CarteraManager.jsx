@@ -33,11 +33,25 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
     const [selectedChains, setSelectedChains] = useState(new Set());   // chain names
     const [batchSaving, setBatchSaving]       = useState(false);
 
+    // Clientes que ya están en la cartera de OTRO vendedor: no se pueden duplicar
+    // (decisión del dueño, 3-nov). Se muestran con su dueño y se mandan a
+    // "Traspasar cartera", que lo hace con fecha de corte.
+    const [deOtro, setDeOtro] = useState({ pos: new Map(), chain: new Map() });
     useEffect(() => {
-        getDocs(query(collection(db, 'pos'), where('active', '==', true)))
-            .then(snap => setAllPos(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-            .finally(() => setLoading(false));
-    }, []);
+        Promise.all([
+            getDocs(query(collection(db, 'pos'), where('active', '==', true))),
+            getDocs(query(collection(db, 'vendor_clients'), where('active', '==', true))).catch(() => null),
+        ]).then(([snap, vcSnap]) => {
+            setAllPos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            const posM = new Map(), chainM = new Map();
+            (vcSnap?.docs || []).map(d => d.data()).filter(v => v.vendedorId !== vendedor.id && (!v.estado || v.estado === 'activo')).forEach(v => {
+                if (v.posId) posM.set(v.posId, v.vendedorName || 'otro vendedor');
+                if (v.chain && v.tipoDespacho === 'centralizado') chainM.set(v.chain, v.vendedorName || 'otro vendedor');
+            });
+            setDeOtro({ pos: posM, chain: chainM });
+        }).finally(() => setLoading(false));
+    }, [vendedor.id]);
+    const otroDe = (pos) => deOtro.pos.get(pos.id) || (pos.tipoDespacho === 'centralizado' && pos.chain ? deOtro.chain.get(pos.chain) : null) || null;
 
     const cities = useMemo(
         () => [...new Set(allPos.map(p => p.city || 'Sin ciudad'))].sort(),
@@ -84,7 +98,7 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
     }, [filtered]);
 
     const toggleDirecto = (posId) => {
-        if (assignedPosIds?.has(posId)) return;
+        if (assignedPosIds?.has(posId) || deOtro.pos.has(posId)) return;
         setSelectedDirecto(prev => {
             const next = new Set(prev);
             next.has(posId) ? next.delete(posId) : next.add(posId);
@@ -94,7 +108,7 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
 
     const toggleChainSel = (chainName) => {
         const branches = centralizadoByChain[chainName] || [];
-        if (branches.every(p => assignedPosIds?.has(p.id))) return;
+        if (branches.every(p => assignedPosIds?.has(p.id)) || deOtro.chain.has(chainName)) return;
         setSelectedChains(prev => {
             const next = new Set(prev);
             next.has(chainName) ? next.delete(chainName) : next.add(chainName);
@@ -103,7 +117,7 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
     };
 
     const toggleDirectoChain = (posList) => {
-        const eligible = posList.filter(p => !assignedPosIds?.has(p.id));
+        const eligible = posList.filter(p => !assignedPosIds?.has(p.id) && !otroDe(p));
         const allSel = eligible.length > 0 && eligible.every(p => selectedDirecto.has(p.id));
         setSelectedDirecto(prev => {
             const next = new Set(prev);
@@ -221,6 +235,9 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                         {!cityFilter && (
                             <p className="text-xs text-slate-400 text-center py-2">Selecciona una ciudad para ver los clientes disponibles</p>
                         )}
+                        {cityFilter && (deOtro.pos.size > 0 || deOtro.chain.size > 0) && (
+                            <p className="text-[11px] text-slate-500 px-1">Un cliente que ya está en la cartera de otro vendedor no se puede repetir. Para pasárselo a este vendedor usa Comercial → <b>Traspasar cartera</b>.</p>
+                        )}
 
                         {cityFilter && filtered.length === 0 && (
                             <p className="text-xs text-slate-400 text-center py-3">
@@ -237,7 +254,8 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                                 </div>
                                 <ul className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
                                     {Object.entries(centralizadoByChain).map(([chain, branches]) => {
-                                        const isAssigned = branches.some(p => assignedPosIds?.has(p.id));
+                                        const otro = deOtro.chain.get(chain) || null;
+                                        const isAssigned = branches.some(p => assignedPosIds?.has(p.id)) || !!otro;
                                         const isSelected = selectedChains.has(chain);
                                         return (
                                             <li
@@ -269,7 +287,7 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                                                     </p>
                                                 </div>
                                                 {isAssigned && (
-                                                    <span className="shrink-0 text-xs text-slate-400 font-medium">Asignado</span>
+                                                    <span className="shrink-0 text-xs text-slate-400 font-medium">{otro ? `En cartera de ${otro}` : 'Asignado'}</span>
                                                 )}
                                             </li>
                                         );
@@ -288,7 +306,7 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                                     </div>
                                 )}
                                 {Object.entries(directoGrouped).map(([chain, posList]) => {
-                                    const eligible = posList.filter(p => !assignedPosIds?.has(p.id));
+                                    const eligible = posList.filter(p => !assignedPosIds?.has(p.id) && !otroDe(p));
                                     const allChainSel = eligible.length > 0 && eligible.every(p => selectedDirecto.has(p.id));
                                     return (
                                         <div key={chain} className="mb-2">
@@ -305,7 +323,8 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                                             </div>
                                             <ul className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white overflow-hidden">
                                                 {posList.map(pos => {
-                                                    const isAssigned = assignedPosIds?.has(pos.id);
+                                                    const otro = otroDe(pos);
+                                                    const isAssigned = assignedPosIds?.has(pos.id) || !!otro;
                                                     const isSelected = selectedDirecto.has(pos.id);
                                                     return (
                                                         <li
@@ -339,7 +358,7 @@ function AssignPosForm({ vendedor, assignedPosIds, onAdded, onCancel }) {
                                                                 )}
                                                             </div>
                                                             {isAssigned && (
-                                                                <span className="shrink-0 text-xs text-slate-400 font-medium">Asignado</span>
+                                                                <span className="shrink-0 text-xs text-slate-400 font-medium">{otro ? `En cartera de ${otro}` : 'Asignado'}</span>
                                                             )}
                                                         </li>
                                                     );

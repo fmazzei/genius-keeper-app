@@ -114,6 +114,10 @@ async function leerDatos(g, ahoraMs, estado) {
             .some(m => (u.modulos || {})[m] !== false)).map(u => u.id),
         gerentes: activos.filter(u => u.role === 'gerencia' || u.role === 'sales_manager').map(u => u.id),
         supervisores: activos.filter(u => u.role === 'vendedor').map(u => ({ ...u, uid: u.id, nombre: u.name || u.email })),
+        // Vendedores que dejaron la empresa con fecha de cese: sus meses hasta el
+        // cese también se congelan solos (decisión del dueño, 3-nov).
+        cesados: (d.usuarios || []).filter(u => u.role === 'vendedor' && u.active === false && /^\d{4}-\d{2}-\d{2}$/.test(String(u.fechaCese || '')))
+            .map(u => ({ ...u, uid: u.id, nombre: u.name || u.email })),
         laborables: estado.laborables || {},
     };
 }
@@ -188,7 +192,7 @@ async function ejecutarVigilante({ ahoraMs = Date.now(), enviarPush = enviarPush
     if (g.pesado && d.comisiones) {
         try {
             const { cierresAutomaticos } = require('./vigilanteComisiones');
-            const vendedores = (d.supervisores || []).filter(v => v.active !== false);
+            const vendedores = [...(d.supervisores || []).filter(v => v.active !== false), ...(d.cesados || [])];
             const nuevos = cierresAutomaticos({ ...d.comisiones, vendedores, ahoraMs });
             for (const c of nuevos) {
                 try {

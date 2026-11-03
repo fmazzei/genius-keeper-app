@@ -274,8 +274,8 @@ export default function DossierComercialDoc({ onClose }) {
                                 <Dato label={`Comisión · ${d.condiciones.comision?.bajaLabel || 'Baja'}`} valor={`${d.condiciones.comision?.bajaRate ?? '—'}%`} />
                                 <Dato label="Bono por cobranza a tiempo" valor={`${d.condiciones.comision?.bonusPuntualidad ?? '—'}%`} />
                                 <Dato label="Comisión foodservice (plana)" valor={`${d.condiciones.comision?.comisionFoodservice ?? '—'}%`} />
-                                {/* Bloques del constructor (bono por nivel, penetración, crecimiento, base de unidades). */}
-                                {bloquesDeEsquema(d.condiciones.comision || {}).filter(b => ['bonoNivel', 'bonoPenetracion', 'bonoCrecimiento', 'base'].includes(b.id)).map(b => (
+                                {/* Bloques del constructor (bono por nivel, Activación, crecimiento, base de unidades). */}
+                                {bloquesDeEsquema(d.condiciones.comision || {}).filter(b => ['bonoNivel', 'bonoActivacion', 'bonoCrecimiento', 'base'].includes(b.id)).map(b => (
                                     <Dato key={b.id} label={b.nombre} valor={b.resumen} />
                                 ))}
                             </Bloque>

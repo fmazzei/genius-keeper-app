@@ -640,12 +640,8 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                 </section>
 
                 <section>
-                    <SectionHeader label="Bonos de penetración y crecimiento (USD)" />
+                    <SectionHeader label="Bono de crecimiento (USD)" />
                     <div className="bg-white border border-slate-200 rounded-xl px-4">
-                        <InlineRow label="Bono de penetración" hint="Se paga si compró al menos este % de la cartera (PDV activos)" suffix="USD"
-                            value={config.bonoPenetracion?.montoUSD || 0} step={10} onChange={v => setBonoSimple('bonoPenetracion', 'montoUSD', v)} />
-                        <InlineRow label="% de la cartera" suffix="%" value={config.bonoPenetracion?.pct || 0} step={5} onChange={v => setBonoSimple('bonoPenetracion', 'pct', v)} />
-                        <InlineRow label="Mín. unidades por PDV" hint="Para que un PDV cuente como que compró en el mes" suffix="uds" value={config.bonoPenetracion?.minUnidades || 0} step={1} onChange={v => setBonoSimple('bonoPenetracion', 'minUnidades', v)} />
                         <InlineRow label="Bono de crecimiento" hint="Se paga si las unidades crecen al menos este % contra el mes anterior (no aplica el primer mes)" suffix="USD"
                             value={config.bonoCrecimiento?.montoUSD || 0} step={10} onChange={v => setBonoSimple('bonoCrecimiento', 'montoUSD', v)} />
                         <InlineRow label="Crecimiento mínimo" suffix="%" value={config.bonoCrecimiento?.pct || 0} step={1} onChange={v => setBonoSimple('bonoCrecimiento', 'pct', v)} />
@@ -676,10 +672,19 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                         />
                         <InlineRow
                             label="Bono Activación"
+                            hint="% de lo cobrado × semanas logradas ÷ semanas del mes"
                             suffix="%"
                             value={config.bonusActivacion}
                             step={0.5}
                             onChange={v => setConfig(p => ({ ...p, bonusActivacion: v }))}
+                        />
+                        <InlineRow
+                            label="Bono Activación en dólares"
+                            hint="Monto del mes × semanas logradas ÷ semanas del mes. Se puede usar en vez del % o además."
+                            suffix="USD"
+                            value={config.bonoActivacionUSD || 0}
+                            step={10}
+                            onChange={v => setConfig(p => ({ ...p, bonoActivacionUSD: v }))}
                         />
                         <InlineRow
                             label="Umbral de activación"
@@ -807,11 +812,11 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                     {pv.comision > 0 && <span>Comisión{pv.nivel ? ` ${pv.nivel} ${pv.tasa}%` : ''} <b className="text-slate-600">${pv.comision.toFixed(0)}</b></span>}
                                     {pv.bonosPct > 0 && <span>Bonos % <b className="text-slate-600">${pv.bonosPct.toFixed(0)}</b></span>}
                                     {escalones.length > 0 && <span>Bono por nivel <b className="text-slate-600">${pv.bonoNivel.toFixed(0)}</b>{pv.escalon ? ` (${pv.escalon})` : ''}</span>}
-                                    {pv.hasta > 0 && <span>+ hasta <b className="text-slate-600">${pv.hasta.toFixed(0)}</b> de penetración y crecimiento</span>}
+                                    {pv.hasta > 0 && <span>+ hasta <b className="text-slate-600">${pv.hasta.toFixed(0)}</b> de Activación y crecimiento en dólares</span>}
                                 </div>
                             </div>
                         ))}
-                        <p className="text-[11px] text-slate-400">* Un mes completo, todo cobrado a tiempo al precio por unidad. La penetración y el crecimiento dependen de la cartera y del mes anterior.</p>
+                        <p className="text-[11px] text-slate-400">* Un mes completo, todo cobrado a tiempo al precio por unidad. La Activación y el crecimiento dependen de la cartera y del mes anterior.</p>
                     </div>
                 </section>
 

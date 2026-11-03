@@ -83,7 +83,7 @@ const filasMes = (e) => [
     num(e.comisionFoodMonto) ? fila('Foodservice', `cobrado ${usd(e.cobradoFood)}`, usd(e.comisionFoodMonto)) : null,
     // Bonos en USD del constructor por bloques.
     num(e.bonoNivelMonto) ? fila('Bono por nivel', e.bonoNivelEscalon ? `escalón ${e.bonoNivelEscalon}` : null, usd(e.bonoNivelMonto)) : null,
-    num(e.bonoPenetracionMonto) ? fila('Bono de penetración', e.penetracion ? `${num(e.penetracion.compraron)} de ${num(e.penetracion.cartera)} PDV` : null, usd(e.bonoPenetracionMonto)) : null,
+    num(e.bonoActivacionUSDMonto) ? fila('Bono Activación en dólares', `${num(e.actSemanasLogradas)} de ${num(e.actSemanasTotales)} semanas`, usd(e.bonoActivacionUSDMonto)) : null,
     num(e.bonoCrecimientoMonto) ? fila('Bono de crecimiento', e.crecimiento?.aplica ? `${num(e.crecimiento.crecimientoPct)} %` : null, usd(e.bonoCrecimientoMonto)) : null,
     // Fijo y comisiones siempre por separado: que nadie confunda un monto con otro.
     fila('Comisiones devengadas', e.congelado ? 'congelado' : 'calculado hoy', usd(e.devengadoComision)),
@@ -172,7 +172,7 @@ function evaluarComisiones(d, cfg) {
 
     // 1c. Factura de un vendedor distinto al dueño actual de su carnet: la reasignación no se completó.
     // Con un traspaso con fecha de corte, el dueño se mide por la fecha de la factura.
-    const duenoDe = (f) => vendedorDelCarnetEnFecha(clientes[String(f.zohoCustomerId)], f.fecha, f.numero).vendedorId;
+    const duenoDe = (f) => vendedorDelCarnetEnFecha(clientes[String(f.zohoCustomerId)], f.fecha, f.numero, f.estado === 'pagada' ? f.fechaPago : null).vendedorId;
     const desalineadas = activas.filter(f => {
         if (!f.zohoCustomerId) return false;
         const c = clientes[String(f.zohoCustomerId)];

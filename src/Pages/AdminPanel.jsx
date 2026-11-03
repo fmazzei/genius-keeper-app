@@ -32,6 +32,7 @@ import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
 import DesgloseBloques from '@/Components/DesgloseBloques.jsx';
 import TraspasoCartera from '@/Components/TraspasoCartera.jsx';
+import CeseVendedor from '@/Components/CeseVendedor.jsx';
 
 // Índice público usuario→correo para permitir login por NOMBRE DE USUARIO.
 // Se escribe al crear/editar cualquier usuario con username.
@@ -1538,6 +1539,7 @@ const VendedoresManagement = () => {
     const [correoEnUso, setCorreoEnUso]               = useState(null);
     const [commissionTarget, setCommissionTarget]     = useState(null);
     const [carteraTarget, setCarteraTarget]           = useState(null);
+    const [ceseTarget, setCeseTarget]                 = useState(null);
     const [pendingCounts, setPendingCounts]           = useState({});
 
     const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '', fechaIngreso: '', zohoSalespersonName: '' };
@@ -1664,9 +1666,18 @@ const VendedoresManagement = () => {
     // reactivar a alguien con el correo liberado, se ofrece devolvérselo.
     const handleToggleActive = async (v) => {
         const activar = v.active === false;
+        // Desactivar a un vendedor pide su FECHA DE CESE (decisión del dueño, 3-nov):
+        // sus comisiones se congelan hasta ese día y sus abiertas pasan al heredero.
+        if (!activar) { setCeseTarget(v); return; }
         try {
-            await updateDoc(doc(db, 'users_metadata', v.id), { active: activar });
-        } catch { alert('No se pudo actualizar.'); return; }
+            await updateDoc(doc(db, 'users_metadata', v.id), { active: true });
+            if (v.fechaCese && window.confirm(`${v.name} tenía fecha de cese ${v.fechaCese}. ¿Anularla? (sus facturas abiertas en esa fecha vuelven a ser suyas)`)) {
+                await httpsCallable(functions, 'registrarCese')({ vendedorId: v.id, accion: 'anular' });
+            }
+        } catch (e) { alert(e?.message || 'No se pudo actualizar.'); return; }
+        await despuesDeCambiarActivo(v, true);
+    };
+    const despuesDeCambiarActivo = async (v, activar) => {
         try {
             if (!activar && v.email && !v.emailOriginal && window.confirm(
                 `${v.name} quedó INACTIVO: ya no puede entrar y sus comisiones siguen para liquidarle.\n\n` +
@@ -1731,8 +1742,13 @@ const VendedoresManagement = () => {
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${v.active !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                        {v.active !== false ? 'Activo' : 'Inactivo'}
+                                        {v.active !== false ? 'Activo' : v.fechaCese ? `Cesó ${v.fechaCese.split('-').reverse().join('/')}` : 'Inactivo'}
                                     </span>
+                                    {v.active === false && (
+                                        <button onClick={() => setCeseTarget(v)} className="text-[11px] font-semibold text-red-600 hover:underline" title="Fecha en que dejó la empresa">
+                                            {v.fechaCese ? 'Cambiar cese' : 'Registrar cese'}
+                                        </button>
+                                    )}
                                     <ToggleSwitch enabled={v.active !== false} setEnabled={() => handleToggleActive(v)} />
                                     <button onClick={() => setCarteraTarget(v)} className="relative p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-full transition-colors" title="Cartera de clientes">
                                         <Briefcase size={16} />
@@ -1873,6 +1889,15 @@ const VendedoresManagement = () => {
             >
                 {carteraTarget && <CarteraManager vendedor={carteraTarget} />}
             </Modal>
+
+            {/* Fecha de cese: se pide al desactivar a un vendedor. */}
+            {ceseTarget && (
+                <CeseVendedor
+                    vendedor={ceseTarget}
+                    onCancelar={() => setCeseTarget(null)}
+                    onListo={async () => { const v = ceseTarget; setCeseTarget(null); if (v.active !== false) await despuesDeCambiarActivo(v, false); }}
+                />
+            )}
         </div>
     );
 };

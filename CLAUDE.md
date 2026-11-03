@@ -3981,94 +3981,105 @@ Pedido del dueño: Carolina salió y entra Erick, que usará `ventas@lacteoca.co
 - **Node.js 22 en las funciones (3-nov):** Google retiró Node.js 20 el 30-oct-2026 y desde entonces TODO deploy de funciones fallaba ("Runtime Node.js 20 was decommissioned"); por eso `cuentaCorreo` no existía y la pantalla decía "internal". `functions/package.json` → `engines.node: "22"`. `CorreoEnUso` ya no muestra "internal" suelto: dice que el servidor no respondió.
 - **"Sin rol" que no era (3-nov):** Erick (`ventas@lacteoca.com`, uid `hu8Xkb3KO5WfHxRGGBwTWhrs0P32`) tenía perfil `vendedor` activo y al entrar vio "tu cuenta no tiene un rol asignado". Causa más probable: la lectura del perfil falló o tardó más de 15 s en un teléfono nuevo (sin rol guardado), y ese error caía en la misma pantalla que "sin rol". Ahora `AuthContext` intenta 3 veces (15/20/25 s) y, si no lee, pone `role:'sin-lectura'`: `App.tsx` dice que fue la conexión y ofrece Reintentar. La pantalla de sin rol (perfil que no existe, `no-role`) dice "sin perfil en GK" y trae "Ya me lo asignaron: reintentar".
 
-### Remuneración del vendedor por bloques (2026-11-03) ✅ (en la rama `claude/constructor-remuneracion`, sin publicar)
+### Remuneración del vendedor por bloques (2026-11-03) ✅ (rama `claude/constructor-remuneracion`, sin publicar)
 
-Pedido del dueño: armar el pago de cada vendedor como una combinación libre de bloques. Debe cubrir:
-- solo fijo;
-- fijo + niveles % (Carolina);
-- fijo + tasa fija;
-- 100 % variable (Wilmer);
-- fijo + bonos en USD (Erick).
+Pedido del dueño: armar el pago de cada vendedor como una combinación libre de bloques. Debe cubrir solo fijo, fijo + niveles % (Carolina), fijo + tasa fija, 100 % variable (Wilmer) y fijo + bonos en USD (Erick).
 
-**Los bloques** (`src/utils/bloquesRemuneracion.js`, puro, empaquetado con el motor) son campos opcionales del mismo `commissionConfig`. Por defecto en `commissionDefaults.js` y en el espejo de `commissionEngine.js`:
+**Los bloques** (`src/utils/bloquesRemuneracion.js`, puro, empaquetado con el motor) son campos opcionales del mismo `commissionConfig` (defaults en `commissionDefaults.js` y en el espejo de `commissionEngine.js`):
 
 | Bloque | Campos |
 |---|---|
 | Fijo | `salarioFijo`, `viaticosSemanales` (por quincenas, como antes) |
 | Comisión % | `comisionActiva` (false = sin comisión %), `esquema` 'niveles' (tiers + bajaRate) o 'fija' (tasaFija) |
-| Bono por nivel (USD) | `bonoNivel = {activo, escalones:[{etiqueta, minUnidades \| minPct, montoUSD}]}`: solo el escalón más alto logrado; por debajo del más bajo, $0. Un escalón en % se recalcula con la meta; uno en unidades, en un período corto, va en proporción a sus días (como la meta) |
-| Penetración (USD) | `bonoPenetracion = {activo, pct, minUnidades, montoUSD}`: % de la cartera (`carteraActivacion`, sucursales con PDV activo) que compró ≥ N uds |
-| Crecimiento (USD) | `bonoCrecimiento = {activo, pct, montoUSD}`: unidades ≥ pct % sobre el período anterior, por día (un período corto no se compara con uno completo); el primer mes no aplica y lo dice |
+| Bono por nivel (USD) | `bonoNivel = {activo, escalones:[{etiqueta, minUnidades \| minPct, montoUSD}]}`: solo el escalón más alto logrado; por debajo del más bajo, $0. Un escalón en % se recalcula con la meta; uno en unidades va en proporción a los días en un período corto (como la meta) |
+| Activación | la de siempre (`activacionThreshold` % de la cartera con ≥ `activacionMinUnits` uds facturadas cada semana). Se paga en % de lo cobrado (`bonusActivacion`) y/o en dólares (**`bonoActivacionUSD`** × semanas logradas ÷ semanas del período). El Bono Anaquel la sustituye igual que al %. |
+| Crecimiento (USD) | `bonoCrecimiento = {activo, pct, montoUSD}`: unidades ≥ pct % sobre el período anterior, por día (un período corto no se compara con uno completo). El primer mes no aplica y lo dice. |
 | Bonos % | `bonusPuntualidad`, `bonusActivacion`, `bonusAnaquel` (sin cambios) |
 | Foodservice / Recuperadas | `comisionFoodservice`, `comisionRecuperadas` (0 = nada) |
 | Base de unidades | `baseUnidades` 'facturadas' (lo de siempre) o 'cobradas' |
 
-- **Unidades 'cobradas':** las de las facturas cuyo cobro cae en el período, en el mismo sitio donde cae el cobro en el motor: `fechaPago`, o el destino si el mes está congelado. No cuentan las que perdieron la comisión por pasar de `facturaMaxDias`. Con esa base se miden la meta, el nivel y los bonos en USD: ningún bono se paga sobre lo no cobrado. La bolsa de 1 kg = 4 uds ya viene así en `facturas_vendedor.unidades` (`unidadesDeLinea`).
-- **Sin comisión %:** `normalizarEsquema` (periodosComision.js) lo traduce a "sin niveles, tasa 0", igual que la tasa fija. Así el servidor (`buildTiers`, que ahora también reconoce `comisionActiva:false`) deja en 0 la comisión provisional de cada factura. Los bonos en USD nunca van por factura.
+- **"Bono de penetración" retirado** (decisión del dueño, 3-nov): era lo mismo que la Activación de cartera. Para Erick: Activación 80 % con $200 en dólares.
+- **Unidades 'cobradas':** las de las facturas cuyo cobro cae en el período (donde el motor pone el cobro: `fechaPago`, o el destino si el mes está congelado). No cuentan las que perdieron la comisión por pasar de `facturaMaxDias`. Con esa base se miden la meta, el nivel y los bonos en USD. La bolsa de 1 kg = 4 uds ya viene así en `facturas_vendedor.unidades` (`unidadesDeLinea`).
+- **Sin comisión %:** `normalizarEsquema` lo traduce a "sin niveles, tasa 0". Por eso el servidor (`buildTiers`, que también reconoce `comisionActiva:false`) deja en 0 la comisión provisional de cada factura. Los bonos en USD nunca van por factura.
 
 **Motor** (`vendedorMeta.js`):
-- Cada período lleva `baseUnidades`, `lineasUnidades`, `bonoNivel`, `bonoPenetracion` y `bonoCrecimiento`.
-- `montosPeriodo` suma `bonoNivelMonto`, `bonoPenetracionMonto` y `bonoCrecimientoMonto` a `devengadoComision`.
-- Cada fila del estado de cuenta y el desglose traen **`bloques`** (`bloquesDeFila`): lo ganado por bloque, `{id, nombre, monto, detalle, cuenta:'fijo'|'comision'}`.
-- `bloques` y los montos en USD entran en `CAMPOS_CONGELADOS`: el cierre (manual o automático) guarda el desglose. Un cierre anterior sin `bloques` lo arma con sus cifras congeladas.
+- Cada período lleva `baseUnidades`, `lineasUnidades`, `bonoNivel` y `bonoCrecimiento`.
+- `montosPeriodo` suma `bonoNivelMonto`, `bonoActivacionUSDMonto` y `bonoCrecimientoMonto` a `devengadoComision`.
+- Cada fila del estado de cuenta y cada desglose trae **`bloques`** (`bloquesDeFila`): lo ganado por bloque, `{id, nombre, monto, detalle, cuenta:'fijo'|'comision'}`.
+- Esos campos entran en `CAMPOS_CONGELADOS`: el cierre (manual o automático) guarda el desglose. Un cierre anterior sin `bloques` lo arma con sus cifras congeladas.
 - **Esquemas viejos sin tocar los documentos:** se describen como bloques al vuelo (`bloquesDeEsquema`).
-- **Regresión:** `tests/fixtures/regresionComisiones.json` guarda lo que daba el motor anterior para los esquemas reales de Carolina y Wilmer, en 40 casos al azar (7.200 cifras). La prueba exige lo mismo. Solo se regenera si una regla cambia A PROPÓSITO: `node tests/fixtures/generarRegresion.mjs <motor viejo .cjs>`.
+- **Regresión:** `tests/fixtures/regresionComisiones.json` guarda lo que daba el motor anterior para los esquemas reales de Carolina y Wilmer (40 casos al azar, 7.200 cifras), y la prueba exige lo mismo. Se regenera solo si una regla cambia A PROPÓSITO: `node tests/fixtures/generarRegresion.mjs <motor viejo .cjs>`.
 
 **Pantallas:**
-- **Constructor** (`CommissionConstructor.jsx`):
-  - "Cómo se le paga (bloques)" y las plantillas rápidas (`PLANTILLAS`: solo fijo, fijo + niveles, fijo + tasa fija, 100 % variable, fijo + bonos en USD).
-  - "Unidades que cuentan" (facturadas/cobradas) y Comisión % con tres opciones (sin comisión, por niveles, tasa fija).
-  - Editor de escalones (uds o % de la meta), penetración y crecimiento.
-  - La vista previa al 0/80/90/100/120 % (`previaEsquema`) reemplaza el simulador por monto.
-- **Inicio del vendedor:** con 'cobradas' la meta usa `estadoActual.unidades`. El hero dice "Te faltan N uds cobradas para el bono de $X", la penetración y el crecimiento. Si es solo fijo, no aparece la tarjeta de comisión. El Estado de Cuenta muestra los bonos en USD.
-- **`DesgloseBloques.jsx`** (oscuro/claro/papel) y las listas por bloque en:
-  - Liquidaciones, Comisiones a pagar y Conciliación;
-  - `LiquidacionDetalladaDoc`, `EstadoCuentaDoc` y `CommissionProposalDoc` (escalones, penetración, crecimiento, potencial con bonos en USD);
-  - `DossierComercialDoc` (ahora con el esquema VIGENTE, `configEnFecha`);
-  - `desempenoVendedor` (`comision.bloques`);
-  - el vigilante (`filasMes`).
+- **Constructor:**
+  - "Cómo se le paga (bloques)" y las plantillas (`PLANTILLAS`).
+  - "Unidades que cuentan" y Comisión % con tres opciones (sin comisión, por niveles, tasa fija).
+  - Escalones del bono por nivel; crecimiento; Activación en % y en dólares.
+  - Vista previa al 0/80/90/100/120 % (`previaEsquema`).
+- **Inicio del vendedor:** "Te faltan N uds cobradas para el bono de $X", semanas de Activación y crecimiento. Si es solo fijo, no aparece la tarjeta de comisión.
+- **`DesgloseBloques.jsx`** y las listas por bloque aparecen en Liquidaciones, Comisiones a pagar, Conciliación, `LiquidacionDetalladaDoc`, `EstadoCuentaDoc`, `CommissionProposalDoc`, `DossierComercialDoc` (esquema vigente, `configEnFecha`), `desempenoVendedor` y el vigilante.
 
-### Traspasar cartera con fecha de corte (2026-11-03) ✅ (misma rama, sin ejecutar)
+### Traspasos de cartera, duplicados y fecha de cese (2026-11-03) ✅ (misma rama, sin ejecutar)
 
-Comercial → **Traspasar cartera** (`TraspasoCartera.jsx`, solo máster). Primero muestra qué va a mover y solo con la confirmación lo aplica. Corre en el callable **`traspasarCartera({deId, aId, corte, abiertasAlNuevo, accion:'simular'|'ejecutar'})`** (`functions/handlers/traspasoCartera.js`, solo máster y nunca con la llave maestra).
+Reglas del dueño (3-nov):
+- (1) se traspasa toda la cartera o solo algunos clientes;
+- (2) no se permiten clientes duplicados: el sistema los señala y pide traspasarlos o dejarlos con el vendedor actual;
+- (3) al marcar inactivo a un vendedor se pide su **fecha de cese**. Sus comisiones quedan congeladas hasta esa fecha y, desde ahí, todas sus facturas abiertas pasan al vendedor que heredó sus clientes.
 
-**Regla** (`functions/handlers/traspasoReglas.js`, puro):
-- Cada carnet de A guarda `traspasos: [{id, desde, deVendedorId, aVendedorId, facturasAlNuevo}]` y pasa a `vendedorId = B`.
-- `vendedorDelCarnetEnFecha(cliente, fecha, numero)`: una factura anterior al corte sigue siendo de A, y desde el corte es de B. Varios traspasos se encadenan.
-- `facturasAlNuevo` son las abiertas de antes del corte que el dueño decide que cobre B, como recuperadas.
+**Regla de dueño por fecha** (`functions/handlers/traspasoReglas.js`, puro):
+- Cada carnet traspasado guarda `traspasos: [{id, desde, deVendedorId, aVendedorId, ceseDe}]` y pasa a `vendedorId = B`.
+- `vendedorDelCarnetEnFecha(cliente, fecha, numero, fechaPago)`:
+  - una factura de antes del corte es de A;
+  - desde el corte, es de B;
+  - si A cesó (`ceseDe`) y la factura no estaba cobrada antes del día del cese, la hereda B, que la cobra como recuperada a su tasa de recuperadas.
+  - Los traspasos se encadenan.
+- La usan, para que el historial no se mueva solo:
+  - la conciliación (`resolveVendedorFromPreload`, con `last_payment_date`; `loadClienteMap` trae `traspasos`);
+  - el webhook;
+  - la reasignación manual (`backfillFacturasPorCustomerId` solo mueve lo que por fecha es del dueño de hoy y corrige lo que quedó en otro lado);
+  - el aviso `comision_atribucion` del vigilante.
 
-**La usan, para que el historial no se mueva solo:**
-- la conciliación (`resolveVendedorFromPreload`; `loadClienteMap` trae `traspasos`);
-- el webhook (`upsertFacturaFromZoho` lee el carnet);
-- la reasignación manual (`backfillFacturasPorCustomerId` solo mueve lo que por fecha es del dueño de hoy);
-- el aviso `comision_atribucion` del vigilante.
+**Fecha de cese** (`users_metadata.fechaCese`):
+- `periodosDeEmpleo(…, {cese})`: el último período termina el día del cese (`cese:true`). Su fijo son las quincenas cerradas hasta ese día (`baseDePeriodo`, `etiquetaFijo` "Fijo hasta el cese"). Su meta va en proporción y no hay períodos después.
+- El vigilante congela solo los meses de los vendedores **cesados** (`d.cesados`), además de los activos.
+- **Callable `registrarCese({accion:'simular'|'ejecutar'|'anular', vendedorId, fechaCese})`** (solo máster):
+  - deja al vendedor inactivo con su fecha;
+  - escribe `ceseDe` en los traspasos que salieron de él;
+  - re-atribuye sus facturas y deja constancia en `traspasos_cartera` (`tipo:'cese'`).
+  - "anular" lo deshace.
+- **Pantalla:** `CeseVendedor.jsx`. Al apagar el interruptor de un vendedor (AdminPanel → Vendedores) se pide la fecha y se muestra qué facturas pasan. Los inactivos tienen "Registrar cese" / "Cambiar cese" y el estado dice "Cesó dd/mm/aaaa". Al reactivar se ofrece anular el cese.
 
-**Qué hace al ejecutar:**
-1. Carnets de A → B con el traspaso.
-2. `vendor_clients` de A: `active:false, estado:'traspasado'`. Se le agrega a B lo que no tenía (`{id}__{doc}`). Las carteras activas de vendedores SIN perfil (Wilmer `mFAMSyQi…`) pasan a `huerfano_desactivado`.
-3. `zoho_customer_map` de A → B (solo para facturas nuevas sin carnet).
-4. Facturas re-atribuidas por fecha con `backfillFacturasPorCustomerId`, y comprobación de que ninguna queda con otro dueño.
-5. Constancia en **`traspasos_cartera/{corte}_{A}_{B}`** (quién, cuándo, plan y resultado; reglas: lee el máster, escribe solo el servidor).
+**Traspaso** (callable `traspasarCartera`, Comercial → **Traspasar cartera**, `TraspasoCartera.jsx`, solo máster y nunca con la llave maestra):
+- `accion:'simular'|'ejecutar'`, `deId`, `aId`, `corte` (por defecto, la fecha de ingreso de quien recibe), `seleccion:'todo'|[ids de vendor_clients de A]`, `decisiones:{llave → vendedorId}`.
+- `planTraspaso`:
+  - Un cliente elegido que ya está activo en otra cartera (de B o de un tercero) es un **duplicado**. No se ejecuta hasta decidir con quién se queda.
+  - Quedarse con B: se apaga el de A. Quedarse con A o con el tercero: no pasa y se apaga la copia del otro.
+  - Toda la cartera = todos los carnets de A, menos los de clientes que se quedan con otro. Algunos clientes = los carnets de esos PDV (por `pos.zohoCustomerId`, o las sucursales de una cadena centralizada).
+- **Al ejecutar:**
+  1. carnets → B con el traspaso (y `ceseDe` si A ya cesó);
+  2. `vendor_clients`: los de A `traspasado`; a B se le agrega lo que no tenía (`{id}__{doc}`); las copias apagadas `duplicado_resuelto`; las carteras de vendedores SIN perfil (Wilmer `mFAMSyQi…`) `huerfano_desactivado`;
+  3. `zoho_customer_map` de A → B (solo con toda la cartera);
+  4. facturas por fecha, con comprobación.
+- Constancia en **`traspasos_cartera/{corte}_{A}_{B}_{todo|firma}`**. Es idempotente: el id sale de lo pedido.
+- **Duplicados de todas las carteras:** `accion:'duplicados'` los lista con el dueño del carnet. `accion:'resolverDuplicado'` deja el cliente SOLO con el dueño del carnet en Zoho. Dárselo a otro es un traspaso con fecha, y la función lo rechaza.
+- **CarteraManager** ya no deja asignar un PDV o cadena que está en la cartera de otro vendedor: lo muestra "En cartera de X" y remite a Traspasar cartera.
 
-Es idempotente: el mismo traspaso no se aplica dos veces. Los cierres de A (`comisiones_cerradas`) no se tocan.
-
-**Resumen real Carolina → Erick, corte 2026-11-03** (leído el 3-nov, sin ejecutar):
-- 43 carnets pasan a Erick.
-- La cartera de Carolina (25 PDV activos) ya está entera en la de Erick (29: las mismas 25 + 4 de Páramo): se apagan 25 y se agregan 0.
-- Se apagan 29 PDV activos de la cartera huérfana de Wilmer.
-- Facturas: todas las de esos carnets son anteriores al corte y se quedan con Carolina. No hay ninguna desde el 1-nov.
-- 29 abiertas, saldo $2.667,04 (una es recuperada: INV-001588, Los Gorditos, abril). Si se marca la opción, las cobra Erick como recuperadas (Erick: 0 %).
-- **Riesgo que esto cierra:** hoy Erick y Carolina tienen la misma cartera activa. La alineación de cada hora (`alinearCarnetsConCartera`) lo reporta como conflicto "varias_carteras" y no asigna. Si alguien apagara la de Carolina a mano, movería TODO el historial a Erick.
+**Resumen real Carolina → Erick** (corte = ingreso de Erick 2026-11-03, leído el 3-nov, sin ejecutar):
+- 43 carnets.
+- Los 25 PDV activos de Carolina ya están en la cartera de Erick: son 25 duplicados a decidir; elegir "Traspasar a Erick" no agrega nada nuevo.
+- Se apagan 29 PDV de la cartera huérfana de Wilmer.
+- No hay facturas desde el 1-nov.
+- Hay 29 abiertas, saldo $2.667,04. Carolina está inactiva SIN fecha de cese: al registrarla, las que sigan abiertas ese día pasan a Erick (recuperadas; Erick: 0 %).
 
 **Pruebas:**
-- `TZ=America/Caracas node --import ./tests/alias.mjs tests/remuneracionBloques.test.mjs` (40 en verde: umbrales 1279→$0 … 1900→$250, penetración 79/80 %, crecimiento 9,9/10 %, primer mes, cobradas vs facturadas, bolsa de 1 kg, solo fijo, servidor en 0, desglose y cierre, regresión).
-- `TZ=America/Caracas node --import ./tests/alias.mjs tests/traspasoCartera.test.mjs` (17 en verde).
-- `npx firebase emulators:exec --only firestore --project demo-traspaso "node tests/traspasoCartera.e2e.test.mjs"` (19 en verde: el día anterior al corte queda con A, el del corte va a B, el cierre de A intacto, idempotente, la conciliación no devuelve el historial).
+- `remuneracionBloques.test.mjs` (48: umbrales 1279→$0 … 1900→$250, Activación en USD 79/80 % y por semanas, crecimiento 9,9/10 %, primer mes, cobradas vs facturadas, bolsa de 1 kg, solo fijo, servidor en 0, desglose y cierre, regresión).
+- `traspasoCartera.test.mjs` (33: corte, cese, duplicados, toda/algunos, meses con cese, cerrados intactos).
+- `traspasoCartera.e2e.test.mjs` (emulador: traspaso con duplicado decidido, cese y su anulación, resolver duplicados, traspaso de un solo cliente, idempotencia, conciliación).
 
 **Pendiente del dueño:**
-- El sueldo fijo de Erick: su perfil tiene $300 + $25/semana en el primer esquema y $450 desde el 1-nov, y entró el 3-nov. Se carga su esquema de bonos cuando lo confirme.
-- Decidir si sus abiertas de antes del corte las cobra él (0 %) o Carolina.
-- Aprobar el traspaso.
+- La fecha de cese de Carolina.
+- El sueldo fijo de Erick ($300 + $25/semana o $450): se carga su esquema cuando lo confirme.
+- Aprobar el PR y hacer el traspaso.
 
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 

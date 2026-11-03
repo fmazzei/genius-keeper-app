@@ -50,6 +50,6 @@ export const DEFAULT_COMMISSION_CONFIG = {
     comisionActiva:      true,          // false = sin comisión % (solo fijo y/o bonos en USD)
     baseUnidades:        'facturadas',  // 'cobradas' = unidades de facturas cobradas en el período
     bonoNivel:           null,          // {activo, escalones:[{etiqueta, minUnidades|minPct, montoUSD}]}
-    bonoPenetracion:     null,          // {activo, pct, minUnidades, montoUSD}
+    bonoActivacionUSD:   0,             // Bono Activación en USD × semanas logradas ÷ semanas (además del %)
     bonoCrecimiento:     null,          // {activo, pct, montoUSD}
 };

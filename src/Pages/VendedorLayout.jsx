@@ -321,14 +321,14 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                             {p.bonoCobranzaMonto > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Bono Cobranza ({p.bonoCobranzaRate}% de lo cobrado a tiempo)</span><span className="text-emerald-400 font-mono">+{money(p.bonoCobranzaMonto)}</span></div>
                             )}
-                            {p.bonoActivacionMonto > 0 && (
+                            {p.bonoActivacionMonto > 0 && !(p.bonoActivacionUSDMonto > 0) && (
                                 <div className="flex justify-between"><span className="text-slate-400">Bono Activación ({p.bonoActivacionRate}% × semanas logradas)</span><span className="text-emerald-400 font-mono">+{money(p.bonoActivacionMonto)}</span></div>
                             )}
                             {p.bonoAnaquelMonto > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Bono Anaquel ({p.bonoAnaquelRate}%)</span><span className="text-emerald-400 font-mono">+{money(p.bonoAnaquelMonto)}</span></div>
                             )}
                             {/* Bonos en USD (constructor por bloques): se muestran aunque estén en $0, con lo que falta. */}
-                            {(p.bloques || []).filter(b => ['bonoNivel', 'bonoPenetracion', 'bonoCrecimiento'].includes(b.id)).map(b => (
+                            {(p.bloques || []).filter(b => ['bonoNivel', 'bonoCrecimiento'].includes(b.id) || (b.id === 'bonoActivacion' && p.bonoActivacionUSDMonto > 0)).map(b => (
                                 <div key={b.id} className="flex justify-between gap-2"><span className="text-slate-400">{b.nombre}{b.detalle ? ` (${b.detalle})` : ''}</span><span className={`font-mono ${b.monto > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>+{money(b.monto)}</span></div>
                             ))}
                             {p.comisionFoodMonto > 0 && (
@@ -555,18 +555,17 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
     const tasaFija = esTasaFija(commConfig);
     const sinPct = commConfig.comisionActiva === false;
     const hasComisionPct = !sinPct && (tasaFija ? (commConfig.bajaRate || 0) > 0 : (tiers || []).some(t => t.rate > 0));
-    // Bloques en USD (bono por nivel, penetración, crecimiento) y bonos %.
+    // Bloques en USD (bono por nivel, Activación en USD, crecimiento) y bonos %.
     const bonosUSD = (commConfig.bonoNivel && commConfig.bonoNivel.activo !== false && (commConfig.bonoNivel.escalones || []).length > 0)
-        || (commConfig.bonoPenetracion && commConfig.bonoPenetracion.activo !== false && commConfig.bonoPenetracion.montoUSD > 0)
+        || (Number(commConfig.bonoActivacionUSD) || 0) > 0
         || (commConfig.bonoCrecimiento && commConfig.bonoCrecimiento.activo !== false && commConfig.bonoCrecimiento.montoUSD > 0);
     // Solo fijo: no hay nada variable que mostrar como "comisión".
     const hasComision = hasComisionPct || bonosUSD || (commConfig.bonusPuntualidad || 0) > 0 || (commConfig.comisionFoodservice || 0) > 0;
     const sigBono = estadoActual?.bonoNivelSiguiente || null;
-    const pen = estadoActual?.penetracion;
     const crec = estadoActual?.crecimiento;
     const proximo = commConfig.proximoEsquema || null;
     const showAnaquel      = commConfig.bonusAnaquel > 0 && stats.hasAnaquel;
-    const showActivacion   = commConfig.bonusActivacion > 0 && !stats.hasAnaquel;
+    const showActivacion   = (commConfig.bonusActivacion > 0 || (Number(commConfig.bonoActivacionUSD) || 0) > 0) && !stats.hasAnaquel;
     const showPuntualidad  = commConfig.bonusPuntualidad > 0;
     const showBonosSection = showActivacion || showPuntualidad || showAnaquel;
 
@@ -674,9 +673,10 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                                     <p className="text-xs text-slate-300">Te faltan <b className="text-emerald-400">{Number(sigBono.faltan).toLocaleString()} uds{porCobradas ? ' cobradas' : ''}</b> para el bono de <b className="text-white">{money(sigBono.monto)}</b>{estadoActual.bonoNivelEscalon ? ' (se paga solo el más alto)' : ''}.</p>
                                 </div>
                             )}
-                            {pen?.activo && (
-                                <p className={`text-xs ${pen.logrado ? 'text-emerald-300' : 'text-slate-400'}`}>
-                                    {pen.logrado ? '✓ ' : ''}Penetración: <b>{pen.compraron} de {pen.cartera}</b> PDV compraron (≥{pen.minUnidades} uds){pen.logrado ? ` · ${money(pen.monto)}` : ` · te faltan ${pen.faltan} PDV para ${money(pen.montoUSD)}`}
+                            {(Number(commConfig.bonoActivacionUSD) || 0) > 0 && estadoActual.actSemanasTotales > 0 && (
+                                <p className="text-xs text-slate-300">
+                                    Activación: <b>{estadoActual.actSemanasLogradas} de {estadoActual.actSemanasTotales}</b> semanas logradas → {money(estadoActual.bonoActivacionUSDMonto)} de {money(commConfig.bonoActivacionUSD)}
+                                    {!estadoActual.actSemLograda && estadoActual.actSemObjetivo > 0 ? ` · esta semana llevas ${estadoActual.actSemActivados} de ${estadoActual.actSemObjetivo} PDV` : ''}
                                 </p>
                             )}
                             {crec?.activo && (
@@ -885,7 +885,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                                     : <AlertCircle size={20} className="text-amber-400 shrink-0" />
                                 }
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-white text-sm font-semibold">Bono Activación (+{commConfig.bonusActivacion}%)</p>
+                                    <p className="text-white text-sm font-semibold">Bono Activación ({[commConfig.bonusActivacion > 0 ? `+${commConfig.bonusActivacion}%` : null, commConfig.bonoActivacionUSD > 0 ? `hasta $${commConfig.bonoActivacionUSD}` : null].filter(Boolean).join(' · ')})</p>
                                     {estadoActual.carteraSize > 0 ? (
                                         <p className="text-slate-400 text-xs">
                                             Esta semana: <b className={estadoActual.actSemLograda ? 'text-emerald-400' : 'text-white'}>{estadoActual.actSemActivados}/{estadoActual.carteraSize}</b> sucursales con ≥{commConfig.activacionMinUnits} uds · objetivo {estadoActual.actSemObjetivo}

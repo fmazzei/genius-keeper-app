@@ -38,7 +38,7 @@ function computeProposal(config = {}) {
     const topRate        = (tiers[0]?.rate || objetivo.rate || 0) + bonoCobranza + bonoActivacion;
 
     const montoFacturacion = (Number(config.metaMensual) || 0) * precio;
-    // Bonos en USD: el de nivel al 100 % de la meta, más penetración y crecimiento.
+    // Bonos en USD: el de nivel al 100 % de la meta, más Activación en USD y crecimiento.
     const bonoNivel100 = previaEsquema(config, 100).bonoNivel;
     const maxUSD = maximoBonosUSD(config);
     const extrasUSD = maxUSD - Math.max(0, ...escalonesBonoNivel(config, { meta: Number(config.metaMensual) || 0 }).map(e => e.monto), 0);
@@ -199,10 +199,10 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                                 <p className="text-slate-400 text-[10px] mt-1 text-center">Se paga solo el escalón más alto que alcances en el mes.</p>
                             </div>
                         )}
-                        {(config.bonoPenetracion?.montoUSD > 0 || config.bonoCrecimiento?.montoUSD > 0) && (
+                        {(config.bonoActivacionUSD > 0 || config.bonoCrecimiento?.montoUSD > 0) && (
                             <div className="grid grid-cols-2 gap-3">
-                                {config.bonoPenetracion?.montoUSD > 0 && config.bonoPenetracion.activo !== false && (
-                                    <Badge Icon={Target} title="Bono de penetración" value={`+${money(config.bonoPenetracion.montoUSD)}`} sub={`si compra el ${config.bonoPenetracion.pct}% de tu cartera (≥${config.bonoPenetracion.minUnidades} uds por PDV)`} tone="amber" />
+                                {config.bonoActivacionUSD > 0 && (
+                                    <Badge Icon={Target} title="Bono Activación" value={`hasta +${money(config.bonoActivacionUSD)}`} sub={`cada semana, ${config.activacionThreshold}% de tu cartera con ≥${config.activacionMinUnits} uds; proporcional a las semanas logradas`} tone="amber" />
                                 )}
                                 {config.bonoCrecimiento?.montoUSD > 0 && config.bonoCrecimiento.activo !== false && (
                                     <Badge Icon={ArrowUpRight} title="Bono de crecimiento" value={`+${money(config.bonoCrecimiento.montoUSD)}`} sub={`si creces ${config.bonoCrecimiento.pct}% o más contra el mes anterior`} tone="emerald" />

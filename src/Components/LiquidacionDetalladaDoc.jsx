@@ -196,7 +196,8 @@ function PeriodoDetalle({ d, multi }) {
                     {d.comisionFoodMonto > 0 && <tr><td className="py-0.5">Foodservice ({d.tasaFood}% de {money(d.cobradoFood)})</td><td className="text-right"><Num>{money(d.comisionFoodMonto)}</Num></td></tr>}
                     {d.bonoRecupMonto > 0 && <tr><td className="py-0.5">Cuentas recuperadas ({d.tasaRecup}%)</td><td className="text-right"><Num>{money(d.bonoRecupMonto)}</Num></td></tr>}
                     {/* Bonos en USD del constructor por bloques */}
-                    {(d.bloques || []).filter(b => ['bonoNivel', 'bonoPenetracion', 'bonoCrecimiento'].includes(b.id)).map(b => (
+                    {d.bonoActivacionUSDMonto > 0 && <tr><td className="py-0.5">Bono Activación en dólares (${d.bonoActivacionUSD} × {d.semanasLogradas} de {d.semanasTotales} semanas)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoActivacionUSDMonto)}</Num></td></tr>}
+                    {(d.bloques || []).filter(b => ['bonoNivel', 'bonoCrecimiento'].includes(b.id)).map(b => (
                         <tr key={b.id}><td className="py-0.5 pr-2">{b.nombre}{b.detalle ? ` (${b.detalle})` : ''}</td><td className="text-right align-top"><Num color={b.monto > 0 ? '#127c3e' : undefined}>{money(b.monto)}</Num></td></tr>
                     ))}
                     <tr className="border-t-2" style={{ borderColor: NAVY }}><td className="py-1 font-bold">COMISIONES GANADAS</td><td className="text-right"><Num bold color={NAVY}>{money(d.devengadoComision)}</Num></td></tr>

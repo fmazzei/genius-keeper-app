@@ -112,7 +112,7 @@ async function backfillFacturasPorCustomerId(customerId, vendedorDestino, db, op
         let vendedor = vendedorDestino;
         let destino = vendedor ? vendedor.id : null;
         if (conTraspasos) {
-            const dueno = vendedorDelCarnetEnFecha(cliente, factura.fecha, factura.numero).vendedorId;
+            const dueno = vendedorDelCarnetEnFecha(cliente, factura.fecha, factura.numero, factura.estado === 'pagada' ? factura.fechaPago : null).vendedorId;
             if (dueno !== destino) {
                 // Le toca a un vendedor anterior: solo se corrige si quedó en otro lado.
                 if (!opts.vendedoresPorId || factura.vendedorId === dueno) continue;
