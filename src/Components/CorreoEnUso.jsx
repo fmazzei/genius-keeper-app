@@ -17,6 +17,16 @@ const fmtDia = (v) => {
     return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)}`;
 };
 
+// "internal" a secas = el servidor no respondió (la función no está publicada o
+// se cayó). Se dice así, en vez de mostrar la palabra suelta.
+const mensajeDe = (e, porDefecto) => {
+    const code = String(e?.code || '');
+    if (code.endsWith('internal') || code.endsWith('not-found') || code.endsWith('unavailable')) {
+        return 'El servidor no respondió. Espera unos minutos y vuelve a tocar Crear; si sigue, avísale al soporte.';
+    }
+    return e?.message || porDefecto;
+};
+
 export const cuentaCorreo = (datos) => httpsCallable(functions, 'cuentaCorreo')(datos).then(r => r.data);
 
 export default function CorreoEnUso({ email, onLiberado }) {
@@ -29,7 +39,7 @@ export default function CorreoEnUso({ email, onLiberado }) {
         setInfo(null); setError('');
         cuentaCorreo({ accion: 'consultar', email })
             .then(r => { if (vivo) setInfo(r); })
-            .catch(e => { if (vivo) setError(e?.message || 'No se pudo revisar de quién es el correo.'); });
+            .catch(e => { if (vivo) setError(mensajeDe(e, 'No se pudo revisar de quién es el correo.')); });
         return () => { vivo = false; };
     }, [email]);
 
@@ -39,7 +49,7 @@ export default function CorreoEnUso({ email, onLiberado }) {
             await cuentaCorreo({ accion: 'liberar', email });
             onLiberado?.();
         } catch (e) {
-            setError(e?.message || 'No se pudo liberar el correo.');
+            setError(mensajeDe(e, 'No se pudo liberar el correo.'));
             setTrabajando(false);
         }
     };

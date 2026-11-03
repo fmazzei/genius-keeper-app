@@ -3970,6 +3970,7 @@ Pedido del dueño: Carolina salió y entra Erick, que usará `ventas@lacteoca.co
 - **Pantallas** (`AdminPanel`): al crear un vendedor o un usuario con un correo en uso, en vez de mandar a Firebase Console, **`CorreoEnUso.jsx`** dice de quién es y ofrece "Liberar el correo y crear la cuenta". Al suspender a un vendedor se pregunta si liberar su correo; al reactivarlo, si devolvérselo. La lista muestra "correo X liberado".
 - **Se quitó la "recuperación" silenciosa en el alta de vendedores**: si la contraseña escrita coincidía con la de la cuenta vieja, el vendedor nuevo heredaba el uid de quien se fue, con sus facturas, su cartera y sus comisiones.
 - Prueba: `node tests/cuentasCorreo.test.mjs` (10 en verde). No probado contra el emulador de Auth.
+- **Node.js 22 en las funciones (3-nov):** Google retiró Node.js 20 el 30-oct-2026 y desde entonces TODO deploy de funciones fallaba ("Runtime Node.js 20 was decommissioned"); por eso `cuentaCorreo` no existía y la pantalla decía "internal". `functions/package.json` → `engines.node: "22"`. `CorreoEnUso` ya no muestra "internal" suelto: dice que el servidor no respondió.
 
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 
