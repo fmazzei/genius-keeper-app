@@ -24,6 +24,7 @@ const { inventarioZoho } = require('./handlers/inventarioZoho');
 const { datosRutaMercaderista } = require('./handlers/rutaMercaderista');
 const { simularFusionPdv, fusionarPdv } = require('./handlers/fusionPdv');
 const { vigilanteAcciones } = require('./handlers/vigilante');
+const { cuentaCorreo } = require('./handlers/cuentasCorreo');
 
 // Conector MCP de solo lectura (claude.ai). Se exporta SOLO la función: el
 // módulo también expone utilidades internas para pruebas.
@@ -33,4 +34,4 @@ exports.mcp = require('./handlers/mcpServer').mcp;
 // las herramientas simulador_* del conector.
 exports.simulador = require('./handlers/simuladorApp').simulador;
 
-Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools, zohoReconcile, masterTools, zohoInvoicing, kromaEmpresas, ventasPlanta, inventarioPerpetuo, { inventarioZoho, datosRutaMercaderista, simularFusionPdv, fusionarPdv, vigilanteAcciones });
+Object.assign(exports, triggers, callable, scheduled, webhooks, reports, kromaNotifs, adminTools, zohoReconcile, masterTools, zohoInvoicing, kromaEmpresas, ventasPlanta, inventarioPerpetuo, { inventarioZoho, datosRutaMercaderista, simularFusionPdv, fusionarPdv, vigilanteAcciones, cuentaCorreo });

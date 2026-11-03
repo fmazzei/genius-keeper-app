@@ -382,6 +382,13 @@ service cloud.firestore {
 
     // Fusiones de PDV duplicados: registro + copia exacta de cada documento
     // tocado (para deshacer). Solo las escribe el servidor (fusionarPdv).
+    // Constancia de cada correo liberado o devuelto (cuentaCorreo): solo el
+    // servidor escribe; la lee el máster.
+    match /correos_liberados/{id} {
+      allow read: if isMaster();
+      allow write: if false;
+    }
+
     match /fusiones_pdv/{id} {
       allow read: if isMaster();
       allow write: if false;

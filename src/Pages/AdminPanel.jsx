@@ -15,6 +15,7 @@ import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
 import InformeVerificacionDoc from '../Components/InformeVerificacionDoc.jsx';
 import CarteraManager from '../Components/CarteraManager.jsx';
 import CorregirPagoSheet from '../Components/CorregirPagoSheet.jsx';
+import CorreoEnUso, { cuentaCorreo } from '../Components/CorreoEnUso.jsx';
 import { describirCambio } from '../utils/liquidacionCorrecciones.js';
 import { useAppConfig } from '../context/AppConfigContext.tsx';
 import { useTeamMetaMensual } from '../hooks/useTeamMetaMensual.js';
@@ -561,6 +562,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
     const [newUser, setNewUser]       = useState({ name: '', email: '', username: '', password: '' });
     const [isCreating, setIsCreating] = useState(false);
     const [createError, setCreateError] = useState('');
+    const [correoEnUso, setCorreoEnUso] = useState(null);
 
     useEffect(() => {
         const q = query(collection(db, 'users_metadata'), where('role', 'in', targetRoles));
@@ -621,7 +623,8 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                     setNewUser({ name: '', email: '', username: '', password: '' });
                     setIsModalOpen(false);
                 } catch (recoverErr) {
-                    setCreateError(`La cuenta de Auth ya existe con otra contraseña. Ve a Firebase Console → Authentication, elimina "${newUser.email.trim()}" e inténtalo de nuevo.`);
+                    // Es de otra persona: GK dice de quién y, si está inactiva, lo libera.
+                    setCorreoEnUso(newUser.email.trim());
                 }
             }
             else if (err.code === 'auth/weak-password') setCreateError('La contraseña debe tener al menos 6 caracteres.');
@@ -629,7 +632,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
         } finally { setIsCreating(false); }
     };
 
-    const closeModal = () => { setIsModalOpen(false); setCreateError(''); setNewUser({ name: '', email: '', username: '', password: '' }); };
+    const closeModal = () => { setIsModalOpen(false); setCreateError(''); setCorreoEnUso(null); setNewUser({ name: '', email: '', username: '', password: '' }); };
 
     if (loading) return <LoadingSpinner />;
 
@@ -711,6 +714,7 @@ const UserRoleManagement = ({ targetRoles, createRole, sectionLabel, sectionDesc
                         <p className="text-xs text-slate-500 mt-1">El usuario puede cambiarla desde su cuenta.</p>
                     </div>
                     {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg font-medium">{createError}</p>}
+                    {correoEnUso && <CorreoEnUso email={correoEnUso} onLiberado={() => { setCorreoEnUso(null); handleCreate({ preventDefault() {} }); }} />}
                     <div className="flex gap-3 pt-2">
                         <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button>
                         <button type="submit" disabled={isCreating} className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-brand-blue text-white rounded-lg font-semibold disabled:opacity-50">
@@ -1529,6 +1533,7 @@ const VendedoresManagement = () => {
     const [editTarget, setEditTarget]                 = useState(null);
     const [isCreating, setIsCreating]                 = useState(false);
     const [createError, setCreateError]               = useState('');
+    const [correoEnUso, setCorreoEnUso]               = useState(null);
     const [commissionTarget, setCommissionTarget]     = useState(null);
     const [carteraTarget, setCarteraTarget]           = useState(null);
     const [pendingCounts, setPendingCounts]           = useState({});
@@ -1566,6 +1571,7 @@ const VendedoresManagement = () => {
         setIsAddModalOpen(false);
         setEditTarget(null);
         setCreateError('');
+        setCorreoEnUso(null);
         setForm(EMPTY_FORM);
     };
 
@@ -1605,27 +1611,11 @@ const VendedoresManagement = () => {
             closeModal();
         } catch (err) {
             if (err.code === 'auth/email-already-in-use') {
-                try {
-                    const { initializeApp, deleteApp } = await import('firebase/app');
-                    const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
-                    const username = form.username.trim().toLowerCase().replace(/\s+/g, '_');
-                    const tempApp2  = initializeApp(FIREBASE_CONFIG, `recover-vendedor-${Date.now()}`);
-                    const tempAuth2 = getAuth(tempApp2);
-                    const { user } = await signInWithEmailAndPassword(tempAuth2, form.email.trim(), form.password);
-                    await setDoc(doc(db, 'users_metadata', user.uid), {
-                        name: form.name.trim(), email: form.email.trim(), username,
-                        role: 'vendedor', active: true,
-                        reporterId: form.reporterId, reporterName: form.reporterName,
-                        fechaIngreso: form.fechaIngreso || null,
-                        zohoSalespersonName: form.zohoSalespersonName.trim(),
-                    });
-                    await writeLoginIndex(username, form.email.trim(), user.uid);
-                    await tempAuth2.signOut();
-                    await deleteApp(tempApp2);
-                    closeModal();
-                } catch (recoverErr) {
-                    setCreateError(`La cuenta de Auth ya existe con otra contraseña. Ve a Firebase Console → Authentication, elimina "${form.email.trim()}" e inténtalo de nuevo.`);
-                }
+                // NO se "recupera" la cuenta vieja con la contraseña escrita: el
+                // vendedor nuevo heredaría el uid de quien se fue, con sus
+                // facturas, su cartera y sus comisiones. GK dice de quién es el
+                // correo y, si esa cuenta está inactiva o sin perfil, lo libera.
+                setCorreoEnUso(form.email.trim());
             }
             else if (err.code === 'auth/weak-password') setCreateError('La contraseña debe tener al menos 6 caracteres.');
             else setCreateError(`Error: ${err.message}`);
@@ -1667,7 +1657,27 @@ const VendedoresManagement = () => {
         setIsAddModalOpen(true);
     };
 
-    const handleToggleActive = (v) => updateDoc(doc(db, 'users_metadata', v.id), { active: !v.active }).catch(() => alert('No se pudo actualizar.'));
+    // Suspender NO borra: sus facturas, pagos y comisiones siguen para liquidarle.
+    // Al suspender se ofrece liberar su correo para dárselo a otra persona; al
+    // reactivar a alguien con el correo liberado, se ofrece devolvérselo.
+    const handleToggleActive = async (v) => {
+        const activar = v.active === false;
+        try {
+            await updateDoc(doc(db, 'users_metadata', v.id), { active: activar });
+        } catch { alert('No se pudo actualizar.'); return; }
+        try {
+            if (!activar && v.email && !v.emailOriginal && window.confirm(
+                `${v.name} quedó INACTIVO: ya no puede entrar y sus comisiones siguen para liquidarle.\n\n` +
+                `¿Liberar también su correo (${v.email}) para usarlo con otra persona?`)) {
+                await cuentaCorreo({ accion: 'liberar', email: v.email });
+                alert(`Listo: ${v.email} quedó libre. Ya puedes crear la cuenta nueva con ese correo.`);
+            } else if (activar && v.emailOriginal && window.confirm(
+                `${v.name} tenía el correo ${v.emailOriginal}, que se liberó al suspenderlo.\n\n¿Devolvérselo para que pueda entrar de nuevo?`)) {
+                await cuentaCorreo({ accion: 'restaurar', uid: v.id });
+                alert(`Listo: ${v.name} vuelve a entrar con ${v.emailOriginal}.`);
+            }
+        } catch (e) { alert(e?.message || 'No se pudo cambiar el correo.'); }
+    };
     const handleDelete = (v) => {
         if (!window.confirm(`¿Eliminar a "${v.name}"? Perderá el acceso de inmediato.`)) return;
         deleteDoc(doc(db, 'users_metadata', v.id)).catch(() => alert('No se pudo eliminar.'));
@@ -1711,6 +1721,7 @@ const VendedoresManagement = () => {
                                         <p className="font-semibold text-slate-800 truncate">{v.name || v.email}</p>
                                         <p className="text-xs text-slate-400 truncate">
                                             {v.username ? <span className="text-slate-500 font-medium">@{v.username}</span> : v.email}
+                                            {v.emailOriginal && <> · <span className="text-amber-600 font-medium">correo {v.emailOriginal} liberado</span></>}
                                             {v.reporterName && <> · <span className="text-slate-500">{v.reporterName}</span></>}
                                             {v.metaMensual > 0 && <> · <span className="text-emerald-600 font-medium">{v.metaMensual.toLocaleString()} uds/mes</span></>}
                                         </p>
@@ -1800,6 +1811,7 @@ const VendedoresManagement = () => {
                     </div>
 
                     {createError && <p className="text-red-600 text-sm bg-red-50 p-3 rounded-lg font-medium">{createError}</p>}
+                    {correoEnUso && <CorreoEnUso email={correoEnUso} onLiberado={() => { setCorreoEnUso(null); handleCreate({ preventDefault() {} }); }} />}
 
                     <div className="flex gap-3 pt-1">
                         <button type="button" onClick={closeModal} className="flex-1 py-3 px-4 border border-slate-300 rounded-lg font-semibold text-slate-700 hover:bg-slate-50">Cancelar</button>

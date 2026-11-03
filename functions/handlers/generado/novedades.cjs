@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-03-liberar-correo",
+    fecha: "2026-11-03",
+    roles: ["master"],
+    titulo: "Reusar el correo de quien se fue",
+    resumen: "Si un correo ya est\xE1 en uso, GK dice de qui\xE9n es y, si esa persona est\xE1 inactiva, lo libera para la cuenta nueva. Sus comisiones y pagos quedan para liquidarle."
+  },
+  {
     id: "2026-10-29-planilla-fecha",
     fecha: "2026-10-29",
     roles: ["master"],

@@ -3957,6 +3957,20 @@ Decisión del dueño: desde el **1-nov-2026** Carolina cobra una **comisión fij
 - **Vendedor**: el inicio usa el esquema del período en curso, anuncia el próximo cambio ("Tu comisión cambia el 01/11/2026: …") y con tasa fija dice "Tasa fija 4,5 %" en vez de un nivel.
 - Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/esquemaComision.test.mjs` (21 en verde: esquema por fecha, octubre intacto, factura de octubre cobrada en noviembre a la tasa de octubre, 4,5 % + 1,5 % a tiempo, foodservice y recuperadas al 4,5 %, comprobante = estado de cuenta, servidor = app).
 
+### Liberar el correo de quien se fue, sin perder sus comisiones (2026-11-03) ✅
+
+Pedido del dueño: Carolina salió y entra Erick, que usará `ventas@lacteoca.com`. Carolina se SUSPENDE (no se borra) porque falta liquidarle. Crear a Erick fallaba con "La cuenta de Auth ya existe… elimina el correo en Firebase Console".
+- **Lo que había de verdad** (revisado el 3-nov): `ventas@lacteoca.com` NO era de Carolina (ella entra con `carolina@lacteoca.com` y ya estaba inactiva). Era la cuenta de **Wilmer Casares** (`mFAMSyQiESSvGkrKVN7RutTGZNJ3`, vendedor de junio): su perfil en `users_metadata` se borró y su cuenta de acceso quedó viva, con 3 facturas anuladas y 29 entradas activas de `vendor_clients`. Además hay una cuenta `erick@lacteoca.com` creada el 3-nov sin perfil (un intento de alta que se quedó a medias).
+- **Callable `cuentaCorreo({accion, email|uid})`** (`functions/handlers/cuentasCorreo.js`, solo máster, nunca con la llave maestra):
+  - `consultar`: de quién es el correo (perfil o, si se borró, el `vendedorName` de su cartera), si está activo y su último acceso.
+  - `liberar`: solo si la cuenta está INACTIVA o no tiene perfil. Le pone un correo de archivo (`baja.<uid>.<marca>@<dominio>`), la desactiva, revoca su sesión y borra sus teléfonos (`users_metadata/{uid}/tokens`). El perfil guarda `emailOriginal`, `correoLiberadoAt` y `correoLiberadoPor`; `login_index` apunta al correo de archivo. **El uid no cambia**: facturas, pagos, cierres y comisiones siguen igual y se le sigue liquidando.
+  - `restaurar`: devuelve el correo original si nadie lo usa.
+  - Nunca toca el máster, las cuentas compartidas (`lacteoca@`, `anaquel@`, `produccion@`), una cuenta activa ni la propia.
+  - Constancia en `correos_liberados` (reglas: lee el máster, escribe solo el servidor).
+- **Pantallas** (`AdminPanel`): al crear un vendedor o un usuario con un correo en uso, en vez de mandar a Firebase Console, **`CorreoEnUso.jsx`** dice de quién es y ofrece "Liberar el correo y crear la cuenta". Al suspender a un vendedor se pregunta si liberar su correo; al reactivarlo, si devolvérselo. La lista muestra "correo X liberado".
+- **Se quitó la "recuperación" silenciosa en el alta de vendedores**: si la contraseña escrita coincidía con la de la cuenta vieja, el vendedor nuevo heredaba el uid de quien se fue, con sus facturas, su cartera y sus comisiones.
+- Prueba: `node tests/cuentasCorreo.test.mjs` (10 en verde). No probado contra el emulador de Auth.
+
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 
 Pedido del dueño: las alertas de los reportes deben llegar al máster y a la gerencia, abrir el reporte al tocarlas y decir las unidades; el reporte debe traer la coordenada de donde se hizo; y las alertas del sistema o del agente van solo al máster, en Configuraciones, con un punto rojo cuando llega una.
