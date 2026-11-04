@@ -11,6 +11,9 @@ import { computeEstadosDeCuenta, computeDesglosePeriodo, listPeriodos, carteraAc
 import { reglasDelVendedor, etiquetaFijo } from '../utils/periodosComision.js';
 import { cuentaEnCartera, motivoFuera } from '../utils/facturaEstado.js';
 import ComprobanteLiquidacionDoc from '../Components/ComprobanteLiquidacionDoc.jsx';
+import CrucesVerificacion, { InsigniaCruces } from '../Components/CrucesVerificacion.jsx';
+import { verificarLiquidacion, puedePagar, avisosDe, fotoDelCalculo, compararConHoy } from '../utils/verificarLiquidacion.js';
+import { nombresPlan } from '../utils/piezasComision.js';
 import LiquidacionDetalladaDoc from '../Components/LiquidacionDetalladaDoc.jsx';
 import InformeVerificacionDoc from '../Components/InformeVerificacionDoc.jsx';
 import CarteraManager from '../Components/CarteraManager.jsx';
@@ -2863,6 +2866,12 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
     const [pendingComp, setPendingComp] = useState(null);        // dataUrl del comprobante antes de confirmar
     const [compFileName, setCompFileName] = useState('');
     const [comprobantePago, setComprobantePago] = useState(null); // {liquidacion, estado, dataUrl} para el PDF del Paso 3
+    // Cruces de verificación (verificarLiquidacion.js): los avisos que el
+    // administrador marcó como revisados antes de pagar, y qué período tiene
+    // abiertos sus cruces en la lista.
+    const [revisados, setRevisados]     = useState(() => new Set());
+    const [verCruces, setVerCruces]     = useState('');
+    const { zohoSyncAt } = useAppConfig();
 
     useEffect(() => {
         if (vendedoresProp && vendedoresProp.length) return; // ya vienen del layout
@@ -2992,6 +3001,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
         setPeriodKey(pk); setMonto(''); setFecha(hoyStr); setNota('');
         setConcepto(''); setFijoTipo('');
         setPendingComp(null); setCompFileName(''); setOkMsg(''); setError('');
+        setRevisados(new Set());
         setPago({ paso: 2, periodKey: pk });
     };
     const adjuntarPendiente = async (file) => {
@@ -3007,6 +3017,12 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
         if (!vendedorId || !periodKey || !(Number(monto) > 0)) return;
         if (!concepto || (concepto === 'fijo' && !fijoTipo)) { setError('Elige primero qué vas a pagar: fijo o comisiones.'); return; }
         const estAntes = estados.find(e => e.periodKey === periodKey);
+        // Los cruces deciden: un error de esa cuenta impide pagar, y cada aviso
+        // tiene que estar marcado como revisado.
+        const ver = verifs[periodKey];
+        if (!ver || !puedePagar(ver.v, concepto)) { setError('Los cruces de verificación no cuadran: corrige lo que está en rojo antes de pagar.'); return; }
+        const faltan = avisosDe(ver.v, concepto).filter(a => !revisados.has(a.id));
+        if (faltan.length) { setError(`Marca como revisado: ${faltan.map(a => a.titulo).join(' · ')}.`); return; }
         if (concepto === 'fijo') {
             const tope = topePagoFijo(fijoTipo, baseMesVendedor, estAntes?.saldoFijo);
             if (Number(monto) > tope + 0.005) { setError(`El pago de fijo no puede pasar de ${money(tope)}.`); return; }
@@ -3020,6 +3036,10 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                 concepto, ...(concepto === 'fijo' ? { fijoTipo } : {}),
                 registradoPor: auth.currentUser?.uid || null, registradoPorEmail: auth.currentUser?.email || null,
                 comprobanteAdjunto: !!pendingComp, createdAt: serverTimestamp(),
+                // Foto del cálculo al pagar: lo que se pagó, de dónde salió y qué
+                // cruces pasó. Con ella el comprobante lo demuestra aunque después
+                // el cálculo cambie.
+                calculo: fotoDelCalculo(ver.d, ver.v, { concepto, monto: Number(monto), avisosRevisados: avisosDe(ver.v, concepto).map(a => a.titulo) }),
             });
             if (pendingComp) {
                 await setDoc(doc(db, 'liquidacion_comprobantes', ref.id), { dataUrl: pendingComp, vendedorId, subidoPor: auth.currentUser?.uid || null, subidoEn: serverTimestamp() });
@@ -3030,6 +3050,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                 concepto, fijoTipo: concepto === 'fijo' ? fijoTipo : null,
                 dataUrl: pendingComp,
                 saldoAntes: estAntes ? (concepto === 'fijo' ? estAntes.saldoFijo : estAntes.saldoComision) : null,
+                calculo: fotoDelCalculo(ver.d, ver.v, { concepto, monto: Number(monto), avisosRevisados: avisosDe(ver.v, concepto).map(a => a.titulo) }),
             });
         } catch (e) {
             setError(e.message || 'No se pudo registrar el pago.');
@@ -3039,6 +3060,20 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
     // Fijo mensual de la ficha de comisiones del vendedor (sueldo + viáticos):
     // la quincena es como máximo la mitad; el mes completo, todo.
     const baseMesVendedor = raw ? reglasDelVendedor(raw.meta).baseMes : 0;
+
+    // Cada período con su desglose (lo del comprobante) y sus cruces contra lo
+    // que ve el vendedor, sus facturas, sus pagos y Zoho.
+    const verifs = useMemo(() => {
+        const out = {};
+        if (!raw) return out;
+        const precioUnidad = Number(raw.meta?.commissionConfig?.precioUnidad) || 0;
+        estados.forEach(e => {
+            const d = computeDesglosePeriodo(raw.meta, raw.facturas, e.periodKey, { carteraSize: raw.carteraSize, cartera: raw.cartera, cerrados: raw.cerrados, liquidaciones: raw.liqs });
+            out[e.periodKey] = { d, v: verificarLiquidacion({ desglose: d, estado: e, facturas: raw.facturas, precioUnidad, zohoSyncAt, vendedorId }) };
+        });
+        return out;
+    }, [raw, estados, zohoSyncAt, vendedorId]);
+    const vDe = (pk) => verifs[pk]?.v || null;
 
     // Cierre/freeze de período (Fase 3.10): congela el devengado de un período
     // cerrado para que cobros tardíos / notas de crédito posteriores no alteren
@@ -3172,9 +3207,11 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                         ) : (
                             <div className="space-y-2">
                                 {estados.map(e => (
-                                    <div key={e.periodKey} className="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2 text-sm">
+                                    <React.Fragment key={e.periodKey}>
+                                    <div className="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2 text-sm">
                                         <div className="min-w-0">
                                             <p className="font-semibold text-slate-700">Mes {e.mes} <span className="text-slate-400 font-normal">· {e.rango}</span>{e.congelado && <span className="ml-1.5 text-[10px] font-bold text-blue-600">🔒 congelado</span>}</p>
+                                            <div className="my-0.5"><InsigniaCruces v={vDe(e.periodKey)} onClick={() => setVerCruces(v => v === e.periodKey ? '' : e.periodKey)} /></div>
                                             <p className="text-slate-400 text-xs">{e.cerrado ? 'Cerrado' : 'En curso'} · {e.comisionActiva === false ? (e.bonoNivelEscalon ? `Bono ${e.bonoNivelEscalon}` : 'sin comisión %') : `Nivel ${e.nivel}`} · {e.unidades.toLocaleString()} uds{e.baseUnidades === 'cobradas' ? ' cobradas' : ''}</p>
                                             {(e.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).length > 0 && (
                                                 <p className="text-slate-500 text-[11px]">{(e.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).map(b => `${b.nombre} ${money(b.monto)}`).join(' · ')}</p>
@@ -3203,10 +3240,12 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                             </div>
                                         </div>
                                     </div>
+                                    {verCruces === e.periodKey && <CrucesVerificacion v={vDe(e.periodKey)} abierto />}
+                                    </React.Fragment>
                                 ))}
                             </div>
                         )}
-                        <p className="text-slate-400 text-[11px] mt-3"><b>Comprobante detallado</b>: PDF con la evidencia de facturas por cada bono. <b>Congelar</b> fija el devengado de un período cerrado; <b>Reabrir</b> lo recalcula.</p>
+                        <p className="text-slate-400 text-[11px] mt-3"><b>Cruces</b>: cada cifra se vuelve a sumar por otro camino (lo que ve el vendedor, factura por factura, escalones, semanas, pagos); tócalos para verlos. <b>Comprobante detallado</b>: PDF con la evidencia de facturas por cada bono y los cruces. <b>Congelar</b> fija el devengado de un período cerrado; <b>Reabrir</b> lo recalcula.</p>
                     </div>
 
                     {/* Comprobante de CORTE (uno o varios meses) */}
@@ -3301,6 +3340,19 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                                             Corregido {c.at?.toDate ? c.at.toDate().toLocaleDateString('es-VE') : ''}{c.porEmail ? ` por ${c.porEmail}` : ''}: {describirCambio(c, { money, periodo: periodLabel })}. Motivo: {c.motivo}
                                                         </p>
                                                     ))}
+                                                    {(() => {
+                                                        // La foto del cálculo guardada al pagar, contra el cálculo de hoy.
+                                                        if (!l.calculo) return <p className="mt-1.5 text-[11px] text-slate-400">Registrado antes de los cruces: este pago no tiene foto del cálculo.</p>;
+                                                        const cmp = compararConHoy(l.calculo, vDe(l.periodKey)?.firma, verifs[l.periodKey]?.d);
+                                                        const varAntes = l.concepto === 'fijo' ? l.calculo.base : l.calculo.devengadoComision;
+                                                        const varHoy = l.concepto === 'fijo' ? cmp.baseHoy : cmp.hoy;
+                                                        return (
+                                                            <p className={`mt-1.5 text-[11px] rounded px-2 py-1 border ${cmp.estado === 'igual' ? 'text-emerald-800 bg-emerald-50 border-emerald-100' : 'text-amber-800 bg-amber-50 border-amber-100'}`}>
+                                                                Foto del cálculo · firma <b className="font-mono">{l.calculo.firma}</b>
+                                                                {cmp.estado === 'igual' ? ' · coincide con el cálculo de hoy.' : ` · el cálculo cambió desde el pago (al pagar ${money(varAntes)}, hoy ${money(varHoy)}). Revisa el comprobante.`}
+                                                            </p>
+                                                        );
+                                                    })()}
                                                     <div className="mt-2 pt-2 border-t border-slate-50 flex items-center gap-3">
                                                         {l.comprobanteAdjunto ? (
                                                             <button onClick={() => abrirComprobante(l.id)} className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">📎 Ver comprobante del banco</button>
@@ -3326,6 +3378,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                         <LiquidacionDetalladaDoc
                             desgloses={docDesgloses}
                             vendedorName={vendedores.find(v => v.id === vendedorId)?.name || ''}
+                            verifs={Object.fromEntries(Object.entries(verifs).map(([k, x]) => [k, x.v]))}
                             onClose={() => setDocDesgloses(null)}
                         />
                     )}
@@ -3351,6 +3404,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                     liquidacion={comprobante}
                     vendedorName={vendedores.find(v => v.id === vendedorId)?.name || ''}
                     estado={estados.find(e => e.periodKey === comprobante.periodKey) || null}
+                    verificacionHoy={verifs[comprobante.periodKey] || null}
                     onClose={() => setComprobante(null)}
                 />
             )}
@@ -3368,7 +3422,12 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                 const saldoDespues = pago.paso === 3
                     ? (pago.saldoAntes != null ? pago.saldoAntes - pago.monto : saldoConc(est))
                     : saldoConc(est) - nMonto;
-                const nombreConc = conc === 'fijo' ? `fijo (${tipoF === 'quincena' ? 'quincena' : 'mes completo'})` : 'comisiones';
+                const cuentaVar = nombresPlan(est?.cfg || raw?.meta?.commissionConfig || {}).cuenta;
+                const nombreConc = conc === 'fijo' ? `fijo (${tipoF === 'quincena' ? 'quincena' : 'mes completo'})` : cuentaVar.toLowerCase();
+                const verP = vDe(pago.periodKey);
+                const bloqueado = !!conc && !puedePagar(verP, conc);
+                const avisosPend = conc ? avisosDe(verP, conc).filter(a => !revisados.has(a.id)) : [];
+                const toggleRev = (id) => setRevisados(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
                 const Opcion = ({ activo, onClick, titulo, sub, disabled, tono = 'blue' }) => (
                     <button type="button" onClick={onClick} disabled={disabled}
                         className={`flex-1 text-left rounded-xl border-2 p-3 transition-colors disabled:opacity-40 ${activo ? (tono === 'sky' ? 'border-sky-500 bg-sky-50' : 'border-emerald-500 bg-emerald-50') : 'border-slate-200 bg-white'}`}>
@@ -3390,7 +3449,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                 {/* Las dos cuentas del período, siempre por separado */}
                                 <div className="grid grid-cols-2 gap-2 mb-4 text-xs">
                                     <div className={`rounded-lg border p-2.5 ${conc === 'comision' ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200'}`}>
-                                        <p className="font-black uppercase tracking-wider text-[10px] text-emerald-700">Comisiones</p>
+                                        <p className="font-black uppercase tracking-wider text-[10px] text-emerald-700">{cuentaVar}</p>
                                         <p className="text-slate-600">Ganadas {money(est?.devengadoComision)}</p>
                                         <p className="text-slate-600">Pagadas {money(est?.pagadoComision)}</p>
                                         <p className="font-bold text-amber-600">Por pagar {money(est?.saldoComision)}</p>
@@ -3411,7 +3470,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                             <Opcion activo={concepto === 'fijo'} tono="sky" titulo="Fijo" sub="Sueldo + viáticos"
                                                 onClick={() => { setConcepto('fijo'); setFijoTipo(''); setMonto(''); setError(''); }}
                                                 disabled={!est || est.saldoFijo <= 0.005} />
-                                            <Opcion activo={concepto === 'comision'} titulo="Comisiones" sub="Lo ganado por cobranza y bonos"
+                                            <Opcion activo={concepto === 'comision'} titulo={cuentaVar} sub="Lo ganado según su plan"
                                                 onClick={() => { setConcepto('comision'); setFijoTipo(''); setMonto(''); setError(''); }} />
                                         </div>
                                         {est && est.saldoFijo <= 0.005 && <p className="text-[11px] text-slate-500 -mt-2 mb-3">El fijo de este período ya está pagado.</p>}
@@ -3432,7 +3491,12 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                             </>
                                         )}
 
-                                        {(concepto === 'comision' || (concepto === 'fijo' && fijoTipo)) && (<>
+                                        {concepto && (
+                                            <div className="mb-3">
+                                                <CrucesVerificacion v={verP} concepto={concepto} revisados={revisados} onRevisar={toggleRev} />
+                                            </div>
+                                        )}
+                                        {(concepto === 'comision' || (concepto === 'fijo' && fijoTipo)) && !bloqueado && (<>
                                         {concepto === 'comision' && aFavorAntes(est) > 0.5 && (
                                             <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-xs text-amber-800">
                                                 En un mes anterior se le pagaron <b>{money(aFavorAntes(est))}</b> de comisiones de más. Para no pagarlos dos veces, haz un pago parcial que los descuenta:
@@ -3478,7 +3542,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
 
                                         <div className="flex gap-2 mt-4">
                                             <button onClick={cerrarWizard} className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-slate-100 text-slate-600">Cancelar</button>
-                                            <button onClick={confirmarPago} disabled={saving || !(nMonto > 0) || !concepto || (concepto === 'fijo' && !fijoTipo) || excedeTope} className="flex-1 py-2.5 rounded-lg text-sm font-bold bg-brand-blue text-white disabled:opacity-50">{saving ? 'Registrando…' : 'Confirmar pago'}</button>
+                                            <button onClick={confirmarPago} disabled={saving || !(nMonto > 0) || !concepto || (concepto === 'fijo' && !fijoTipo) || excedeTope || bloqueado || avisosPend.length > 0} className="flex-1 py-2.5 rounded-lg text-sm font-bold bg-brand-blue text-white disabled:opacity-50">{saving ? 'Registrando…' : bloqueado ? 'No cuadra: no se puede pagar' : avisosPend.length ? `Revisa ${avisosPend.length} aviso${avisosPend.length === 1 ? '' : 's'}` : 'Confirmar pago'}</button>
                                         </div>
                                     </>
                                 ) : (
@@ -3486,11 +3550,12 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                         <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-3">
                                             <p className="font-bold text-emerald-800 text-sm">✓ Pago de {nombreConc} registrado</p>
                                             <p className="text-sm text-slate-700 mt-1">Monto: <b>{money(pago.monto)}</b> · Fecha: <b>{pago.fecha}</b></p>
-                                            <p className="text-sm text-slate-700">{conc === 'fijo' ? 'Fijo' : 'Comisiones'} por pagar del período: <b>{money(pago.saldoAntes)}</b> → <b className="text-amber-600">{money(saldoDespues)}</b></p>
+                                            <p className="text-sm text-slate-700">{conc === 'fijo' ? 'Fijo' : cuentaVar} por pagar del período: <b>{money(pago.saldoAntes)}</b> → <b className="text-amber-600">{money(saldoDespues)}</b></p>
                                             <p className="text-xs text-slate-500 mt-1">Comprobante del banco: {pago.dataUrl ? <b className="text-emerald-700">adjunto ✓</b> : 'pendiente (adjúntalo en el Histórico)'}</p>
+                                            {pago.calculo?.firma && <p className="text-xs text-slate-500 mt-1">Foto del cálculo guardada con el pago · firma <b className="font-mono">{pago.calculo.firma}</b></p>}
                                         </div>
                                         <button
-                                            onClick={() => setComprobantePago({ liquidacion: { periodKey: pago.periodKey, monto: pago.monto, fecha: pago.fecha, nota, concepto: pago.concepto, fijoTipo: pago.fijoTipo, registradoPorEmail: auth.currentUser?.email }, estado: est, dataUrl: pago.dataUrl })}
+                                            onClick={() => setComprobantePago({ liquidacion: { periodKey: pago.periodKey, monto: pago.monto, fecha: pago.fecha, nota, concepto: pago.concepto, fijoTipo: pago.fijoTipo, registradoPorEmail: auth.currentUser?.email, calculo: pago.calculo }, estado: est, dataUrl: pago.dataUrl })}
                                             className="w-full py-2.5 rounded-lg text-sm font-bold bg-brand-blue text-white flex items-center justify-center gap-2"
                                         >
                                             <Receipt size={16} /> Descargar comprobante del pago
@@ -3510,6 +3575,7 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                     vendedorName={vendedores.find(v => v.id === vendedorId)?.name || ''}
                     estado={comprobantePago.estado}
                     comprobanteBanco={comprobantePago.dataUrl}
+                    verificacionHoy={verifs[comprobantePago.liquidacion.periodKey] || null}
                     onClose={() => setComprobantePago(null)}
                 />
             )}

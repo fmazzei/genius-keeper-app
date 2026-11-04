@@ -341,7 +341,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                 })()}
 
                 {desglose && (
-                    <LiquidacionDetalladaDoc desglose={desglose} vendedorName={vendedorName} onClose={() => setDesglose(null)} />
+                    <LiquidacionDetalladaDoc desglose={desglose} vendedorName={vendedorName} mostrarCruces={false} onClose={() => setDesglose(null)} />
                 )}
 
                 {/* Cómo gana: solo las piezas de SU plan, con su nombre (bono o comisión). */}

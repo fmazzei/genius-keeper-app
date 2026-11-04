@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-04-liquidacion-verificada",
+    fecha: "2026-11-04",
+    roles: ["master"],
+    titulo: "Pagar comisiones y bonos con cruces de verificaci\xF3n",
+    resumen: "Antes de pagar, Liquidaciones vuelve a sumar cada cifra por otro camino: lo que ve el vendedor, factura por factura, escalones, semanas y pagos. Si algo no cuadra no deja pagar, y el comprobante guarda la foto del c\xE1lculo con su firma."
+  },
+  {
     id: "2026-11-04-vendedor-ordenado",
     fecha: "2026-11-04",
     roles: ["vendedor", "master"],
