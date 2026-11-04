@@ -186,7 +186,7 @@ function PeriodoDetalle({ d, multi }) {
                 <table className="w-full text-[12px]" style={{ tableLayout: 'fixed' }}>
                     <colgroup><col style={{ width: '68%' }} /><col style={{ width: '32%' }} /></colgroup>
                     <tbody>
-                    {porOrigen && porOrigen.length > 0 ? porOrigen.map(g => (
+                    {d.comisionActiva === false ? null : porOrigen && porOrigen.length > 0 ? porOrigen.map(g => (
                         <tr key={g.mes}><td className="py-0.5 pr-2">Cobrado de facturas {g.mes === d.mes ? 'de este mes' : `del Mes ${g.mes}`} ({money(g.cobrado)}) × nivel {g.nivel} {g.tasa}%</td><td className="text-right align-top"><Num>{money(g.comision)}</Num></td></tr>
                     )) : (
                         <tr><td className="py-0.5 pr-2">Comisión nivel {d.nivel} ({d.tasa}% sobre lo cobrado)</td><td className="text-right align-top"><Num>{money(comisionNivel)}</Num></td></tr>
@@ -195,6 +195,11 @@ function PeriodoDetalle({ d, multi }) {
                     {d.bonoActivacionMonto > 0 && <tr><td className="py-0.5">Bono Activación ({d.bonoActRate}% × semanas logradas del mes de cada factura)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoActivacionMonto)}</Num></td></tr>}
                     {d.comisionFoodMonto > 0 && <tr><td className="py-0.5">Foodservice ({d.tasaFood}% de {money(d.cobradoFood)})</td><td className="text-right"><Num>{money(d.comisionFoodMonto)}</Num></td></tr>}
                     {d.bonoRecupMonto > 0 && <tr><td className="py-0.5">Cuentas recuperadas ({d.tasaRecup}%)</td><td className="text-right"><Num>{money(d.bonoRecupMonto)}</Num></td></tr>}
+                    {/* Bonos en USD del constructor por bloques */}
+                    {d.bonoActivacionUSDMonto > 0 && <tr><td className="py-0.5">Bono Activación en dólares (${d.bonoActivacionUSD} × {d.semanasLogradas} de {d.semanasTotales} semanas)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoActivacionUSDMonto)}</Num></td></tr>}
+                    {(d.bloques || []).filter(b => ['bonoNivel', 'bonoCrecimiento'].includes(b.id)).map(b => (
+                        <tr key={b.id}><td className="py-0.5 pr-2">{b.nombre}{b.detalle ? ` (${b.detalle})` : ''}</td><td className="text-right align-top"><Num color={b.monto > 0 ? '#127c3e' : undefined}>{money(b.monto)}</Num></td></tr>
+                    ))}
                     <tr className="border-t-2" style={{ borderColor: NAVY }}><td className="py-1 font-bold">COMISIONES GANADAS</td><td className="text-right"><Num bold color={NAVY}>{money(d.devengadoComision)}</Num></td></tr>
                     <tr><td className="py-0.5">Comisiones pagadas</td><td className="text-right"><Num color="#127c3e">{money(d.pagadoComision)}</Num></td></tr>
                     <tr><td className="py-0.5 font-bold">{d.saldoComision < -0.5 ? 'Comisiones pagadas de más' : 'Comisiones por pagar'}</td><td className="text-right"><Num bold color={d.saldoComision > 0.5 ? '#b45309' : '#127c3e'}>{money(Math.abs(d.saldoComision))}</Num></td></tr>
@@ -207,8 +212,12 @@ function PeriodoDetalle({ d, multi }) {
 
             {/* Facturación → nivel */}
             <div className="px-8 gk-sec">
-                <SecTitle>FACTURACIÓN — DEFINE EL NIVEL</SecTitle>
-                <p className="text-[11px] text-slate-600 mb-1">Colocó <b>{uds(d.unidades)}</b> de <b>{uds(d.metaMensual)}</b> uds ({d.pct}% de la meta) → <b>Nivel {d.nivel}</b> (tasa {d.tasa}%). Esa tasa se aplica a estas facturas en el mes en que se cobren.</p>
+                <SecTitle>{d.baseUnidades === 'cobradas' ? 'FACTURACIÓN DEL MES' : 'FACTURACIÓN — DEFINE EL NIVEL'}</SecTitle>
+                {d.baseUnidades === 'cobradas' ? (
+                    <p className="text-[11px] text-slate-600 mb-1">Su meta y sus bonos se miden con las unidades <b>cobradas</b> en el mes: <b>{uds(d.unidades)}</b> de <b>{uds(d.metaMensual)}</b> uds ({d.pct}% de la meta){d.bonoNivel?.escalon ? <> → escalón <b>{d.bonoNivel.escalon.etiqueta}</b></> : ''}. Lo facturado sin cobrar todavía no cuenta.</p>
+                ) : (
+                    <p className="text-[11px] text-slate-600 mb-1">Colocó <b>{uds(d.unidades)}</b> de <b>{uds(d.metaMensual)}</b> uds ({d.pct}% de la meta) → <b>Nivel {d.nivel}</b> (tasa {d.tasa}%). Esa tasa se aplica a estas facturas en el mes en que se cobren.</p>
+                )}
                 <p className="text-[11px] mb-1" style={{ color: '#334155' }}>De lo facturado este mes ya se cobró <b style={{ color: '#127c3e' }}>{money(d.cobradoDeLoFacturado ?? 0)}</b> de <b>{money(d.facturadoMonto)}</b> · <b>{d.nPagadas}</b> de <b>{d.nFacturas}</b> facturas pagadas.</p>
                 <FacturasTable rows={d.facturas} empty="Sin facturación en el período." />
             </div>

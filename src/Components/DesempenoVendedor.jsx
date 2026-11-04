@@ -452,6 +452,9 @@ export default function DesempenoVendedor({ ev, anio, nombre, ventana = 'mes', o
                                     <p className="text-xs text-slate-500 mt-1.5">
                                         Nivel de comisión <b className="text-slate-700">{ev.comision.nivel} ({(ev.comision.tasa * 100).toLocaleString('es-VE', { maximumFractionDigits: 1 })}%)</b>
                                         {ev.comision.generada != null && <>{' · '}comisión devengada en el mes (lo cobrado): <b className="text-slate-700">{money0(ev.comision.generada)}</b></>}
+                                        {(ev.comision.bloques || []).filter(b => Number(b.monto)).length > 0 && (
+                                            <span className="block mt-0.5">{(ev.comision.bloques || []).filter(b => Number(b.monto)).map(b => `${b.nombre} ${money0(b.monto)}`).join(' · ')}</span>
+                                        )}
                                     </p>
                                 )}
                                 {p.sinIngreso && <p className="text-xs text-amber-700 mt-2">Sin fecha de ingreso: se evalúa el mes de calendario con la meta plena.</p>}

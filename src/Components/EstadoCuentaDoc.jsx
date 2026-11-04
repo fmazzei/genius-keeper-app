@@ -164,8 +164,14 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
                                         <td className="py-1.5 px-2 break-words">
                                             <span className="font-bold">Mes {e.mes}</span> · {e.rango} {e.periodKey?.slice(0, 4)}
                                             <span className="block text-[10px] text-slate-500 break-words">
-                                                {e.cerrado ? 'Cerrado' : 'En curso'} · Nivel {e.nivel} ({e.tasa}%) · {uds(e.unidades)} uds{e.cobranzaTasa != null ? ` · cobr. ${Math.round(e.cobranzaTasa)}%` : ''}
+                                                {e.cerrado ? 'Cerrado' : 'En curso'} · {e.comisionActiva === false ? 'sin comisión %' : `Nivel ${e.nivel} (${e.tasa}%)`} · {uds(e.unidades)} uds{e.baseUnidades === 'cobradas' ? ' cobradas' : ''}{e.cobranzaTasa != null ? ` · cobr. ${Math.round(e.cobranzaTasa)}%` : ''}
                                             </span>
+                                            {/* Lo variable por bloque (comisión %, bonos en USD, bonos %). */}
+                                            {(e.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).length > 0 && (
+                                                <span className="block text-[10px] text-slate-600 break-words">
+                                                    {(e.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).map(b => `${b.nombre} ${n2(b.monto)}`).join(' · ')}
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="py-1.5 px-1 text-right tabular-nums">{n2(e.devengadoComision)}</td>
                                         <td className="py-1.5 px-1 text-right tabular-nums" style={{ color: '#127c3e' }}>{n2(e.pagadoComision)}</td>
@@ -232,7 +238,7 @@ export default function EstadoCuentaDoc({ estados = [], vendedorName = 'Vendedor
                     {/* ── Notas ── */}
                     <div className="px-8 pt-5 pb-6 text-[10.5px] text-slate-600 leading-relaxed">
                         <p className="font-bold" style={{ color: NAVY }}>Notas</p>
-                        <p className="mt-1">Comisiones = lo cobrado × la tasa del nivel del mes en que se facturó, más bonos, foodservice y cuentas recuperadas.</p>
+                        <p className="mt-1">Comisiones = lo cobrado × la tasa del nivel del mes en que se facturó, más bonos (en % o en USD), foodservice y cuentas recuperadas. Bajo cada mes, lo ganado por bloque.</p>
                         <p>Fijo = sueldo + viáticos del período (en proporción a sus días si el período es corto). Se paga por quincena o completo.</p>
                         <p>Cada pago registrado por administración indica si es de fijo o de comisiones. Los pagos anteriores a esa separación se aplicaron primero al fijo del período y el resto a comisiones.</p>
                         <p>Saldo = ganado − pagado, en cada cuenta por separado.</p>

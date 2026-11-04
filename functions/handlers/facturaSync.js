@@ -18,6 +18,7 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { mesCohorteFromDate, periodoCohorteFromDate, diffDias, DEFAULT_COMMISSION_CONFIG } = require('./commissionEngine');
 const { congelarTasaCohorte, procesarPagoFactura, normalizeCustomerKey } = require('./facturaCommissionOps');
+const { vendedorDelCarnetEnFecha, tieneTraspasos } = require('./traspasoReglas');
 
 const toDate = (value) => {
     if (!value) return null;
@@ -128,6 +129,16 @@ function resolveVendedorFromPreload(invoice, preload) {
     const cid = invoice.customer_id != null && invoice.customer_id !== '' ? String(invoice.customer_id) : null;
     if (cid && preload.clienteMap && preload.clienteMap.has(cid)) {
         const c = preload.clienteMap.get(cid);
+        // Traspaso con fecha de corte: la factura es del vendedor que tenía el
+        // cliente en su fecha (el historial no se mueve con el traspaso).
+        if (tieneTraspasos(c)) {
+            const pago = invoice.status === 'paid' ? (invoice.last_payment_date || invoice.payment_date || null) : null;
+            const { vendedorId: dueno, porTraspaso } = vendedorDelCarnetEnFecha(c, invoice.date, invoice.invoice_number, pago);
+            if (porTraspaso) {
+                if (dueno && preload.vendedorById.has(dueno)) return { id: dueno, data: preload.vendedorById.get(dueno) };
+                if (!dueno) return null;
+            }
+        }
         if (c.esOficina) return null; // oficina: sin vendedor, intencional
         if (c.vendedorId && preload.vendedorById.has(c.vendedorId)) {
             return { id: c.vendedorId, data: preload.vendedorById.get(c.vendedorId) };
@@ -219,6 +230,22 @@ async function upsertFacturaFromZoho(invoice, appConfig, opts = {}) {
     } else {
         vendedor = await resolveVendedorPorRazonSocial(invoice.customer_name);
         if (!vendedor) vendedor = await resolveVendedor(invoice.salesperson_name);
+        // Webhook: si el carnet tuvo un traspaso con fecha de corte, manda la fecha.
+        const cidW = invoice.customer_id != null && invoice.customer_id !== '' ? String(invoice.customer_id) : null;
+        if (cidW) {
+            try {
+                const cs = await admin.firestore().doc(`clientes_zoho/${cidW.replace(/\//g, '-')}`).get();
+                const c = cs.exists ? cs.data() : null;
+                if (tieneTraspasos(c)) {
+                    const pago = invoice.status === 'paid' ? (invoice.last_payment_date || invoice.payment_date || null) : null;
+                    const { vendedorId: dueno, porTraspaso } = vendedorDelCarnetEnFecha(c, invoice.date, invoice.invoice_number, pago);
+                    if (porTraspaso && dueno && dueno !== vendedor?.id) {
+                        const vs = await admin.firestore().doc(`users_metadata/${dueno}`).get();
+                        if (vs.exists) vendedor = { id: dueno, data: vs.data() };
+                    }
+                }
+            } catch (e) { /* sin el carnet, la resolución de siempre */ }
+        }
     }
 
     // Conciliación POR VENDEDOR: descarta de inmediato las facturas de otros

@@ -91,8 +91,23 @@ var DEFAULT_COMMISSION_CONFIG = {
   // precio de venta por unidad foodservice
   comisionFoodservice: 5,
   // % flat sobre lo cobrado de facturas foodservice
-  metaKgFoodservice: 0
+  metaKgFoodservice: 0,
   // kg de queso foodservice al mes (0 = sin meta)
+  // BLOQUES (constructor de remuneración, 3-nov-2026; ver bloquesRemuneracion.js).
+  comisionActiva: true,
+  // false = sin comisión % (solo fijo y/o bonos en USD)
+  baseUnidades: "facturadas",
+  // 'cobradas' = unidades de facturas cobradas en el período
+  bonoNivel: null,
+  // {activo, escalones:[{etiqueta, minUnidades|minPct, montoUSD}]}
+  bonoActivacionUSD: 0,
+  // Bono Activación en USD × semanas logradas ÷ semanas (además del %)
+  bonoCrecimiento: null,
+  // {activo, pct, montoUSD}
+  bonoNivelFood: null,
+  // {activo, escalones:[{etiqueta, minKg | minPct, montoUSD}]} — foodservice, en kg contra metaKgFoodservice
+  bonoCrecimientoFood: null
+  // {activo, pct, montoUSD} — foodservice, kg contra el mes anterior
 };
 
 // src/utils/periodosComision.js
@@ -112,21 +127,26 @@ var pad = (n) => String(n).padStart(2, "0");
 var claveDe = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 var diasEntre = (a, b) => Math.round((b - a) / DIA);
 var diasDelMes = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-function periodosDeEmpleo(fechaIngreso, hasta = /* @__PURE__ */ new Date(), { desde = CIERRE_MES_CALENDARIO_DESDE } = {}) {
+function periodosDeEmpleo(fechaIngreso, hasta = /* @__PURE__ */ new Date(), { desde = CIERRE_MES_CALENDARIO_DESDE, cese = null } = {}) {
   const ingreso = fechaLocal(fechaIngreso);
   if (!ingreso) return [];
   const corte = desde ? fechaLocal(desde) : null;
+  const finCese = cese && fechaLocal(cese) ? new Date(fechaLocal(cese).getFullYear(), fechaLocal(cese).getMonth(), fechaLocal(cese).getDate() + 1) : null;
   const out = [];
   let start = ingreso;
   for (let i = 0; i < 1200; i++) {
+    if (finCese && start >= finCese) break;
     const calendario = !!corte && start >= corte;
-    const end = calendario ? new Date(start.getFullYear(), start.getMonth() + 1, 1) : addMonths(ingreso, i + 1);
+    const endPleno = calendario ? new Date(start.getFullYear(), start.getMonth() + 1, 1) : addMonths(ingreso, i + 1);
+    const conCese = !!(finCese && endPleno > finCese);
+    const end = conCese ? finCese : endPleno;
     const dias = diasEntre(start, end);
-    const fraccion = calendario ? dias / diasDelMes(start) : 1;
+    const diasPleno = calendario ? diasDelMes(start) : diasEntre(start, endPleno);
+    const fraccion = calendario || conCese ? dias / diasPleno : 1;
     const corto = fraccion < 1;
-    const transicion = corto && i > 0;
-    out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto, transicion });
-    if (end > hasta) break;
+    const transicion = corto && i > 0 && !conCese;
+    out.push({ i, mes: i + 1, start, end, periodKey: claveDe(start), dias, calendario, fraccion, corto, transicion, cese: conCese });
+    if (conCese || end > hasta) break;
     start = end;
   }
   return out;
@@ -150,6 +170,9 @@ function normalizarEsquema(config = {}) {
   const c = { ...DEFAULT_COMMISSION_CONFIG, ...config };
   for (const k of Object.keys(DEFAULT_COMMISSION_CONFIG)) {
     if (c[k] === void 0 || c[k] === null) c[k] = DEFAULT_COMMISSION_CONFIG[k];
+  }
+  if (c.comisionActiva === false) {
+    return { ...c, tiers: [], bajaActiva: true, bajaRate: 0, bajaLabel: "Sin comisi\xF3n %" };
   }
   if (c.esquema === "fija") {
     return { ...c, tiers: [], bajaActiva: true, bajaRate: Number(c.tasaFija) || 0, bajaLabel: c.tasaFijaLabel || "Tasa fija" };
@@ -200,11 +223,16 @@ function quincenasDe(p) {
   return out;
 }
 var baseDePeriodo = (p, { baseMes }) => {
+  if (p.cese) return baseMes / 2 * quincenasDe(p).length;
   if (p.corto && !p.transicion) return baseMes * (p.fraccion ?? 1);
   return baseMes / 2 * quincenasDe(p).length;
 };
 var ddmm = (d) => `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
 function etiquetaFijo(p) {
+  if (p?.cese) {
+    const q = quincenasDe(p);
+    return q.length ? `Fijo hasta el cese (${q.length === 1 ? "quincena" : "quincenas"} del ${q.map(ddmm).join(" y ")})` : "Fijo hasta el cese (sin quincena cerrada)";
+  }
   if (p?.transicion) {
     const q = quincenasDe(p);
     return q.length === 1 ? `Fijo (quincena del ${ddmm(q[0])})` : `Fijo (${q.length} quincenas)`;
@@ -218,7 +246,7 @@ function notaTransicion(p) {
   return `El fijo se paga por quincenas (el 15 y el \xFAltimo d\xEDa del mes). Este per\xEDodo lleva ${q.length === 1 ? "la quincena" : "las quincenas"} del ${q.map(ddmm).join(" y ")}.`;
 }
 function periodosConMeta(vendedor = {}, hasta = /* @__PURE__ */ new Date(), opts) {
-  return periodosDeEmpleo(vendedor.fechaIngreso, hasta, opts).map((p) => {
+  return periodosDeEmpleo(vendedor.fechaIngreso, hasta, { ...opts || {}, cese: vendedor.fechaCese || null }).map((p) => {
     const reglas = reglasDelVendedor(vendedor, p.start);
     return {
       ...p,

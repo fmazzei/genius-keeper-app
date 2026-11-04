@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-03-remuneracion-bloques',
+        fecha: '2026-11-03',
+        roles: ['master'],
+        titulo: 'Comisiones por bloques y traspaso de cartera',
+        resumen: 'El esquema de cada vendedor se arma por bloques: fijo, comisión %, bono por nivel en USD, Activación (en % o en dólares) y crecimiento, y foodservice con sus propios bonos y su meta en kg, con plantillas y vista previa. Nuevo en Comercial: "Traspasar cartera" (toda o algunos clientes) sin duplicados, y al desactivar un vendedor se pide su fecha de cese.',
+    },
+    {
         id: '2026-11-03-kroma-hold-consumibles',
         fecha: '2026-11-03',
         roles: ['master'],

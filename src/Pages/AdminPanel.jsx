@@ -30,6 +30,9 @@ import AlertaAnaquelConfig from '@/Components/AlertaAnaquelConfig.jsx';
 import CentroNotificacionesConfig from '@/Components/CentroNotificacionesConfig.jsx';
 import FacturacionClientes from './FacturacionClientes.jsx';
 import VendorKpiConfig from '../Components/VendorKpiConfig.jsx';
+import DesgloseBloques from '@/Components/DesgloseBloques.jsx';
+import TraspasoCartera from '@/Components/TraspasoCartera.jsx';
+import CeseVendedor from '@/Components/CeseVendedor.jsx';
 
 // Índice público usuario→correo para permitir login por NOMBRE DE USUARIO.
 // Se escribe al crear/editar cualquier usuario con username.
@@ -1536,6 +1539,7 @@ const VendedoresManagement = () => {
     const [correoEnUso, setCorreoEnUso]               = useState(null);
     const [commissionTarget, setCommissionTarget]     = useState(null);
     const [carteraTarget, setCarteraTarget]           = useState(null);
+    const [ceseTarget, setCeseTarget]                 = useState(null);
     const [pendingCounts, setPendingCounts]           = useState({});
 
     const EMPTY_FORM = { name: '', email: '', username: '', password: '', reporterId: '', reporterName: '', fechaIngreso: '', zohoSalespersonName: '' };
@@ -1662,9 +1666,18 @@ const VendedoresManagement = () => {
     // reactivar a alguien con el correo liberado, se ofrece devolvérselo.
     const handleToggleActive = async (v) => {
         const activar = v.active === false;
+        // Desactivar a un vendedor pide su FECHA DE CESE (decisión del dueño, 3-nov):
+        // sus comisiones se congelan hasta ese día y sus abiertas pasan al heredero.
+        if (!activar) { setCeseTarget(v); return; }
         try {
-            await updateDoc(doc(db, 'users_metadata', v.id), { active: activar });
-        } catch { alert('No se pudo actualizar.'); return; }
+            await updateDoc(doc(db, 'users_metadata', v.id), { active: true });
+            if (v.fechaCese && window.confirm(`${v.name} tenía fecha de cese ${v.fechaCese}. ¿Anularla? (sus facturas abiertas en esa fecha vuelven a ser suyas)`)) {
+                await httpsCallable(functions, 'registrarCese')({ vendedorId: v.id, accion: 'anular' });
+            }
+        } catch (e) { alert(e?.message || 'No se pudo actualizar.'); return; }
+        await despuesDeCambiarActivo(v, true);
+    };
+    const despuesDeCambiarActivo = async (v, activar) => {
         try {
             if (!activar && v.email && !v.emailOriginal && window.confirm(
                 `${v.name} quedó INACTIVO: ya no puede entrar y sus comisiones siguen para liquidarle.\n\n` +
@@ -1729,8 +1742,13 @@ const VendedoresManagement = () => {
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                     <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${v.active !== false ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                        {v.active !== false ? 'Activo' : 'Inactivo'}
+                                        {v.active !== false ? 'Activo' : v.fechaCese ? `Cesó ${v.fechaCese.split('-').reverse().join('/')}` : 'Inactivo'}
                                     </span>
+                                    {v.active === false && (
+                                        <button onClick={() => setCeseTarget(v)} className="text-[11px] font-semibold text-red-600 hover:underline" title="Fecha en que dejó la empresa">
+                                            {v.fechaCese ? 'Cambiar cese' : 'Registrar cese'}
+                                        </button>
+                                    )}
                                     <ToggleSwitch enabled={v.active !== false} setEnabled={() => handleToggleActive(v)} />
                                     <button onClick={() => setCarteraTarget(v)} className="relative p-2 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-full transition-colors" title="Cartera de clientes">
                                         <Briefcase size={16} />
@@ -1871,6 +1889,15 @@ const VendedoresManagement = () => {
             >
                 {carteraTarget && <CarteraManager vendedor={carteraTarget} />}
             </Modal>
+
+            {/* Fecha de cese: se pide al desactivar a un vendedor. */}
+            {ceseTarget && (
+                <CeseVendedor
+                    vendedor={ceseTarget}
+                    onCancelar={() => setCeseTarget(null)}
+                    onListo={async () => { const v = ceseTarget; setCeseTarget(null); if (v.active !== false) await despuesDeCambiarActivo(v, false); }}
+                />
+            )}
         </div>
     );
 };
@@ -3147,7 +3174,10 @@ export const LiquidacionesManagement = ({ vendedores: vendedoresProp, lockedVend
                                     <div key={e.periodKey} className="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-3 py-2 text-sm">
                                         <div className="min-w-0">
                                             <p className="font-semibold text-slate-700">Mes {e.mes} <span className="text-slate-400 font-normal">· {e.rango}</span>{e.congelado && <span className="ml-1.5 text-[10px] font-bold text-blue-600">🔒 congelado</span>}</p>
-                                            <p className="text-slate-400 text-xs">{e.cerrado ? 'Cerrado' : 'En curso'} · Nivel {e.nivel} · {e.unidades.toLocaleString()} uds</p>
+                                            <p className="text-slate-400 text-xs">{e.cerrado ? 'Cerrado' : 'En curso'} · {e.comisionActiva === false ? (e.bonoNivelEscalon ? `Bono ${e.bonoNivelEscalon}` : 'sin comisión %') : `Nivel ${e.nivel}`} · {e.unidades.toLocaleString()} uds{e.baseUnidades === 'cobradas' ? ' cobradas' : ''}</p>
+                                            {(e.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).length > 0 && (
+                                                <p className="text-slate-500 text-[11px]">{(e.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).map(b => `${b.nombre} ${money(b.monto)}`).join(' · ')}</p>
+                                            )}
                                         </div>
                                         <div className="text-right shrink-0">
                                             <p className="text-slate-700 text-xs">Comisiones {money(e.devengadoComision)} · pag. {money(e.pagadoComision)} → <b className={e.saldoComision > 0.5 ? 'text-amber-600' : 'text-emerald-600'}>{money(e.saldoComision)}</b></p>
@@ -4086,8 +4116,11 @@ export const ConciliacionFacturas = ({ vendedores: vendedoresProp, lockedVendedo
                                     En este mes se pagaron <b>{money(-desgloseActual.saldoComision)}</b> de comisiones de más: son cobros que ahora cuentan en el mes siguiente (no es dinero perdido ni duplicado). Descuéntalo al liquidar el mes siguiente.
                                 </p>
                             )}
+                            <div className="mt-2"><DesgloseBloques fila={desgloseActual} tema="claro" titulo="Lo ganado, por bloque" /></div>
                             <p className="text-slate-400 text-[10px] mt-1.5">
-                                Comisión = lo cobrado EN este período × la tasa del nivel del mes en que se facturó + bonos (este mes: nivel {desgloseActual.nivel}, {desgloseActual.tasa}%). Lo que se cobre después de cerrar entra al mes siguiente. El comprobante detalla el número factura por factura.
+                                {desgloseActual.comisionActiva === false
+                                    ? <>Sin comisión %: lo variable son los bonos en USD, medidos con las unidades {desgloseActual.baseUnidades === 'cobradas' ? 'cobradas' : 'facturadas'} del período. El comprobante detalla cada factura.</>
+                                    : <>Comisión = lo cobrado EN este período × la tasa del nivel del mes en que se facturó + bonos (este mes: nivel {desgloseActual.nivel}, {desgloseActual.tasa}%). Lo que se cobre después de cerrar entra al mes siguiente. El comprobante detalla el número factura por factura.</>}
                             </p>
                             {onLiquidar && (
                                 <button onClick={onLiquidar} className="w-full mt-3 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-3 rounded-lg">
@@ -4369,7 +4402,10 @@ export const ComisionesDashboard = ({ vendedores: vendedoresProp, onPagar } = {}
                                             <div key={p.periodKey} className="flex items-center justify-between px-4 py-2 text-sm">
                                                 <div>
                                                     <p className="text-slate-700">Mes {p.mes} <span className="text-slate-400 font-normal">· {p.rango} · {p.periodKey?.slice(0, 4)}</span>{p.congelado && <span className="ml-1 text-[10px] text-blue-600">🔒</span>}</p>
-                                                    <p className="text-slate-400 text-xs">{p.cerrado ? 'Cerrado' : 'En curso'} · Nivel {p.nivel}</p>
+                                                    <p className="text-slate-400 text-xs">{p.cerrado ? 'Cerrado' : 'En curso'} · {p.comisionActiva === false ? (p.bonoNivelEscalon ? `Bono ${p.bonoNivelEscalon}` : 'sin comisión %') : `Nivel ${p.nivel}`}</p>
+                                                    {(p.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).length > 0 && (
+                                                        <p className="text-slate-500 text-[11px]">{(p.bloques || []).filter(b => b.cuenta !== 'fijo' && Number(b.monto)).map(b => `${b.nombre} ${money(b.monto)}`).join(' · ')}</p>
+                                                    )}
                                                 </div>
                                                 <div className="text-right">
                                                     <p className="text-slate-600 text-xs">Comisiones {money(p.devengadoComision)} · pag. {money(p.pagadoComision)} → <b className={p.saldoComision > 0.5 ? 'text-amber-600' : 'text-emerald-600'}>{money(p.saldoComision)}</b></p>
@@ -5275,6 +5311,7 @@ const AdminPanel = ({ user, posList, reports, loading, alertasAgente = null }) =
                 { id: 'facturacion', label: 'Facturación', Icon: Receipt, badge: 'Nuevo' },
                 { id: 'vendor_kpis', label: 'KPIs del Vendedor', Icon: LayoutGrid, badge: 'Nuevo' },
                 { id: 'liquidaciones', label: 'Liquidaciones', Icon: Wallet },
+                { id: 'traspaso_cartera', label: 'Traspasar cartera', Icon: Users, badge: 'Nuevo' },
                 { id: 'depots',      label: 'Depósitos',        Icon: Warehouse },
                 { id: 'almacen_comercial', label: 'Almacén Comercial', Icon: Truck },
                 { id: 'competitors', label: 'Competidores',     Icon: ShoppingCart },
@@ -5339,6 +5376,7 @@ const AdminPanel = ({ user, posList, reports, loading, alertasAgente = null }) =
             case 'facturacion':    return <FacturacionClientes />;
             case 'vendor_kpis':    return <VendorKpiConfig />;
             case 'liquidaciones':  return <LiquidacionesManagement />;
+            case 'traspaso_cartera': return <TraspasoCartera />;
             case 'depots':         return <DepotManagement />;
             case 'almacen_comercial': return <AlmacenComercialPage canPicking />;
             case 'competitors':    return <CompetitorManagement />;

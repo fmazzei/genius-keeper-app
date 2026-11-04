@@ -41,6 +41,13 @@ const DEFAULT_COMMISSION_CONFIG = {
     precioUnidadFoodservice: 4.8,
     comisionFoodservice: 5.0,
     metaKgFoodservice: 0,
+    // Bloques (constructor de remuneración): ver src/utils/bloquesRemuneracion.js.
+    // Los bonos en USD nunca van en la comisión provisional de una factura.
+    comisionActiva: true,
+    baseUnidades: 'facturadas',
+    bonoNivel: null,
+    bonoActivacionUSD: 0,
+    bonoCrecimiento: null, bonoNivelFood: null, bonoCrecimientoFood: null,
 };
 
 /**
@@ -51,7 +58,8 @@ function buildTiers(config) {
     // Un esquema de TASA FIJA llega normalizado sin niveles (configEnFecha): por
     // debajo de "ningún nivel" paga la tasa fija (bajaRate). Solo un esquema por
     // niveles sin niveles cargados cae a los de por defecto.
-    const sinNiveles = config.esquema === 'fija';
+    // Lo mismo sin bloque de comisión % (comisionActiva:false): tasa 0.
+    const sinNiveles = config.esquema === 'fija' || config.comisionActiva === false;
     const tiers = (sinNiveles ? [] : (config.tiers && config.tiers.length > 0 ? config.tiers : DEFAULT_COMMISSION_CONFIG.tiers))
         .slice()
         .sort((a, b) => b.minPct - a.minPct)

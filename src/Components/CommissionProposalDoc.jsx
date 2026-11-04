@@ -9,7 +9,8 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, Shield, Zap, Target, Package, ArrowUpRight, RotateCcw } from 'lucide-react';
+import { X, Printer, Shield, Zap, Target, Package, ArrowUpRight, RotateCcw, Award } from 'lucide-react';
+import { escalonesBonoNivel, maximoBonosUSD, previaEsquema } from '@/utils/bloquesRemuneracion.js';
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 const uds   = (n) => `${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
@@ -20,7 +21,9 @@ function computeProposal(config = {}) {
     const viaticosMes = (Number(config.viaticosSemanales) || 0) * 4;
     const base   = fijo + viaticosMes;
 
-    const fija = config.esquema === 'fija';
+    // Sin bloque de comisión % (solo fijo, o fijo + bonos en USD).
+    const sinPct = config.comisionActiva === false;
+    const fija = !sinPct && config.esquema === 'fija';
     const tiers = fija ? [] : [...(config.tiers || [])].sort((a, b) => b.minPct - a.minPct);
     // Nivel "objetivo" = el que aplica al 100% de cumplimiento (con tasa fija, la tasa fija).
     const objetivo = fija ? { label: 'Tasa fija', rate: Number(config.tasaFija) || 0 }
@@ -31,18 +34,22 @@ function computeProposal(config = {}) {
     const bonoCobranza   = Number(config.bonusPuntualidad) || 0; // "Bono Cobranza" (rate)
     const bonoActivacion = Number(config.bonusActivacion) || 0;
 
-    const tasaObjetivo   = (Number(objetivo.rate) || 0) + bonoCobranza + bonoActivacion;
+    const tasaObjetivo   = (sinPct ? 0 : (Number(objetivo.rate) || 0)) + bonoCobranza + bonoActivacion;
     const topRate        = (tiers[0]?.rate || objetivo.rate || 0) + bonoCobranza + bonoActivacion;
 
     const montoFacturacion = (Number(config.metaMensual) || 0) * precio;
-    const comisionObjetivo = montoFacturacion * tasaObjetivo / 100;
-    const potencial        = base + comisionObjetivo;
+    // Bonos en USD: el de nivel al 100 % de la meta, más Activación en USD y crecimiento.
+    const bonoNivel100 = previaEsquema(config, 100).bonoNivel;
+    const maxUSD = maximoBonosUSD(config);
+    const extrasUSD = maxUSD - Math.max(0, ...escalonesBonoNivel(config, { meta: Number(config.metaMensual) || 0 }).map(e => e.monto), 0);
+    const comisionObjetivo = montoFacturacion * tasaObjetivo / 100 + bonoNivel100;
+    const potencial        = base + comisionObjetivo + Math.max(0, extrasUSD);
 
     // Ejemplo: cobras a tiempo lo que colocas y activas tu cartera → tasa objetivo.
     const montoCobranza    = montoFacturacion;
     const comisionEjemplo  = montoCobranza * tasaObjetivo / 100;
 
-    return { fija, precio, base, fijo, viaticosMes, tiers, objetivo, bonoCobranza, bonoActivacion, tasaObjetivo, topRate, montoFacturacion, comisionObjetivo, potencial, montoCobranza, comisionEjemplo };
+    return { sinPct, maxUSD, bonoNivel100, fija, precio, base, fijo, viaticosMes, tiers, objetivo, bonoCobranza, bonoActivacion, tasaObjetivo, topRate, montoFacturacion, comisionObjetivo, potencial, montoCobranza, comisionEjemplo };
 }
 
 const PRINT_CSS = `
@@ -174,8 +181,37 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                             </div>
                         )}
 
+                        {/* Bono por nivel en USD (constructor por bloques) */}
+                        {escalonesBonoNivel(config, { meta: Number(config.metaMensual) || 0 }).length > 0 && (
+                            <div>
+                                <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
+                                    <Award size={14} /> Bono por nivel ({config.baseUnidades === 'cobradas' ? 'unidades cobradas en el mes' : 'unidades facturadas en el mes'})
+                                </p>
+                                <div className="flex items-end gap-1.5">
+                                    {escalonesBonoNivel(config, { meta: Number(config.metaMensual) || 0 }).map((e, i) => (
+                                        <div key={i} className="flex-1 rounded-lg px-2 py-2.5 text-center border bg-emerald-50 border-emerald-200">
+                                            <p className="text-[11px] font-bold text-emerald-700">{e.etiqueta}</p>
+                                            <p className="text-[9px] text-slate-400 leading-tight">≥ {uds(e.umbral)} uds</p>
+                                            <p className="text-base font-black text-emerald-700">{money(e.monto)}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                                <p className="text-slate-400 text-[10px] mt-1 text-center">Se paga solo el escalón más alto que alcances en el mes.</p>
+                            </div>
+                        )}
+                        {(config.bonoActivacionUSD > 0 || config.bonoCrecimiento?.montoUSD > 0) && (
+                            <div className="grid grid-cols-2 gap-3">
+                                {config.bonoActivacionUSD > 0 && (
+                                    <Badge Icon={Target} title="Bono Activación" value={`hasta +${money(config.bonoActivacionUSD)}`} sub={`cada semana, ${config.activacionThreshold}% de tu cartera con ≥${config.activacionMinUnits} uds; proporcional a las semanas logradas`} tone="amber" />
+                                )}
+                                {config.bonoCrecimiento?.montoUSD > 0 && config.bonoCrecimiento.activo !== false && (
+                                    <Badge Icon={ArrowUpRight} title="Bono de crecimiento" value={`+${money(config.bonoCrecimiento.montoUSD)}`} sub={`si creces ${config.bonoCrecimiento.pct}% o más contra el mes anterior`} tone="emerald" />
+                                )}
+                            </div>
+                        )}
+
                         {/* Escalera de comisión */}
-                        {!p.fija && <div>
+                        {!p.fija && !p.sinPct && <div>
                             <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
                                 <ArrowUpRight size={14} /> Tu comisión crece contigo
                             </p>
@@ -194,7 +230,7 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                         </div>}
 
                         {/* Bonos que suben tu tasa */}
-                        <div>
+                        {(p.bonoCobranza > 0 || p.bonoActivacion > 0) && <div>
                             <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
                                 <Zap size={14} /> Bonos que suben tu comisión
                             </p>
@@ -214,8 +250,8 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                                     </div>
                                 </div>}
                             </div>
-                            <p className="text-center text-sm font-black text-emerald-700 mt-1.5">Hasta {p.topRate.toFixed(1)}% sobre lo que cobras</p>
-                        </div>
+                            {!p.sinPct && <p className="text-center text-sm font-black text-emerald-700 mt-1.5">Hasta {p.topRate.toFixed(1)}% sobre lo que cobras</p>}
+                        </div>}
 
                         {/* Cuentas recuperadas */}
                         {recuperadas > 0 && (
@@ -231,8 +267,12 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
                         <div className="rounded-xl border-2 border-emerald-200 px-4 py-2.5 text-center">
                             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Ejemplo</p>
                             <p className="text-slate-700 text-[13px] mt-0.5 leading-snug">
-                                Cobras a tiempo <b>{money(p.montoCobranza)}</b> {p.fija ? <>con tu comisión fija</> : <>en nivel <b>{p.objetivo.label}</b></>}{p.bonoActivacion > 0 ? ' con tu cartera activa' : ''} →
-                                <span className="text-emerald-700 font-black"> ~{money(p.comisionEjemplo)}</span> de comisión <b>+ tu base</b>
+                                {p.sinPct ? (
+                                    <>Cobras <b>{uds(config.metaMensual)} uds</b> (tu meta) → <span className="text-emerald-700 font-black">{money(p.bonoNivel100)}</span> de bono por nivel <b>+ tu base</b>{p.maxUSD > p.bonoNivel100 ? <> (y hasta {money(p.maxUSD - p.bonoNivel100)} más en otros bonos)</> : null}</>
+                                ) : (
+                                    <>Cobras a tiempo <b>{money(p.montoCobranza)}</b> {p.fija ? <>con tu comisión fija</> : <>en nivel <b>{p.objetivo.label}</b></>}{p.bonoActivacion > 0 ? ' con tu cartera activa' : ''} →
+                                <span className="text-emerald-700 font-black"> ~{money(p.comisionEjemplo + p.bonoNivel100)}</span> de comisión <b>+ tu base</b></>
+                                )}
                             </p>
                         </div>
                     </div>

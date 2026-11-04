@@ -17,6 +17,7 @@
 // dinero (nunca al vendedor).
 
 const M = require('./generado/vendedorMeta.cjs');
+const { vendedorDelCarnetEnFecha, tieneTraspasos } = require('./traspasoReglas');
 const { fila, seccion, diaTxt } = require('./avisoDetalle');
 
 const DIA = 86400000;
@@ -73,13 +74,17 @@ const MOTIVO_CONFLICTO = {
 // Resumen de un mes de empleo, con las MISMAS cifras del estado de cuenta.
 const filasMes = (e) => [
     fila('Período', null, `Mes ${e.mes} · ${e.rango}`),
-    fila('Facturado (define el nivel)', `meta ${num(e.metaMensual).toLocaleString('es-VE')} uds`, `${num(e.unidades).toLocaleString('es-VE')} uds · ${e.nivel} ${num(e.tasa)} %`),
+    fila(e.baseUnidades === 'cobradas' ? 'Unidades cobradas (definen el nivel)' : 'Facturado (define el nivel)', `meta ${num(e.metaMensual).toLocaleString('es-VE')} uds`, `${num(e.unidades).toLocaleString('es-VE')} uds${e.comisionActiva === false ? '' : ` · ${e.nivel} ${num(e.tasa)} %`}`),
     fila('Cobrado en el mes', null, usd(e.cobrado)),
     e.comisionNivelMonto != null ? fila('Comisión por nivel', null, usd(e.comisionNivelMonto)) : null,
     num(e.bonoCobranzaMonto) ? fila('Bono cobranza', null, usd(e.bonoCobranzaMonto)) : null,
     num(e.bonoActivacionMonto) ? fila('Bono activación', `${num(e.actSemanasLogradas)} de ${num(e.actSemanasTotales)} semanas`, usd(e.bonoActivacionMonto)) : null,
     num(e.cobradoRecup) ? fila('Cuentas recuperadas', `cobrado ${usd(e.cobradoRecup)} al ${num(e.tasaRecup)} %`, usd(num(e.cobradoRecup) * num(e.tasaRecup) / 100)) : null,
     num(e.comisionFoodMonto) ? fila('Foodservice', `cobrado ${usd(e.cobradoFood)}`, usd(e.comisionFoodMonto)) : null,
+    // Bonos en USD del constructor por bloques.
+    num(e.bonoNivelMonto) ? fila('Bono por nivel', e.bonoNivelEscalon ? `escalón ${e.bonoNivelEscalon}` : null, usd(e.bonoNivelMonto)) : null,
+    num(e.bonoActivacionUSDMonto) ? fila('Bono Activación en dólares', `${num(e.actSemanasLogradas)} de ${num(e.actSemanasTotales)} semanas`, usd(e.bonoActivacionUSDMonto)) : null,
+    num(e.bonoCrecimientoMonto) ? fila('Bono de crecimiento', e.crecimiento?.aplica ? `${num(e.crecimiento.crecimientoPct)} %` : null, usd(e.bonoCrecimientoMonto)) : null,
     // Fijo y comisiones siempre por separado: que nadie confunda un monto con otro.
     fila('Comisiones devengadas', e.congelado ? 'congelado' : 'calculado hoy', usd(e.devengadoComision)),
     fila('Comisiones pagadas', null, usd(e.pagadoComision)),
@@ -166,10 +171,13 @@ function evaluarComisiones(d, cfg) {
     }
 
     // 1c. Factura de un vendedor distinto al dueño actual de su carnet: la reasignación no se completó.
+    // Con un traspaso con fecha de corte, el dueño se mide por la fecha de la factura.
+    const duenoDe = (f) => vendedorDelCarnetEnFecha(clientes[String(f.zohoCustomerId)], f.fecha, f.numero, f.estado === 'pagada' ? f.fechaPago : null).vendedorId;
     const desalineadas = activas.filter(f => {
         if (!f.zohoCustomerId) return false;
         const c = clientes[String(f.zohoCustomerId)];
         if (!c) return false;
+        if (tieneTraspasos(c)) return (f.vendedorId || null) !== duenoDe(f);
         if (c.esOficina === true) return !!f.vendedorId;
         return !!c.vendedorId && f.vendedorId !== c.vendedorId;
     });

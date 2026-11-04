@@ -297,17 +297,22 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
     // más bonos, foodservice y recuperadas). Antes sumaba `comisionGenerada`, la
     // cifra provisional del servidor, de las facturas EMITIDAS en el mes: otro
     // número, que no coincidía con lo que se le paga.
-    let comisionGenerada = null;
+    let comisionGenerada = null, bloques = null, sinPct = false;
     if (v.tipo === 'mes' && vendedor.fechaIngreso) {
         const pad = (n) => String(n).padStart(2, '0');
         const periodKey = `${inicio.getFullYear()}-${pad(inicio.getMonth() + 1)}-${pad(inicio.getDate())}`;
         const d = computeDesglosePeriodo(vendedor, suyas, periodKey, cartera ? { cartera, ahora } : { carteraSize, ahora });
-        if (d) comisionGenerada = d.devengadoComision;
+        if (d) {
+            comisionGenerada = d.devengadoComision;
+            // Lo ganado por bloque (sin el fijo): comisión %, bonos en USD y bonos %.
+            bloques = (d.bloques || []).filter(b => b.cuenta !== 'fijo');
+            sinPct = d.comisionActiva === false;
+        }
     }
 
     return {
         global, estado: estadoDe(global),
-        comision: v.tipo === 'mes' ? { nivel: nivel.label, tasa: nivel.rate, generada: comisionGenerada } : null,
+        comision: v.tipo === 'mes' ? { nivel: sinPct ? 'Sin comisión %' : nivel.label, tasa: sinPct ? 0 : nivel.rate, generada: comisionGenerada, bloques } : null,
         pilares: Object.fromEntries(Object.entries(pilares).map(([k, x]) => [k, { ...x, estado: estadoDe(x.score), peso: PESOS[k] }])),
         contexto,
         peor: peor && peor.perdida > 0 ? peor.k : null,

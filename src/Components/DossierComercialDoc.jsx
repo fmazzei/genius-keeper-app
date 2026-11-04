@@ -17,6 +17,8 @@
 // antes de imprimir: van como campos, no como huecos.
 
 import React, { useState, useEffect } from 'react';
+import { bloquesDeEsquema } from '@/utils/bloquesRemuneracion.js';
+import { configEnFecha } from '@/utils/periodosComision.js';
 import { createPortal } from 'react-dom';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/Firebase/config.js';
@@ -123,8 +125,9 @@ export default function DossierComercialDoc({ onClose }) {
                 // La meta mensual sale del vendedor activo, no de una constante:
                 // si mañana se fija en otra cifra, el dossier la refleja solo.
                 const vendedores = m(users).filter(u => u.role === 'vendedor' && u.active !== false);
-                const cfg = vendedores.find(v => v.commissionConfig)?.commissionConfig
-                    || DEFAULT_COMMISSION_CONFIG;
+                // El esquema VIGENTE hoy (con sus cambios por fecha y sus bloques).
+                const v0 = vendedores.find(v => v.commissionConfig);
+                const cfg = v0 ? configEnFecha(v0, new Date()) : DEFAULT_COMMISSION_CONFIG;
 
                 setD(construirDossier({
                     facturas: m(fact), clientes: m(cli),
@@ -264,12 +267,17 @@ export default function DossierComercialDoc({ onClose }) {
                             <Bloque titulo="Esquema de pago al equipo de ventas">
                                 <Dato label="Sueldo fijo" valor={money(d.condiciones.comision?.salarioFijo)} sub="/ mes" />
                                 <Dato label="Viáticos" valor={money(d.condiciones.comision?.viaticosSemanales)} sub="/ semana" />
-                                {(d.condiciones.comision?.tiers || []).map(t => (
+                                {d.condiciones.comision?.comisionActiva === false && <Dato label="Comisión %" valor="No tiene" />}
+                                {(d.condiciones.comision?.comisionActiva === false ? [] : (d.condiciones.comision?.tiers || [])).map(t => (
                                     <Dato key={t.label} label={`Comisión · ${t.label} (desde ${t.minPct}% de la meta)`} valor={`${t.rate}%`} />
                                 ))}
                                 <Dato label={`Comisión · ${d.condiciones.comision?.bajaLabel || 'Baja'}`} valor={`${d.condiciones.comision?.bajaRate ?? '—'}%`} />
                                 <Dato label="Bono por cobranza a tiempo" valor={`${d.condiciones.comision?.bonusPuntualidad ?? '—'}%`} />
                                 <Dato label="Comisión foodservice (plana)" valor={`${d.condiciones.comision?.comisionFoodservice ?? '—'}%`} />
+                                {/* Bloques del constructor (bono por nivel, Activación, crecimiento, base de unidades). */}
+                                {bloquesDeEsquema(d.condiciones.comision || {}).filter(b => ['bonoNivel', 'bonoActivacion', 'bonoCrecimiento', 'base'].includes(b.id)).map(b => (
+                                    <Dato key={b.id} label={b.nombre} valor={b.resumen} />
+                                ))}
                             </Bloque>
 
                             <Bloque titulo="Facturación mes a mes">

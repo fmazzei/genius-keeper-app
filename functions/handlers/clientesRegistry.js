@@ -12,6 +12,7 @@
 //     updatedAt }  — vendedorId/esOficina/categoria los pone el admin y se
 //   preservan al re-sincronizar (merge).
 
+const { vendedorDelCarnetEnFecha, tieneTraspasos } = require('./traspasoReglas');
 const admin = require("firebase-admin");
 const { congelarTasaCohorte, procesarPagoFactura, revertirAcumulados } = require('./facturaCommissionOps');
 const { periodoCohorteFromDate } = require('./commissionEngine');
@@ -81,6 +82,9 @@ async function loadClienteMap(db) {
             vendedorId: x.vendedorId || null,
             esOficina:  x.esOficina === true,
             categoria:  x.categoria || 'retail',
+            // Traspasos con fecha de corte: una factura anterior al corte sigue
+            // siendo del vendedor de antes (ver traspasoReglas.js).
+            traspasos:  Array.isArray(x.traspasos) ? x.traspasos : [],
         });
     });
     return map;
@@ -92,14 +96,32 @@ async function loadClienteMap(db) {
  * (que la conciliación guarda en cada factura).
  * @returns {Promise<number>} facturas tocadas.
  */
-async function backfillFacturasPorCustomerId(customerId, vendedor, db) {
+async function backfillFacturasPorCustomerId(customerId, vendedorDestino, db, opts = {}) {
     const snap = await db.collection('facturas_vendedor')
         .where('zohoCustomerId', '==', String(customerId)).get();
+    // Si el carnet tuvo traspasos con fecha de corte, solo se mueven las facturas
+    // que por su fecha le tocan al dueño de hoy: el historial de antes del corte
+    // se queda con quien era el vendedor entonces.
+    const cliSnap = await db.doc(`clientes_zoho/${clienteIdKey(customerId)}`).get();
+    const cliente = cliSnap.exists ? cliSnap.data() : null;
+    const conTraspasos = tieneTraspasos(cliente);
     let n = 0;
     for (const docSnap of snap.docs) {
         const factura = { id: docSnap.id, ...docSnap.data() };
         if (factura.estado === 'anulada') continue;
-        const destino = vendedor ? vendedor.id : null;
+        let vendedor = vendedorDestino;
+        let destino = vendedor ? vendedor.id : null;
+        if (conTraspasos) {
+            const dueno = vendedorDelCarnetEnFecha(cliente, factura.fecha, factura.numero, factura.estado === 'pagada' ? factura.fechaPago : null).vendedorId;
+            if (dueno !== destino) {
+                // Le toca a un vendedor anterior: solo se corrige si quedó en otro lado.
+                if (!opts.vendedoresPorId || factura.vendedorId === dueno) continue;
+                const v2 = opts.vendedoresPorId.get(dueno);
+                if (!v2) continue;
+                vendedor = { id: dueno, data: v2 };
+                destino = dueno;
+            }
+        }
         if (factura.vendedorId === destino) continue; // ya está bien
         if (factura.vendedorId) await revertirAcumulados(factura); // suelta al anterior
 

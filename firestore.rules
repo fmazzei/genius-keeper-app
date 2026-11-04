@@ -389,6 +389,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Traspasos de cartera con fecha de corte: constancia (solo el servidor escribe).
+    match /traspasos_cartera/{id} {
+      allow read: if isMaster();
+      allow write: if false;
+    }
+
     match /fusiones_pdv/{id} {
       allow read: if isMaster();
       allow write: if false;
