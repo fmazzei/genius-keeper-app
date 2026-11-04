@@ -4010,6 +4010,32 @@ Pedido del dueño con capturas del inicio de Erick: se veían «Tu fijo va apart
   - Carolina (4,5 % fija + cobranza + fijo $400).
   - Solo sueldo.
 
+### Liquidar y pagar con cruces de verificación (2026-11-04) ✅
+
+Pedido del dueño: *"un error en esto puede costar un problema laboral… el cálculo de las comisiones y de los bonos, los comprobantes y todo lo relacionado debe tener cruces de verificación que permitan al administrador saber lo que está pagando y el comprobante lo demuestre"*.
+
+- **`src/utils/verificarLiquidacion.js`** (puro) → `verificarLiquidacion({desglose, estado, facturas, precioUnidad, zohoSyncAt, ahora, vendedorId})`. Vuelve a sumar cada cifra del período por otro camino y la compara. Cada cruce dice a qué cuenta toca (`comision`, `fijo`, `ambas`) y es `ok`, `aviso` o `error`:
+  - lo que ve el vendedor (`computeEstadosDeCuenta`) = el comprobante (`computeDesglosePeriodo`), en lo variable y en el sueldo;
+  - el total = la suma de sus bloques; el bloque de sueldo = el fijo del período;
+  - comisión % factura por factura (cada cobro × la tasa del mes en que se facturó), bono por cobrar a tiempo, comisión foodservice y recuperadas: solo si la pieza está en el plan o tiene monto;
+  - unidades contadas = la suma de sus facturas; el escalón pagado = el que da la tabla para esas unidades (retail y foodservice en kg), con su explicación («1.450 uds ≥ 1.400 (Escalón 2) → $180»);
+  - activación: semanas logradas contadas una por una, USD × logradas ÷ semanas y la parte en %; crecimiento;
+  - pagos registrados = pagado del estado de cuenta; ganado − pagado = por pagar (por cuenta);
+  - estado del mes: en curso = aviso (adelanto), cerrado sin congelar = aviso, congelado = ok. En un mes congelado los cruces del cálculo de hoy bajan a aviso: lo que se paga es lo congelado;
+  - datos de las facturas del período: repetidas (error), cobradas sin fecha de cobro, cobro antes de la factura, unidades que parecen kilos (avisos);
+  - Zoho sin actualizar hace más de 5 h (aviso).
+  - `firmaCalculo(contenidoFirma(d))`: huella corta (FNV-1a, «BEE6-5356») de las cifras y las facturas. Mismo cálculo ⇒ misma firma.
+  - `puedePagar(v, concepto)` (un error de esa cuenta lo impide; uno de bonos no frena el sueldo), `avisosDe`, `fotoDelCalculo`, `compararConHoy`.
+- **Liquidaciones** (`LiquidacionesManagement` en `AdminPanel`):
+  - Cada período lleva su insignia («✓ cuadra · firma», «! N por revisar», «✗ N no cuadran»); al tocarla se abren sus cruces (`CrucesVerificacion.jsx`).
+  - En el asistente de pago, al elegir qué se paga aparecen los cruces de esa cuenta. Un error impide pagar («No cuadra: no se puede pagar»); cada aviso pide marcar «lo revisé» antes de confirmar. `confirmarPago` lo vuelve a comprobar.
+  - **El pago guarda la foto del cálculo** (`liquidaciones.calculo`): firma, bloques, ganado, pagado y por pagar antes, facturas cobradas (número, monto, tasa), líneas de unidades, heredadas, semanas, cruces y los avisos que se aceptaron. Las reglas ya permitían el campo al crear; las correcciones no lo tocan.
+  - En el histórico cada pago dice si su foto coincide con el cálculo de hoy o cuánto cambió; los pagos anteriores dicen que no tienen foto.
+- **Comprobante de pago** (`ComprobanteLiquidacionDoc`, prop `verificacionHoy`): «De dónde sale este pago» (cada bono o comisión con su detalle, ganado, pagado antes, este pago y lo que queda), «Cruces de verificación al pagar», «Facturas que sustentan el cálculo» y «Firma del cálculo» con la comparación con hoy. Usa el nombre del plan (bonos, comisiones o las dos).
+- **Comprobante detallado** (`LiquidacionDetalladaDoc`, props `verifs` y `mostrarCruces`): cierra cada período con sus cruces y su firma (al vendedor no se le muestran). Se agregaron las filas de los bonos de foodservice, que entraban al total sin aparecer.
+- Los bloques del motor se llaman como las piezas del constructor: «Comisión fija», «Comisión por niveles», «Bono por escalones», «Bono por cobrar a tiempo», «Bono de activación de cartera», «Bono de disponibilidad en anaquel», «Bono foodservice por escalones» (los cierres ya congelados conservan su nombre).
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/verificarLiquidacion.test.mjs` (27 en verde: Erick en curso con escalón 2, cálculo alterado que da error, error de bonos que no frena el sueldo, partes que no suman, sin cartera, factura repetida, kilos como unidades, Zoho viejo, Carolina cerrada con fija + cobranza + foodservice y un pago de sueldo, foto, firma igual y distinta, mes congelado).
+
 ### Página del vendedor ordenada: gestión, lo que gana y sus KPIs (2026-11-04) ✅
 
 Pedido del dueño con capturas del perfil de Erick: *"lo que es bono debe llamarse bono y lo que es comisiones debe llamarse comisiones… es demasiado repetitivo… lo primero es su gestión, lo segundo sus comisiones, lo tercero los indicadores"*.

@@ -153,20 +153,20 @@ export function bloquesDeEsquema(cfg = {}) {
         }
     }
     const esc = escalonesBonoNivel(cfg, { meta: num(cfg.metaMensual) });
-    if (esc.length) out.push({ id: 'bonoNivel', nombre: 'Bono por nivel', resumen: esc.map(e => `${e.porPct ? `${e.minPct} %` : `${e.umbral} uds`} → ${usd(e.monto)}`).join(' · ') + ' (solo el más alto)' });
+    if (esc.length) out.push({ id: 'bonoNivel', nombre: 'Bono por escalones', resumen: esc.map(e => `${e.porPct ? `${e.minPct} %` : `${e.umbral} uds`} → ${usd(e.monto)}`).join(' · ') + ' (solo el más alto)' });
     if (cfg.bonoCrecimiento && cfg.bonoCrecimiento.activo !== false && num(cfg.bonoCrecimiento.montoUSD) > 0) {
         const b = cfg.bonoCrecimiento;
         out.push({ id: 'bonoCrecimiento', nombre: 'Bono de crecimiento', resumen: `${usd(b.montoUSD)} si crece ${num(b.pct)} % o más contra el mes anterior` });
     }
-    if (num(cfg.bonusPuntualidad) > 0) out.push({ id: 'bonoCobranza', nombre: 'Bono Cobranza', resumen: `${pct(cfg.bonusPuntualidad)} sobre cada factura cobrada a tiempo` });
+    if (num(cfg.bonusPuntualidad) > 0) out.push({ id: 'bonoCobranza', nombre: 'Bono por cobrar a tiempo', resumen: `${pct(cfg.bonusPuntualidad)} sobre cada factura cobrada a tiempo` });
     if (num(cfg.bonusActivacion) > 0 || num(cfg.bonoActivacionUSD) > 0) {
         const pago = [num(cfg.bonusActivacion) > 0 ? `${pct(cfg.bonusActivacion)} de lo cobrado` : null, num(cfg.bonoActivacionUSD) > 0 ? usd(cfg.bonoActivacionUSD) : null].filter(Boolean).join(' + ');
-        out.push({ id: 'bonoActivacion', nombre: 'Bono Activación', resumen: `${pago} × semanas logradas (cada semana, ${num(cfg.activacionThreshold)} % de la cartera con ≥${num(cfg.activacionMinUnits)} uds)` });
+        out.push({ id: 'bonoActivacion', nombre: 'Bono de activación de cartera', resumen: `${pago} × semanas logradas (cada semana, ${num(cfg.activacionThreshold)} % de la cartera con ≥${num(cfg.activacionMinUnits)} uds)` });
     }
-    if (num(cfg.bonusAnaquel) > 0) out.push({ id: 'bonoAnaquel', nombre: 'Bono Anaquel', resumen: `${pct(cfg.bonusAnaquel)} en cuentas de régimen anaquel` });
+    if (num(cfg.bonusAnaquel) > 0) out.push({ id: 'bonoAnaquel', nombre: 'Bono de disponibilidad en anaquel', resumen: `${pct(cfg.bonusAnaquel)} en cuentas de régimen anaquel` });
     if (num(cfg.comisionFoodservice) > 0) out.push({ id: 'foodservice', nombre: 'Comisión foodservice', resumen: `${pct(cfg.comisionFoodservice)} flat sobre lo cobrado` });
     const escF = escalonesBonoNivel(cfg, { meta: num(cfg.metaKgFoodservice), medida: 'food' });
-    if (escF.length) out.push({ id: 'bonoNivelFood', nombre: 'Bono foodservice por nivel', resumen: escF.map(e => `${e.porPct ? `${e.minPct} %` : `${String(e.umbral).replace('.', ',')} kg`} → ${usd(e.monto)}`).join(' · ') + ' (solo el más alto)' });
+    if (escF.length) out.push({ id: 'bonoNivelFood', nombre: 'Bono foodservice por escalones', resumen: escF.map(e => `${e.porPct ? `${e.minPct} %` : `${String(e.umbral).replace('.', ',')} kg`} → ${usd(e.monto)}`).join(' · ') + ' (solo el más alto)' });
     if (cfg.bonoCrecimientoFood && cfg.bonoCrecimientoFood.activo !== false && num(cfg.bonoCrecimientoFood.montoUSD) > 0) {
         const b = cfg.bonoCrecimientoFood;
         out.push({ id: 'bonoCrecimientoFood', nombre: 'Bono de crecimiento foodservice', resumen: `${usd(b.montoUSD)} si los kg crecen ${num(b.pct)} % o más contra el mes anterior` });

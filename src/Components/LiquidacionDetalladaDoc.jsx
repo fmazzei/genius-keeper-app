@@ -12,6 +12,8 @@
 
 import React from 'react';
 import { etiquetaFijo } from '../utils/periodosComision.js';
+import { nombresPlan } from '../utils/piezasComision.js';
+import { verificarLiquidacion } from '../utils/verificarLiquidacion.js';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
 
@@ -53,7 +55,7 @@ const Num = ({ children, color, bold }) => (
     <span style={{ fontFamily: MONO, fontVariantNumeric: 'tabular-nums', color: color || '#111', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{children}</span>
 );
 
-export default function LiquidacionDetalladaDoc({ desgloses, desglose, vendedorName = 'Vendedor', onClose }) {
+export default function LiquidacionDetalladaDoc({ desgloses, desglose, vendedorName = 'Vendedor', verifs = null, mostrarCruces = true, onClose }) {
     const list = (desgloses && desgloses.length) ? desgloses : (desglose ? [desglose] : []);
     if (!list.length) return null;
     const ordered = [...list].sort((a, b) => a.mes - b.mes);
@@ -127,7 +129,7 @@ export default function LiquidacionDetalladaDoc({ desgloses, desglose, vendedorN
                     )}
 
                     {/* Detalle por período */}
-                    {ordered.map(d => <PeriodoDetalle key={d.periodKey} d={d} multi={multi} />)}
+                    {ordered.map(d => <PeriodoDetalle key={d.periodKey} d={d} multi={multi} v={verifs?.[d.periodKey] || null} mostrarCruces={mostrarCruces} />)}
 
                     {/* Pie */}
                     <div className="mt-5 px-8 py-3 flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-300" style={{ background: '#eceef1', fontFamily: SANS }}>
@@ -169,7 +171,11 @@ function CuentaFijo({ d }) {
     );
 }
 
-function PeriodoDetalle({ d, multi }) {
+function PeriodoDetalle({ d, multi, v: vDado, mostrarCruces = true }) {
+    // Cruces de verificación del período: los de Liquidaciones si vienen; si no,
+    // los que se pueden hacer con el desglose solo.
+    const v = vDado || verificarLiquidacion({ desglose: d });
+    const cuenta = nombresPlan(d.cfg || {}).cuenta;
     const porOrigen = Array.isArray(d.cobrosPorOrigen) ? d.cobrosPorOrigen : null;
     const comisionNivel = porOrigen ? (d.comisionNivelMonto || 0) : d.cobradoRegular * d.tasa / 100;
     return (
@@ -182,7 +188,7 @@ function PeriodoDetalle({ d, multi }) {
 
             {/* Resumen del devengado */}
             <div className="px-8 gk-sec">
-                <SecTitle>COMISIONES DEL PERÍODO</SecTitle>
+                <SecTitle>{cuenta.toUpperCase()} DEL PERÍODO</SecTitle>
                 <table className="w-full text-[12px]" style={{ tableLayout: 'fixed' }}>
                     <colgroup><col style={{ width: '68%' }} /><col style={{ width: '32%' }} /></colgroup>
                     <tbody>
@@ -197,12 +203,12 @@ function PeriodoDetalle({ d, multi }) {
                     {d.bonoRecupMonto > 0 && <tr><td className="py-0.5">Cuentas recuperadas ({d.tasaRecup}%)</td><td className="text-right"><Num>{money(d.bonoRecupMonto)}</Num></td></tr>}
                     {/* Bonos en USD del constructor por bloques */}
                     {d.bonoActivacionUSDMonto > 0 && <tr><td className="py-0.5">Bono Activación en dólares (${d.bonoActivacionUSD} × {d.semanasLogradas} de {d.semanasTotales} semanas)</td><td className="text-right"><Num color="#127c3e">{money(d.bonoActivacionUSDMonto)}</Num></td></tr>}
-                    {(d.bloques || []).filter(b => ['bonoNivel', 'bonoCrecimiento'].includes(b.id)).map(b => (
+                    {(d.bloques || []).filter(b => ['bonoNivel', 'bonoCrecimiento', 'bonoNivelFood', 'bonoCrecimientoFood'].includes(b.id)).map(b => (
                         <tr key={b.id}><td className="py-0.5 pr-2">{b.nombre}{b.detalle ? ` (${b.detalle})` : ''}</td><td className="text-right align-top"><Num color={b.monto > 0 ? '#127c3e' : undefined}>{money(b.monto)}</Num></td></tr>
                     ))}
-                    <tr className="border-t-2" style={{ borderColor: NAVY }}><td className="py-1 font-bold">COMISIONES GANADAS</td><td className="text-right"><Num bold color={NAVY}>{money(d.devengadoComision)}</Num></td></tr>
-                    <tr><td className="py-0.5">Comisiones pagadas</td><td className="text-right"><Num color="#127c3e">{money(d.pagadoComision)}</Num></td></tr>
-                    <tr><td className="py-0.5 font-bold">{d.saldoComision < -0.5 ? 'Comisiones pagadas de más' : 'Comisiones por pagar'}</td><td className="text-right"><Num bold color={d.saldoComision > 0.5 ? '#b45309' : '#127c3e'}>{money(Math.abs(d.saldoComision))}</Num></td></tr>
+                    <tr className="border-t-2" style={{ borderColor: NAVY }}><td className="py-1 font-bold">{cuenta.toUpperCase()} {cuenta === 'Bonos' ? 'GANADOS' : 'GANADAS'}</td><td className="text-right"><Num bold color={NAVY}>{money(d.devengadoComision)}</Num></td></tr>
+                    <tr><td className="py-0.5">{cuenta} {cuenta === 'Bonos' ? 'pagados' : 'pagadas'}</td><td className="text-right"><Num color="#127c3e">{money(d.pagadoComision)}</Num></td></tr>
+                    <tr><td className="py-0.5 font-bold">{d.saldoComision < -0.5 ? `${cuenta}: pagado de más` : `${cuenta} por pagar`}</td><td className="text-right"><Num bold color={d.saldoComision > 0.5 ? '#b45309' : '#127c3e'}>{money(Math.abs(d.saldoComision))}</Num></td></tr>
                 </tbody></table>
                 <CuentaFijo d={d} />
                 {d.congelado && d.modelo !== 'cobro' && (
@@ -296,6 +302,24 @@ function PeriodoDetalle({ d, multi }) {
                     <p className="text-[11px] text-slate-600 mt-1 text-right">{d.tasaRecup}% sobre {money(d.cobradoRecup)} recuperado = <b>+{money(d.bonoRecupMonto)}</b></p>
                 </div>
             )}
+
+            {/* Cruces de verificación: cada cifra sumada por otro camino (para administración) */}
+            {mostrarCruces && <div className="px-8 gk-sec">
+                <SecTitle>CRUCES DE VERIFICACIÓN · FIRMA DEL CÁLCULO {v.firma || '—'}</SecTitle>
+                <table className="w-full text-[11px]" style={{ tableLayout: 'fixed' }}>
+                    <colgroup><col style={{ width: '6%' }} /><col style={{ width: '30%' }} /><col style={{ width: '64%' }} /></colgroup>
+                    <tbody>
+                        {v.cruces.map(c => (
+                            <tr key={c.id} style={{ verticalAlign: 'top' }}>
+                                <td className="py-0.5 font-bold" style={{ color: c.nivel === 'ok' ? '#127c3e' : c.nivel === 'aviso' ? '#b45309' : '#b91c1c' }}>{c.nivel === 'ok' ? '✓' : c.nivel === 'aviso' ? '!' : '✗'}</td>
+                                <td className="py-0.5 pr-2 font-semibold">{c.titulo}</td>
+                                <td className="py-0.5 text-slate-600" style={{ fontFamily: SANS }}>{c.detalle}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                <p className="text-[10px] text-slate-500 mt-1">✓ cuadra · ! revisar · ✗ no cuadra. La firma resume las cifras y las facturas de este cálculo: si algo cambia, la firma cambia.</p>
+            </div>}
         </>
     );
 }

@@ -7,6 +7,8 @@
 
 import React from 'react';
 import { etiquetaFijo } from '../utils/periodosComision.js';
+import { nombresPlan } from '../utils/piezasComision.js';
+import { compararConHoy } from '../utils/verificarLiquidacion.js';
 import { createPortal } from 'react-dom';
 import { X, Printer } from 'lucide-react';
 
@@ -37,7 +39,16 @@ function LeaderRow({ label, value, bold, valueColor, nowrap = true }) {
     );
 }
 
-export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorName = 'Vendedor', estado = null, comprobanteBanco = null, onClose }) {
+export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorName = 'Vendedor', estado = null, comprobanteBanco = null, verificacionHoy = null, onClose }) {
+    // Cómo se llama lo variable de este vendedor (bonos, comisiones o las dos).
+    const cuenta = nombresPlan(estado?.cfg || verificacionHoy?.d?.cfg || {}).cuenta;
+    const esFijo = liquidacion.concepto === 'fijo';
+    // La foto del cálculo guardada al pagar (liquidaciones.calculo) y la comparación con hoy.
+    const foto = liquidacion.calculo || null;
+    const cmp = foto ? compararConHoy(foto, verificacionHoy?.v?.firma, verificacionHoy?.d) : null;
+    const tocaCuenta = (c) => c.cuenta === 'ambas' || !c.cuenta || c.cuenta === (esFijo ? 'fijo' : 'comision');
+    const marca = (n) => (n === 'ok' ? '✓' : n === 'aviso' ? '!' : '✗');
+    const colorNivel = (n) => (n === 'ok' ? '#127c3e' : n === 'aviso' ? '#b45309' : '#b91c1c');
     const ahora = new Date();
     const fechaHora = ahora.toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -49,9 +60,9 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
     // separación no lo dicen y se muestran como tales.
     const concepto = liquidacion.concepto === 'fijo'
         ? `FIJO (SUELDO + VIÁTICOS) · ${liquidacion.fijoTipo === 'quincena' ? 'QUINCENA' : 'MES COMPLETO'}`
-        : liquidacion.concepto === 'comision' ? 'COMISIONES' : 'SIN CONCEPTO (anterior a la separación fijo / comisiones)';
+        : liquidacion.concepto === 'comision' ? cuenta.toUpperCase() : 'SIN CONCEPTO (anterior a la separación fijo / comisiones)';
     const titulo = liquidacion.concepto === 'fijo' ? 'COMPROBANTE DE PAGO DE FIJO'
-        : liquidacion.concepto === 'comision' ? 'COMPROBANTE DE PAGO DE COMISIONES' : 'COMPROBANTE DE LIQUIDACIÓN';
+        : liquidacion.concepto === 'comision' ? `COMPROBANTE DE PAGO DE ${cuenta.toUpperCase()}` : 'COMPROBANTE DE LIQUIDACIÓN';
 
     const SecTitle = ({ children }) => (
         <p className="font-bold text-[12px] tracking-wide mt-5 mb-2 pb-1 border-b-2" style={{ color: NAVY, borderColor: NAVY }}>{children}</p>
@@ -114,24 +125,123 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
                     {/* ── Monto liquidado (destacado) ── */}
                     <div className="px-8 mt-5">
                         <div className="border-2 rounded-md px-4 py-3 flex items-center justify-between" style={{ borderColor: NAVY }}>
-                            <span className="font-bold" style={{ color: NAVY, fontFamily: SANS }}>{liquidacion.concepto === 'fijo' ? 'FIJO PAGADO' : liquidacion.concepto === 'comision' ? 'COMISIONES PAGADAS' : 'MONTO LIQUIDADO'}</span>
+                            <span className="font-bold" style={{ color: NAVY, fontFamily: SANS }}>{liquidacion.concepto === 'fijo' ? 'FIJO PAGADO' : liquidacion.concepto === 'comision' ? `${cuenta.toUpperCase()} ${cuenta === 'Bonos' ? 'PAGADOS' : 'PAGADAS'}` : 'MONTO LIQUIDADO'}</span>
                             <span className="font-black text-[20px]" style={{ color: '#127c3e' }}>{money(liquidacion.monto)}</span>
                         </div>
+                    </div>
+
+                    {/* ── De dónde sale este pago (foto del cálculo al pagar) ── */}
+                    {foto && (
+                        <div className="px-8">
+                            <SecTitle>DE DÓNDE SALE ESTE PAGO</SecTitle>
+                            <div className="text-[12px]">
+                                {(foto.bloques || []).filter(b => (esFijo ? b.cuenta === 'fijo' : b.cuenta !== 'fijo') && (Number(b.monto) || b.detalle)).map(b => (
+                                    <div key={b.id} className="py-0.5">
+                                        <LeaderRow label={b.nombre} value={money(b.monto)} />
+                                        {b.detalle && <p className="text-[10.5px] text-slate-500 -mt-0.5 pl-3" style={{ fontFamily: SANS }}>{b.detalle}</p>}
+                                    </div>
+                                ))}
+                                <LeaderRow label={esFijo ? 'Sueldo del período' : `${cuenta} ${cuenta === 'Bonos' ? 'ganados' : 'ganadas'} en el período`} value={money(esFijo ? foto.base : foto.devengadoComision)} bold />
+                                <LeaderRow label="Pagado antes de este pago" value={money(esFijo ? foto.pagadoFijoAntes : foto.pagadoComisionAntes)} />
+                                <LeaderRow label="Por pagar antes de este pago" value={money(esFijo ? foto.saldoFijoAntes : foto.saldoComisionAntes)} />
+                                <LeaderRow label="Este pago" value={money(liquidacion.monto)} valueColor="#127c3e" />
+                                <LeaderRow label="Queda por pagar" value={money((esFijo ? foto.saldoFijoAntes : foto.saldoComisionAntes) - (Number(liquidacion.monto) || 0))} bold valueColor={NAVY} />
+                                {!esFijo && (
+                                    <p className="text-[10.5px] text-slate-600 mt-2">
+                                        {foto.baseUnidades === 'cobradas' ? 'Unidades cobradas' : 'Unidades facturadas'} del mes: <b>{Number(foto.unidades || 0).toLocaleString('es-VE')}</b>
+                                        {Number(foto.kgFood) > 0 ? <> · foodservice <b>{String(foto.kgFood).replace('.', ',')} kg</b></> : null}
+                                        {Number(foto.cobradoRegular) > 0 ? <> · cobrado retail <b>{money(foto.cobradoRegular)}</b></> : null}
+                                        {Number(foto.cobradoFood) > 0 ? <> · cobrado foodservice <b>{money(foto.cobradoFood)}</b></> : null}
+                                        {Number(foto.cobradoRecup) > 0 ? <> · heredado cobrado <b>{money(foto.cobradoRecup)}</b></> : null}
+                                        {(foto.semanas || []).length > 0 ? <> · semanas de activación logradas <b>{foto.semanas.filter(x => x.ok).length} de {foto.semanas.length}</b></> : null}
+                                        . Calculado el {new Date(foto.calculadoEn).toLocaleString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}{foto.congelado ? ' sobre el mes congelado' : foto.cerrado ? ' con el mes cerrado' : ' con el mes en curso (adelanto)'}.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ── Cruces de verificación que pasó el cálculo al pagar ── */}
+                    {foto && (
+                        <div className="px-8" style={{ pageBreakInside: 'avoid' }}>
+                            <SecTitle>CRUCES DE VERIFICACIÓN AL PAGAR</SecTitle>
+                            <table className="w-full text-[11px]" style={{ tableLayout: 'fixed', fontFamily: SANS }}>
+                                <colgroup><col style={{ width: '5%' }} /><col style={{ width: '32%' }} /><col style={{ width: '63%' }} /></colgroup>
+                                <tbody>
+                                    {(foto.cruces || []).filter(tocaCuenta).map(c => (
+                                        <tr key={c.id} style={{ verticalAlign: 'top' }}>
+                                            <td className="py-0.5 font-bold" style={{ color: colorNivel(c.nivel) }}>{marca(c.nivel)}</td>
+                                            <td className="py-0.5 pr-2 font-semibold">{c.titulo}</td>
+                                            <td className="py-0.5 text-slate-600">{c.detalle}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {(foto.avisosRevisados || []).length > 0 && (
+                                <p className="text-[10.5px] text-slate-700 mt-1.5">Avisos revisados y aceptados por quien registró el pago: <b>{foto.avisosRevisados.join(' · ')}</b>.</p>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── Facturas que sustentan el cálculo ── */}
+                    {foto && !esFijo && ((foto.facturas || []).length > 0 || (foto.recuperadas || []).length > 0 || (foto.lineas || []).length > 0) && (
+                        <div className="px-8">
+                            <SecTitle>FACTURAS QUE SUSTENTAN EL CÁLCULO</SecTitle>
+                            {(foto.facturas || []).length > 0 && (
+                                <>
+                                    <p className="text-[10.5px] text-slate-600 mb-1">Cobradas en el período ({foto.facturas.length}, {money(foto.facturas.reduce((x, f) => x + Number(f.m || 0), 0))}):</p>
+                                    <p className="text-[10px] leading-snug break-words" style={{ fontFamily: MONO }}>{foto.facturas.map(f => `${f.n} ${money(f.m).replace('$ ', '$')}${f.food ? ' FS' : ''}`).join(' · ')}</p>
+                                </>
+                            )}
+                            {foto.baseUnidades !== 'cobradas' && (foto.lineas || []).length > 0 && (
+                                <>
+                                    <p className="text-[10.5px] text-slate-600 mt-2 mb-1">Facturadas en el mes (unidades que cuentan, {foto.lineas.length}):</p>
+                                    <p className="text-[10px] leading-snug break-words" style={{ fontFamily: MONO }}>{foto.lineas.map(f => `${f.n} ${Number(f.u).toLocaleString('es-VE')} uds`).join(' · ')}</p>
+                                </>
+                            )}
+                            {(foto.recuperadas || []).length > 0 && (
+                                <>
+                                    <p className="text-[10.5px] text-slate-600 mt-2 mb-1">Heredadas cobradas ({foto.recuperadas.length}):</p>
+                                    <p className="text-[10px] leading-snug break-words" style={{ fontFamily: MONO }}>{foto.recuperadas.map(f => `${f.n} ${money(f.m).replace('$ ', '$')}`).join(' · ')}</p>
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ── Firma del cálculo y comparación con hoy ── */}
+                    <div className="px-8" style={{ pageBreakInside: 'avoid' }}>
+                        <SecTitle>FIRMA DEL CÁLCULO</SecTitle>
+                        {foto ? (
+                            <div className="text-[12px]">
+                                <LeaderRow label="Firma al pagar" value={foto.firma || '—'} bold />
+                                {cmp?.estado === 'igual' && <p className="text-[11px] mt-1" style={{ color: '#127c3e' }}>✓ Hoy el cálculo da la misma firma: lo pagado corresponde al cálculo vigente.</p>}
+                                {cmp?.estado === 'distinto' && (
+                                    <p className="text-[11px] mt-1" style={{ color: '#b45309' }}>
+                                        ! El cálculo cambió desde este pago (firma de hoy {verificacionHoy?.v?.firma || '—'}): al pagar {esFijo ? 'el sueldo era' : 'lo ganado era'} {money(esFijo ? cmp.baseAntes : cmp.antes)} y hoy es {money(esFijo ? cmp.baseHoy : cmp.hoy)}. La diferencia se paga o se descuenta en el próximo pago; este comprobante muestra lo que había al pagar.
+                                    </p>
+                                )}
+                                <p className="text-[10px] text-slate-500 mt-1">La firma resume las cifras y las facturas del cálculo en el momento del pago. Si alguna cambia, la firma cambia.</p>
+                            </div>
+                        ) : (
+                            <p className="text-[11px] text-slate-600">Este pago se registró antes de que GK guardara la foto del cálculo con cada pago.{verificacionHoy?.v?.firma ? ` Firma del cálculo de hoy: ${verificacionHoy.v.firma}.` : ''}</p>
+                        )}
                     </div>
 
                     {/* ── Estado del período (contexto) ── */}
                     {estado && (
                         <div className="px-8">
-                            <SecTitle>ESTADO DEL PERÍODO</SecTitle>
+                            <SecTitle>ESTADO DEL PERÍODO {foto ? 'HOY' : ''}</SecTitle>
                             <div className="text-[12px]">
-                                <p className="font-bold text-[11px]" style={{ color: NAVY }}>COMISIONES</p>
-                                <LeaderRow label="Ganadas" value={money(estado.devengadoComision)} />
-                                <LeaderRow label="Pagadas (acumulado)" value={money(estado.pagadoComision)} valueColor="#127c3e" />
+                                <p className="font-bold text-[11px]" style={{ color: NAVY }}>{cuenta.toUpperCase()}</p>
+                                <LeaderRow label={cuenta === 'Bonos' ? 'Ganados' : 'Ganadas'} value={money(estado.devengadoComision)} />
+                                <LeaderRow label={cuenta === 'Bonos' ? 'Pagados (acumulado)' : 'Pagadas (acumulado)'} value={money(estado.pagadoComision)} valueColor="#127c3e" />
                                 <LeaderRow label="Por pagar" value={money(estado.saldoComision)} bold valueColor={NAVY} />
+                                {(Number(estado.base) > 0 || Number(estado.pagadoFijo) > 0) && (<>
                                 <p className="font-bold text-[11px] mt-3" style={{ color: NAVY }}>FIJO (SUELDO + VIÁTICOS)</p>
                                 <LeaderRow label={etiquetaFijo(estado)} value={money(estado.base)} />
                                 <LeaderRow label="Pagado (acumulado)" value={money(estado.pagadoFijo)} valueColor="#127c3e" />
                                 <LeaderRow label="Por pagar" value={money(estado.saldoFijo)} bold valueColor={NAVY} />
+                                </>)}
                             </div>
                         </div>
                     )}
@@ -154,7 +264,7 @@ export default function ComprobanteLiquidacionDoc({ liquidacion = {}, vendedorNa
 
                     {/* ── Descripción ── */}
                     <div className="px-8 pt-5 pb-4 text-[10.5px] text-slate-600 leading-relaxed">
-                        <p>Este comprobante certifica el registro de un pago a favor del titular indicado, imputado al período señalado y al concepto indicado. El fijo (sueldo + viáticos) y las comisiones se llevan en cuentas separadas: un pago de uno nunca descuenta del otro.</p>
+                        <p>Este comprobante certifica el registro de un pago a favor del titular indicado, imputado al período señalado y al concepto indicado. El fijo (sueldo + viáticos) y {cuenta.toLowerCase()} se llevan en cuentas separadas: un pago de uno nunca descuenta del otro. Las cifras de «De dónde sale este pago» y los cruces son los del momento del pago.</p>
                     </div>
 
                     {/* ── Pie ── */}

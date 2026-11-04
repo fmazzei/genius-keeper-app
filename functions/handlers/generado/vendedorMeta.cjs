@@ -754,16 +754,16 @@ function bloquesDeFila(r = {}, cfg = {}) {
   add("fijo", "Sueldo fijo", r.base, "", Number(r.base) > 0, "fijo");
   add(
     "comision",
-    cfg.esquema === "fija" ? "Comisi\xF3n (tasa fija)" : "Comisi\xF3n por nivel",
+    cfg.esquema === "fija" ? "Comisi\xF3n fija" : "Comisi\xF3n por niveles",
     r.comisionNivelMonto,
     r.cobradoRegular != null ? `Sobre $${r2m(r.cobradoRegular)} cobrados` : "",
     tieneComisionPct(cfg) && Number(r.cobradoRegular) > 0
   );
   add(
     "bonoNivel",
-    "Bono por nivel",
+    "Bono por escalones",
     r.bonoNivelMonto,
-    r.bonoNivelEscalon ? `Escal\xF3n ${r.bonoNivelEscalon}` : r.bonoNivelSiguiente ? `Faltan ${r.bonoNivelSiguiente.faltan} uds para ${r.bonoNivelSiguiente.etiqueta}` : "",
+    r.bonoNivelEscalon ? /^escal/i.test(r.bonoNivelEscalon) ? r.bonoNivelEscalon : `Escal\xF3n ${r.bonoNivelEscalon}` : r.bonoNivelSiguiente ? `Faltan ${r.bonoNivelSiguiente.faltan} uds para ${r.bonoNivelSiguiente.etiqueta}` : "",
     !!(cfg.bonoNivel && cfg.bonoNivel.activo !== false)
   );
   add(
@@ -773,23 +773,23 @@ function bloquesDeFila(r = {}, cfg = {}) {
     r.crecimiento && r.crecimiento.activo ? r.crecimiento.aplica ? `${pc(r.crecimiento.crecimientoPct)} contra el mes anterior` : r.crecimiento.motivo : "",
     !!(cfg.bonoCrecimiento && cfg.bonoCrecimiento.activo !== false)
   );
-  add("bonoCobranza", "Bono Cobranza", r.bonoCobranzaMonto, r.bonoCobranzaRate ? `${pc(r.bonoCobranzaRate)} de lo cobrado a tiempo` : "");
+  add("bonoCobranza", "Bono por cobrar a tiempo", r.bonoCobranzaMonto, r.bonoCobranzaRate ? `${pc(r.bonoCobranzaRate)} de lo cobrado a tiempo` : "");
   const semL = r.actSemanasLogradas ?? r.semanasLogradas, semT = r.actSemanasTotales ?? r.semanasTotales;
   add(
     "bonoActivacion",
-    "Bono Activaci\xF3n",
+    "Bono de activaci\xF3n de cartera",
     (Number(r.bonoActivacionMonto) || 0) + (Number(r.bonoActivacionUSDMonto) || 0),
     semT != null ? `${semL || 0} de ${semT} semanas logradas` : "",
     (Number(cfg.bonoActivacionUSD) || 0) > 0
   );
-  add("bonoAnaquel", "Bono Anaquel", r.bonoAnaquelMonto, "");
+  add("bonoAnaquel", "Bono de disponibilidad en anaquel", r.bonoAnaquelMonto, "");
   add("foodservice", "Comisi\xF3n foodservice", r.comisionFoodMonto, r.tasaFood ? `${pc(r.tasaFood)} flat` : "");
   const kgTxt = (v) => String(Math.round((Number(v) || 0) * 10) / 10).replace(".", ",");
   add(
     "bonoNivelFood",
-    "Bono foodservice por nivel",
+    "Bono foodservice por escalones",
     r.bonoNivelFoodMonto,
-    r.bonoNivelFoodEscalon ? `Escal\xF3n ${r.bonoNivelFoodEscalon} \xB7 ${kgTxt(r.kgFood)} kg` : r.bonoNivelFoodSiguiente ? `Faltan ${kgTxt(r.bonoNivelFoodSiguiente.faltan)} kg para ${r.bonoNivelFoodSiguiente.etiqueta}` : "",
+    r.bonoNivelFoodEscalon ? `${/^escal/i.test(r.bonoNivelFoodEscalon) ? r.bonoNivelFoodEscalon : `Escal\xF3n ${r.bonoNivelFoodEscalon}`} \xB7 ${kgTxt(r.kgFood)} kg` : r.bonoNivelFoodSiguiente ? `Faltan ${kgTxt(r.bonoNivelFoodSiguiente.faltan)} kg para ${r.bonoNivelFoodSiguiente.etiqueta}` : "",
     !!(cfg.bonoNivelFood && cfg.bonoNivelFood.activo !== false)
   );
   add(
