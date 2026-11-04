@@ -14,7 +14,7 @@
 //
 // Puro: lo usan el inicio del vendedor, sus indicadores y Comercial → Vendedores.
 
-import { piezasActivas, pieza, simularEsquema, completo } from './piezasComision.js';
+import { piezasActivas, pieza, simularEsquema, completo, nombresPlan, clasePieza } from './piezasComision.js';
 import { escalonesBonoNivel } from './bloquesRemuneracion.js';
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -57,7 +57,7 @@ function marcas(cfg, meta, medida = 'retail') {
  * El tablero del plan para un período.
  * @param {object} cfgRaw  esquema vigente del período (commissionConfig o configEnFecha)
  * @param {object} fila    fila del estado de cuenta del período (o filaDeDesglose)
- * @param {object} extra   { anaquel: {hasAnaquel, ok, cubiertos, total} }
+ * @param {object} extra   { anaquel: {hasAnaquel, ok, cubiertos, total}, ritmo: {diasPasados, diasRestantes} }
  */
 export function tableroPlan(cfgRaw = {}, fila = null, extra = {}) {
     const cfg = completo(cfgRaw);
@@ -73,7 +73,7 @@ export function tableroPlan(cfgRaw = {}, fila = null, extra = {}) {
     const tarjetas = [];
     const T = (id, datos) => {
         const p = pieza(id);
-        tarjetas.push({ id, nombre: p.nombre, grupo: p.grupo, regla: p.resumen(cfg), para: p.para, ganado: 0, maximo: null, pct: null, progreso: '', siguiente: '', estado: 'en_camino', cuenta: 'comision', ...datos });
+        tarjetas.push({ id, nombre: p.nombre, grupo: p.grupo, clase: clasePieza(id), regla: p.resumen(cfg), para: p.para, ganado: 0, maximo: null, pct: null, progreso: '', siguiente: '', estado: 'en_camino', cuenta: 'comision', barra: null, faltan: 0, ...datos });
     };
 
     for (const id of activas) {
@@ -102,6 +102,7 @@ export function tableroPlan(cfgRaw = {}, fila = null, extra = {}) {
                     estado: sig ? 'en_camino' : 'logrado',
                     progreso: `Nivel ${f.nivel || '—'}${f.tasa != null ? ` · ${fmtPct(f.tasa)}` : ''} sobre ${fmtUsd(f.cobradoRegular)} cobrados`,
                     siguiente: sig ? `Te faltan ${fmtUds(Math.ceil(meta * num(sig.minPct) / 100 - unidades))} ${udsTxt} para el nivel ${sig.label} (${fmtPct(sig.rate)}).` : 'Estás en el nivel más alto.',
+                    barra: 'retail', faltan: sig ? Math.ceil(meta * num(sig.minPct) / 100 - unidades) : 0,
                 });
                 break;
             }
@@ -116,6 +117,7 @@ export function tableroPlan(cfgRaw = {}, fila = null, extra = {}) {
                     estado: !sig && num(f.bonoNivelMonto) > 0 ? 'logrado' : num(f.bonoNivelMonto) > 0 ? 'en_camino' : 'pendiente',
                     progreso: `${fmtUds(unidades)} ${udsTxt}${f.bonoNivelEscalon ? ` · escalón «${f.bonoNivelEscalon}»` : ''}`,
                     siguiente: sig ? `Te faltan ${fmtUds(sig.faltan)} ${udsTxt} para ${fmtUsd(sig.monto)}.` : (num(f.bonoNivelMonto) > 0 ? '¡Lograste el escalón más alto!' : ''),
+                    barra: 'retail', faltan: sig ? num(sig.faltan) : 0,
                 });
                 break;
             }
@@ -130,7 +132,7 @@ export function tableroPlan(cfgRaw = {}, fila = null, extra = {}) {
                 const regla = [usd > 0 ? fmtUsd(usd).replace(',00', '') : null, num(cfg.bonusActivacion) > 0 ? `${fmtPct(cfg.bonusActivacion)} de lo cobrado` : null].filter(Boolean).join(' + ');
                 if (fila && !(cartera > 0)) {
                     T(id, {
-                        nombre: 'Activación de cartera', ganado: 0, maximo: usd || null, estado: 'no_aplica',
+                        ganado: 0, maximo: usd || null, estado: 'no_aplica',
                         regla: `${regla} al mes si cada semana el ${num(cfg.activacionThreshold)} % de tus PDV compra ${num(cfg.activacionMinUnits)} uds o más`,
                         progreso: 'Todavía no tienes PDV activos a tu nombre.',
                         siguiente: 'Pídele a administración que te asigne tu cartera: sin ella no se puede medir.',
@@ -139,7 +141,7 @@ export function tableroPlan(cfgRaw = {}, fila = null, extra = {}) {
                 }
                 const objetivo = num(f.actSemObjetivo), activados = num(f.actSemActivados);
                 T(id, {
-                    nombre: 'Activación de cartera', ganado, maximo: usd || null,
+                    ganado, maximo: usd || null,
                     regla: `${regla} al mes si cada semana el ${num(cfg.activacionThreshold)} % de tus PDV compra ${num(cfg.activacionMinUnits)} uds o más`,
                     pct: semT > 0 ? semL / semT : null,
                     estado: semT > 0 && semL === semT ? 'logrado' : semL > 0 ? 'en_camino' : 'pendiente',
@@ -204,6 +206,7 @@ export function tableroPlan(cfgRaw = {}, fila = null, extra = {}) {
                     estado: !sig && num(f.bonoNivelFoodMonto) > 0 ? 'logrado' : num(f.bonoNivelFoodMonto) > 0 ? 'en_camino' : 'pendiente',
                     progreso: `${fmtKgP(kg)}${kgTxtBase ? ` ${kgTxtBase}` : ''}${f.bonoNivelFoodEscalon ? ` · escalón «${f.bonoNivelFoodEscalon}»` : ''}`,
                     siguiente: sig ? `Te faltan ${fmtKgP(sig.faltan)}${kgTxtBase ? ` ${kgTxtBase}` : ''} para ${fmtUsd(sig.monto)}.` : (num(f.bonoNivelFoodMonto) > 0 ? '¡Lograste el escalón más alto!' : ''),
+                    barra: 'food', faltan: sig ? num(sig.faltan) : 0,
                 });
                 break;
             }
@@ -211,6 +214,21 @@ export function tableroPlan(cfgRaw = {}, fila = null, extra = {}) {
                 T(id, { ganado: num(f.bonoRecupMonto), estado: 'siempre', progreso: `${fmtPct(cfg.comisionRecuperadas)} de ${fmtUsd(f.cobradoRecup)} heredados cobrados`, siguiente: 'Cobra las facturas viejas de tu cartera.' });
                 break;
             default: break; // 'arranque' no paga: se ve en la meta
+        }
+    }
+
+    // El ritmo para el siguiente escalón o nivel (solo en el mes en curso): lo
+    // que le falta, repartido en los días que quedan, contra lo que lleva por día.
+    const rit = extra.ritmo || {};
+    const dR = num(rit.diasRestantes), dP = num(rit.diasPasados);
+    if (fila && !f.cerrado && dR > 0) {
+        for (const t of tarjetas) {
+            if (!t.barra || !(t.faltan > 0)) continue;
+            const kgs = t.barra === 'food';
+            const u = kgs ? (porCobradas ? 'kg cobrados' : 'kg') : udsTxt;
+            const fmt = kgs ? (v) => String(Math.round(num(v) * 10) / 10).replace('.', ',') : (v) => fmtUds(Math.ceil(num(v)));
+            const lleva = kgs ? kg : unidades;
+            t.ritmo = `Necesitas ${fmt(t.faltan / dR)} ${u} por día los próximos ${dR} día${dR === 1 ? '' : 's'}${dP > 0 ? ` · hoy vas a ${fmt(lleva / dP)} por día` : ''}.`;
         }
     }
 
@@ -225,6 +243,8 @@ export function tableroPlan(cfgRaw = {}, fila = null, extra = {}) {
         tarjetas: variables, fijo: fijo || null,
         ganado, alMeta, techo: techo.variable,
         pctAlMeta: alMeta > 0 ? Math.min(1, ganado / alMeta) : null,
+        // Cómo se llama lo que gana: bonos, comisiones o las dos cosas.
+        nombres: nombresPlan(cfg),
         porCobradas, soloFijo: variables.length === 0,
         metas: {
             retail: meta > 0 ? { actual: unidades, meta, unidad: udsTxt, pct: unidades / meta, marcas: marcas(cfg, meta) } : null,

@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-04-vendedor-ordenado',
+        fecha: '2026-11-04',
+        roles: ['vendedor', 'master'],
+        titulo: 'Tu página, más ordenada',
+        resumen: 'Mi Semana es tu gestión, la segunda pestaña es lo que ganas (se llama «Mis bonos», «Mis comisiones» o «Comisión y bonos» según tu plan) y Mis KPIs son tus indicadores. El botón Nuevo pedido está ahora en la pestaña Pedidos.',
+    },
+    {
         id: '2026-11-04-plan-vendedor',
         fecha: '2026-11-04',
         roles: ['vendedor', 'master'],

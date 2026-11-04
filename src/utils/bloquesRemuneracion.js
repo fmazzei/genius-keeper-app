@@ -164,14 +164,14 @@ export function bloquesDeEsquema(cfg = {}) {
         out.push({ id: 'bonoActivacion', nombre: 'Bono Activación', resumen: `${pago} × semanas logradas (cada semana, ${num(cfg.activacionThreshold)} % de la cartera con ≥${num(cfg.activacionMinUnits)} uds)` });
     }
     if (num(cfg.bonusAnaquel) > 0) out.push({ id: 'bonoAnaquel', nombre: 'Bono Anaquel', resumen: `${pct(cfg.bonusAnaquel)} en cuentas de régimen anaquel` });
-    if (num(cfg.comisionFoodservice) > 0) out.push({ id: 'foodservice', nombre: 'Foodservice', resumen: `${pct(cfg.comisionFoodservice)} flat sobre lo cobrado` });
+    if (num(cfg.comisionFoodservice) > 0) out.push({ id: 'foodservice', nombre: 'Comisión foodservice', resumen: `${pct(cfg.comisionFoodservice)} flat sobre lo cobrado` });
     const escF = escalonesBonoNivel(cfg, { meta: num(cfg.metaKgFoodservice), medida: 'food' });
     if (escF.length) out.push({ id: 'bonoNivelFood', nombre: 'Bono foodservice por nivel', resumen: escF.map(e => `${e.porPct ? `${e.minPct} %` : `${String(e.umbral).replace('.', ',')} kg`} → ${usd(e.monto)}`).join(' · ') + ' (solo el más alto)' });
     if (cfg.bonoCrecimientoFood && cfg.bonoCrecimientoFood.activo !== false && num(cfg.bonoCrecimientoFood.montoUSD) > 0) {
         const b = cfg.bonoCrecimientoFood;
-        out.push({ id: 'bonoCrecimientoFood', nombre: 'Crecimiento foodservice', resumen: `${usd(b.montoUSD)} si los kg crecen ${num(b.pct)} % o más contra el mes anterior` });
+        out.push({ id: 'bonoCrecimientoFood', nombre: 'Bono de crecimiento foodservice', resumen: `${usd(b.montoUSD)} si los kg crecen ${num(b.pct)} % o más contra el mes anterior` });
     }
-    if (num(cfg.comisionRecuperadas) > 0) out.push({ id: 'recuperadas', nombre: 'Cuentas recuperadas', resumen: `${pct(cfg.comisionRecuperadas)} flat sobre lo cobrado de facturas heredadas` });
+    if (num(cfg.comisionRecuperadas) > 0) out.push({ id: 'recuperadas', nombre: 'Comisión por cuentas recuperadas', resumen: `${pct(cfg.comisionRecuperadas)} flat sobre lo cobrado de facturas heredadas` });
     if (Array.isArray(cfg.arranque) && cfg.arranque.length) out.push({ id: 'arranque', nombre: 'Arranque', resumen: cfg.arranque.map((a, i) => `Mes ${i + 1}: ${num(a.meta)} uds`).join(' · ') });
     out.push({ id: 'base', nombre: 'Unidades que cuentan', resumen: baseDeUnidades(cfg) === 'cobradas' ? 'Las de facturas COBRADAS en el mes' : 'Las FACTURADAS en el mes' });
     return out;

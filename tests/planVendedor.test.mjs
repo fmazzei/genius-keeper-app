@@ -92,5 +92,21 @@ console.log('— 4. Solo sueldo');
     ok(plan.soloFijo && plan.fijo.ganado === 300 && plan.tarjetas.length === 0, 'solo fijo: sin tarjetas variables');
 }
 
+console.log('— 5. Bono o comisión, y el ritmo para el siguiente escalón');
+{
+    const fila = computeEstadosDeCuenta(erick, [], [], { ahora })[0];
+    const plan = tableroPlan(configEnFecha(erick, new Date(2026, 10, 1)), fila, { ritmo: { diasPasados: 19, diasRestantes: 11 } });
+    ok(plan.nombres.pestana === 'Mis bonos' && plan.nombres.cuenta === 'Bonos', `Erick: «${plan.nombres.pestana}»`);
+    const bn = plan.tarjetas.find(t => t.id === 'bonoNivel');
+    ok(bn.clase === 'bono' && bn.barra === 'retail', 'el bono por escalones lleva la barra de la meta');
+    ok(/117 uds cobradas por día los próximos 11 días/.test(bn.ritmo || ''), `ritmo: ${bn.ritmo}`);
+    ok(plan.tarjetas.find(t => t.id === 'foodNivel').barra === 'food', 'el bono foodservice lleva la barra de kg');
+    ok(plan.tarjetas.every(t => t.clase === 'bono' && /^Bono/.test(t.nombre)), `todas sus piezas se llaman bono: ${plan.tarjetas.map(t => t.nombre).join(', ')}`);
+    const caro = tableroPlan({ salarioFijo: 400, comisionActiva: true, esquema: 'fija', tasaFija: 4.5, bonusPuntualidad: 1.5, bonusActivacion: 0, bonusAnaquel: 0, comisionFoodservice: 4.5, comisionRecuperadas: 4.5 }, null);
+    ok(caro.nombres.pestana === 'Comisión y bonos', `Carolina: «${caro.nombres.pestana}»`);
+    const soloCom = tableroPlan({ comisionActiva: true, esquema: 'fija', tasaFija: 4, bonusPuntualidad: 0, bonusActivacion: 0, bonusAnaquel: 0, comisionFoodservice: 0, comisionRecuperadas: 0 }, null);
+    ok(soloCom.nombres.pestana === 'Mis comisiones', 'solo comisión: «Mis comisiones»');
+}
+
 console.log(fallas ? `\n✗ ${fallas} fallas` : '\n✓ todo en verde');
 process.exit(fallas ? 1 : 0);
