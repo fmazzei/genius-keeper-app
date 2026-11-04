@@ -23,13 +23,25 @@ const ICON = {
 };
 
 function buildKpi(id, ctx) {
-    const { stats, vendedor, estadoActual, tier, pct, execKpis } = ctx;
+    const { stats, vendedor, estadoActual, execKpis, plan } = ctx;
+    // Las tarjetas de comisiones salen de SU plan (planVendedor.js): lo que no
+    // está en su plan no se muestra.
+    const tarjeta = (...ids) => (plan?.tarjetas || []).find(t => ids.includes(t.id));
     switch (id) {
-        case 'comision_periodo':
-            return { value: money(estadoActual?.devengadoComision || 0), unit: 'en comisiones', sub: `Por cobrar: comisiones ${money(Math.max(0, estadoActual?.saldoComision || 0))} · fijo ${money(Math.max(0, estadoActual?.saldoFijo || 0))}`, tone: 'good' };
+        case 'comision_periodo': {
+            if (plan?.soloFijo) return { value: money(plan.fijo?.ganado || 0), unit: 'sueldo', sub: 'Tu plan es solo sueldo fijo.', tone: 'neutral' };
+            const saldoFijo = Math.max(0, estadoActual?.saldoFijo || 0);
+            return {
+                value: money(estadoActual?.devengadoComision || 0), unit: 'ganado',
+                sub: [plan?.alMeta > 0 ? `Al cumplir tu meta: ${money(plan.alMeta)}` : null, `Por cobrar: ${money(Math.max(0, estadoActual?.saldoComision || 0))}`, saldoFijo > 0 ? `fijo ${money(saldoFijo)}` : null].filter(Boolean).join(' · '),
+                tone: 'good', bar: plan?.pctAlMeta ?? null,
+            };
+        }
         case 'meta_nivel': {
-            const p = Math.round((pct || 0) * 100);
-            return { value: `${num(stats.unidadesDelMes)} / ${num(vendedor.metaMensual)}`, unit: 'uds', sub: `Nivel ${tier?.label || '—'} · ${p}% de la meta`, tone: p >= 100 ? 'good' : p >= 60 ? 'warn' : 'neutral', bar: Math.min(1, pct || 0) };
+            const m = plan?.metas?.retail;
+            if (!m) return { value: `${num(stats.unidadesDelMes)} / ${num(vendedor.metaMensual)}`, unit: 'uds', sub: 'Meta del mes', tone: 'neutral' };
+            const p = Math.round(m.pct * 100);
+            return { value: `${num(m.actual)} / ${num(m.meta)}`, unit: m.unidad, sub: [plan.chipMeta, `${p} % de la meta`].filter(Boolean).join(' · '), tone: p >= 100 ? 'good' : p >= 60 ? 'warn' : 'neutral', bar: Math.min(1, m.pct) };
         }
         case 'velocidad': {
             const ok = (stats.runRateActual || 0) >= (stats.runRateNeeded || 0);
@@ -45,11 +57,17 @@ function buildKpi(id, ctx) {
             return { value: num(stats.facturasVencidas || 0), unit: 'vencidas', sub: `${money(stats.montoVencido || 0)} por cobrar vencido`, tone: (stats.facturasVencidas || 0) > 0 ? 'bad' : 'good' };
         case 'despachos':
             return { value: num(stats.despachoHoy || 0), unit: 'uds hoy', sub: 'Unidades despachadas en el día', tone: 'neutral' };
-        case 'activacion':
-            return { value: stats.activacionOk ? 'Logrado' : `${num(stats.puntosActivacion || 0)}/${num(stats.puntosTotal || 0)}`, unit: 'cartera', sub: 'Cobertura facturada de tu cartera', tone: stats.activacionOk ? 'good' : 'warn' };
-        case 'anaquel':
-            if (!stats.hasAnaquel) return null; // sin cuentas de anaquel → no aplica
+        case 'activacion': {
+            const t = tarjeta('activacionUSD', 'activacionPct');
+            if (!t) return null; // no está en su plan
+            if (t.estado === 'no_aplica') return { value: '—', sub: t.progreso, tone: 'neutral' };
+            return { value: estadoActual ? `${estadoActual.actSemanasLogradas || 0}/${estadoActual.actSemanasTotales || 0}` : '—', unit: 'semanas', sub: t.siguiente || t.progreso, tone: t.estado === 'logrado' ? 'good' : 'warn', bar: t.pct };
+        }
+        case 'anaquel': {
+            const t = tarjeta('anaquel');
+            if (!t || t.estado === 'no_aplica') return null;
             return { value: stats.anaquelOk ? 'Logrado' : `${num(stats.anaquelCubiertos || 0)}/${num(stats.anaquelTotal || 0)}`, unit: 'sucursales', sub: 'Disponibilidad en anaquel', tone: stats.anaquelOk ? 'good' : 'warn' };
+        }
         case 'radar': {
             const n = (stats.radarAlerts || []).length;
             return { value: num(n), unit: n === 1 ? 'alerta' : 'alertas', sub: `${num(stats.stockoutsCount || 0)} quiebre(s) de stock`, tone: n > 0 ? 'warn' : 'good' };
@@ -87,8 +105,8 @@ function buildKpi(id, ctx) {
     }
 }
 
-export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, tier, pct, onNavigate, execKpis, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas, onRefresh, refreshing = false }) {
-    const ctx = { stats, vendedor, estadoActual, tier, pct, execKpis };
+export default function VendedorKpisView({ enabledIds = [], stats, vendedor, estadoActual, plan = null, onNavigate, execKpis, hasAnaquelData = false, onOpenAnaquelMap, hasVentasData = false, onOpenVentas, onRefresh, refreshing = false }) {
+    const ctx = { stats, vendedor, estadoActual, execKpis, plan };
     const [detalle, setDetalle] = useState(null); // { id, def, kpi } del KPI expandido
     const [openCats, setOpenCats] = useState({}); // categorías colapsadas por defecto
 
@@ -144,6 +162,33 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                     </div>
                 );
             })()}
+
+            {/* Tu plan de comisiones de un vistazo: una fila por pieza. */}
+            {plan && plan.tarjetas.length > 0 && (
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
+                    <p className="text-[11px] font-black uppercase tracking-widest text-emerald-400/80">Tu plan este mes</p>
+                    {plan.tarjetas.map(t => (
+                        <div key={t.id}>
+                            <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-sm font-semibold text-slate-200 truncate">{t.nombre}</span>
+                                <span className={`text-sm font-black tabular-nums ${t.ganado > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                    {money(t.ganado)}{t.maximo > 0 && <span className="text-[11px] font-bold text-slate-500"> / {money(t.maximo)}</span>}
+                                </span>
+                            </div>
+                            {t.pct != null && (
+                                <div className="h-1 rounded-full bg-slate-800 overflow-hidden mt-1">
+                                    <div className={`h-full rounded-full ${t.estado === 'logrado' ? 'bg-emerald-400' : 'bg-amber-400'}`} style={{ width: `${Math.max(2, Math.min(100, t.pct * 100))}%` }} />
+                                </div>
+                            )}
+                            {(t.siguiente || t.progreso) && <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{t.siguiente || t.progreso}</p>}
+                        </div>
+                    ))}
+                    <div className="flex items-baseline justify-between pt-1.5 border-t border-slate-800">
+                        <span className="text-xs font-bold text-slate-400">Total ganado</span>
+                        <span className="text-base font-black text-emerald-400 tabular-nums">{money(plan.ganado)}{plan.alMeta > 0 && <span className="text-[11px] font-bold text-slate-500"> · a la meta {money(plan.alMeta)}</span>}</span>
+                    </div>
+                </div>
+            )}
 
             {/* Ventas por cliente/PDV de tu cartera — el indicador que mueve tu comisión */}
             {onOpenVentas && (

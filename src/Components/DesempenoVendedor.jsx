@@ -14,6 +14,7 @@
 // (Facturación, Activación, Cobranza, Captación); la Activación se muestra con
 // quiénes se activaron, cuánto facturaron y quiénes faltan.
 
+import PlanComisiones from '@/Components/PlanComisiones.jsx';
 import React, { useState } from 'react';
 import { Receipt, Wallet, Zap, UserPlus, AlertTriangle, MapPin, Store, FileText, Check, ChevronDown } from 'lucide-react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ReferenceLine } from 'recharts';
@@ -448,18 +449,19 @@ export default function DesempenoVendedor({ ev, anio, nombre, ventana = 'mes', o
                                         <span>Lo que más le resta: <b>{PILAR_META[ev.peor].nombre}</b> ({pct(ev.pilares[ev.peor].pctMeta)})</span>
                                     </p>
                                 )}
-                                {ev.comision && (
-                                    <p className="text-xs text-slate-500 mt-1.5">
-                                        Nivel de comisión <b className="text-slate-700">{ev.comision.nivel} ({(ev.comision.tasa * 100).toLocaleString('es-VE', { maximumFractionDigits: 1 })}%)</b>
-                                        {ev.comision.generada != null && <>{' · '}comisión devengada en el mes (lo cobrado): <b className="text-slate-700">{money0(ev.comision.generada)}</b></>}
-                                        {(ev.comision.bloques || []).filter(b => Number(b.monto)).length > 0 && (
-                                            <span className="block mt-0.5">{(ev.comision.bloques || []).filter(b => Number(b.monto)).map(b => `${b.nombre} ${money0(b.monto)}`).join(' · ')}</span>
-                                        )}
-                                    </p>
+                                {ev.comision && !ev.comision.plan && ev.comision.generada != null && (
+                                    <p className="text-xs text-slate-500 mt-1.5">Comisión devengada en el mes (lo cobrado): <b className="text-slate-700">{money0(ev.comision.generada)}</b></p>
                                 )}
                                 {p.sinIngreso && <p className="text-xs text-amber-700 mt-2">Sin fecha de ingreso: se evalúa el mes de calendario con la meta plena.</p>}
                             </div>
                         </div>
+                        {/* Su plan de comisiones y cómo va: lo mismo que ve el vendedor. */}
+                        {ev.comision?.plan && (
+                            <div className="px-4 sm:px-6 pt-4">
+                                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Su plan de comisiones este mes</p>
+                                <PlanComisiones plan={ev.comision.plan} tema="claro" quien={nombre} />
+                            </div>
+                        )}
                         <p className="px-4 sm:px-6 pt-3 text-[11px] text-slate-400">Toca cada parte para ver el detalle.</p>
                         <Pilares ev={ev} />
                         <Contexto contexto={ev.contexto} />

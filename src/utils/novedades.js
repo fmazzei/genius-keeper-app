@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-04-plan-vendedor',
+        fecha: '2026-11-04',
+        roles: ['vendedor', 'master'],
+        titulo: 'Tu plan de comisiones, en tu inicio',
+        resumen: 'Tu inicio muestra ahora tu plan tal como es: lo que llevas ganado este mes, lo que ganas al cumplir tu meta y una tarjeta por cada forma en que ganas, con lo que te falta para el siguiente premio.',
+    },
+    {
         id: '2026-11-04-constructor-piezas',
         fecha: '2026-11-04',
         roles: ['master'],

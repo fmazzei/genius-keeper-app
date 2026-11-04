@@ -19,6 +19,7 @@
 // como contexto. Un pilar sin datos NO cuenta: se declara y su peso se reparte.
 
 import { computeActivacionPeriodo, tierParaPct, fechaCalendario, computeMetaMensual, carteraActivacion, clavesCartera, computeDesglosePeriodo } from '@/utils/vendedorMeta.js';
+import { tableroPlan, filaDeDesglose } from '@/utils/planVendedor.js';
 import { cuentaEnCartera, esPorCobrar, saldoAbierto } from '@/utils/facturaEstado.js';
 import { clasificarVentas, evaluarPlan } from '@/utils/gestionVenta.js';
 import { detalleActivacion } from '@/utils/activacion.js';
@@ -297,7 +298,7 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
     // más bonos, foodservice y recuperadas). Antes sumaba `comisionGenerada`, la
     // cifra provisional del servidor, de las facturas EMITIDAS en el mes: otro
     // número, que no coincidía con lo que se le paga.
-    let comisionGenerada = null, bloques = null, sinPct = false;
+    let comisionGenerada = null, bloques = null, sinPct = false, plan = null;
     if (v.tipo === 'mes' && vendedor.fechaIngreso) {
         const pad = (n) => String(n).padStart(2, '0');
         const periodKey = `${inicio.getFullYear()}-${pad(inicio.getMonth() + 1)}-${pad(inicio.getDate())}`;
@@ -307,12 +308,14 @@ export function evaluarDesempeno({ vendedor = {}, facturas = [], ventana = null,
             // Lo ganado por bloque (sin el fijo): comisión %, bonos en USD y bonos %.
             bloques = (d.bloques || []).filter(b => b.cuenta !== 'fijo');
             sinPct = d.comisionActiva === false;
+            // Su plan con lo que lleva: lo mismo que ve el vendedor en su inicio.
+            plan = tableroPlan(d.cfg || cfg, filaDeDesglose(d));
         }
     }
 
     return {
         global, estado: estadoDe(global),
-        comision: v.tipo === 'mes' ? { nivel: sinPct ? 'Sin comisión %' : nivel.label, tasa: sinPct ? 0 : nivel.rate, generada: comisionGenerada, bloques } : null,
+        comision: v.tipo === 'mes' ? { nivel: sinPct ? 'Sin comisión %' : nivel.label, tasa: sinPct ? 0 : nivel.rate, generada: comisionGenerada, bloques, plan } : null,
         pilares: Object.fromEntries(Object.entries(pilares).map(([k, x]) => [k, { ...x, estado: estadoDe(x.score), peso: PESOS[k] }])),
         contexto,
         peor: peor && peor.perdida > 0 ? peor.k : null,

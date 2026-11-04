@@ -27,6 +27,20 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-04-plan-vendedor",
+    fecha: "2026-11-04",
+    roles: ["vendedor", "master"],
+    titulo: "Tu plan de comisiones, en tu inicio",
+    resumen: "Tu inicio muestra ahora tu plan tal como es: lo que llevas ganado este mes, lo que ganas al cumplir tu meta y una tarjeta por cada forma en que ganas, con lo que te falta para el siguiente premio."
+  },
+  {
+    id: "2026-11-04-constructor-piezas",
+    fecha: "2026-11-04",
+    roles: ["master"],
+    titulo: "Constructor de comisiones por piezas",
+    resumen: "El esquema de cada vendedor se arma con piezas que agregas y quitas (sueldo, comisi\xF3n, premios en d\xF3lares, foodservice\u2026), con tres preguntas para empezar, un simulador que muestra de d\xF3nde sale cada d\xF3lar y avisos que no dejan guardar un error como un bono de 80 %. La propuesta en PDF muestra solo lo que el vendedor tiene."
+  },
+  {
     id: "2026-11-03-remuneracion-bloques",
     fecha: "2026-11-03",
     roles: ["master"],

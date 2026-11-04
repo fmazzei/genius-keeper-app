@@ -7,9 +7,9 @@
 
 export const VENDOR_KPI_REGISTRY = [
     { id: 'comision_periodo', label: 'Comisión del período', cat: 'Comisiones', desc: 'Devengado del período en curso' },
-    { id: 'meta_nivel',       label: 'Meta del mes y Nivel', cat: 'Comisiones', desc: 'Unidades facturadas vs meta + nivel de comisión' },
+    { id: 'meta_nivel',       label: 'Meta del mes',         cat: 'Comisiones', desc: 'Unidades vs meta, como las mide tu plan (cobradas o facturadas)' },
     { id: 'velocidad',        label: 'Velocidad de venta',   cat: 'Comisiones', desc: 'Ritmo actual vs el necesario para la meta' },
-    { id: 'activacion',       label: 'Bono Activación',      cat: 'Comisiones', desc: 'Cobertura de cartera facturada por semana' },
+    { id: 'activacion',       label: 'Bono Activación',      cat: 'Comisiones', desc: 'Semanas en que tu cartera compró (si está en tu plan)' },
     { id: 'anaquel',          label: 'Bono Anaquel',         cat: 'Comisiones', desc: 'Disponibilidad en anaquel (cuentas de régimen anaquel)' },
     { id: 'por_cobrar',       label: 'Por cobrar',           cat: 'Cobranza',  desc: 'Facturas por vencer y monto abierto' },
     { id: 'cobranza',         label: 'Cobranza a tiempo',    cat: 'Cobranza',  desc: '% de facturas cobradas dentro de plazo' },

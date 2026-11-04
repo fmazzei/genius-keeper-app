@@ -3981,6 +3981,35 @@ Pedido del dueño: Carolina salió y entra Erick, que usará `ventas@lacteoca.co
 - **Node.js 22 en las funciones (3-nov):** Google retiró Node.js 20 el 30-oct-2026 y desde entonces TODO deploy de funciones fallaba ("Runtime Node.js 20 was decommissioned"); por eso `cuentaCorreo` no existía y la pantalla decía "internal". `functions/package.json` → `engines.node: "22"`. `CorreoEnUso` ya no muestra "internal" suelto: dice que el servidor no respondió.
 - **"Sin rol" que no era (3-nov):** Erick (`ventas@lacteoca.com`, uid `hu8Xkb3KO5WfHxRGGBwTWhrs0P32`) tenía perfil `vendedor` activo y al entrar vio "tu cuenta no tiene un rol asignado". Causa más probable: la lectura del perfil falló o tardó más de 15 s en un teléfono nuevo (sin rol guardado), y ese error caía en la misma pantalla que "sin rol". Ahora `AuthContext` intenta 3 veces (15/20/25 s) y, si no lee, pone `role:'sin-lectura'`: `App.tsx` dice que fue la conexión y ofrece Reintentar. La pantalla de sin rol (perfil que no existe, `no-role`) dice "sin perfil en GK" y trae "Ya me lo asignaron: reintentar".
 
+### La página del vendedor muestra SU plan (2026-11-04) ✅
+
+Pedido del dueño con capturas del inicio de Erick: se veían «Tu fijo va aparte: $0», «Bono Cobranza +0 %», «Nivel Sin comisión %» y una Activación de «0/0 cartera». La página no reflejaba el plan del vendedor. *"Que se vea y exprese su plan de comisiones y cómo afecta su rendimiento… cada vendedor puede tener un sistema distinto."*
+
+- **`src/utils/planVendedor.js` → `tableroPlan(cfg, fila, extra)`** (puro). Cruza las piezas del constructor (`piezasActivas`) con la fila del período del MISMO motor que paga (`computeEstadosDeCuenta`; para el máster, `filaDeDesglose(computeDesglosePeriodo)`). No calcula comisiones, solo las presenta.
+  - Devuelve, por pieza puesta: lo ganado, el máximo, la barra, el progreso y el siguiente paso («Te faltan 150 uds cobradas para $200»).
+  - Además: lo ganado en el mes, lo que gana a la meta y el techo (con `simularEsquema`), las metas retail y foodservice con las marcas de escalones o niveles, y el chip de la meta (comisión, nivel o escalón).
+  - Una pieza que no se puede medir lo dice: activación sin cartera («pídele a administración que te asigne tu cartera»), crecimiento en el primer mes y anaquel sin cuentas en consignación.
+- **`src/Components/PlanComisiones.jsx`** (tema oscuro o claro). Muestra:
+  - lo que lleva ganado, con la barra hasta lo que gana a la meta y el techo;
+  - el sueldo fijo aparte, solo si lo tiene;
+  - la meta con chips de escalones o niveles;
+  - foodservice en kg;
+  - «Cómo ganas», con una tarjeta por pieza que se toca para ver la regla.
+- **Inicio del vendedor** (`VendedorLayout` → `HomeView`):
+  - El plan reemplaza el hero, el medidor de la meta, la tarjeta de cobranza con su bono y «Estado de bonos».
+  - Quedan lo que se le debe hoy (dentro del plan), el aviso de cambio de plan, el ritmo para la meta y vencidas, por vencer y despachos.
+  - Se borraron `MetaDetailModal`, `buildTiers`, `getTierFromConfig` y sus estilos. `resumenEsquema` usa las piezas.
+- **Mis KPIs** (`VendedorKpisView`): arriba, «Tu plan este mes» con una fila por pieza.
+  - «Comisión del período» dice lo ganado y lo que gana a la meta.
+  - «Meta del mes» usa las unidades de su plan (cobradas o facturadas) y el detalle lista los escalones.
+  - «Bono Activación» y «Bono Anaquel» solo aparecen si están en su plan.
+- **Máster** (Comercial → Vendedores, `DesempenoVendedor`): «Su plan de comisiones este mes» con el mismo componente en tema claro (`evaluarDesempeno` devuelve `comision.plan`). Se quitó la línea «Nivel de comisión» que no aplicaba a todos.
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/planVendedor.test.mjs` (23 en verde).
+  - Erick sin ventas: solo sus 4 piezas, sin fijo ni cobranza, $550 a la meta y $600 de techo.
+  - Erick con 1.450 uds: escalón 2 ($180); el máster ve lo mismo.
+  - Carolina (4,5 % fija + cobranza + fijo $400).
+  - Solo sueldo.
+
 ### Constructor de comisiones por PIEZAS (2026-11-04) ✅ (rama `claude/constructor-remuneracion`)
 
 Reclamo del dueño con capturas del esquema de Erick: el constructor de bloques era una lista de campos sueltos. Al tantear, quedó guardado un **Bono Activación de 80 %** (el campo en % de lo cobrado, no el de dólares), y la propuesta decía «hasta $7.376». Además, el último nivel de la comisión no se podía borrar y el PDF mostraba «Tu comisión 0 % fijo» a quien no tiene comisión %. Pedido: *"un conjunto de opciones clasificadas que el usuario va agregando y simulando… que el sistema lo guíe"*.
