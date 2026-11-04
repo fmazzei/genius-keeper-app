@@ -4065,7 +4065,7 @@ Reglas del dueño (3-nov):
 - **CarteraManager** ya no deja asignar un PDV o cadena que está en la cartera de otro vendedor: lo muestra "En cartera de X" y remite a Traspasar cartera.
 
 **Esquema de Erick (confirmado por el dueño, 4-nov), a cargar al aprobar el PR:**
-- Ingreso **1-nov-2026**; fijo **$400** al mes (por quincenas), sin viáticos; sin comisión %.
+- Ingreso **1-nov-2026**; **sin fijo** y sin comisión %: solo gana bonos en USD (corrección del dueño, 4-nov: no tiene los $400).
 - Unidades **cobradas**. Las facturas heredadas de Carolina (anteriores a su ingreso) **no suman** a sus unidades y no le pagan nada (recuperadas 0 %).
 - Bono por nivel (unidades cobradas en el mes): 1.280 → $160 · 1.400 → $180 · 1.600 → $200 (meta) · 1.900 → $250. Solo el más alto.
 - Activación (en la tabla del dueño: "penetración de cartera"): 80 % de su cartera con ≥12 uds por semana; **$200 × semanas logradas ÷ semanas del mes**.

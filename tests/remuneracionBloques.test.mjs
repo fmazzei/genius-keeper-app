@@ -27,7 +27,7 @@ const cerca = (a, b) => Math.abs(a - b) < 0.005;
 const ts = (dia) => { const d = new Date(`${dia}T00:00:00Z`); return { toDate: () => d }; };
 
 const ERICK_CFG = {
-    metaMensual: 1600, precioUnidad: 5.45, salarioFijo: 400, viaticosSemanales: 0,
+    metaMensual: 1600, precioUnidad: 5.45, salarioFijo: 0, viaticosSemanales: 0,
     comisionActiva: false, baseUnidades: 'cobradas',
     bonusPuntualidad: 0, bonusActivacion: 0, bonusAnaquel: 0, comisionRecuperadas: 0, comisionFoodservice: 5,
     bonoNivel: { activo: true, escalones: [
@@ -117,7 +117,7 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     const tardio = { ...erick, fechaIngreso: '2026-11-03' };   // un vendedor que entra el 3: noviembre corto
     const nov = (u) => computeEstadosDeCuenta(tardio, [F('N1', '2026-11-04', u, cobrada('2026-11-10'))], [], { ahora: ahoraFeb }).find(f => f.periodKey === '2026-11-03');
     ok(nov(1194).bonoNivelMonto === 0 && nov(1195).bonoNivelMonto === 160, 'noviembre (28 de 30 días): el escalón de 1.280 pasa a 1.195 uds');
-    ok(cerca(nov(0).base, 400 * 28 / 30), 'noviembre: el fijo del primer período en proporción a sus días');
+    ok(cerca(computeEstadosDeCuenta({ ...tardio, commissionConfig: { ...ERICK_CFG, salarioFijo: 400 } }, [], [], { ahora: ahoraFeb }).find(f => f.periodKey === '2026-11-03').base, 400 * 28 / 30), 'con fijo: el del primer período va en proporción a sus días');
 }
 
 // 6. Desglose por bloque: suma lo devengado; un cierre congelado lo conserva.
@@ -128,7 +128,7 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     const suma = d.bloques.reduce((s, b) => s + b.monto, 0);
     ok(d.unidades === 1440 && d.bonoNivelMonto === 180 && cerca(d.bonoActivacionUSDMonto, 40), 'diciembre: 1.440 uds → $180 por nivel + $40 de Activación (1 de 5 semanas)');
     ok(cerca(suma, d.devengadoTotal), `los bloques suman lo devengado ($${d.devengadoTotal})`);
-    ok(d.bloques.find(b => b.id === 'fijo').cuenta === 'fijo' && !d.bloques.some(b => b.id === 'comision'), 'el fijo va en su cuenta; sin bloque de comisión %');
+    ok(!d.bloques.some(b => b.id === 'fijo') && !d.bloques.some(b => b.id === 'comision') && cerca(d.devengadoTotal, 220), 'sin fijo ni comisión %: solo bloques de bonos, total $220');
     const des = computeDesglosePeriodo(erick, facturas, '2026-12-01', { cartera, ahora: ahoraFeb });
     ok(cerca(des.devengadoTotal, d.devengadoTotal) && des.bloques.length === d.bloques.length, 'el comprobante da lo mismo que el estado de cuenta');
     const congelado = { ...d, modelo: 'cobro', congeladoEn: { toDate: () => new Date(2027, 0, 5) }, bloques: [{ id: 'fijo', nombre: 'Sueldo fijo', monto: 450, cuenta: 'fijo' }, { id: 'bonoNivel', nombre: 'Bono por nivel', monto: 180, cuenta: 'comision' }], devengadoComision: 180, devengadoTotal: 630, bonoActivacionUSDMonto: 0 };
@@ -157,11 +157,11 @@ for (const [u, m] of umbrales.slice(0, 7)) {
 // 9. Bloques del esquema y vista previa (constructor).
 {
     const ids = bloquesDeEsquema(configEnFecha(erick, new Date(2026, 11, 5))).map(b => b.id);
-    ok(ids.includes('fijo') && ids.includes('bonoNivel') && ids.includes('bonoActivacion') && ids.includes('bonoCrecimiento') && !ids.includes('comision'), 'bloques de Erick: fijo, bono por nivel, Activación y crecimiento; sin comisión %');
+    ok(!ids.includes('fijo') && ids.includes('bonoNivel') && ids.includes('bonoActivacion') && ids.includes('bonoCrecimiento') && !ids.includes('comision'), 'bloques de Erick: sin fijo; bono por nivel, Activación y crecimiento; sin comisión %');
     const caro = bloquesDeEsquema(configEnFecha({ commissionConfig: { tiers: [{ label: 'Óptima', minPct: 100, rate: 5 }], bajaRate: 2.5 }, metaMensual: 2000 }, new Date())).map(b => b.id);
     ok(caro.includes('comision') && caro.includes('bonoCobranza'), 'un esquema viejo se describe con sus bloques (comisión por niveles y bonos %)');
     const p100 = previaEsquema(ERICK_CFG, 100);
-    ok(p100.bonoNivel === 200 && p100.comision === 0 && p100.total === 600 && p100.hasta === 300, 'vista previa al 100 %: fijo $400 + bono $200 (+ hasta $300 de Activación y crecimiento)');
+    ok(p100.bonoNivel === 200 && p100.comision === 0 && p100.total === 200 && p100.hasta === 300, 'vista previa al 100 %: sin fijo + bono $200 (+ hasta $300 de Activación y crecimiento)');
     ok(previaEsquema(ERICK_CFG, 79).bonoNivel === 0, 'vista previa al 79 %: sin bono por nivel');
 }
 
@@ -185,8 +185,8 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     ok(difs === 0, `regresión: Carolina y Wilmer dan lo mismo que antes (${cifras} cifras en ${esperado.length} casos)`);
 }
 
-// 10. Erick tal como lo confirmó el dueño (4-nov): ingreso 1-nov, fijo $400 sin viáticos,
-//    unidades COBRADAS, las facturas heredadas de Carolina (anteriores a su ingreso) NO suman
+// 10. Erick tal como lo confirmó el dueño (4-nov): ingreso 1-nov,
+//    sin fijo (corrección del dueño, 4-nov), unidades COBRADAS, las facturas heredadas de Carolina (anteriores a su ingreso) NO suman
 //    y la Activación paga $200 en proporción a las semanas logradas.
 {
     const filas = computeEstadosDeCuenta(erick, [
@@ -195,7 +195,7 @@ for (const [u, m] of umbrales.slice(0, 7)) {
         F('N2', '2026-11-20', 500),                              // propia, sin cobrar
     ], [], { ahora: ahoraFeb });
     const nov = filas.find(f => f.periodKey === '2026-11-01');
-    ok(nov && nov.base === 400, 'noviembre: mes completo, fijo $400');
+    ok(nov && nov.base === 0, 'noviembre: mes completo, sin fijo (Erick solo gana bonos)');
     ok(nov.unidades === 1300, 'noviembre: cuentan solo las 1.300 uds propias cobradas; las 900 heredadas no suman y las 500 sin cobrar tampoco');
     ok(nov.bonoNivelMonto === 160 && cerca(nov.devengadoComision, 160), 'noviembre: bono por nivel $160 y nada por la heredada (recuperadas 0 %)');
 }
