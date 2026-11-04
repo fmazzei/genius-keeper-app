@@ -188,6 +188,18 @@ export default function TraspasoCartera() {
                     {plan.duplicados.length > 0 && (
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
                             <p className="font-semibold text-amber-900">{plan.duplicados.length} cliente(s) ya están en otra cartera. Elige con quién se queda cada uno:</p>
+                            {/* Todos de una vez: a quien recibe (cada uno se puede cambiar después). */}
+                            {plan.duplicados.some(d => d.opciones.some(o => o.id === plan.a.id) && decisiones[d.llave] !== plan.a.id) && (
+                                <button type="button" disabled={trabajando}
+                                    onClick={() => {
+                                        const dec = { ...decisiones };
+                                        plan.duplicados.forEach(d => { if (d.opciones.some(o => o.id === plan.a.id)) dec[d.llave] = plan.a.id; });
+                                        setDecisiones(dec); simular(dec);
+                                    }}
+                                    className="w-full text-xs font-bold px-3 py-2 rounded-lg bg-emerald-600 text-white disabled:opacity-40">
+                                    Todos con {plan.a.nombre}
+                                </button>
+                            )}
                             {plan.duplicados.map(d => (
                                 <div key={d.llave} className="flex flex-wrap items-center gap-1.5">
                                     <span className="text-slate-700 min-w-0 flex-1">{d.nombre} <span className="text-xs text-slate-500">(también en: {d.otros.map(o => o.nombre).join(', ')})</span></span>
