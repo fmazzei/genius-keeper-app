@@ -461,6 +461,17 @@ function motorComisiones(meta = {}, facturasIn = [], opts = {}) {
         p.bonoCrecimiento = bonoCrecimientoPara(cfgP, p.unidades, prev
             ? { unidades: prev.unidades, fraccion: prev.corto ? prev.fraccion : 1, fraccionActual: p.corto ? p.fraccion : 1, mes: prev.mes }
             : null);
+        // Foodservice con sus propios bonos, en kg contra su meta: solo donde se
+        // mide aparte (antes del corte de octubre sumaba a las unidades del retail).
+        // El crecimiento solo se compara con un mes que también lo midió aparte.
+        p.bonoNivelFood = p.separaFood
+            ? bonoNivelPara(cfgP, p.kgFood, { meta: p.metaKg, fraccion: p.corto ? p.fraccion : 1, medida: 'food' })
+            : { activo: false, monto: 0 };
+        p.bonoCrecimientoFood = p.separaFood
+            ? bonoCrecimientoPara(cfgP, p.kgFood, prev && prev.separaFood
+                ? { unidades: prev.kgFood, fraccion: prev.corto ? prev.fraccion : 1, fraccionActual: p.corto ? p.fraccion : 1, mes: prev.mes }
+                : null, { medida: 'food' })
+            : { activo: false, monto: 0 };
     });
 
     // 6) Cobros: al período del pago, con la tasa del período de la factura.
@@ -526,10 +537,13 @@ function montosPeriodo(p, opts = {}) {
     const bonoNivelMonto = p.bonoNivel?.monto || 0;
     const bonoActivacionUSDMonto = hasAnaquel ? 0 : (Number(cfg.bonoActivacionUSD) || 0) * (p.act?.factor || 0);
     const bonoCrecimientoMonto = p.bonoCrecimiento?.monto || 0;
+    const bonoNivelFoodMonto = p.bonoNivelFood?.monto || 0;
+    const bonoCrecimientoFoodMonto = p.bonoCrecimientoFood?.monto || 0;
     const devengadoComision = comisionNivelMonto + bonoCobranzaMonto + bonoActivacionMonto + bonoAnaquelMonto + bonoRecupMonto + comisionFoodMonto
-        + bonoNivelMonto + bonoActivacionUSDMonto + bonoCrecimientoMonto;
+        + bonoNivelMonto + bonoActivacionUSDMonto + bonoCrecimientoMonto + bonoNivelFoodMonto + bonoCrecimientoFoodMonto;
     return {
         bonoNivelMonto, bonoActivacionUSDMonto, bonoCrecimientoMonto, bonoActivacionUSD: Number(cfg.bonoActivacionUSD) || 0,
+        bonoNivelFoodMonto, bonoCrecimientoFoodMonto,
         cobradoRegular, cobradoRegularATiempo, cobradoFood, cobradoRecup,
         cobrosPorOrigen, comisionNivelMonto,
         bonoCobranzaRate: bonoCobranza, bonoCobranzaMonto,
@@ -552,6 +566,7 @@ const CAMPOS_CONGELADOS = [
     'devengadoComision', 'base', 'devengadoTotal', 'modelo',
     // Bloques en USD y el desglose por bloque (constructor de remuneración).
     'bonoNivelMonto', 'bonoActivacionUSDMonto', 'bonoCrecimientoMonto', 'baseUnidades', 'bloques',
+    'bonoNivelFoodMonto', 'bonoCrecimientoFoodMonto',
 ];
 
 const r2m = (v) => Math.round((Number(v) || 0) * 100) / 100;
@@ -588,6 +603,13 @@ export function bloquesDeFila(r = {}, cfg = {}) {
         (Number(cfg.bonoActivacionUSD) || 0) > 0);
     add('bonoAnaquel', 'Bono Anaquel', r.bonoAnaquelMonto, '');
     add('foodservice', 'Foodservice', r.comisionFoodMonto, r.tasaFood ? `${pc(r.tasaFood)} flat` : '');
+    const kgTxt = (v) => String(Math.round((Number(v) || 0) * 10) / 10).replace('.', ',');
+    add('bonoNivelFood', 'Bono foodservice por nivel', r.bonoNivelFoodMonto,
+        r.bonoNivelFoodEscalon ? `Escalón ${r.bonoNivelFoodEscalon} · ${kgTxt(r.kgFood)} kg` : (r.bonoNivelFoodSiguiente ? `Faltan ${kgTxt(r.bonoNivelFoodSiguiente.faltan)} kg para ${r.bonoNivelFoodSiguiente.etiqueta}` : ''),
+        !!(cfg.bonoNivelFood && cfg.bonoNivelFood.activo !== false));
+    add('bonoCrecimientoFood', 'Crecimiento foodservice', r.bonoCrecimientoFoodMonto,
+        r.crecimientoFood && r.crecimientoFood.activo ? (r.crecimientoFood.aplica ? `${pc(r.crecimientoFood.crecimientoPct)} en kg contra el mes anterior` : r.crecimientoFood.motivo) : '',
+        !!(cfg.bonoCrecimientoFood && cfg.bonoCrecimientoFood.activo !== false));
     add('recuperadas', 'Cuentas recuperadas', r.bonoRecupMonto, r.tasaRecup ? `${pc(r.tasaRecup)} flat` : '');
     return out;
 }
@@ -701,6 +723,10 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             bonoNivelEscalon: p.bonoNivel?.escalon?.etiqueta || null,
             bonoNivelSiguiente: p.bonoNivel?.siguiente ? { etiqueta: p.bonoNivel.siguiente.etiqueta, faltan: p.bonoNivel.siguiente.faltan, monto: p.bonoNivel.siguiente.monto, umbral: p.bonoNivel.siguiente.umbral } : null,
             crecimiento: p.bonoCrecimiento,
+            bonoNivelFoodMonto: mt.bonoNivelFoodMonto, bonoCrecimientoFoodMonto: mt.bonoCrecimientoFoodMonto,
+            bonoNivelFoodEscalon: p.bonoNivelFood?.escalon?.etiqueta || null,
+            bonoNivelFoodSiguiente: p.bonoNivelFood?.siguiente ? { etiqueta: p.bonoNivelFood.siguiente.etiqueta, faltan: p.bonoNivelFood.siguiente.faltan, monto: p.bonoNivelFood.siguiente.monto, umbral: p.bonoNivelFood.siguiente.umbral } : null,
+            crecimientoFood: p.bonoCrecimientoFood,
             devengadoComision: mt.devengadoComision,
             // Salario y viáticos del período: completos en un mes entero, en
             // proporción a sus días en un período corto.
@@ -717,7 +743,7 @@ export function computeEstadosDeCuenta(meta = {}, facturas = [], liquidaciones =
             // Un cierre del modelo anterior no trae el desglose por origen.
             if (frozen.comisionNivelMonto == null) { row.comisionNivelMonto = null; row.cobrosPorOrigen = null; }
             // Un cierre anterior a los bloques en USD no los tenía: valen 0.
-            ['bonoNivelMonto', 'bonoActivacionUSDMonto', 'bonoCrecimientoMonto'].forEach(k => { if (frozen[k] == null) row[k] = 0; });
+            ['bonoNivelMonto', 'bonoActivacionUSDMonto', 'bonoCrecimientoMonto', 'bonoNivelFoodMonto', 'bonoCrecimientoFoodMonto'].forEach(k => { if (frozen[k] == null) row[k] = 0; });
         }
         // Desglose por bloque: el del cierre si lo guardó; si no, armado con las cifras de la fila.
         if (!(row.congelado && Array.isArray(frozen?.bloques))) row.bloques = bloquesDeFila(row, p.cfg);
@@ -839,11 +865,15 @@ export function computeDesglosePeriodo(meta = {}, facturas = [], periodKey, opts
         bonoNivel: p.bonoNivel, bonoNivelMonto: mt.bonoNivelMonto,
         bonoActivacionUSD: mt.bonoActivacionUSD, bonoActivacionUSDMonto: mt.bonoActivacionUSDMonto,
         crecimiento: p.bonoCrecimiento, bonoCrecimientoMonto: mt.bonoCrecimientoMonto,
+        bonoNivelFood: p.bonoNivelFood, bonoNivelFoodMonto: mt.bonoNivelFoodMonto,
+        crecimientoFood: p.bonoCrecimientoFood, bonoCrecimientoFoodMonto: mt.bonoCrecimientoFoodMonto,
         bloques: (congelado && Array.isArray(frozen.bloques)) ? frozen.bloques : bloquesDeFila({
             base, comisionNivelMonto: mt.comisionNivelMonto, cobradoRegular: mt.cobradoRegular,
             bonoNivelMonto: mt.bonoNivelMonto, bonoNivelEscalon: p.bonoNivel?.escalon?.etiqueta || null, bonoNivelSiguiente: p.bonoNivel?.siguiente || null,
             bonoActivacionUSDMonto: mt.bonoActivacionUSDMonto, semanasLogradas: p.act.semanasLogradas, semanasTotales: p.act.semanasTotales,
             bonoCrecimientoMonto: mt.bonoCrecimientoMonto, crecimiento: p.bonoCrecimiento,
+            kgFood: p.kgFood, bonoNivelFoodMonto: mt.bonoNivelFoodMonto, bonoNivelFoodEscalon: p.bonoNivelFood?.escalon?.etiqueta || null, bonoNivelFoodSiguiente: p.bonoNivelFood?.siguiente || null,
+            bonoCrecimientoFoodMonto: mt.bonoCrecimientoFoodMonto, crecimientoFood: p.bonoCrecimientoFood,
             bonoCobranzaMonto: mt.bonoCobranzaMonto, bonoCobranzaRate: mt.bonoCobranzaRate,
             bonoActivacionMonto: mt.bonoActivacionMonto, bonoAnaquelMonto: mt.bonoAnaquelMonto,
             comisionFoodMonto: mt.comisionFoodMonto, tasaFood: mt.tasaFood,

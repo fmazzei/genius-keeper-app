@@ -3996,6 +3996,7 @@ Pedido del dueño: armar el pago de cada vendedor como una combinación libre de
 | Crecimiento (USD) | `bonoCrecimiento = {activo, pct, montoUSD}`: unidades ≥ pct % sobre el período anterior, por día (un período corto no se compara con uno completo). El primer mes no aplica y lo dice. |
 | Bonos % | `bonusPuntualidad`, `bonusActivacion`, `bonusAnaquel` (sin cambios) |
 | Foodservice / Recuperadas | `comisionFoodservice`, `comisionRecuperadas` (0 = nada) |
+| Bonos foodservice (USD) | Como el retail, en **kg** contra su propia meta `metaKgFoodservice` (pedido del dueño, 4-nov): `bonoNivelFood = {activo, escalones:[{etiqueta, minKg \| minPct, montoUSD}]}` y `bonoCrecimientoFood = {activo, pct, montoUSD}`. Kg con la misma base de unidades (facturadas o cobradas). Solo en períodos que separan foodservice (`separaFood`, mes calendario desde oct-2026); el crecimiento solo se compara con un mes que también lo midió aparte. |
 | Base de unidades | `baseUnidades` 'facturadas' (lo de siempre) o 'cobradas' |
 
 - **"Bono de penetración" retirado** (decisión del dueño, 3-nov): era lo mismo que la Activación de cartera. Para Erick: Activación 80 % con $200 en dólares.
@@ -4014,9 +4015,9 @@ Pedido del dueño: armar el pago de cada vendedor como una combinación libre de
 - **Constructor:**
   - "Cómo se le paga (bloques)" y las plantillas (`PLANTILLAS`).
   - "Unidades que cuentan" y Comisión % con tres opciones (sin comisión, por niveles, tasa fija).
-  - Escalones del bono por nivel; crecimiento; Activación en % y en dólares.
+  - Escalones del bono por nivel; crecimiento; Activación en % y en dólares; "Bonos foodservice (USD, en kg)" (mismo editor de escalones, en kg, y su crecimiento).
   - Vista previa al 0/80/90/100/120 % (`previaEsquema`).
-- **Inicio del vendedor:** "Te faltan N uds cobradas para el bono de $X", semanas de Activación y crecimiento. Si es solo fijo, no aparece la tarjeta de comisión.
+- **Inicio del vendedor:** "Te faltan N uds cobradas para el bono de $X", semanas de Activación y crecimiento; en el medidor de foodservice, su escalón, lo que falta en kg y su crecimiento. Si es solo fijo, no aparece la tarjeta de comisión.
 - **`DesgloseBloques.jsx`** y las listas por bloque aparecen en Liquidaciones, Comisiones a pagar, Conciliación, `LiquidacionDetalladaDoc`, `EstadoCuentaDoc`, `CommissionProposalDoc`, `DossierComercialDoc` (esquema vigente, `configEnFecha`), `desempenoVendedor` y el vigilante.
 
 ### Traspasos de cartera, duplicados y fecha de cese (2026-11-03) ✅ (misma rama, sin ejecutar)
@@ -4068,7 +4069,8 @@ Reglas del dueño (3-nov):
 - Ingreso **1-nov-2026**; **sin fijo** y sin comisión %: solo gana bonos en USD (corrección del dueño, 4-nov: no tiene los $400).
 - Unidades **cobradas**. Las facturas heredadas de Carolina (anteriores a su ingreso) **no suman** a sus unidades y no le pagan nada (recuperadas 0 %).
 - Bono por nivel (unidades cobradas en el mes): 1.280 → $160 · 1.400 → $180 · 1.600 → $200 (meta) · 1.900 → $250. Solo el más alto.
-- Activación (en la tabla del dueño: "penetración de cartera"): 80 % de su cartera con ≥12 uds por semana; **$200 × semanas logradas ÷ semanas del mes**.
+- Activación (en la tabla del dueño: "penetración de cartera"): 80 % de su cartera con ≥12 uds **facturadas** por semana (confirmado); **$200 × semanas logradas ÷ semanas del mes**.
+- Foodservice: sus propios bonos y su meta en kg (decisión del dueño). Montos y meta por definir; mientras tanto, sin comisión de foodservice.
 - Crecimiento ≥10 % sobre el mes anterior: +$100 (desde diciembre).
 - En la tabla, 1.400 dice 90 % y 1.900 dice 120 % de 1.600 (serían 1.440 y 1.920): se cargan las unidades de la tabla.
 
@@ -4080,7 +4082,7 @@ Reglas del dueño (3-nov):
 - 29 abiertas, saldo $2.667,04: con el cese pasan a Erick como recuperadas (0 %, no suman a sus unidades).
 
 **Pruebas:**
-- `remuneracionBloques.test.mjs` (51: umbrales 1279→$0 … 1900→$250, Activación en USD 79/80 % y por semanas, crecimiento 9,9/10 %, primer mes, cobradas vs facturadas, heredadas que no suman, bolsa de 1 kg, solo fijo, servidor en 0, desglose y cierre, regresión).
+- `remuneracionBloques.test.mjs` (61: umbrales 1279→$0 … 1900→$250, Activación en USD 79/80 % y por semanas, crecimiento 9,9/10 %, primer mes, cobradas vs facturadas, heredadas que no suman, bonos foodservice en kg (umbrales, % de su meta, crecimiento, no suman al retail, sin bono antes del corte), bolsa de 1 kg, solo fijo, servidor en 0, desglose y cierre, regresión).
 - `traspasoCartera.test.mjs` (33: corte, cese, duplicados, toda/algunos, meses con cese, cerrados intactos).
 - `traspasoCartera.e2e.test.mjs` (emulador: traspaso con duplicado decidido, cese y su anulación, resolver duplicados, traspaso de un solo cliente, idempotencia, conciliación).
 

@@ -200,5 +200,41 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     ok(nov.bonoNivelMonto === 160 && cerca(nov.devengadoComision, 160), 'noviembre: bono por nivel $160 y nada por la heredada (recuperadas 0 %)');
 }
 
+// 11. Foodservice con sus propios bonos y su propia meta, en kg (pedido del dueño, 4-nov).
+{
+    const FOOD = { ...ERICK_CFG, metaKgFoodservice: 100,
+        bonoNivelFood: { activo: true, escalones: [
+            { etiqueta: 'Básico', minKg: 80, montoUSD: 50 },
+            { etiqueta: 'Meta', minPct: 100, montoUSD: 80 },
+        ] },
+        bonoCrecimientoFood: { activo: true, pct: 10, montoUSD: 40 },
+    };
+    const e = { ...erick, commissionConfig: FOOD };
+    const FS = (n, dia, uds, extra = {}) => F(n, dia, uds, { categoria: 'foodservice', ...extra });
+    // 79,75 kg = 319 uds de 250 g; 80 kg = 320 uds; 100 kg = 400 uds.
+    const dic = (fs) => diciembre(computeEstadosDeCuenta(e, fs, [], { ahora: ahoraFeb }));
+    const r79 = dic([FS('F1', '2026-12-02', 319, cobrada('2026-12-09'))]);
+    const r80 = dic([FS('F1', '2026-12-02', 320, cobrada('2026-12-09')), F('R1', '2026-12-02', 1280, cobrada('2026-12-09'))]);
+    const r100 = dic([FS('F1', '2026-12-02', 400, cobrada('2026-12-09'))]);
+    ok(r79.bonoNivelFoodMonto === 0 && r79.bonoNivelFoodSiguiente?.faltan === 0.3, 'foodservice 79,75 kg → $0; faltan 0,3 kg para el Básico');
+    ok(r80.bonoNivelFoodMonto === 50 && r80.unidades === 1280 && r80.bonoNivelMonto === 160, 'foodservice 80 kg → $50, y no suma a las 1.280 uds del retail (su bono, $160, aparte)');
+    ok(r100.bonoNivelFoodMonto === 80, 'foodservice 100 kg (100 % de su meta) → $80, solo el más alto');
+    ok(dic([FS('F1', '2026-12-02', 400)]).bonoNivelFoodMonto === 0, 'con base cobradas, los kg sin cobrar no cuentan');
+    const ids = r80.bloques.map(b => b.id);
+    ok(ids.includes('bonoNivelFood') && cerca(r80.bloques.reduce((t, b) => t + b.monto, 0), r80.devengadoTotal), 'el bloque foodservice aparece y los bloques suman lo devengado');
+    const ene = (dk, ek) => computeEstadosDeCuenta(e, [
+        FS('D', '2026-12-02', dk * 4, cobrada('2026-12-09')), FS('J', '2027-01-05', ek * 4, cobrada('2027-01-12')),
+    ], [], { ahora: ahoraFeb }).find(f => f.periodKey === '2027-01-01');
+    ok(ene(50, 54.75).bonoCrecimientoFoodMonto === 0 && ene(50, 55).bonoCrecimientoFoodMonto === 40, 'crecimiento foodservice: 9,5 % → $0; 10 % → +$40');
+    const des = computeDesglosePeriodo(e, [FS('F1', '2026-12-02', 320, cobrada('2026-12-09'))], '2026-12-01', { ahora: ahoraFeb });
+    ok(des.bonoNivelFoodMonto === 50, 'el comprobante da el mismo bono foodservice');
+    // Antes del corte de octubre foodservice sumaba al retail: ahí no hay bono foodservice aparte.
+    const viejo = computeEstadosDeCuenta({ id: 'V', fechaIngreso: '2026-08-19', metaMensual: 1600, commissionConfig: FOOD },
+        [FS('S1', '2026-09-02', 400, cobrada('2026-09-09'))], [], { ahora: ahoraFeb }).find(f => f.periodKey === '2026-08-19');
+    ok(viejo && viejo.bonoNivelFoodMonto === 0, 'en un período de aniversario (foodservice dentro del retail) no hay bono foodservice');
+    ok(previaEsquema(FOOD, 100).bonoNivelFood === 80 && maximoBonosUSD(FOOD) === 550 + 80 + 40, 'vista previa y máximo incluyen foodservice');
+    ok(bloquesDeEsquema(FOOD).some(b => b.id === 'bonoNivelFood'), 'el esquema describe el bloque foodservice');
+}
+
 console.log(fallas ? `\n${fallas} FALLA(S)` : '\nTodo en verde');
 process.exit(fallas ? 1 : 0);

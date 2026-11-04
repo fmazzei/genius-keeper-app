@@ -28,7 +28,14 @@
 //                     No aplica en el primer mes.
 //   Bonos %  ........ bonusPuntualidad (Cobranza), bonusActivacion, bonusAnaquel:
 //                     sin cambios.
-//   Foodservice ..... comisionFoodservice (% flat; 0 = nada).
+//   Foodservice ..... comisionFoodservice (% flat; 0 = nada). Y, como el retail,
+//                     sus propios bonos en USD medidos en KG de queso contra
+//                     su meta (`metaKgFoodservice`) (pedido del dueño, 4-nov):
+//                     bonoNivelFood = {activo, escalones:[{etiqueta, minKg |
+//                     minPct, montoUSD}]} y bonoCrecimientoFood = {activo, pct,
+//                     montoUSD}. Solo en los períodos que separan foodservice
+//                     (mes calendario, desde oct-2026); antes, foodservice
+//                     sumaba a las unidades del retail.
 //   Recuperadas ..... comisionRecuperadas (% flat; puede ser 0).
 //   Arranque ........ metas reducidas los primeros meses (arranque).
 //   Base de unidades  baseUnidades = 'facturadas' | 'cobradas': con qué unidades
@@ -45,16 +52,25 @@
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 /** Escalones del bono por nivel, ordenados de menor a mayor umbral, con su umbral en unidades para un período. */
-export function escalonesBonoNivel(cfg = {}, { meta = 0, fraccion = 1 } = {}) {
-    const b = cfg.bonoNivel;
+// Retail se mide en unidades enteras; foodservice en kg con un decimal.
+const MEDIDAS = {
+    retail: { nivel: 'bonoNivel', crec: 'bonoCrecimiento', min: 'minUnidades', dec: 0, unidad: 'uds' },
+    food: { nivel: 'bonoNivelFood', crec: 'bonoCrecimientoFood', min: 'minKg', dec: 1, unidad: 'kg' },
+};
+const redondear = (v, dec) => { const f = 10 ** dec; return Math.round(v * f) / f; };
+const techo = (v, dec) => { const f = 10 ** dec; return Math.ceil(v * f - 1e-9) / f; };
+
+export function escalonesBonoNivel(cfg = {}, { meta = 0, fraccion = 1, medida = 'retail' } = {}) {
+    const M = MEDIDAS[medida] || MEDIDAS.retail;
+    const b = cfg[M.nivel];
     if (!b || b.activo === false || !Array.isArray(b.escalones)) return [];
     return b.escalones
         .map((e, i) => {
-            const porPct = e.minUnidades == null || e.minUnidades === '' ? (e.minPct != null && e.minPct !== '') : false;
+            const porPct = e[M.min] == null || e[M.min] === '' ? (e.minPct != null && e.minPct !== '') : false;
             const umbral = porPct
-                ? Math.ceil(num(meta) * num(e.minPct) / 100)
-                : Math.round(num(e.minUnidades) * (fraccion < 1 ? fraccion : 1));
-            return { i, etiqueta: e.etiqueta || `Escalón ${i + 1}`, porPct, minPct: porPct ? num(e.minPct) : null, minUnidades: porPct ? null : num(e.minUnidades), umbral, monto: num(e.montoUSD) };
+                ? techo(num(meta) * num(e.minPct) / 100, M.dec)
+                : redondear(num(e[M.min]) * (fraccion < 1 ? fraccion : 1), M.dec);
+            return { i, etiqueta: e.etiqueta || `Escalón ${i + 1}`, porPct, minPct: porPct ? num(e.minPct) : null, minUnidades: porPct ? null : num(e[M.min]), umbral, monto: num(e.montoUSD), unidad: M.unidad };
         })
         .filter(e => e.umbral > 0 || e.monto > 0)
         .sort((a, b2) => a.umbral - b2.umbral);
@@ -64,8 +80,9 @@ export function escalonesBonoNivel(cfg = {}, { meta = 0, fraccion = 1 } = {}) {
  * Bono por nivel de un período: el escalón más alto logrado (o ninguno) y el
  * siguiente, para decirle al vendedor cuánto le falta.
  */
-export function bonoNivelPara(cfg = {}, unidades = 0, { meta = 0, fraccion = 1 } = {}) {
-    const esc = escalonesBonoNivel(cfg, { meta, fraccion });
+export function bonoNivelPara(cfg = {}, unidades = 0, { meta = 0, fraccion = 1, medida = 'retail' } = {}) {
+    const dec = (MEDIDAS[medida] || MEDIDAS.retail).dec;
+    const esc = escalonesBonoNivel(cfg, { meta, fraccion, medida });
     if (!esc.length) return { activo: false, monto: 0, escalon: null, siguiente: null, escalones: [] };
     let logrado = null;
     for (const e of esc) if (num(unidades) >= e.umbral) logrado = e;
@@ -74,7 +91,7 @@ export function bonoNivelPara(cfg = {}, unidades = 0, { meta = 0, fraccion = 1 }
         activo: true,
         monto: logrado ? logrado.monto : 0,
         escalon: logrado,
-        siguiente: siguiente ? { ...siguiente, faltan: siguiente.umbral - num(unidades) } : null,
+        siguiente: siguiente ? { ...siguiente, faltan: redondear(siguiente.umbral - num(unidades), dec) } : null,
         escalones: esc,
     };
 }
@@ -84,24 +101,25 @@ export function bonoNivelPara(cfg = {}, unidades = 0, { meta = 0, fraccion = 1 }
  * fracción del mes) para que un período corto no infle ni hunda el crecimiento.
  * El primer período no tiene contra qué compararse; un anterior en cero, tampoco.
  */
-export function bonoCrecimientoPara(cfg = {}, unidades = 0, previo = null) {
-    const b = cfg.bonoCrecimiento;
+export function bonoCrecimientoPara(cfg = {}, unidades = 0, previo = null, { medida = 'retail' } = {}) {
+    const M = MEDIDAS[medida] || MEDIDAS.retail;
+    const b = cfg[M.crec];
     if (!b || b.activo === false || !(num(b.montoUSD) > 0)) return { activo: false, monto: 0 };
     const base = { activo: true, pct: num(b.pct), montoUSD: num(b.montoUSD) };
     if (!previo) return { ...base, aplica: false, motivo: 'Es el primer mes: no hay un mes anterior con qué comparar.', monto: 0 };
     const fr = (x) => (num(x) > 0 && num(x) < 1 ? num(x) : 1);
     const ant = num(previo.unidades) / fr(previo.fraccion);
     const act = num(unidades) / fr(previo.fraccionActual);
-    if (!(ant > 0)) return { ...base, aplica: false, motivo: 'El mes anterior no tuvo unidades: no hay base para medir el crecimiento.', monto: 0, anterior: 0 };
+    if (!(ant > 0)) return { ...base, aplica: false, motivo: `El mes anterior no tuvo ${M.dec ? 'kg' : 'unidades'}: no hay base para medir el crecimiento.`, monto: 0, anterior: 0 };
     const crec = (act - ant) / ant * 100;
     const r = Math.round(crec * 100) / 100;
     // Se compara redondeado a 2 decimales: 9,99 % no llega al 10 %, 10,00 % sí.
     const logrado = r >= base.pct - 1e-9;
-    const meta = Math.ceil(ant * (1 + base.pct / 100) * fr(previo.fraccionActual));
+    const meta = techo(ant * (1 + base.pct / 100) * fr(previo.fraccionActual), M.dec);
     return {
         ...base, aplica: true, anterior: num(previo.unidades), anteriorMes: previo.mes ?? null,
-        crecimientoPct: r, logrado, monto: logrado ? base.montoUSD : 0,
-        unidadesObjetivo: meta, faltan: Math.max(0, meta - num(unidades)),
+        crecimientoPct: r, logrado, monto: logrado ? base.montoUSD : 0, unidad: M.unidad,
+        unidadesObjetivo: meta, faltan: Math.max(0, redondear(meta - num(unidades), M.dec)),
     };
 }
 
@@ -147,6 +165,12 @@ export function bloquesDeEsquema(cfg = {}) {
     }
     if (num(cfg.bonusAnaquel) > 0) out.push({ id: 'bonoAnaquel', nombre: 'Bono Anaquel', resumen: `${pct(cfg.bonusAnaquel)} en cuentas de régimen anaquel` });
     if (num(cfg.comisionFoodservice) > 0) out.push({ id: 'foodservice', nombre: 'Foodservice', resumen: `${pct(cfg.comisionFoodservice)} flat sobre lo cobrado` });
+    const escF = escalonesBonoNivel(cfg, { meta: num(cfg.metaKgFoodservice), medida: 'food' });
+    if (escF.length) out.push({ id: 'bonoNivelFood', nombre: 'Bono foodservice por nivel', resumen: escF.map(e => `${e.porPct ? `${e.minPct} %` : `${String(e.umbral).replace('.', ',')} kg`} → ${usd(e.monto)}`).join(' · ') + ' (solo el más alto)' });
+    if (cfg.bonoCrecimientoFood && cfg.bonoCrecimientoFood.activo !== false && num(cfg.bonoCrecimientoFood.montoUSD) > 0) {
+        const b = cfg.bonoCrecimientoFood;
+        out.push({ id: 'bonoCrecimientoFood', nombre: 'Crecimiento foodservice', resumen: `${usd(b.montoUSD)} si los kg crecen ${num(b.pct)} % o más contra el mes anterior` });
+    }
     if (num(cfg.comisionRecuperadas) > 0) out.push({ id: 'recuperadas', nombre: 'Cuentas recuperadas', resumen: `${pct(cfg.comisionRecuperadas)} flat sobre lo cobrado de facturas heredadas` });
     if (Array.isArray(cfg.arranque) && cfg.arranque.length) out.push({ id: 'arranque', nombre: 'Arranque', resumen: cfg.arranque.map((a, i) => `Mes ${i + 1}: ${num(a.meta)} uds`).join(' · ') });
     out.push({ id: 'base', nombre: 'Unidades que cuentan', resumen: baseDeUnidades(cfg) === 'cobradas' ? 'Las de facturas COBRADAS en el mes' : 'Las FACTURADAS en el mes' });
@@ -159,7 +183,10 @@ export function maximoBonosUSD(cfg = {}) {
     const nivel = esc.length ? Math.max(...esc.map(e => e.monto)) : 0;
     const pen = num(cfg.bonoActivacionUSD);
     const cre = cfg.bonoCrecimiento && cfg.bonoCrecimiento.activo !== false ? num(cfg.bonoCrecimiento.montoUSD) : 0;
-    return nivel + pen + cre;
+    const escF = escalonesBonoNivel(cfg, { meta: num(cfg.metaKgFoodservice), medida: 'food' });
+    const nivelF = escF.length ? Math.max(...escF.map(e => e.monto)) : 0;
+    const creF = cfg.bonoCrecimientoFood && cfg.bonoCrecimientoFood.activo !== false ? num(cfg.bonoCrecimientoFood.montoUSD) : 0;
+    return nivel + pen + cre + nivelF + creF;
 }
 
 /**
@@ -184,10 +211,15 @@ export function previaEsquema(cfg = {}, pctMeta = 100) {
     const comision = cobrado * tasa / 100;
     const bonosPct = cobrado * (num(cfg.bonusPuntualidad) + num(cfg.bonusActivacion)) / 100;
     const bn = bonoNivelPara(cfg, unidades, { meta });
+    // Foodservice, al mismo % de su meta en kg.
+    const metaKg = num(cfg.metaKgFoodservice);
+    const kg = Math.round(metaKg * num(pctMeta) / 10) / 10;
+    const bnF = bonoNivelPara(cfg, kg, { meta: metaKg, medida: 'food' });
     const hasta = num(cfg.bonoActivacionUSD)
-        + (cfg.bonoCrecimiento && cfg.bonoCrecimiento.activo !== false ? num(cfg.bonoCrecimiento.montoUSD) : 0);
-    const variable = comision + bonosPct + bn.monto;
-    return { pctMeta: num(pctMeta), unidades, cobrado, fijo, tasa, nivel, comision, bonosPct, bonoNivel: bn.monto, escalon: bn.escalon?.etiqueta || null, hasta, variable, total: fijo + variable };
+        + (cfg.bonoCrecimiento && cfg.bonoCrecimiento.activo !== false ? num(cfg.bonoCrecimiento.montoUSD) : 0)
+        + (cfg.bonoCrecimientoFood && cfg.bonoCrecimientoFood.activo !== false ? num(cfg.bonoCrecimientoFood.montoUSD) : 0);
+    const variable = comision + bonosPct + bn.monto + bnF.monto;
+    return { pctMeta: num(pctMeta), unidades, cobrado, fijo, tasa, nivel, comision, bonosPct, bonoNivel: bn.monto, escalon: bn.escalon?.etiqueta || null, kg, bonoNivelFood: bnF.monto, escalonFood: bnF.escalon?.etiqueta || null, hasta, variable, total: fijo + variable };
 }
 
 /** Plantillas rápidas del constructor (se aplican encima del esquema que se edita). */
@@ -195,7 +227,7 @@ export const PLANTILLAS = [
     {
         id: 'solo_fijo', nombre: 'Solo sueldo fijo',
         descripcion: 'Sueldo y viáticos; sin comisión ni bonos.',
-        cambios: { comisionActiva: false, bonusPuntualidad: 0, bonusActivacion: 0, bonusAnaquel: 0, comisionFoodservice: 0, comisionRecuperadas: 0, bonoNivel: null, bonoActivacionUSD: 0, bonoCrecimiento: null },
+        cambios: { comisionActiva: false, bonusPuntualidad: 0, bonusActivacion: 0, bonusAnaquel: 0, comisionFoodservice: 0, comisionRecuperadas: 0, bonoNivel: null, bonoActivacionUSD: 0, bonoCrecimiento: null, bonoNivelFood: null, bonoCrecimientoFood: null },
     },
     {
         id: 'fijo_niveles', nombre: 'Fijo + comisión por niveles',

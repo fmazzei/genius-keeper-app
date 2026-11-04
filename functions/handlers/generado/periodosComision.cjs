@@ -102,8 +102,12 @@ var DEFAULT_COMMISSION_CONFIG = {
   // {activo, escalones:[{etiqueta, minUnidades|minPct, montoUSD}]}
   bonoActivacionUSD: 0,
   // Bono Activación en USD × semanas logradas ÷ semanas (además del %)
-  bonoCrecimiento: null
+  bonoCrecimiento: null,
   // {activo, pct, montoUSD}
+  bonoNivelFood: null,
+  // {activo, escalones:[{etiqueta, minKg | minPct, montoUSD}]} — foodservice, en kg contra metaKgFoodservice
+  bonoCrecimientoFood: null
+  // {activo, pct, montoUSD} — foodservice, kg contra el mes anterior
 };
 
 // src/utils/periodosComision.js

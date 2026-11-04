@@ -223,18 +223,60 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
         setConfig(p => ({ ...p, ...JSON.parse(JSON.stringify(pl.cambios)) }));
     };
     // Bono por nivel (escalones en USD)
+    // Un mismo editor para el retail (unidades) y foodservice (kg).
+    const MEDIDA = {
+        retail: { campo: 'bonoNivel', min: 'minUnidades', meta: Number(config.metaMensual) || 0, unidad: 'uds', paso: 10, fmt: (v) => fmtUnits(v) },
+        food: { campo: 'bonoNivelFood', min: 'minKg', meta: Number(config.metaKgFoodservice) || 0, unidad: 'kg', paso: 5, fmt: (v) => String(Math.round((Number(v) || 0) * 10) / 10).replace('.', ',') },
+    };
     const escalones = config.bonoNivel?.escalones || [];
-    const setBonoNivel = (fn) => setConfig(p => {
-        const b = p.bonoNivel || { activo: true, escalones: [] };
-        return { ...p, bonoNivel: fn({ ...b, escalones: [...(b.escalones || [])] }) };
+    const escalonesFood = config.bonoNivelFood?.escalones || [];
+    const setEscalones = (m, fn) => setConfig(p => {
+        const b = p[MEDIDA[m].campo] || { activo: true, escalones: [] };
+        return { ...p, [MEDIDA[m].campo]: fn({ ...b, escalones: [...(b.escalones || [])] }) };
     });
-    const updEscalon = (i, campo, val) => setBonoNivel(b => ({ ...b, escalones: b.escalones.map((e, j) => j === i ? { ...e, [campo]: val } : e) }));
-    const setPorPct = (i, porPct) => setBonoNivel(b => ({ ...b, escalones: b.escalones.map((e, j) => {
+    const setBonoNivel = (fn) => setEscalones('retail', fn);
+    const updEscalon = (i, campo, val, m = 'retail') => setEscalones(m, b => ({ ...b, escalones: b.escalones.map((e, j) => j === i ? { ...e, [campo]: val } : e) }));
+    const setPorPct = (i, porPct, m = 'retail') => setEscalones(m, b => ({ ...b, escalones: b.escalones.map((e, j) => {
         if (j !== i) return e;
-        const meta = Number(config.metaMensual) || 0;
-        if (porPct) return { ...e, minPct: e.minPct ?? (meta > 0 ? Math.round((Number(e.minUnidades) || 0) / meta * 10000) / 100 : 0), minUnidades: null };
-        return { ...e, minUnidades: e.minUnidades ?? Math.round(meta * (Number(e.minPct) || 0) / 100), minPct: null };
+        const { meta, min } = MEDIDA[m];
+        const dec = m === 'food' ? 10 : 1;
+        if (porPct) return { ...e, minPct: e.minPct ?? (meta > 0 ? Math.round((Number(e[min]) || 0) / meta * 10000) / 100 : 0), [min]: null };
+        return { ...e, [min]: e[min] ?? Math.round(meta * (Number(e.minPct) || 0) / 100 * dec) / dec, minPct: null };
     }) }));
+    const editorEscalones = (m) => {
+        const M = MEDIDA[m];
+        const lista = m === 'food' ? escalonesFood : escalones;
+        return lista.length === 0 ? (
+            <p className="text-sm text-slate-400 italic py-1 px-1">Sin bono por nivel.</p>
+        ) : (
+            <div className="bg-white border border-slate-200 rounded-xl px-3">
+                {lista.map((e, i) => {
+                    const porPct = e[M.min] == null && e.minPct != null;
+                    return (
+                        <div key={i} className="py-2.5 border-b border-slate-100 last:border-b-0 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                                <input type="text" value={e.etiqueta || ''} onChange={ev => updEscalon(i, 'etiqueta', ev.target.value, m)}
+                                    className="flex-1 min-w-0 text-sm font-bold text-slate-800 bg-slate-50 rounded-lg px-2 py-1" />
+                                <button type="button" onClick={() => setEscalones(m, b => ({ ...b, escalones: b.escalones.filter((_, j) => j !== i) }))} className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-sm">
+                                <span className="text-xs text-slate-400 shrink-0">Desde</span>
+                                <input type="number" min="0" step={porPct ? 0.5 : M.paso}
+                                    value={(porPct ? e.minPct : e[M.min]) || ''}
+                                    onChange={ev => updEscalon(i, porPct ? 'minPct' : M.min, Number(ev.target.value) || 0, m)}
+                                    className="w-20 text-center p-1.5 border border-slate-200 rounded-lg font-mono" />
+                                <button type="button" onClick={() => setPorPct(i, !porPct, m)} className="px-2 py-1 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 shrink-0">{porPct ? '% de la meta' : M.unidad}</button>
+                                <span className="text-xs text-slate-400 shrink-0">→ $</span>
+                                <input type="number" min="0" step="10" value={e.montoUSD || ''} onChange={ev => updEscalon(i, 'montoUSD', Number(ev.target.value) || 0, m)}
+                                    className="w-20 text-center p-1.5 border border-slate-200 rounded-lg font-mono" />
+                            </div>
+                            <p className="text-[11px] text-slate-400">{porPct ? `= ${M.fmt(M.meta * (Number(e.minPct) || 0) / 100)} ${M.unidad} con la meta de ${M.fmt(M.meta)}` : `= ${(M.meta > 0 ? Math.round((Number(e[M.min]) || 0) / M.meta * 1000) / 10 : 0)} % de la meta`}</p>
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
     const setBonoSimple = (clave, campo, val) => setConfig(p => ({ ...p, [clave]: { activo: true, ...(p[clave] || {}), [campo]: val } }));
     const previas = [0, 80, 90, 100, 120].map(pc => previaEsquema(config, pc));
 
@@ -606,36 +648,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     <SectionHeader label="Bono por nivel (USD)"
                         action={<button type="button" onClick={() => setBonoNivel(b => ({ ...b, activo: true, escalones: [...b.escalones, { etiqueta: `Escalón ${b.escalones.length + 1}`, minUnidades: 0, montoUSD: 0 }] }))}
                             className="flex items-center gap-1 text-xs font-semibold text-blue-600 active:opacity-60"><Plus size={13} /> Escalón</button>} />
-                    {escalones.length === 0 ? (
-                        <p className="text-sm text-slate-400 italic py-1 px-1">Sin bono por nivel.</p>
-                    ) : (
-                        <div className="bg-white border border-slate-200 rounded-xl px-3">
-                            {escalones.map((e, i) => {
-                                const porPct = e.minUnidades == null && e.minPct != null;
-                                return (
-                                    <div key={i} className="py-2.5 border-b border-slate-100 last:border-b-0 space-y-1.5">
-                                        <div className="flex items-center gap-2">
-                                            <input type="text" value={e.etiqueta || ''} onChange={ev => updEscalon(i, 'etiqueta', ev.target.value)}
-                                                className="flex-1 min-w-0 text-sm font-bold text-slate-800 bg-slate-50 rounded-lg px-2 py-1" />
-                                            <button type="button" onClick={() => setBonoNivel(b => ({ ...b, escalones: b.escalones.filter((_, j) => j !== i) }))} className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
-                                        </div>
-                                        <div className="flex items-center gap-1.5 text-sm">
-                                            <span className="text-xs text-slate-400 shrink-0">Desde</span>
-                                            <input type="number" min="0" step={porPct ? 0.5 : 10}
-                                                value={(porPct ? e.minPct : e.minUnidades) || ''}
-                                                onChange={ev => updEscalon(i, porPct ? 'minPct' : 'minUnidades', Number(ev.target.value) || 0)}
-                                                className="w-20 text-center p-1.5 border border-slate-200 rounded-lg font-mono" />
-                                            <button type="button" onClick={() => setPorPct(i, !porPct)} className="px-2 py-1 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600 shrink-0">{porPct ? '% de la meta' : 'uds'}</button>
-                                            <span className="text-xs text-slate-400 shrink-0">→ $</span>
-                                            <input type="number" min="0" step="10" value={e.montoUSD || ''} onChange={ev => updEscalon(i, 'montoUSD', Number(ev.target.value) || 0)}
-                                                className="w-20 text-center p-1.5 border border-slate-200 rounded-lg font-mono" />
-                                        </div>
-                                        <p className="text-[11px] text-slate-400">{porPct ? `= ${fmtUnits((Number(config.metaMensual) || 0) * (Number(e.minPct) || 0) / 100)} uds con la meta de ${fmtUnits(config.metaMensual)}` : `= ${(config.metaMensual > 0 ? Math.round((Number(e.minUnidades) || 0) / config.metaMensual * 1000) / 10 : 0)} % de la meta`}</p>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                    {editorEscalones('retail')}
                     <p className="text-xs text-slate-400 mt-1.5 px-1">Se paga SOLO el escalón más alto que se alcance; por debajo del más bajo, $0. Un escalón en % se recalcula si cambia la meta; uno en unidades, en un mes corto, va en proporción a sus días.</p>
                 </section>
 
@@ -797,6 +810,20 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                     </div>
                 </section>
 
+                {/* ── 4b. Bonos foodservice en USD (en kg, como el retail en unidades) ── */}
+                <section>
+                    <SectionHeader label="Bonos foodservice (USD, en kg)"
+                        action={<button type="button" onClick={() => setEscalones('food', b => ({ ...b, activo: true, escalones: [...b.escalones, { etiqueta: `Escalón ${b.escalones.length + 1}`, minKg: 0, montoUSD: 0 }] }))}
+                            className="flex items-center gap-1 text-xs font-semibold text-blue-600 active:opacity-60"><Plus size={13} /> Escalón</button>} />
+                    {editorEscalones('food')}
+                    <div className="bg-white border border-slate-200 rounded-xl px-4 mt-2">
+                        <InlineRow label="Crecimiento foodservice" hint="Se paga si los kg crecen al menos este % contra el mes anterior (no aplica el primer mes)" suffix="USD"
+                            value={config.bonoCrecimientoFood?.montoUSD || 0} step={10} onChange={v => setBonoSimple('bonoCrecimientoFood', 'montoUSD', v)} />
+                        <InlineRow label="Crecimiento mínimo" suffix="%" value={config.bonoCrecimientoFood?.pct || 0} step={1} onChange={v => setBonoSimple('bonoCrecimientoFood', 'pct', v)} />
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1.5 px-1">Kg de queso a clientes foodservice en el mes ({(config.baseUnidades || 'facturadas') === 'cobradas' ? 'de facturas cobradas' : 'facturados'}), contra la Meta Foodservice. Solo el escalón más alto. No suman a los bonos del retail ni a sus unidades.</p>
+                </section>
+
                 {/* ── 7. Vista previa ── */}
                 <section>
                     <SectionHeader label="Vista previa de un mes completo" />
@@ -812,6 +839,7 @@ const CommissionConstructor = forwardRef(({ vendedor, onClose }, ref) => {
                                     {pv.comision > 0 && <span>Comisión{pv.nivel ? ` ${pv.nivel} ${pv.tasa}%` : ''} <b className="text-slate-600">${pv.comision.toFixed(0)}</b></span>}
                                     {pv.bonosPct > 0 && <span>Bonos % <b className="text-slate-600">${pv.bonosPct.toFixed(0)}</b></span>}
                                     {escalones.length > 0 && <span>Bono por nivel <b className="text-slate-600">${pv.bonoNivel.toFixed(0)}</b>{pv.escalon ? ` (${pv.escalon})` : ''}</span>}
+                                    {escalonesFood.length > 0 && <span>Foodservice {String(pv.kg).replace('.', ',')} kg <b className="text-slate-600">${pv.bonoNivelFood.toFixed(0)}</b>{pv.escalonFood ? ` (${pv.escalonFood})` : ''}</span>}
                                     {pv.hasta > 0 && <span>+ hasta <b className="text-slate-600">${pv.hasta.toFixed(0)}</b> de Activación y crecimiento en dólares</span>}
                                 </div>
                             </div>

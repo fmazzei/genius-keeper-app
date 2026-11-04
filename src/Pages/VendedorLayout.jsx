@@ -328,7 +328,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                                 <div className="flex justify-between"><span className="text-slate-400">Bono Anaquel ({p.bonoAnaquelRate}%)</span><span className="text-emerald-400 font-mono">+{money(p.bonoAnaquelMonto)}</span></div>
                             )}
                             {/* Bonos en USD (constructor por bloques): se muestran aunque estén en $0, con lo que falta. */}
-                            {(p.bloques || []).filter(b => ['bonoNivel', 'bonoCrecimiento'].includes(b.id) || (b.id === 'bonoActivacion' && p.bonoActivacionUSDMonto > 0)).map(b => (
+                            {(p.bloques || []).filter(b => ['bonoNivel', 'bonoCrecimiento', 'bonoNivelFood', 'bonoCrecimientoFood'].includes(b.id) || (b.id === 'bonoActivacion' && p.bonoActivacionUSDMonto > 0)).map(b => (
                                 <div key={b.id} className="flex justify-between gap-2"><span className="text-slate-400">{b.nombre}{b.detalle ? ` (${b.detalle})` : ''}</span><span className={`font-mono ${b.monto > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>+{money(b.monto)}</span></div>
                             ))}
                             {p.comisionFoodMonto > 0 && (
@@ -559,8 +559,14 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
     const bonosUSD = (commConfig.bonoNivel && commConfig.bonoNivel.activo !== false && (commConfig.bonoNivel.escalones || []).length > 0)
         || (Number(commConfig.bonoActivacionUSD) || 0) > 0
         || (commConfig.bonoCrecimiento && commConfig.bonoCrecimiento.activo !== false && commConfig.bonoCrecimiento.montoUSD > 0);
+    // Foodservice con sus propios bonos en USD (en kg contra su meta).
+    const bonosFood = (commConfig.bonoNivelFood && commConfig.bonoNivelFood.activo !== false && (commConfig.bonoNivelFood.escalones || []).length > 0)
+        || (commConfig.bonoCrecimientoFood && commConfig.bonoCrecimientoFood.activo !== false && commConfig.bonoCrecimientoFood.montoUSD > 0);
+    const sigBonoFood = estadoActual?.bonoNivelFoodSiguiente || null;
+    // Con base 'cobradas', los kg de foodservice también son los cobrados.
+    const kgFoodVista = porCobradas && estadoActual ? (Number(estadoActual.kgFood) || 0) : (stats.kgFoodMes || 0);
     // Solo fijo: no hay nada variable que mostrar como "comisión".
-    const hasComision = hasComisionPct || bonosUSD || (commConfig.bonusPuntualidad || 0) > 0 || (commConfig.comisionFoodservice || 0) > 0;
+    const hasComision = hasComisionPct || bonosUSD || bonosFood || (commConfig.bonusPuntualidad || 0) > 0 || (commConfig.comisionFoodservice || 0) > 0;
     const sigBono = estadoActual?.bonoNivelSiguiente || null;
     const crec = estadoActual?.crecimiento;
     const proximo = commConfig.proximoEsquema || null;
@@ -764,20 +770,31 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                             )}
                         </div>
                         {/* Foodservice va aparte, en kg (desde el corte a fin de mes) */}
-                        {vendedor.separaFood && (vendedor.metaKg > 0 || stats.kgFoodMes > 0) && (
+                        {vendedor.separaFood && (vendedor.metaKg > 0 || kgFoodVista > 0 || bonosFood) && (
                             <div className="mt-3 pt-3 border-t border-slate-800">
                                 <div className="flex items-baseline justify-between gap-2">
                                     <p className="text-slate-400 text-xs font-semibold">Foodservice</p>
                                     <p className="text-sm font-black font-mono text-amber-300">
-                                        {fmtKg(stats.kgFoodMes || 0)}{vendedor.metaKg > 0 && <span className="text-slate-500 font-normal"> / {fmtKg(vendedor.metaKg)}</span>}
+                                        {fmtKg(kgFoodVista)}{vendedor.metaKg > 0 && <span className="text-slate-500 font-normal"> / {fmtKg(vendedor.metaKg)}</span>}
                                     </p>
                                 </div>
                                 {vendedor.metaKg > 0 && (
                                     <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-1.5">
-                                        <div className="h-2 rounded-full bg-amber-400" style={{ width: `${Math.min(100, (stats.kgFoodMes || 0) / vendedor.metaKg * 100).toFixed(1)}%` }} />
+                                        <div className="h-2 rounded-full bg-amber-400" style={{ width: `${Math.min(100, kgFoodVista / vendedor.metaKg * 100).toFixed(1)}%` }} />
                                     </div>
                                 )}
-                                <p className="text-slate-500 text-[11px] mt-1">Kg de queso a clientes foodservice. No suma a tus unidades: comisión fija del {commConfig.comisionFoodservice}% sobre lo cobrado.</p>
+                                {bonosFood && estadoActual?.bonoNivelFoodEscalon && (
+                                    <p className="text-xs text-emerald-300 mt-1.5 flex items-center gap-2"><CheckCircle size={14} className="shrink-0" /> Bono foodservice <b>{estadoActual.bonoNivelFoodEscalon}</b>: {money(estadoActual.bonoNivelFoodMonto)}</p>
+                                )}
+                                {bonosFood && sigBonoFood && (
+                                    <p className="text-xs text-slate-300 mt-1.5">Te faltan <b className="text-amber-300">{fmtKg(sigBonoFood.faltan)}{porCobradas ? ' cobrados' : ''}</b> para el bono foodservice de <b className="text-white">{money(sigBonoFood.monto)}</b>.</p>
+                                )}
+                                {bonosFood && estadoActual?.crecimientoFood?.activo && (
+                                    <p className="text-xs text-slate-400 mt-1">Crecimiento foodservice: {estadoActual.crecimientoFood.aplica
+                                        ? (estadoActual.crecimientoFood.logrado ? `logrado (+${money(estadoActual.crecimientoFood.montoUSD)})` : `faltan ${fmtKg(estadoActual.crecimientoFood.faltan)} para +${money(estadoActual.crecimientoFood.montoUSD)}`)
+                                        : estadoActual.crecimientoFood.motivo}</p>
+                                )}
+                                <p className="text-slate-500 text-[11px] mt-1">Kg de queso a clientes foodservice{porCobradas ? ' (cobrados)' : ''}. No suman a tus unidades.{(commConfig.comisionFoodservice || 0) > 0 ? ` Comisión fija del ${commConfig.comisionFoodservice}% sobre lo cobrado.` : ''}</p>
                             </div>
                         )}
                     </>

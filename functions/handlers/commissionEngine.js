@@ -47,7 +47,7 @@ const DEFAULT_COMMISSION_CONFIG = {
     baseUnidades: 'facturadas',
     bonoNivel: null,
     bonoActivacionUSD: 0,
-    bonoCrecimiento: null,
+    bonoCrecimiento: null, bonoNivelFood: null, bonoCrecimientoFood: null,
 };
 
 /**
