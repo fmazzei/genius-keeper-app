@@ -15,15 +15,12 @@ const num = (n) => (Number(n) || 0).toLocaleString('es-VE', { maximumFractionDig
 const TONE_TEXT = { good: 'text-emerald-400', warn: 'text-amber-400', bad: 'text-red-400', neutral: 'text-white' };
 
 const DETALLE = {
-    comision_periodo: { que: 'Lo que has ganado de comisión en el período de empleo en curso, sobre lo que YA se cobró.', como: 'Suma de la comisión de cada factura cobrada, con la tasa de tu nivel (o 5% flat si es heredada).', hacer: 'Cobra a tiempo: una unidad solo vale cuando se cobra.' },
-    meta_nivel: { que: 'Unidades que has facturado este período vs tu meta, y el nivel de comisión que te da ese volumen.', como: 'Unidades de tus facturas dentro del período de empleo ÷ meta. Más unidades = mejor nivel = mejor tasa.', hacer: 'Coloca más pedidos y cuida que se facturen para subir de nivel.' },
+    meta_nivel: { que: 'Las unidades que llevas en el mes contra tu meta.', como: 'Unidades de tus facturas del mes (cobradas o facturadas, según tu meta) ÷ meta.', hacer: 'Coloca más pedidos y cuida que se facturen y se cobren.' },
     velocidad: { que: 'Tu ritmo de venta actual comparado con el ritmo que necesitas para llegar a la meta.', como: 'Unidades facturadas ÷ días transcurridos, contra (lo que falta ÷ días restantes).', hacer: 'Si vas por debajo del ritmo necesario, acelera pedidos esta semana.' },
     por_cobrar: { que: 'Facturas tuyas que están por vencer pronto.', como: 'Facturas no pagadas cuyo vencimiento cae en los próximos 3 días.', hacer: 'Adelántate: contacta al cliente antes de que venza.' },
-    cobranza: { que: 'Qué porcentaje de tus facturas se cobró dentro del plazo (vencimiento + gracia).', como: 'Facturas cobradas a tiempo ÷ facturas que ya debían cobrarse.', hacer: 'El Bono Cobranza se paga por cada factura cobrada a tiempo.' },
-    vencidas: { que: 'Facturas de tu cartera que ya pasaron su fecha de vencimiento sin cobrarse.', como: 'Cuenta y monto de facturas no pagadas con vencimiento anterior a hoy.', hacer: 'Prioriza estas: a los 45 días la comisión se anula.' },
-    despachos: { que: 'Unidades que registraste como despachadas hoy.', como: 'Suma de despachos del día. Es logística: no cuenta para tu meta ni comisión.', hacer: 'El despacho mueve producto; la venta se cuenta al facturar.' },
-    activacion: { que: 'Qué parte de tu cartera facturó suficientes unidades esta semana (Bono Activación).', como: 'PDV de tu cartera con facturación ≥ mínimo ÷ total de tu cartera.', hacer: 'Activa más clientes cada semana para ganar el bono proporcional.' },
-    anaquel: { que: 'Disponibilidad de producto en anaquel en tus cuentas de régimen anaquel (Bono Anaquel).', como: 'Sucursales con inventario alto en visitas de martes/viernes ÷ total de cuentas anaquel.', hacer: 'Coordina con el mercaderista para mantener el anaquel surtido.' },
+    cobranza: { que: 'Qué porcentaje de tus facturas se cobró dentro del plazo (vencimiento + gracia).', como: 'Facturas cobradas a tiempo ÷ facturas que ya debían cobrarse.', hacer: 'Llama al cliente antes del vencimiento: lo que se cobra a tiempo no se vuelve deuda vieja.' },
+    vencidas: { que: 'Facturas de tu cartera que ya pasaron su fecha de vencimiento sin cobrarse.', como: 'Cuenta y monto de facturas no pagadas con vencimiento anterior a hoy.', hacer: 'Prioriza las más viejas: cuanto más tiempo pasa, más difícil es cobrarlas.' },
+    despachos: { que: 'Unidades que registraste como despachadas hoy.', como: 'Suma de despachos del día. Es logística: no cuenta para tu meta.', hacer: 'El despacho mueve producto; la venta se cuenta al facturar.' },
     radar: { que: 'Alertas accionables de tu cartera: visitas vencidas, nunca visitados y quiebres de stock.', como: 'Se comparan las últimas visitas de tus PDV contra su frecuencia y su estado de stock.', hacer: 'Atiende primero los quiebres y las visitas más atrasadas.' },
     genius: { que: 'Puntaje global de qué tan bien se ejecuta tu producto en el punto de venta de tu cartera.', como: 'Combina posición en anaquel, POP, ausencia de quiebres, cumplimiento de visitas y calidad del reporte.', hacer: 'Sube el KPI de ejecución más débil para mejorar el puntaje.' },
     cumplimiento: { que: 'Qué % de tus PDV fue visitado dentro de su frecuencia asignada.', como: 'PDV con última visita dentro de su intervalo de días ÷ PDV activos con frecuencia.', hacer: 'Agenda con el mercaderista los PDV que se están atrasando.' },
@@ -46,42 +43,16 @@ const Bloque = ({ Icon, titulo, children, color = 'text-slate-400' }) => (
 
 // Desglose contextual opcional por KPI.
 function Extra({ id, ctx, kpi }) {
-    const { stats, vendedor, estadoActual, plan } = ctx || {};
+    const { stats, vendedor, plan } = ctx || {};
     if (id === 'meta_nivel') {
         // La meta como la mide SU plan (unidades cobradas o facturadas).
-        const m = plan?.metas?.retail || { actual: stats?.unidadesDelMes || 0, meta: vendedor?.metaMensual || 0, unidad: 'uds', pct: 0, marcas: [] };
+        const m = plan?.metas?.retail || { actual: stats?.unidadesDelMes || 0, meta: vendedor?.metaMensual || 0, unidad: 'uds', pct: 0 };
         const pct = m.meta > 0 ? m.actual / m.meta : 0;
         return (
             <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4">
                 <div className="flex justify-between text-xs text-slate-400 mb-1"><span>{num(m.actual)} {m.unidad}</span><span>meta {num(m.meta)}</span></div>
                 <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${Math.min(100, pct * 100)}%` }} /></div>
                 <p className="text-xs text-slate-500 mt-2">{Math.round(pct * 100)}% de la meta · faltan {num(Math.max(0, m.meta - m.actual))} {m.unidad}</p>
-                {m.marcas.length > 0 && (
-                    <div className="mt-3 space-y-1">
-                        {m.marcas.map((mk, i) => (
-                            <div key={i} className={`flex justify-between text-xs ${m.actual >= mk.umbral ? 'text-emerald-400' : 'text-slate-400'}`}>
-                                <span>{mk.etiqueta} · desde {num(mk.umbral)}</span><b>{mk.texto}</b>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        );
-    }
-    if (id === 'comision_periodo' && estadoActual) {
-        return (
-            <div className="space-y-2">
-                {[['Comisiones', estadoActual.devengadoComision, estadoActual.pagadoComision, estadoActual.saldoComision, 'text-emerald-400'],
-                  ['Fijo (sueldo + viáticos)', estadoActual.base, estadoActual.pagadoFijo, estadoActual.saldoFijo, 'text-sky-300']].map(([t, dev, pag, sal, c]) => (
-                    <div key={t}>
-                        <p className={`text-[11px] font-black uppercase tracking-wide mb-1 ${c}`}>{t}</p>
-                        <div className="grid grid-cols-3 gap-2">
-                            {[['Ganado', dev, 'text-white'], ['Pagado', pag, 'text-emerald-400'], ['Por cobrar', sal, 'text-amber-400']].map(([l, v, cc]) => (
-                                <div key={l} className="rounded-xl bg-slate-900 border border-slate-800 p-3"><p className="text-[10px] uppercase tracking-wide text-slate-500 font-bold">{l}</p><p className={`font-black ${cc}`}>{money(v)}</p></div>
-                            ))}
-                        </div>
-                    </div>
-                ))}
             </div>
         );
     }

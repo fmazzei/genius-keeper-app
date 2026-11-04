@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { etiquetaFijo, notaTransicion, configEnFecha, proximoCambioEsquema } from '../utils/periodosComision.js';
-import { piezasActivas, pieza, completo } from '../utils/piezasComision.js';
+import { piezasActivas, pieza, completo, nombresPlan } from '../utils/piezasComision.js';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
 import {
@@ -13,11 +13,11 @@ import { useAuth } from '@/context/AuthContext';
 import AlertaAnaquelBajo from '@/Components/AlertaAnaquelBajo.jsx';
 import NovedadesApp from '@/Components/NovedadesApp.jsx';
 import {
-    Home, MapPin, Package, Bell,
+    Home, MapPin, Bell,
     LogOut, TrendingUp, CheckCircle, AlertCircle,
     Clock, Loader, Target, Trash2, Briefcase,
     ClipboardList, Receipt, Store, Warehouse, X, RefreshCw, FilePlus,
-    Zap, ChevronLeft, ChevronRight, Wallet, Download, Award, Handshake, Bot,
+    ChevronLeft, ChevronRight, Wallet, Download, Award, Handshake, Bot,
 } from 'lucide-react';
 import AvisoDetalleSheet from '@/Components/AvisoDetalleSheet.jsx';
 import EstadoCuentaDoc from '@/Components/EstadoCuentaDoc.jsx';
@@ -113,21 +113,9 @@ function startOfWeek() {
 
 // ─── Sub-views ────────────────────────────────────────────────────────────────
 
-function StatChip({ label, value, color = 'text-white', sub, className = '' }) {
-    return (
-        <div className={`bg-slate-800/60 border border-slate-700 rounded-xl px-4 py-3 text-center ${className}`}>
-            <p className={`text-xl font-black font-mono ${color}`}>{value}</p>
-            <p className="text-slate-400 text-xs mt-0.5 leading-tight">{label}</p>
-            {sub && <p className="text-slate-500 text-[10px] mt-0.5">{sub}</p>}
-        </div>
-    );
-}
-
 // ─── Estado de Cuenta (Fase 3.7/3.8) — histórico por período de empleo ───────
 function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor', desgloseInputs = null, onBack }) {
     const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const gracia   = commConfig.cobranzaGraciaDias ?? 5;
-    const bonoRate = commConfig.bonusPuntualidad ?? 0;
     const [showDoc, setShowDoc] = useState(false);
     const [desglose, setDesglose] = useState(null);
     const verDesglose = (periodKey) => {
@@ -162,13 +150,18 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
 
     const irAAdeudado = () => { if (primerAdeudadoIdx >= 0) setSelIdx(primerAdeudadoIdx); };
 
+    // Cómo se llama lo que gana (bonos, comisiones o las dos cosas), según su
+    // plan de hoy y, en cada período, según el plan con que se pagó ese mes.
+    const nHoy = nombresPlan(commConfig);
+    const nDe = (e) => (e?.cfg ? nombresPlan(e.cfg) : nHoy);
+
     return (
         <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-4">
             <div className="flex items-center gap-3">
                 <button onClick={onBack} className="p-2 rounded-xl bg-slate-800 text-slate-400 shrink-0"><ChevronLeft size={18} /></button>
                 <div className="flex-1 min-w-0">
                     <p className="text-white font-black text-lg leading-tight">Estado de Cuenta</p>
-                    <p className="text-slate-400 text-xs">Tu comisión por período (se corta el último día de cada mes)</p>
+                    <p className="text-slate-400 text-xs">{nHoy.clave === 'sueldo' ? 'Tu sueldo' : nHoy.cuenta} por período (se corta el último día de cada mes)</p>
                 </div>
                 {estados.length > 0 && (
                     <button
@@ -199,7 +192,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                         <div className="flex-1 min-w-0">
                             <p className="text-amber-300 font-bold text-sm leading-tight">Se te adeuda de períodos anteriores</p>
                             <p className="text-amber-200 text-xs font-semibold mt-0.5">
-                                Comisiones {money(adeudadoComision)} · Fijo {money(adeudadoFijo)}
+                                {nHoy.cuenta} {money(adeudadoComision)} · Fijo {money(adeudadoFijo)}
                             </p>
                             <p className="text-amber-400/70 text-[11px]">{anteriores.length} período{anteriores.length === 1 ? '' : 's'} con saldo · toca para ver</p>
                         </div>
@@ -242,6 +235,8 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                 {/* Tarjeta del período seleccionado */}
                 {p && (() => {
                     const pctMeta = p.metaMensual > 0 ? Math.round((p.unidades / p.metaMensual) * 100) : 0;
+                    const np = nDe(p);
+                    const piezasP = piezasActivas(completo(p.cfg || commConfig));
                     return (
                 <div className={`bg-slate-900 border rounded-2xl p-4 ${p.cerrado ? 'border-slate-700' : 'border-emerald-600/40'}`}>
                     <div className="flex items-center justify-between mb-3">
@@ -251,30 +246,30 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                                 Mes {p.mes} de empleo · {p.congelado ? 'cerrado · congelado 🔒' : p.cerrado ? 'cerrado (provisional)' : 'en curso · provisional'}
                             </p>
                         </div>
-                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 ${p.cerrado ? 'text-slate-300' : 'text-emerald-400'}`}>{p.comisionActiva === false ? (p.bonoNivelEscalon || 'Sin bono por nivel') : `Nivel ${p.nivel}`}</span>
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-slate-800 ${p.cerrado ? 'text-slate-300' : 'text-emerald-400'}`}>{piezasP.includes('comisionNiveles') ? `Nivel ${p.nivel}` : piezasP.includes('comisionFija') ? `Comisión ${String(p.tasa).replace('.', ',')} %` : piezasP.includes('bonoNivel') ? (p.bonoNivelEscalon || 'Sin escalón aún') : np.cuenta}</span>
                     </div>
 
                     {/* Metas del período */}
-                    <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                    <div className={`grid ${piezasP.includes('cobranza') ? 'grid-cols-2' : 'grid-cols-1'} gap-2 text-xs mb-3`}>
                         <div className="bg-slate-800/60 rounded-lg p-2.5">
                             <p className="text-slate-400">{p.baseUnidades === 'cobradas' ? 'Unidades cobradas' : 'Facturación (colocado)'}</p>
                             <p className="text-white font-bold">{p.unidades.toLocaleString()} / {p.metaMensual.toLocaleString()} uds</p>
-                            <p className="text-slate-500 text-[10px]">{pctMeta}% de tu meta → {p.comisionActiva === false ? 'define tu bono' : 'define tu nivel'}</p>
+                            <p className="text-slate-500 text-[10px]">{pctMeta}% de tu meta{piezasP.includes('comisionNiveles') ? ' → define tu nivel' : piezasP.includes('bonoNivel') ? ' → define tu bono' : ''}</p>
                         </div>
-                        <div className="bg-slate-800/60 rounded-lg p-2.5">
+                        {piezasP.includes('cobranza') && <div className="bg-slate-800/60 rounded-lg p-2.5">
                             <p className="text-slate-400">Cobranza a tiempo</p>
                             <p className={`font-bold ${p.bonoCobranzaMonto > 0 ? 'text-emerald-400' : 'text-white'}`}>{p.cobranzaTasa === null ? '—' : `${p.cobranzaTasa.toFixed(0)}%`}</p>
                             <p className="text-slate-500 text-[10px]">
                                 {p.cobrDen > 0 ? `${p.cobrATiempo} de ${p.cobrDen} facturas a tiempo` : 'sin facturas por cobrar aún'}
                             </p>
-                        </div>
+                        </div>}
                     </div>
 
                     {/* Cómo se calcula la comisión */}
                     <div className="bg-slate-800/40 rounded-lg p-3 mb-3">
                         <p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1.5">Cómo se calcula</p>
                         <div className="space-y-1 text-xs">
-                            <div className="flex justify-between"><span className="text-slate-400">Cobrado en el período</span><span className="text-white font-mono">{money(p.cobradoRegular)}</span></div>
+                            {np.clave !== 'bonos' && <div className="flex justify-between"><span className="text-slate-400">Cobrado en el período</span><span className="text-white font-mono">{money(p.cobradoRegular)}</span></div>}
                             {p.comisionActiva === false ? null : Array.isArray(p.cobrosPorOrigen) ? (
                                 p.cobrosPorOrigen.map(g => (
                                     <div key={g.mes} className="flex justify-between gap-2">
@@ -285,7 +280,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                                     </div>
                                 ))
                             ) : (
-                                <div className="flex justify-between"><span className="text-slate-400">Comisión nivel {p.nivel} ({p.tasa}%)</span><span className="text-white font-mono">{money(p.cobradoRegular * p.tasa / 100)}</span></div>
+                                <div className="flex justify-between"><span className="text-slate-400">{piezasP.includes('comisionFija') ? 'Comisión fija' : `Comisión nivel ${p.nivel}`} ({p.tasa}%)</span><span className="text-white font-mono">{money(p.cobradoRegular * p.tasa / 100)}</span></div>
                             )}
                             {p.bonoCobranzaMonto > 0 && (
                                 <div className="flex justify-between"><span className="text-slate-400">Bono Cobranza ({p.bonoCobranzaRate}% de lo cobrado a tiempo)</span><span className="text-emerald-400 font-mono">+{money(p.bonoCobranzaMonto)}</span></div>
@@ -316,8 +311,8 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                     {/* Resultado: comisiones y fijo SIEMPRE por separado */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <BloqueCuenta
-                            titulo="Comisiones" acento="emerald" money={money}
-                            filas={[['Ganadas', p.devengadoComision], ['Pagadas', p.pagadoComision]]}
+                            titulo={np.cuenta} acento="emerald" money={money}
+                            filas={[[np.clave === 'bonos' ? 'Ganados' : 'Ganadas', p.devengadoComision], [np.clave === 'bonos' ? 'Pagados' : 'Pagadas', p.pagadoComision]]}
                             saldo={p.saldoComision}
                             notaDeMas="cobros que ahora cuentan en el mes siguiente; se descuenta allí"
                         />
@@ -329,7 +324,7 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                         />
                     </div>
                     <div className="flex justify-between items-center mt-2 px-1 text-xs">
-                        <span className="text-slate-500">Total por cobrar (comisiones + fijo)</span>
+                        <span className="text-slate-500">Total por cobrar ({np.cuenta.toLowerCase()} + fijo)</span>
                         <span className={`font-mono font-bold ${p.saldo > 0.5 ? 'text-slate-200' : 'text-slate-500'}`}>{money(p.saldo)}</span>
                     </div>
 
@@ -349,10 +344,15 @@ function EstadoCuentaView({ estados, commConfig = {}, vendedorName = 'Vendedor',
                     <LiquidacionDetalladaDoc desglose={desglose} vendedorName={vendedorName} onClose={() => setDesglose(null)} />
                 )}
 
+                {/* Cómo gana: solo las piezas de SU plan, con su nombre (bono o comisión). */}
                 <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-1.5">
-                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Comisión</b> = lo que <b>cobras</b> en el período × la tasa del <b>nivel</b> que lograste el mes en que <b>facturaste</b> (a más colocación, mejor tasa). Un mes cerrado no cambia: lo que cobres después entra al mes en curso.</p>
-                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Bono Cobranza</b> = <b>+{bonoRate}%</b> sobre <b>cada factura</b> que cobras a tiempo (dentro de vencimiento + {gracia} días de gracia).</p>
-                    <p className="text-slate-400 text-[11px]"><b className="text-slate-300">Fijo y comisiones se pagan por separado.</b> El fijo (sueldo + viáticos) puede pagarse por quincena o completo; las comisiones se liquidan sobre el mes vencido. Cada pago que te registra administración dice a cuál de los dos corresponde.</p>
+                    {piezasActivas(completo(commConfig)).filter(id => id !== 'arranque' && id !== 'fijo').map(id => (
+                        <p key={id} className="text-slate-400 text-[11px]"><b className="text-slate-300">{pieza(id).nombre}</b>: {pieza(id).resumen(completo(commConfig))}.</p>
+                    ))}
+                    {piezasActivas(completo(commConfig)).includes('fijo') && (
+                        <p className="text-slate-400 text-[11px]"><b className="text-slate-300">El fijo y {nHoy.cuenta.toLowerCase()} se pagan por separado.</b> El fijo (sueldo + viáticos) se paga por quincenas; {nHoy.cuenta.toLowerCase()} se liquidan sobre el mes vencido.</p>
+                    )}
+                    <p className="text-slate-400 text-[11px]">Un mes cerrado no cambia: lo que cobres después entra al mes en curso.</p>
                 </div>
               </>
             )}
@@ -387,6 +387,7 @@ function BloqueCuenta({ titulo, acento, filas, saldo, notaDeMas, nota, money }) 
 function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
     const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const anio = periodo.periodKey ? periodo.periodKey.slice(0, 4) : '';
+    const n = nombresPlan(periodo.cfg || {});
     return (
         <div className="fixed inset-0 z-[60] bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-5">
             <div className="w-full max-w-sm bg-slate-900 border border-emerald-600/40 rounded-3xl overflow-hidden shadow-2xl">
@@ -401,7 +402,7 @@ function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
 
                 <div className="px-6 pb-6">
                     <div className="text-center mb-4">
-                        <p className="text-slate-400 text-xs uppercase tracking-widest">Comisiones ganadas</p>
+                        <p className="text-slate-400 text-xs uppercase tracking-widest">{n.cuenta} {n.clave === 'bonos' ? 'ganados' : 'ganadas'}</p>
                         <p className="text-emerald-400 text-4xl font-black font-mono mt-1">{money(periodo.devengadoComision)}</p>
                         <p className="text-slate-400 text-xs mt-1">Fijo del período (aparte): <b className="text-sky-300">{money(periodo.base)}</b></p>
                     </div>
@@ -421,7 +422,7 @@ function CierrePeriodoModal({ periodo, onClose, onVerDetalle }) {
 
                     {periodo.saldo > 0.5 && (
                         <p className="text-amber-400/90 text-xs text-center mb-3">
-                            Por liquidarte: comisiones {money(Math.max(0, periodo.saldoComision || 0))} · fijo {money(Math.max(0, periodo.saldoFijo || 0))}
+                            Por liquidarte: {n.cuenta.toLowerCase()} {money(Math.max(0, periodo.saldoComision || 0))} · fijo {money(Math.max(0, periodo.saldoFijo || 0))}
                         </p>
                     )}
 
@@ -488,9 +489,8 @@ function HomeView({ vendedor, stats, loading, onNavigate, commConfig, estados = 
     // (la fila del MISMO motor que paga). Ver planVendedor.js.
     const plan = useMemo(() => tableroPlan(commConfig, estadoActual, {
         anaquel: { hasAnaquel: stats.hasAnaquel, ok: stats.anaquelOk, cubiertos: stats.anaquelCubiertos, total: stats.anaquelTotal },
-    }), [commConfig, estadoActual, stats.hasAnaquel, stats.anaquelOk, stats.anaquelCubiertos, stats.anaquelTotal]);
-    const unidades = estadoActual ? Number(estadoActual.unidades) || 0 : (stats.unidadesDelMes || 0);
-    const metaAlcanzada = vendedor.metaMensual > 0 && unidades >= vendedor.metaMensual;
+        ritmo: { diasPasados: stats.diasPasados, diasRestantes: stats.diasRestantes },
+    }), [commConfig, estadoActual, stats.hasAnaquel, stats.anaquelOk, stats.anaquelCubiertos, stats.anaquelTotal, stats.diasPasados, stats.diasRestantes]);
     const deuda = deudaVendedor(estados);
     const proximo = commConfig.proximoEsquema || null;
 
@@ -532,7 +532,7 @@ function HomeView({ vendedor, stats, loading, onNavigate, commConfig, estados = 
                         <div className="mt-3 bg-slate-800/60 rounded-lg p-2.5 space-y-1.5">
                             <p className="text-slate-400 text-[11px] font-semibold uppercase tracking-widest">Lo que te deben hoy</p>
                             <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-slate-200 text-xs font-semibold">Comisiones y bonos</span>
+                                <span className="text-slate-200 text-xs font-semibold">{plan.nombres?.cuenta || 'Comisiones'}</span>
                                 <b className="text-emerald-400 font-mono text-sm">{money(Math.max(0, deuda.comision))}</b>
                             </div>
                             {deuda.comisiones.map(l => (
@@ -575,77 +575,6 @@ function HomeView({ vendedor, stats, loading, onNavigate, commConfig, estados = 
                     <p className="text-sky-300 text-xs font-semibold uppercase tracking-widest">Tu plan cambia el {fechaCortaDe(proximo.desde)}</p>
                     <p className="text-slate-200 text-sm mt-1.5 leading-snug">{resumenEsquema(proximo.config)}</p>
                     <p className="text-slate-400 text-[11px] mt-1.5">Lo que facturaste antes de esa fecha se paga con las reglas de hoy, aunque lo cobres después.</p>
-                </div>
-            )}
-
-            {/* ── Ritmo para llegar a la meta ── */}
-            {!loading && vendedor.metaMensual > 0 && !metaAlcanzada && stats.diasRestantes > 0 && (
-                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 flex items-center gap-3">
-                    <div className="p-2 bg-blue-500/15 rounded-lg text-blue-400 shrink-0"><Zap size={18} /></div>
-                    <p className="text-slate-300 text-xs leading-snug">
-                        Vas a <b className="text-white">{(stats.runRateActual || 0).toFixed(1)} uds/día</b>. Para llegar a la meta necesitas <b className="text-blue-400">{(stats.runRateNeeded || 0).toFixed(1)} uds/día</b> los próximos <b className="text-white">{stats.diasRestantes}</b> día{stats.diasRestantes > 1 ? 's' : ''}.
-                    </p>
-                </div>
-            )}
-
-            {/* ── Tus facturas por cobrar y despachos (operación) ── */}
-            {!loading && (
-                <div className="grid grid-cols-3 gap-2">
-                    <StatChip label="Vencidas" value={stats.facturasVencidas} color={stats.facturasVencidas > 0 ? 'text-red-400' : undefined}
-                        sub={stats.montoVencido > 0 ? `$${Math.round(stats.montoVencido).toLocaleString('es-VE')}` : 'al día'} />
-                    <StatChip label="Por vencer" value={stats.facturasPorVencer} color={stats.facturasPorVencer > 0 ? 'text-amber-400' : undefined} sub="próx. 3 días" />
-                    <StatChip label="Despachos hoy" value={stats.despachoHoy} />
-                </div>
-            )}
-
-            {/* ── Radar de Acción Operativa ── */}
-            {!loading && (
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Radar de Acción Operativa</p>
-                        {stats.stockoutsCount > 0 && (
-                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">
-                                {stats.stockoutsCount} quiebre{stats.stockoutsCount > 1 ? 's' : ''}
-                            </span>
-                        )}
-                    </div>
-
-                    {stats.radarAlerts.length === 0 ? (
-                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
-                            <CheckCircle size={20} className="text-emerald-400 shrink-0" />
-                            <p className="text-slate-300 text-sm">Tu cartera está al día — sin visitas vencidas ni quiebres de stock.</p>
-                        </div>
-                    ) : (
-                        stats.radarAlerts.slice(0, 4).map(a => {
-                            const isCritica = a.type === 'Quiebre de Stock';
-                            return (
-                                <button
-                                    key={a.id}
-                                    onClick={() => onNavigate('cartera')}
-                                    className={`w-full text-left rounded-xl p-3.5 border flex items-start gap-3 active:scale-[0.99] transition-transform ${isCritica ? 'bg-red-500/10 border-red-500/30' : 'bg-amber-500/10 border-amber-500/30'}`}
-                                >
-                                    {isCritica
-                                        ? <Package size={18} className="text-red-400 shrink-0 mt-0.5" />
-                                        : <AlertCircle size={18} className="text-amber-400 shrink-0 mt-0.5" />
-                                    }
-                                    <div className="flex-1 min-w-0">
-                                        <p className={`font-bold text-sm ${isCritica ? 'text-red-300' : 'text-amber-300'}`}>
-                                            {a.type} — {a.posName}
-                                        </p>
-                                        <p className="text-slate-400 text-xs mt-0.5">{a.details}</p>
-                                    </div>
-                                </button>
-                            );
-                        })
-                    )}
-                    {stats.radarAlerts.length > 4 && (
-                        <button
-                            onClick={() => onNavigate('cartera')}
-                            className="w-full text-center text-slate-400 text-xs py-1 underline-offset-2 hover:text-white hover:underline transition-colors"
-                        >
-                            +{stats.radarAlerts.length - 4} alerta{stats.radarAlerts.length - 4 > 1 ? 's' : ''} más — ver en tu cartera
-                        </button>
-                    )}
                 </div>
             )}
 
@@ -797,7 +726,7 @@ const VendedorLayout = ({ user, onLogout }) => {
         unidadesDelMes: 0, kgFoodMes: 0, comisionSemana: 0, despachoHoy: 0,
         activacionOk: false, puntosActivacion: 0, puntosTotal: 0,
         facturasPorVencer: 0, puntualidadPct: null,
-        runRateActual: 0, runRateNeeded: 0, diasRestantes: 0,
+        runRateActual: 0, runRateNeeded: 0, diasRestantes: 0, diasPasados: 0,
         radarAlerts: [], stockoutsCount: 0, radarAlertsByPosId: {},
         periodoLabel: '', mesArranque: 0,
         cobranzaTasa: null, facturasVencidas: 0, montoVencido: 0,
@@ -1221,7 +1150,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                     activacionOk, puntosActivacion, puntosTotal,
                     facturasPorVencer, puntualidadPct,
                     hasAnaquel: false, anaquelOk: false, anaquelCubiertos: 0, anaquelTotal: 0,
-                    runRateActual, runRateNeeded, diasRestantes,
+                    runRateActual, runRateNeeded, diasRestantes, diasPasados,
                     radarAlerts: [], stockoutsCount: 0, radarAlertsByPosId: {},
                     periodoLabel, mesArranque,
                     cobranzaTasa, facturasVencidas, montoVencido,
@@ -1545,7 +1474,17 @@ const VendedorLayout = ({ user, onLogout }) => {
         }
 
         if (currentView === 'pedidos') {
-            return <MisPedidosView vendedorId={user.uid} vendedorName={vendedor.nombre} />;
+            return (
+                <div className="flex-1 flex flex-col overflow-hidden">
+                    <div className="px-4 pt-3 shrink-0">
+                        <button onClick={() => navigate('pedido')}
+                            className="w-full flex items-center justify-center gap-2 bg-emerald-600 active:bg-emerald-500 text-white font-black py-3 rounded-xl text-sm">
+                            <ClipboardList size={17} /> Nuevo pedido
+                        </button>
+                    </div>
+                    <MisPedidosView vendedorId={user.uid} vendedorName={vendedor.nombre} />
+                </div>
+            );
         }
 
         if (currentView === 'facturas') {
@@ -1638,9 +1577,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 {/* Selector de vista (arriba, siempre visible) — deja claro que hay 2 vistas */}
                 <div className="shrink-0 px-4 pt-3 pb-2 bg-slate-950">
                     <div className="flex bg-slate-900 border border-slate-800 rounded-xl p-1">
-                        {['Mi Semana', 'Inicio', 'Mis KPIs'].map((lbl, i) => (
+                        {['Mi Semana', nombresPlan(commConfig).pestana, 'Mis KPIs'].map((lbl, i) => (
                             <button key={i} onClick={() => go(i)}
-                                className={`flex-1 text-sm font-bold py-2 rounded-lg transition-colors ${homePage === i ? 'bg-slate-800 text-white shadow' : 'text-slate-400'}`}>
+                                className={`flex-1 text-sm font-bold py-2 px-1 leading-tight rounded-lg transition-colors ${homePage === i ? 'bg-slate-800 text-white shadow' : 'text-slate-400'}`}>
                                 {lbl}
                             </button>
                         ))}
@@ -1826,9 +1765,9 @@ const VendedorLayout = ({ user, onLogout }) => {
                 />
             )}
 
-            {/* ── FAB: Nuevo Pedido — se oculta en Mi Semana (pág. 0) y en Mis KPIs
-                 (pág. 2), donde tapa las listas de indicadores. Solo aparece en Inicio. ── */}
-            {!subView && currentView !== 'despacho' && !(currentView === 'home' && homePage !== 1) && (
+            {/* ── Nuevo pedido: vive arriba de la pestaña Pedidos. Solo si esa pestaña
+                 está apagada para este vendedor, queda el botón flotante en el inicio. ── */}
+            {!subView && modules.pedidosVendedor === false && currentView === 'home' && (
                 <button
                     onClick={() => navigate('pedido')}
                     className="absolute bottom-20 right-4 z-40 flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-white font-black pl-4 pr-5 py-3.5 rounded-full shadow-xl shadow-emerald-900/50 transition-all"

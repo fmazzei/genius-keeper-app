@@ -69,29 +69,42 @@ function BarraMeta({ m, t, fmt }) {
     );
 }
 
-function Tarjeta({ c, t }) {
+function Tarjeta({ c, t, metas }) {
     const [abierta, setAbierta] = useState(false);
-    const Icono = ICONO[c.grupo] || Target;
+    const Icono = c.grupo === 'food' ? UtensilsCrossed : c.clase === 'comision' ? Percent : c.clase === 'bono' ? Gift : (ICONO[c.grupo] || Target);
     const Estado = c.estado === 'logrado' ? CheckCircle2 : c.estado === 'no_aplica' ? Lock : null;
+    // Los escalones o niveles que dependen de la meta llevan la barra de la meta
+    // con sus marcas adentro (no se repite la meta en otro bloque).
+    const meta = c.barra === 'retail' ? metas?.retail : c.barra === 'food' ? metas?.food : null;
     return (
         <button type="button" onClick={() => setAbierta(a => !a)} className={`w-full text-left border rounded-2xl p-3.5 ${t.card}`}>
             <div className="flex items-center gap-3">
                 <span className={`w-9 h-9 rounded-xl grid place-items-center shrink-0 ${t.icono}`}><Icono size={18} /></span>
                 <div className="flex-1 min-w-0">
                     <p className={`text-sm font-black leading-tight ${t.txt} flex items-center gap-1.5`}>{c.nombre}{Estado && <Estado size={14} className={t.estado[c.estado]} />}</p>
-                    <p className={`text-xs leading-snug ${t.sub}`}>{c.progreso}</p>
+                    {!meta && <p className={`text-xs leading-snug ${t.sub}`}>{c.progreso}</p>}
                 </div>
                 <div className="text-right shrink-0">
                     <p className={`text-base font-black font-mono ${c.ganado > 0 ? t.estado.logrado : t.sub}`}>{fmtUsd(c.ganado)}</p>
                     {c.maximo > 0 && <p className={`text-[10px] ${t.muted}`}>de {fmtUsd(c.maximo).replace(',00', '')}</p>}
                 </div>
             </div>
-            {c.pct != null && (
+            {meta && (
+                <div className="mt-3">
+                    <BarraMeta m={meta} t={t} fmt={c.barra === 'food' ? (v) => fmtKgP(v).replace(' kg', '') : fmtUds} />
+                </div>
+            )}
+            {!meta && c.pct != null && (
                 <div className={`h-1.5 rounded-full mt-2.5 overflow-hidden ${t.track}`}>
                     <div className={`h-full rounded-full ${t.barra[c.estado]}`} style={{ width: `${Math.max(2, Math.min(100, c.pct * 100))}%` }} />
                 </div>
             )}
-            {c.siguiente && <p className={`text-xs mt-2 rounded-lg px-2.5 py-1.5 ${t.sig}`}>{c.siguiente}</p>}
+            {(c.siguiente || c.ritmo) && (
+                <div className={`text-xs mt-2 rounded-lg px-2.5 py-1.5 ${t.sig}`}>
+                    {c.siguiente && <p className="font-semibold">{c.siguiente}</p>}
+                    {c.ritmo && <p className={`mt-0.5 ${t.sub}`}>{c.ritmo}</p>}
+                </div>
+            )}
             <div className={`flex items-center gap-1 mt-1.5 text-[11px] ${t.muted}`}>
                 <ChevronDown size={12} className={`transition-transform ${abierta ? 'rotate-180' : ''}`} /> {abierta ? 'Cómo se gana' : 'Ver cómo se gana'}
             </div>
@@ -112,13 +125,15 @@ export default function PlanComisiones({ plan, tema = 'oscuro', quien = 'tu', pe
     const t = TEMAS[tema] || TEMAS.oscuro;
     const tu = quien === 'tu';
     const Hero = onTocarHero ? 'button' : 'div';
+    const nombres = plan.nombres || { llevas: 'Llevas ganado', titulo: 'tu plan' };
+    const titulo = tu ? nombres.titulo : nombres.titulo.replace(/^tus /, 'sus ').replace(/^tu /, 'su ');
     return (
         <div className="space-y-3">
             {/* 1. Lo ganado y lo que puede ganar */}
             <Hero type={onTocarHero ? 'button' : undefined} onClick={onTocarHero}
                 className={`block w-full text-left border rounded-2xl p-5 ${t.hero}`}>
                 <p className={`text-xs font-semibold uppercase tracking-widest ${t.heroLbl}`}>
-                    {plan.soloFijo ? (tu ? 'Tu sueldo' : 'Sueldo') : (tu ? 'Llevas ganado este mes' : 'Lleva ganado este mes')}{periodo ? ` · ${periodo}` : ''}
+                    {plan.soloFijo ? (tu ? 'Tu sueldo' : 'Sueldo') : `${tu ? nombres.llevas : nombres.llevas.replace(/^Llevas/, 'Lleva')} este mes`}{periodo ? ` · ${periodo}` : ''}
                 </p>
                 {plan.soloFijo ? (
                     <p className={`text-4xl font-black font-mono mt-1 ${t.big}`}>{fmtUsd(plan.fijo?.ganado)}</p>
@@ -147,29 +162,12 @@ export default function PlanComisiones({ plan, tema = 'oscuro', quien = 'tu', pe
                 {children}
             </Hero>
 
-            {/* 2. Las metas que mueven el dinero */}
-            {plan.metas.retail && (
-                <div className={`border rounded-2xl p-4 ${t.card}`}>
-                    <div className="flex items-center justify-between mb-2 gap-2">
-                        <p className={`text-xs font-semibold uppercase tracking-widest ${t.sub}`}>Meta del mes{plan.metas.food ? ' · retail' : ''}</p>
-                        {plan.chipMeta && <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${t.chip}`}>{plan.chipMeta}</span>}
-                    </div>
-                    <BarraMeta m={plan.metas.retail} t={t} fmt={fmtUds} />
-                    {plan.porCobradas && <p className={`text-[11px] mt-1 ${t.muted}`}>Cuentan las unidades de facturas cobradas en el mes.</p>}
-                </div>
-            )}
-            {plan.metas.food && (
-                <div className={`border rounded-2xl p-4 ${t.card}`}>
-                    <p className={`text-xs font-semibold uppercase tracking-widest mb-2 ${t.sub}`}>Meta foodservice · kg de queso</p>
-                    <BarraMeta m={plan.metas.food} t={t} fmt={(v) => fmtKgP(v).replace(' kg', '')} />
-                </div>
-            )}
-
-            {/* 3. Cómo gana: una tarjeta por pieza del plan */}
+            {/* 2. Cómo van: una tarjeta por pieza del plan, con lo que falta */}
             {plan.tarjetas.length > 0 && (
                 <div className="space-y-2">
-                    <p className={`text-xs font-semibold uppercase tracking-widest ${t.muted}`}>{tu ? 'Cómo ganas' : 'Cómo gana'} · {tu ? 'tu' : 'su'} plan</p>
-                    {plan.tarjetas.map(c => <Tarjeta key={c.id} c={c} t={t} />)}
+                    <p className={`text-xs font-semibold uppercase tracking-widest ${t.muted}`}>Cómo van {titulo}</p>
+                    {plan.porCobradas && plan.tarjetas.some(c => c.barra) && <p className={`text-[11px] -mt-1 ${t.muted}`}>Cuentan las unidades de facturas cobradas en el mes.</p>}
+                    {plan.tarjetas.map(c => <Tarjeta key={c.id} c={c} t={t} metas={plan.metas} />)}
                 </div>
             )}
         </div>

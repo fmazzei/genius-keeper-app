@@ -4010,6 +4010,19 @@ Pedido del dueño con capturas del inicio de Erick: se veían «Tu fijo va apart
   - Carolina (4,5 % fija + cobranza + fijo $400).
   - Solo sueldo.
 
+### Página del vendedor ordenada: gestión, lo que gana y sus KPIs (2026-11-04) ✅
+
+Pedido del dueño con capturas del perfil de Erick: *"lo que es bono debe llamarse bono y lo que es comisiones debe llamarse comisiones… es demasiado repetitivo… lo primero es su gestión, lo segundo sus comisiones, lo tercero los indicadores"*.
+
+- **Bono o comisión** (`piezasComision.js`): `clasePieza(id)` = `comision` (comisión fija o por niveles, foodservice %, recuperadas), `bono` (escalones, activación, crecimiento, cobranza, anaquel, foodservice por escalones y su crecimiento) o `sueldo`. `nombresPlan(cfg)` da `{clave, pestana, titulo, cuenta, llevas}`: «Mis bonos» / «Mis comisiones» / «Comisión y bonos» / «Mi sueldo». Las piezas que son bono se llaman «Bono …» (activación de cartera, activación %, disponibilidad en anaquel, crecimiento foodservice) y recuperadas «Comisión por cuentas recuperadas», también en los bloques del motor y en el constructor.
+- **Las tres pestañas del inicio**:
+  - **Mi Semana**: la gestión (seguidor), sin dinero.
+  - **Segunda pestaña, con el nombre de su plan**: solo lo que gana. Arriba lo que lleva («Llevas en bonos este mes»), lo que se le debe hoy y, debajo, «Cómo van tus bonos» con una tarjeta por pieza. Los escalones o niveles que dependen de la meta llevan la barra de la meta adentro (`tarjeta.barra` 'retail'|'food'), con lo que falta y el ritmo para lograrlo (`tarjeta.ritmo`, de `extra.ritmo = {diasPasados, diasRestantes}`). Ya no hay bloques sueltos de meta, ni la tarjeta de ritmo, ni vencidas/por vencer/despachos, ni el radar (están en Mi Semana y en Mis KPIs).
+  - **Mis KPIs**: solo gestión. Se retiraron «Tu plan este mes» y la categoría Comisiones (comisión del período, Bono Activación, Bono Anaquel); Meta del mes y Velocidad pasan a la categoría **Ventas**. Los textos de ayuda ya no hablan de comisiones.
+- **Estado de cuenta y cierre del mes**: la cuenta variable se llama según el plan del período (`nombresPlan(p.cfg)`): «Bonos ganados», «Comisiones», etc. La caja de cobranza solo aparece si tiene el bono de cobranza, y la explicación del pie lista solo las piezas de su plan.
+- **Nuevo pedido**: el botón flotante salió del inicio y quedó arriba de la pestaña Pedidos (como «Nueva factura»). Si la pestaña Pedidos está apagada para ese vendedor, el botón flotante sigue en el inicio.
+- Prueba: `tests/planVendedor.test.mjs` (30 en verde: Erick «Mis bonos», Carolina «Comisión y bonos», solo comisión, la barra en el escalón y el ritmo).
+
 ### Constructor de comisiones por PIEZAS (2026-11-04) ✅ (rama `claude/constructor-remuneracion`)
 
 Reclamo del dueño con capturas del esquema de Erick: el constructor de bloques era una lista de campos sueltos. Al tantear, quedó guardado un **Bono Activación de 80 %** (el campo en % de lo cobrado, no el de dólares), y la propuesta decía «hasta $7.376». Además, el último nivel de la comisión no se podía borrar y el PDF mostraba «Tu comisión 0 % fijo» a quien no tiene comisión %. Pedido: *"un conjunto de opciones clasificadas que el usuario va agregando y simulando… que el sistema lo guíe"*.

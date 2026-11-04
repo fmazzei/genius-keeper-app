@@ -27,6 +27,13 @@ __export(novedades_exports, {
 module.exports = __toCommonJS(novedades_exports);
 var NOVEDADES = [
   {
+    id: "2026-11-04-vendedor-ordenado",
+    fecha: "2026-11-04",
+    roles: ["vendedor", "master"],
+    titulo: "Tu p\xE1gina, m\xE1s ordenada",
+    resumen: "Mi Semana es tu gesti\xF3n, la segunda pesta\xF1a es lo que ganas (se llama \xABMis bonos\xBB, \xABMis comisiones\xBB o \xABComisi\xF3n y bonos\xBB seg\xFAn tu plan) y Mis KPIs son tus indicadores. El bot\xF3n Nuevo pedido est\xE1 ahora en la pesta\xF1a Pedidos."
+  },
+  {
     id: "2026-11-04-plan-vendedor",
     fecha: "2026-11-04",
     roles: ["vendedor", "master"],

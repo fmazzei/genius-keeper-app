@@ -783,7 +783,7 @@ function bloquesDeFila(r = {}, cfg = {}) {
     (Number(cfg.bonoActivacionUSD) || 0) > 0
   );
   add("bonoAnaquel", "Bono Anaquel", r.bonoAnaquelMonto, "");
-  add("foodservice", "Foodservice", r.comisionFoodMonto, r.tasaFood ? `${pc(r.tasaFood)} flat` : "");
+  add("foodservice", "Comisi\xF3n foodservice", r.comisionFoodMonto, r.tasaFood ? `${pc(r.tasaFood)} flat` : "");
   const kgTxt = (v) => String(Math.round((Number(v) || 0) * 10) / 10).replace(".", ",");
   add(
     "bonoNivelFood",
@@ -794,12 +794,12 @@ function bloquesDeFila(r = {}, cfg = {}) {
   );
   add(
     "bonoCrecimientoFood",
-    "Crecimiento foodservice",
+    "Bono de crecimiento foodservice",
     r.bonoCrecimientoFoodMonto,
     r.crecimientoFood && r.crecimientoFood.activo ? r.crecimientoFood.aplica ? `${pc(r.crecimientoFood.crecimientoPct)} en kg contra el mes anterior` : r.crecimientoFood.motivo : "",
     !!(cfg.bonoCrecimientoFood && cfg.bonoCrecimientoFood.activo !== false)
   );
-  add("recuperadas", "Cuentas recuperadas", r.bonoRecupMonto, r.tasaRecup ? `${pc(r.tasaRecup)} flat` : "");
+  add("recuperadas", "Comisi\xF3n por cuentas recuperadas", r.bonoRecupMonto, r.tasaRecup ? `${pc(r.tasaRecup)} flat` : "");
   return out;
 }
 function repartirPagos(liquidacionesPeriodo = [], base = 0, devengadoComision = 0) {

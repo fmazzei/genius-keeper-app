@@ -112,7 +112,7 @@ export const PIEZAS = [
         resumen: (c) => escalonesBonoNivel(c, { meta: num(c.metaMensual) }).map(e => `${e.umbral.toLocaleString('es-VE')} uds → ${usdTxt(e.monto)}`).join(' · '),
     },
     {
-        id: 'activacionUSD', grupo: 'usd', nombre: 'Activación de cartera',
+        id: 'activacionUSD', grupo: 'usd', nombre: 'Bono de activación de cartera',
         para: 'Dólares por cada semana en que la mayoría de sus clientes compra. Premia vender a muchos, no a pocos.',
         activa: (c) => num(c.bonoActivacionUSD) > 0,
         agregar: (c) => ({ ...c, bonoActivacionUSD: 200, activacionThreshold: num(c.activacionThreshold) || 80, activacionMinUnits: num(c.activacionMinUnits) || 12 }),
@@ -149,7 +149,7 @@ export const PIEZAS = [
         resumen: (c) => `${pctTxt(c.bonusPuntualidad)} de lo cobrado a tiempo (+${num(c.cobranzaGraciaDias)} días de gracia)`,
     },
     {
-        id: 'activacionPct', grupo: 'pct', nombre: 'Activación en %',
+        id: 'activacionPct', grupo: 'pct', nombre: 'Bono de activación (%)',
         para: 'Como la activación de cartera, pero en % de lo cobrado en vez de dólares.',
         activa: (c) => num(c.bonusActivacion) > 0,
         agregar: (c) => ({ ...c, bonusActivacion: 1, activacionThreshold: num(c.activacionThreshold) || 80, activacionMinUnits: num(c.activacionMinUnits) || 12 }),
@@ -162,7 +162,7 @@ export const PIEZAS = [
         resumen: (c) => `${pctTxt(c.bonusActivacion)} de lo cobrado si cada semana el ${num(c.activacionThreshold)} % de su cartera compra ${num(c.activacionMinUnits)} uds o más`,
     },
     {
-        id: 'anaquel', grupo: 'pct', nombre: 'Disponibilidad en anaquel',
+        id: 'anaquel', grupo: 'pct', nombre: 'Bono de disponibilidad en anaquel',
         para: 'Solo para cuentas en consignación: reemplaza a la activación en esas cuentas.',
         activa: (c) => num(c.bonusAnaquel) > 0,
         agregar: (c) => ({ ...c, bonusAnaquel: 1 }),
@@ -196,7 +196,7 @@ export const PIEZAS = [
         resumen: (c) => escalonesBonoNivel(c, { meta: num(c.metaKgFoodservice), medida: 'food' }).map(e => `${kgTxt(e.umbral)} → ${usdTxt(e.monto)}`).join(' · '),
     },
     {
-        id: 'foodCrec', grupo: 'food', nombre: 'Crecimiento foodservice',
+        id: 'foodCrec', grupo: 'food', nombre: 'Bono de crecimiento foodservice',
         para: 'Dólares si los kg de foodservice crecen contra el mes anterior.',
         activa: (c) => conMonto(c.bonoCrecimientoFood),
         agregar: (c) => ({ ...c, bonoCrecimientoFood: { activo: true, pct: 10, montoUSD: 50 } }),
@@ -208,7 +208,7 @@ export const PIEZAS = [
         resumen: (c) => `${usdTxt(c.bonoCrecimientoFood?.montoUSD)} si los kg crecen ${num(c.bonoCrecimientoFood?.pct)} % o más`,
     },
     {
-        id: 'recuperadas', grupo: 'extra', nombre: 'Cuentas recuperadas',
+        id: 'recuperadas', grupo: 'extra', nombre: 'Comisión por cuentas recuperadas',
         para: 'Un % por cobrar facturas viejas que heredó de otro vendedor.',
         activa: (c) => num(c.comisionRecuperadas) > 0,
         agregar: (c) => ({ ...c, comisionRecuperadas: 3 }),
@@ -228,6 +228,33 @@ export const PIEZAS = [
 ];
 
 export const pieza = (id) => PIEZAS.find(p => p.id === id);
+
+// ─── Bono o comisión ─────────────────────────────────────────────────────────
+// Pedido del dueño (4-nov-2026): "lo que es bono debe llamarse bono y lo que es
+// comisión debe llamarse comisión", también en los títulos de la página del
+// vendedor. Una comisión es un % de lo cobrado; un bono es un premio por lograr
+// algo (en dólares o en %). El sueldo no es ninguno de los dos.
+const CLASE = {
+    fijo: 'sueldo',
+    comisionFija: 'comision', comisionNiveles: 'comision', foodPct: 'comision', recuperadas: 'comision',
+    bonoNivel: 'bono', activacionUSD: 'bono', crecimiento: 'bono', cobranza: 'bono', activacionPct: 'bono',
+    anaquel: 'bono', foodNivel: 'bono', foodCrec: 'bono',
+};
+export const clasePieza = (id) => CLASE[id] || null;
+
+/**
+ * Cómo se llama lo que gana el vendedor según SU plan: solo bonos, solo
+ * comisiones, las dos cosas o solo sueldo. Lo usan los títulos de su página.
+ */
+export function nombresPlan(cfg = {}) {
+    const ids = piezasActivas(cfg);
+    const com = ids.some(id => CLASE[id] === 'comision');
+    const bon = ids.some(id => CLASE[id] === 'bono');
+    if (com && bon) return { clave: 'mixto', pestana: 'Comisión y bonos', titulo: 'tus comisiones y bonos', cuenta: 'Comisiones y bonos', llevas: 'Llevas en comisiones y bonos' };
+    if (bon) return { clave: 'bonos', pestana: 'Mis bonos', titulo: 'tus bonos', cuenta: 'Bonos', llevas: 'Llevas en bonos' };
+    if (com) return { clave: 'comisiones', pestana: 'Mis comisiones', titulo: 'tus comisiones', cuenta: 'Comisiones', llevas: 'Llevas en comisiones' };
+    return { clave: 'sueldo', pestana: 'Mi sueldo', titulo: 'tu sueldo', cuenta: 'Variable', llevas: 'Tu sueldo' };
+}
 
 /** Las piezas puestas en un esquema, en el orden del catálogo. */
 export const piezasActivas = (cfg = {}) => {

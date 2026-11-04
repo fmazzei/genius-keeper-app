@@ -2,10 +2,11 @@
 //
 // 2ª vista (deslizable) del Home del vendedor: una lista de KPIs propios. Qué
 // KPIs aparecen lo decide el máster (config por rol, useVendorKpiConfig). Los
-// valores se derivan del `stats`/`estadoActual`/`tier` que el Home ya calcula.
+// valores se derivan del `stats`/`estadoActual` que el Home ya calcula. Solo
+// indicadores de GESTIÓN: lo que gana está en la pestaña de su plan.
 
 import React, { useState, useEffect } from 'react';
-import { DollarSign, Target, Gauge, Clock, AlertTriangle, Truck, Award, Store, Radar, TrendingUp, CheckCircle, Eye, Droplets, BarChart3, Package, Info, Star, ChevronDown } from 'lucide-react';
+import { Target, Gauge, Clock, AlertTriangle, Truck, Radar, TrendingUp, CheckCircle, Eye, Droplets, BarChart3, Package, Info, Star, ChevronDown } from 'lucide-react';
 import { VENDOR_KPI_MAP } from '@/config/vendorKpiRegistry.js';
 import PullToRefresh from '@/Components/PullToRefresh.jsx';
 import VendedorKpiDetalle from '@/Components/VendedorKpiDetalle.jsx';
@@ -17,31 +18,21 @@ const TONE = {
     good: 'text-emerald-400', warn: 'text-amber-400', bad: 'text-red-400', neutral: 'text-white',
 };
 const ICON = {
-    comision_periodo: DollarSign, meta_nivel: Target, velocidad: Gauge, por_cobrar: Clock,
-    cobranza: Clock, vencidas: AlertTriangle, despachos: Truck, activacion: Award, anaquel: Store, radar: Radar,
+    meta_nivel: Target, velocidad: Gauge, por_cobrar: Clock,
+    cobranza: Clock, vencidas: AlertTriangle, despachos: Truck, radar: Radar,
     genius: Target, cumplimiento: CheckCircle, quiebres: Package, frescura: Droplets, anaquel_efec: BarChart3, pop: Info, visitas: Eye,
 };
 
 function buildKpi(id, ctx) {
     const { stats, vendedor, estadoActual, execKpis, plan } = ctx;
-    // Las tarjetas de comisiones salen de SU plan (planVendedor.js): lo que no
-    // está en su plan no se muestra.
-    const tarjeta = (...ids) => (plan?.tarjetas || []).find(t => ids.includes(t.id));
+    // De su plan solo se usa la meta (cómo la mide: cobradas o facturadas). Lo
+    // que gana (comisiones o bonos) no se repite aquí: está en su pestaña.
     switch (id) {
-        case 'comision_periodo': {
-            if (plan?.soloFijo) return { value: money(plan.fijo?.ganado || 0), unit: 'sueldo', sub: 'Tu plan es solo sueldo fijo.', tone: 'neutral' };
-            const saldoFijo = Math.max(0, estadoActual?.saldoFijo || 0);
-            return {
-                value: money(estadoActual?.devengadoComision || 0), unit: 'ganado',
-                sub: [plan?.alMeta > 0 ? `Al cumplir tu meta: ${money(plan.alMeta)}` : null, `Por cobrar: ${money(Math.max(0, estadoActual?.saldoComision || 0))}`, saldoFijo > 0 ? `fijo ${money(saldoFijo)}` : null].filter(Boolean).join(' · '),
-                tone: 'good', bar: plan?.pctAlMeta ?? null,
-            };
-        }
         case 'meta_nivel': {
             const m = plan?.metas?.retail;
             if (!m) return { value: `${num(stats.unidadesDelMes)} / ${num(vendedor.metaMensual)}`, unit: 'uds', sub: 'Meta del mes', tone: 'neutral' };
             const p = Math.round(m.pct * 100);
-            return { value: `${num(m.actual)} / ${num(m.meta)}`, unit: m.unidad, sub: [plan.chipMeta, `${p} % de la meta`].filter(Boolean).join(' · '), tone: p >= 100 ? 'good' : p >= 60 ? 'warn' : 'neutral', bar: Math.min(1, m.pct) };
+            return { value: `${num(m.actual)} / ${num(m.meta)}`, unit: m.unidad, sub: `${p} % de la meta`, tone: p >= 100 ? 'good' : p >= 60 ? 'warn' : 'neutral', bar: Math.min(1, m.pct) };
         }
         case 'velocidad': {
             const ok = (stats.runRateActual || 0) >= (stats.runRateNeeded || 0);
@@ -57,17 +48,6 @@ function buildKpi(id, ctx) {
             return { value: num(stats.facturasVencidas || 0), unit: 'vencidas', sub: `${money(stats.montoVencido || 0)} por cobrar vencido`, tone: (stats.facturasVencidas || 0) > 0 ? 'bad' : 'good' };
         case 'despachos':
             return { value: num(stats.despachoHoy || 0), unit: 'uds hoy', sub: 'Unidades despachadas en el día', tone: 'neutral' };
-        case 'activacion': {
-            const t = tarjeta('activacionUSD', 'activacionPct');
-            if (!t) return null; // no está en su plan
-            if (t.estado === 'no_aplica') return { value: '—', sub: t.progreso, tone: 'neutral' };
-            return { value: estadoActual ? `${estadoActual.actSemanasLogradas || 0}/${estadoActual.actSemanasTotales || 0}` : '—', unit: 'semanas', sub: t.siguiente || t.progreso, tone: t.estado === 'logrado' ? 'good' : 'warn', bar: t.pct };
-        }
-        case 'anaquel': {
-            const t = tarjeta('anaquel');
-            if (!t || t.estado === 'no_aplica') return null;
-            return { value: stats.anaquelOk ? 'Logrado' : `${num(stats.anaquelCubiertos || 0)}/${num(stats.anaquelTotal || 0)}`, unit: 'sucursales', sub: 'Disponibilidad en anaquel', tone: stats.anaquelOk ? 'good' : 'warn' };
-        }
         case 'radar': {
             const n = (stats.radarAlerts || []).length;
             return { value: num(n), unit: n === 1 ? 'alerta' : 'alertas', sub: `${num(stats.stockoutsCount || 0)} quiebre(s) de stock`, tone: n > 0 ? 'warn' : 'good' };
@@ -163,34 +143,7 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
                 );
             })()}
 
-            {/* Tu plan de comisiones de un vistazo: una fila por pieza. */}
-            {plan && plan.tarjetas.length > 0 && (
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-2">
-                    <p className="text-[11px] font-black uppercase tracking-widest text-emerald-400/80">Tu plan este mes</p>
-                    {plan.tarjetas.map(t => (
-                        <div key={t.id}>
-                            <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-sm font-semibold text-slate-200 truncate">{t.nombre}</span>
-                                <span className={`text-sm font-black tabular-nums ${t.ganado > 0 ? 'text-emerald-400' : 'text-slate-500'}`}>
-                                    {money(t.ganado)}{t.maximo > 0 && <span className="text-[11px] font-bold text-slate-500"> / {money(t.maximo)}</span>}
-                                </span>
-                            </div>
-                            {t.pct != null && (
-                                <div className="h-1 rounded-full bg-slate-800 overflow-hidden mt-1">
-                                    <div className={`h-full rounded-full ${t.estado === 'logrado' ? 'bg-emerald-400' : 'bg-amber-400'}`} style={{ width: `${Math.max(2, Math.min(100, t.pct * 100))}%` }} />
-                                </div>
-                            )}
-                            {(t.siguiente || t.progreso) && <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">{t.siguiente || t.progreso}</p>}
-                        </div>
-                    ))}
-                    <div className="flex items-baseline justify-between pt-1.5 border-t border-slate-800">
-                        <span className="text-xs font-bold text-slate-400">Total ganado</span>
-                        <span className="text-base font-black text-emerald-400 tabular-nums">{money(plan.ganado)}{plan.alMeta > 0 && <span className="text-[11px] font-bold text-slate-500"> · a la meta {money(plan.alMeta)}</span>}</span>
-                    </div>
-                </div>
-            )}
-
-            {/* Ventas por cliente/PDV de tu cartera — el indicador que mueve tu comisión */}
+            {/* Ventas por cliente/PDV de tu cartera */}
             {onOpenVentas && (
                 <button onClick={onOpenVentas}
                     className="w-full text-left rounded-2xl p-4 flex items-center gap-3 bg-gradient-to-br from-emerald-500/15 to-teal-500/5 border border-emerald-500/30 active:scale-[0.99] transition-transform">
@@ -204,7 +157,7 @@ export default function VendedorKpisView({ enabledIds = [], stats, vendedor, est
             )}
 
             {(() => {
-                const CAT_ORDER = ['Comisiones', 'Cobranza', 'Operación', 'Ejecución en campo'];
+                const CAT_ORDER = ['Ventas', 'Cobranza', 'Operación', 'Ejecución en campo'];
                 const groups = {};
                 items.forEach(x => { (groups[x.def.cat] ||= []).push(x); });
                 const cats = CAT_ORDER.filter(c => (groups[c] && groups[c].length) || (c === 'Operación' && onOpenAnaquelMap));

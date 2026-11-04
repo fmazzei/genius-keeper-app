@@ -602,15 +602,15 @@ export function bloquesDeFila(r = {}, cfg = {}) {
         semT != null ? `${semL || 0} de ${semT} semanas logradas` : '',
         (Number(cfg.bonoActivacionUSD) || 0) > 0);
     add('bonoAnaquel', 'Bono Anaquel', r.bonoAnaquelMonto, '');
-    add('foodservice', 'Foodservice', r.comisionFoodMonto, r.tasaFood ? `${pc(r.tasaFood)} flat` : '');
+    add('foodservice', 'Comisión foodservice', r.comisionFoodMonto, r.tasaFood ? `${pc(r.tasaFood)} flat` : '');
     const kgTxt = (v) => String(Math.round((Number(v) || 0) * 10) / 10).replace('.', ',');
     add('bonoNivelFood', 'Bono foodservice por nivel', r.bonoNivelFoodMonto,
         r.bonoNivelFoodEscalon ? `Escalón ${r.bonoNivelFoodEscalon} · ${kgTxt(r.kgFood)} kg` : (r.bonoNivelFoodSiguiente ? `Faltan ${kgTxt(r.bonoNivelFoodSiguiente.faltan)} kg para ${r.bonoNivelFoodSiguiente.etiqueta}` : ''),
         !!(cfg.bonoNivelFood && cfg.bonoNivelFood.activo !== false));
-    add('bonoCrecimientoFood', 'Crecimiento foodservice', r.bonoCrecimientoFoodMonto,
+    add('bonoCrecimientoFood', 'Bono de crecimiento foodservice', r.bonoCrecimientoFoodMonto,
         r.crecimientoFood && r.crecimientoFood.activo ? (r.crecimientoFood.aplica ? `${pc(r.crecimientoFood.crecimientoPct)} en kg contra el mes anterior` : r.crecimientoFood.motivo) : '',
         !!(cfg.bonoCrecimientoFood && cfg.bonoCrecimientoFood.activo !== false));
-    add('recuperadas', 'Cuentas recuperadas', r.bonoRecupMonto, r.tasaRecup ? `${pc(r.tasaRecup)} flat` : '');
+    add('recuperadas', 'Comisión por cuentas recuperadas', r.bonoRecupMonto, r.tasaRecup ? `${pc(r.tasaRecup)} flat` : '');
     return out;
 }
 
