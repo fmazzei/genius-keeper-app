@@ -21,6 +21,13 @@
 
 export const NOVEDADES = [
     {
+        id: '2026-11-04-constructor-piezas',
+        fecha: '2026-11-04',
+        roles: ['master'],
+        titulo: 'Constructor de comisiones por piezas',
+        resumen: 'El esquema de cada vendedor se arma con piezas que agregas y quitas (sueldo, comisión, premios en dólares, foodservice…), con tres preguntas para empezar, un simulador que muestra de dónde sale cada dólar y avisos que no dejan guardar un error como un bono de 80 %. La propuesta en PDF muestra solo lo que el vendedor tiene.',
+    },
+    {
         id: '2026-11-03-remuneracion-bloques',
         fecha: '2026-11-03',
         roles: ['master'],

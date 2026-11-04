@@ -9,47 +9,24 @@
 
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { X, Printer, Shield, Zap, Target, Package, ArrowUpRight, RotateCcw, Award } from 'lucide-react';
-import { escalonesBonoNivel, maximoBonosUSD, previaEsquema } from '@/utils/bloquesRemuneracion.js';
+import { X, Printer, Shield, Package, ArrowUpRight, Award, UtensilsCrossed } from 'lucide-react';
+import { escalonesBonoNivel } from '@/utils/bloquesRemuneracion.js';
+import { PIEZAS, piezasActivas, simularEsquema, curvaEsquema, completo } from '@/utils/piezasComision.js';
 
 const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
 const uds   = (n) => `${Math.round(Number(n) || 0).toLocaleString('es-VE')}`;
+const kg    = (n) => `${String(Math.round((Number(n) || 0) * 10) / 10).replace('.', ',')} kg`;
 
+// La propuesta muestra SOLO las piezas puestas del esquema (pedido del dueño,
+// 4-nov: salía "Tu comisión 0 % fijo" y un "Bono Activación +80 %" a quien no
+// los tenía). Las cifras salen del mismo simulador del constructor.
 function computeProposal(config = {}) {
-    const precio = Number(config.precioUnidad) || 5.6;
-    const fijo       = Number(config.salarioFijo) || 0;
-    const viaticosMes = (Number(config.viaticosSemanales) || 0) * 4;
-    const base   = fijo + viaticosMes;
-
-    // Sin bloque de comisión % (solo fijo, o fijo + bonos en USD).
-    const sinPct = config.comisionActiva === false;
-    const fija = !sinPct && config.esquema === 'fija';
-    const tiers = fija ? [] : [...(config.tiers || [])].sort((a, b) => b.minPct - a.minPct);
-    // Nivel "objetivo" = el que aplica al 100% de cumplimiento (con tasa fija, la tasa fija).
-    const objetivo = fija ? { label: 'Tasa fija', rate: Number(config.tasaFija) || 0 }
-        : tiers.filter(t => t.minPct <= 100).sort((a, b) => b.minPct - a.minPct)[0]
-        || tiers[tiers.length - 1]
-        || { label: 'Óptima', rate: 5 };
-
-    const bonoCobranza   = Number(config.bonusPuntualidad) || 0; // "Bono Cobranza" (rate)
-    const bonoActivacion = Number(config.bonusActivacion) || 0;
-
-    const tasaObjetivo   = (sinPct ? 0 : (Number(objetivo.rate) || 0)) + bonoCobranza + bonoActivacion;
-    const topRate        = (tiers[0]?.rate || objetivo.rate || 0) + bonoCobranza + bonoActivacion;
-
-    const montoFacturacion = (Number(config.metaMensual) || 0) * precio;
-    // Bonos en USD: el de nivel al 100 % de la meta, más Activación en USD y crecimiento.
-    const bonoNivel100 = previaEsquema(config, 100).bonoNivel;
-    const maxUSD = maximoBonosUSD(config);
-    const extrasUSD = maxUSD - Math.max(0, ...escalonesBonoNivel(config, { meta: Number(config.metaMensual) || 0 }).map(e => e.monto), 0);
-    const comisionObjetivo = montoFacturacion * tasaObjetivo / 100 + bonoNivel100;
-    const potencial        = base + comisionObjetivo + Math.max(0, extrasUSD);
-
-    // Ejemplo: cobras a tiempo lo que colocas y activas tu cartera → tasa objetivo.
-    const montoCobranza    = montoFacturacion;
-    const comisionEjemplo  = montoCobranza * tasaObjetivo / 100;
-
-    return { sinPct, maxUSD, bonoNivel100, fija, precio, base, fijo, viaticosMes, tiers, objetivo, bonoCobranza, bonoActivacion, tasaObjetivo, topRate, montoFacturacion, comisionObjetivo, potencial, montoCobranza, comisionEjemplo };
+    const c = completo(config);
+    const activas = piezasActivas(c);
+    const s100 = simularEsquema(c);
+    const techo = simularEsquema(c, { pctMeta: 150, pctKg: 150 });
+    const curva = curvaEsquema(c, [80, 100, 120]);
+    return { c, activas, s100, techo, curva, tiene: (id) => activas.includes(id) };
 }
 
 const PRINT_CSS = `
@@ -74,65 +51,29 @@ const PRINT_CSS = `
 }
 `;
 
-const Step = ({ label, rate, meta, highlight }) => (
-    <div className={`flex-1 rounded-lg px-2 py-2.5 text-center border ${highlight ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'}`}>
-        <p className={`text-[11px] font-bold ${highlight ? 'text-emerald-700' : 'text-slate-500'}`}>{label}</p>
-        {meta && <p className="text-[9px] text-slate-400 leading-tight">{meta} meta</p>}
-        <p className={`text-base font-black ${highlight ? 'text-emerald-700' : 'text-slate-700'}`}>{rate}%</p>
-    </div>
-);
-
-const Badge = ({ Icon, title, value, sub, tone = 'emerald' }) => {
-    const tones = {
-        emerald: 'bg-emerald-50 border-emerald-200 text-emerald-700',
-        blue:    'bg-blue-50 border-blue-200 text-blue-700',
-        amber:   'bg-amber-50 border-amber-200 text-amber-700',
-    };
-    return (
-        <div className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 ${tones[tone]}`}>
-            <Icon size={18} className="shrink-0" />
-            <div className="min-w-0">
-                <p className="text-[11px] font-semibold leading-tight opacity-80">{title}</p>
-                <p className="text-sm font-black leading-tight">{value}</p>
-                {sub && <p className="text-[10px] font-semibold leading-tight opacity-70 mt-0.5">{sub}</p>}
-            </div>
-        </div>
-    );
-};
+const TONOS = { base: 'bg-blue-50 border-blue-200 text-blue-800', comision: 'bg-emerald-50 border-emerald-200 text-emerald-800', usd: 'bg-amber-50 border-amber-200 text-amber-800', pct: 'bg-violet-50 border-violet-200 text-violet-800', food: 'bg-orange-50 border-orange-200 text-orange-800', extra: 'bg-slate-50 border-slate-200 text-slate-700' };
 
 export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor', onClose }) {
-    const p = computeProposal(config);
-    const allTiers = [...p.tiers, { label: config.bajaLabel || 'Baja', rate: Number(config.bajaRate) || 0 }];
+    const { c, s100, techo, curva, tiene } = computeProposal(config);
     const fecha = new Date().toLocaleDateString('es-VE', { day: '2-digit', month: 'long', year: 'numeric' });
-    const gracia     = Number(config.cobranzaGraciaDias) || 5;
-    const minUnits   = Number(config.activacionMinUnits) || 24;
-    const threshold  = Number(config.activacionThreshold) || 80;
-    const recuperadas  = Number(config.comisionRecuperadas) || 0;
+    const fijoMes = (Number(c.salarioFijo) || 0) + (Number(c.viaticosSemanales) || 0) * 4;
+    const cobradas = c.baseUnidades === 'cobradas';
+    const escRetail = tiene('bonoNivel') ? escalonesBonoNivel(c, { meta: Number(c.metaMensual) || 0 }) : [];
+    const escFood = tiene('foodNivel') ? escalonesBonoNivel(c, { meta: Number(c.metaKgFoodservice) || 0, medida: 'food' }) : [];
+    const niveles = tiene('comisionNiveles') ? [...(c.tiers || [])].sort((a, b) => a.minPct - b.minPct) : [];
+    // Piezas que se explican con una línea (las demás tienen su propio bloque).
+    const conBloque = new Set(['fijo', 'comisionNiveles', 'bonoNivel', 'foodNivel', 'arranque']);
+    const sueltas = PIEZAS.filter(p => tiene(p.id) && !conBloque.has(p.id));
 
-    // Portal al <body>: si el overlay se renderiza dentro del modal del
-    // AdminPanel (un ancestro con `transform`), `position: fixed` se ancla a ese
-    // ancestro y la barra de acciones queda fuera de vista → app "atrapada".
-    // Con el portal, el overlay ocupa el viewport real y la barra siempre se ve.
     return createPortal((
         <div id="gk-proposal-portal" className="fixed inset-0 z-[100] bg-slate-900/80 flex flex-col overflow-auto">
-            {/* Toolbar — no se imprime */}
             <div className="gk-no-print sticky top-0 z-10 flex items-center justify-between gap-3 bg-slate-900 px-4 py-3">
-                <button onClick={onClose} className="flex items-center gap-1.5 text-slate-300 text-sm font-semibold hover:text-white">
-                    <X size={18} /> Cerrar
-                </button>
-                <button
-                    onClick={() => window.print()}
-                    className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm px-4 py-2 rounded-lg"
-                >
-                    <Printer size={16} /> Imprimir / Guardar PDF
-                </button>
+                <button onClick={onClose} className="flex items-center gap-1.5 text-slate-300 text-sm font-semibold hover:text-white"><X size={18} /> Cerrar</button>
+                <button onClick={() => window.print()} className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm px-4 py-2 rounded-lg"><Printer size={16} /> Imprimir / Guardar PDF</button>
             </div>
 
-            {/* Hoja */}
             <div className="flex-1 p-3 sm:p-6 flex justify-center">
                 <div id="gk-proposal-sheet" className="bg-white w-full max-w-[800px] rounded-2xl shadow-2xl overflow-hidden self-start">
-
-                    {/* Encabezado */}
                     <div className="bg-[#0D2B4C] px-6 py-3.5 flex items-center justify-between">
                         <div>
                             <p className="text-[#FFD600] text-[10px] font-black uppercase tracking-[0.2em]">Genius Keeper</p>
@@ -146,138 +87,102 @@ export default function CommissionProposalDoc({ config, vendedorName = 'Vendedor
 
                     {/* Hero */}
                     <div className="px-6 py-3 text-center border-b border-slate-100">
-                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Tu potencial mensual</p>
-                        <p className="text-emerald-600 text-3xl font-black leading-none my-1">hasta {money(p.potencial)}</p>
-                        <p className="text-slate-400 text-[10px]">Ingreso base + comisión al cumplir tu meta, con bonos activos</p>
+                        <p className="text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">Al cumplir tu meta ganas</p>
+                        <p className="text-emerald-600 text-3xl font-black leading-none my-1">{money(s100.total)} <span className="text-base text-slate-400 font-bold">al mes</span></p>
+                        {techo.total > s100.total && <p className="text-slate-500 text-[11px]">y hasta <b>{money(techo.total)}</b> si llegas al 150 % de tu meta</p>}
                     </div>
 
                     <div className="px-6 py-3 space-y-2.5">
-
-                        {/* Piso + Meta */}
-                        <div className="grid grid-cols-2 gap-3">
-                            <Badge Icon={Shield} title="Tu piso seguro" value={`${money(p.base)} / mes`} sub={`fijo ${money(p.fijo)} + viáticos ${money(p.viaticosMes)}`} tone="blue" />
-                            <Badge Icon={Package} title="Meta de colocación" value={`${uds(config.metaMensual)} uds`} tone="emerald" />
+                        {/* Piso y metas */}
+                        <div className={`grid gap-3 ${tiene('fijo') ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                            {tiene('fijo') && (
+                                <div className="flex items-center gap-2.5 rounded-xl border px-3 py-2.5 bg-blue-50 border-blue-200 text-blue-700">
+                                    <Shield size={18} className="shrink-0" />
+                                    <div><p className="text-[11px] font-semibold opacity-80">Tu piso seguro</p><p className="text-sm font-black">{money(fijoMes)} / mes</p>
+                                        {Number(c.viaticosSemanales) > 0 && <p className="text-[10px] opacity-70">sueldo {money(c.salarioFijo)} + viáticos {money(Number(c.viaticosSemanales) * 4)}</p>}</div>
+                                </div>
+                            )}
+                            <div className="flex items-center gap-2.5 rounded-xl border px-3 py-2.5 bg-emerald-50 border-emerald-200 text-emerald-700">
+                                <Package size={18} className="shrink-0" />
+                                <div><p className="text-[11px] font-semibold opacity-80">Tu meta del mes</p>
+                                    <p className="text-sm font-black">{uds(c.metaMensual)} uds{Number(c.metaKgFoodservice) > 0 ? ` · ${kg(c.metaKgFoodservice)} foodservice` : ''}</p>
+                                    <p className="text-[10px] opacity-70">Cuentan las unidades {cobradas ? 'cobradas' : 'facturadas'} en el mes</p></div>
+                            </div>
                         </div>
 
-                        {/* Período de arranque (meta reducida los primeros meses) */}
-                        {Array.isArray(config.arranque) && config.arranque.length > 0 && (() => {
-                            const metaPlena = Number(config.metaMensual) || 1;
-                            return (
-                                <div className="rounded-xl bg-blue-50 border border-blue-200 px-3.5 py-2">
-                                    <p className="text-blue-800 text-[12px] font-black leading-tight">Período de arranque · meta reducida al inicio</p>
-                                    <p className="text-slate-600 text-[11px] leading-snug mt-0.5">
-                                        {config.arranque.map((a, i) => `Mes ${i + 1}: ${Math.round(((Number(a.meta) || 0) / metaPlena) * 100)}% (${uds(a.meta)} uds)`).join(' · ')}. Desde el mes {config.arranque.length + 1}, tu meta plena es <b>{uds(config.metaMensual)} uds</b>.
-                                    </p>
-                                </div>
-                            );
-                        })()}
-
-                        {/* Tasa fija */}
-                        {p.fija && (
-                            <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 text-center">
-                                <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em]">Tu comisión</p>
-                                <p className="text-emerald-700 text-2xl font-black leading-tight">{p.objetivo.rate}% fijo</p>
-                                <p className="text-slate-500 text-[11px] leading-snug">Sobre todo lo que <b>cobras</b>, sin niveles: cada unidad cobrada suma igual.</p>
+                        {tiene('arranque') && (
+                            <div className="rounded-xl bg-blue-50 border border-blue-200 px-3.5 py-2">
+                                <p className="text-blue-800 text-[12px] font-black">Meta reducida al empezar</p>
+                                <p className="text-slate-600 text-[11px]">{c.arranque.map((a, i) => `Mes ${i + 1}: ${uds(a.meta)} uds`).join(' · ')}. Después, {uds(c.metaMensual)} uds.</p>
                             </div>
                         )}
 
-                        {/* Bono por nivel en USD (constructor por bloques) */}
-                        {escalonesBonoNivel(config, { meta: Number(config.metaMensual) || 0 }).length > 0 && (
+                        {niveles.length > 0 && (
                             <div>
-                                <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
-                                    <Award size={14} /> Bono por nivel ({config.baseUnidades === 'cobradas' ? 'unidades cobradas en el mes' : 'unidades facturadas en el mes'})
-                                </p>
+                                <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5"><ArrowUpRight size={14} /> Tu comisión sube contigo (sobre lo que cobras)</p>
                                 <div className="flex items-end gap-1.5">
-                                    {escalonesBonoNivel(config, { meta: Number(config.metaMensual) || 0 }).map((e, i) => (
+                                    {c.bajaActiva !== false && Number(c.bajaRate) > 0 && (
+                                        <div className="flex-1 rounded-lg px-2 py-2.5 text-center border bg-slate-50 border-slate-200">
+                                            <p className="text-[11px] font-bold text-slate-500">{c.bajaLabel || 'Por debajo'}</p>
+                                            <p className="text-[9px] text-slate-400">menos de {niveles[0]?.minPct ?? 0} %</p>
+                                            <p className="text-base font-black text-slate-700">{c.bajaRate}%</p>
+                                        </div>
+                                    )}
+                                    {niveles.map((t, i) => (
                                         <div key={i} className="flex-1 rounded-lg px-2 py-2.5 text-center border bg-emerald-50 border-emerald-200">
-                                            <p className="text-[11px] font-bold text-emerald-700">{e.etiqueta}</p>
-                                            <p className="text-[9px] text-slate-400 leading-tight">≥ {uds(e.umbral)} uds</p>
-                                            <p className="text-base font-black text-emerald-700">{money(e.monto)}</p>
+                                            <p className="text-[11px] font-bold text-emerald-700">{t.label}</p>
+                                            <p className="text-[9px] text-slate-400">desde {t.minPct} % ({uds(Number(c.metaMensual) * t.minPct / 100)} uds)</p>
+                                            <p className="text-base font-black text-emerald-700">{t.rate}%</p>
                                         </div>
                                     ))}
                                 </div>
-                                <p className="text-slate-400 text-[10px] mt-1 text-center">Se paga solo el escalón más alto que alcances en el mes.</p>
-                            </div>
-                        )}
-                        {(config.bonoActivacionUSD > 0 || config.bonoCrecimiento?.montoUSD > 0) && (
-                            <div className="grid grid-cols-2 gap-3">
-                                {config.bonoActivacionUSD > 0 && (
-                                    <Badge Icon={Target} title="Bono Activación" value={`hasta +${money(config.bonoActivacionUSD)}`} sub={`cada semana, ${config.activacionThreshold}% de tu cartera con ≥${config.activacionMinUnits} uds; proporcional a las semanas logradas`} tone="amber" />
-                                )}
-                                {config.bonoCrecimiento?.montoUSD > 0 && config.bonoCrecimiento.activo !== false && (
-                                    <Badge Icon={ArrowUpRight} title="Bono de crecimiento" value={`+${money(config.bonoCrecimiento.montoUSD)}`} sub={`si creces ${config.bonoCrecimiento.pct}% o más contra el mes anterior`} tone="emerald" />
-                                )}
                             </div>
                         )}
 
-                        {/* Escalera de comisión */}
-                        {!p.fija && !p.sinPct && <div>
-                            <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
-                                <ArrowUpRight size={14} /> Tu comisión crece contigo
-                            </p>
-                            <div className="flex items-end gap-1.5">
-                                {(() => {
-                                    const minReal = p.tiers.length ? Math.min(...p.tiers.map(t => Number(t.minPct))) : 90;
-                                    return [...allTiers].reverse().map((t, i) => {
-                                        const meta = (t.minPct != null && t.minPct !== undefined)
-                                            ? `≥${t.minPct}%`
-                                            : `<${minReal}%`;
-                                        return <Step key={i} label={t.label} rate={t.rate} meta={meta} highlight={t.label === p.objetivo.label} />;
-                                    });
-                                })()}
+                        {[[escRetail, 'Premio por escalones', Award, (e) => `${uds(e.umbral)} uds`], [escFood, 'Premio foodservice', UtensilsCrossed, (e) => kg(e.umbral)]].map(([esc, titulo, Icono, umbral]) => esc.length > 0 && (
+                            <div key={titulo}>
+                                <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5"><Icono size={14} /> {titulo} (se paga el más alto que logres)</p>
+                                <div className="flex items-end gap-1.5">
+                                    {esc.map((e, i) => (
+                                        <div key={i} className="flex-1 rounded-lg px-2 py-2.5 text-center border bg-amber-50 border-amber-200">
+                                            <p className="text-[11px] font-bold text-amber-800">{e.etiqueta}</p>
+                                            <p className="text-[9px] text-slate-400">desde {umbral(e)}</p>
+                                            <p className="text-base font-black text-amber-800">{money(e.monto)}</p>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
-                            <p className="text-slate-400 text-[10px] mt-1 text-center">"Meta" = % de tu meta de colocación que alcanzas · % = comisión sobre lo que <b>cobras</b></p>
-                        </div>}
+                        ))}
 
-                        {/* Bonos que suben tu tasa */}
-                        {(p.bonoCobranza > 0 || p.bonoActivacion > 0) && <div>
-                            <p className="text-slate-400 text-[11px] font-black uppercase tracking-[0.15em] mb-1.5 flex items-center gap-1.5">
-                                <Zap size={14} /> Bonos que suben tu comisión
-                            </p>
-                            <div className="space-y-2">
-                                {p.bonoCobranza > 0 && <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-3.5 py-2 flex items-start gap-2.5">
-                                    <Zap size={17} className="text-emerald-600 shrink-0 mt-0.5" />
-                                    <div className="min-w-0">
-                                        <p className="text-emerald-800 text-sm font-black leading-tight">Bono Cobranza +{p.bonoCobranza}%</p>
-                                        <p className="text-slate-500 text-[11px] leading-snug">Sobre <b>cada factura</b> que cobras a tiempo (dentro de vencimiento + {gracia} días de gracia). Mientras más puntual, más ganas.</p>
+                        {sueltas.length > 0 && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                {sueltas.map(p => (
+                                    <div key={p.id} className={`rounded-xl border px-3 py-2 ${TONOS[p.grupo]}`}>
+                                        <p className="text-sm font-black leading-tight">{p.nombre}</p>
+                                        <p className="text-[11px] text-slate-600 leading-snug mt-0.5">{p.resumen(c)}</p>
                                     </div>
-                                </div>}
-                                {p.bonoActivacion > 0 && <div className="rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-2 flex items-start gap-2.5">
-                                    <Target size={17} className="text-amber-600 shrink-0 mt-0.5" />
-                                    <div className="min-w-0">
-                                        <p className="text-amber-800 text-sm font-black leading-tight">Bono Activación +{p.bonoActivacion}%</p>
-                                        <p className="text-slate-500 text-[11px] leading-snug">Coloca ≥{minUnits} uds en el <b>{threshold}% de tu cartera cada semana</b>. Se paga proporcional a las semanas que lo logras, sobre lo que cobras.</p>
-                                    </div>
-                                </div>}
-                            </div>
-                            {!p.sinPct && <p className="text-center text-sm font-black text-emerald-700 mt-1.5">Hasta {p.topRate.toFixed(1)}% sobre lo que cobras</p>}
-                        </div>}
-
-                        {/* Cuentas recuperadas */}
-                        {recuperadas > 0 && (
-                            <div className="rounded-xl bg-[#0D2B4C]/5 border border-[#0D2B4C]/15 px-3.5 py-2 flex items-center gap-2.5">
-                                <RotateCcw size={18} className="text-[#0D2B4C] shrink-0" />
-                                <p className="text-slate-700 text-[12px] leading-snug">
-                                    <b>Cuentas Recuperadas:</b> cobra facturas heredadas de tu cartera y gana una comisión del <b>{recuperadas}%</b> sobre el monto que cobres de ellas.
-                                </p>
+                                ))}
                             </div>
                         )}
 
-                        {/* Ejemplo */}
-                        <div className="rounded-xl border-2 border-emerald-200 px-4 py-2.5 text-center">
-                            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Ejemplo</p>
-                            <p className="text-slate-700 text-[13px] mt-0.5 leading-snug">
-                                {p.sinPct ? (
-                                    <>Cobras <b>{uds(config.metaMensual)} uds</b> (tu meta) → <span className="text-emerald-700 font-black">{money(p.bonoNivel100)}</span> de bono por nivel <b>+ tu base</b>{p.maxUSD > p.bonoNivel100 ? <> (y hasta {money(p.maxUSD - p.bonoNivel100)} más en otros bonos)</> : null}</>
-                                ) : (
-                                    <>Cobras a tiempo <b>{money(p.montoCobranza)}</b> {p.fija ? <>con tu comisión fija</> : <>en nivel <b>{p.objetivo.label}</b></>}{p.bonoActivacion > 0 ? ' con tu cartera activa' : ''} →
-                                <span className="text-emerald-700 font-black"> ~{money(p.comisionEjemplo + p.bonoNivel100)}</span> de comisión <b>+ tu base</b></>
-                                )}
-                            </p>
+                        {/* Ejemplos con el mismo cálculo del constructor */}
+                        <div className="rounded-xl border-2 border-emerald-200 overflow-hidden">
+                            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest text-center pt-2">Ejemplos de un mes{tiene('activacionUSD') || tiene('activacionPct') ? ', activando tu cartera todas las semanas' : ''}{tiene('crecimiento') ? ' y creciendo' : ''}</p>
+                            <table className="w-full text-[12px] mt-1">
+                                <thead><tr className="text-slate-400 text-[10px]"><th className="text-left px-3 py-1 font-semibold">Logras</th>{curva.map(x => <th key={x.pctMeta} className="px-2 py-1 font-semibold text-right">{x.pctMeta} % ({uds(x.unidades)} uds)</th>)}</tr></thead>
+                                <tbody>
+                                    {s100.lineas.map(l => (
+                                        <tr key={l.id} className="border-t border-slate-100">
+                                            <td className="px-3 py-1 text-slate-600">{l.nombre}</td>
+                                            {curva.map(x => <td key={x.pctMeta} className="px-2 py-1 text-right text-slate-700">{money((x.lineas.find(y => y.id === l.id) || {}).monto)}</td>)}
+                                        </tr>
+                                    ))}
+                                    <tr className="border-t-2 border-emerald-200 bg-emerald-50"><td className="px-3 py-1.5 font-black text-emerald-800">Total</td>{curva.map(x => <td key={x.pctMeta} className="px-2 py-1.5 text-right font-black text-emerald-800">{money(x.total)}</td>)}</tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 
-                    {/* Pie */}
                     <div className="bg-slate-50 px-6 py-3 flex items-center justify-between border-t border-slate-100">
                         <p className="text-slate-400 text-[10px]">Genius Keeper · Lácteoca — {fecha}</p>
                         <p className="text-slate-400 text-[10px]">Propuesta referencial, sujeta a las políticas de la empresa</p>

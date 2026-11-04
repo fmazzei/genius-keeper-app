@@ -1846,6 +1846,7 @@ const VendedoresManagement = () => {
                 isOpen={!!commissionTarget}
                 onClose={() => setCommissionTarget(null)}
                 title={commissionTarget ? `Comisiones — ${commissionTarget.name}` : ''}
+                size="xl"
                 footer={
                     <div className="flex gap-3">
                         <button
