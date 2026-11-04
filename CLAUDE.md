@@ -3981,6 +3981,33 @@ Pedido del dueño: Carolina salió y entra Erick, que usará `ventas@lacteoca.co
 - **Node.js 22 en las funciones (3-nov):** Google retiró Node.js 20 el 30-oct-2026 y desde entonces TODO deploy de funciones fallaba ("Runtime Node.js 20 was decommissioned"); por eso `cuentaCorreo` no existía y la pantalla decía "internal". `functions/package.json` → `engines.node: "22"`. `CorreoEnUso` ya no muestra "internal" suelto: dice que el servidor no respondió.
 - **"Sin rol" que no era (3-nov):** Erick (`ventas@lacteoca.com`, uid `hu8Xkb3KO5WfHxRGGBwTWhrs0P32`) tenía perfil `vendedor` activo y al entrar vio "tu cuenta no tiene un rol asignado". Causa más probable: la lectura del perfil falló o tardó más de 15 s en un teléfono nuevo (sin rol guardado), y ese error caía en la misma pantalla que "sin rol". Ahora `AuthContext` intenta 3 veces (15/20/25 s) y, si no lee, pone `role:'sin-lectura'`: `App.tsx` dice que fue la conexión y ofrece Reintentar. La pantalla de sin rol (perfil que no existe, `no-role`) dice "sin perfil en GK" y trae "Ya me lo asignaron: reintentar".
 
+### Constructor de comisiones por PIEZAS (2026-11-04) ✅ (rama `claude/constructor-remuneracion`)
+
+Reclamo del dueño con capturas del esquema de Erick: el constructor de bloques era una lista de campos sueltos. Al tantear, quedó guardado un **Bono Activación de 80 %** (el campo en % de lo cobrado, no el de dólares), y la propuesta decía «hasta $7.376». Además, el último nivel de la comisión no se podía borrar y el PDF mostraba «Tu comisión 0 % fijo» a quien no tiene comisión %. Pedido: *"un conjunto de opciones clasificadas que el usuario va agregando y simulando… que el sistema lo guíe"*.
+
+- **Catálogo puro `src/utils/piezasComision.js`.**
+  - Cada PIEZA (`PIEZAS`) tiene `activa(cfg)`, `agregar(cfg)` con valores de ejemplo, `quitar(cfg)`, `campos` o `editor`, y `resumen`.
+  - **Quitar deja el campo en 0, no en null.** Un null se rellena con los valores por defecto (`bonusActivacion` 1, `comisionRecuperadas` 5…).
+  - Las piezas escriben los MISMOS campos de `commissionConfig`: no hay formato nuevo y los esquemas guardados siguen valiendo.
+  - Grupos (`GRUPOS`): ingreso seguro (sueldo); comisión % (fija o por niveles, solo una: `excluye`); premios en dólares (escalones, activación, crecimiento); premios en % (cobranza, activación %, anaquel); foodservice (%, escalones en kg, crecimiento); extras (recuperadas, meta reducida al empezar).
+  - `MODELOS` y `aplicarModelo`: quitan todas las piezas y ponen las del modelo; meta y precios se quedan.
+  - `piezasDeRespuestas`: la guía de tres preguntas (¿sueldo? ¿% o dólares o ambos? ¿el % sube?).
+  - `simularEsquema(cfg, escenario)`: una línea por pieza con su cuenta (`detalle`), total, fijo/variable y `costoPct` (lo que se lleva de lo vendido). `curvaEsquema` y `techoEsquema` (150 %).
+  - `avisosEsquema`: `error` (no deja guardar), `aviso` e `idea`, cada uno con arreglos de un toque.
+    - Un premio % sobre 10 es aviso; sobre 25, error. La activación % ofrece «pagarlo en dólares».
+    - Niveles sin ningún %, escalón en 0 o sin monto, escalones en % con meta 0.
+    - Premios en dólares contando facturadas (sugiere cobradas), activación con umbral 0, meta 0, sin piezas.
+    - Al 100 % se lleva más del 15 % de lo vendido.
+  - `limpiarEsquema` antes de guardar: sin comisión % deja `comisionActiva:false`, `tiers:[]`.
+- **Pantalla** (`CommissionConstructor.jsx`, modal `xl` en AdminPanel → Vendedores → Comisiones), en tres pasos:
+  - Arriba, fijo: lo que gana al 100 % de la meta y «N por corregir / Listo».
+  - ① La meta (uds, precio, kg de foodservice, unidades cobradas o facturadas, «Más reglas»).
+  - ② Cómo gana: las piezas puestas (tocar para ajustar, ✕ para quitar, con su $ al 100 % y sus avisos en la tarjeta); «Agregar una pieza» abre el catálogo por grupos (tocar o arrastrar en la computadora); «Guíame» y «Empezar desde un modelo».
+  - ③ Pruébalo: deslizadores (% de la meta, % de los kg, semanas de activación, ¿creció?, % cobrado a tiempo, heredado), total con la barra por pieza y su cuenta, y la curva 0–150 % (tocar una barra mueve el escenario).
+  - Los esquemas por fecha siguen igual. Guardar se niega si algún esquema tiene un error y lo abre. Los números son `type="text"` con coma decimal.
+- **Propuesta en PDF** (`CommissionProposalDoc.jsx`): solo las piezas puestas, con las mismas cifras del simulador. Muestra «Al cumplir tu meta ganas» y «hasta» al 150 %; el piso solo si hay sueldo; la escalera de niveles, los escalones en uds y en kg, una tarjeta por pieza y la tabla de ejemplos al 80/100/120 %.
+- Prueba: `TZ=America/Caracas node --import ./tests/alias.mjs tests/piezasComision.test.mjs` (55 en verde). Incluye el esquema roto de Erick: el 80 % es error y se arregla de un toque; su esquema por piezas da $550 al 100 % y $600 de techo. Además: cada pieza se pone y se quita sin restos, una sola comisión %, la guía y Carolina.
+
 ### Remuneración del vendedor por bloques (2026-11-03) ✅ (rama `claude/constructor-remuneracion`, sin publicar)
 
 Pedido del dueño: armar el pago de cada vendedor como una combinación libre de bloques. Debe cubrir solo fijo, fijo + niveles % (Carolina), fijo + tasa fija, 100 % variable (Wilmer) y fijo + bonos en USD (Erick).
