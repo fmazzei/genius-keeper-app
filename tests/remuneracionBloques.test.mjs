@@ -27,7 +27,7 @@ const cerca = (a, b) => Math.abs(a - b) < 0.005;
 const ts = (dia) => { const d = new Date(`${dia}T00:00:00Z`); return { toDate: () => d }; };
 
 const ERICK_CFG = {
-    metaMensual: 1600, precioUnidad: 5.45, salarioFijo: 450, viaticosSemanales: 0,
+    metaMensual: 1600, precioUnidad: 5.45, salarioFijo: 400, viaticosSemanales: 0,
     comisionActiva: false, baseUnidades: 'cobradas',
     bonusPuntualidad: 0, bonusActivacion: 0, bonusAnaquel: 0, comisionRecuperadas: 0, comisionFoodservice: 5,
     bonoNivel: { activo: true, escalones: [
@@ -39,7 +39,7 @@ const ERICK_CFG = {
     activacionThreshold: 80, activacionMinUnits: 12, bonoActivacionUSD: 200,
     bonoCrecimiento: { activo: true, pct: 10, montoUSD: 100 },
 };
-const erick = { id: 'E', fechaIngreso: '2026-11-03', metaMensual: 1600, commissionConfig: ERICK_CFG };
+const erick = { id: 'E', fechaIngreso: '2026-11-01', metaMensual: 1600, commissionConfig: ERICK_CFG };
 
 // 1. Umbrales del bono por nivel (función pura y motor).
 const umbrales = [[1279, 0], [1280, 160], [1399, 160], [1400, 180], [1600, 200], [1899, 200], [1900, 250], [2500, 250]];
@@ -67,7 +67,7 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     const d = diciembre(computeEstadosDeCuenta(erick, facturas, [], { ahora: ahoraFeb }));
     ok(d.unidades === 1300, 'diciembre cuenta 1.300 uds: las cobradas en el mes; las 2.000 sin cobrar no cuentan');
     ok(d.bonoNivelMonto === 160, 'con 1.300 uds cobradas, bono de $160');
-    const nov = computeEstadosDeCuenta(erick, facturas, [], { ahora: ahoraFeb }).find(f => f.periodKey === '2026-11-03');
+    const nov = computeEstadosDeCuenta(erick, facturas, [], { ahora: ahoraFeb }).find(f => f.periodKey === '2026-11-01');
     ok(nov.unidades === 0, 'noviembre no cuenta la factura que se cobró en diciembre');
     const anulada = diciembre(computeEstadosDeCuenta(erick, [F('D3', '2026-10-01', 1500, { ...cobrada('2026-12-05'), comisionAnulada: true })], [], { ahora: ahoraFeb }));
     ok(anulada.unidades === 0, 'una factura cobrada pasados los 45 días (comisión anulada) no cuenta');
@@ -105,7 +105,7 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     ], [], { ahora: ahoraFeb }).find(f => f.periodKey === '2027-01-01');
     ok(mes(1000, 1099).bonoCrecimientoMonto === 0, 'crecimiento 9,9 % → $0');
     ok(mes(1000, 1100).bonoCrecimientoMonto === 100, 'crecimiento 10 % → +$100');
-    const nov = computeEstadosDeCuenta(erick, [F('N1', '2026-11-04', 1500, cobrada('2026-11-10'))], [], { ahora: ahoraFeb }).find(f => f.periodKey === '2026-11-03');
+    const nov = computeEstadosDeCuenta(erick, [F('N1', '2026-11-04', 1500, cobrada('2026-11-10'))], [], { ahora: ahoraFeb }).find(f => f.periodKey === '2026-11-01');
     ok(nov.bonoCrecimientoMonto === 0 && nov.crecimiento.aplica === false && /primer mes/i.test(nov.crecimiento.motivo), 'el primer mes no tiene bono de crecimiento y lo dice');
     const g = bonoCrecimientoPara(ERICK_CFG, 1080, { unidades: 1000, fraccion: 28 / 30, fraccionActual: 1, mes: 1 });
     ok(g.aplica && g.monto === 0 && cerca(g.crecimientoPct, 0.8), 'contra un mes corto se compara por día (1.000 en 28 de 30 días ≈ 1.071 en un mes completo)');
@@ -114,9 +114,10 @@ for (const [u, m] of umbrales.slice(0, 7)) {
 
 // 5. Período corto: los escalones en unidades van en proporción (como la meta).
 {
-    const nov = (u) => computeEstadosDeCuenta(erick, [F('N1', '2026-11-04', u, cobrada('2026-11-10'))], [], { ahora: ahoraFeb }).find(f => f.periodKey === '2026-11-03');
+    const tardio = { ...erick, fechaIngreso: '2026-11-03' };   // un vendedor que entra el 3: noviembre corto
+    const nov = (u) => computeEstadosDeCuenta(tardio, [F('N1', '2026-11-04', u, cobrada('2026-11-10'))], [], { ahora: ahoraFeb }).find(f => f.periodKey === '2026-11-03');
     ok(nov(1194).bonoNivelMonto === 0 && nov(1195).bonoNivelMonto === 160, 'noviembre (28 de 30 días): el escalón de 1.280 pasa a 1.195 uds');
-    ok(cerca(nov(0).base, 450 * 28 / 30), 'noviembre: el fijo del primer período en proporción a sus días');
+    ok(cerca(nov(0).base, 400 * 28 / 30), 'noviembre: el fijo del primer período en proporción a sus días');
 }
 
 // 6. Desglose por bloque: suma lo devengado; un cierre congelado lo conserva.
@@ -160,7 +161,7 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     const caro = bloquesDeEsquema(configEnFecha({ commissionConfig: { tiers: [{ label: 'Óptima', minPct: 100, rate: 5 }], bajaRate: 2.5 }, metaMensual: 2000 }, new Date())).map(b => b.id);
     ok(caro.includes('comision') && caro.includes('bonoCobranza'), 'un esquema viejo se describe con sus bloques (comisión por niveles y bonos %)');
     const p100 = previaEsquema(ERICK_CFG, 100);
-    ok(p100.bonoNivel === 200 && p100.comision === 0 && p100.total === 650 && p100.hasta === 300, 'vista previa al 100 %: fijo $450 + bono $200 (+ hasta $300 de Activación y crecimiento)');
+    ok(p100.bonoNivel === 200 && p100.comision === 0 && p100.total === 600 && p100.hasta === 300, 'vista previa al 100 %: fijo $400 + bono $200 (+ hasta $300 de Activación y crecimiento)');
     ok(previaEsquema(ERICK_CFG, 79).bonoNivel === 0, 'vista previa al 79 %: sin bono por nivel');
 }
 
@@ -182,6 +183,21 @@ for (const [u, m] of umbrales.slice(0, 7)) {
         caso.desgloses.forEach((d, j) => comparar(d, a.desgloses[j], `desglose ${caso.filas[j].periodKey}`));
     });
     ok(difs === 0, `regresión: Carolina y Wilmer dan lo mismo que antes (${cifras} cifras en ${esperado.length} casos)`);
+}
+
+// 10. Erick tal como lo confirmó el dueño (4-nov): ingreso 1-nov, fijo $400 sin viáticos,
+//    unidades COBRADAS, las facturas heredadas de Carolina (anteriores a su ingreso) NO suman
+//    y la Activación paga $200 en proporción a las semanas logradas.
+{
+    const filas = computeEstadosDeCuenta(erick, [
+        F('C1', '2026-10-20', 900, cobrada('2026-11-12')),      // de Carolina, la cobra Erick: recuperada
+        F('N1', '2026-11-03', 1300, cobrada('2026-11-25')),     // propia, cobrada en noviembre
+        F('N2', '2026-11-20', 500),                              // propia, sin cobrar
+    ], [], { ahora: ahoraFeb });
+    const nov = filas.find(f => f.periodKey === '2026-11-01');
+    ok(nov && nov.base === 400, 'noviembre: mes completo, fijo $400');
+    ok(nov.unidades === 1300, 'noviembre: cuentan solo las 1.300 uds propias cobradas; las 900 heredadas no suman y las 500 sin cobrar tampoco');
+    ok(nov.bonoNivelMonto === 160 && cerca(nov.devengadoComision, 160), 'noviembre: bono por nivel $160 y nada por la heredada (recuperadas 0 %)');
 }
 
 console.log(fallas ? `\n${fallas} FALLA(S)` : '\nTodo en verde');

@@ -4064,22 +4064,27 @@ Reglas del dueño (3-nov):
 - **Duplicados de todas las carteras:** `accion:'duplicados'` los lista con el dueño del carnet. `accion:'resolverDuplicado'` deja el cliente SOLO con el dueño del carnet en Zoho. Dárselo a otro es un traspaso con fecha, y la función lo rechaza.
 - **CarteraManager** ya no deja asignar un PDV o cadena que está en la cartera de otro vendedor: lo muestra "En cartera de X" y remite a Traspasar cartera.
 
-**Resumen real Carolina → Erick** (corte = ingreso de Erick 2026-11-03, leído el 3-nov, sin ejecutar):
+**Esquema de Erick (confirmado por el dueño, 4-nov), a cargar al aprobar el PR:**
+- Ingreso **1-nov-2026**; fijo **$400** al mes (por quincenas), sin viáticos; sin comisión %.
+- Unidades **cobradas**. Las facturas heredadas de Carolina (anteriores a su ingreso) **no suman** a sus unidades y no le pagan nada (recuperadas 0 %).
+- Bono por nivel (unidades cobradas en el mes): 1.280 → $160 · 1.400 → $180 · 1.600 → $200 (meta) · 1.900 → $250. Solo el más alto.
+- Activación (en la tabla del dueño: "penetración de cartera"): 80 % de su cartera con ≥12 uds por semana; **$200 × semanas logradas ÷ semanas del mes**.
+- Crecimiento ≥10 % sobre el mes anterior: +$100 (desde diciembre).
+- En la tabla, 1.400 dice 90 % y 1.900 dice 120 % de 1.600 (serían 1.440 y 1.920): se cargan las unidades de la tabla.
+
+**Plan Carolina → Erick** (sin ejecutar): cese de Carolina **31-oct-2026**; traspaso de toda su cartera con corte **1-nov-2026**. Al leerlo el 3-nov:
 - 43 carnets.
-- Los 25 PDV activos de Carolina ya están en la cartera de Erick: son 25 duplicados a decidir; elegir "Traspasar a Erick" no agrega nada nuevo.
+- Sus 25 PDV activos ya están también en la cartera de Erick: son 25 duplicados, que se resuelven a favor de Erick.
 - Se apagan 29 PDV de la cartera huérfana de Wilmer.
 - No hay facturas desde el 1-nov.
-- Hay 29 abiertas, saldo $2.667,04. Carolina está inactiva SIN fecha de cese: al registrarla, las que sigan abiertas ese día pasan a Erick (recuperadas; Erick: 0 %).
+- 29 abiertas, saldo $2.667,04: con el cese pasan a Erick como recuperadas (0 %, no suman a sus unidades).
 
 **Pruebas:**
-- `remuneracionBloques.test.mjs` (48: umbrales 1279→$0 … 1900→$250, Activación en USD 79/80 % y por semanas, crecimiento 9,9/10 %, primer mes, cobradas vs facturadas, bolsa de 1 kg, solo fijo, servidor en 0, desglose y cierre, regresión).
+- `remuneracionBloques.test.mjs` (51: umbrales 1279→$0 … 1900→$250, Activación en USD 79/80 % y por semanas, crecimiento 9,9/10 %, primer mes, cobradas vs facturadas, heredadas que no suman, bolsa de 1 kg, solo fijo, servidor en 0, desglose y cierre, regresión).
 - `traspasoCartera.test.mjs` (33: corte, cese, duplicados, toda/algunos, meses con cese, cerrados intactos).
 - `traspasoCartera.e2e.test.mjs` (emulador: traspaso con duplicado decidido, cese y su anulación, resolver duplicados, traspaso de un solo cliente, idempotencia, conciliación).
 
-**Pendiente del dueño:**
-- La fecha de cese de Carolina.
-- El sueldo fijo de Erick ($300 + $25/semana o $450): se carga su esquema cuando lo confirme.
-- Aprobar el PR y hacer el traspaso.
+**Pendiente del dueño:** aprobar el PR. Después: cargar el esquema y el ingreso de Erick, registrar el cese de Carolina y hacer el traspaso (mostrando antes el resumen).
 
 ## Alertas: la campanita es de la operación; las del agente, en Configuraciones (2026-10-14) ✅
 
