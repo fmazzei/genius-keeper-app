@@ -236,5 +236,16 @@ for (const [u, m] of umbrales.slice(0, 7)) {
     ok(bloquesDeEsquema(FOOD).some(b => b.id === 'bonoNivelFood'), 'el esquema describe el bloque foodservice');
 }
 
+// 12. Foodservice de Erick hoy (4-nov): meta 50 kg, un solo escalón 50 kg → $50, crecimiento apagado.
+{
+    const cfg = { ...ERICK_CFG, metaKgFoodservice: 50,
+        bonoNivelFood: { activo: true, escalones: [{ etiqueta: 'Meta', minKg: 50, montoUSD: 50 }] },
+        bonoCrecimientoFood: { activo: true, pct: 0, montoUSD: 0 } };
+    const e = { ...erick, commissionConfig: cfg };
+    const mes = (uds) => diciembre(computeEstadosDeCuenta(e, [F('F1', '2026-12-02', uds, { ...cobrada('2026-12-09'), categoria: 'foodservice' })], [], { ahora: ahoraFeb }));
+    ok(mes(199).bonoNivelFoodMonto === 0 && mes(200).bonoNivelFoodMonto === 50 && mes(320).bonoNivelFoodMonto === 50, 'Erick foodservice: 49,75 kg → $0; 50 kg → $50; 80 kg → $50 (un solo escalón)');
+    ok(mes(320).bonoCrecimientoFoodMonto === 0 && maximoBonosUSD(cfg) === 550 + 50, 'crecimiento foodservice apagado; máximo $600 al mes');
+}
+
 console.log(fallas ? `\n${fallas} FALLA(S)` : '\nTodo en verde');
 process.exit(fallas ? 1 : 0);

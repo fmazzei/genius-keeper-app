@@ -4070,7 +4070,7 @@ Reglas del dueño (3-nov):
 - Unidades **cobradas**. Las facturas heredadas de Carolina (anteriores a su ingreso) **no suman** a sus unidades y no le pagan nada (recuperadas 0 %).
 - Bono por nivel (unidades cobradas en el mes): 1.280 → $160 · 1.400 → $180 · 1.600 → $200 (meta) · 1.900 → $250. Solo el más alto.
 - Activación (en la tabla del dueño: "penetración de cartera"): 80 % de su cartera con ≥12 uds **facturadas** por semana (confirmado); **$200 × semanas logradas ÷ semanas del mes**.
-- Foodservice: sus propios bonos y su meta en kg (decisión del dueño). Montos y meta por definir; mientras tanto, sin comisión de foodservice.
+- Foodservice (en kg cobrados, aparte del retail): meta **50 kg**; por ahora un solo escalón, **50 kg → $50** (decisión del dueño, 4-nov). Los escalones de 35 y 60 kg se cargan después, cuando el dueño ponga sus montos. El crecimiento de foodservice queda configurado y apagado ($0). Sin comisión % de foodservice.
 - Crecimiento ≥10 % sobre el mes anterior: +$100 (desde diciembre).
 - En la tabla, 1.400 dice 90 % y 1.900 dice 120 % de 1.600 (serían 1.440 y 1.920): se cargan las unidades de la tabla.
 
@@ -4082,7 +4082,7 @@ Reglas del dueño (3-nov):
 - 29 abiertas, saldo $2.667,04: con el cese pasan a Erick como recuperadas (0 %, no suman a sus unidades).
 
 **Pruebas:**
-- `remuneracionBloques.test.mjs` (61: umbrales 1279→$0 … 1900→$250, Activación en USD 79/80 % y por semanas, crecimiento 9,9/10 %, primer mes, cobradas vs facturadas, heredadas que no suman, bonos foodservice en kg (umbrales, % de su meta, crecimiento, no suman al retail, sin bono antes del corte), bolsa de 1 kg, solo fijo, servidor en 0, desglose y cierre, regresión).
+- `remuneracionBloques.test.mjs` (63: umbrales 1279→$0 … 1900→$250, Activación en USD 79/80 % y por semanas, crecimiento 9,9/10 %, primer mes, cobradas vs facturadas, heredadas que no suman, bonos foodservice en kg (umbrales, % de su meta, crecimiento, no suman al retail, sin bono antes del corte), bolsa de 1 kg, solo fijo, servidor en 0, desglose y cierre, regresión).
 - `traspasoCartera.test.mjs` (33: corte, cese, duplicados, toda/algunos, meses con cese, cerrados intactos).
 - `traspasoCartera.e2e.test.mjs` (emulador: traspaso con duplicado decidido, cese y su anulación, resolver duplicados, traspaso de un solo cliente, idempotencia, conciliación).
 
