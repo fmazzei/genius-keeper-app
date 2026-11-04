@@ -46,13 +46,25 @@ const Bloque = ({ Icon, titulo, children, color = 'text-slate-400' }) => (
 
 // Desglose contextual opcional por KPI.
 function Extra({ id, ctx, kpi }) {
-    const { stats, vendedor, estadoActual, pct } = ctx || {};
+    const { stats, vendedor, estadoActual, plan } = ctx || {};
     if (id === 'meta_nivel') {
+        // La meta como la mide SU plan (unidades cobradas o facturadas).
+        const m = plan?.metas?.retail || { actual: stats?.unidadesDelMes || 0, meta: vendedor?.metaMensual || 0, unidad: 'uds', pct: 0, marcas: [] };
+        const pct = m.meta > 0 ? m.actual / m.meta : 0;
         return (
             <div className="rounded-2xl bg-slate-900 border border-slate-800 p-4">
-                <div className="flex justify-between text-xs text-slate-400 mb-1"><span>{num(stats?.unidadesDelMes)} uds</span><span>meta {num(vendedor?.metaMensual)}</span></div>
-                <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${Math.min(100, (pct || 0) * 100)}%` }} /></div>
-                <p className="text-xs text-slate-500 mt-2">{Math.round((pct || 0) * 100)}% de la meta · faltan {num(Math.max(0, (vendedor?.metaMensual || 0) - (stats?.unidadesDelMes || 0)))} uds</p>
+                <div className="flex justify-between text-xs text-slate-400 mb-1"><span>{num(m.actual)} {m.unidad}</span><span>meta {num(m.meta)}</span></div>
+                <div className="h-2.5 rounded-full bg-slate-800 overflow-hidden"><div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-500" style={{ width: `${Math.min(100, pct * 100)}%` }} /></div>
+                <p className="text-xs text-slate-500 mt-2">{Math.round(pct * 100)}% de la meta · faltan {num(Math.max(0, m.meta - m.actual))} {m.unidad}</p>
+                {m.marcas.length > 0 && (
+                    <div className="mt-3 space-y-1">
+                        {m.marcas.map((mk, i) => (
+                            <div key={i} className={`flex justify-between text-xs ${m.actual >= mk.umbral ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                <span>{mk.etiqueta} · desde {num(mk.umbral)}</span><b>{mk.texto}</b>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         );
     }

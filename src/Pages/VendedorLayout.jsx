@@ -1,8 +1,8 @@
 // RUTA: src/Pages/VendedorLayout.jsx
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { etiquetaFijo, notaTransicion, configEnFecha, proximoCambioEsquema, esTasaFija } from '../utils/periodosComision.js';
-import { bloquesDeEsquema } from '../utils/bloquesRemuneracion.js';
+import { etiquetaFijo, notaTransicion, configEnFecha, proximoCambioEsquema } from '../utils/periodosComision.js';
+import { piezasActivas, pieza, completo } from '../utils/piezasComision.js';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '@/Firebase/config.js';
 import {
@@ -33,8 +33,10 @@ import AlmacenComercialPage from '@/Pages/AlmacenComercialPage.jsx';
 import { requestNotificationPermission } from '@/utils/firebaseMessaging.js';
 import { DEFAULT_COMMISSION_CONFIG } from '@/Components/CommissionConstructor.jsx';
 import { computeMetaMensual, computeEstadosDeCuenta, computeDesglosePeriodo, fechaCalendario, carteraActivacion } from '@/utils/vendedorMeta.js';
-import { kgDeUnidades, fmtKg } from '@/utils/canalVenta.js';
+import { kgDeUnidades } from '@/utils/canalVenta.js';
 import VendedorKpisView from '@/Components/VendedorKpisView.jsx';
+import PlanComisiones from '@/Components/PlanComisiones.jsx';
+import { tableroPlan } from '@/utils/planVendedor.js';
 import { useVendorKpiConfig } from '@/hooks/useVendorKpiConfig.js';
 import SeguidorSemanalView from '@/Components/SeguidorSemanalView.jsx';
 import PullToRefresh from '@/Components/PullToRefresh.jsx';
@@ -88,39 +90,6 @@ function writeHomeCache(uid, { vendedor, commConfig, stats }) {
     } catch {
         // localStorage lleno/no disponible (modo privado): la caché es opcional.
     }
-}
-
-// ─── Tier style palette (by tier index, 0 = highest) ─────────────────────────
-
-const TIER_STYLES = [
-    { color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40' },
-    { color: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/40'    },
-    { color: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/40'   },
-    { color: 'text-violet-400',  bg: 'bg-violet-500/20',  border: 'border-violet-500/40'  },
-];
-const BAJA_STYLE = { color: 'text-slate-400', bg: 'bg-slate-500/20', border: 'border-slate-500/40' };
-
-function buildTiers(config) {
-    const tiers = [...(config.tiers || DEFAULT_COMMISSION_CONFIG.tiers)]
-        .sort((a, b) => b.minPct - a.minPct)
-        .map((t, i) => ({
-            label:  t.label,
-            min:    t.minPct / 100,
-            rate:   t.rate   / 100,
-            ...( TIER_STYLES[i] || TIER_STYLES[TIER_STYLES.length - 1] ),
-        }));
-    return tiers;
-}
-
-function getTierFromConfig(pct, tiers, bajaRate, bajaLabel = 'Baja') {
-    for (const t of tiers) {
-        if (pct >= t.min) return t;
-    }
-    // Por debajo del tier más bajo configurado: paga la tasa del nivel más bajo
-    // (editable/eliminable). Si se eliminó, bajaRate = 0 → sin comisión.
-    const lowest = tiers[tiers.length - 1];
-    const rate = bajaRate !== undefined && bajaRate !== null ? bajaRate / 100 : (lowest?.rate ?? 0);
-    return { label: bajaLabel || 'Baja', min: 0, rate, ...BAJA_STYLE };
 }
 
 function saludoDelDia() {
@@ -487,27 +456,14 @@ function deudaVendedor(estados = []) {
 // "2026-11-01" → "01/11/2026" (sin pasar por UTC).
 const fechaCortaDe = (s) => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(s || ''); };
 
-// Un esquema de comisión en una frase: tasa (fija o por niveles) y bonos activos.
+// Un plan de comisión en una frase: sus piezas, como las nombra el constructor.
 function resumenEsquema(cfg = {}) {
-    const partes = [];
-    if (cfg.comisionActiva === false) {
-        const b = bloquesDeEsquema(cfg).filter(x => !['fijo', 'base'].includes(x.id));
-        return (b.length ? b.map(x => `${x.nombre}: ${x.resumen}`).join(' · ') : 'Solo sueldo fijo') + '.';
-    }
-    if (esTasaFija(cfg)) partes.push(`Comisión fija del ${cfg.bajaRate}% sobre lo cobrado`);
-    else {
-        const tasas = [...(cfg.tiers || [])].map(t => t.rate).concat(cfg.bajaActiva === false ? [] : [cfg.bajaRate || 0]).filter(r => r > 0);
-        if (tasas.length) partes.push(`Comisión por niveles del ${Math.min(...tasas)}% al ${Math.max(...tasas)}%`);
-    }
-    if (cfg.bonusPuntualidad > 0) partes.push(`Bono Cobranza ${cfg.bonusPuntualidad}%`);
-    if (cfg.bonusActivacion > 0) partes.push(`Bono Activación ${cfg.bonusActivacion}%`);
-    if (cfg.bonusAnaquel > 0) partes.push(`Bono Anaquel ${cfg.bonusAnaquel}%`);
-    partes.push(`foodservice ${cfg.comisionFoodservice}%`, `cuentas recuperadas ${cfg.comisionRecuperadas}%`);
-    return partes.join(' · ') + '.';
+    const c = completo(cfg);
+    const partes = piezasActivas(c).filter(id => id !== 'arranque').map(id => `${pieza(id).nombre}: ${pieza(id).resumen(c)}`);
+    return (partes.length ? partes.join(' · ') : 'Sin piezas') + '.';
 }
 
-function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, estados = [], estadoActual, ultimoCerrado, loadError, onRetry, onRefresh }) {
-    const [showMetaModal, setShowMetaModal] = useState(false);
+function HomeView({ vendedor, stats, loading, onNavigate, commConfig, estados = [], estadoActual, ultimoCerrado, loadError, onRetry, onRefresh }) {
     const money = (n) => `$${(Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     // Pantalla de cierre de período (Fase 3.9): al cerrar un mes de empleo, se
@@ -528,69 +484,15 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
         setCierre(null);
     };
 
-    // Unidades que cuentan: las facturadas (lo de siempre) o, si el esquema lo dice,
-    // las de facturas COBRADAS en el período (las da el motor del estado de cuenta).
-    const porCobradas = commConfig.baseUnidades === 'cobradas';
-    const st = porCobradas && estadoActual ? { ...stats, unidadesDelMes: Number(estadoActual.unidades) || 0 } : stats;
-    const pct     = vendedor.metaMensual > 0 ? st.unidadesDelMes / vendedor.metaMensual : 0;
-    const tierBase = getTierFromConfig(pct, tiers, commConfig.bajaRate, commConfig.bajaLabel);
-    // Con tasa fija no hay niveles: la tasa se muestra en verde, no como "nivel bajo".
-    const tier    = esTasaFija(commConfig) ? { ...tierBase, color: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40' } : tierBase;
-    const barPct  = Math.min(pct, 1.25);
-    const metaAlcanzada = vendedor.metaMensual > 0 && st.unidadesDelMes >= vendedor.metaMensual;
-    const faltanParaMeta = Math.max(0, vendedor.metaMensual - st.unidadesDelMes);
-
-    const unidadesParaSiguiente = () => {
-        for (let i = tiers.length - 1; i >= 0; i--) {
-            if (pct < tiers[i].min) {
-                return { uds: Math.ceil((tiers[i].min - pct) * vendedor.metaMensual), tier: tiers[i] };
-            }
-        }
-        return null;
-    };
-    const siguiente = unidadesParaSiguiente();
-    const faltan = siguiente?.uds ?? null;
-    const ingresoBase = commConfig.salarioFijo + commConfig.viaticosSemanales * 4;
+    // Su plan, tal como lo armó el constructor, con lo que lleva en el período
+    // (la fila del MISMO motor que paga). Ver planVendedor.js.
+    const plan = useMemo(() => tableroPlan(commConfig, estadoActual, {
+        anaquel: { hasAnaquel: stats.hasAnaquel, ok: stats.anaquelOk, cubiertos: stats.anaquelCubiertos, total: stats.anaquelTotal },
+    }), [commConfig, estadoActual, stats.hasAnaquel, stats.anaquelOk, stats.anaquelCubiertos, stats.anaquelTotal]);
+    const unidades = estadoActual ? Number(estadoActual.unidades) || 0 : (stats.unidadesDelMes || 0);
+    const metaAlcanzada = vendedor.metaMensual > 0 && unidades >= vendedor.metaMensual;
     const deuda = deudaVendedor(estados);
-    const tasaFija = esTasaFija(commConfig);
-    const sinPct = commConfig.comisionActiva === false;
-    const hasComisionPct = !sinPct && (tasaFija ? (commConfig.bajaRate || 0) > 0 : (tiers || []).some(t => t.rate > 0));
-    // Bloques en USD (bono por nivel, Activación en USD, crecimiento) y bonos %.
-    const bonosUSD = (commConfig.bonoNivel && commConfig.bonoNivel.activo !== false && (commConfig.bonoNivel.escalones || []).length > 0)
-        || (Number(commConfig.bonoActivacionUSD) || 0) > 0
-        || (commConfig.bonoCrecimiento && commConfig.bonoCrecimiento.activo !== false && commConfig.bonoCrecimiento.montoUSD > 0);
-    // Foodservice con sus propios bonos en USD (en kg contra su meta).
-    const bonosFood = (commConfig.bonoNivelFood && commConfig.bonoNivelFood.activo !== false && (commConfig.bonoNivelFood.escalones || []).length > 0)
-        || (commConfig.bonoCrecimientoFood && commConfig.bonoCrecimientoFood.activo !== false && commConfig.bonoCrecimientoFood.montoUSD > 0);
-    const sigBonoFood = estadoActual?.bonoNivelFoodSiguiente || null;
-    // Con base 'cobradas', los kg de foodservice también son los cobrados.
-    const kgFoodVista = porCobradas && estadoActual ? (Number(estadoActual.kgFood) || 0) : (stats.kgFoodMes || 0);
-    // Solo fijo: no hay nada variable que mostrar como "comisión".
-    const hasComision = hasComisionPct || bonosUSD || bonosFood || (commConfig.bonusPuntualidad || 0) > 0 || (commConfig.comisionFoodservice || 0) > 0;
-    const sigBono = estadoActual?.bonoNivelSiguiente || null;
-    const crec = estadoActual?.crecimiento;
     const proximo = commConfig.proximoEsquema || null;
-    const showAnaquel      = commConfig.bonusAnaquel > 0 && stats.hasAnaquel;
-    const showActivacion   = (commConfig.bonusActivacion > 0 || (Number(commConfig.bonoActivacionUSD) || 0) > 0) && !stats.hasAnaquel;
-    const showPuntualidad  = commConfig.bonusPuntualidad > 0;
-    const showBonosSection = showActivacion || showPuntualidad || showAnaquel;
-
-    // Nota: se quitaron "Comisión semana" (usaba otra ventana/fuente que el hero
-    // y el Estado de Cuenta → confundía) y "Tasa comisión" (ya vive en el medidor
-    // de meta y en el Estado de Cuenta).
-    const statCards = [
-        ingresoBase > 0 && {
-            key: 'ingresoBase',
-            label: 'Ingreso base/mes',
-            value: `$${ingresoBase}`,
-            sub: 'fijo + viáticos',
-        },
-        {
-            key: 'despachosHoy',
-            label: 'Despachos hoy',
-            value: loading ? '—' : stats.despachoHoy,
-        },
-    ].filter(Boolean);
 
     return (
         <PullToRefresh onRefresh={onRefresh} refreshing={loading}
@@ -619,28 +521,18 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                 <CierrePeriodoModal periodo={cierre} onClose={cerrarCelebracion} onVerDetalle={() => { cerrarCelebracion(); onNavigate('estado_cuenta'); }} />
             )}
 
-            {/* ── Comisión en vivo (hero gamificado) ── */}
-            {!loading && hasComision && (
-                <button
-                    type="button"
-                    onClick={() => onNavigate('estado_cuenta')}
-                    className="w-full text-left bg-gradient-to-br from-emerald-600/20 via-slate-900 to-slate-900 border border-emerald-600/40 rounded-2xl p-5 active:scale-[0.99] transition-transform"
-                >
-                    <p className="text-emerald-300/80 text-xs font-semibold uppercase tracking-widest">{sinPct ? 'Tus bonos este período' : 'Tu comisión este período'}</p>
-                    <div className="flex items-end gap-2 mt-1">
-                        <span className="text-emerald-400 text-4xl font-black font-mono leading-none">{money(estadoActual?.devengadoComision)}</span>
-                        <span className="text-slate-400 text-sm mb-0.5">y subiendo</span>
-                    </div>
-                    <p className="text-slate-400 text-xs mt-1.5">
-                        Tu fijo va aparte: <b className="text-sky-300">{money(estadoActual?.base ?? ingresoBase)}</b> {estadoActual?.transicion ? `(${etiquetaFijo(estadoActual).replace(/^Fijo \(|\)$/g, '')})` : estadoActual?.corto ? `(${estadoActual.dias} días)` : 'este mes'}
-                    </p>
+            {/* ── Su plan de comisiones, tal como lo armó el constructor: lo
+                ganado, sus metas y una tarjeta por pieza (planVendedor.js). ── */}
+            {!loading && (
+                <PlanComisiones plan={plan} tema="oscuro" quien="tu" periodo={(stats.periodoLabel || '').split(' · ')[0]}
+                    onTocarHero={() => onNavigate('estado_cuenta')}>
                     {/* Lo que se le debe HOY, sumando todos sus meses: el número de
                         arriba es solo lo ganado en el período en curso. */}
                     {deuda && (deuda.comision > 0.005 || deuda.fijoTotal > 0.005) && (
                         <div className="mt-3 bg-slate-800/60 rounded-lg p-2.5 space-y-1.5">
                             <p className="text-slate-400 text-[11px] font-semibold uppercase tracking-widest">Lo que te deben hoy</p>
                             <div className="flex items-baseline justify-between gap-2">
-                                <span className="text-slate-200 text-xs font-semibold">Comisiones</span>
+                                <span className="text-slate-200 text-xs font-semibold">Comisiones y bonos</span>
                                 <b className="text-emerald-400 font-mono text-sm">{money(Math.max(0, deuda.comision))}</b>
                             </div>
                             {deuda.comisiones.map(l => (
@@ -667,308 +559,42 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
                             )}
                         </div>
                     )}
-                    {/* Bloques en USD: lo que tiene y lo que le falta. */}
-                    {bonosUSD && estadoActual && (
-                        <div className="mt-3 space-y-1.5">
-                            {estadoActual.bonoNivelEscalon && (
-                                <p className="text-xs text-emerald-300 flex items-center gap-2"><CheckCircle size={14} className="shrink-0" /> Bono por nivel <b>{estadoActual.bonoNivelEscalon}</b>: {money(estadoActual.bonoNivelMonto)}</p>
-                            )}
-                            {sigBono && (
-                                <div className="bg-slate-800/50 rounded-lg p-2.5 flex items-center gap-2">
-                                    <TrendingUp size={15} className="text-emerald-400 shrink-0" />
-                                    <p className="text-xs text-slate-300">Te faltan <b className="text-emerald-400">{Number(sigBono.faltan).toLocaleString()} uds{porCobradas ? ' cobradas' : ''}</b> para el bono de <b className="text-white">{money(sigBono.monto)}</b>{estadoActual.bonoNivelEscalon ? ' (se paga solo el más alto)' : ''}.</p>
-                                </div>
-                            )}
-                            {(Number(commConfig.bonoActivacionUSD) || 0) > 0 && estadoActual.actSemanasTotales > 0 && (
-                                <p className="text-xs text-slate-300">
-                                    Activación: <b>{estadoActual.actSemanasLogradas} de {estadoActual.actSemanasTotales}</b> semanas logradas → {money(estadoActual.bonoActivacionUSDMonto)} de {money(commConfig.bonoActivacionUSD)}
-                                    {!estadoActual.actSemLograda && estadoActual.actSemObjetivo > 0 ? ` · esta semana llevas ${estadoActual.actSemActivados} de ${estadoActual.actSemObjetivo} PDV` : ''}
-                                </p>
-                            )}
-                            {crec?.activo && (
-                                <p className={`text-xs ${crec.logrado ? 'text-emerald-300' : 'text-slate-400'}`}>
-                                    {!crec.aplica ? `Crecimiento: ${crec.motivo}` : crec.logrado
-                                        ? `✓ Crecimiento ${String(crec.crecimientoPct).replace('.', ',')} % contra el mes anterior · ${money(crec.monto)}`
-                                        : `Crecimiento: llevas ${String(crec.crecimientoPct).replace('.', ',')} %; te faltan ${Number(crec.faltan).toLocaleString()} uds para ${money(crec.montoUSD)}`}
-                                </p>
-                            )}
-                        </div>
+                    {estadoActual?.transicion && (
+                        <p className="text-slate-400 text-[11px] mt-2">{notaTransicion(estadoActual)}</p>
                     )}
-                    {hasComisionPct && faltan !== null && siguiente && (
-                        <div className="mt-3 bg-slate-800/50 rounded-lg p-2.5 flex items-center gap-2">
-                            <TrendingUp size={15} className="text-emerald-400 shrink-0" />
-                            <p className="text-xs text-slate-300">
-                                Cobra <b className="text-emerald-400">{faltan.toLocaleString()} uds</b> más → subes a <b className="text-white">Nivel {siguiente.tier.label}</b> ({(siguiente.tier.rate * 100).toFixed(1)}%) y tu tasa mejora.
-                            </p>
-                        </div>
+                    {vendedor.antesDeIngreso && vendedor.ingreso && (
+                        <p className="text-amber-400 text-[11px] mt-2 font-semibold">Comienzas el {vendedor.ingreso.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })} · aún no ingresas</p>
                     )}
-                    {hasComisionPct && faltan === null && (
-                        <div className="mt-3 bg-emerald-500/10 rounded-lg p-2.5 flex items-center gap-2">
-                            <CheckCircle size={15} className="text-emerald-400 shrink-0" />
-                            <p className="text-xs text-emerald-300">{tasaFija
-                                ? <>Comisión fija del <b>{commConfig.bajaRate}%</b> sobre todo lo que cobras: cada unidad cobrada suma.</>
-                                : '¡Estás en el nivel más alto! Cada unidad que cobras suma a tu comisión.'}</p>
-                        </div>
-                    )}
-                </button>
+                    <p className="text-slate-500 text-[11px] mt-2">Toca para ver tu estado de cuenta.</p>
+                </PlanComisiones>
             )}
 
-            {/* ── Aviso de cambio de esquema (desde una fecha) ── */}
+            {/* ── Aviso de cambio de plan (desde una fecha) ── */}
             {!loading && proximo && (
                 <div className="bg-sky-500/10 border border-sky-500/40 rounded-2xl p-4">
-                    <p className="text-sky-300 text-xs font-semibold uppercase tracking-widest">Tu comisión cambia el {fechaCortaDe(proximo.desde)}</p>
+                    <p className="text-sky-300 text-xs font-semibold uppercase tracking-widest">Tu plan cambia el {fechaCortaDe(proximo.desde)}</p>
                     <p className="text-slate-200 text-sm mt-1.5 leading-snug">{resumenEsquema(proximo.config)}</p>
                     <p className="text-slate-400 text-[11px] mt-1.5">Lo que facturaste antes de esa fecha se paga con las reglas de hoy, aunque lo cobres después.</p>
                 </div>
             )}
 
-            {/* ── Commission Meter ── */}
-            <button
-                type="button"
-                onClick={() => setShowMetaModal(true)}
-                className={`w-full text-left bg-slate-900 border ${tier.border} rounded-2xl p-5 active:scale-[0.99] transition-transform`}
-            >
-                <div className="flex items-center justify-between mb-1">
-                    <div className="min-w-0">
-                        <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">
-                            {stats.mesArranque > 0 ? `Meta · Mes ${stats.mesArranque}` : 'Meta del Mes'}{porCobradas ? ' · uds cobradas' : ''}
-                        </p>
-                        {stats.periodoLabel && (
-                            <p className="text-slate-500 text-[11px] mt-0.5">{stats.periodoLabel}</p>
-                        )}
-                        {vendedor.antesDeIngreso && vendedor.ingreso && (
-                            <p className="text-amber-400 text-[11px] mt-0.5 font-semibold">Comienzas el {vendedor.ingreso.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' })} · aún no ingresas</p>
-                        )}
-                    </div>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tier.bg} ${tier.color} shrink-0`}>
-                        {sinPct ? (estadoActual?.bonoNivelEscalon || 'Sin bono aún') : tasaFija ? `${tier.label} ${commConfig.bajaRate}%` : `Nivel ${tier.label}`}
-                    </span>
-                </div>
-
-                {loading ? (
-                    <div className="flex justify-center py-6"><Loader size={24} className="animate-spin text-slate-500" /></div>
-                ) : (
-                    <>
-                        <div className="flex items-end gap-2 my-3">
-                            <span className={`text-4xl font-black font-mono ${tier.color}`}>{st.unidadesDelMes.toLocaleString()}</span>
-                            <span className="text-slate-500 text-lg mb-1">/ {vendedor.metaMensual.toLocaleString()} uds</span>
-                        </div>
-
-                        <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden mb-2">
-                            <div
-                                className={`h-3 rounded-full transition-all duration-700 ${tier.color.replace('text-', 'bg-').replace('-400', '-400')}`}
-                                style={{ width: `${(barPct * 100).toFixed(1)}%` }}
-                            />
-                        </div>
-
-                        <div className="flex items-center justify-between">
-                            <p className="text-slate-500 text-xs">{(pct * 100).toFixed(0)}% del objetivo{vendedor.separaFood ? ' · retail' : ''}</p>
-                            {hasComisionPct && faltan !== null && (
-                                <p className={`text-xs font-semibold ${tier.color}`}>
-                                    {faltan.toLocaleString()} uds → Nivel {siguiente.tier.label} ({(siguiente.tier.rate * 100).toFixed(1)}%)
-                                </p>
-                            )}
-                        </div>
-                        {/* Foodservice va aparte, en kg (desde el corte a fin de mes) */}
-                        {vendedor.separaFood && (vendedor.metaKg > 0 || kgFoodVista > 0 || bonosFood) && (
-                            <div className="mt-3 pt-3 border-t border-slate-800">
-                                <div className="flex items-baseline justify-between gap-2">
-                                    <p className="text-slate-400 text-xs font-semibold">Foodservice</p>
-                                    <p className="text-sm font-black font-mono text-amber-300">
-                                        {fmtKg(kgFoodVista)}{vendedor.metaKg > 0 && <span className="text-slate-500 font-normal"> / {fmtKg(vendedor.metaKg)}</span>}
-                                    </p>
-                                </div>
-                                {vendedor.metaKg > 0 && (
-                                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden mt-1.5">
-                                        <div className="h-2 rounded-full bg-amber-400" style={{ width: `${Math.min(100, kgFoodVista / vendedor.metaKg * 100).toFixed(1)}%` }} />
-                                    </div>
-                                )}
-                                {bonosFood && estadoActual?.bonoNivelFoodEscalon && (
-                                    <p className="text-xs text-emerald-300 mt-1.5 flex items-center gap-2"><CheckCircle size={14} className="shrink-0" /> Bono foodservice <b>{estadoActual.bonoNivelFoodEscalon}</b>: {money(estadoActual.bonoNivelFoodMonto)}</p>
-                                )}
-                                {bonosFood && sigBonoFood && (
-                                    <p className="text-xs text-slate-300 mt-1.5">Te faltan <b className="text-amber-300">{fmtKg(sigBonoFood.faltan)}{porCobradas ? ' cobrados' : ''}</b> para el bono foodservice de <b className="text-white">{money(sigBonoFood.monto)}</b>.</p>
-                                )}
-                                {bonosFood && estadoActual?.crecimientoFood?.activo && (
-                                    <p className="text-xs text-slate-400 mt-1">Crecimiento foodservice: {estadoActual.crecimientoFood.aplica
-                                        ? (estadoActual.crecimientoFood.logrado ? `logrado (+${money(estadoActual.crecimientoFood.montoUSD)})` : `faltan ${fmtKg(estadoActual.crecimientoFood.faltan)} para +${money(estadoActual.crecimientoFood.montoUSD)}`)
-                                        : estadoActual.crecimientoFood.motivo}</p>
-                                )}
-                                <p className="text-slate-500 text-[11px] mt-1">Kg de queso a clientes foodservice{porCobradas ? ' (cobrados)' : ''}. No suman a tus unidades.{(commConfig.comisionFoodservice || 0) > 0 ? ` Comisión fija del ${commConfig.comisionFoodservice}% sobre lo cobrado.` : ''}</p>
-                            </div>
-                        )}
-                    </>
-                )}
-            </button>
-
-            {showMetaModal && (
-                <MetaDetailModal
-                    vendedor={vendedor}
-                    stats={st}
-                    tiers={tiers}
-                    commConfig={commConfig}
-                    pct={pct}
-                    tier={tier}
-                    onClose={() => setShowMetaModal(false)}
-                />
-            )}
-
-            {/* ── Velocidad de Venta ── */}
-            {!loading && st.unidadesDelMes > 0 && (
-                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-2 bg-blue-500/15 rounded-lg text-blue-400 shrink-0"><Zap size={18} /></div>
-                        <div>
-                            <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Velocidad de Venta</p>
-                            <p className="text-white text-xl font-black font-mono">
-                                {stats.runRateActual.toFixed(1)} <span className="text-slate-500 text-sm font-normal">uds/día</span>
-                            </p>
-                        </div>
-                    </div>
-                    <p className="text-slate-400 text-xs bg-slate-800/60 rounded-lg p-2.5">
-                        {metaAlcanzada
-                            ? '¡Meta del mes alcanzada!'
-                            : stats.diasRestantes > 0
-                                ? <>Necesitas <span className="font-bold text-blue-400">{stats.runRateNeeded.toFixed(1)} uds/día</span> los próximos <span className="font-bold text-white">{stats.diasRestantes}</span> día{stats.diasRestantes > 1 ? 's' : ''} para llegar a la meta.</>
-                                : <>El mes cerró a <span className="font-bold text-amber-400">{faltanParaMeta.toLocaleString()} uds</span> de la meta.</>
-                        }
+            {/* ── Ritmo para llegar a la meta ── */}
+            {!loading && vendedor.metaMensual > 0 && !metaAlcanzada && stats.diasRestantes > 0 && (
+                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 flex items-center gap-3">
+                    <div className="p-2 bg-blue-500/15 rounded-lg text-blue-400 shrink-0"><Zap size={18} /></div>
+                    <p className="text-slate-300 text-xs leading-snug">
+                        Vas a <b className="text-white">{(stats.runRateActual || 0).toFixed(1)} uds/día</b>. Para llegar a la meta necesitas <b className="text-blue-400">{(stats.runRateNeeded || 0).toFixed(1)} uds/día</b> los próximos <b className="text-white">{stats.diasRestantes}</b> día{stats.diasRestantes > 1 ? 's' : ''}.
                     </p>
                 </div>
             )}
 
-            {/* ── Cobranza a tiempo (puntualidad) + acción del día ── */}
+            {/* ── Tus facturas por cobrar y despachos (operación) ── */}
             {!loading && (
-                <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4">
-                    <div className="flex items-center justify-between mb-1">
-                        <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Cobranza a Tiempo</p>
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
-                            Bono Cobranza +{commConfig.bonusPuntualidad}%
-                        </span>
-                    </div>
-                    <div className="flex items-end gap-2 my-2">
-                        <span className={`text-3xl font-black font-mono ${stats.cobranzaTasa > 0 ? 'text-emerald-400' : 'text-white'}`}>
-                            {stats.cobranzaTasa === null ? '—' : `${stats.cobranzaTasa.toFixed(0)}%`}
-                        </span>
-                        <span className="text-slate-500 text-base mb-0.5">de tus facturas, cobrado a tiempo</span>
-                    </div>
-                    <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden mb-2">
-                        <div
-                            className="h-2.5 rounded-full transition-all duration-700 bg-emerald-400"
-                            style={{ width: `${Math.min(100, stats.cobranzaTasa || 0).toFixed(1)}%` }}
-                        />
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-slate-800/60 rounded-lg p-2.5 text-center">
-                            <p className={`text-xl font-black ${stats.facturasVencidas > 0 ? 'text-red-400' : 'text-slate-300'}`}>{stats.facturasVencidas}</p>
-                            <p className="text-slate-400 text-[11px]">Vencidas {stats.montoVencido > 0 ? `· $${Math.round(stats.montoVencido).toLocaleString()}` : ''}</p>
-                        </div>
-                        <div className="bg-slate-800/60 rounded-lg p-2.5 text-center">
-                            <p className={`text-xl font-black ${stats.facturasPorVencer > 0 ? 'text-amber-400' : 'text-slate-300'}`}>{stats.facturasPorVencer}</p>
-                            <p className="text-slate-400 text-[11px]">Por vencer (3 días)</p>
-                        </div>
-                    </div>
-                    <p className="text-slate-400 text-xs mt-2"><b className="text-slate-300">Cada factura</b> que cobras a tiempo (dentro de vencimiento + {commConfig.cobranzaGraciaDias} días de gracia) te suma <b className="text-emerald-400">+{commConfig.bonusPuntualidad}%</b> de comisión sobre ese monto.</p>
-                </div>
-            )}
-
-            {/* ── Resumen financiero ── */}
-            {statCards.length > 0 && (
-                <div className="grid grid-cols-2 gap-2">
-                    {statCards.map((c, i) => (
-                        <StatChip
-                            key={c.key}
-                            label={c.label}
-                            value={c.value}
-                            color={c.color}
-                            sub={c.sub}
-                            className={statCards.length % 2 === 1 && i === statCards.length - 1 ? 'col-span-2' : ''}
-                        />
-                    ))}
-                </div>
-            )}
-
-            {/* ── Bonos de estado ── */}
-            {showBonosSection && (
-                <div className="space-y-2">
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest">Estado de Bonos</p>
-
-                    {showActivacion && estadoActual && (() => {
-                        const faltanAct = Math.max(0, (estadoActual.actSemObjetivo || 0) - (estadoActual.actSemActivados || 0));
-                        return (
-                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
-                            <div className="flex items-center gap-3">
-                                {estadoActual.actSemLograda
-                                    ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
-                                    : <AlertCircle size={20} className="text-amber-400 shrink-0" />
-                                }
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-white text-sm font-semibold">Bono Activación ({[commConfig.bonusActivacion > 0 ? `+${commConfig.bonusActivacion}%` : null, commConfig.bonoActivacionUSD > 0 ? `hasta $${commConfig.bonoActivacionUSD}` : null].filter(Boolean).join(' · ')})</p>
-                                    {estadoActual.carteraSize > 0 ? (
-                                        <p className="text-slate-400 text-xs">
-                                            Esta semana: <b className={estadoActual.actSemLograda ? 'text-emerald-400' : 'text-white'}>{estadoActual.actSemActivados}/{estadoActual.carteraSize}</b> sucursales con ≥{commConfig.activacionMinUnits} uds · objetivo {estadoActual.actSemObjetivo}
-                                            {estadoActual.actSemLograda ? ' — ¡lograda!' : ` · faltan ${faltanAct}`}
-                                        </p>
-                                    ) : (
-                                        <p className="text-slate-400 text-xs">Aún no tienes cartera asignada.</p>
-                                    )}
-                                </div>
-                            </div>
-                            {estadoActual.carteraSize > 0 && (
-                                <>
-                                    <div className="mt-2.5 flex items-center justify-between text-[11px]">
-                                        <span className="text-slate-500">Semanas logradas este período</span>
-                                        <span className="text-emerald-400 font-bold">{estadoActual.actSemanasLogradas}/{estadoActual.actSemanasTotales}</span>
-                                    </div>
-                                    <p className="text-slate-500 text-[10px] mt-1.5">Se paga proporcional: <b className="text-slate-400">+{commConfig.bonusActivacion}% × (semanas logradas ÷ semanas del período)</b> sobre lo cobrado.</p>
-                                </>
-                            )}
-                        </div>
-                        );
-                    })()}
-
-                    {showAnaquel && (
-                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
-                            {stats.anaquelOk
-                                ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
-                                : <AlertCircle size={20} className="text-amber-400 shrink-0" />
-                            }
-                            <div className="flex-1 min-w-0">
-                                <p className="text-white text-sm font-semibold">Bono Disponibilidad en Anaquel (+{commConfig.bonusAnaquel}%)</p>
-                                <p className="text-slate-400 text-xs">
-                                    {stats.anaquelOk
-                                        ? '¡Disponibilidad lograda este mes!'
-                                        : `Cubre ${stats.anaquelCubiertos}/${stats.anaquelTotal} sucursales con +${commConfig.anaquelMinUnits} uds promedio en visitas mar/vie de este mes para ganarlo`
-                                    }
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {showPuntualidad && (
-                        <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-3">
-                            {stats.facturasPorVencer === 0
-                                ? <CheckCircle size={20} className="text-emerald-400 shrink-0" />
-                                : <Clock size={20} className="text-red-400 shrink-0" />
-                            }
-                            <div className="flex-1 min-w-0">
-                                <p className="text-white text-sm font-semibold">
-                                    Bono Puntualidad
-                                    {stats.puntualidadPct !== null
-                                        ? ` (+${(commConfig.bonusPuntualidad * stats.puntualidadPct / 100).toFixed(2)}% de +${commConfig.bonusPuntualidad}%)`
-                                        : ` (+${commConfig.bonusPuntualidad}%)`}
-                                </p>
-                                <p className="text-slate-400 text-xs">
-                                    {stats.puntualidadPct !== null && (
-                                        <>{stats.puntualidadPct.toFixed(0)}% de tus facturas cobradas este mes, a tiempo (+{commConfig.cobranzaGraciaDias} días de margen). </>
-                                    )}
-                                    {stats.facturasPorVencer === 0
-                                        ? 'Sin facturas próximas a vencer'
-                                        : `${stats.facturasPorVencer} factura${stats.facturasPorVencer > 1 ? 's' : ''} por vencer — cobra para no perder el bono`
-                                    }
-                                </p>
-                            </div>
-                        </div>
-                    )}
+                <div className="grid grid-cols-3 gap-2">
+                    <StatChip label="Vencidas" value={stats.facturasVencidas} color={stats.facturasVencidas > 0 ? 'text-red-400' : undefined}
+                        sub={stats.montoVencido > 0 ? `$${Math.round(stats.montoVencido).toLocaleString('es-VE')}` : 'al día'} />
+                    <StatChip label="Por vencer" value={stats.facturasPorVencer} color={stats.facturasPorVencer > 0 ? 'text-amber-400' : undefined} sub="próx. 3 días" />
+                    <StatChip label="Despachos hoy" value={stats.despachoHoy} />
                 </div>
             )}
 
@@ -1039,133 +665,6 @@ function HomeView({ vendedor, stats, loading, onNavigate, tiers, commConfig, est
     );
 }
 
-// ─── Meta detail modal ──────────────────────────────────────────────────────
-function MetaDetailModal({ vendedor, stats, tiers, commConfig, pct, tier, onClose }) {
-    const arranque = commConfig.arranque || [];
-
-    // Etapas: cada mes de arranque + la meta plena al final.
-    const etapas = [
-        ...arranque.map((a, i) => ({ label: `Mes ${i + 1}`, meta: a.meta, mes: i + 1 })),
-        { label: 'Meta plena', meta: commConfig.metaMensual, mes: arranque.length + 1 },
-    ];
-
-    return (
-        <div
-            className="fixed inset-0 bg-black/60 z-50 flex flex-col justify-end"
-            onClick={onClose}
-        >
-            <div
-                className="bg-slate-900 border-t border-slate-700 rounded-t-2xl p-5 max-h-[85vh] overflow-y-auto"
-                onClick={e => e.stopPropagation()}
-            >
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-white font-bold text-lg">Tus Metas</h3>
-                    <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-white" aria-label="Cerrar">
-                        <X size={20} />
-                    </button>
-                </div>
-
-                {/* Meta actual */}
-                <div className={`bg-slate-800/60 border ${tier.border} rounded-xl p-4 mb-5`}>
-                    <div className="flex items-center justify-between mb-2">
-                        <p className="text-slate-400 text-xs font-semibold uppercase tracking-widest">Meta actual</p>
-                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${tier.bg} ${tier.color}`}>
-                            Nivel {tier.label}
-                        </span>
-                    </div>
-                    <div className="flex items-end gap-2 mb-2">
-                        <span className={`text-3xl font-black font-mono ${tier.color}`}>{stats.unidadesDelMes.toLocaleString()}</span>
-                        <span className="text-slate-500 text-base mb-0.5">/ {vendedor.metaMensual.toLocaleString()} uds</span>
-                    </div>
-                    <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
-                        <div
-                            className={`h-2.5 rounded-full transition-all duration-700 ${tier.color.replace('text-', 'bg-')}`}
-                            style={{ width: `${(Math.min(pct, 1.25) * 100).toFixed(1)}%` }}
-                        />
-                    </div>
-                    <p className="text-slate-500 text-xs mt-1.5">{(pct * 100).toFixed(0)}% del objetivo</p>
-                </div>
-
-                {/* Niveles de comisión */}
-                <div className="mb-5">
-                    <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">{esTasaFija(commConfig) ? 'Tu comisión' : 'Niveles de Comisión'}</p>
-                    <div className="space-y-2">
-                        {[...tiers, ...(commConfig.bajaActiva === false ? [] : [{ label: commConfig.bajaLabel || 'Baja', rate: (commConfig.bajaRate || 0) / 100, min: 0, ...BAJA_STYLE }])].map((t, i) => {
-                            const isBaja = t.min === 0 && i === tiers.length;
-                            const lowest = tiers[tiers.length - 1];
-                            const lowestMinUnits = lowest ? Math.round(lowest.min * vendedor.metaMensual) : 0;
-                            const minUnits = Math.round(t.min * vendedor.metaMensual);
-                            const isActive = tier.label === t.label;
-                            return (
-                                <div
-                                    key={i}
-                                    className={`flex items-center justify-between rounded-xl p-3 border ${isActive ? `${t.bg} ${t.border}` : 'bg-slate-800/40 border-slate-800'}`}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <span className={`text-sm font-bold ${isActive ? t.color : 'text-slate-300'}`}>{t.label}</span>
-                                        {isActive && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white">ACTUAL</span>}
-                                    </div>
-                                    <div className="text-right">
-                                        <p className={`text-sm font-mono font-bold ${isActive ? t.color : 'text-slate-400'}`}>{t.rate > 0 ? `${(t.rate * 100).toFixed(1)}%` : '—'}</p>
-                                        <p className="text-slate-500 text-[10px]">{esTasaFija(commConfig) ? 'sobre todo lo cobrado, sin niveles' : isBaja ? `< ${lowestMinUnits.toLocaleString()} uds` : `desde ${minUnits.toLocaleString()} uds`}</p>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* Período de arranque */}
-                {arranque.length > 0 && (
-                    <div>
-                        <p className="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Metas por Mes (Período de Arranque)</p>
-                        <div className="space-y-2">
-                            {etapas.map((e) => {
-                                const isCurrent = vendedor.mesArranque > 0
-                                    ? e.mes === vendedor.mesArranque
-                                    : e.mes === arranque.length + 1;
-                                const isPast = vendedor.mesArranque > 0 && e.mes < vendedor.mesArranque;
-                                const etapaPct = isCurrent
-                                    ? Math.min(pct, 1.25)
-                                    : (isPast ? 1 : 0);
-                                return (
-                                    <div
-                                        key={e.mes}
-                                        className={`rounded-xl p-3 border ${isCurrent ? `${tier.bg} ${tier.border}` : 'bg-slate-800/40 border-slate-800'}`}
-                                    >
-                                        <div className="flex items-center justify-between mb-1.5">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-sm font-semibold ${isCurrent ? 'text-white' : 'text-slate-400'}`}>{e.label}</span>
-                                                {isCurrent && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/10 text-white">ACTUAL</span>}
-                                                {isPast && <CheckCircle size={12} className="text-emerald-400" />}
-                                            </div>
-                                            <span className={`text-sm font-mono font-bold ${isCurrent ? 'text-white' : 'text-slate-500'}`}>
-                                                {e.meta.toLocaleString()} uds
-                                            </span>
-                                        </div>
-                                        <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                                            <div
-                                                className={`h-2 rounded-full transition-all duration-700 ${isCurrent ? tier.color.replace('text-', 'bg-') : isPast ? 'bg-emerald-500' : 'bg-slate-700'}`}
-                                                style={{ width: `${(etapaPct * 100).toFixed(1)}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
-
-// Dos bandejas separadas (pedido del dueño, 14-oct), para que cada alerta se lea
-// con la importancia que tiene:
-//   · "agente": lo que el vigilante detecta solo (PDV sin visita, ritmo de la
-//     meta, mercaderista sin reportes…). Botón con el robot.
-//   · "operacion": lo del día a día (facturas por vencer, despachos, pickings).
-//     Botón de la campanita.
 function AlertasView({ alertas, loadingAlertas, onDelete, uid, avisosVig = [], onMarcarVisto, modo = 'operacion' }) {
     const agente = modo === 'agente';
     // Tocar una alerta abre TODA su información. Los avisos del vigilante traen su
@@ -2114,9 +1613,11 @@ const VendedorLayout = ({ user, onLogout }) => {
             );
         }
 
-        const tiers = buildTiers(commConfig);
-        const pct   = vendedor.metaMensual > 0 ? stats.unidadesDelMes / vendedor.metaMensual : 0;
-        const tier  = getTierFromConfig(pct, tiers, commConfig.bajaRate, commConfig.bajaLabel);
+        // Su plan con lo que lleva (el mismo que pinta Inicio): de aquí salen los
+        // indicadores de comisiones de "Mis KPIs".
+        const planKpi = tableroPlan(commConfig, estados[0] || null, {
+            anaquel: { hasAnaquel: stats.hasAnaquel, ok: stats.anaquelOk, cubiertos: stats.anaquelCubiertos, total: stats.anaquelTotal },
+        });
         const kpiIds = getVendorKpis();
 
         // Home deslizable: página 0 = inicio actual · página 1 = tus KPIs.
@@ -2178,7 +1679,6 @@ const VendedorLayout = ({ user, onLogout }) => {
                             stats={stats}
                             loading={loading}
                             onNavigate={navigate}
-                            tiers={tiers}
                             commConfig={commConfig}
                             estados={estados}
                             estadoActual={estados[0] || null}
@@ -2194,8 +1694,7 @@ const VendedorLayout = ({ user, onLogout }) => {
                             stats={stats}
                             vendedor={vendedor}
                             estadoActual={estados[0] || null}
-                            tier={tier}
-                            pct={pct}
+                            plan={planKpi}
                             onNavigate={navigate}
                             execKpis={execKpis}
                             hasAnaquelData={carteraVisitas.length > 0}
